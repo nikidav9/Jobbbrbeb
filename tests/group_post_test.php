@@ -51,6 +51,62 @@ check('строка попадает в отчёт', str_contains($db, "if (\$gr
 // Причина отказа приходит из Telegram и уходит в разметку сообщения.
 check('причина отказа экранируется', str_contains($db, 'htmlspecialchars(mb_substr($whyText'));
 
+// ── Догоняющее объявление ─────────────────────────────────────────────────────
+// Главная причина молчания была не на сервере: объявление посылает приложение
+// отдельным запросом уже ПОСЛЕ закрытия экрана, а повторы занимают до полутора
+// минут. Свернул человек приложение — запрос не ушёл, и сервер о вакансии даже
+// не узнал. Починить это можно только со стороны сервера: пусть догоняет сам.
+check('догоняющее задание есть', str_contains($db, 'function jt_announce_missed('));
+check('задание доступно как операция', str_contains($db, "case 'cronAnnounceMissed':"));
+check('операция только для админа', str_contains($db, "'cronAnnounceMissed',"));
+// Искать по всему файлу нельзя: те же строки встречаются в других функциях, и
+// проверка проходит даже на сломанном коде. Однажды так и вышло — мутация
+// «убрать окно по времени» применилась, а тест остался зелёным, потому что
+// нашёл 'created_at' => 'gte.' в чужом задании. Вырезаем тело нужной функции.
+function fn_body(string $src, string $name): string
+{
+    $start = strpos($src, "function {$name}(");
+    if ($start === false) return '';
+    $end = strpos($src, "\n}\n", $start);
+    return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
+}
+$missed = fn_body($db, 'jt_announce_missed');
+check('тело догоняющего задания найдено', $missed !== '');
+
+check('берёт обе таблицы вакансий',
+    str_contains($missed, "'table' => 'jm_perm_vacancies'") && str_contains($missed, "'table' => 'jm_vacancies'"));
+check('берёт только открытые', str_contains($missed, "'status' => 'eq.open',"));
+
+// При первом запуске отметки gpost нет НИ У КОГО — она новая. Без окна по
+// времени и без учёта старой отметки задание вывалило бы в группу всю историю.
+check('окно по времени есть', str_contains($missed, "'created_at' => 'gte.' . \$cut"));
+check('старая отметка тоже считается доставкой',
+    str_contains($missed, "'eq.gpost:' . \$id") && str_contains($missed, "'eq.bcast:' . \$id"));
+// Пределов должно быть ДВА: перед таблицей и перед каждой вакансией. С одним
+// внешним задание внутри одной таблицы объявит сколько угодно.
+check('предел проверяется и внутри перебора вакансий',
+    substr_count($missed, 'count($announced) >= $limit') >= 2);
+check('окно и предел ограничены сверху',
+    str_contains($db, 'min(48, (int)($args[0] ?? 6))') && str_contains($db, 'min(20, (int)($args[1] ?? 5))'));
+
+// Отметку ставим только после успешной отправки — иначе повторится та же
+// ошибка, из-за которой вакансия терялась навсегда.
+$sendAt = strpos($db, 'if (!tg_send_message(TG_GROUP_CHAT_ID, $html, $btn)) continue;');
+$markAt = strpos($db, "'key' => 'gpost:' . \$id, 'value' => now_iso()");
+check('отметка ставится после отправки', $sendAt !== false && $markAt !== false && $sendAt < $markAt);
+
+// Текст собирается на сервере: догоняющее задание не может позвать клиентский
+// код. Данные вводят работодатели и они уходят в разметку Telegram.
+check('текст объявления собирается на сервере', str_contains($db, 'function jt_group_html('));
+check('данные работодателя экранируются',
+    str_contains($db, "htmlspecialchars(\$x, ENT_QUOTES, 'UTF-8')"));
+check('без названия или компании не объявляем',
+    str_contains($db, "if (\$title === '' || \$company === '') return '';"));
+
+$wf = (string)file_get_contents(__DIR__ . '/../.github/workflows/announce-missed.yml');
+check('задание запускается по расписанию', str_contains($wf, "cron: '7 * * * *'"));
+check('задание зовёт нужную операцию', str_contains($wf, 'cronAnnounceMissed'));
+
 if ($failures) {
     echo "group post: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

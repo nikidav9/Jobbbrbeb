@@ -143,6 +143,7 @@ if (!$fn) { jt_respond(['error' => 'Missing fn'], 400); exit; }
 $adminFns = [
     'dbKeyKind', 'adminResetPassword', 'dbMigrateChatMedia', 'dbDeleteUser',
     'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges', 'cronShiftNudge',
+    'cronAnnounceMissed',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
     'extSourcesList', 'extSourceSave', 'extSourceDelete', 'extStats',
@@ -1952,6 +1953,119 @@ function jt_shift_party(string $likeId, ?string $authUid, bool $employerOnly): a
  * Поле invited_by задаёт СЕРВЕР по коду: клиент его не присылает и прислать не
  * может — в dbUpsertUser оно срезается белым списком.
  */
+
+/**
+ * Объявить в группу вакансии, о которых объявить забыли.
+ *
+ * Зачем это вообще нужно. Объявление в группу «ПОДРАБОТКИ» до сих пор
+ * целиком зависело от телефона того, кто публикует: приложение зовёт
+ * dbNotifyAllWorkersNewVacancy отдельным запросом уже ПОСЛЕ того, как экран
+ * закрылся (router.back()), и даёт до трёх попыток с двадцатипятисекундным
+ * ожиданием — это полторы минуты. Человек нажал «Опубликовать», увидел
+ * «Вакансия опубликована» и свернул приложение: запрос не ушёл, сервер о
+ * вакансии не узнал, и починить это на сервере было нечем — он просто не
+ * знал, что объявлять.
+ *
+ * Так вакансия и провисела сутки в ленте без единого сообщения в группе.
+ *
+ * Теперь сервер догоняет сам. Раз в час смотрит свежие открытые вакансии и
+ * объявляет те, по которым отметки о доставке нет.
+ *
+ * Почему окно короткое и почему старые отметки тоже считаются: при первом
+ * запуске у всех прежних вакансий отметки gpost нет — она новая. Без обоих
+ * ограничений задание вывалило бы в группу всю историю. Поэтому берём только
+ * последние часы и считаем доставленной вакансию, у которой есть ЛЮБАЯ из
+ * двух отметок: gpost (новая) или bcast (её ставил прежний код, когда
+ * рассылка начиналась).
+ */
+function jt_announce_missed(int $hours = 6, int $limit = 5): array
+{
+    $cut = gmdate('Y-m-d\TH:i:s\Z', time() - $hours * 3600);
+    $announced = [];
+    $checked = 0;
+
+    $sources = [
+        ['table' => 'jm_perm_vacancies', 'kind' => 'perm',
+         'cols' => 'id,title,company,metro_station,salary,schedule,created_at'],
+        ['table' => 'jm_vacancies', 'kind' => 'shift',
+         'cols' => 'id,title,company,metro_station,salary,date,time_start,time_end,created_at'],
+    ];
+
+    foreach ($sources as $src) {
+        if (count($announced) >= $limit) break;
+        $rows = sb_select($src['table'], [
+            'status' => 'eq.open',
+            'created_at' => 'gte.' . $cut,
+            'order' => 'created_at.asc',
+        ], $src['cols']);
+
+        foreach ($rows as $v) {
+            if (count($announced) >= $limit) break;
+            $id = trim((string)($v['id'] ?? ''));
+            if ($id === '') continue;
+            $checked++;
+
+            // Любая из двух отметок означает «уже занимались».
+            if (sb_single('jm_settings', ['key' => 'eq.gpost:' . $id], 'key')) continue;
+            if (sb_single('jm_settings', ['key' => 'eq.bcast:' . $id], 'key')) continue;
+
+            $html = jt_group_html($v, $src['kind']);
+            if ($html === '') continue;
+
+            $campaign = bin2hex(random_bytes(8));
+            $btn = 'https://t.me/JobToo_bot/app?startapp=' . $src['kind'] . '_' . $id . '_' . $campaign;
+            if (TG_GROUP_CHAT_ID === 0) break;
+            if (!tg_send_message(TG_GROUP_CHAT_ID, $html, $btn)) continue;
+
+            sb_upsert('jm_settings', [
+                'key' => 'gpost:' . $id, 'value' => now_iso(), 'updated_at' => now_iso(),
+            ], 'key');
+            $announced[] = $id;
+        }
+    }
+
+    return ['checked' => $checked, 'announced' => count($announced), 'ids' => $announced];
+}
+
+/**
+ * Текст объявления в группу.
+ *
+ * Повторяет формат, который собирает приложение (services/notifications.ts).
+ * Повтор осознанный: догоняющее задание не может позвать клиентский код, а
+ * два разных вида объявления в одной группе выглядели бы как поломка. Меняя
+ * формат там — поменять и здесь.
+ */
+function jt_group_html(array $v, string $kind): string
+{
+    $title = trim((string)($v['title'] ?? ''));
+    $company = trim((string)($v['company'] ?? ''));
+    if ($title === '' || $company === '') return '';
+
+    $e = fn(string $x): string => htmlspecialchars($x, ENT_QUOTES, 'UTF-8');
+    $salary = (float)($v['salary'] ?? 0);
+    $head = $kind === 'perm' ? '💼 <b>Новая постоянная вакансия!</b>' : '⚡ <b>Новая подработка!</b>';
+
+    $out = $head . "\n\n👷 " . $e($title) . ' — ' . $e($company);
+
+    if ($kind === 'shift') {
+        $date = trim((string)($v['date'] ?? ''));
+        $time = trim(trim((string)($v['time_start'] ?? '')) . '–' . trim((string)($v['time_end'] ?? '')), '–');
+        if ($date !== '') $out .= "\n📅 " . $e($date) . ($time !== '' ? ', ' . $e($time) : '');
+        elseif ($time !== '') $out .= "\n🕐 " . $e($time);
+    } else {
+        $schedule = trim((string)($v['schedule'] ?? ''));
+        if ($schedule !== '') $out .= "\n🗓 " . $e($schedule);
+    }
+
+    $metro = trim((string)($v['metro_station'] ?? ''));
+    if ($metro !== '') $out .= "\n🚇 м. " . $e($metro);
+    if ($salary > 0) {
+        $out .= "\n💰 " . number_format($salary, 0, ',', ' ') . ' ₽' . ($kind === 'perm' ? '/мес' : '');
+    }
+
+    return $out . "\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇";
+}
+
 function jt_referral_attach(string $uid, string $rawCode): void
 {
     try {
@@ -3244,6 +3358,16 @@ try {
         }
 
         // Отдельный вызов той же рассылки — чтобы прогнать вручную, не дожидаясь крона.
+        // Догоняющее объявление: вакансии, о которых не объявили, потому что
+        // запрос с телефона публикующего не дошёл. Подробности — в
+        // jt_announce_missed.
+        case 'cronAnnounceMissed': {
+            $hours = max(1, min(48, (int)($args[0] ?? 6)));
+            $limit = max(1, min(20, (int)($args[1] ?? 5)));
+            $data = jt_announce_missed($hours, $limit);
+            break;
+        }
+
         case 'cronShiftNudge':
             @set_time_limit(300);
             $data = shift_nudge_run(); break;
