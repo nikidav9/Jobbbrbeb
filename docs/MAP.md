@@ -157,6 +157,21 @@
   не блокируются: существующий пользователь проходит по своему сохранённому
   `id`. Списки для PostgREST всё равно строить через `sb_in_list()`.
 
+### Чужие данные на чтение
+- **`dbGetLikes` отдаёт только свои отклики** (`or=(worker_id.eq,employer_id.eq)`).
+  Прежде отдавалась вся таблица сервиса, и приложение звало её на каждом
+  обновлении списка.
+- **`dbGetLikeByVacancyWorker` отвечает обеим сторонам смены** — работнику и
+  работодателю этой вакансии. Была в `$selfArgFns`, то есть работодателю
+  отказывала, и экран переписки обходил это, выкачивая всё.
+- **Файлы переписки.** Id чата стоит в самом имени файла
+  (`chat/<id чата>_<время>`), `jt_chat_id_from_media_path` его достаёт,
+  `jt_require_chat_party` сверяет. Применено к `dbSignMedia` и
+  `dbUploadChatMedia` (там ещё и `x-upsert`, то есть можно было подменить).
+- `dbFileComplaint` берёт заявителя из сессии, `dbGetPermVacancyViewers` — в
+  `$ownedVacancyFns`, как и её сменный близнец.
+- Проверка — `tests/read_authz_test.php`.
+
 ### Кому можно написать
 - **`jt_may_notify` в `db.php`** — одно правило на все точки, где пишут
   человеку: `tgNotifyUser`, `sendPushNotification`, `tgNotifyNewApplication`,

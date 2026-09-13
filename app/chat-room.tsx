@@ -21,7 +21,7 @@ import { ReadTicks, isSeenByOther } from '@/components/ReadTicks';
 import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate, uid, nowISO } from '@/services/storage';
-import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetLikes, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
+import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
 import { notifyWorkerGotMatch, notifyWorkerNewMessage, notifyEmployerNewMessage,
   setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
@@ -394,8 +394,11 @@ export default function ChatRoom() {
         : null);
       return;
     }
-    dbGetLikes().then(allLikes => {
-      const like = allLikes.find(l => l.vacancyId === chat.vacancyId && l.workerId === chat.workerId);
+    // Один отклик спрашиваем по одному отклику. Раньше здесь выкачивались ВСЕ
+    // отклики сервиса, чтобы найти в них этот: dbGetLikeByVacancyWorker была
+    // доступна только самому работнику, и экран обходил отказ мягким путём.
+    // Теперь операция отвечает обеим сторонам смены, и обходить нечего.
+    dbGetLikeByVacancyWorker(chat.vacancyId, chat.workerId).then(like => {
       if (!like) { setLikeStatus('pending'); return; }
       if (like.isMatch || like.employerLiked === true) setLikeStatus('approved');
       else if (like.employerLiked === false) setLikeStatus('rejected');

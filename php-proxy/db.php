@@ -246,7 +246,7 @@ $selfArgFns = [
     'dbDeleteWebPushSubscription' => 0, 'dbGetNotifications' => 0,
     'dbMarkAllNotifsRead' => 0, 'dbDeleteAllNotifs' => 0,
     'dbRecordVacancyView' => 1, 'dbRecordPermVacancyView' => 1,
-    'dbGetLikeByVacancyWorker' => 1, 'dbRemoveLike' => 1,
+    'dbRemoveLike' => 1,
     'dbCheckAndCreateMatch' => 1, 'dbApplyPermVacancy' => 1,
 ];
 if (isset($selfArgFns[$fn])) {
@@ -301,6 +301,9 @@ $ownedVacancyFns = [
     'dbClosePermVacancy' => ['jm_perm_vacancies', 0],
     'dbDeletePermVacancy' => ['jm_perm_vacancies', 0],
     'dbGetPermApplicationsForVacancy' => ['jm_perm_vacancies', 0],
+    // Близнец dbGetVacancyViewers для постоянных вакансий стоял без проверки:
+    // список посмотревших чужую вакансию отдавался любому вошедшему.
+    'dbGetPermVacancyViewers' => ['jm_perm_vacancies', 0],
 ];
 if (isset($ownedVacancyFns[$fn])) {
     [$table, $pos] = $ownedVacancyFns[$fn];
@@ -1974,6 +1977,42 @@ function jt_may_notify(?string $authUid, string $recipientId): bool
     return (bool)$app;
 }
 
+/**
+ * Сторона переписки — или отказ.
+ *
+ * Та же проверка, что стоит для $chatArgFns до switch, но вызываемая: файлы
+ * чата адресуются не идентификатором чата, а именем файла, и в общий список
+ * не укладываются.
+ */
+function jt_require_chat_party(?string $authUid, string $chatId): void
+{
+    $chat = $chatId !== ''
+        ? sb_single('jm_chats', ['id' => 'eq.' . $chatId], 'worker_id,employer_id') : null;
+    if (!$chat || ($authUid !== (string)$chat['worker_id'] && $authUid !== (string)$chat['employer_id'])) {
+        jt_respond(['error' => 'Chat access denied'], 403); exit;
+    }
+}
+
+/**
+ * Идентификатор чата из имени файла.
+ *
+ * Приложение складывает имена так: `chat/<id чата>_<время>.jpg` и
+ * `chat/voice_<id чата>_<время>.<расширение>`. Значит по имени видно, чей это
+ * файл, и подписывать ссылку или заливать можно только своей стороне.
+ *
+ * Нашлось сплошной ревизией прав: бакет закрытый, но подписать ссылку на ЛЮБОЙ
+ * файл чата мог любой вошедший — то есть прочитать чужую переписку в
+ * фотографиях и голосовых. Залить с чужим именем (и перезаписать, заголовок
+ * x-upsert стоит) — тоже.
+ */
+function jt_chat_id_from_media_path(string $path): string
+{
+    $name = basename($path);
+    if (str_starts_with($name, 'voice_')) $name = substr($name, 6);
+    $pos = strpos($name, '_');
+    return $pos === false ? '' : substr($name, 0, $pos);
+}
+
 /** Отказ по правилу выше. Один текст на все точки, чтобы не разъехались. */
 function jt_require_notify_right(?string $authUid, string $recipientId): void
 {
@@ -2860,6 +2899,10 @@ try {
             if (!preg_match('#^chat/[A-Za-z0-9._-]{1,180}$#', $name) || str_contains($name, '..')) {
                 $data = ['error' => 'плохое имя файла']; break;
             }
+            // Заливать можно только в свою переписку. Имя задаёт клиент, а
+            // выше стоит x-upsert: без этой проверки чужой файл можно было и
+            // подменить.
+            jt_require_chat_party($authUid, jt_chat_id_from_media_path($name));
             // Бакет закрытый, но ссылку на него подписывают и отдают с того же
             // имени, что и сайт, — значит разметка, залитая сюда, тоже
             // выполнится как своя. Приложение шлёт только фотографии и
@@ -2911,6 +2954,9 @@ try {
         case 'dbSignMedia': {
             $raw = (string)($args[0] ?? '');
             if ($raw === '') { $data = ['error' => 'нужен путь']; break; }
+            // Подписать ссылку может только сторона этой переписки: id чата
+            // стоит в самом имени файла, см. jt_chat_id_from_media_path.
+            jt_require_chat_party($authUid, jt_chat_id_from_media_path($raw));
 
             // Из старой ссылки достаём путь после имени бакета.
             $path = $raw;
@@ -5036,8 +5082,15 @@ try {
             sb_update('jm_vacancies', ['id' => 'eq.' . $args[0]], fill_coords($args[1])); break;
 
         // ── Likes ──────────────────────────────────────────────────────────────
-        case 'dbGetLikes':
-            $data = sb_select('jm_likes'); break;
+        // Своё и только своё. Прежде отдавалась ВСЯ таблица откликов сервиса:
+        // кто куда откликался, кому отказали, чем кончилась смена — любому
+        // вошедшему, одним запросом. Приложение и само звало это на каждом
+        // обновлении списка, так что заодно перестали гонять чужое.
+        case 'dbGetLikes': {
+            $me = (string)($authUid ?? '');
+            $data = $me === '' ? [] : sb_select('jm_likes',
+                ['or' => "(worker_id.eq.{$me},employer_id.eq.{$me})"]); break;
+        }
 
         case 'dbGetLikesForUser': {
             $field = $args[1] === 'worker' ? 'worker_id' : 'employer_id';
@@ -5172,8 +5225,21 @@ try {
             break;
         }
 
-        case 'dbGetLikeByVacancyWorker':
+        // Отклик видят обе стороны: сам работник и работодатель этой смены.
+        // Прежде операция была в $selfArgFns, то есть работодателю отвечала
+        // отказом, — и экран переписки обходил это, выкачивая ВСЕ отклики
+        // сервиса, чтобы найти в них один. Проверка, которую легко обойти
+        // мягким путём, хуже отсутствующей: она создаёт видимость.
+        case 'dbGetLikeByVacancyWorker': {
+            $me = (string)($authUid ?? '');
+            if ($me !== (string)($args[1] ?? '')) {
+                $vac = sb_single('jm_vacancies', ['id' => 'eq.' . (string)($args[0] ?? '')], 'employer_id');
+                if (!$vac || (string)($vac['employer_id'] ?? '') !== $me) {
+                    jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+                }
+            }
             $data = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $args[0], 'worker_id' => 'eq.' . $args[1]]); break;
+        }
 
         case 'dbUpsertLike': {
             [$vid, $wid, $eid] = [$args[0], $args[1], $args[2]];
@@ -5502,8 +5568,11 @@ try {
         // ── Complaints ─────────────────────────────────────────────────────────
         case 'dbFileComplaint': {
             $p = $args[0];
+            // Заявитель — из подписанной сессии, а не из тела запроса. Прежде
+            // можно было подать жалобу от чужого имени: reporterId брали как
+            // прислали.
             sb_insert('jm_complaints', [
-                'id' => uid(), 'reporter_id' => $p['reporterId'], 'reporter_phone' => $p['reporterPhone'],
+                'id' => uid(), 'reporter_id' => (string)($authUid ?? ''), 'reporter_phone' => $p['reporterPhone'],
                 'reporter_company' => $p['reporterCompany'] ?? null, 'target_id' => $p['targetId'],
                 'target_phone' => $p['targetPhone'], 'target_company' => $p['targetCompany'] ?? null,
                 'complaint_type' => $p['complaintType'], 'description' => $p['description'] ?? null,

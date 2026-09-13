@@ -29,7 +29,6 @@ import {
   dbRestoreSession,
   dbClearSession,
   dbGetVacancies,
-  dbGetLikes,
   dbGetLikesForUser,
   dbGetVacancyStatsMap,
   dbResponsivenessMap,
@@ -834,9 +833,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const refreshLikes = async (u?: User) => {
     const user = u ?? currentUser;
+    // Без вошедшего человека откликов нет и быть не может: операция требует
+    // сессии. Прежде здесь звалась dbGetLikes(), отдававшая ВСЮ таблицу
+    // откликов сервиса, — ветка и не работала бы, и просить такое незачем.
     if (!user) {
-      const data = await dbGetLikes();
-      setLikes(data);
+      setLikes([]);
       return;
     }
     const data = await dbGetLikesForUser(user.id, user.role);
