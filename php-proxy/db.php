@@ -1516,8 +1516,15 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  * Если $pushBody не передан, в пуш идёт обычный текст — так и должно быть
  * для сообщений, где имён нет вовсе (а таких большинство).
  */
+/**
+ * $pushTitle — заголовок ИМЕННО для пуша, когда он должен отличаться от
+ * заголовка в колокольчике. Нужен переписке: в колокольчике внутри приложения
+ * видно, кто написал, а на экране блокировки — только «Новое сообщение».
+ * Так же устроены WhatsApp и Signal со спрятанными предпросмотрами.
+ */
 function notify_user(string $userId, string $title, string $body, string $type = '',
-                     array $data = [], ?string $pushBody = null): void {
+                     array $data = [], ?string $pushBody = null,
+                     ?string $pushTitle = null): void {
     if ($userId === '') return;
 
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 60);
@@ -1546,7 +1553,7 @@ function notify_user(string $userId, string $title, string $body, string $type =
     }
     if (!empty($u['push_token'])) {
         expo_push([[
-            'to' => $u['push_token'], 'title' => $title, 'body' => $pushBody ?? $body,
+            'to' => $u['push_token'], 'title' => $pushTitle ?? $title, 'body' => $pushBody ?? $body,
             'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches',
             'data' => array_merge(['type' => $type], $data),
         ]]);
@@ -1975,6 +1982,52 @@ function jt_may_notify(?string $authUid, string $recipientId): bool
         ?? sb_single('jm_perm_applications',
             ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
     return (bool)$app;
+}
+
+/**
+ * Строка сообщения для уведомления.
+ *
+ * Повторяет services/messagePreview.ts: фото и голосовые лежат в той же
+ * текстовой колонке, что и обычные сообщения, — служебная метка плюс ссылка.
+ * Показывать её человеку нельзя, поэтому значок и слово.
+ *
+ * Значки те же, что в списке чатов: список и шторка уведомлений должны
+ * говорить одно и то же.
+ */
+function jt_message_preview(string $text): string
+{
+    if (str_starts_with($text, '[voice]')) return '🎤 Голосовое сообщение';
+    if (str_starts_with($text, '[img]')) return '📷 Фото';
+    return mb_substr($text, 0, 100);
+}
+
+/**
+ * Известить вторую сторону переписки о новом сообщении.
+ *
+ * Раньше это делал телефон отправителя: собирал заголовок из своего имени,
+ * брал чужой пуш-токен и слал. Отсюда шли сразу две беды. Первая — обычная
+ * для этой породы: вызов «выстрелил и забыл», обрыв связи, и человек о
+ * сообщении не узнал. Вторая хуже: раз текст уведомления приходит с клиента,
+ * через НАШЕГО бота можно было послать что угодно тому, с кем есть переписка.
+ * Право писать я закрыл раньше, а вот содержание оставалось за клиентом.
+ *
+ * Теперь и имя отправителя, и текст сервер берёт из того, что сам записал.
+ */
+function jt_notify_new_message(array $chat, string $senderId, string $text): void
+{
+    $workerId = (string)($chat['worker_id'] ?? '');
+    $employerId = (string)($chat['employer_id'] ?? '');
+    $recipientId = $senderId === $workerId ? $employerId : $workerId;
+    if ($recipientId === '' || $recipientId === $senderId) return;
+
+    $u = sb_single('jm_users', ['id' => 'eq.' . $senderId], 'first_name,last_name');
+    $name = trim(((string)($u['first_name'] ?? '')) . ' ' . ((string)($u['last_name'] ?? '')));
+    if ($name === '') $name = 'Собеседник';
+
+    notify_user($recipientId, '💬 ' . $name, jt_message_preview($text),
+        'message', ['chatId' => (string)($chat['id'] ?? '')],
+        // На экране блокировки — ни имени, ни текста.
+        'Откройте чат в JobToo', '💬 Новое сообщение');
 }
 
 /**
@@ -5340,6 +5393,17 @@ try {
         case 'dbInsertMessage': {
             $msg = ['id' => uid(), 'chat_id' => $args[0], 'sender_id' => $args[1], 'text' => $args[2], 'created_at' => now_iso()];
             msg_insert($msg);
+            // Известить вторую сторону — здесь же, а не отдельным вызовом с
+            // телефона отправителя. Проверка «сторона переписки» уже прошла
+            // выше, в $chatArgFns, так что чат заведомо наш.
+            try {
+                $chatRow = sb_single('jm_chats', ['id' => 'eq.' . (string)$args[0]],
+                    'id,worker_id,employer_id');
+                if ($chatRow) jt_notify_new_message($chatRow, (string)$args[1], (string)$args[2]);
+            } catch (Throwable $e) {
+                // Сообщение записано — это главное. Уведомление не должно
+                // ронять отправку.
+            }
             $data = $msg; break;
         }
 
@@ -5461,6 +5525,22 @@ try {
             $data = chat_ensure($wid, $eid, (string)$vid, (string)$vt, (string)$cn,
                                 $sm, (int)$uw, (int)$ue,
                                 is_string($author) ? $author : (bool)$author);
+            // О первом сообщении извещаем здесь же. Раньше это делал телефон
+            // отправителя отдельным вызовом, с текстом уведомления от себя.
+            //
+            // Именно ЗДЕСЬ, а не внутри chat_ensure: её зовёт ещё и
+            // dbApplyPermVacancy, а та извещает работодателя своим
+            // «Новая заявка». Извещай chat_ensure — на одно событие приходило
+            // бы два пуша.
+            $senderId = ($author === true || $author === 'worker') ? (string)$wid
+                      : ($author === 'employer' ? (string)$eid : '');
+            if ($senderId !== '' && trim((string)$sm) !== '') {
+                try {
+                    jt_notify_new_message(
+                        ['id' => (string)$data, 'worker_id' => (string)$wid, 'employer_id' => (string)$eid],
+                        $senderId, (string)$sm);
+                } catch (Throwable $e) { /* чат заведён — это главное */ }
+            }
             break;
         }
 

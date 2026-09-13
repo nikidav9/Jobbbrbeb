@@ -22,8 +22,7 @@ import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate, uid, nowISO } from '@/services/storage';
 import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
-import { notifyWorkerGotMatch, notifyWorkerNewMessage, notifyEmployerNewMessage,
-  setActiveChat } from '@/services/notifications';
+import { notifyWorkerGotMatch, setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
 import { getSupabaseClient } from '@/template';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
@@ -649,13 +648,10 @@ export default function ChatRoom() {
       lastCountRef.current += 1;
       const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
       dbIncrementUnread(chat.id, forRole).catch(() => {});
-      const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
-      // В уведомлении вместо ссылки — понятная подпись
-      if (currentUser.role === 'worker') {
-        notifyEmployerNewMessage(chat.employerId, senderName, '📷 Фото', chat.id).catch(() => {});
-      } else {
-        notifyWorkerNewMessage(chat.workerId, senderName, '📷 Фото', chat.id).catch(() => {});
-      }
+      // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
+      // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
+      // заодно текст уведомления приходил с клиента — то есть через нашего
+      // бота можно было послать что угодно тому, с кем есть переписка.
       refreshChats().catch(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {
@@ -776,12 +772,10 @@ export default function ChatRoom() {
       lastCountRef.current += 1;
       const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
       dbIncrementUnread(chat.id, forRole).catch(() => {});
-      const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
-      if (currentUser.role === 'worker') {
-        notifyEmployerNewMessage(chat.employerId, senderName, '🎤 Голосовое сообщение', chat.id).catch(() => {});
-      } else {
-        notifyWorkerNewMessage(chat.workerId, senderName, '🎤 Голосовое сообщение', chat.id).catch(() => {});
-      }
+      // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
+      // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
+      // заодно текст уведомления приходил с клиента — то есть через нашего
+      // бота можно было послать что угодно тому, с кем есть переписка.
       refreshChats().catch(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {
@@ -823,14 +817,10 @@ export default function ChatRoom() {
       lastCountRef.current += 1;
       const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
       dbIncrementUnread(chat.id, forRole).catch(() => {});
-      const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
-      // Always notify the recipient — they are on a different device.
-      // chatId is passed so the notification tap navigates directly to this chat.
-      if (currentUser.role === 'worker') {
-        notifyEmployerNewMessage(chat.employerId, senderName, text, chat.id).catch(() => {});
-      } else {
-        notifyWorkerNewMessage(chat.workerId, senderName, text, chat.id).catch(() => {});
-      }
+      // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
+      // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
+      // заодно текст уведомления приходил с клиента — то есть через нашего
+      // бота можно было послать что угодно тому, с кем есть переписка.
       refreshChats().catch(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {

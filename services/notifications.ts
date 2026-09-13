@@ -364,28 +364,14 @@ export async function notifyEmployerGotMatch(
   );
 }
 
-export async function notifyEmployerNewMessage(
-  employerId: string,
-  senderName: string,
-  preview: string,
-  chatId?: string,
-): Promise<void> {
-  await pushTo(
-    employerId,
-    `💬 ${senderName}`,
-    preview.slice(0, 100),
-    'message',
-    'messages',
-    chatId ? { chatId } : {},
-    true,
-    // Ни имени, ни текста: это переписка. Так же устроены WhatsApp и Signal
-    // со спрятанными предпросмотрами — на экране блокировки видно, что
-    // сообщение есть, а что в нём, знает только тот, кто откроет приложение.
-    { title: '💬 Новое сообщение', body: 'Откройте чат в JobToo' },
-  );
-}
 
-// ─── Worker notifications ─────────────────────────────────────────────────────
+// Уведомлений о сообщениях здесь больше нет. Их шлёт сервер при записи
+// сообщения и при заведении чата (jt_notify_new_message в php-proxy/db.php):
+// имя отправителя и текст он берёт из того, что сам записал, а не из того,
+// что прислал телефон. Отсюда они и терялись при обрыве, и позволяли послать
+// через нашего бота произвольный текст тому, с кем есть переписка.
+
+// ─── Worker notifications ──────────────────────────────────────────────────
 
 export async function notifyWorkerGotMatch(
   workerId: string,
@@ -446,23 +432,6 @@ export async function notifyWorkerShiftCancelled(
   await pushTo(workerId, title, body, 'shift_cancelled', 'matches');
 }
 
-export async function notifyWorkerNewMessage(
-  workerId: string,
-  senderName: string,
-  preview: string,
-  chatId?: string,
-): Promise<void> {
-  await pushTo(
-    workerId,
-    `💬 ${senderName}`,
-    preview.slice(0, 100),
-    'message',
-    'messages',
-    chatId ? { chatId } : {},
-    true,
-    { title: '💬 Новое сообщение', body: 'Откройте чат в JobToo' },
-  );
-}
 
 // ─── Nearby vacancy broadcast ─────────────────────────────────────────────────
 

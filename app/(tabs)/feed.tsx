@@ -59,7 +59,7 @@ import {
   dbStartGuestRegistration,
 } from '@/services/db';
 import { notifyEmployerGotMatch, notifyWorkerGotMatch,
-  notifyEmployerNewMessage } from '@/services/notifications';
+} from '@/services/notifications';
 import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
@@ -2233,14 +2233,8 @@ function WorkerFeed() {
         true,   // сообщение от работника, а не от системы
       );
       refreshChats().catch(() => {});
-      // В уведомлении — сами слова человека: работодатель решает, отвечать
-      // ли, по ним, а не по казённому «Новый отклик».
-      notifyEmployerNewMessage(
-        card.employerId,
-        `${currentUser.firstName} ${currentUser.lastName}`,
-        message,
-        chatId,
-      ).catch(() => {});
+      // О первом сообщении извещает СЕРВЕР при заведении чата: в уведомлении
+      // по-прежнему сами слова человека, но собирает их тот, кто их записал.
       setApplyFor(null);
       router.push({ pathname: '/chat-room', params: { chatId } });
     } catch (e) {
@@ -3006,11 +3000,10 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         refreshPermApplications().catch(() => {}),
         refreshChats().catch(() => {}),
       ]);
-      notifyEmployerNewMessage(
-        v.employerId,
-        `${currentUser.firstName} ${currentUser.lastName}`,
-        message,
-      ).catch(() => {});
+      // Уведомления отсюда больше нет: работодателя извещает сервер при
+      // создании отклика («Новая заявка»). Этот вызов слал ВТОРОЕ уведомление
+      // о том же событии — с другим заголовком, поэтому глушитель повторов в
+      // notify_user его и не гасил.
     } catch (e) {
       console.warn('[applyTo]', e);
       showToast('Не удалось отправить отклик', 'error');
