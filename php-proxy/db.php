@@ -1909,6 +1909,37 @@ const SCORE_EXPERIENCE_FULL = 30;
  * за год работы случается. Совпавший код увёл бы вознаграждение чужому
  * человеку, поэтому проверяем, а не надеемся.
  */
+
+/**
+ * Сверить, что смену закрывает её сторона, и вернуть строку.
+ *
+ * Эти операции требовали входа, но не спрашивали, ЧЬЯ смена: их нет в
+ * $selfArgFns, потому что владелец там не довод запроса, а поле в строке.
+ * Любой вошедший мог закрыть чужую смену любым итогом — и поставить человеку
+ * невыход, который бьёт по рейтингу сильнее всего остального.
+ *
+ * $employerOnly — для нынешней отметки об итоге: в приложении её ставит
+ * работодатель и только он (экран EmployerMatches). Старые операции
+ * подтверждения принимают обе стороны: какая из них зовёт их в давно
+ * установленном приложении, мы не знаем, а сломать его — ровно то, ради чего
+ * эти операции и оставлены.
+ */
+function jt_shift_party(string $likeId, ?string $authUid, bool $employerOnly): array
+{
+    $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'id,worker_id,employer_id');
+    if (!$like) {
+        jt_respond(['error' => 'Смена не найдена'], 404); exit;
+    }
+    $employerId = trim((string)($like['employer_id'] ?? ''));
+    $workerId = trim((string)($like['worker_id'] ?? ''));
+    $uid = (string)($authUid ?? '');
+    $allowed = $uid !== '' && ($uid === $employerId || (!$employerOnly && $uid === $workerId));
+    if (!$allowed) {
+        jt_respond(['error' => 'Это не ваша смена'], 403); exit;
+    }
+    return $like;
+}
+
 function jt_referral_code_unique(): string
 {
     for ($i = 0; $i < 5; $i++) {
@@ -5047,12 +5078,16 @@ try {
             $opts = $args[2] ?? [];
             $ok = ['worked', 'no_show', 'worker_cancelled', 'employer_cancelled', 'other_cancelled'];
             if (!in_array($out, $ok, true)) throw new Exception('неизвестный итог смены');
+            jt_shift_party((string)$lid, $authUid, true);
             $worked = $out === 'worked';
             sb_update('jm_likes', ['id' => 'eq.' . $lid], [
                 'outcome'      => $out,
                 'late_minutes' => $worked ? (int)($opts['lateMinutes'] ?? 0) : null,
                 'outcome_at'   => now_iso(),
-                'outcome_by'   => $opts['by'] ?? null,
+                // Кто отметил — из подписанной сессии. Раньше сюда клался
+                // $opts['by'] с клиента: человек мог подписать чужой отметкой
+                // кого угодно.
+                'outcome_by'   => $authUid,
                 'employer_confirmed' => $worked,
                 'worker_confirmed'   => $worked,
                 'shift_completed'    => $worked,
@@ -5082,6 +5117,7 @@ try {
         // виноватого не знаем». Приписать сюда невыход значило бы испортить
         // человеку рейтинг за то, о чём его не спросили.
         case 'dbConfirmShift': {
+            jt_shift_party((string)$args[0], $authUid, false);
             sb_update('jm_likes', ['id' => 'eq.' . $args[0]], [
                 'outcome' => 'worked', 'late_minutes' => null, 'outcome_at' => now_iso(),
                 'employer_confirmed' => true, 'worker_confirmed' => true,
@@ -5095,6 +5131,7 @@ try {
         }
 
         case 'dbCancelShift': {
+            jt_shift_party((string)$args[0], $authUid, false);
             sb_update('jm_likes', ['id' => 'eq.' . $args[0]], [
                 'outcome' => 'cancelled_legacy', 'outcome_at' => now_iso(),
                 'cancelled' => true, 'shift_completed' => false,

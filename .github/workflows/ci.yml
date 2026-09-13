@@ -62,6 +62,9 @@ jobs:
       - name: Приглашение платит за выход на смену, а не за отклик
         run: php tests/referral_test.php
 
+      - name: Смену закрывает её сторона, а не любой вошедший
+        run: php tests/shift_authz_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
