@@ -39,7 +39,7 @@ type Source = {
   connector_kind: string
   integration_mode: 'redirect' | 'embedded_test' | 'embedded'
   integration_configured: boolean
-  career_pages: string[]
+  career_pages?: string[]
 }
 
 type PartnerReport = {
