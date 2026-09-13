@@ -23,7 +23,6 @@ import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate, uid, nowISO } from '@/services/storage';
 import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetLikes, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
 import { notifyWorkerGotMatch, notifyWorkerNewMessage, notifyEmployerNewMessage,
-  notifyWorkerPermApplicationApproved, notifyWorkerPermApplicationRejected,
   setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
 import { getSupabaseClient } from '@/template';
@@ -504,11 +503,14 @@ export default function ChatRoom() {
         if (!permApp) { showToast('Отклик не найден', 'error'); return; }
         await dbSetPermApplicationStatus(permApp.id, 'approved');
         setLikeStatus('approved');
+        // Строку и уведомление пишет СЕРВЕР тем же запросом, что меняет
+        // статус (jt_perm_app_announce). Отсюда они уходили «выстрелил и
+        // забыл», а сообщение от имени «system» приложению вообще запрещено —
+        // сервер отвечал 403, и отказ гасился пустым .catch(). Здесь осталась
+        // только дорисовка на месте, чтобы директор увидел строку сразу.
         const okMsg: Message = { id: uid(), senderId: 'system',
           text: 'Кандидат одобрен на вакансию. Обсудите детали выхода.', timestamp: nowISO() };
         appendMessages([okMsg]);
-        dbInsertMessage(chat.id, 'system', okMsg.text).catch(() => {});
-        notifyWorkerPermApplicationApproved(workerId, permVacancy.company, permVacancy.title).catch(() => {});
         refreshPermApplications?.().catch(() => {});
         refreshChats().catch(() => {});
         return;
@@ -550,12 +552,11 @@ export default function ChatRoom() {
 
       if (permVacancy) {
         if (permApp) {
+          // Строку в чат, счётчик непрочитанного и уведомление ставит сервер
+          // в этом же запросе — см. jt_perm_app_announce в php-proxy/db.php.
           await dbSetPermApplicationStatus(permApp.id, 'rejected');
-          notifyWorkerPermApplicationRejected(workerId, permVacancy.company, permVacancy.title).catch(() => {});
           refreshPermApplications?.().catch(() => {});
         }
-        dbInsertMessage(chat.id, 'system', rejectMsg).catch(() => {});
-        dbIncrementUnread(chat.id, 'worker').catch(() => {});
         refreshChats().catch(() => {});
         return;
       }

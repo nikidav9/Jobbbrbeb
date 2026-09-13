@@ -2068,6 +2068,62 @@ function jt_group_html(array $v, string $kind): string
 
 
 /**
+ * Сказать соискателю о решении по его отклику на постоянную вакансию.
+ *
+ * Раньше это делал телефон директора: после записи статуса приложение
+ * отдельными вызовами слало уведомление и системную строку в чат, и оба
+ * вызова были «выстрелил и забыл». Уведомление терялось при любом обрыве, а
+ * системная строка НЕ ДОХОДИЛА ВООБЩЕ: писать сообщение от имени «system»
+ * приложению запрещено (проверка «Invalid sender» в начале файла), и отказ
+ * гасился пустым .catch(). Директор видел строку у себя — её дорисовывали на
+ * месте, — а соискатель не видел ничего.
+ *
+ * Теперь и то и другое делает сервер в том же запросе, что меняет статус.
+ *
+ * Заголовки уведомлений те же, что слало приложение. Это не случайность:
+ * notify_user гасит повтор с тем же заголовком в течение минуты, поэтому со
+ * старой сборки второе уведомление не придёт.
+ */
+function jt_perm_app_announce(array $app, string $status): void
+{
+    if ($status !== 'approved' && $status !== 'rejected') return;
+    $workerId = trim((string)($app['worker_id'] ?? ''));
+    $employerId = trim((string)($app['employer_id'] ?? ''));
+    if ($workerId === '') return;
+
+    $v = sb_single('jm_perm_vacancies',
+        ['id' => 'eq.' . (string)($app['vacancy_id'] ?? '')], 'title,company');
+    $title = trim((string)($v['title'] ?? '')) ?: 'вакансию';
+    $company = trim((string)($v['company'] ?? '')) ?: 'Работодатель';
+
+    if ($status === 'approved') {
+        notify_user($workerId, '✅ Заявка одобрена!',
+            $company . ' одобрили вашу заявку на «' . $title . '» и написали вам — ответьте в чате.',
+            'perm_approved');
+        $line = 'Кандидат одобрен на вакансию. Обсудите детали выхода.';
+    } else {
+        notify_user($workerId, '❌ Заявка отклонена',
+            $company . ' отклонили вашу заявку на «' . $title . '».',
+            'perm_rejected');
+        $line = 'Вы не подошли по данной вакансии. Чат закрыт.';
+    }
+
+    // Строку пишем только в УЖЕ существующий разговор. При одобрении из
+    // «Мэтчей» чат заводится следующим запросом и сразу с личным сообщением
+    // директора — системная строка там была бы лишней.
+    if ($employerId === '') return;
+    $chat = sb_single('jm_chats',
+        ['worker_id' => 'eq.' . $workerId, 'employer_id' => 'eq.' . $employerId],
+        'id,unread_worker');
+    if (!$chat) return;
+
+    msg_insert(['id' => uid(), 'chat_id' => $chat['id'], 'sender_id' => 'system',
+        'text' => $line, 'created_at' => now_iso()]);
+    sb_update('jm_chats', ['id' => 'eq.' . $chat['id']],
+        ['unread_worker' => (int)($chat['unread_worker'] ?? 0) + 1]);
+}
+
+/**
  * Список значений для фильтра PostgREST `in.(…)`.
  *
  * Складывать значения через запятую напрямую нельзя: id пользователя приходит
@@ -5390,8 +5446,30 @@ try {
             break;
         }
 
-        case 'dbSetPermApplicationStatus':
-            sb_update('jm_perm_applications', ['id' => 'eq.' . $args[0]], ['status' => $args[1]]); break;
+        // Решение по отклику на постоянную вакансию.
+        //
+        // Было в одну строку: ни проверки, чей это отклик, ни следов решения.
+        // Проверки не было вовсе — то есть любой вошедший мог одобрить или
+        // отклонить чужого кандидата. А сказать соискателю о решении пытался
+        // телефон директора, и получалось это плохо: см. jt_perm_app_announce.
+        case 'dbSetPermApplicationStatus': {
+            $appId = (string)($args[0] ?? '');
+            $status = (string)($args[1] ?? '');
+            if (!in_array($status, ['approved', 'rejected', 'hired'], true)) {
+                throw new Exception('неизвестный статус отклика');
+            }
+            $app = $appId !== '' ? sb_single('jm_perm_applications', ['id' => 'eq.' . $appId],
+                'id,vacancy_id,worker_id,employer_id,status') : null;
+            if (!$app) { jt_respond(['error' => 'Отклик не найден'], 404); exit; }
+            if ((string)($app['employer_id'] ?? '') !== (string)$authUid) {
+                jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+            }
+            $wasStatus = (string)($app['status'] ?? '');
+            sb_update('jm_perm_applications', ['id' => 'eq.' . $appId], ['status' => $status]);
+            // Повторное нажатие не шлёт второго уведомления.
+            if ($wasStatus !== $status) jt_perm_app_announce($app, $status);
+            break;
+        }
 
         // ── Permanent saved ────────────────────────────────────────────────────
         case 'dbGetPermSaved': {

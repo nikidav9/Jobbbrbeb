@@ -71,6 +71,9 @@ jobs:
       - name: Согласие на обработку данных пишется и его пропажу видно
         run: php tests/consent_test.php
 
+      - name: Решение по отклику принимает владелец вакансии и оно доходит
+        run: php tests/perm_app_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

@@ -28,8 +28,6 @@ import {
   notifyWorkerShiftConfirmedByEmployer,
   notifyWorkerShiftCancelled,
   notifyWorkerGotMatch,
-  notifyWorkerPermApplicationApproved,
-  notifyWorkerPermApplicationRejected,
 } from '@/services/notifications';
 import { Chip } from '@/components/ui/Chip';
 import { VacancyDetailModal } from '@/components/feature/VacancyDetailModal';
@@ -815,8 +813,9 @@ function EmployerMatches() {
     if (!vacancy) return;
     setLoading(app.id);
     try {
+      // Уведомление соискателю шлёт сервер тем же запросом: отсюда оно
+      // уходило «выстрелил и забыл» и терялось при любом обрыве связи.
       await dbSetPermApplicationStatus(app.id, 'approved');
-      notifyWorkerPermApplicationApproved(app.workerId, vacancy.company, vacancy.title).catch(() => {});
       const chatId = await dbCreateChat(
         app.workerId,
         currentUser.id,
@@ -841,13 +840,10 @@ function EmployerMatches() {
   };
 
   const rejectPermApp = async (app: PermApplication) => {
-    const vacancy = permVacancies.find((v: PermVacancy) => v.id === app.vacancyId);
     setLoading(app.id + '_d');
     try {
+      // Уведомление и строку в чат ставит сервер — см. jt_perm_app_announce.
       await dbSetPermApplicationStatus(app.id, 'rejected');
-      if (vacancy) {
-        notifyWorkerPermApplicationRejected(app.workerId, vacancy.company, vacancy.title).catch(() => {});
-      }
       await refreshPermApplications();
       showToast('Отклонено', 'success');
     } catch {
