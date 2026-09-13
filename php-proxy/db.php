@@ -2999,6 +2999,34 @@ try {
             ]);
             $referralLine = "🎁 Приглашения: пришли по коду за сутки <b>{$refDay}</b>"
                 . ", начислений ждёт решения <b>{$refPending}</b>";
+
+            // Публикация в группу «ПОДРАБОТКИ». Итог последней записывался в
+            // jm_settings и не читался НИГДЕ: в коде так и сказано — «иначе
+            // выяснять причину будет нечем», — а читателя не было. Из-за этого
+            // вакансия могла сутки висеть в ленте без объявления, и заметить
+            // это можно было только глазами в самой группе.
+            $groupLine = '';
+            $groupAlert = '';
+            $lastPost = sb_single('jm_settings', ['key' => 'eq.last_group_post'], 'value');
+            $post = json_decode((string)($lastPost['value'] ?? ''), true);
+            if (is_array($post)) {
+                $when = trim((string)($post['когда'] ?? ''));
+                $whenMsk = $when !== '' && strtotime($when) !== false
+                    ? (new DateTimeImmutable($when))->setTimezone(new DateTimeZone('Europe/Moscow'))->format('d.m H:i')
+                    : '—';
+                if (!empty($post['ok'])) {
+                    $groupLine = "📣 Последний пост в группу: {$whenMsk} МСК, доставлен";
+                } else {
+                    $why = $post['отказ'] ?? null;
+                    $whyText = is_array($why)
+                        ? trim((string)($why['описание'] ?? $why['description'] ?? json_encode($why, JSON_UNESCAPED_UNICODE)))
+                        : trim((string)$why);
+                    if ($whyText === '') $whyText = 'причина не записана';
+                    $groupLine = "📣 Последний пост в группу: {$whenMsk} МСК, <b>НЕ доставлен</b> — "
+                        . htmlspecialchars(mb_substr($whyText, 0, 160), ENT_QUOTES, 'UTF-8');
+                    $groupAlert = 'последний пост в группу «ПОДРАБОТКИ» не доставлен';
+                }
+            }
             // Накопившиеся начисления — долг перед людьми, которые свою часть
             // уже сделали. Молчать о нём нельзя.
             $referralAlert = $refPending >= 5
@@ -3015,6 +3043,7 @@ try {
             // молчал, только когда умирали все сразу.
             foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
             if ($referralAlert !== '') $alerts[] = $referralAlert;
+            if ($groupAlert !== '') $alerts[] = $groupAlert;
             if ($newWorkers === 0 && $previousWorkers > 0) {
                 $alerts[] = 'новых работников — 0, хотя накануне были';
             }
@@ -3033,6 +3062,7 @@ try {
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
             $lines[] = $health['line'];
             $lines[] = $referralLine;
+            if ($groupLine !== '') $lines[] = $groupLine;
             $lines[] = "📅 Открытых смен на завтра: <b>{$tomorrowShifts}</b>";
             $bounceRate = number_format($metrika['bounce_rate'], 1, ',', ' ');
             $trafficSources = $metrika['sources'];
@@ -5459,16 +5489,35 @@ try {
             // и запостить в группу дважды. Поэтому «столбим» вакансию заранее:
             // если по ней уже начинали рассылку — сразу выходим. Отметку ставим
             // ДО работы (claim), чтобы гонка повторов не дала дублей.
+            //
+            // ВАЖНО: отметки ДВЕ, по одной на каждый вид доставки.
+            //
+            // Была одна на всё, и ставилась она ДО отправки. Из-за этого сбой
+            // при отправке в группу означал, что вакансия помечена разосланной
+            // навсегда: повтор с клиента получал already_sent и выходил, а в
+            // группе так ничего и не появлялось. Именно так вакансия могла
+            // висеть в ленте сутки без единого сообщения.
+            //
+            // Личные сообщения по-прежнему столбим ЗАРАНЕЕ: повторная рассылка
+            // всем работникам хуже неотправленной. А пост в группу — операция
+            // одна и быстрая, и его отметку ставим только ПОСЛЕ успеха, чтобы
+            // повтор мог доделать то, что не вышло.
+            $dmAlreadySent = false;
+            $groupAlreadySent = false;
             if ($vacancyId !== '') {
-                if (sb_single('jm_settings', ['key' => 'eq.bcast:' . $vacancyId], 'key')) {
+                $dmAlreadySent = sb_single('jm_settings', ['key' => 'eq.bcast:' . $vacancyId], 'key') !== null;
+                $groupAlreadySent = sb_single('jm_settings', ['key' => 'eq.gpost:' . $vacancyId], 'key') !== null;
+                if ($dmAlreadySent && $groupAlreadySent) {
                     $data = ['ok' => true, 'skipped' => 'already_sent'];
                     break;
                 }
-                sb_upsert('jm_settings', [
-                    'key' => 'bcast:' . $vacancyId,
-                    'value' => now_iso(),
-                    'updated_at' => now_iso(),
-                ], 'key');
+                if (!$dmAlreadySent) {
+                    sb_upsert('jm_settings', [
+                        'key' => 'bcast:' . $vacancyId,
+                        'value' => now_iso(),
+                        'updated_at' => now_iso(),
+                    ], 'key');
+                }
             }
             $dmCampaign = bin2hex(random_bytes(8));
             $groupCampaign = bin2hex(random_bytes(8));
@@ -5489,8 +5538,18 @@ try {
                     . "\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇";
             }
             $groupOk = false;
-            if ($groupHtml !== '' && TG_GROUP_CHAT_ID !== 0) {
+            if ($groupAlreadySent) {
+                $groupOk = true;
+            } elseif ($groupHtml !== '' && TG_GROUP_CHAT_ID !== 0) {
                 $groupOk = tg_send_message(TG_GROUP_CHAT_ID, $groupHtml, $groupBtnUrl);
+                // Отметку ставим только после успеха: см. выше.
+                if ($groupOk && $vacancyId !== '') {
+                    sb_upsert('jm_settings', [
+                        'key' => 'gpost:' . $vacancyId,
+                        'value' => now_iso(),
+                        'updated_at' => now_iso(),
+                    ], 'key');
+                }
             }
             // Итог публикации сохраняем: иначе он теряется, а следующий раз
             // выяснять причину снова будет нечем.
@@ -5532,9 +5591,11 @@ try {
             // выбранного фильтра поведение всё равно остаётся прежним.
             $vacancyMetro = (string)($args[6] ?? '');
             $vacancyWorkType = (string)($args[7] ?? '');
-            $data = notify_workers((string)$args[0], (string)$args[1], (string)$args[2],
-                                   (string)($args[3] ?? 'nearby_shift'), $btnUrl,
-                                   $vacancyMetro, $vacancyWorkType);
+            $data = $dmAlreadySent
+                ? ['ok' => true, 'skipped' => 'dm_already_sent']
+                : notify_workers((string)$args[0], (string)$args[1], (string)$args[2],
+                                 (string)($args[3] ?? 'nearby_shift'), $btnUrl,
+                                 $vacancyMetro, $vacancyWorkType);
             $data['group'] = $groupOk;
 
             // DM-публикация существует только если Telegram действительно
