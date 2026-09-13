@@ -103,6 +103,50 @@ check('данные работодателя экранируются',
 check('без названия или компании не объявляем',
     str_contains($db, "if (\$title === '' || \$company === '') return '';"));
 
+// ── Объявляет тот, кто разместил ──────────────────────────────────────────────
+// Вход здесь требовался, а чья вакансия — не проверялось, и разметка поста
+// приходила с клиента готовой. Любой зарегистрированный мог отправить в
+// открытую группу и пушем каждому работнику произвольный текст со своей
+// ссылкой. Обработчик лежит в case, а не в функции, — вырезаем его блок.
+function case_body(string $src, string $fn): string
+{
+    $start = strpos($src, "case '{$fn}': {");
+    if ($start === false) return '';
+    $end = strpos($src, "\n        case '", $start + 10);
+    return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
+}
+$notify = case_body($db, 'dbNotifyAllWorkersNewVacancy');
+check('тело рассылки найдено', $notify !== '');
+
+check('вакансию берём из базы', str_contains($notify, '$vacancyRow = sb_single('));
+check('чужую вакансию не объявляем',
+    str_contains($notify, "(string)(\$vacancyRow['employer_id'] ?? '') !== (string)\$authUid")
+    && str_contains($notify, "jt_respond(['error' => 'Это не ваша вакансия'], 403)"));
+check('несуществующую вакансию не объявляем',
+    str_contains($notify, "jt_respond(['error' => 'Вакансия не найдена'], 404)"));
+
+// Порядок здесь не мелочь. Отметка bcast ставится ЗАРАНЕЕ, до рассылки: если
+// проверку права пропустить вперёд неё, посторонний успеет пометить чужую
+// вакансию разосланной — и настоящее объявление уже не уйдёт никогда.
+$ownerAt = strpos($notify, "jt_respond(['error' => 'Это не ваша вакансия'], 403)");
+$claimAt = strpos($notify, "'key' => 'bcast:' . \$vacancyId");
+check('право проверяется раньше отметки о рассылке',
+    $ownerAt !== false && $claimAt !== false && $ownerAt < $claimAt);
+
+// ── Формат объявления живёт в ОДНОМ месте (задача 16) ─────────────────────────
+// Было два: приложение собирало разметку и слало её готовой, сервер собирал
+// свою для догоняющего задания. Два вида объявления в одной группе выглядели
+// бы как поломка, а разъехались бы они непременно.
+check('текст поста собирает сервер',
+    str_contains($notify, '$groupHtml = jt_group_html($vacancyRow, $deepKind);'));
+check('клиентская разметка группы больше не берётся',
+    !str_contains($notify, '$args[4]'));
+$notifTs = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
+check('приложение больше не собирает пост для группы',
+    !str_contains($notifTs, 'В приложении смены появляются раньше'));
+check('место довода сохранено ради номеров остальных',
+    str_contains($notifTs, "const groupHtml = '';"));
+
 $wf = (string)file_get_contents(__DIR__ . '/../.github/workflows/announce-missed.yml');
 check('задание запускается по расписанию', str_contains($wf, "cron: '7 * * * *'"));
 check('задание зовёт нужную операцию', str_contains($wf, 'cronAnnounceMissed'));

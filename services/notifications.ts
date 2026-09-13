@@ -525,9 +525,13 @@ export async function notifyWorkersNewVacancy(params: {
 
     const headHtml = type === 'permanent' ? '💼 <b>Новая постоянная вакансия!</b>' : '⚡ <b>Новая подработка!</b>';
     const tgHtml = headHtml + detailsHtml + '\n\nУспей откликнуться 👇';
-    // Пост в группу «ПОДРАБОТКИ» — тот же формат + напоминание про приложение
-    const groupHtml = headHtml + detailsHtml
-      + '\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇';
+    // Текст поста в группу «ПОДРАБОТКИ» здесь больше не собирается: его делает
+    // сервер (jt_group_html в php-proxy/db.php) из строки вакансии. Раньше
+    // формат жил в двух местах, и второй — догоняющее задание — неизбежно
+    // разъехался бы с этим. Довод оставлен пустым, чтобы не сдвинуть номера
+    // остальных: старый сервер по пустому соберёт пост из tgHtml, как и до
+    // появления этого поля.
+    const groupHtml = '';
 
     const notifyPayload = JSON.stringify({
       fn: 'dbNotifyAllWorkersNewVacancy',
