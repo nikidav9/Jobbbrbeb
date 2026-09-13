@@ -346,6 +346,10 @@ function uid(): string {
     return base_convert(time(), 10, 36) . substr(base_convert(mt_rand(), 10, 36), 2, 5);
 }
 
+function jt_new_user_id_is_valid(string $id): bool {
+    return preg_match('~\A[a-z0-9]{8,32}\z~', $id) === 1;
+}
+
 function now_iso(): string {
     $ms = intval(microtime(true) * 1000) % 1000;
     return gmdate('Y-m-d\TH:i:s') . '.' . str_pad((string)$ms, 3, '0', STR_PAD_LEFT) . 'Z';
@@ -2583,6 +2587,9 @@ try {
             $uid = trim((string)($u['id'] ?? ''));
             if ($uid === '') throw new RuntimeException('Нужен id пользователя');
             $existing = sb_single('jm_users', ['id' => 'eq.' . $uid], 'id');
+            if (!$existing && !jt_new_user_id_is_valid($uid)) {
+                throw new RuntimeException('Некорректный id пользователя');
+            }
             if ($existing && $authUid !== $uid) {
                 jt_respond(['error' => 'Authentication required'], 401); exit;
             }
