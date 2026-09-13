@@ -89,6 +89,9 @@ jobs:
       - name: Мэтч и итог смены извещает сервер
         run: php tests/match_outcome_notify_test.php
 
+      - name: Счётчики по вакансиям — только по своим
+        run: php tests/stats_scope_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

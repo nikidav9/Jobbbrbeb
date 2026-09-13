@@ -2044,6 +2044,37 @@ function jt_notify_shift_outcome(string $likeId, string $outcome): void
 }
 
 /**
+ * Идентификаторы вакансий этого работодателя.
+ *
+ * Нужны там, где раньше выбирали таблицу целиком: счётчики откликов и
+ * просмотров читает экран «мои вакансии», а отдавались они по всему рынку.
+ */
+function jt_own_vacancy_ids(string $table, ?string $authUid): array
+{
+    $me = (string)($authUid ?? '');
+    if ($me === '') return [];
+    $rows = sb_select_all($table, ['employer_id' => 'eq.' . $me], 'id');
+    return array_values(array_filter(array_column($rows, 'id')));
+}
+
+/**
+ * Строки таблицы по списку вакансий, порциями.
+ *
+ * Порции нужны не для красоты: идентификаторы уходят в адрес запроса, и
+ * работодатель с сотней вакансий упёрся бы в его длину.
+ */
+function jt_rows_for_vacancies(string $table, array $vacancyIds, string $cols): array
+{
+    $out = [];
+    foreach (array_chunk($vacancyIds, 100) as $chunk) {
+        foreach (sb_select_all($table, ['vacancy_id' => sb_in_list($chunk)], $cols) as $r) {
+            $out[] = $r;
+        }
+    }
+    return $out;
+}
+
+/**
  * Строка сообщения для уведомления.
  *
  * Повторяет services/messagePreview.ts: фото и голосовые лежат в той же
@@ -5204,9 +5235,16 @@ try {
         case 'dbGetLikesByVacancy':
             $data = sb_select('jm_likes', ['vacancy_id' => 'eq.' . $args[0]]); break;
 
+        // Счётчики по СВОИМ вакансиям. Карту читает экран «мои вакансии» и
+        // больше никто, а выбиралась она по всем двум таблицам целиком — то
+        // есть каждый вошедший получал отклики и просмотры всего рынка и
+        // заставлял базу читать эти таблицы от начала до конца.
         case 'dbGetVacancyStatsMap': {
-            $rows = sb_select_all('jm_likes', [], 'vacancy_id,worker_liked,employer_liked,worker_skipped,is_match');
-            $viewRows = sb_select_all('jm_vacancy_views', [], 'vacancy_id');
+            $mine = jt_own_vacancy_ids('jm_vacancies', $authUid);
+            if (!$mine) { $data = new stdClass(); break; }
+            $rows = jt_rows_for_vacancies('jm_likes', $mine,
+                'vacancy_id,worker_liked,employer_liked,worker_skipped,is_match');
+            $viewRows = jt_rows_for_vacancies('jm_vacancy_views', $mine, 'vacancy_id');
             $map = [];
             foreach ($rows as $r) {
                 $vid = $r['vacancy_id'];
@@ -5309,8 +5347,11 @@ try {
             break;
         }
 
+        // То же самое для постоянных вакансий.
         case 'dbGetPermVacancyViewsMap': {
-            $rows = sb_select_all('jm_perm_vacancy_views', [], 'vacancy_id');
+            $mine = jt_own_vacancy_ids('jm_perm_vacancies', $authUid);
+            if (!$mine) { $data = new stdClass(); break; }
+            $rows = jt_rows_for_vacancies('jm_perm_vacancy_views', $mine, 'vacancy_id');
             $map = [];
             foreach ($rows as $r) {
                 $vid = $r['vacancy_id'];
