@@ -16,6 +16,7 @@
 ob_start();
 require_once __DIR__ . '/partner_billing.php';
 require_once __DIR__ . '/superjob_oauth_lib.php';
+require_once __DIR__ . '/ext_health.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -2753,18 +2754,30 @@ try {
                 'environment' => 'eq.production', 'first_seen_at' => 'gte.' . $cut24,
             ]);
 
-            $lastImportTs = null;
-            $sources = sb_select_all('jm_ext_sources', [
+            $extSources = sb_select_all('jm_ext_sources', [
                 'environment' => 'eq.production', 'enabled' => 'is.true',
-            ], 'last_success_at');
-            foreach ($sources as $source) {
+            ], 'id,name,period_min,last_success_at');
+            // Живые вакансии считаем по источникам, а не одним числом: пока не
+            // видно, на ком держится витрина, зависимостью нельзя управлять.
+            // Выборка одноколоночная — строк много, но это та же цена, какую
+            // платит сводка extStats.
+            $liveCounts = [];
+            foreach (sb_select_all('jm_ext_vacancies', [
+                'active' => 'is.true', 'environment' => 'eq.production',
+            ], 'source_id') as $row) {
+                $k = (string)($row['source_id'] ?? '');
+                $liveCounts[$k] = ($liveCounts[$k] ?? 0) + 1;
+            }
+            $health = ext_source_health($extSources, $liveCounts, $now);
+
+            $lastImportTs = null;
+            foreach ($extSources as $source) {
                 $ts = !empty($source['last_success_at'])
                     ? strtotime((string)$source['last_success_at']) : false;
                 if ($ts !== false && ($lastImportTs === null || $ts > $lastImportTs)) {
                     $lastImportTs = $ts;
                 }
             }
-            $importSilent = $lastImportTs === null || $lastImportTs < $now - 86400;
             $lastImport = 'никогда';
             if ($lastImportTs !== null) {
                 $lastImport = (new DateTimeImmutable('@' . $lastImportTs))
@@ -2779,7 +2792,9 @@ try {
 
             $alerts = [];
             if ($applications === 0) $alerts[] = 'откликов за сутки — 0';
-            if ($importSilent) $alerts[] = 'партнёрский импорт молчит больше 24 часов';
+            // Тревога по каждому источнику отдельно: общий максимум по всем
+            // молчал, только когда умирали все сразу.
+            foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
             if ($newWorkers === 0 && $previousWorkers > 0) {
                 $alerts[] = 'новых работников — 0, хотя накануне были';
             }
@@ -2796,12 +2811,13 @@ try {
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
+            $lines[] = $health['line'];
             $lines[] = "📅 Открытых смен на завтра: <b>{$tomorrowShifts}</b>";
             $bounceRate = number_format($metrika['bounce_rate'], 1, ',', ' ');
-            $sources = $metrika['sources'];
+            $trafficSources = $metrika['sources'];
             $lines[] = '';
             $lines[] = "📈 Метрика за {$metrika['date']}: визиты <b>{$metrika['visits']}</b>, посетители <b>{$metrika['users']}</b>, отказы <b>{$bounceRate}%</b>";
-            $lines[] = "🧭 Источники: поиск <b>{$sources['organic']}</b>, прямые <b>{$sources['direct']}</b>, переходы <b>{$sources['referral']}</b>, соцсети <b>{$sources['social']}</b>";
+            $lines[] = "🧭 Источники трафика: поиск <b>{$trafficSources['organic']}</b>, прямые <b>{$trafficSources['direct']}</b>, переходы <b>{$trafficSources['referral']}</b>, соцсети <b>{$trafficSources['social']}</b>";
             $lines[] = "🔎 Поиск за 30 дней: <b>{$metrika['search_30d']}</b> визитов от <b>{$metrika['search_30d_users']}</b> человек";
             $text = implode("\n", $lines);
 

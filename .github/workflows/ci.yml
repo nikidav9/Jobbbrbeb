@@ -53,6 +53,9 @@ jobs:
       - name: Сводные страницы считают, а не выдумывают
         run: php tests/landing_page_test.php
 
+      - name: Смерть одного источника вакансий видна в отчёте
+        run: php tests/ext_health_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
