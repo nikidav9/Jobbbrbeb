@@ -159,6 +159,10 @@ $adminFns = [
     'supportReply', 'supportThreads', 'botReply', 'botInbox',
     'tgGroupInfo', 'tgPostToGroup', 'tgSetWebhook', 'tgWebhookInfo',
     'dbGetWorkerTokensByMetro', 'dbGetAllWorkerTokens',
+    // Разовая уборка по ВСЕМ чатам сервиса и запись расходов по партнёрам.
+    // Приложение их не зовёт (dbMergeDuplicateChats — вообще никто, расходы —
+    // только дашборд), а любому вошедшему они были открыты.
+    'dbMergeDuplicateChats', 'extPartnerCostSave',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -1930,6 +1934,54 @@ const SCORE_EXPERIENCE_FULL = 30;
  * установленном приложении, мы не знаем, а сломать его — ровно то, ради чего
  * эти операции и оставлены.
  */
+/**
+ * Кому этот человек вправе написать.
+ *
+ * Найдено сплошной ревизией прав: операции tgNotifyUser, sendPushNotification,
+ * tgNotifyNewApplication и dbGetPushToken требовали входа — и только. Кому
+ * именно пишем, не проверялось вовсе.
+ *
+ * Что это значило. Любой зарегистрировавшийся мог отправить через НАШЕГО бота
+ * произвольный текст любому человеку сервиса по его id, взять чужой пуш-токен
+ * и слать на него что угодно (токен Expo сам по себе никого не спрашивает).
+ * Для сервиса, где люди ищут работу, это готовая рассылка от имени JobToo.
+ *
+ * Правило простое: писать можно тому, с кем уже есть связь, — переписка,
+ * отклик на смену или заявка на постоянную вакансию. То есть тому, кому и так
+ * можно написать в чат. Рассылка по всей базе закрыта.
+ *
+ * Это ПЕРВЫЙ рубеж, а не последний: текст уведомления по-прежнему приходит с
+ * клиента. Перенести тексты на сервер — отдельная работа, записана в очередь.
+ */
+function jt_may_notify(?string $authUid, string $recipientId): bool
+{
+    $me = (string)($authUid ?? '');
+    if ($me === '' || $recipientId === '') return false;
+    if ($me === $recipientId) return true;
+
+    $chat = sb_single('jm_chats', ['worker_id' => 'eq.' . $me, 'employer_id' => 'eq.' . $recipientId], 'id')
+        ?? sb_single('jm_chats', ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
+    if ($chat) return true;
+
+    $like = sb_single('jm_likes', ['worker_id' => 'eq.' . $me, 'employer_id' => 'eq.' . $recipientId], 'id')
+        ?? sb_single('jm_likes', ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
+    if ($like) return true;
+
+    $app = sb_single('jm_perm_applications',
+            ['worker_id' => 'eq.' . $me, 'employer_id' => 'eq.' . $recipientId], 'id')
+        ?? sb_single('jm_perm_applications',
+            ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
+    return (bool)$app;
+}
+
+/** Отказ по правилу выше. Один текст на все точки, чтобы не разъехались. */
+function jt_require_notify_right(?string $authUid, string $recipientId): void
+{
+    if (!jt_may_notify($authUid, $recipientId)) {
+        jt_respond(['error' => 'Этому человеку писать не от чего'], 403); exit;
+    }
+}
+
 function jt_shift_party(string $likeId, ?string $authUid, bool $employerOnly): array
 {
     $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'id,worker_id,employer_id');
@@ -3185,6 +3237,7 @@ try {
         // Директору в Telegram: карточка кандидата + кнопки Одобрить/Отклонить
         // args: [employerId, workerId, vacancyId, vacancyTitle]
         case 'tgNotifyNewApplication':
+            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             $data = tg_new_application_card((string)$args[0], (string)$args[1], (string)$args[2], (string)($args[3] ?? ''));
             break;
 
@@ -4940,6 +4993,7 @@ try {
 
         // args: [userId, text] — message the user's linked Telegram account
         case 'tgNotifyUser': {
+            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             $u = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'telegram_id');
             $btn = isset($args[2]) && $args[2] ? true : false; // показать кнопку «Открыть JobToo»
             $data = ($u && !empty($u['telegram_id']))
@@ -5206,7 +5260,11 @@ try {
         case 'dbRemoveLike':
             sb_delete('jm_likes', ['vacancy_id' => 'eq.' . $args[0], 'worker_id' => 'eq.' . $args[1]]); break;
 
+        // Удалить отклик может только его сторона. Проверки не было: любой
+        // вошедший стирал чужой отклик по id, а вместе с ним итог смены и
+        // основание рейтинга.
         case 'dbDeleteMatch':
+            jt_shift_party((string)($args[0] ?? ''), $authUid, false);
             sb_delete('jm_likes', ['id' => 'eq.' . $args[0]]); break;
 
         // ── Messages ───────────────────────────────────────────────────────────
@@ -5845,10 +5903,17 @@ try {
         // Разбор завалов: те, кто вышел до появления dbClearPushToken, так и
         // остались с токеном в базе, а войти и почиститься не могут — они же
         // вышли. Здесь ищем по самому токену, аккаунт знать не нужно.
+        // Отвязывают токен, когда он достался другому человеку на том же
+        // телефоне. Чужой токен отвязывать незачем ни при каком раскладе, а
+        // проверки не было: зная токен (его отдавала dbGetPushToken любому),
+        // можно было лишить человека уведомлений.
         case 'dbReleasePushToken':
-            sb_update('jm_users', ['push_token' => 'eq.' . $args[0]], ['push_token' => null]); break;
+            sb_update('jm_users',
+                ['push_token' => 'eq.' . $args[0], 'id' => 'eq.' . (string)($authUid ?? '')],
+                ['push_token' => null]); break;
 
         case 'dbGetPushToken': {
+            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             $r = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'push_token');
             $data = $r['push_token'] ?? null; break;
         }
@@ -5883,6 +5948,14 @@ try {
         case 'sendPushNotification': {
             [$to, $title, $nbody, $nd] = [$args[0], $args[1], $args[2], $args[3] ?? []];
             $tokens = is_array($to) ? $to : [$to];
+            // Токен Expo сам по себе никого не спрашивает: зная его, послать
+            // на устройство можно что угодно. Поэтому смотрим, ЧЕЙ он, и
+            // сверяем с правом писать этому человеку. Токен, за которым нет
+            // никого (устаревший), тоже отклоняем — слать на него нечего.
+            foreach ($tokens as $pushToken) {
+                $owner = sb_single('jm_users', ['push_token' => 'eq.' . (string)$pushToken], 'id');
+                jt_require_notify_right($authUid, (string)($owner['id'] ?? ''));
+            }
             $msgs = array_map(fn($t) => [
                 'to' => $t, 'title' => $title, 'body' => $nbody,
                 'sound' => 'default', 'priority' => 'high',
@@ -6086,6 +6159,9 @@ try {
         }
 
         case 'dbSaveNotification': {
+            // Колокольчик чужому человеку — такая же рассылка, как пуш: текст
+            // приходит с клиента. Право писать проверяем тем же правилом.
+            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             // type/payload нужны, чтобы по нажатию на уведомление открылся
             // нужный экран. Колонок может ещё не быть — тогда сохраняем как
             // раньше, только заголовок и текст.
@@ -6110,14 +6186,19 @@ try {
         case 'dbGetNotifications':
             $data = sb_select('jm_notifications', ['user_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;
 
+        // Своё и только своё. Прежде обе операции брали id уведомления и не
+        // смотрели, чьё оно: чужое можно было пометить прочитанным или стереть.
         case 'dbMarkNotifRead':
-            sb_update('jm_notifications', ['id' => 'eq.' . $args[0]], ['is_read' => true]); break;
+            sb_update('jm_notifications',
+                ['id' => 'eq.' . $args[0], 'user_id' => 'eq.' . (string)($authUid ?? '')],
+                ['is_read' => true]); break;
 
         case 'dbMarkAllNotifsRead':
             sb_update('jm_notifications', ['user_id' => 'eq.' . $args[0]], ['is_read' => true]); break;
 
         case 'dbDeleteNotif':
-            sb_delete('jm_notifications', ['id' => 'eq.' . $args[0]]); break;
+            sb_delete('jm_notifications',
+                ['id' => 'eq.' . $args[0], 'user_id' => 'eq.' . (string)($authUid ?? '')]); break;
 
         case 'dbDeleteAllNotifs':
             sb_delete('jm_notifications', ['user_id' => 'eq.' . $args[0]]); break;

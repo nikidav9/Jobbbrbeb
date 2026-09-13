@@ -77,6 +77,9 @@ jobs:
       - name: Отклик на смену меняет его сторона, а отказ доходит до человека
         run: php tests/like_authz_test.php
 
+      - name: Писать человеку можно только тому, с кем есть связь
+        run: php tests/notify_authz_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
