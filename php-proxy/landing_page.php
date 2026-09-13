@@ -221,16 +221,34 @@ function lp_layout(string $title, string $head, string $body): string
 /** Вилка оплаты по живым вакансиям. Считаем, а не выдумываем. */
 function lp_salary_line(array $rows): string
 {
-    $vals = [];
-    foreach ($rows as $r) if ($r['salary'] > 0) $vals[] = $r['salary'];
-    if (!$vals) return '';
-    sort($vals);
-    $min = $vals[0];
-    $max = $vals[count($vals) - 1];
-    $mid = $vals[intdiv(count($vals), 2)];
-    if ($min === $max) return 'Платят ' . lp_money($min) . '.';
-    return 'Платят от ' . lp_money($min) . ' до ' . lp_money($max)
-        . ', чаще всего около ' . lp_money($mid) . '.';
+    $groups = [];
+    foreach ($rows as $r) {
+        if (($r['salary'] ?? 0) <= 0) continue;
+        $period = ($r['per'] ?? 'смена') === 'месяц' ? 'месяц' : 'смена';
+        $groups[$period][] = (float)$r['salary'];
+    }
+
+    $parts = [];
+    foreach (['смена', 'месяц'] as $period) {
+        $vals = $groups[$period] ?? [];
+        if (!$vals) continue;
+        sort($vals);
+        $count = count($vals);
+        $min = $vals[0];
+        $max = $vals[$count - 1];
+        $prefix = $period === 'месяц' ? 'В месяц платят ' : 'За смену платят ';
+        if ($min === $max) {
+            $parts[] = $prefix . lp_money($min) . '.';
+            continue;
+        }
+        $middle = intdiv($count, 2);
+        $median = $count % 2 === 0
+            ? ($vals[$middle - 1] + $vals[$middle]) / 2
+            : $vals[$middle];
+        $parts[] = $prefix . 'от ' . lp_money($min) . ' до ' . lp_money($max)
+            . ', медианная ставка — ' . lp_money($median) . '.';
+    }
+    return implode(' ', $parts);
 }
 
 function lp_render(string $workSlug, string $stationSlug): void
