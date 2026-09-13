@@ -28,6 +28,9 @@ function sb_select(string $t, array $f = [], string $sel = '*'): array
             $rows = array_values(array_filter($rows, fn($r) => (string)($r[$col] ?? '') === $want));
         } elseif ((string)$cond === 'is.true') {
             $rows = array_values(array_filter($rows, fn($r) => !empty($r[$col])));
+        } elseif (str_starts_with((string)$cond, 'in.(')) {
+            $want = explode(',', trim(substr((string)$cond, 3), '()'));
+            $rows = array_values(array_filter($rows, fn($r) => in_array((string)($r[$col] ?? ''), $want, true)));
         }
     }
     return $rows;
@@ -84,7 +87,41 @@ $ext[] = ['id' => 'ext-cook', 'title' => 'Повар', 'company' => 'Кафе', 
     'salary' => 3000, 'pay_period' => 'shift', 'url' => 'https://hh.ru/vacancy/2',
     'active' => true, 'work_type' => 'cook'];
 
-$GLOBALS['TABLES'] = ['jm_vacancies' => $own, 'jm_ext_vacancies' => $ext];
+// Источники. Публичной странице можно показывать только вакансии включённых
+// боевых источников — ровно как ленте приложения (extVacancies в db.php).
+$sources = [
+    ['id' => 'hh', 'enabled' => true, 'environment' => 'production'],
+    ['id' => 'sandbox', 'enabled' => true, 'environment' => 'sandbox'],
+    ['id' => 'off', 'enabled' => false, 'environment' => 'production'],
+];
+foreach ($ext as &$e) { $e['source_id'] = 'hh'; $e['environment'] = 'production'; }
+unset($e);
+
+// Вакансии, которых на публичной странице быть не должно. Песочницу миграция
+// 046 заводила словами «никогда не попадают в публичную ленту», а выключенный
+// источник выключен руками и намеренно.
+$ext[] = ['id' => 'sb-1', 'title' => 'Комплектовщик из песочницы', 'company' => 'Песочница',
+    'metro_station' => 'Алтуфьево', 'salary' => 9999, 'pay_period' => 'shift',
+    'url' => 'https://example.invalid/1', 'active' => true, 'work_type' => 'picker',
+    'source_id' => 'sandbox', 'environment' => 'sandbox'];
+$ext[] = ['id' => 'off-1', 'title' => 'Комплектовщик выключенного источника', 'company' => 'Выкл',
+    'metro_station' => 'Алтуфьево', 'salary' => 8888, 'pay_period' => 'shift',
+    'url' => 'https://example.invalid/2', 'active' => true, 'work_type' => 'picker',
+    'source_id' => 'off', 'environment' => 'production'];
+
+// Рассогласованные данные: источник боевой и включённый, а у самой вакансии
+// окружение песочницы. Фильтр по источнику такую не поймает — ловит второй
+// фильтр, по окружению. Ровно так же подстраховывается лента приложения.
+$ext[] = ['id' => 'mix-1', 'title' => 'Комплектовщик с чужим окружением', 'company' => 'Смешанный',
+    'metro_station' => 'Алтуфьево', 'salary' => 7777, 'pay_period' => 'shift',
+    'url' => 'https://example.invalid/3', 'active' => true, 'work_type' => 'picker',
+    'source_id' => 'hh', 'environment' => 'sandbox'];
+
+$GLOBALS['TABLES'] = [
+    'jm_vacancies' => $own,
+    'jm_ext_vacancies' => $ext,
+    'jm_ext_sources' => $sources,
+];
 
 function render_page(string $work, string $station = ''): string
 {
@@ -107,12 +144,25 @@ check('партнёрская ведёт к источнику', str_contains($h
 check('станция выше порога в перелинковке', str_contains($html, '/rabota/komplektovshchik/altufevo'));
 check('станция ниже порога не предлагается', !str_contains($html, 'medvedkovo'));
 
+// Песочница и выключенные источники: их не должно быть ни в списке, ни в счёте.
+check('вакансия песочницы не показана', !str_contains($html, 'из песочницы'));
+check('вакансия выключенного источника не показана', !str_contains($html, 'выключенного источника'));
+check('они не считаются в пороге и в счёте', !str_contains($html, '10 вакансий'));
+check('вакансия с чужим окружением не показана', !str_contains($html, 'с чужим окружением'));
+check('их зарплаты не попали в вилку',
+    !str_contains($html, '9 999') && !str_contains($html, '8 888') && !str_contains($html, '7 777'));
+
 // ── Страница профессии по станции ─────────────────────────────────────────────
 $html = render_page('komplektovshchik', 'altufevo');
 check('заголовок со станцией', str_contains($html, 'у метро Алтуфьево'));
 check('счёт только по станции', str_contains($html, '6 вакансий'));
 check('канонический адрес со станцией', str_contains($html, '/rabota/komplektovshchik/altufevo"'));
 check('есть ссылка на город', str_contains($html, '/rabota/komplektovshchik"'));
+// «Другие профессии» не должны вести в 404: у повара вакансий меньше порога,
+// страницы нет — значит и ссылки быть не должно. Ссылка туда тратила бы обход
+// робота и время человека.
+check('нет ссылки на профессию без страницы', !str_contains($html, '/rabota/povar'));
+check('нет заголовка над пустым списком профессий', !str_contains($html, 'Другие профессии'));
 
 // ── Порог ─────────────────────────────────────────────────────────────────────
 // Ниже порога страницы нет вовсе: тонкая страница без содержания понижает

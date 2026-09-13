@@ -41,6 +41,13 @@ $source = sb_single('jm_ext_sources', ['id' => 'eq.' . $sourceId], 'id,connector
 if (!$source || (string)($source['connector_kind'] ?? '') !== 'career') {
     cf_fail(404, 'источник не карьерные страницы');
 }
+// Выключенный источник не обслуживаем. Миграция 063 заводит его выключенным
+// намеренно: сначала владелец смотрит глазами, что отдают страницы, и только
+// потом включает. Отдавать его через открытую точку входа значило бы обойти
+// эту проверку — поле enabled запрашивалось, но не проверялось.
+if (empty($source['enabled'])) {
+    cf_fail(403, 'источник выключен');
+}
 
 $config = is_array($source['connector_config'] ?? null) ? $source['connector_config'] : [];
 $pages = is_array($config['pages'] ?? null) ? array_values($config['pages']) : [];

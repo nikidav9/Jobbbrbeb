@@ -11,6 +11,10 @@
 // содержания, понижает весь сайт. Поэтому есть порог — меньше LP_MIN вакансий,
 // и страницы просто нет.
 
+// Сбой базы должен быть слышен. Без строгого режима sb() возвращает пустой
+// список, страница оказывается ниже порога и отдаёт 404 — то есть сообщает
+// поисковику, что её больше нет, и он её выбросит. Пятьсот третий честнее.
+if (!defined('SB_STRICT')) define('SB_STRICT', true);
 require_once __DIR__ . '/sb_lite.php';
 require_once __DIR__ . '/vacancy_url.php';
 
@@ -130,7 +134,31 @@ function lp_collect(string $workType): array
             'url' => vacancy_id_is_url_safe((string)($r['id'] ?? '')) ? LP_SITE . '/s/' . $r['id'] : '',
         ];
     }
-    foreach (sb_select_all('jm_ext_vacancies', ['active' => 'is.true', 'work_type' => 'eq.' . $workType],
+    // Партнёрские берём ровно по тем же правилам, что и лента приложения
+    // (см. extVacancies в db.php): только рабочее окружение и только
+    // включённые источники.
+    //
+    // Без этого на публичную страницу и в карту сайта попадали бы вакансии
+    // песочницы — миграция 046 заводила её словами «никогда не попадают в
+    // публичную ленту», — и вакансии источников, выключенных вручную. Они же
+    // считались бы в пороге LP_MIN и в «столько-то вакансий», то есть страница
+    // могла существовать целиком за счёт того, чего людям показывать нельзя.
+    $allowed = [];
+    foreach (sb_select_all('jm_ext_sources', [
+        'enabled' => 'is.true', 'environment' => 'eq.production',
+    ], 'id') as $src) {
+        $id = trim((string)($src['id'] ?? ''));
+        if ($id !== '') $allowed[] = $id;
+    }
+    if (!$allowed) return $out;
+
+    $extFilters = [
+        'active' => 'is.true',
+        'environment' => 'eq.production',
+        'work_type' => 'eq.' . $workType,
+        'source_id' => 'in.(' . implode(',', $allowed) . ')',
+    ];
+    foreach (sb_select_all('jm_ext_vacancies', $extFilters,
         'id,title,company,metro_station,address,salary,pay_period,url') as $r) {
         $out[] = [
             'title' => (string)($r['title'] ?? ''),
@@ -270,10 +298,15 @@ function lp_render(string $workSlug, string $stationSlug): void
     } else {
         foreach (LP_WORK as $slug => $w) {
             if ($slug === $workSlug) continue;
+            // Ссылаемся только туда, где страница есть. Порог тот же, что в
+            // lp_render и в карте сайта: ниже него страницы не существует, и
+            // ссылка вела бы человека и робота в 404. Роботу это тратит обход,
+            // человеку — время.
+            if (count(lp_collect($w['type'])) < LP_MIN) continue;
             $others .= '<a href="' . LP_SITE . '/rabota/' . $slug . '">' . lp_e($w['name']) . '</a> ';
         }
-        $others = '<h2>Другие профессии</h2><p class="links">' . $others . '</p>'
-            . '<p class="links"><a href="' . LP_SITE . '/rabota/' . $workSlug . '">'
+        if ($others !== '') $others = '<h2>Другие профессии</h2><p class="links">' . $others . '</p>';
+        $others .= '<p class="links"><a href="' . LP_SITE . '/rabota/' . $workSlug . '">'
             . lp_e($work['name']) . ' по всей Москве</a></p>';
     }
 
@@ -339,4 +372,12 @@ try {
     lp_render($workSlug, $stationSlug);
 } catch (LpNotFound $e) {
     lp_404();
+} catch (Throwable $e) {
+    // База недоступна — это не «страницы нет». Разница между 404 и 503 здесь
+    // в том, выбросит поисковик страницу из выдачи или придёт снова.
+    http_response_code(503);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Retry-After: 300');
+    echo lp_layout('Сервис временно недоступен', '',
+        '<h1>Сейчас не получится</h1><p>Мы чиним. Попробуйте через несколько минут.</p>');
 }

@@ -13,6 +13,12 @@
 // давать по ним что-то своё: их текст совпадает с hh.ru, и ссылка на копию
 // хуже её отсутствия.
 
+// Сбой базы должен быть слышен. Без строгого режима sb() возвращает пустой
+// список, и карта уходит роботу с одними статическими адресами — с ответом
+// 200 и часовым кэшем. Для поисковика это значит «все вакансии и все сводные
+// страницы исчезли», и он их выбросит. Пятьсот третий честнее: робот придёт
+// снова.
+if (!defined('SB_STRICT')) define('SB_STRICT', true);
 require_once __DIR__ . '/sb_lite.php';
 require_once __DIR__ . '/vacancy_url.php';
 // Берём из сводных страниц только перечень: константа гасит их точку входа.
@@ -48,6 +54,7 @@ function sm_day(?string $ts): string
 }
 
 $body = '';
+try {
 foreach (SM_STATIC as $path) {
     $body .= sm_url(SM_SITE . $path);
 }
@@ -73,6 +80,15 @@ foreach ($sources as $src) {
 // сам landing_page.php — там же порог, ниже которого страницы нет.
 foreach (lp_index() as $path) {
     $body .= sm_url(SM_SITE . $path);
+}
+
+} catch (Throwable $e) {
+    // См. выше: лучше честный отказ, чем карта, обещающая пустой сайт.
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    header('Retry-After: 300');
+    echo "карта сайта временно недоступна\n";
+    exit;
 }
 
 header('Content-Type: application/xml; charset=utf-8');

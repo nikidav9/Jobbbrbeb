@@ -1941,6 +1941,42 @@ function jt_shift_party(string $likeId, ?string $authUid, bool $employerOnly): a
     return $like;
 }
 
+
+/**
+ * Записать код приглашения и того, кто привёл, только что созданному человеку.
+ *
+ * Отдельно от создания профиля намеренно: см. комментарий в dbUpsertUser.
+ * Приглашение — приятное дополнение, регистрация — обязательна, и первое не
+ * имеет права ронять второе.
+ *
+ * Поле invited_by задаёт СЕРВЕР по коду: клиент его не присылает и прислать не
+ * может — в dbUpsertUser оно срезается белым списком.
+ */
+function jt_referral_attach(string $uid, string $rawCode): void
+{
+    try {
+        $fields = ['referral_code' => jt_referral_code_unique()];
+
+        $code = ref_code_normalize($rawCode);
+        $inviterId = null;
+        if ($code !== null) {
+            $inviter = sb_single('jm_users', ['referral_code' => 'eq.' . $code], 'id');
+            $inviterId = $inviter['id'] ?? null;
+        }
+        $verdict = ref_can_attribute(
+            $inviterId !== null ? (string)$inviterId : null, $uid, false, null);
+        if ($verdict['ok']) {
+            $fields['invited_by'] = (string)$inviterId;
+            $fields['invited_at'] = now_iso();
+        }
+
+        sb_update('jm_users', ['id' => 'eq.' . $uid], $fields);
+    } catch (Throwable $e) {
+        // Колонок ещё нет (миграция 064 не применена) или база моргнула.
+        // Человек зарегистрирован — это главное.
+    }
+}
+
 function jt_referral_code_unique(): string
 {
     for ($i = 0; $i < 5; $i++) {
@@ -2304,28 +2340,21 @@ try {
             } elseif (!is_bcrypt($u['password'])) {
                 $u['password'] = password_hash((string)$u['password'], PASSWORD_BCRYPT);
             }
-            // Приглашение. Код приходит отдельным доводом, а не полем профиля:
-            // поле клиент назначает сам, а здесь решает сервер — он находит
-            // владельца кода и записывает связь. Иначе любой пропишет себе
-            // в пригласившие кого угодно запросом на пять минут.
-            //
-            // Только при регистрации и только один раз: правила в referral.php.
-            $inviterId = null;
-            if (!$existing) {
-                $u['referral_code'] = jt_referral_code_unique();
-                $code = ref_code_normalize((string)($args[1] ?? ''));
-                if ($code !== null) {
-                    $inviter = sb_single('jm_users', ['referral_code' => 'eq.' . $code], 'id');
-                    $inviterId = $inviter['id'] ?? null;
-                }
-                $verdict = ref_can_attribute(
-                    $inviterId !== null ? (string)$inviterId : null, $uid, false, null);
-                if ($verdict['ok']) {
-                    $u['invited_by'] = (string)$inviterId;
-                    $u['invited_at'] = now_iso();
-                }
-            }
             sb_upsert('jm_users', $u, 'id');
+            // Приглашение пишем ОТДЕЛЬНОЙ операцией и после того, как человек
+            // уже создан.
+            //
+            // Сначала я дописывал эти поля в ту же строку — и это сломало бы
+            // регистрацию всем. Миграция 064 применяется руками, деплой
+            // уезжает сам при слиянии; между этими моментами колонки
+            // referral_code в базе нет, PostgREST отвечает 400 на неизвестное
+            // поле, а sb() на 400 бросает исключение. То есть весь
+            // dbUpsertUser падал бы, и никто не смог бы зарегистрироваться.
+            //
+            // Теперь худшее, что может случиться до миграции, — человек
+            // зарегистрируется без кода приглашения. Код ему всё равно
+            // заведётся при первом заходе на экран приглашения.
+            if (!$existing) jt_referral_attach($uid, (string)($args[1] ?? ''));
             $data = ['session_token' => $existing ? null : jt_session_issue($uid)];
             break;
         }

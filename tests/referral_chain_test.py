@@ -56,7 +56,28 @@ check("второй довод уходит на сервер",
       re.search(r"referralCode\s*\?\s*\[row,\s*referralCode\]\s*:\s*\[row\]", dbts) is not None)
 
 # 5. Сервер его читает — тем же номером довода.
-check("сервер читает второй довод", "ref_code_normalize((string)($args[1] ?? ''))" in dbphp)
+check("сервер читает второй довод", "jt_referral_attach($uid, (string)($args[1] ?? ''))" in dbphp)
+check("код нормализуется перед поиском владельца", "ref_code_normalize($rawCode)" in dbphp)
+# Приглашение пишется ОТДЕЛЬНОЙ операцией и после создания профиля: миграция
+# 064 применяется руками, а деплой уезжает сам, и в промежутке колонки нет.
+# Одной строкой с профилем это роняло бы регистрацию всем — PostgREST отвечает
+# 400 на неизвестное поле, а sb() на 400 бросает исключение.
+check("приглашение не пишется вместе с профилем",
+      "$u['referral_code']" not in dbphp and "$u['invited_by']" not in dbphp)
+# Искать try/catch по всему файлу нельзя: точка с re.S перепрыгивает границу
+# функции и находит чужой обработчик. Вырезаем тело именно этой функции.
+def body(name: str) -> str:
+    start = dbphp.find(f"function {name}(")
+    if start < 0:
+        return ""
+    end = dbphp.find("\n}\n", start)
+    return dbphp[start:end] if end > start else dbphp[start:]
+
+attach = body("jt_referral_attach")
+check("функция приглашения на месте", attach != "")
+check("сбой приглашения не роняет регистрацию",
+      "try {" in attach and "} catch (Throwable" in attach)
+check("приглашение пишется отдельной операцией", "sb_update('jm_users'" in attach)
 check("правила приглашения подключены", "ref_can_attribute(" in dbphp)
 check("код нормализуется по общему правилу", "function ref_code_normalize" in referral)
 
