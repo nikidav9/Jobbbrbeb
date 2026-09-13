@@ -22,7 +22,7 @@ import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate, uid, nowISO } from '@/services/storage';
 import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
-import { notifyWorkerGotMatch, setActiveChat } from '@/services/notifications';
+import { setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
 import { getSupabaseClient } from '@/template';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
@@ -526,7 +526,8 @@ export default function ChatRoom() {
         const matchMsg: Message = { id: uid(), senderId: 'system', text: 'У вас мэтч! Вы подошли друг другу. Познакомьтесь и обсудите детали!', timestamp: nowISO() };
         const safetyMsg: Message = { id: uid(), senderId: 'system_safety', text: 'Рекомендуем не переводить общение в сторонние мессенджеры или почту, а продолжить его в чате JobToo: так у мошенников будет меньше шансов вас обмануть.\n\nГде бы вы ни общались — не сообщайте свой CVV-код, код из SMS и не вводите данные карты по ссылке.', timestamp: nowISO() };
         appendMessages([matchMsg, safetyMsg]);
-        notifyWorkerGotMatch(chat.workerId, chat.companyName, chat.vacTitle).catch(() => {});
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+    // собирает тот, кто записал событие, и только другой стороне.
         const existingLike = likes.find(l => l.vacancyId === vacId && l.workerId === workerId);
         if (existingLike) optimisticUpdateLike({ ...existingLike, isMatch: true, employerLiked: true });
       }

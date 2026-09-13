@@ -40,38 +40,30 @@ function case_body(string $src, string $fn): string
     return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
 }
 
-// ── Само правило ──────────────────────────────────────────────────────────────
-$rule = fn_body($db, 'jt_may_notify');
-check('правило есть', $rule !== '');
-check('себе писать можно', str_contains($rule, 'if ($me === $recipientId) return true;'));
-// Три вида связи. Каждый проверяется в обе стороны: кто работник, а кто
-// работодатель, зависит от того, с чьей стороны смотреть.
-check('связь через переписку', substr_count($rule, "sb_single('jm_chats'") === 2);
-check('связь через отклик на смену', substr_count($rule, "sb_single('jm_likes'") === 2);
-check('связь через заявку на вакансию', substr_count($rule, "sb_single('jm_perm_applications'") === 2);
-check('без входа никому', str_contains($rule, "if (\$me === '' || \$recipientId === '') return false;"));
+// ── Уведомления человеку шлёт только сервер ──────────────────────────────────
+// Правило «кому вправе написать» (jt_may_notify) отсюда УБРАНО, и это не
+// ослабление, а следующий шаг. Оно стерегло операции, которыми пользовался
+// клиент; теперь клиент их не зовёт вовсе — уведомление отправляет сервер там
+// же, где записывает событие. Сторож, которого никто не зовёт, создаёт
+// видимость проверки, поэтому вместо него операции закрыты админским токеном.
+check('правило связи убрано вместе с нуждой в нём',
+    !str_contains($db, 'function jt_may_notify') && !str_contains($db, 'jt_require_notify_right'));
 
-$deny = fn_body($db, 'jt_require_notify_right');
-check('отказ отдаёт 403', str_contains($deny, "jt_respond(['error' => 'Этому человеку писать не от чего'], 403)"));
-
-// ── Правило применено во всех точках, где пишут человеку ─────────────────────
-foreach (['tgNotifyUser', 'tgNotifyNewApplication', 'dbGetPushToken', 'dbSaveNotification'] as $op) {
-    $body = case_body($db, $op);
-    check("{$op}: тело найдено", $body !== '');
-    check("{$op}: право писать проверяется", str_contains($body, 'jt_require_notify_right($authUid,'));
+$adminBlock = '';
+if (preg_match('~\$adminFns = \[(.*?)\n\];~s', $db, $m)) $adminBlock = $m[1];
+check('список админских операций найден', $adminBlock !== '');
+foreach (['tgNotifyUser', 'sendPushNotification', 'tgNotifyNewApplication',
+          'dbGetPushToken', 'dbSaveNotification'] as $op) {
+    check("{$op} — только админским токеном", str_contains($adminBlock, "'{$op}'"));
 }
-
-// Пуш идёт не по id человека, а по токену устройства — значит сначала надо
-// выяснить, чей это токен.
-$push = case_body($db, 'sendPushNotification');
-check('пуш: владелец токена выясняется',
-    str_contains($push, "sb_single('jm_users', ['push_token' => 'eq.' . (string)\$pushToken], 'id')"));
-check('пуш: право писать проверяется', str_contains($push, 'jt_require_notify_right($authUid,'));
-// Проверка должна стоять ДО отправки, иначе она ничего не стоит.
-$guardAt = strpos($push, 'jt_require_notify_right');
-$sendAt = strpos($push, "curl_init('https://exp.host");
-check('пуш: проверка раньше отправки',
-    $guardAt !== false && $sendAt !== false && $guardAt < $sendAt);
+// Приложение не должно уметь их звать: иначе смысла в переносе нет.
+$clientFiles = ['services/db.ts', 'services/notifications.ts'];
+foreach ($clientFiles as $rel) {
+    $src = (string)file_get_contents(__DIR__ . '/../' . $rel);
+    foreach (['tgNotifyUser', 'sendPushNotification', 'dbGetPushToken', 'dbSaveNotification'] as $op) {
+        check("{$rel} не зовёт {$op}", !str_contains($src, "'{$op}'"));
+    }
+}
 
 // ── Своё и только своё ────────────────────────────────────────────────────────
 // Прежде брали id записи и не смотрели, чья она.

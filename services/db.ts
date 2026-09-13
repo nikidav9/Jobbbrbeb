@@ -1852,13 +1852,6 @@ export async function dbDeleteWebPushSubscription(userId: string): Promise<void>
   await withTimeout(supabase.from('jm_web_push_subscriptions').delete().eq('user_id', userId));
 }
 
-export async function dbGetPushToken(userId: string): Promise<string | null> {
-  if (IS_NATIVE) { return proxy<string | null>('dbGetPushToken', [userId]); }
-  const { data } = await withTimeout(
-    supabase.from('jm_users').select('push_token').eq('id', userId).maybeSingle()
-  );
-  return data?.push_token ?? null;
-}
 
 export async function dbSetEmployerCompany(userId: string, company: string): Promise<void> {
   if (IS_NATIVE) { await proxy('dbSetEmployerCompany', [userId, company]); return; }
@@ -1890,13 +1883,6 @@ export async function dbGetWorkerTokensByMetro(metroStation: string): Promise<{ 
 
 // ─── In-app notifications ──────────────────────────────────────────────────────
 
-export async function dbSaveNotification(
-  userId: string, title: string, body: string,
-  type?: string, payload?: Record<string, unknown>,
-): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbSaveNotification', [userId, title, body, type ?? null, payload ?? null]); return; }
-  await withTimeout(supabase.from('jm_notifications').insert({ user_id: userId, title, body, type, payload }));
-}
 
 /** Отметить, что пользователь сейчас в приложении. Ошибки глушим: это
  *  фоновая отметка, ради неё нельзя ломать экран. */
@@ -1990,9 +1976,6 @@ export async function dbBindTelegram(userId: string, initData: string): Promise<
 }
 
 /** Sends a Telegram message to a user's linked account (bot notification) */
-export async function dbTelegramNotifyUser(userId: string, text: string): Promise<boolean> {
-  return proxy<boolean>('tgNotifyUser', [userId, text]);
-}
 
 export async function dbAutoClosePastVacancies(): Promise<void> {
   await proxy('dbAutoClosePastVacancies');

@@ -24,11 +24,6 @@ import { useMissingUsers } from '@/hooks/useMissingUsers';
 import { workerLikes, workerActive, workerRejected, workerCompleted,
   employerLikes, employerPending, employerMatched, employerCompleted,
   employerPermApps } from '@/services/matchCounts';
-import {
-  notifyWorkerShiftConfirmedByEmployer,
-  notifyWorkerShiftCancelled,
-  notifyWorkerGotMatch,
-} from '@/services/notifications';
 import { Chip } from '@/components/ui/Chip';
 import { VacancyDetailModal } from '@/components/feature/VacancyDetailModal';
 import { ApplySheet } from '@/components/feature/ApplySheet';
@@ -706,7 +701,6 @@ function EmployerMatches() {
   const approve = async (like: Like) => {
     setLoading(like.id);
     try {
-      const vac = getVacancy(like.vacancyId);
       const worker = getWorker(like.workerId);
       const workerName = worker ? `${worker.firstName} ${worker.lastName}` : 'Работник';
 
@@ -721,9 +715,8 @@ function EmployerMatches() {
 
       refreshAll().catch(() => {});
 
-      if (result.matched) {
-        notifyWorkerGotMatch(like.workerId, vac?.company ?? currentUser.company ?? '', vac?.title ?? '').catch(() => {});
-      }
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+      // собирает тот, кто записал событие, и только другой стороне.
       if (result.matched || result.chatId) {
         showToast(`Мэтч с ${workerName}!`, 'success');
         router.push({ pathname: '/chat-room', params: { chatId: result.chatId } });
@@ -766,19 +759,14 @@ function EmployerMatches() {
       const worker = getWorker(like.workerId);
       const vac = getVacancy(like.vacancyId);
       const workerName = worker ? `${worker.firstName} ${worker.lastName}` : 'Работник';
-      const company = currentUser.company ?? `${currentUser.firstName} ${currentUser.lastName}`;
+      // Работника об итоге извещает СЕРВЕР (jt_notify_shift_outcome): текст
+      // зависит от итога и собирается там, где итог записан.
 
       if (outcome !== 'worked') {
-        if (worker && vac) {
-          notifyWorkerShiftCancelled(worker.id, company, vac.title, outcome).catch(() => {});
-        }
         showToast('Отмечено', 'success');
         return;
       }
 
-      if (worker && vac) {
-        notifyWorkerShiftConfirmedByEmployer(worker.id, company, vac.title).catch(() => {});
-      }
       showToast(
         lateMinutes ? 'Смена засчитана, опоздание отмечено' : 'Смена подтверждена! Оцените работника',
         'success',

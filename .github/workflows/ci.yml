@@ -86,6 +86,9 @@ jobs:
       - name: Уведомление о сообщении собирает сервер, а не телефон
         run: php tests/message_notify_test.php
 
+      - name: Мэтч и итог смены извещает сервер
+        run: php tests/match_outcome_notify_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

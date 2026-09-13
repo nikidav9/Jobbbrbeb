@@ -163,6 +163,18 @@ $adminFns = [
     // Приложение их не зовёт (dbMergeDuplicateChats — вообще никто, расходы —
     // только дашборд), а любому вошедшему они были открыты.
     'dbMergeDuplicateChats', 'extPartnerCostSave',
+    // Уведомления человеку приложение больше НЕ шлёт: их отправляет сервер
+    // там же, где записывает событие (jt_notify_new_message, jt_notify_match,
+    // jt_notify_shift_outcome, jt_perm_app_announce). Пока эти операции были
+    // открыты вошедшему, текст уведомления приходил с клиента — то есть через
+    // нашего бота можно было послать что угодно тому, с кем есть переписка.
+    // Теперь звать их может только админский токен.
+    //
+    // Старые сборки приложения их ещё зовут и получат отказ. Потери нет:
+    // уведомление к этому времени уже ушло с сервера, а отказ у них и так
+    // проглатывается пустым catch.
+    'tgNotifyUser', 'sendPushNotification', 'tgNotifyNewApplication',
+    'dbGetPushToken', 'dbSaveNotification',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -1524,7 +1536,7 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  */
 function notify_user(string $userId, string $title, string $body, string $type = '',
                      array $data = [], ?string $pushBody = null,
-                     ?string $pushTitle = null): void {
+                     ?string $pushTitle = null, ?string $channelId = null): void {
     if ($userId === '') return;
 
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 60);
@@ -1554,7 +1566,7 @@ function notify_user(string $userId, string $title, string $body, string $type =
     if (!empty($u['push_token'])) {
         expo_push([[
             'to' => $u['push_token'], 'title' => $pushTitle ?? $title, 'body' => $pushBody ?? $body,
-            'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches',
+            'sound' => 'default', 'priority' => 'high', 'channelId' => $channelId ?? 'matches',
             'data' => array_merge(['type' => $type], $data),
         ]]);
     }
@@ -1944,44 +1956,91 @@ const SCORE_EXPERIENCE_FULL = 30;
  * установленном приложении, мы не знаем, а сломать его — ровно то, ради чего
  * эти операции и оставлены.
  */
+
 /**
- * Кому этот человек вправе написать.
+ * Название и компания смены — одной строкой на всех.
  *
- * Найдено сплошной ревизией прав: операции tgNotifyUser, sendPushNotification,
- * tgNotifyNewApplication и dbGetPushToken требовали входа — и только. Кому
- * именно пишем, не проверялось вовсе.
- *
- * Что это значило. Любой зарегистрировавшийся мог отправить через НАШЕГО бота
- * произвольный текст любому человеку сервиса по его id, взять чужой пуш-токен
- * и слать на него что угодно (токен Expo сам по себе никого не спрашивает).
- * Для сервиса, где люди ищут работу, это готовая рассылка от имени JobToo.
- *
- * Правило простое: писать можно тому, с кем уже есть связь, — переписка,
- * отклик на смену или заявка на постоянную вакансию. То есть тому, кому и так
- * можно написать в чат. Рассылка по всей базе закрыта.
- *
- * Это ПЕРВЫЙ рубеж, а не последний: текст уведомления по-прежнему приходит с
- * клиента. Перенести тексты на сервер — отдельная работа, записана в очередь.
+ * Вакансию могли удалить, а отклик по ней остаться: связи в базе нет. Тогда
+ * подставляем общие слова, а не пустые кавычки.
  */
-function jt_may_notify(?string $authUid, string $recipientId): bool
+function jt_shift_titles(string $vacancyId): array
 {
-    $me = (string)($authUid ?? '');
-    if ($me === '' || $recipientId === '') return false;
-    if ($me === $recipientId) return true;
+    $vac = $vacancyId !== ''
+        ? sb_single('jm_vacancies', ['id' => 'eq.' . $vacancyId], 'title,company') : null;
+    return [
+        trim((string)($vac['title'] ?? '')) ?: 'смену',
+        trim((string)($vac['company'] ?? '')) ?: 'Работодатель',
+    ];
+}
 
-    $chat = sb_single('jm_chats', ['worker_id' => 'eq.' . $me, 'employer_id' => 'eq.' . $recipientId], 'id')
-        ?? sb_single('jm_chats', ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
-    if ($chat) return true;
+/**
+ * Известить о мэтче ту сторону, которая его НЕ нажимала.
+ *
+ * Раньше это делал телефон нажавшего, и текст собирал сам. Событие целиком
+ * серверное — мэтч заводится здесь же, — так что телефону тут делать нечего:
+ * обрыв связи терял уведомление, а подпись под ним можно было подделать.
+ *
+ * Извещаем именно другую сторону: свой же нажим человек и так видит на экране.
+ */
+function jt_notify_match(string $vacancyId, string $workerId, string $employerId,
+                         ?string $actorUid): void
+{
+    [$title, $company] = jt_shift_titles($vacancyId);
+    $actor = (string)($actorUid ?? '');
 
-    $like = sb_single('jm_likes', ['worker_id' => 'eq.' . $me, 'employer_id' => 'eq.' . $recipientId], 'id')
-        ?? sb_single('jm_likes', ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
-    if ($like) return true;
+    if ($actor !== $workerId && $workerId !== '') {
+        notify_user($workerId, '🎉 Мэтч! Вас хотят взять!',
+            $company . ' подтвердили ваш отклик на «' . $title . '». Откройте чат!',
+            'match_worker');
+    }
+    if ($actor !== $employerId && $employerId !== '') {
+        $w = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'first_name,last_name');
+        $name = trim(((string)($w['first_name'] ?? '')) . ' ' . ((string)($w['last_name'] ?? ''))) ?: 'Кандидат';
+        notify_user($employerId, '🎉 Мэтч!',
+            $name . ' готов выйти на смену «' . $title . '». Откройте чат!',
+            'match_employer', [],
+            // В пуш — без имени: он уходит за границу. Название смены
+            // оставляем, без него уведомление перестаёт что-либо значить.
+            'Кандидат готов выйти на смену «' . $title . '». Откройте чат!');
+    }
+}
 
-    $app = sb_single('jm_perm_applications',
-            ['worker_id' => 'eq.' . $me, 'employer_id' => 'eq.' . $recipientId], 'id')
-        ?? sb_single('jm_perm_applications',
-            ['worker_id' => 'eq.' . $recipientId, 'employer_id' => 'eq.' . $me], 'id');
-    return (bool)$app;
+/**
+ * Известить работника об итоге смены.
+ *
+ * Тексты разные не для красоты. Прежде на все случаи был один — «компания
+ * отменила смену», — и человек, которого отметили не вышедшим, получал письмо
+ * про отмену работодателем. Неправда, да ещё и отметку, которая пойдёт ему в
+ * рейтинг, он бы так и не увидел. Пусть видит: если это ошибка, успеет
+ * написать в поддержку, пока помнит, как всё было.
+ */
+function jt_notify_shift_outcome(string $likeId, string $outcome): void
+{
+    $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'worker_id,vacancy_id');
+    $workerId = (string)($like['worker_id'] ?? '');
+    if ($workerId === '') return;
+    [$title, $company] = jt_shift_titles((string)($like['vacancy_id'] ?? ''));
+
+    if ($outcome === 'worked') {
+        notify_user($workerId, '✅ Смена подтверждена работодателем',
+            $company . ' подтвердил смену «' . $title . '». Хотите оставить отзыв?',
+            'shift_confirmed_by_employer', [], null, null, 'default');
+        return;
+    }
+
+    [$t, $b] = match ($outcome) {
+        'no_show' => ['⚠️ Отмечен невыход',
+            $company . ' отметил, что вы не вышли на смену «' . $title
+            . '». Это влияет на рейтинг. Если это ошибка — напишите в поддержку.'],
+        'worker_cancelled' => ['Смена отменена',
+            'Ваш отказ от смены «' . $title . '» (' . $company . ') записан. На рейтинг он не влияет.'],
+        'other_cancelled' => ['Смена отменена',
+            'Смена «' . $title . '» не состоялась по другой причине. На рейтинг сторон это не влияет.'],
+        default => ['❌ Смена отменена',
+            $company . ' отменил смену «' . $title
+            . '». Загляните в приложение — там много других подработок!'],
+    };
+    notify_user($workerId, $t, $b, 'shift_cancelled');
 }
 
 /**
@@ -2067,16 +2126,10 @@ function jt_chat_id_from_media_path(string $path): string
 }
 
 /** Отказ по правилу выше. Один текст на все точки, чтобы не разъехались. */
-function jt_require_notify_right(?string $authUid, string $recipientId): void
-{
-    if (!jt_may_notify($authUid, $recipientId)) {
-        jt_respond(['error' => 'Этому человеку писать не от чего'], 403); exit;
-    }
-}
 
 function jt_shift_party(string $likeId, ?string $authUid, bool $employerOnly): array
 {
-    $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'id,worker_id,employer_id');
+    $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'id,worker_id,employer_id,vacancy_id');
     if (!$like) {
         jt_respond(['error' => 'Смена не найдена'], 404); exit;
     }
@@ -3336,7 +3389,6 @@ try {
         // Директору в Telegram: карточка кандидата + кнопки Одобрить/Отклонить
         // args: [employerId, workerId, vacancyId, vacancyTitle]
         case 'tgNotifyNewApplication':
-            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             $data = tg_new_application_card((string)$args[0], (string)$args[1], (string)$args[2], (string)($args[3] ?? ''));
             break;
 
@@ -5092,7 +5144,6 @@ try {
 
         // args: [userId, text] — message the user's linked Telegram account
         case 'tgNotifyUser': {
-            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             $u = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'telegram_id');
             $btn = isset($args[2]) && $args[2] ? true : false; // показать кнопку «Открыть JobToo»
             $data = ($u && !empty($u['telegram_id']))
@@ -5716,6 +5767,11 @@ try {
                 sb_update('jm_vacancies', ['id' => 'eq.' . $vid],
                     ['workers_found' => $nf, 'status' => $nf >= ($vac['workers_needed'] ?? 999) ? 'closed' : 'open']);
             }
+            // Известить другую сторону — здесь же. Раньше это делал телефон
+            // нажавшего, отдельным вызовом и со своим текстом.
+            try {
+                jt_notify_match((string)$vid, (string)$wid, (string)$eid, $authUid);
+            } catch (Throwable $e) { /* мэтч заведён — это главное */ }
             $data = ['matched' => true, 'chatId' => $cid]; break;
         }
 
@@ -5857,6 +5913,12 @@ try {
             if (!empty($lk['worker_id'])) jt_recalc_score((string)$lk['worker_id']);
             // И работодателя: отмена смены — это его ось, а не работника.
             if (!empty($lk['employer_id'])) jt_recalc_employer_score((string)$lk['employer_id']);
+            // Работник узнаёт об итоге отсюда же. Отметку, которая пойдёт ему
+            // в рейтинг, он должен увидеть: если это ошибка, успеет написать в
+            // поддержку, пока помнит, как всё было.
+            try {
+                jt_notify_shift_outcome((string)$lid, (string)$out);
+            } catch (Throwable $e) { /* итог записан — это главное */ }
             $data = true; break;
         }
 
@@ -6062,7 +6124,6 @@ try {
                 ['push_token' => null]); break;
 
         case 'dbGetPushToken': {
-            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             $r = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'push_token');
             $data = $r['push_token'] ?? null; break;
         }
@@ -6097,14 +6158,6 @@ try {
         case 'sendPushNotification': {
             [$to, $title, $nbody, $nd] = [$args[0], $args[1], $args[2], $args[3] ?? []];
             $tokens = is_array($to) ? $to : [$to];
-            // Токен Expo сам по себе никого не спрашивает: зная его, послать
-            // на устройство можно что угодно. Поэтому смотрим, ЧЕЙ он, и
-            // сверяем с правом писать этому человеку. Токен, за которым нет
-            // никого (устаревший), тоже отклоняем — слать на него нечего.
-            foreach ($tokens as $pushToken) {
-                $owner = sb_single('jm_users', ['push_token' => 'eq.' . (string)$pushToken], 'id');
-                jt_require_notify_right($authUid, (string)($owner['id'] ?? ''));
-            }
             $msgs = array_map(fn($t) => [
                 'to' => $t, 'title' => $title, 'body' => $nbody,
                 'sound' => 'default', 'priority' => 'high',
@@ -6308,9 +6361,6 @@ try {
         }
 
         case 'dbSaveNotification': {
-            // Колокольчик чужому человеку — такая же рассылка, как пуш: текст
-            // приходит с клиента. Право писать проверяем тем же правилом.
-            jt_require_notify_right($authUid, (string)($args[0] ?? ''));
             // type/payload нужны, чтобы по нажатию на уведомление открылся
             // нужный экран. Колонок может ещё не быть — тогда сохраняем как
             // раньше, только заголовок и текст.

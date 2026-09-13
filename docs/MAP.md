@@ -188,17 +188,24 @@
   `$ownedVacancyFns`, как и её сменный близнец.
 - Проверка — `tests/read_authz_test.php`.
 
-### Кому можно написать
-- **`jt_may_notify` в `db.php`** — одно правило на все точки, где пишут
-  человеку: `tgNotifyUser`, `sendPushNotification`, `tgNotifyNewApplication`,
-  `dbGetPushToken`, `dbSaveNotification`. Писать можно тому, с кем уже есть
-  связь: переписка, отклик на смену или заявка на постоянную вакансию (каждая
-  проверяется в обе стороны). Отказ — `jt_require_notify_right`, 403.
-- Пуш идёт по токену устройства, а не по id человека, поэтому сначала
-  выясняется, чей это токен: токен Expo сам по себе никого не спрашивает.
-- **Это первый рубеж, не последний.** Текст уведомления по-прежнему приходит с
-  клиента — перенос текстов на сервер записан в очередь.
-- Проверка — `tests/notify_authz_test.php`.
+### Уведомления человеку: шлёт только сервер
+- **Приложение уведомлений не шлёт вообще.** Каждое событие извещает та
+  серверная операция, которая его записала: `jt_notify_new_message`
+  (`dbInsertMessage`, `dbCreateChat`), `jt_notify_match`
+  (`dbCheckAndCreateMatch`), `jt_notify_shift_outcome` (`dbSetShiftOutcome`),
+  `jt_perm_app_announce` (`dbSetPermApplicationStatus`),
+  `jt_shift_reject_announce` (`dbUpsertLike`).
+- Поэтому `tgNotifyUser`, `sendPushNotification`, `tgNotifyNewApplication`,
+  `dbGetPushToken` и `dbSaveNotification` переведены в `$adminFns`. Пока они
+  были открыты вошедшему, текст уведомления приходил с клиента — через нашего
+  бота можно было послать что угодно.
+- Правило `jt_may_notify` удалено вместе с нуждой в нём: сторож, которого никто
+  не зовёт, создаёт видимость проверки.
+- **Исключение одно** — `notifyWorkersNewVacancy`: это рассылка, а не событие
+  одного человека, и у неё свой серверный обработчик
+  `dbNotifyAllWorkersNewVacancy`.
+- Проверки — `tests/notify_authz_test.php`, `tests/message_notify_test.php`,
+  `tests/match_outcome_notify_test.php`.
 
 ### Отклики на смены (`dbUpsertLike`)
 - **Кто что вправе менять.** Владелец смены берётся из `jm_vacancies`, а не из

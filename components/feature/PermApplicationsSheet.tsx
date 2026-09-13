@@ -27,8 +27,6 @@ import {
   dbCreateChat,
 } from '@/services/db';
 import {
-  notifyWorkerPermApplicationApproved,
-  notifyWorkerPermApplicationRejected,
 } from '@/services/notifications';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
@@ -77,12 +75,9 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
     if (!currentUser || !vacancy) return;
     setActionLoading(app.id);
     try {
+      // Уведомление соискателю шлёт сервер тем же запросом, что меняет статус
+      // (jt_perm_app_announce). Отсюда оно уходило «выстрелил и забыл».
       await dbSetPermApplicationStatus(app.id, 'approved');
-      notifyWorkerPermApplicationApproved(
-        app.workerId,
-        vacancy.company,
-        vacancy.title,
-      ).catch(() => {});
       const chatId = await dbCreateChat(
         app.workerId,
         currentUser.id,
@@ -117,13 +112,6 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
     setActionLoading(app.id + '_r');
     try {
       await dbSetPermApplicationStatus(app.id, 'rejected');
-      if (vacancy) {
-        notifyWorkerPermApplicationRejected(
-          app.workerId,
-          vacancy.company,
-          vacancy.title,
-        ).catch(() => {});
-      }
       await refreshPermApplications();
       showToast('Отклонено', 'success');
     } catch (e) {

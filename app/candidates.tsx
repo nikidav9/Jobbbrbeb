@@ -7,7 +7,6 @@ import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { notifyWorkerGotMatch } from '@/services/notifications';
 import { dbUpsertLike, dbCheckAndCreateMatch } from '@/services/db';
 import { getInitials, nameColorFromString } from '@/services/storage';
 
@@ -62,7 +61,8 @@ export default function CandidatesScreen() {
 
     if (result.matched) {
       const worker = getWorker(workerId);
-      notifyWorkerGotMatch(workerId, vacancy.company, vacancy.title).catch(() => {});
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+      // собирает тот, кто записал событие, и только другой стороне.
       showToast(`🎉 Мэтч с ${worker?.firstName ?? 'работником'}! Чат открыт`, 'match');
     } else {
       showToast('Отклик одобрен. Ждём подтверждения работника.', 'success');

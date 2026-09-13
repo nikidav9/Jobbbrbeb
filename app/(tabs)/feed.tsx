@@ -58,8 +58,6 @@ import {
   dbRecordGuestEvent,
   dbStartGuestRegistration,
 } from '@/services/db';
-import { notifyEmployerGotMatch, notifyWorkerGotMatch,
-} from '@/services/notifications';
 import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
@@ -1393,7 +1391,6 @@ function WorkerListModal({
 
   const onAccept = async (like: Like) => {
     if (!currentUser) return;
-    const vacTitle = vacancy?.title ?? 'Смена';
     setActionLoading(like.workerId);
     try {
       await dbUpsertLike(vacancyId, like.workerId, currentUser.id, { employerLiked: true });
@@ -1402,7 +1399,10 @@ function WorkerListModal({
         optimisticUpdateLike({ ...like, isMatch: true, employerLiked: true });
       }
       refreshLikes().catch(() => {});
-      notifyWorkerGotMatch(like.workerId, vacancy?.company ?? '', vacTitle).catch(() => {});
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+      // собирает тот, кто записал событие, и только другой стороне.
+      // Заодно ушла неправда: здесь уведомление слалось ВСЕГДА, даже когда
+      // мэтча не случилось, — работнику сообщали о мэтче, которого нет.
       showToast('Мэтч! Чат открыт', 'success');
       onClose();
       if (result.chatId) {
@@ -2128,7 +2128,6 @@ function WorkerFeed() {
           const result = await dbCheckAndCreateMatch(card.id, user.id);
           refreshLikes(user).catch(() => {});
           if (result.matched) {
-            notifyEmployerGotMatch(card.employerId, `${user.firstName} ${user.lastName}`, card.title).catch(() => {});
             router.push({ pathname: '/match', params: { vacancyId: card.id, chatId: result.chatId } });
           } else {
             // Уведомление директору шлёт сервер при записи отклика — см. dbUpsertLike.
