@@ -76,6 +76,7 @@ jobs:
           python3 tests/external_filter_count_test.py
           python3 tests/feed_contract_test.py
           python3 tests/career_infra_test.py
+          python3 tests/referral_chain_test.py
           python3 tests/seo_infra_test.py
 
       - name: Web build

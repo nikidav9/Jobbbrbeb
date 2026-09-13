@@ -271,6 +271,23 @@ function userToRow(u: User) {
   };
 }
 
+/**
+ * Своё приглашение: код и что по нему вышло.
+ *
+ * Отдельная операция, а не поле пользователя: профиль любого человека
+ * запрашивает кто угодно, и код приглашения уехал бы вместе с ним.
+ *
+ * `invited` — сколько зарегистрировалось по коду, `rewarded` — за скольких
+ * начислено. Разница между ними это те, кто пришёл, но ещё не вышел на смену:
+ * платим за выход, а не за регистрацию.
+ */
+export type MyReferral = { code: string; invited: number; rewarded: number };
+
+export async function dbGetMyReferral(userId: string): Promise<MyReferral | null> {
+  if (!IS_NATIVE) return null;
+  return await proxy<MyReferral>('dbGetMyReferral', [userId]);
+}
+
 export async function dbGetUserById(id: string): Promise<User | null> {
   if (IS_NATIVE) { const d = await proxy<any>('dbGetUserById', [id]); return d ? rowToUser(d) : null; }
   const { data } = await withTimeout(
@@ -378,13 +395,21 @@ export async function dbChangePassword(
   return res;
 }
 
-export async function dbUpsertUser(u: User): Promise<void> {
+/**
+ * Сохранить профиль; при РЕГИСТРАЦИИ — передать код приглашения.
+ *
+ * Код идёт отдельным доводом, а не полем профиля: поля профиля человек
+ * назначает себе сам, а кто его привёл — решает сервер. Он же находит
+ * владельца кода и записывает связь, и только один раз, при создании.
+ */
+export async function dbUpsertUser(u: User, referralCode?: string): Promise<void> {
   const { avg_rating, rating_count, ...row } = userToRow(u);
   // Пустой пароль не отправляем: он означает «профиль пришёл без пароля»
   // (вход его больше не отдаёт), а не «стереть пароль».
   if (!row.password) delete (row as Partial<typeof row>).password;
   if (IS_NATIVE) {
-    const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', [row]);
+    const args: unknown[] = referralCode ? [row, referralCode] : [row];
+    const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', args);
     if (d?.session_token) await saveSessionToken(d.session_token);
     return;
   }

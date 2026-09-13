@@ -6,6 +6,7 @@ export const uid = () => Date.now().toString(36) + Math.random().toString(36).sl
 export const nowISO = () => new Date().toISOString();
 
 const KEY_CURRENT = 'jm_currentUser';
+const KEY_PENDING_REF = 'jm_pendingReferral';
 
 // ─── Session (current user in AsyncStorage for fast boot) ────────────────────
 
@@ -24,6 +25,39 @@ export async function saveSessionUser(u: User): Promise<void> {
 
 export async function clearSessionUser(): Promise<void> {
   await AsyncStorage.removeItem(KEY_CURRENT);
+}
+
+// ─── Приглашение, пришедшее по ссылке ────────────────────────────────────────
+//
+// Между открытием ссылки и регистрацией человек проходит несколько экранов, а
+// мини-приложение по дороге может перезапуститься. Держать код в памяти
+// недостаточно: он потеряется ровно там, где нужен.
+//
+// Код не секрет, но и не наш: чужое приглашение в хранилище — это чужое
+// вознаграждение, поэтому стираем сразу, как использовали.
+
+export async function getPendingReferral(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(KEY_PENDING_REF);
+  } catch {
+    return null;
+  }
+}
+
+export async function savePendingReferral(code: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_PENDING_REF, code);
+  } catch {
+    // Приглашение — не то, ради чего стоит ронять запуск приложения.
+  }
+}
+
+export async function clearPendingReferral(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(KEY_PENDING_REF);
+  } catch {
+    // См. выше.
+  }
 }
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────

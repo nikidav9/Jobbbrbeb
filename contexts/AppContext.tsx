@@ -19,6 +19,8 @@ import {
   loadCache,
   saveCache,
   CACHE_KEYS,
+  getPendingReferral,
+  clearPendingReferral,
 } from '@/services/storage';
 import {
   dbGetUsers,
@@ -661,7 +663,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ─── Auth actions ──────────────────────────────────────────────────────────
 
   const registerUser = async (u: User) => {
-    await dbUpsertUser(u);
+    // Приглашение, если человек пришёл по ссылке знакомого. Забираем ДО
+    // записи и стираем СРАЗУ после: чужой код, оставшийся в хранилище, был бы
+    // приписан следующему, кто зарегистрируется на этом телефоне.
+    const referralCode = (await getPendingReferral()) ?? undefined;
+    await dbUpsertUser(u, referralCode);
+    if (referralCode) void clearPendingReferral();
     // Если человек пришёл из гостевого просмотра, замыкаем анонимную
     // воронку. user_id не связываем с anon_id и в событие не передаём.
     void dbCompleteGuestRegistration();

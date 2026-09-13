@@ -232,6 +232,7 @@ $selfArgFns = [
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
     'supportHistory' => 0, 'supportSend' => 0,
     'dbGetLikesForUser' => 0, 'dbGetChats' => 0,
+    'dbGetMyReferral' => 0,
     'dbGetSaved' => 0, 'dbAddSaved' => 0, 'dbRemoveSaved' => 0,
     'dbGetPermVacanciesByEmployer' => 0, 'dbGetPermApplications' => 0,
     'dbGetPermSaved' => 0, 'dbAddPermSaved' => 0, 'dbRemovePermSaved' => 0,
@@ -2165,6 +2166,37 @@ try {
     switch ($fn) {
 
         // ── Users ──────────────────────────────────────────────────────────────
+        // Своё приглашение: код и что по нему вышло.
+        //
+        // Отдельная операция, а не поле в USER_PUBLIC_COLS: те колонки уходят
+        // при запросе ЛЮБОГО человека, и код приглашения утёк бы ко всем. Он
+        // не секрет, но чужой код в руках постороннего — это чужое
+        // вознаграждение.
+        //
+        // Код заводится при первом обращении: у всех, кто зарегистрировался до
+        // миграции 064, его нет, и выдавать им пустоту значило бы закрыть
+        // программу для существующих людей — то есть для тех, кто как раз и
+        // может кого-то позвать.
+        case 'dbGetMyReferral': {
+            $me = trim((string)($args[0] ?? ''));
+            $row = sb_single('jm_users', ['id' => 'eq.' . $me], 'id,referral_code');
+            if (!$row) throw new RuntimeException('Пользователь не найден');
+            $code = trim((string)($row['referral_code'] ?? ''));
+            if ($code === '') {
+                $code = jt_referral_code_unique();
+                sb_update('jm_users', ['id' => 'eq.' . $me], ['referral_code' => $code]);
+            }
+            $data = [
+                'code' => $code,
+                // Сколько позвал и за скольких начислено. Разница между этими
+                // числами — те, кто зарегистрировался, но ещё не вышел на
+                // смену: платим за выход, а не за регистрацию.
+                'invited' => sb_count('jm_users', ['invited_by' => 'eq.' . $me]),
+                'rewarded' => sb_count('jm_referral_rewards', ['inviter_id' => 'eq.' . $me]),
+            ];
+            break;
+        }
+
         case 'dbGetUserById':
             $data = sb_single('jm_users', ['id' => 'eq.' . $args[0]], USER_PUBLIC_COLS); break;
 
