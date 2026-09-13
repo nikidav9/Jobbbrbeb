@@ -3852,6 +3852,10 @@ try {
                 $config = is_array($source['connector_config'] ?? null) ? $source['connector_config'] : [];
                 $source['integration_configured'] = !empty($config['application_submit_url'])
                     && !empty($source['webhook_secret']);
+                $source['career_pages'] = array_values(array_filter(
+                    is_array($config['pages'] ?? null) ? $config['pages'] : [],
+                    fn($url) => is_string($url)
+                ));
                 unset($source['auth_header'], $source['connector_config'], $source['webhook_secret']);
             }
             unset($source);
@@ -3866,6 +3870,10 @@ try {
                 $data = ['error' => 'нужны имя и публичный HTTPS-адрес фида']; break;
             }
             $isNew = (string)($v['id'] ?? '') === '';
+            $previous = !$isNew
+                ? sb_single('jm_ext_sources', ['id' => 'eq.' . (string)$v['id']],
+                    'connector_kind,connector_config')
+                : null;
             $row = [
                 'id' => $isNew ? uid() : (string)$v['id'],
                 'name' => $name,
@@ -3904,11 +3912,34 @@ try {
                 if ($submitUrl !== '' && !preg_match('~^https://~i', $submitUrl)) {
                     $data = ['error' => 'endpoint отклика должен использовать HTTPS']; break;
                 }
-                $previous = !$isNew
-                    ? sb_single('jm_ext_sources', ['id' => 'eq.' . $row['id']], 'connector_config') : null;
                 $config = is_array($previous['connector_config'] ?? null)
                     ? $previous['connector_config'] : [];
                 $config['application_submit_url'] = $submitUrl;
+                $row['connector_config'] = $config;
+            }
+            if (array_key_exists('career_pages', $v)) {
+                $kind = (string)($row['connector_kind'] ?? $previous['connector_kind'] ?? 'redirect');
+                if ($kind !== 'career') {
+                    $data = ['error' => 'страницы можно задать только карьерному источнику']; break;
+                }
+                $rawPages = is_array($v['career_pages']) ? $v['career_pages'] : [];
+                $pages = [];
+                foreach ($rawPages as $pageUrl) {
+                    $pageUrl = trim((string)$pageUrl);
+                    if ($pageUrl === '') continue;
+                    if (strlen($pageUrl) > 2048 || !filter_var($pageUrl, FILTER_VALIDATE_URL)
+                            || strtolower((string)parse_url($pageUrl, PHP_URL_SCHEME)) !== 'https') {
+                        $data = ['error' => 'каждая карьерная страница должна быть HTTPS-адресом']; break 2;
+                    }
+                    $pages[$pageUrl] = true;
+                    if (count($pages) > 100) {
+                        $data = ['error' => 'не больше 100 карьерных страниц']; break 2;
+                    }
+                }
+                $config = is_array($row['connector_config'] ?? null)
+                    ? $row['connector_config']
+                    : (is_array($previous['connector_config'] ?? null) ? $previous['connector_config'] : []);
+                $config['pages'] = array_keys($pages);
                 $row['connector_config'] = $config;
             }
             if (array_key_exists('webhook_secret', $v)) {

@@ -16,6 +16,8 @@ ingest = (root / "php-proxy/ingest.php").read_text(encoding="utf-8")
 safe = (root / "php-proxy/safe_url.php").read_text(encoding="utf-8")
 feed = (root / "php-proxy/career_feed.php").read_text(encoding="utf-8")
 migration = (root / "supabase/migrations/063_career_pages_source.sql").read_text(encoding="utf-8")
+db = (root / "php-proxy/db.php").read_text(encoding="utf-8")
+dashboard = (root / "dashboard/app/sources/page.tsx").read_text(encoding="utf-8")
 
 failures = []
 
@@ -66,6 +68,14 @@ check("идентификатор источника ограничен по в�
 # намеренно, и открытая точка входа не должна обходить ручную проверку.
 check("выключенный источник не обслуживается",
       "if (empty($source['enabled'])) {" in career and "'источник выключен'" in career)
+
+# ── Адреса можно настроить в панели ──────────────────────────────────────────
+check("сервер отдаёт адреса карьерных страниц панели", "career_pages" in db)
+check("сервер принимает только HTTPS-адреса", "каждая карьерная страница должна быть HTTPS-адресом" in db)
+check("число страниц ограничено", "не больше 100 карьерных страниц" in db)
+check("панель показывает редактор адресов", "Один HTTPS-адрес карьерной страницы на строку" in dashboard)
+check("пустой карьерный источник нельзя включить",
+      "Сначала сохраните хотя бы одну карьерную страницу" in dashboard)
 
 # ── Разбор чужой разметки ─────────────────────────────────────────────────────
 check("глубина обхода ограничена", "$depth > 8" in feed)

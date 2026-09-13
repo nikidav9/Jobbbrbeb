@@ -93,7 +93,8 @@
   `cronDailyReport`. Проверка — `tests/ext_health_test.php`.
 - `php-proxy/career.php` + `career_feed.php` — карьерные страницы работодателей:
   разбор разметки `JobPosting` прямо с сайта работодателя, без посредника.
-  Адреса страниц — в `connector_config.pages` источника, задаются в панели.
+  Адреса страниц — в `connector_config.pages` источника, редактируются на
+  странице «Источники вакансий» в панели.
   Источник заведён **выключенным** (миграция `063`). Проверки —
   `tests/career_feed_test.php` и `tests/career_infra_test.py`.
 - `php-proxy/safe_url.php` — одно правило на всех, куда сборщику можно ходить.
