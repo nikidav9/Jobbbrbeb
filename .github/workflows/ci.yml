@@ -56,6 +56,9 @@ jobs:
       - name: Смерть одного источника вакансий видна в отчёте
         run: php tests/ext_health_test.php
 
+      - name: Карьерные страницы работодателей разбираются
+        run: php tests/career_feed_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
@@ -66,6 +69,7 @@ jobs:
           python3 tests/headhunter_infra_test.py
           python3 tests/external_filter_count_test.py
           python3 tests/feed_contract_test.py
+          python3 tests/career_infra_test.py
           python3 tests/seo_infra_test.py
 
       - name: Web build
