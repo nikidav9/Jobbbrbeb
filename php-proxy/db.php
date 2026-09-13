@@ -17,6 +17,7 @@ ob_start();
 require_once __DIR__ . '/partner_billing.php';
 require_once __DIR__ . '/superjob_oauth_lib.php';
 require_once __DIR__ . '/ext_health.php';
+require_once __DIR__ . '/referral.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -1888,6 +1889,84 @@ const SCORE_EXPERIENCE_FULL = 30;
  * Ошибки наружу не выпускает: пересчёт идёт следом за записью исхода смены
  * или оценки, и сорвать саму запись из-за него нельзя.
  */
+
+/**
+ * Начислить приглашение, если эта смена — первая отработанная у приглашённого.
+ *
+ * Зовётся из обоих мест, где выставляется shift_completed. Правило «за что
+ * платим» живёт в referral.php и проверяется на выдуманных данных; здесь
+ * только поход в базу.
+ *
+ * Молчит при любой неудаче: начисление — не то, ради чего стоит заваливать
+ * человеку отметку об окончании смены. Несработавшее начисление видно в
+ * jm_referral_rewards, а несохранённый итог смены не видно нигде.
+ */
+
+/**
+ * Свободный код приглашения.
+ *
+ * Совпадение на восьми знаках из тридцати двух маловероятно, но «маловероятно»
+ * за год работы случается. Совпавший код увёл бы вознаграждение чужому
+ * человеку, поэтому проверяем, а не надеемся.
+ */
+function jt_referral_code_unique(): string
+{
+    for ($i = 0; $i < 5; $i++) {
+        $code = ref_code_new();
+        if (sb_single('jm_users', ['referral_code' => 'eq.' . $code], 'id') === null) return $code;
+    }
+    // Пять совпадений подряд — это не везение, а сломанный источник
+    // случайности. Молча выдать шестой код значило бы спрятать поломку.
+    throw new RuntimeException('не удалось подобрать свободный код приглашения');
+}
+
+function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUserId): void
+{
+    try {
+        $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'worker_id,employer_id');
+        $workerId = trim((string)($like['worker_id'] ?? ''));
+        if ($workerId === '') return;
+
+        // Начисляем, только если смену закрыл РАБОТОДАТЕЛЬ, и именно тот, чья
+        // она. Без этой проверки программа печатала бы деньги: dbSetShiftOutcome
+        // требует входа, но не проверяет, чья смена, — значит любой вошедший
+        // мог бы закрыть чужую смену как отработанную. Двух своих учёток и
+        // двух номеров хватило бы, чтобы начислить себе вознаграждение без
+        // единого настоящего выхода на смену.
+        //
+        // Берём именно $authUid из подписанной сессии. В строке есть поле
+        // outcome_by, но его присылает клиент, и доказывает оно ровно ничего.
+        $employerId = trim((string)($like['employer_id'] ?? ''));
+        if ($byUserId === null || $byUserId === '' || $byUserId !== $employerId) return;
+        // И работник не может быть работодателем сам себе.
+        if ($employerId === $workerId) return;
+
+        $worker = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'id,invited_by');
+        $invitedBy = trim((string)($worker['invited_by'] ?? ''));
+        if ($invitedBy === '') return;
+
+        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
+        $verdict = ref_should_award($outcome, $invitedBy, $workerId, $existing !== null);
+        if (!$verdict['ok']) return;
+
+        // Размер вознаграждения не зашит в код: его назначает владелец, и
+        // менять его правкой исходника было бы неудобно и опасно. Пока не
+        // назначен — запись всё равно заводится со статусом pending, чтобы
+        // потом было по чему платить: событие произошло, и потерять его
+        // нельзя, даже если цена ещё не решена.
+        sb_insert('jm_referral_rewards', [
+            'id' => uid(),
+            'inviter_id' => $invitedBy,
+            'invitee_id' => $workerId,
+            'like_id' => $likeId,
+            'status' => 'pending',
+            'qualified_at' => now_iso(),
+        ]);
+    } catch (Throwable $e) {
+        // См. выше: итог смены важнее начисления.
+    }
+}
+
 function jt_recalc_score(string $uid): array {
     $out = [
         'score' => null, 'score_shifts' => 0,
@@ -2153,6 +2232,27 @@ try {
                 unset($u['password']);
             } elseif (!is_bcrypt($u['password'])) {
                 $u['password'] = password_hash((string)$u['password'], PASSWORD_BCRYPT);
+            }
+            // Приглашение. Код приходит отдельным доводом, а не полем профиля:
+            // поле клиент назначает сам, а здесь решает сервер — он находит
+            // владельца кода и записывает связь. Иначе любой пропишет себе
+            // в пригласившие кого угодно запросом на пять минут.
+            //
+            // Только при регистрации и только один раз: правила в referral.php.
+            $inviterId = null;
+            if (!$existing) {
+                $u['referral_code'] = jt_referral_code_unique();
+                $code = ref_code_normalize((string)($args[1] ?? ''));
+                if ($code !== null) {
+                    $inviter = sb_single('jm_users', ['referral_code' => 'eq.' . $code], 'id');
+                    $inviterId = $inviter['id'] ?? null;
+                }
+                $verdict = ref_can_attribute(
+                    $inviterId !== null ? (string)$inviterId : null, $uid, false, null);
+                if ($verdict['ok']) {
+                    $u['invited_by'] = (string)$inviterId;
+                    $u['invited_at'] = now_iso();
+                }
             }
             sb_upsert('jm_users', $u, 'id');
             $data = ['session_token' => $existing ? null : jt_session_issue($uid)];
@@ -4960,6 +5060,7 @@ try {
             ]);
             // Рейтинг работника меняется именно здесь: выход, невыход и
             // опоздание — это три четверти всего, из чего он складывается.
+            jt_referral_on_outcome((string)$lid, $out, $authUid);
             $lk = sb_single('jm_likes', ['id' => 'eq.' . $lid], 'worker_id,employer_id');
             if (!empty($lk['worker_id'])) jt_recalc_score((string)$lk['worker_id']);
             // И работодателя: отмена смены — это его ось, а не работника.
@@ -4986,6 +5087,7 @@ try {
                 'employer_confirmed' => true, 'worker_confirmed' => true,
                 'shift_completed' => true, 'cancelled' => false,
             ]);
+            jt_referral_on_outcome((string)$args[0], 'worked', $authUid);
             $lk = sb_single('jm_likes', ['id' => 'eq.' . $args[0]], 'worker_id,employer_id');
             if (!empty($lk['worker_id'])) jt_recalc_score((string)$lk['worker_id']);
             if (!empty($lk['employer_id'])) jt_recalc_employer_score((string)$lk['employer_id']);
