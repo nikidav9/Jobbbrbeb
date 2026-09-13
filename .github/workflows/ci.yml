@@ -74,6 +74,9 @@ jobs:
       - name: Решение по отклику принимает владелец вакансии и оно доходит
         run: php tests/perm_app_test.php
 
+      - name: Отклик на смену меняет его сторона, а отказ доходит до человека
+        run: php tests/like_authz_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

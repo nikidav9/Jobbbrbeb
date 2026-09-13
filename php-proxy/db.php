@@ -2068,6 +2068,27 @@ function jt_group_html(array $v, string $kind): string
 
 
 /**
+ * Строка в переписку об отказе по смене.
+ *
+ * Текст тот же, что экран уже дорисовывает работодателю на месте: обе стороны
+ * должны видеть одно и то же. Переформулировать его — отдельное решение
+ * владельца, здесь только доставка.
+ */
+function jt_shift_reject_announce(string $workerId, string $employerId): void
+{
+    if ($workerId === '' || $employerId === '') return;
+    $chat = sb_single('jm_chats',
+        ['worker_id' => 'eq.' . $workerId, 'employer_id' => 'eq.' . $employerId],
+        'id,unread_worker');
+    if (!$chat) return;
+
+    msg_insert(['id' => uid(), 'chat_id' => $chat['id'], 'sender_id' => 'system',
+        'text' => 'Вы не подошли по данной вакансии. Чат закрыт.', 'created_at' => now_iso()]);
+    sb_update('jm_chats', ['id' => 'eq.' . $chat['id']],
+        ['unread_worker' => (int)($chat['unread_worker'] ?? 0) + 1]);
+}
+
+/**
  * Сказать соискателю о решении по его отклику на постоянную вакансию.
  *
  * Раньше это делал телефон директора: после записи статуса приложение
@@ -5030,25 +5051,47 @@ try {
             $data = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $args[0], 'worker_id' => 'eq.' . $args[1]]); break;
 
         case 'dbUpsertLike': {
-            [$vid, $wid, $eid, $upd] = [$args[0], $args[1], $args[2], $args[3]];
-            $base = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid]) ?? [
-                'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid, 'employer_id' => $eid,
+            [$vid, $wid, $eid] = [$args[0], $args[1], $args[2]];
+            $upd = is_array($args[3] ?? null) ? $args[3] : [];
+
+            // Кто вправе что менять.
+            //
+            // Проверок здесь не было ни одной, а владельца смены брали с
+            // клиента доводом. То есть любой вошедший мог одобрить или
+            // отклонить чужого кандидата на чужую смену и отозвать чужой
+            // отклик. Настоящего владельца берём из самой вакансии.
+            $vac = sb_single('jm_vacancies', ['id' => 'eq.' . $vid], 'employer_id,title');
+            $existingLike = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid]);
+            // Смену можно удалить, а отклик по ней остаётся: связи в базе нет.
+            // Для такого сироты владельца берём из самого отклика — иначе
+            // работодатель не смог бы закрыть собственный старый отклик.
+            $vacEmployer = (string)($vac['employer_id'] ?? ($existingLike['employer_id'] ?? ''));
+            if ($vacEmployer === '') { jt_respond(['error' => 'Вакансия не найдена'], 404); exit; }
+            if (array_key_exists('employerLiked', $upd) && (string)$authUid !== $vacEmployer) {
+                jt_respond(['error' => 'Это не ваша вакансия'], 403); exit;
+            }
+            if ((array_key_exists('workerLiked', $upd) || array_key_exists('workerSkipped', $upd))
+                && (string)$authUid !== (string)$wid) {
+                jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+            }
+
+            $base = $existingLike ?? [
+                'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid, 'employer_id' => $vacEmployer,
                 'worker_liked' => false, 'employer_liked' => null, 'worker_skipped' => false,
                 'is_match' => false, 'matched_at' => null,
                 'worker_confirmed' => false, 'employer_confirmed' => false,
                 'worker_rated' => false, 'employer_rated' => false, 'shift_completed' => false,
             ];
+            // С клиента принимаем ТОЛЬКО эти три поля. Остальные — мэтч,
+            // отметки о выходе на смену и об оценках — ставит сервер в своих
+            // обработчиках, и раньше их можно было прислать сюда: подписать
+            // себе мэтч, выход на смену или снятие оценки. Ключи помимо этих
+            // молча пропускаем, а не отвергаем: ронять из-за них запись отклика
+            // было бы хуже самой подделки.
             $row = array_merge($base, [
                 'worker_liked'       => $upd['workerLiked']       ?? $base['worker_liked'],
                 'employer_liked'     => $upd['employerLiked']     ?? $base['employer_liked'],
                 'worker_skipped'     => $upd['workerSkipped']     ?? $base['worker_skipped'],
-                'is_match'           => $upd['isMatch']           ?? $base['is_match'],
-                'matched_at'         => $upd['matchedAt']         ?? $base['matched_at'],
-                'worker_confirmed'   => $upd['workerConfirmed']   ?? $base['worker_confirmed'],
-                'employer_confirmed' => $upd['employerConfirmed'] ?? $base['employer_confirmed'],
-                'worker_rated'       => $upd['workerRated']       ?? $base['worker_rated'],
-                'employer_rated'     => $upd['employerRated']     ?? $base['employer_rated'],
-                'shift_completed'    => $upd['shiftCompleted']    ?? $base['shift_completed'],
             ]);
             $written = sb_upsert('jm_likes', $row, 'vacancy_id,worker_id', true);
             if (empty($written)) throw new RuntimeException('Like not saved: permission denied');
@@ -5057,18 +5100,34 @@ try {
             // и с постоянными вакансиями: раньше сообщение слал телефон
             // соискателя уже после записи, и терялось оно молча.
             $justApplied = !empty($row['worker_liked']) && empty($base['worker_liked']);
-            if ($justApplied && !empty($eid)) {
+            if ($justApplied && $vacEmployer !== '') {
                 $w = sb_single('jm_users', ['id' => 'eq.' . $wid], 'first_name,last_name');
-                $v = sb_single('jm_vacancies', ['id' => 'eq.' . $vid], 'title');
                 $wName = trim(($w['first_name'] ?? '') . ' ' . ($w['last_name'] ?? '')) ?: 'Кандидат';
-                $vTitle = (string)($v['title'] ?? 'смена');
-                notify_user((string)$eid, '📥 Новый отклик!',
+                $vTitle = (string)($vac['title'] ?? 'смена');
+                notify_user($vacEmployer, '📥 Новый отклик!',
                     $wName . ' хочет выйти на смену «' . $vTitle . '». Посмотрите кандидата!',
                     'new_applicant', [],
                     // В пуш — без имени: он уходит за границу. Директор всё
                     // равно открывает приложение, чтобы посмотреть кандидата,
                     // и имя в шторке ничего не решает.
                     'Кто-то хочет выйти на смену «' . $vTitle . '». Посмотрите кандидата!');
+            }
+
+            // Отказ по смене: строку в переписку пишет сервер.
+            //
+            // Её писало приложение вызовом dbInsertMessage от имени «system» —
+            // а это запрещено проверкой «Invalid sender», сервер отвечал 403,
+            // и отказ гасился пустым .catch(). Соискатель не видел ничего,
+            // зато счётчик непрочитанного ему исправно рос: значок был, а за
+            // ним пусто.
+            //
+            // Признак приходит с клиента намеренно: строку пишем только там,
+            // где экран её и показывал, — в самой переписке. С экранов
+            // «Кандидаты» и «Мэтчи» отказ по-прежнему молчит, менять это —
+            // решение владельца, а не моё.
+            $justRejected = $row['employer_liked'] === false && $base['employer_liked'] !== false;
+            if ($justRejected && ($upd['announceInChat'] ?? false) === true) {
+                jt_shift_reject_announce((string)$wid, $vacEmployer);
             }
             $data = $row; break;
         }

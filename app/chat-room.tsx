@@ -561,9 +561,12 @@ export default function ChatRoom() {
         return;
       }
 
-      await dbUpsertLike(vacId, workerId, currentUser.id, { employerLiked: false });
-      dbInsertMessage(chat.id, 'system', rejectMsg).catch(() => {});
-      dbIncrementUnread(chat.id, 'worker').catch(() => {});
+      // Строку в переписку и счётчик непрочитанного ставит СЕРВЕР тем же
+      // запросом. Отсюда строка не доходила никогда: писать от имени «system»
+      // приложению запрещено, сервер отвечал 403, и отказ гасился пустым
+      // .catch(). Счётчик при этом рос — значок был, а за ним пусто.
+      await dbUpsertLike(vacId, workerId, currentUser.id,
+        { employerLiked: false, announceInChat: true });
       refreshChats().catch(() => {});
     } catch (e) {
       console.error('[ChatRoom] handleRejectConfirmed error', e);

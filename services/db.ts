@@ -1000,7 +1000,15 @@ export async function dbUpsertLike(
   vacancyId: string,
   workerId: string,
   employerId: string,
-  updates: Partial<Like>
+  /**
+   * Сервер принимает отсюда только три поля: workerLiked, workerSkipped,
+   * employerLiked. Остальные он ставит сам в своих обработчиках.
+   *
+   * `announceInChat` — не поле отклика, а просьба написать в переписку строку
+   * об отказе. Её шлёт только экран самой переписки: с «Кандидатов» и
+   * «Мэтчей» отказ молчит, как молчал всегда.
+   */
+  updates: Partial<Like> & { announceInChat?: boolean }
 ): Promise<Like> {
   if (IS_NATIVE) { const d = await proxy<any>('dbUpsertLike', [vacancyId, workerId, employerId, updates]); return rowToLike(d); }
   const { data: existing } = await withTimeout(
