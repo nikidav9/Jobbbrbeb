@@ -144,6 +144,36 @@ $GLOBALS['TABLES']['jm_ext_vacancies'][0]['title'] = 'Грузчик <script>ale
 $html = render_page('komplektovshchik');
 check('теги в названии экранированы', !str_contains($html, '<script>alert(1)</script>'));
 
+// ── Где работа: станция, а если её нет — адрес ────────────────────────────────
+// Страница про место не должна оставлять карточку без места. У партнёрских
+// вакансий станция заполнена далеко не всегда, и без запасного варианта
+// человек видел «ООО Бета · 4 000 ₽ за смену» и ни намёка, куда ехать.
+check('станция в приоритете',
+    lp_place(['metro' => 'Алтуфьево', 'place' => 'ул. Складская, 4'], '') === 'м. Алтуфьево');
+check('без станции показываем адрес',
+    lp_place(['metro' => '', 'place' => 'Химки, Ленинградское шоссе, 1'], '') === 'Химки, Ленинградское шоссе, 1');
+check('нет ни того ни другого — пусто',
+    lp_place(['metro' => '', 'place' => ''], '') === '');
+check('на странице станции место не повторяем',
+    lp_place(['metro' => 'Алтуфьево', 'place' => 'ул. Складская, 4'], 'altufevo') === '');
+// Адрес бывает длиной в строку целиком, а это подпись под названием.
+$long = lp_place(['metro' => '', 'place' => str_repeat('Очень длинный адрес, ', 6)], '');
+check('длинный адрес обрезан', mb_strlen($long, 'UTF-8') <= 48 && str_ends_with($long, '…'));
+
+// Заглушка sb_select список колонок игнорирует, поэтому отрисовка прошла бы и
+// с незапрошенным из базы адресом — а в бою его бы не было. Сверяем запрос.
+$src = (string)file_get_contents(__DIR__ . '/../php-proxy/landing_page.php');
+check('адрес своих вакансий запрашивается',
+    str_contains($src, "'id,title,company,metro_station,salary,address'"));
+check('адрес партнёрских вакансий запрашивается',
+    str_contains($src, "'id,title,company,metro_station,address,salary,pay_period,url'"));
+
+// И то же самое на настоящей отрисовке, а не только в функции.
+$GLOBALS['TABLES']['jm_ext_vacancies'][5]['metro_station'] = '';
+$GLOBALS['TABLES']['jm_ext_vacancies'][5]['address'] = 'Химки, Ленинградское шоссе, 1';
+$html = render_page('komplektovshchik');
+check('адрес виден в списке', str_contains($html, 'Химки, Ленинградское шоссе, 1'));
+
 if ($failures) {
     echo "landing pages: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

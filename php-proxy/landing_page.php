@@ -83,6 +83,32 @@ function lp_plural(int $n, string $one, string $few, string $many): string
 }
 
 /**
+ * Где работа — одной строкой для карточки.
+ *
+ * Станция метро, а если её нет — адрес. Без запасного варианта карточка на
+ * странице про место молча оставалась без места: у партнёрских вакансий
+ * станция заполнена далеко не всегда, и человек видел «ООО Бета · 4 000 ₽ за
+ * смену» без единого намёка, куда ехать. Свой адрес при этом из базы забирался
+ * и выбрасывался, а партнёрский не запрашивался вовсе.
+ *
+ * На странице станции место не повторяем: оно уже в заголовке.
+ */
+function lp_place(array $r, string $station): string
+{
+    if ($station !== '') return '';
+    $metro = trim((string)($r['metro'] ?? ''));
+    if ($metro !== '') return 'м. ' . $metro;
+
+    $place = trim((string)($r['place'] ?? ''));
+    if ($place === '') return '';
+    // Адрес бывает длиной в строку целиком, а это подпись под названием.
+    if (function_exists('mb_strlen') && mb_strlen($place, 'UTF-8') > 48) {
+        $place = rtrim(mb_substr($place, 0, 47, 'UTF-8'), ' ,.') . '…';
+    }
+    return $place;
+}
+
+/**
  * Живые вакансии этого вида работ.
  *
  * Свои и партнёрские вместе: сводка тем и ценна, что показывает всё, что есть
@@ -97,6 +123,7 @@ function lp_collect(string $workType): array
             'title' => (string)($r['title'] ?? ''),
             'company' => (string)($r['company'] ?? ''),
             'metro' => (string)($r['metro_station'] ?? ''),
+            'place' => (string)($r['address'] ?? ''),
             'salary' => (float)($r['salary'] ?? 0),
             'per' => 'смена',
             'own' => true,
@@ -104,11 +131,12 @@ function lp_collect(string $workType): array
         ];
     }
     foreach (sb_select_all('jm_ext_vacancies', ['active' => 'is.true', 'work_type' => 'eq.' . $workType],
-        'id,title,company,metro_station,salary,pay_period,url') as $r) {
+        'id,title,company,metro_station,address,salary,pay_period,url') as $r) {
         $out[] = [
             'title' => (string)($r['title'] ?? ''),
             'company' => (string)($r['company'] ?? ''),
             'metro' => (string)($r['metro_station'] ?? ''),
+            'place' => (string)($r['address'] ?? ''),
             'salary' => (float)($r['salary'] ?? 0),
             'per' => ((string)($r['pay_period'] ?? 'shift')) === 'month' ? 'месяц' : 'смена',
             'own' => false,
@@ -221,7 +249,7 @@ function lp_render(string $workSlug, string $stationSlug): void
         $link = $r['url'] !== '' ? '<a href="' . lp_e($r['url']) . '">' . $title . '</a>' : $title;
         $meta = array_filter([
             $r['company'],
-            $r['metro'] !== '' && $station === '' ? 'м. ' . $r['metro'] : '',
+            lp_place($r, $station),
             $r['salary'] > 0 ? lp_money($r['salary']) . ' за ' . $r['per'] : '',
         ]);
         $list .= '<li>' . $link . '<br><span class="meta">' . lp_e(implode(' · ', $meta)) . '</span></li>';
