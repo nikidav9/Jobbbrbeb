@@ -1,9 +1,10 @@
 <?php
-// Реферальная программа: кому и когда причитается.
+// Реферальная программа: кому и что записывается.
 //
-// Ошибка здесь стоит денег в обе стороны: не заплатить человеку, который
-// привёл работника, или заплатить дважды за одного и того же. Поэтому
-// проверяем не «функция вернула массив», а каждое правило по отдельности.
+// Денег в ней нет — решение владельца. Вознаграждение — поручительство,
+// которое видно работодателю на карточке, и ошибка здесь портит человеку
+// репутацию в обе стороны: не записать заслуженный выход или приписать чужой.
+// Поэтому проверяем не «функция вернула массив», а каждое правило отдельно.
 
 require_once __DIR__ . '/../php-proxy/referral.php';
 
@@ -49,33 +50,43 @@ check('без приглашённого нет приглашения', ref_can
 check('у отказа есть причина', ref_can_attribute('me', 'me', false, null)['reason'] !== '');
 check('у согласия причины нет', ref_can_attribute('a', 'b', false, null)['reason'] === '');
 
-// ── Когда причитается вознаграждение ──────────────────────────────────────────
-check('за отработанную смену причитается',
-    ref_should_award('worked', 'inviter', 'worker', false)['ok'] === true);
+// ── Что записывается в поручительство ─────────────────────────────────────────
+check('отработанная смена записывается',
+    ref_should_record('worked', 'inviter', 'worker', false)['ok'] === true);
+// Невыход записывается ТОЖЕ, и это не строгость, а то, без чего первое число
+// ничего не стоит: считай мы одни выходы, карточка набивалась бы рассылкой
+// кода сотне незнакомых людей.
+check('невыход записывается',
+    ref_should_record('no_show', 'inviter', 'worker', false)['ok'] === true);
 
-// ГЛАВНОЕ: платим за выход, а не за отклик. Прямой урок Jobr — там платили за
+// ГЛАВНОЕ: считаем итог смены, а не отклик. Прямой урок Jobr — там платили за
 // каждый свайп вправо, к партнёрам полетели пустые отклики, партнёры
-// отключили фиды. Ни один итог, кроме отработанной смены, платить не должен.
-foreach (['no_show', 'worker_cancelled', 'employer_cancelled', 'other_cancelled',
+// отключили фиды. Ни один итог, кроме состоявшейся или несостоявшейся смены,
+// в поручительство не идёт. Отмена не идёт особо: кто был прав при отмене, из
+// строки не видно, а записать её невыходом значило бы испортить поручителю
+// разрыв за то, чего не было.
+foreach (['worker_cancelled', 'employer_cancelled', 'other_cancelled',
           'cancelled_legacy', '', 'applied', 'matched'] as $outcome) {
-    check("за итог «{$outcome}» не платим",
-        ref_should_award($outcome, 'inviter', 'worker', false)['ok'] === false);
+    check("итог «{$outcome}» не записываем",
+        ref_should_record($outcome, 'inviter', 'worker', false)['ok'] === false);
 }
 
-check('без приглашения не платим', ref_should_award('worked', null, 'worker', false)['ok'] === false);
-check('пустое приглашение — не приглашение', ref_should_award('worked', '', 'worker', false)['ok'] === false);
-check('приглашение само на себя не платит', ref_should_award('worked', 'me', 'me', false)['ok'] === false);
-// Платим за первую смену, а не за каждую: иначе это доля с чужого заработка,
-// и стоимость программы перестаёт быть предсказуемой.
-check('дважды за одного не платим', ref_should_award('worked', 'inviter', 'worker', true)['ok'] === false);
+check('без приглашения не записываем', ref_should_record('worked', null, 'worker', false)['ok'] === false);
+check('пустое приглашение — не приглашение', ref_should_record('worked', '', 'worker', false)['ok'] === false);
+check('приглашение само на себя не записываем', ref_should_record('worked', 'me', 'me', false)['ok'] === false);
+// Записываем ПЕРВУЮ смену приглашённого, а не каждую: иначе поручитель копил
+// бы чужой стаж как свой, и число на карточке рассказывало бы о трудолюбии
+// приведённого, а не о том, кого он умеет звать.
+check('дважды за одного не записываем', ref_should_record('worked', 'inviter', 'worker', true)['ok'] === false);
+check('и невыход дважды не записываем', ref_should_record('no_show', 'inviter', 'worker', true)['ok'] === false);
 
 // ── Начисление действительно висит на выходе на смену ─────────────────────────
 // Функцию легко написать и забыть подключить. Оба места, где выставляется
 // shift_completed, должны её звать.
 $db = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
 check('правило подключено к db.php', str_contains($db, "require_once __DIR__ . '/referral.php';"));
-check('начисление считается по итогу смены', substr_count($db, 'ref_should_award(') >= 1);
-check('начисление зовётся из отметки об итоге', str_contains($db, 'jt_referral_on_outcome('));
+check('запись считается по итогу смены', substr_count($db, 'ref_should_record(') >= 1);
+check('запись зовётся из отметки об итоге', str_contains($db, 'jt_referral_on_outcome('));
 check('оба пути отметки покрыты', substr_count($db, 'jt_referral_on_outcome(') >= 3);
 // invited_by задаёт сервер по коду, а не клиент полем в профиле: иначе любой
 // пропишет себе кого угодно запросом на пять минут.
@@ -89,24 +100,24 @@ check('invited_by не задаётся при создании из профи�
 // как отработанную и сам себе начисляет. Постороннего в цепочке нет — значит
 // нет и того, за что мы платим.
 check('пригласивший-работодатель этой смены не получает',
-    ref_should_award('worked', 'boss', 'worker', false, 'boss')['ok'] === false);
+    ref_should_record('worked', 'boss', 'worker', false, 'boss')['ok'] === false);
 check('посторонний пригласивший получает',
-    ref_should_award('worked', 'friend', 'worker', false, 'boss')['ok'] === true);
+    ref_should_record('worked', 'friend', 'worker', false, 'boss')['ok'] === true);
 check('без работодателя правило не срабатывает вхолостую',
-    ref_should_award('worked', 'friend', 'worker', false, null)['ok'] === true);
+    ref_should_record('worked', 'friend', 'worker', false, null)['ok'] === true);
 // Пустая строка работодателя не должна «совпасть» с чем-либо и погасить
-// начисление: проверка была бы бессодержательной, если бы отказ приходил по
+// запись: проверка была бы бессодержательной, если бы отказ приходил по
 // другой причине, поэтому пригласивший тут настоящий.
-check('пустой работодатель не гасит начисление',
-    ref_should_award('worked', 'friend', 'worker', false, '')['ok'] === true);
+check('пустой работодатель не гасит запись',
+    ref_should_record('worked', 'friend', 'worker', false, '')['ok'] === true);
 check('работодатель передаётся из строки смены',
-    str_contains($db, 'ref_should_award($outcome, $invitedBy, $workerId, $existing !== null, $employerId)'));
+    str_contains($db, 'ref_should_record($outcome, $invitedBy, $workerId, $existing !== null, $employerId)'));
 
 // ── Смену закрывает работодатель, а не кто угодно ─────────────────────────────
 // dbSetShiftOutcome требует входа, но НЕ проверяет, чья смена. Без отдельной
 // проверки программа печатала бы деньги: две свои учётки, два номера — и
 // вознаграждение начислено без единого настоящего выхода на смену.
-check('начисление сверяет закрывшего с работодателем',
+check('запись сверяет закрывшего с работодателем',
     str_contains($db, '$byUserId !== $employerId'));
 // outcome_by присылает клиент и доказывает ровно ничего — берём подписанную
 // сессию.
@@ -120,18 +131,74 @@ check('работник сам себе работодателем не быва
 // Проверка в коде не остановит гонку двух одновременных отметок об окончании
 // смены, а запрет в базе остановит.
 $mig = (string)file_get_contents(__DIR__ . '/../supabase/migrations/064_referral_programme.sql');
-check('одно начисление на приглашённого',
+check('одна запись на приглашённого',
     str_contains($mig, 'create unique index if not exists jm_referral_rewards_invitee_key'));
 check('сам себя привести нельзя и в базе', str_contains($mig, 'invited_by <> id'));
-check('начисление самому себе запрещено в базе', str_contains($mig, 'inviter_id <> invitee_id'));
+check('запись самому себе запрещена в базе', str_contains($mig, 'inviter_id <> invitee_id'));
 check('код приглашения уникален', str_contains($mig, 'jm_users_referral_code_key'));
-// Сумма не проставляется кодом: её назначает владелец, и событие заводится
-// до того, как цена решена.
-check('начисление заводится ожидающим', str_contains($mig, "default 'pending'"));
 check('таблица закрыта политиками', str_contains($mig, 'enable row level security'));
 // Служебная таблица не должна утечь в публичную выдачу.
 $api = (string)file_get_contents(__DIR__ . '/../php-proxy/api.php');
-check('начисления не отдаются наружу', !str_contains($api, 'jm_referral_rewards'));
+check('журнал не отдаётся наружу', !str_contains($api, 'jm_referral_rewards'));
+
+$onOutcome = (function (string $src): string {
+    $start = strpos($src, 'function jt_referral_on_outcome(');
+    if ($start === false) return '';
+    $end = strpos($src, "\n}\n", $start);
+    return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
+})($db);
+check('обработчик итога найден', $onOutcome !== '');
+
+// ── Денег в программе нет ─────────────────────────────────────────────────────
+// Решение владельца: платить пока нечем. Обещание вознаграждения без суммы
+// читается как обман, и один раз обманутый второго знакомого не позовёт.
+// Поэтому денежных следов не должно остаться ни в схеме, ни в коде, ни на
+// экране: пока поле есть, кто-нибудь однажды проставит сумму и решит, что её
+// кто-то выплатит.
+$mig65 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/065_referral_vouching.sql');
+foreach (['amount_rub', 'paid_at', 'status'] as $col) {
+    check("колонка {$col} убрана", str_contains($mig65, "drop column if exists {$col}"));
+}
+check('сумма не читается из настроек', !str_contains($db, 'referral_reward_rub'));
+// Статус начисления («ожидает решения», «выплачено») был счётом к оплате.
+// Счёта больше нет, и колонки тоже — писать в неё значило бы ронять вставку.
+check('статус начисления не пишется', !str_contains($onOutcome, "'status'"));
+$invite = (string)file_get_contents(__DIR__ . '/../app/invite.tsx');
+check('экран не обещает денег', !str_contains($invite, 'rewardRub'));
+check('экран говорит об этом прямо', str_contains($invite, 'Денег за приглашение мы не платим'));
+
+// ── Итог смены записывается, и оба ────────────────────────────────────────────
+check('итог попадает в журнал', str_contains($onOutcome, "'outcome' => \$outcome,"));
+check('колонка итога ограничена базой',
+    str_contains($mig65, "check (outcome in ('worked', 'no_show'))"));
+
+// ── Счётчик на карточке ───────────────────────────────────────────────────────
+// Ради этого числа программа и существует: денег мы не платим, платит она —
+// тем, что её видно работодателю, когда он выбирает из похожих анкет.
+check('счётчик заведён в базе',
+    str_contains($mig65, 'add column if not exists referral_worked integer not null default 0'));
+check('счётчик растёт только на выходе',
+    str_contains($onOutcome, "if (\$outcome === 'worked') {")
+    && str_contains($onOutcome, "['referral_worked' => (int)(\$inviter['referral_worked'] ?? 0) + 1]"));
+// Журнал остаётся источником правды: инкремент можно потерять на гонке двух
+// одновременных отметок, и миграция пересчитывает счётчик из журнала.
+check('счётчик пересчитывается из журнала',
+    str_contains($mig65, 'set referral_worked = coalesce(c.n, 0)'));
+// Число бесполезно, если работодатель его не видит.
+check('счётчик уходит в карточку', str_contains($db, "'referral_worked',"));
+// Проверяем именно ВЫВОД числа, а не упоминание поля: условие «показывать,
+// если больше нуля» содержит то же имя, и проверка на одно имя осталась бы
+// зелёной при пустой карточке. Первая попытка так и прошла мутацию.
+$cand = (string)file_get_contents(__DIR__ . '/../app/candidates.tsx');
+check('карточка кандидата показывает число',
+    str_contains($cand, 'Привёл на смену: {worker.referralWorked}'));
+check('карточка не показывает ноль',
+    str_contains($cand, '{(worker.referralWorked ?? 0) > 0 ? ('));
+$prof = (string)file_get_contents(__DIR__ . '/../app/user-profile.tsx');
+check('профиль показывает число',
+    str_contains($prof, 'Привёл на смену: {user.referralWorked}'));
+check('профиль не показывает ноль',
+    str_contains($prof, '{(user.referralWorked ?? 0) > 0 ? ('));
 
 if ($failures) {
     echo "referral: ПРОВАЛЫ\n";

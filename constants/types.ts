@@ -63,6 +63,13 @@ export interface User {
    * значит сорок запросов на один экран.
    */
   confirmedSkills?: WorkType[];
+
+  /**
+   * Поручительство: скольких приведённых этот человек довёл до первой смены.
+   * Считает сервер (jt_referral_on_outcome), приложение только показывает —
+   * как и рейтинг, поставить его себе самому нельзя.
+   */
+  referralWorked?: number;
 }
 
 export interface Vacancy {

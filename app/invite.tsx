@@ -16,20 +16,21 @@ import { rs, rf } from '@/constants/scale';
  * Пригласить друга.
  *
  * Склад — среда с плотными связями: люди зовут знакомых на смены и без нас.
- * Экран не создаёт это поведение, а делает его видимым и вознаграждаемым.
+ * Экран не создаёт это поведение, а делает его видимым и чего-то стоящим.
  *
- * Два решения, которые здесь стоит заметить.
+ * Денег в программе нет — решение владельца. Экран об этом говорит прямо, а не
+ * обходит молчанием: обещание вознаграждения без суммы читается как обман, и
+ * один раз обманутый второго знакомого уже не позовёт.
  *
- * Первое: вознаграждение начисляется, когда друг ВЫХОДИТ НА ПЕРВУЮ СМЕНУ, а не
- * когда регистрируется. Это прямой урок Jobr из разбора конкурентов — там
- * платили за каждый отклик, к партнёрам полетели пустые заявки, и партнёры
- * отключились. Поэтому на экране два числа, а не одно: «позвал» и «вышли». Вид
- * разрыва между ними честнее, чем одно бодрое число.
+ * Вместо денег — поручительство. Позвать знакомого значит за него поручиться:
+ * вышел он на первую смену — это видно работодателям на карточке поручителя,
+ * не вышел — тоже записано. Работает это потому, что доверие работодателя на
+ * этом рынке дефицитнее денег: из двух одинаковых анкет берут ту, за которой
+ * кто-то стоит.
  *
- * Второе: суммы может не быть. Её назначает владелец, и до тех пор экран
- * просто не называет её — вместо того чтобы обещать неизвестное. Позвать
- * знакомого на нормальную смену человек может и без обещания денег, а обещание
- * без числа читается как обман.
+ * Отсюда и три числа вместо одного бодрого. Разрыв между «позвали» и «вышли» и
+ * есть весь смысл: считать регистрации — прямой путь Jobr, где платили за
+ * каждый отклик, к партнёрам полетели пустые заявки, и партнёры отключились.
  */
 export default function InviteScreen() {
   const router = useRouter();
@@ -109,8 +110,13 @@ export default function InviteScreen() {
             <View style={s.card}>
               <Text style={s.lead}>
                 Позовите знакомого, которому нужна работа. Когда он выйдет на
-                первую смену, {data.rewardRub ? 'мы начислим вам' : 'вам начислится'}
-                {data.rewardRub ? ` ${data.rewardRub.toLocaleString('ru-RU')} ₽` : ' вознаграждение'}.
+                первую смену, это встанет в вашу карточку: работодатели видят,
+                скольких вы привели и сколько из них вышли.
+              </Text>
+              <Text style={s.leadMuted}>
+                Денег за приглашение мы не платим — и не обещаем. Платит это
+                другим: из двух похожих анкет работодатель берёт ту, за которой
+                кто-то стоит.
               </Text>
 
               <Text style={s.codeLabel}>Ваш код</Text>
@@ -127,25 +133,31 @@ export default function InviteScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Два числа, а не одно: разрыв между ними и есть смысл правила
-                «платим за выход». Одно бодрое число скрывало бы его. */}
+            {/* Два числа крупно, третье — строкой под ними и только когда оно
+                есть. Три равных столбца на узком экране читаются как таблица,
+                а невышедшие — не столбец: это оговорка к первым двум. Прятать
+                её нельзя, иначе «вышли» перестаёт что-либо значить. */}
             <View style={s.stats}>
               <View style={s.stat}>
                 <Text style={s.statNum}>{data.invited}</Text>
-                <Text style={s.statLabel}>зарегистрировались</Text>
+                <Text style={s.statLabel}>позвали</Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.stat}>
-                <Text style={[s.statNum, { color: Colors.green }]}>{data.rewarded}</Text>
+                <Text style={[s.statNum, { color: Colors.green }]}>{data.worked}</Text>
                 <Text style={s.statLabel}>вышли на смену</Text>
               </View>
             </View>
+            {data.noShow > 0 ? (
+              <Text style={s.statsFoot}>Не вышли: {data.noShow}</Text>
+            ) : null}
 
             <View style={s.note}>
               <Ionicons name="information-circle-outline" size={rf(16)} color={Colors.textMuted} />
               <Text style={s.noteTxt}>
-                Вознаграждение — за выход на смену, а не за регистрацию. Так
-                работодатели получают тех, кто действительно приходит.
+                Считается выход на смену, а не регистрация. Поэтому зовите тех,
+                за кого готовы поручиться: их выход поднимает вашу карточку, их
+                невыход — тоже ваш.
               </Text>
             </View>
           </>
@@ -172,6 +184,7 @@ const s = StyleSheet.create({
     padding: rs(16), gap: rs(10),
   },
   lead: { fontSize: rf(15), lineHeight: rf(21), color: Colors.textPrimary },
+  leadMuted: { fontSize: rf(13), lineHeight: rf(19), color: Colors.textSecondary },
 
   codeLabel: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(6) },
   code: {
@@ -198,6 +211,10 @@ const s = StyleSheet.create({
   statNum: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary },
   statLabel: { fontSize: rf(12), color: Colors.textSecondary },
   statDivider: { width: 1, height: rs(34), backgroundColor: Colors.divider },
+  statsFoot: {
+    fontSize: rf(12), color: Colors.textMuted,
+    textAlign: 'center', marginTop: rs(-4),
+  },
 
   note: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(4) },
   noteTxt: { flex: 1, fontSize: rf(12), lineHeight: rf(17), color: Colors.textMuted },

@@ -528,6 +528,10 @@ define('USER_PUBLIC_COLS', implode(',', [
     'metro_line_id', 'metro_station', 'work_types', 'company', 'bio',
     'avatar_url', 'avg_rating', 'rating_count', 'is_blocked',
     'created_at', 'last_seen_at',
+    // Поручительство: скольких приведённых этот человек довёл до смены.
+    // Отдаётся всем, кто видит карточку, — в этом и смысл награды: она
+    // работает, только если её видит работодатель.
+    'referral_worked',
 ]));
 
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
@@ -1534,10 +1538,24 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  * видно, кто написал, а на экране блокировки — только «Новое сообщение».
  * Так же устроены WhatsApp и Signal со спрятанными предпросмотрами.
  */
-function notify_user(string $userId, string $title, string $body, string $type = '',
-                     array $data = [], ?string $pushBody = null,
-                     ?string $pushTitle = null, ?string $channelId = null): void {
-    if ($userId === '') return;
+/**
+ * Только колокольчик: строка в jm_notifications, без телеграма и без пуша.
+ *
+ * Есть новости, которые человек должен узнать, но за которые нельзя дёргать
+ * его телефон. Отказ по отклику — ровно такая: их много, они неприятные, и
+ * пуш по каждой кончается выключенными уведомлениями. А выключенные
+ * уведомления не вернуть — вместе с отказами человек перестанет получать и
+ * сообщения о мэтчах и о завтрашней смене, то есть ровно то, ради чего
+ * уведомления и нужны. Спрятать отказ тоже нельзя: молчание работодателя —
+ * самый опасный разрыв воронки, и он должен быть виден. Колокольчик и строка
+ * в переписке показывают его, не отнимая всего остального.
+ *
+ * Возвращает false, если писать не стали: пустой получатель или дубль в
+ * пределах минуты. notify_user на этом останавливается — раз строки нет, то
+ * и слать нечего.
+ */
+function notify_bell(string $userId, string $title, string $body, string $type = ''): bool {
+    if ($userId === '') return false;
 
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 60);
     $dup = sb_select('jm_notifications', [
@@ -1545,7 +1563,7 @@ function notify_user(string $userId, string $title, string $body, string $type =
         'title'      => 'eq.' . $title,
         'created_at' => 'gte.' . $since,
     ], 'id');
-    if ($dup) return;
+    if ($dup) return false;
 
     $row = ['user_id' => $userId, 'title' => $title, 'body' => $body];
     if ($type !== '') $row['type'] = $type;
@@ -1555,6 +1573,13 @@ function notify_user(string $userId, string $title, string $body, string $type =
         // Колонки type может не быть — пишем без неё, колокольчик важнее.
         sb_insert('jm_notifications', ['user_id' => $userId, 'title' => $title, 'body' => $body]);
     }
+    return true;
+}
+
+function notify_user(string $userId, string $title, string $body, string $type = '',
+                     array $data = [], ?string $pushBody = null,
+                     ?string $pushTitle = null, ?string $channelId = null): void {
+    if (!notify_bell($userId, $title, $body, $type)) return;
 
     $u = sb_single('jm_users', ['id' => 'eq.' . $userId], 'telegram_id,push_token');
     if (!$u) return;
@@ -2325,7 +2350,14 @@ function jt_shift_reject_announce(string $workerId, string $employerId, string $
     //
     // «Работодатель» в тексте не для вежливости: название компании бывает
     // любого рода, а так глагол согласуется всегда.
-    notify_user($workerId, '❌ Отклик отклонён',
+    //
+    // И только колокольчик — без пуша и без телеграма, см. notify_bell.
+    // Отказов много, они неприятные, и человек, разбуженный третьим за вечер,
+    // выключает уведомления целиком — вместе с теми, ради которых он их и
+    // включал. Узнать об отказе он всё равно узнает: колокольчик, строка в
+    // переписке и непрочитанное на вкладке никуда не делись, и в приложение
+    // он заходит сам, потому что ждёт ответа.
+    notify_bell($workerId, '❌ Отклик отклонён',
         'Работодатель отклонил ваш отклик на смену'
             . (trim($vacTitle) !== '' ? ' «' . trim($vacTitle) . '»' : '') . '.',
         'shift_rejected');
@@ -2386,6 +2418,10 @@ function jt_perm_app_announce(array $app, string $status): void
             'perm_approved');
         $line = 'Заявка на вакансию' . $named . ' одобрена. Обсудите детали выхода.';
     } else {
+        // Здесь пуш остаётся, в отличие от отказа по смене (см. notify_bell).
+        // Разница не в вежливости, а в частоте: смен человек перебирает
+        // десятки за вечер, а заявку на постоянную работу подаёт осознанно и
+        // ответа ждёт — такой отказ приходит редко и «просто так» не будит.
         notify_user($workerId, '❌ Заявка отклонена',
             $company . ' отклонили вашу заявку на «' . ($title ?: 'вакансию') . '».',
             'perm_rejected');
@@ -2532,22 +2568,34 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
         if ($invitedBy === '') return;
 
         $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
-        $verdict = ref_should_award($outcome, $invitedBy, $workerId, $existing !== null, $employerId);
+        $verdict = ref_should_record($outcome, $invitedBy, $workerId, $existing !== null, $employerId);
         if (!$verdict['ok']) return;
 
-        // Размер вознаграждения не зашит в код: его назначает владелец, и
-        // менять его правкой исходника было бы неудобно и опасно. Пока не
-        // назначен — запись всё равно заводится со статусом pending, чтобы
-        // потом было по чему платить: событие произошло, и потерять его
-        // нельзя, даже если цена ещё не решена.
+        // Денег здесь нет и не обещано: программа платит поручительством.
+        // Записываем оба итога — и выход, и невыход. Второй нужен не для
+        // наказания, а чтобы первый что-то значил: если считать только
+        // выходы, число на карточке набирается рассылкой кода сотне
+        // незнакомых людей, и работодателю оно ничего не говорит.
         sb_insert('jm_referral_rewards', [
             'id' => uid(),
             'inviter_id' => $invitedBy,
             'invitee_id' => $workerId,
             'like_id' => $likeId,
-            'status' => 'pending',
+            'outcome' => $outcome,
             'qualified_at' => now_iso(),
         ]);
+
+        // Счётчик на самом поручителе. Карточку кандидата работодатель видит
+        // списком, и считать по журналу на каждого значило бы сорок запросов
+        // на один экран. Пишется он только здесь, в том же заходе, что и
+        // строка журнала; журнал остаётся источником правды, а миграция 065
+        // пересчитывает счётчик из него, если инкремент когда-нибудь
+        // потеряется на гонке двух одновременных отметок.
+        if ($outcome === 'worked') {
+            $inviter = sb_single('jm_users', ['id' => 'eq.' . $invitedBy], 'id,referral_worked');
+            sb_update('jm_users', ['id' => 'eq.' . $invitedBy],
+                ['referral_worked' => (int)($inviter['referral_worked'] ?? 0) + 1]);
+        }
     } catch (Throwable $e) {
         // См. выше: итог смены важнее начисления.
     }
@@ -2740,21 +2788,18 @@ try {
                 $code = jt_referral_code_unique();
                 sb_update('jm_users', ['id' => 'eq.' . $me], ['referral_code' => $code]);
             }
-            // Размер вознаграждения — в настройках, а не в коде: его назначает
-            // владелец, и менять его правкой исходника с выкладкой было бы
-            // неудобно и опасно. Не назначен — экран просто не называет сумму,
-            // а не выдумывает её и не обещает пустое.
-            $rewardRow = sb_single('jm_settings', ['key' => 'eq.referral_reward_rub'], 'value');
-            $reward = (int)($rewardRow['value'] ?? 0);
-
+            // Суммы здесь нет и не будет: программа платит поручительством, а
+            // не деньгами. Три числа вместо одного бодрого — потому что смысл
+            // программы ровно в разрыве между ними: позвал, вышли, не вышли.
+            // Спрятать третье значило бы вернуться к счёту регистраций, за
+            // который Jobr и поплатился.
             $data = [
                 'code' => $code,
-                // Сколько позвал и за скольких начислено. Разница между этими
-                // числами — те, кто зарегистрировался, но ещё не вышел на
-                // смену: платим за выход, а не за регистрацию.
                 'invited' => sb_count('jm_users', ['invited_by' => 'eq.' . $me]),
-                'rewarded' => sb_count('jm_referral_rewards', ['inviter_id' => 'eq.' . $me]),
-                'rewardRub' => $reward > 0 ? $reward : null,
+                'worked' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.worked']),
+                'noShow' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.no_show']),
             ];
             break;
         }
@@ -3518,20 +3563,25 @@ try {
                     ->format('d.m.Y H:i') . ' МСК';
             }
 
-            // Приглашения. Начисления копятся со статусом pending и ждут
-            // решения владельца — а узнать о них ему неоткуда, кроме этого
-            // отчёта: события есть, сигнала нет.
+            // Приглашения. Денег в программе нет, ждать решения нечему —
+            // смотреть надо на то, доходят ли приведённые до смены. Три числа
+            // и есть ответ: если «пришли» растёт, а «вышли» стоит, программа
+            // приводит людей, которые не работают, и это хуже, чем её
+            // отсутствие.
             //
-            // Миграция 064 применяется руками, и до неё таблицы нет. Отчёт от
-            // этого не падает: sb_count возвращает 0 на любой неудаче, включая
-            // отсутствующую таблицу, — она не бросает исключений вовсе. То
-            // есть до миграции здесь будут честные нули, а не поломка.
-            $refPending = sb_count('jm_referral_rewards', ['status' => 'eq.pending']);
+            // Миграции 064 и 065 накатывает выкладка (infra/migrate.sh, до
+            // замены PHP), но отчёт запускается и на базе, где их ещё нет.
+            // Он от этого не падает: sb_count возвращает 0 на любой неудаче,
+            // включая отсутствующую таблицу и неизвестную колонку, — он не
+            // бросает исключений вовсе. То есть до миграции здесь будут
+            // честные нули, а не поломка.
+            $refWorked = sb_count('jm_referral_rewards', ['outcome' => 'eq.worked']);
+            $refNoShow = sb_count('jm_referral_rewards', ['outcome' => 'eq.no_show']);
             $refDay = sb_count('jm_users', [
                 'invited_by' => 'not.is.null', 'created_at' => 'gte.' . $cut24,
             ]);
             $referralLine = "🎁 Приглашения: пришли по коду за сутки <b>{$refDay}</b>"
-                . ", начислений ждёт решения <b>{$refPending}</b>";
+                . ", всего вышли на первую смену <b>{$refWorked}</b>, не вышли <b>{$refNoShow}</b>";
 
             // Согласия на обработку данных. Запись согласия — не аналитика, а
             // доказательство: именно её предъявляют, когда спрашивают, на
@@ -3587,10 +3637,11 @@ try {
                     $groupAlert = 'последний пост в группу «ПОДРАБОТКИ» не доставлен';
                 }
             }
-            // Накопившиеся начисления — долг перед людьми, которые свою часть
-            // уже сделали. Молчать о нём нельзя.
-            $referralAlert = $refPending >= 5
-                ? "начислений по приглашениям ждёт решения: {$refPending}" : '';
+            // Приглашённые, которые не выходят, — это не мелочь: поручительство
+            // держится на том, что число «вышли» чего-то стоит. Перекос в
+            // другую сторону значит, что кодом делятся с кем попало.
+            $referralAlert = $refNoShow > $refWorked && $refNoShow >= 3
+                ? "приглашённых не вышло на смену больше, чем вышло: {$refNoShow} против {$refWorked}" : '';
 
             $tomorrowMsk = gmdate('Y-m-d', $now + 3 * 3600 + 86400);
             $tomorrowShifts = sb_count('jm_vacancies', [

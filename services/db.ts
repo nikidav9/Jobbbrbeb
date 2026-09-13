@@ -244,6 +244,7 @@ function rowToUser(r: any): User {
     empScorePay: r.emp_score_pay != null ? Number(r.emp_score_pay) : undefined,
     empScoreKept: r.emp_score_kept != null ? Number(r.emp_score_kept) : undefined,
     confirmedSkills: Array.isArray(r.confirmed_skills) ? r.confirmed_skills : [],
+    referralWorked: r.referral_worked ?? 0,
   };
 }
 // NB: telegram_id намеренно НЕ входит в userToRow — привязка живёт только
@@ -277,17 +278,19 @@ function userToRow(u: User) {
  * Отдельная операция, а не поле пользователя: профиль любого человека
  * запрашивает кто угодно, и код приглашения уехал бы вместе с ним.
  *
- * `invited` — сколько зарегистрировалось по коду, `rewarded` — за скольких
- * начислено. Разница между ними это те, кто пришёл, но ещё не вышел на смену:
- * платим за выход, а не за регистрацию.
+ * Денег в программе нет: вознаграждение — поручительство, которое видно
+ * работодателю на карточке. Поэтому три числа, а не одно: разрыв между
+ * «позвали» и «вышли» и есть весь её смысл, а невышедшие не прячутся — без
+ * них «вышли» набирается рассылкой кода кому попало.
  */
 export type MyReferral = {
   code: string;
+  /** Сколько человек зарегистрировались по коду. */
   invited: number;
-  rewarded: number;
-  /** Размер вознаграждения. null — владелец ещё не назначил: экран тогда не
-   *  называет сумму, а не обещает неизвестное. Живёт в jm_settings, не в коде. */
-  rewardRub: number | null;
+  /** Из них вышли на первую смену. Это и есть поручительство. */
+  worked: number;
+  /** И не вышли. Число неприятное, но без него первое ничего не значит. */
+  noShow: number;
 };
 
 export async function dbGetMyReferral(userId: string): Promise<MyReferral | null> {
