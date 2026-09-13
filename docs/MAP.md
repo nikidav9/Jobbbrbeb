@@ -240,6 +240,8 @@
 - `public/robots.txt`, `public/sitemap.xml` — поисковые правила и карта только
   существующих публичных страниц; файловые URL без файла получают 404 в nginx.
 - `infra/bootstrap.sh` — сервер раз в минуту проверяет обновления и тянет их сам.
+- `infra/migrate.sh` накатывает новые SQL до замены PHP и сайта. Ошибка оставляет
+  прежний релиз на месте; следующий запуск таймера повторяет попытку.
 - Регулярные задачи: `evening-digest.yml` (16:00 UTC), `daily-nudges.yml` (07:00),
   `partner-monthly-report.yml`, `site-availability.yml` (каждые 5 минут).
 

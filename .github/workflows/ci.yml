@@ -91,6 +91,7 @@ jobs:
           python3 tests/referral_chain_test.py
           python3 tests/user_id_contract_test.py
           python3 tests/seo_infra_test.py
+          python3 tests/deploy_migration_order_test.py
 
       - name: Web build
         env:
