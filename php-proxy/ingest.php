@@ -252,7 +252,8 @@ function ing_normalize(array $it, string $sourceId): ?array
 /** Скачать одну страницу фида с жёстким ограничением размера. */
 function ing_fetch_page(string $url, array $hdrs, string $originHost): array
 {
-    if (!ing_safe_https_url($url)) {
+    $resolveEntries = ing_safe_https_resolve($url);
+    if ($resolveEntries === null) {
         return ['ok' => false, 'error' => 'запрещённый или непубличный HTTPS-адрес'];
     }
     $pageHost = strtolower((string)(parse_url($url, PHP_URL_HOST) ?? ''));
@@ -272,6 +273,7 @@ function ing_fetch_page(string $url, array $hdrs, string $originHost): array
         CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
         CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_RESOLVE => $resolveEntries,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
         CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {

@@ -11,13 +11,13 @@
  * но панель — не повод давать сборщику доступ к localhost, служебным IP и
  * метаданным облака.
  */
-function ing_safe_https_url(string $url): bool
+function ing_safe_https_resolve(string $url): ?array
 {
-    if (!filter_var($url, FILTER_VALIDATE_URL)) return false;
+    if (!filter_var($url, FILTER_VALIDATE_URL)) return null;
     $p = parse_url($url);
-    if (($p['scheme'] ?? '') !== 'https' || empty($p['host'])) return false;
+    if (($p['scheme'] ?? '') !== 'https' || empty($p['host'])) return null;
     $host = strtolower((string)$p['host']);
-    if ($host === 'localhost' || str_ends_with($host, '.local')) return false;
+    if ($host === 'localhost' || str_ends_with($host, '.local')) return null;
 
     $ips = [];
     if (filter_var($host, FILTER_VALIDATE_IP)) {
@@ -29,11 +29,24 @@ function ing_safe_https_url(string $url): bool
             if (!empty($record['ipv6'])) $ips[] = $record['ipv6'];
         }
     }
-    if (!$ips) return false;
+    if (!$ips) return null;
     foreach ($ips as $ip) {
         if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            return false;
+            return null;
         }
     }
-    return true;
+
+    // Передаём curl тот же адрес, который проверили. Иначе домен может между
+    // двумя DNS-запросами сменить публичный IP на внутренний (DNS rebinding).
+    $addresses = array_map(
+        fn($ip) => str_contains((string)$ip, ':') ? '[' . $ip . ']' : (string)$ip,
+        array_values(array_unique($ips))
+    );
+    $port = isset($p['port']) ? (int)$p['port'] : 443;
+    return [$host . ':' . $port . ':' . implode(',', $addresses)];
+}
+
+function ing_safe_https_url(string $url): bool
+{
+    return ing_safe_https_resolve($url) !== null;
 }

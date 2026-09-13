@@ -59,6 +59,8 @@ if (!$pages) cf_fail(422, 'у источника нет годных адрес�
 if ($page >= count($pages)) cf_fail(404, 'страница за пределами списка');
 
 $pageUrl = $pages[$page];
+$resolveEntries = ing_safe_https_resolve($pageUrl);
+if ($resolveEntries === null) cf_fail(422, 'адрес страницы больше не разрешается безопасно');
 
 $body = '';
 $tooLarge = false;
@@ -73,6 +75,7 @@ curl_setopt_array($ch, [
     // так обходят запрет на служебные сети.
     CURLOPT_FOLLOWLOCATION => false,
     CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+    CURLOPT_RESOLVE => $resolveEntries,
     CURLOPT_SSL_VERIFYPEER => true,
     CURLOPT_SSL_VERIFYHOST => 2,
     CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {
@@ -93,12 +96,9 @@ $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
 $error = curl_error($ch);
 curl_close($ch);
 
-// Проверка адреса разрешает имя в адрес сама, curl потом разрешает его ещё
-// раз — и между двумя разрешениями чужой сервер имён волен ответить иначе.
-// Так обходят запрет на служебные сети: первый ответ публичный, второй —
-// 127.0.0.1. Смотрим, к КОМУ мы в итоге пришли, и если это служебная сеть,
-// выбрасываем ответ, не разбирая: запрос уже ушёл, но содержимое чужой
-// внутренней службы наружу не попадёт.
+// CURLOPT_RESOLVE выше не даёт повторно разрешить имя, а эта проверка остаётся
+// вторым рубежом: если curl всё же пришёл не к закреплённому публичному адресу,
+// ответ не разбираем.
 if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
         FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
     cf_fail(502, 'страница увела на непубличный адрес');

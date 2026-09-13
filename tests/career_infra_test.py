@@ -27,6 +27,7 @@ def check(name: str, condition: bool) -> None:
 
 # ── Правило адреса одно на всех ───────────────────────────────────────────────
 check("правило адреса живёт отдельно", "function ing_safe_https_url" in safe)
+check("правило возвращает проверенный адрес для curl", "function ing_safe_https_resolve" in safe)
 check("приёмник берёт общее правило", "require_once __DIR__ . '/safe_url.php';" in ingest)
 check("сборщик берёт общее правило", "require_once __DIR__ . '/safe_url.php';" in career)
 # Своя копия рано или поздно разойдётся с оригиналом — и всегда в сторону
@@ -43,14 +44,15 @@ check("адреса из настроек фильтруются правило�
 # Редирект увёл бы нас на адрес, который проверку не проходил: так её и обходят.
 check("переходы по редиректу выключены", "CURLOPT_FOLLOWLOCATION => false" in career)
 check("только https на уровне curl", "CURLOPT_PROTOCOLS => CURLPROTO_HTTPS" in career)
+check("сборщик закрепляет проверенный DNS-адрес", "CURLOPT_RESOLVE => $resolveEntries" in career)
+check("приёмник закрепляет проверенный DNS-адрес", "CURLOPT_RESOLVE => $resolveEntries" in ingest)
 check("сертификат проверяется", "CURLOPT_SSL_VERIFYPEER => true" in career)
 check("имя в сертификате проверяется", "CURLOPT_SSL_VERIFYHOST => 2" in career)
 # Без предела чужой сервер кормил бы нас, пока не кончится память.
 check("размер страницы ограничен", "$tooLarge = true" in career)
 check("есть время ожидания", "CURLOPT_TIMEOUT" in career and "CURLOPT_CONNECTTIMEOUT" in career)
-# Проверка имени и разрешение имени в curl — два разных разрешения, и между
-# ними чужой сервер имён волен ответить иначе: сначала публичный адрес, потом
-# 127.0.0.1. Смотрим, к кому пришли на самом деле.
+# Адрес закреплён через CURLOPT_RESOLVE, но фактический адрес соединения всё
+# равно проверяем вторым рубежом.
 check("адрес, к которому пришли, читается", "CURLINFO_PRIMARY_IP" in career)
 # Проверяем само условие, а не наличие константы рядом: отключить сторожа,
 # оставив константу на месте, — самый простой способ его потерять.
