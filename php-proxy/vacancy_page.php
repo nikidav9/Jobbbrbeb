@@ -14,6 +14,9 @@
 // Только свои вакансии. Партнёрские сюда не попадают намеренно: их текст тот
 // же, что на hh.ru, и поисковик покажет первоисточник, а не нашу копию.
 
+// Сбой базы не означает, что вакансия исчезла. В строгом режиме отличаем
+// временную недоступность от настоящего 404, чтобы поисковик не удалил страницу.
+if (!defined('SB_STRICT')) define('SB_STRICT', true);
 require_once __DIR__ . '/sb_lite.php';
 require_once __DIR__ . '/vacancy_url.php';
 
@@ -32,6 +35,16 @@ function vp_404(): void
     echo vp_layout('Вакансия не найдена', '', '<h1>Вакансия не найдена</h1>'
         . '<p>Возможно, ссылка устарела. Посмотрите, что открыто сейчас:</p>'
         . '<p><a class="btn" href="' . VP_SITE . '/">Открыть JobToo</a></p>');
+    exit;
+}
+
+function vp_503(): void
+{
+    http_response_code(503);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Retry-After: 300');
+    echo vp_layout('Сервис временно недоступен', '',
+        '<h1>Сейчас не получится</h1><p>Мы чиним. Попробуйте через несколько минут.</p>');
     exit;
 }
 
@@ -251,7 +264,11 @@ $id = trim((string)($_GET['id'] ?? ''));
 if (!vacancy_id_is_url_safe($id)) vp_404();
 
 $table = $kind === 'shift' ? 'jm_vacancies' : 'jm_perm_vacancies';
-$row = sb_single($table, ['id' => 'eq.' . $id]);
+try {
+    $row = sb_single($table, ['id' => 'eq.' . $id]);
+} catch (Throwable $e) {
+    vp_503();
+}
 if (!$row) vp_404();
 
 vp_render(vp_normalize($row, $kind));

@@ -92,7 +92,9 @@ check("закрытая вакансия остаётся страницей", "
 # сообщает поисковику, что сайт опустел, и он выбрасывает страницы из выдачи.
 sitemap_src = (root / "php-proxy/sitemap.php").read_text(encoding="utf-8")
 landing_src = (root / "php-proxy/landing_page.php").read_text(encoding="utf-8")
-for name, text in (("карта сайта", sitemap_src), ("сводные страницы", landing_src)):
+vacancy_src = (root / "php-proxy/vacancy_page.php").read_text(encoding="utf-8")
+for name, text in (("карта сайта", sitemap_src), ("сводные страницы", landing_src),
+                   ("страница вакансии", vacancy_src)):
     check(f"{name}: строгий режим базы включён", "define('SB_STRICT', true)" in text)
     check(f"{name}: при сбое базы отдаётся 503", "http_response_code(503)" in text)
     check(f"{name}: роботу сказано вернуться", "Retry-After" in text)
