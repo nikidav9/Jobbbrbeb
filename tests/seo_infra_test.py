@@ -93,11 +93,40 @@ check("закрытая вакансия остаётся страницей", "
 sitemap_src = (root / "php-proxy/sitemap.php").read_text(encoding="utf-8")
 landing_src = (root / "php-proxy/landing_page.php").read_text(encoding="utf-8")
 vacancy_src = (root / "php-proxy/vacancy_page.php").read_text(encoding="utf-8")
+
+
+def catch_bodies(text: str) -> list[str]:
+    """Тела всех блоков `catch (Throwable ...)` в файле.
+
+    Наличия строки «503» в файле НЕДОСТАТОЧНО. На странице вакансии ответ 503
+    вынесен в отдельную функцию vp_503(), и проверка «в файле есть
+    http_response_code(503)» проходила даже тогда, когда эту функцию никто не
+    зовёт: страница с 503 есть, а при сбое базы до неё не доходит. Ровно та же
+    порода, что «диагностика записывается и не читается нигде».
+
+    Поэтому смотрим, что 503 достижим ИЗ обработчика сбоя.
+    """
+    bodies = []
+    start = 0
+    while True:
+        i = text.find("catch (Throwable", start)
+        if i < 0:
+            return bodies
+        end = text.find("\n}", i)
+        bodies.append(text[i:end if end > i else len(text)])
+        start = i + 1
+
+
 for name, text in (("карта сайта", sitemap_src), ("сводные страницы", landing_src),
                    ("страница вакансии", vacancy_src)):
     check(f"{name}: строгий режим базы включён", "define('SB_STRICT', true)" in text)
     check(f"{name}: при сбое базы отдаётся 503", "http_response_code(503)" in text)
     check(f"{name}: роботу сказано вернуться", "Retry-After" in text)
+    # Отдавать 503 умеет либо сам обработчик, либо функция вида *_503().
+    bodies = catch_bodies(text)
+    check(f"{name}: обработчик сбоя базы есть", bool(bodies))
+    check(f"{name}: сбой базы ДОВОДИТ до 503",
+          any("503" in b or re.search(r"\w+_503\(\)", b) for b in bodies))
 
 # Тонкая страница без содержания понижает весь сайт, а не только себя, поэтому
 # у сводных страниц есть порог, ниже которого страницы не существует.
