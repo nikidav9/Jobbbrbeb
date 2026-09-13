@@ -506,11 +506,12 @@ export default function ChatRoom() {
         // Строку и уведомление пишет СЕРВЕР тем же запросом, что меняет
         // статус (jt_perm_app_announce). Отсюда они уходили «выстрелил и
         // забыл», а сообщение от имени «system» приложению вообще запрещено —
-        // сервер отвечал 403, и отказ гасился пустым .catch(). Здесь осталась
-        // только дорисовка на месте, чтобы директор увидел строку сразу.
-        const okMsg: Message = { id: uid(), senderId: 'system',
-          text: 'Кандидат одобрен на вакансию. Обсудите детали выхода.', timestamp: nowISO() };
-        appendMessages([okMsg]);
+        // сервер отвечал 403, и отказ гасился пустым .catch().
+        //
+        // Свой текст здесь больше не рисуем: он жил бы вторым местом и
+        // разъехался бы с серверным. Вместо этого сразу перечитываем
+        // переписку — тем же опросом, что и обычно.
+        pollRef.current?.();
         refreshPermApplications?.().catch(() => {});
         refreshChats().catch(() => {});
         return;
@@ -545,10 +546,10 @@ export default function ChatRoom() {
     try {
       const workerId = chat.workerId;
       const vacId = chat.vacancyId;
-      const rejectMsg = 'Вы не подошли по данной вакансии. Чат закрыт.';
-      const optimisticMsg: Message = { id: uid(), senderId: 'system', text: rejectMsg, timestamp: nowISO() };
+      // Текст строки об отказе — на сервере, и только там. Здесь его
+      // дорисовывали на месте, и он же уходил записью от имени «system»,
+      // которую сервер отвергал: директор видел одно, соискатель — ничего.
       setLikeStatus('rejected');
-      appendMessages([optimisticMsg]);
 
       if (permVacancy) {
         if (permApp) {
@@ -557,6 +558,7 @@ export default function ChatRoom() {
           await dbSetPermApplicationStatus(permApp.id, 'rejected');
           refreshPermApplications?.().catch(() => {});
         }
+        pollRef.current?.();
         refreshChats().catch(() => {});
         return;
       }
@@ -565,8 +567,8 @@ export default function ChatRoom() {
       // запросом. Отсюда строка не доходила никогда: писать от имени «system»
       // приложению запрещено, сервер отвечал 403, и отказ гасился пустым
       // .catch(). Счётчик при этом рос — значок был, а за ним пусто.
-      await dbUpsertLike(vacId, workerId, currentUser.id,
-        { employerLiked: false, announceInChat: true });
+      await dbUpsertLike(vacId, workerId, currentUser.id, { employerLiked: false });
+      pollRef.current?.();
       refreshChats().catch(() => {});
     } catch (e) {
       console.error('[ChatRoom] handleRejectConfirmed error', e);

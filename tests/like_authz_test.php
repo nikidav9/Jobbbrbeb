@@ -91,28 +91,62 @@ check('нечитаемый довод не роняет запрос',
 $ann = fn_body($db, 'jt_shift_reject_announce');
 check('объявление отказа есть', $ann !== '');
 check('строка пишется от имени системы', str_contains($ann, "'sender_id' => 'system'"));
-check('текст тот же, что видит работодатель',
-    str_contains($ann, 'Вы не подошли по данной вакансии. Чат закрыт.')
-    && str_contains($chat, 'Вы не подошли по данной вакансии. Чат закрыт.'));
+// Прежний текст не говорил, ПО КАКОЙ вакансии отказ, — а чат один на пару
+// людей, и речь в нём идёт о нескольких сменах подряд.
+check('смена названа',
+    str_contains($ann, "\$named = \$title !== '' ? ' «' . \$title . '»' : '';")
+    && str_contains($ann, "'Отклик на смену' . \$named . ' отклонён."));
+
+// Уведомление — и оно важнее строки. Чат заводится только на мэтче: у того,
+// кому отказали с экрана «Кандидаты», переписки обычно нет вовсе, и без
+// уведомления отказ до него не дойдёт никак. Это и было самым частым
+// молчанием, ради него правку и делали.
+check('уведомление уходит', str_contains($ann, "notify_user(\$workerId, '❌ Отклик отклонён'"));
+$notifyAt = strpos($ann, 'notify_user($workerId');
+$chatAt = strpos($ann, "sb_single('jm_chats'");
+check('уведомление уходит ДО поиска переписки, а не вместо',
+    $notifyAt !== false && $chatAt !== false && $notifyAt < $chatAt);
+check('уведомление не зависит от наличия переписки',
+    $notifyAt !== false && $notifyAt < strpos($ann, "if (!\$chat) return '';"));
+// Название компании бывает любого рода — безличное «работодатель» согласуется
+// с глаголом всегда.
+check('в уведомлении нет угадывания рода',
+    str_contains($ann, "'Работодатель отклонил ваш отклик на смену'"));
+// А вот про закрытую переписку оставляем: экран действительно блокирует ввод
+// по отклонённому отклику, и без этой фразы человек упрётся в серый ввод и не
+// поймёт, почему.
+check('про закрытую переписку сказано', str_contains($ann, 'Переписка по ней закрыта.'));
+check('ввод и правда блокируется',
+    str_contains($chat, "const isChatBlocked = likeStatus === 'rejected'"));
+// Текст живёт в ОДНОМ месте. На клиенте его быть не должно: там он и
+// разъехался бы, и уходил записью, которую сервер отвергает.
+check('приложение своего текста об отказе не держит',
+    !str_contains($chat, 'Отклик на смену'));
 check('счётчик непрочитанного растёт',
     str_contains($ann, "'unread_worker' => (int)(\$chat['unread_worker'] ?? 0) + 1"));
-check('без переписки не пишем', str_contains($ann, 'if (!$chat) return;'));
+check('без переписки не пишем', str_contains($ann, "if (!\$chat) return '';"));
 
 // Объявляем только на переходе в отказ: повторное нажатие не должно писать
 // вторую строку, а одобрение — вообще никакой.
 check('объявляем только на переходе в отказ',
     str_contains($h, "\$justRejected = \$row['employer_liked'] === false && \$base['employer_liked'] !== false;"));
-// Признак приходит с клиента намеренно: строку пишем только там, где экран её и
-// показывал. С «Кандидатов» и «Мэтчей» отказ по-прежнему молчит — менять это
-// решение за владельцем проекта.
-check('строку пишем только по просьбе экрана переписки',
-    str_contains($h, "(\$upd['announceInChat'] ?? false) === true"));
-check('переписка эту просьбу шлёт',
-    str_contains($chat, 'employerLiked: false, announceInChat: true'));
-check('«Кандидаты» её не шлют', !str_contains($candidates, 'announceInChat'));
-check('«Мэтчи» её не шлют', !str_contains($matches, 'announceInChat'));
-check('клиентский слой знает про этот довод',
-    str_contains($dbts, 'announceInChat?: boolean'));
+// Объявляем со ВСЕХ экранов, где отказывают. Признака-выключателя больше нет:
+// пока он был, «Кандидаты» и «Мэтчи» молчали — человек не узнавал об отказе
+// никак. Включено по решению владельца проекта.
+check('выключателя не осталось',
+    !str_contains($db, 'announceInChat') && !str_contains($dbts, 'announceInChat')
+    && !str_contains($chat, 'announceInChat')
+    && !str_contains($candidates, 'announceInChat') && !str_contains($matches, 'announceInChat'));
+check('название смены доходит до строки',
+    str_contains($h, "jt_shift_reject_announce((string)\$wid, \$vacEmployer, (string)(\$vac['title'] ?? ''))"));
+// Все три экрана отказывают одним и тем же вызовом — значит и строка будет
+// одна и та же, откуда бы ни нажали.
+check('переписка отказывает через общий вызов',
+    str_contains($chat, 'employerLiked: false'));
+check('«Кандидаты» отказывают через общий вызов',
+    str_contains($candidates, 'employerLiked: false'));
+check('«Мэтчи» отказывают через общий вызов',
+    str_contains($matches, 'employerLiked: false'));
 
 // ── Приложение больше не пытается писать от имени «system» ────────────────────
 check('переписка не пишет отказ сама',
