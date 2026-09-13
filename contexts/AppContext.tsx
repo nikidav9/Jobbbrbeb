@@ -667,7 +667,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // записи и стираем СРАЗУ после: чужой код, оставшийся в хранилище, был бы
     // приписан следующему, кто зарегистрируется на этом телефоне.
     const referralCode = (await getPendingReferral()) ?? undefined;
-    await dbUpsertUser(u, referralCode);
+    // Согласие передаём ТЕМ ЖЕ запросом. Отдельный вызов ниже оставлен для
+    // совместимости со старым сервером и безвреден: запись перезаписывает ту
+    // же строку, а не плодит вторую.
+    await dbUpsertUser(u, referralCode, { stamp: LEGAL_STAMP, docs: legalVersions() });
     if (referralCode) void clearPendingReferral();
     // Если человек пришёл из гостевого просмотра, замыкаем анонимную
     // воронку. user_id не связываем с anon_id и в событие не передаём.

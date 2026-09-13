@@ -409,13 +409,24 @@ export async function dbChangePassword(
  * назначает себе сам, а кто его привёл — решает сервер. Он же находит
  * владельца кода и записывает связь, и только один раз, при создании.
  */
-export async function dbUpsertUser(u: User, referralCode?: string): Promise<void> {
+export type ConsentPayload = { stamp: string; docs: Record<string, string> };
+
+export async function dbUpsertUser(
+  u: User,
+  referralCode?: string,
+  consent?: ConsentPayload,
+): Promise<void> {
   const { avg_rating, rating_count, ...row } = userToRow(u);
   // Пустой пароль не отправляем: он означает «профиль пришёл без пароля»
   // (вход его больше не отдаёт), а не «стереть пароль».
   if (!row.password) delete (row as Partial<typeof row>).password;
   if (IS_NATIVE) {
-    const args: unknown[] = referralCode ? [row, referralCode] : [row];
+    // Согласие идёт ТЕМ ЖЕ запросом, что создаёт человека. Отдельным вызовом
+    // оно терялось при любом обрыве связи, а запись согласия — доказательство,
+    // а не аналитика.
+    const args: unknown[] = consent
+      ? [row, referralCode ?? '', consent]
+      : (referralCode ? [row, referralCode] : [row]);
     const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', args);
     if (d?.session_token) await saveSessionToken(d.session_token);
     return;

@@ -2066,6 +2066,70 @@ function jt_group_html(array $v, string $kind): string
     return $out . "\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇";
 }
 
+
+/**
+ * Список значений для фильтра PostgREST `in.(…)`.
+ *
+ * Складывать значения через запятую напрямую нельзя: id пользователя приходит
+ * с клиента при регистрации и формат его никто не проверяет. Запятая внутри
+ * разорвала бы список на два значения, а скобка — сломала бы запрос целиком, и
+ * тогда падает всё, что этот запрос делает. Мой счётчик согласий в суточном
+ * отчёте именно так и уронил бы весь отчёт.
+ *
+ * PostgREST разрешает брать значение в двойные кавычки; внутри них кавычка
+ * экранируется обратной косой.
+ */
+function sb_in_list(array $values): string
+{
+    $quoted = [];
+    foreach ($values as $v) {
+        $quoted[] = '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], (string)$v) . '"';
+    }
+    return 'in.(' . implode(',', $quoted) . ')';
+}
+
+/**
+ * Записать согласие в тот же заход, что создал человека.
+ *
+ * Раньше согласие писалось ОТДЕЛЬНЫМ запросом с клиента, и запрос этот был
+ * «выстрелил и забыл»: void dbRecordConsent(...) без ожидания, без повтора,
+ * без обработки отказа. Регистрация идёт с телефона, часто на плохой связи —
+ * сеть моргнула, и человек зарегистрирован, а записи о том, что он принял
+ * условия, нет. Узнать об этом было неоткуда.
+ *
+ * Запись согласия — не аналитика, а доказательство: именно её предъявляют,
+ * когда спрашивают, на каком основании мы обрабатываем данные человека.
+ *
+ * Идентификатор строки тот же, что в dbRecordConsent: человек плюс отпечаток
+ * набора документов. Поэтому повторный вызов с клиента (старые версии
+ * приложения его ещё делают) перезаписывает ту же строку, а не плодит вторую.
+ *
+ * Отказ не роняет регистрацию — отказать человеку в регистрации из-за сбоя
+ * записи было бы хуже. Зато молчания больше нет: суточный отчёт считает тех,
+ * кто зарегистрировался без согласия, и поднимает тревогу.
+ */
+
+function jt_consent_attach(string $uid, $payload): void
+{
+    if (!is_array($payload)) return;
+    $stamp = trim((string)($payload['stamp'] ?? ''));
+    if ($stamp === '') return;
+    $docs = is_array($payload['docs'] ?? null) ? $payload['docs'] : [];
+
+    try {
+        sb_upsert('jm_consents', [
+            'id'          => $uid . ':' . substr(hash('sha256', $stamp), 0, 16),
+            'user_id'     => $uid,
+            'stamp'       => $stamp,
+            'docs'        => $docs,
+            'source'      => 'registration',
+            'accepted_at' => now_iso(),
+        ], 'id');
+    } catch (Throwable $e) {
+        // См. выше: регистрацию не роняем, но и не молчим — считается в отчёте.
+    }
+}
+
 function jt_referral_attach(string $uid, string $rawCode): void
 {
     try {
@@ -2468,7 +2532,12 @@ try {
             // Теперь худшее, что может случиться до миграции, — человек
             // зарегистрируется без кода приглашения. Код ему всё равно
             // заведётся при первом заходе на экран приглашения.
-            if (!$existing) jt_referral_attach($uid, (string)($args[1] ?? ''));
+            if (!$existing) {
+                jt_referral_attach($uid, (string)($args[1] ?? ''));
+                // Согласие — в этом же заходе. Отдельным запросом оно терялось
+                // при любом обрыве связи, см. jt_consent_attach.
+                jt_consent_attach($uid, $args[2] ?? null);
+            }
             $data = ['session_token' => $existing ? null : jt_session_issue($uid)];
             break;
         }
@@ -3114,6 +3183,33 @@ try {
             $referralLine = "🎁 Приглашения: пришли по коду за сутки <b>{$refDay}</b>"
                 . ", начислений ждёт решения <b>{$refPending}</b>";
 
+            // Согласия на обработку данных. Запись согласия — не аналитика, а
+            // доказательство: именно её предъявляют, когда спрашивают, на
+            // каком основании мы обрабатываем данные человека. Теперь она
+            // пишется в том же заходе, что создаёт человека, но если запись
+            // всё же не легла, молчать об этом нельзя.
+            $consentGap = 0;
+            $newIds = array_column(sb_select_all('jm_users', [
+                'created_at' => 'gte.' . $cut24,
+            ], 'id'), 'id');
+            if ($newIds) {
+                $withConsent = [];
+                foreach (array_chunk($newIds, 100) as $chunk) {
+                    foreach (sb_select_all('jm_consents', [
+                        'user_id' => sb_in_list($chunk),
+                    ], 'user_id') as $c) {
+                        $withConsent[(string)($c['user_id'] ?? '')] = true;
+                    }
+                }
+                foreach ($newIds as $id) {
+                    if (!isset($withConsent[(string)$id])) $consentGap++;
+                }
+            }
+            $consentLine = '📝 Согласий: ' . (count($newIds) - $consentGap) . ' из ' . count($newIds)
+                . ' зарегистрировавшихся за сутки';
+            $consentAlert = $consentGap > 0
+                ? "зарегистрировались без записи о согласии: {$consentGap}" : '';
+
             // Публикация в группу «ПОДРАБОТКИ». Итог последней записывался в
             // jm_settings и не читался НИГДЕ: в коде так и сказано — «иначе
             // выяснять причину будет нечем», — а читателя не было. Из-за этого
@@ -3158,6 +3254,7 @@ try {
             foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
             if ($referralAlert !== '') $alerts[] = $referralAlert;
             if ($groupAlert !== '') $alerts[] = $groupAlert;
+            if ($consentAlert !== '') $alerts[] = $consentAlert;
             if ($newWorkers === 0 && $previousWorkers > 0) {
                 $alerts[] = 'новых работников — 0, хотя накануне были';
             }
@@ -3177,6 +3274,7 @@ try {
             $lines[] = $health['line'];
             $lines[] = $referralLine;
             if ($groupLine !== '') $lines[] = $groupLine;
+            $lines[] = $consentLine;
             $lines[] = "📅 Открытых смен на завтра: <b>{$tomorrowShifts}</b>";
             $bounceRate = number_format($metrika['bounce_rate'], 1, ',', ' ');
             $trafficSources = $metrika['sources'];
