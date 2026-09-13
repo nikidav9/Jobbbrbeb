@@ -681,6 +681,23 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Пригласить друга — отдельной строкой, не внутри «Аккаунта».
+            Склад это среда с плотными связями: люди зовут знакомых и без нас.
+            Спрятать такую строку под раскрывающуюся карточку значит выключить
+            то, что и так происходит само. */}
+        <View style={sS.card}>
+          <TouchableOpacity style={sS.header} onPress={() => router.push('/invite')} activeOpacity={0.7}>
+            <View style={[sS.iconSquare, { backgroundColor: Colors.green }]}>
+              <Ionicons name="gift" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={sS.title}>Пригласить друга</Text>
+              <Text style={sS.summary} numberOfLines={1}>Вышел на смену — вам вознаграждение</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
         {/* Аккаунт — все действия с учётной записью в одном месте */}
         <SectionCard
           iconName="shield-checkmark"

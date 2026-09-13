@@ -281,7 +281,14 @@ function userToRow(u: User) {
  * начислено. Разница между ними это те, кто пришёл, но ещё не вышел на смену:
  * платим за выход, а не за регистрацию.
  */
-export type MyReferral = { code: string; invited: number; rewarded: number };
+export type MyReferral = {
+  code: string;
+  invited: number;
+  rewarded: number;
+  /** Размер вознаграждения. null — владелец ещё не назначил: экран тогда не
+   *  называет сумму, а не обещает неизвестное. Живёт в jm_settings, не в коде. */
+  rewardRub: number | null;
+};
 
 export async function dbGetMyReferral(userId: string): Promise<MyReferral | null> {
   if (!IS_NATIVE) return null;

@@ -81,7 +81,7 @@ function ref_can_attribute(?string $inviterId, string $inviteeId, bool $inviteeE
  * $workerId       — сам работник;
  * $rewardExists   — есть ли уже начисление за этого работника.
  */
-function ref_should_award(string $outcome, ?string $invitedBy, string $workerId, bool $rewardExists): array
+function ref_should_award(string $outcome, ?string $invitedBy, string $workerId, bool $rewardExists, ?string $employerId = null): array
 {
     // Единственный итог, за который платим. Ни отклик, ни матч, ни выход на
     // связь — только отработанная смена. См. заголовок файла.
@@ -92,5 +92,13 @@ function ref_should_award(string $outcome, ?string $invitedBy, string $workerId,
     // приглашение, а доля с чужого заработка, и стоимость программы
     // перестаёт быть предсказуемой.
     if ($rewardExists) return ['ok' => false, 'reason' => 'за этого работника уже начислено'];
+    // Пригласивший не может быть работодателем той самой смены. Иначе это
+    // замкнутый круг: работодатель зовёт работника, нанимает его, сам
+    // закрывает смену как отработанную и сам себе начисляет вознаграждение.
+    // Ни одного постороннего в этой цепочке нет, а значит нет и того, за что
+    // мы платим, — приведённого со стороны человека.
+    if ($employerId !== null && $employerId !== '' && $invitedBy === $employerId) {
+        return ['ok' => false, 'reason' => 'пригласивший — работодатель этой смены'];
+    }
     return ['ok' => true, 'reason' => ''];
 }

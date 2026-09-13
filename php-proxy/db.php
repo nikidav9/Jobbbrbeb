@@ -1978,7 +1978,7 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
         if ($invitedBy === '') return;
 
         $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
-        $verdict = ref_should_award($outcome, $invitedBy, $workerId, $existing !== null);
+        $verdict = ref_should_award($outcome, $invitedBy, $workerId, $existing !== null, $employerId);
         if (!$verdict['ok']) return;
 
         // Размер вознаграждения не зашит в код: его назначает владелец, и
@@ -2186,6 +2186,13 @@ try {
                 $code = jt_referral_code_unique();
                 sb_update('jm_users', ['id' => 'eq.' . $me], ['referral_code' => $code]);
             }
+            // Размер вознаграждения — в настройках, а не в коде: его назначает
+            // владелец, и менять его правкой исходника с выкладкой было бы
+            // неудобно и опасно. Не назначен — экран просто не называет сумму,
+            // а не выдумывает её и не обещает пустое.
+            $rewardRow = sb_single('jm_settings', ['key' => 'eq.referral_reward_rub'], 'value');
+            $reward = (int)($rewardRow['value'] ?? 0);
+
             $data = [
                 'code' => $code,
                 // Сколько позвал и за скольких начислено. Разница между этими
@@ -2193,6 +2200,7 @@ try {
                 // смену: платим за выход, а не за регистрацию.
                 'invited' => sb_count('jm_users', ['invited_by' => 'eq.' . $me]),
                 'rewarded' => sb_count('jm_referral_rewards', ['inviter_id' => 'eq.' . $me]),
+                'rewardRub' => $reward > 0 ? $reward : null,
             ];
             break;
         }
