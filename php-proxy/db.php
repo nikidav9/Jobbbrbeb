@@ -2956,6 +2956,25 @@ try {
                     ->format('d.m.Y H:i') . ' МСК';
             }
 
+            // Приглашения. Начисления копятся со статусом pending и ждут
+            // решения владельца — а узнать о них ему неоткуда, кроме этого
+            // отчёта: события есть, сигнала нет.
+            //
+            // Миграция 064 применяется руками, и до неё таблицы нет. Отчёт от
+            // этого не падает: sb_count возвращает 0 на любой неудаче, включая
+            // отсутствующую таблицу, — она не бросает исключений вовсе. То
+            // есть до миграции здесь будут честные нули, а не поломка.
+            $refPending = sb_count('jm_referral_rewards', ['status' => 'eq.pending']);
+            $refDay = sb_count('jm_users', [
+                'invited_by' => 'not.is.null', 'created_at' => 'gte.' . $cut24,
+            ]);
+            $referralLine = "🎁 Приглашения: пришли по коду за сутки <b>{$refDay}</b>"
+                . ", начислений ждёт решения <b>{$refPending}</b>";
+            // Накопившиеся начисления — долг перед людьми, которые свою часть
+            // уже сделали. Молчать о нём нельзя.
+            $referralAlert = $refPending >= 5
+                ? "начислений по приглашениям ждёт решения: {$refPending}" : '';
+
             $tomorrowMsk = gmdate('Y-m-d', $now + 3 * 3600 + 86400);
             $tomorrowShifts = sb_count('jm_vacancies', [
                 'status' => 'eq.open', 'date' => 'eq.' . $tomorrowMsk,
@@ -2966,6 +2985,7 @@ try {
             // Тревога по каждому источнику отдельно: общий максимум по всем
             // молчал, только когда умирали все сразу.
             foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
+            if ($referralAlert !== '') $alerts[] = $referralAlert;
             if ($newWorkers === 0 && $previousWorkers > 0) {
                 $alerts[] = 'новых работников — 0, хотя накануне были';
             }
@@ -2983,6 +3003,7 @@ try {
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
             $lines[] = $health['line'];
+            $lines[] = $referralLine;
             $lines[] = "📅 Открытых смен на завтра: <b>{$tomorrowShifts}</b>";
             $bounceRate = number_format($metrika['bounce_rate'], 1, ',', ' ');
             $trafficSources = $metrika['sources'];
