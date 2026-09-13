@@ -93,7 +93,9 @@ foreach ($decoded['items'] as $vacancy) {
     ];
     if ($company !== '') $item['company'] = $company;
     if ($address !== '') $item['address'] = $address;
-    if ($metro !== '') $item['metro_station'] = $metro;
+    // Ключ именно 'metro': ingest.php читает его, а не 'metro_station'.
+    // Ошибка в имени ничего не ломает вслух — станция просто пропадает.
+    if ($metro !== '') $item['metro'] = $metro;
     if ($salary > 0) $item['pay'] = $salary;
     if ($scheduleText !== '') $item['schedule'] = $scheduleText;
     if ($description !== '') $item['description'] = $description;
