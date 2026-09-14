@@ -1053,17 +1053,13 @@ export async function fetchFunnel() {
     { data: likes },
     { data: permApps },
     { data: guestEvents },
-    { data: shiftViews },
-    { data: permViews },
     cohortUsers,
     cohortLikes,
   ] = await Promise.all([
-    supabase.from('jm_users').select('id,role,created_at,first_name,last_name,metro_station,work_types'),
+    supabase.from('jm_users').select('id,role,created_at'),
     supabase.from('jm_likes').select('id,worker_id,is_match,worker_liked,worker_confirmed,employer_confirmed,shift_completed,created_at'),
     supabase.from('jm_perm_applications').select('id,worker_id,status,created_at'),
     supabase.from('jm_guest_events').select('anon_id,event_type,vacancy_kind,campaign_id,channel,occurred_at'),
-    supabase.from('jm_vacancy_views').select('worker_id'),
-    supabase.from('jm_perm_vacancy_views').select('worker_id'),
     selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
     selectAllBetween(
       'jm_likes',
@@ -1078,8 +1074,6 @@ export async function fetchFunnel() {
   const lk = likes ?? []
   const ap = permApps ?? []
   const ge = guestEvents ?? []
-  const sv = shiftViews ?? []
-  const pv = permViews ?? []
 
   const workers = u.filter((x: any) => x.role === 'worker')
 
@@ -1087,41 +1081,6 @@ export async function fetchFunnel() {
   const matchedLk = lk.filter((l: any) => l.is_match)
   const confirmedLk = lk.filter((l: any) => l.worker_confirmed && l.employer_confirmed)
   const completedLk = lk.filter((l: any) => l.shift_completed)
-
-  const profileCompleteWorkers = workers.filter((w: any) => {
-    const types = Array.isArray(w.work_types) ? w.work_types : []
-    return Boolean(
-      String(w.first_name ?? '').trim()
-      && String(w.last_name ?? '').trim()
-      && String(w.metro_station ?? '').trim()
-      && types.length > 0
-    )
-  })
-  const viewedWorkerIds = new Set([
-    ...sv.map((v: any) => v.worker_id),
-    ...pv.map((v: any) => v.worker_id),
-  ].filter(Boolean))
-  const applicantWorkerIds = new Set([
-    ...likedLk.map((l: any) => l.worker_id),
-    ...ap.map((a: any) => a.worker_id),
-  ].filter(Boolean))
-  const workerRegMap: Record<string, string> = {}
-  for (const usr of workers) workerRegMap[(usr as any).id] = (usr as any).created_at
-  const firstApplication: Record<string, string> = {}
-  for (const event of [...likedLk, ...ap]) {
-    const wid = (event as any).worker_id
-    const at = (event as any).created_at
-    if (wid && at && (!firstApplication[wid] || at < firstApplication[wid])) {
-      firstApplication[wid] = at
-    }
-  }
-  let activated7d = 0
-  for (const wid of Object.keys(firstApplication)) {
-    const reg = workerRegMap[wid]
-    if (!reg) continue
-    const elapsed = new Date(firstApplication[wid]).getTime() - new Date(reg).getTime()
-    if (elapsed >= 0 && elapsed <= 7 * 86400_000) activated7d++
-  }
 
   const shiftsByWorker: Record<string, number> = {}
   for (const l of completedLk) {
@@ -1242,8 +1201,11 @@ export async function fetchFunnel() {
   ]
 
   const cohortColors = [PALETTE.blue, PALETTE.cyan, PALETTE.purple, PALETTE.orange, PALETTE.green]
-  const mainFunnel = buildWorkerShiftCohort(cohortUsers, cohortLikes, funnelNow).steps
+  const workerCohort = buildWorkerShiftCohort(cohortUsers, cohortLikes, funnelNow)
+  const mainFunnel = workerCohort.steps
     .map((step, index) => ({ ...step, fill: cohortColors[index] }))
+  const [cohortWorkers, cohortApplied, cohortMatched, cohortConfirmed, cohortWorked] =
+    workerCohort.steps.map(step => step.value)
 
   const eventFunnel = [
     { name: 'Лайки воркеров', value: likedLk.length, fill: PALETTE.blue },
@@ -1261,16 +1223,16 @@ export async function fetchFunnel() {
   return {
     kpi: {
       workers: workers.length,
-      profileCompleteWorkers: profileCompleteWorkers.length,
-      profileCompleteRate: workers.length > 0
-        ? ((profileCompleteWorkers.length / workers.length) * 100).toFixed(1) : '0',
-      viewedWorkers: viewedWorkerIds.size,
-      viewedRate: workers.length > 0
-        ? ((viewedWorkerIds.size / workers.length) * 100).toFixed(1) : '0',
-      activatedWorkers: applicantWorkerIds.size,
-      activationRate: workers.length > 0
-        ? ((applicantWorkerIds.size / workers.length) * 100).toFixed(1) : '0',
-      activation7d: workers.length > 0 ? ((activated7d / workers.length) * 100).toFixed(1) : '0',
+      cohortWorkers,
+      cohortApplied,
+      cohortMatched,
+      cohortConfirmed,
+      cohortWorked,
+      cohortApplyRate: pct(cohortApplied, cohortWorkers),
+      cohortMatchRate: pct(cohortMatched, cohortApplied),
+      cohortConfirmRate: pct(cohortConfirmed, cohortMatched),
+      cohortWorkRate: pct(cohortWorked, cohortWorkers),
+      cohortBiggestDrop: workerCohort.biggestDrop,
       totalLikes: likedLk.length,
       totalMatches: matchedLk.length,
       matchRate: likedLk.length > 0 ? ((matchedLk.length / likedLk.length) * 100).toFixed(1) : '0',
