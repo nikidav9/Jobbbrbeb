@@ -1,0 +1,84 @@
+name: Production SEO audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/seo-production-audit.py
+      - php-proxy/vacancy_page.php
+      - php-proxy/landing_page.php
+      - php-proxy/sitemap.php
+      - public/robots.txt
+      - infra/nginx-site.conf
+      - .github/workflows/seo-production-audit.yml
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobtoo-production-seo-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверить живой SEO-контур
+        id: audit
+        continue-on-error: true
+        run: |
+          set +e
+          python3 scripts/seo-production-audit.py \
+            --base https://jobtoo.ru \
+            --samples 12 \
+            --json "$RUNNER_TEMP/seo-production-report.json"
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Сводка замера
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ['RUNNER_TEMP']) / 'seo-production-report.json'
+          print('## Production SEO — jobtoo.ru')
+          if not p.exists():
+              print('Отчёт не создан: аудит завершился до записи JSON.')
+              raise SystemExit(0)
+          r = json.loads(p.read_text())
+          s = r.get('sitemap', {})
+          t = r.get('timings_ms', {})
+          print(f"- sitemap: **{s.get('total', 0)}** URL")
+          print(f"- свои вакансии/смены: **{s.get('vacancy_pages', 0)}**")
+          print(f"- сводные `/rabota/`: **{s.get('landing_pages', 0)}**")
+          print(f"- выборка страниц: **{t.get('count', 0)}**, median **{t.get('median', 0)} ms**, p95 **{t.get('p95', 0)} ms**")
+          failures = r.get('failures', [])
+          print(f"- результат: {'✅ OK' if not failures else '❌ ' + str(len(failures)) + ' ошибок'}")
+          if failures:
+              print('\n### Ошибки')
+              for item in failures[:30]:
+                  print(f'- {item}')
+          print('\n### Партнёрские вакансии')
+          print('Отдельные копии карточек источников в sitemap не добавляем. Партнёрские данные используются в уникальных агрегированных `/rabota/` страницах.')
+          PY
+
+      - name: Сохранить полный отчёт
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-seo-${{ github.run_id }}
+          path: ${{ runner.temp }}/seo-production-report.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Завершить ошибкой при SEO-регрессии
+        if: steps.audit.outputs.exit_code != '0'
+        run: exit 1
