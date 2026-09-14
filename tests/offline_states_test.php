@@ -105,6 +105,20 @@ $m = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
 check('отклики: обрыв меряется по всему списку, не по вкладке',
     str_contains($m, 'const offlineHere = offline.likes && myLikes.length === 0;'));
 
+// ── Регистрация и поддержка: сетевой сбой не выдаётся за успех/пустоту ───────
+foreach (['app/register-worker.tsx' => 'работник', 'app/register-employer.tsx' => 'работодатель'] as $file => $role) {
+    $src = (string)file_get_contents(__DIR__ . '/../' . $file);
+    check("регистрация {$role}: сбой проверки номера не пропускает дальше",
+        !preg_match('~catch\s*\{[\s\S]{0,180}setStep\(2\)~', $src));
+    check("регистрация {$role}: сбой проверки номера объяснён",
+        str_contains($src, 'Не удалось проверить номер. Проверьте связь и попробуйте ещё раз.'));
+}
+$support = (string)file_get_contents(__DIR__ . '/../app/support.tsx');
+check('поддержка: ошибка истории хранится отдельно', str_contains($support, 'loadFailed'));
+check('поддержка: ошибка истории не выглядит пустым чатом', str_contains($support, 'Не удалось загрузить переписку'));
+check('поддержка: историю можно повторить',
+    (bool)preg_match('~onPress=\{\(\) => void load\(\)\}[\s\S]{0,160}Повторить~', $support));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

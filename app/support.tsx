@@ -39,14 +39,23 @@ export default function SupportScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
     if (!currentUser) return;
-    try { setMsgs(await dbSupportHistory(currentUser.id)); }
-    catch {} finally { setLoading(false); }
+    try {
+      setMsgs(await dbSupportHistory(currentUser.id));
+      setLoadFailed(false);
+    } catch {
+      // Не подменяем сетевую ошибку фразой «Напишите нам»: пустой ответ и
+      // непринесённая история — разные состояния.
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+    }
   }, [currentUser?.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -166,6 +175,14 @@ export default function SupportScreen() {
           >
             {loading ? (
               <ActivityIndicator color={Colors.primary} style={{ marginTop: rs(24) }} />
+            ) : loadFailed && msgs.length === 0 ? (
+              <View style={s.empty}>
+                <Text style={s.emptyTitle}>Не удалось загрузить переписку</Text>
+                <Text style={s.emptySub}>Проверьте связь и попробуйте ещё раз.</Text>
+                <TouchableOpacity style={s.retryBtn} onPress={() => void load()} activeOpacity={0.85}>
+                  <Text style={s.retryTxt}>Повторить</Text>
+                </TouchableOpacity>
+              </View>
             ) : msgs.length === 0 ? (
               <View style={s.empty}>
                 <Text style={s.emptyTitle}>Напишите нам</Text>
@@ -252,6 +269,8 @@ const s = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: rs(40), paddingHorizontal: rs(20) },
   emptyTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
   emptySub: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', marginTop: rs(8), lineHeight: rf(20) },
+  retryBtn: { marginTop: rs(16), backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) },
+  retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '700' },
 
   bubble: { maxWidth: '86%', borderRadius: rs(16), paddingHorizontal: rs(13), paddingVertical: rs(10) },
   mine: { alignSelf: 'flex-end', backgroundColor: Colors.primary, borderBottomRightRadius: rs(4) },
