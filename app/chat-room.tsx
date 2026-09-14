@@ -21,10 +21,8 @@ import { ReadTicks, isSeenByOther } from '@/components/ReadTicks';
 import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate, uid, nowISO } from '@/services/storage';
-import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetLikes, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
-import { notifyWorkerGotMatch, notifyWorkerNewMessage, notifyEmployerNewMessage,
-  notifyWorkerPermApplicationApproved, notifyWorkerPermApplicationRejected,
-  setActiveChat } from '@/services/notifications';
+import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
+import { setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
 import { getSupabaseClient } from '@/template';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
@@ -395,8 +393,11 @@ export default function ChatRoom() {
         : null);
       return;
     }
-    dbGetLikes().then(allLikes => {
-      const like = allLikes.find(l => l.vacancyId === chat.vacancyId && l.workerId === chat.workerId);
+    // Один отклик спрашиваем по одному отклику. Раньше здесь выкачивались ВСЕ
+    // отклики сервиса, чтобы найти в них этот: dbGetLikeByVacancyWorker была
+    // доступна только самому работнику, и экран обходил отказ мягким путём.
+    // Теперь операция отвечает обеим сторонам смены, и обходить нечего.
+    dbGetLikeByVacancyWorker(chat.vacancyId, chat.workerId).then(like => {
       if (!like) { setLikeStatus('pending'); return; }
       if (like.isMatch || like.employerLiked === true) setLikeStatus('approved');
       else if (like.employerLiked === false) setLikeStatus('rejected');
@@ -504,11 +505,15 @@ export default function ChatRoom() {
         if (!permApp) { showToast('Отклик не найден', 'error'); return; }
         await dbSetPermApplicationStatus(permApp.id, 'approved');
         setLikeStatus('approved');
-        const okMsg: Message = { id: uid(), senderId: 'system',
-          text: 'Кандидат одобрен на вакансию. Обсудите детали выхода.', timestamp: nowISO() };
-        appendMessages([okMsg]);
-        dbInsertMessage(chat.id, 'system', okMsg.text).catch(() => {});
-        notifyWorkerPermApplicationApproved(workerId, permVacancy.company, permVacancy.title).catch(() => {});
+        // Строку и уведомление пишет СЕРВЕР тем же запросом, что меняет
+        // статус (jt_perm_app_announce). Отсюда они уходили «выстрелил и
+        // забыл», а сообщение от имени «system» приложению вообще запрещено —
+        // сервер отвечал 403, и отказ гасился пустым .catch().
+        //
+        // Свой текст здесь больше не рисуем: он жил бы вторым местом и
+        // разъехался бы с серверным. Вместо этого сразу перечитываем
+        // переписку — тем же опросом, что и обычно.
+        pollRef.current?.();
         refreshPermApplications?.().catch(() => {});
         refreshChats().catch(() => {});
         return;
@@ -521,7 +526,8 @@ export default function ChatRoom() {
         const matchMsg: Message = { id: uid(), senderId: 'system', text: 'У вас мэтч! Вы подошли друг другу. Познакомьтесь и обсудите детали!', timestamp: nowISO() };
         const safetyMsg: Message = { id: uid(), senderId: 'system_safety', text: 'Рекомендуем не переводить общение в сторонние мессенджеры или почту, а продолжить его в чате JobToo: так у мошенников будет меньше шансов вас обмануть.\n\nГде бы вы ни общались — не сообщайте свой CVV-код, код из SMS и не вводите данные карты по ссылке.', timestamp: nowISO() };
         appendMessages([matchMsg, safetyMsg]);
-        notifyWorkerGotMatch(chat.workerId, chat.companyName, chat.vacTitle).catch(() => {});
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+    // собирает тот, кто записал событие, и только другой стороне.
         const existingLike = likes.find(l => l.vacancyId === vacId && l.workerId === workerId);
         if (existingLike) optimisticUpdateLike({ ...existingLike, isMatch: true, employerLiked: true });
       }
@@ -543,26 +549,29 @@ export default function ChatRoom() {
     try {
       const workerId = chat.workerId;
       const vacId = chat.vacancyId;
-      const rejectMsg = 'Вы не подошли по данной вакансии. Чат закрыт.';
-      const optimisticMsg: Message = { id: uid(), senderId: 'system', text: rejectMsg, timestamp: nowISO() };
+      // Текст строки об отказе — на сервере, и только там. Здесь его
+      // дорисовывали на месте, и он же уходил записью от имени «system»,
+      // которую сервер отвергал: директор видел одно, соискатель — ничего.
       setLikeStatus('rejected');
-      appendMessages([optimisticMsg]);
 
       if (permVacancy) {
         if (permApp) {
+          // Строку в чат, счётчик непрочитанного и уведомление ставит сервер
+          // в этом же запросе — см. jt_perm_app_announce в php-proxy/db.php.
           await dbSetPermApplicationStatus(permApp.id, 'rejected');
-          notifyWorkerPermApplicationRejected(workerId, permVacancy.company, permVacancy.title).catch(() => {});
           refreshPermApplications?.().catch(() => {});
         }
-        dbInsertMessage(chat.id, 'system', rejectMsg).catch(() => {});
-        dbIncrementUnread(chat.id, 'worker').catch(() => {});
+        pollRef.current?.();
         refreshChats().catch(() => {});
         return;
       }
 
+      // Строку в переписку и счётчик непрочитанного ставит СЕРВЕР тем же
+      // запросом. Отсюда строка не доходила никогда: писать от имени «system»
+      // приложению запрещено, сервер отвечал 403, и отказ гасился пустым
+      // .catch(). Счётчик при этом рос — значок был, а за ним пусто.
       await dbUpsertLike(vacId, workerId, currentUser.id, { employerLiked: false });
-      dbInsertMessage(chat.id, 'system', rejectMsg).catch(() => {});
-      dbIncrementUnread(chat.id, 'worker').catch(() => {});
+      pollRef.current?.();
       refreshChats().catch(() => {});
     } catch (e) {
       console.error('[ChatRoom] handleRejectConfirmed error', e);
@@ -640,13 +649,10 @@ export default function ChatRoom() {
       lastCountRef.current += 1;
       const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
       dbIncrementUnread(chat.id, forRole).catch(() => {});
-      const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
-      // В уведомлении вместо ссылки — понятная подпись
-      if (currentUser.role === 'worker') {
-        notifyEmployerNewMessage(chat.employerId, senderName, '📷 Фото', chat.id).catch(() => {});
-      } else {
-        notifyWorkerNewMessage(chat.workerId, senderName, '📷 Фото', chat.id).catch(() => {});
-      }
+      // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
+      // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
+      // заодно текст уведомления приходил с клиента — то есть через нашего
+      // бота можно было послать что угодно тому, с кем есть переписка.
       refreshChats().catch(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {
@@ -767,12 +773,10 @@ export default function ChatRoom() {
       lastCountRef.current += 1;
       const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
       dbIncrementUnread(chat.id, forRole).catch(() => {});
-      const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
-      if (currentUser.role === 'worker') {
-        notifyEmployerNewMessage(chat.employerId, senderName, '🎤 Голосовое сообщение', chat.id).catch(() => {});
-      } else {
-        notifyWorkerNewMessage(chat.workerId, senderName, '🎤 Голосовое сообщение', chat.id).catch(() => {});
-      }
+      // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
+      // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
+      // заодно текст уведомления приходил с клиента — то есть через нашего
+      // бота можно было послать что угодно тому, с кем есть переписка.
       refreshChats().catch(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {
@@ -814,14 +818,10 @@ export default function ChatRoom() {
       lastCountRef.current += 1;
       const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
       dbIncrementUnread(chat.id, forRole).catch(() => {});
-      const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
-      // Always notify the recipient — they are on a different device.
-      // chatId is passed so the notification tap navigates directly to this chat.
-      if (currentUser.role === 'worker') {
-        notifyEmployerNewMessage(chat.employerId, senderName, text, chat.id).catch(() => {});
-      } else {
-        notifyWorkerNewMessage(chat.workerId, senderName, text, chat.id).catch(() => {});
-      }
+      // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
+      // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
+      // заодно текст уведомления приходил с клиента — то есть через нашего
+      // бота можно было послать что угодно тому, с кем есть переписка.
       refreshChats().catch(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {

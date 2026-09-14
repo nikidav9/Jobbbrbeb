@@ -24,13 +24,6 @@ import { useMissingUsers } from '@/hooks/useMissingUsers';
 import { workerLikes, workerActive, workerRejected, workerCompleted,
   employerLikes, employerPending, employerMatched, employerCompleted,
   employerPermApps } from '@/services/matchCounts';
-import {
-  notifyWorkerShiftConfirmedByEmployer,
-  notifyWorkerShiftCancelled,
-  notifyWorkerGotMatch,
-  notifyWorkerPermApplicationApproved,
-  notifyWorkerPermApplicationRejected,
-} from '@/services/notifications';
 import { Chip } from '@/components/ui/Chip';
 import { VacancyDetailModal } from '@/components/feature/VacancyDetailModal';
 import { ApplySheet } from '@/components/feature/ApplySheet';
@@ -324,7 +317,7 @@ function partnerStatus(status: PartnerApplication['status']): {
 
 function WorkerMatches() {
   const router = useRouter();
-  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast } = useApp();
+  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast, offline } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [detailVacancy, setDetailVacancy] = useState<Vacancy | null>(null);
   const [partnerApplications, setPartnerApplications] = useState<PartnerApplication[]>([]);
@@ -368,6 +361,15 @@ function WorkerMatches() {
     ['completed', 'no_show'].includes(a.status));
   const partnerActive = partnerApplications.filter(a =>
     !partnerRejected.includes(a) && !partnerCompleted.includes(a));
+
+  // Признак берётся с того списка, который экран показывает, — с откликов.
+  // Общий «сервер недоступен» врал бы в обе стороны: вакансии могут не
+  // прийти, когда отклики пришли, и наоборот.
+  //
+  // Смотрим на весь список, а не на вкладку: пустая вкладка «Отказы» при
+  // принесённых откликах — это правда, и «нет связи» поверх неё было бы
+  // неправдой. А если список не принесли, пусты все три по одной причине.
+  const offlineHere = offline.likes && myLikes.length === 0;
 
   const shownItems =
     tab === 'active'
@@ -563,12 +565,24 @@ function WorkerMatches() {
 
       {shownItems.length === 0 ? (
         <View style={s.empty}>
-          <Ionicons name={emptyIcon[tab]} size={56} color={Colors.textMuted} />
+          {/* Обрыв связи и пустой список — разные вещи, и путать их тут
+              дороже, чем в ленте. «Нет активных заявок» человек, только что
+              откликнувшийся, читает как «мой отклик пропал»: он не узнает, что
+              список просто не принесли, и решит, что сервис его потерял. */}
+          <Ionicons
+            name={offlineHere ? 'cloud-offline-outline' : emptyIcon[tab]}
+            size={56}
+            color={Colors.textMuted}
+          />
           <Text style={s.emptyTitle}>
-            {tab === 'active' ? 'Нет активных заявок' : tab === 'rejected' ? 'Нет отказов' : 'Нет завершённых смен'}
+            {offlineHere
+              ? 'Нет связи с сервером'
+              : tab === 'active' ? 'Нет активных заявок' : tab === 'rejected' ? 'Нет отказов' : 'Нет завершённых смен'}
           </Text>
           <Text style={s.emptySub}>
-            {tab === 'active'
+            {offlineHere
+              ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
+              : tab === 'active'
               ? 'Откликайтесь на вакансии — они появятся здесь'
               : tab === 'rejected'
               ? 'Это хорошо! Продолжайте откликаться'
@@ -708,7 +722,6 @@ function EmployerMatches() {
   const approve = async (like: Like) => {
     setLoading(like.id);
     try {
-      const vac = getVacancy(like.vacancyId);
       const worker = getWorker(like.workerId);
       const workerName = worker ? `${worker.firstName} ${worker.lastName}` : 'Работник';
 
@@ -723,9 +736,8 @@ function EmployerMatches() {
 
       refreshAll().catch(() => {});
 
-      if (result.matched) {
-        notifyWorkerGotMatch(like.workerId, vac?.company ?? currentUser.company ?? '', vac?.title ?? '').catch(() => {});
-      }
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+      // собирает тот, кто записал событие, и только другой стороне.
       if (result.matched || result.chatId) {
         showToast(`Мэтч с ${workerName}!`, 'success');
         router.push({ pathname: '/chat-room', params: { chatId: result.chatId } });
@@ -768,19 +780,14 @@ function EmployerMatches() {
       const worker = getWorker(like.workerId);
       const vac = getVacancy(like.vacancyId);
       const workerName = worker ? `${worker.firstName} ${worker.lastName}` : 'Работник';
-      const company = currentUser.company ?? `${currentUser.firstName} ${currentUser.lastName}`;
+      // Работника об итоге извещает СЕРВЕР (jt_notify_shift_outcome): текст
+      // зависит от итога и собирается там, где итог записан.
 
       if (outcome !== 'worked') {
-        if (worker && vac) {
-          notifyWorkerShiftCancelled(worker.id, company, vac.title, outcome).catch(() => {});
-        }
         showToast('Отмечено', 'success');
         return;
       }
 
-      if (worker && vac) {
-        notifyWorkerShiftConfirmedByEmployer(worker.id, company, vac.title).catch(() => {});
-      }
       showToast(
         lateMinutes ? 'Смена засчитана, опоздание отмечено' : 'Смена подтверждена! Оцените работника',
         'success',
@@ -815,8 +822,9 @@ function EmployerMatches() {
     if (!vacancy) return;
     setLoading(app.id);
     try {
+      // Уведомление соискателю шлёт сервер тем же запросом: отсюда оно
+      // уходило «выстрелил и забыл» и терялось при любом обрыве связи.
       await dbSetPermApplicationStatus(app.id, 'approved');
-      notifyWorkerPermApplicationApproved(app.workerId, vacancy.company, vacancy.title).catch(() => {});
       const chatId = await dbCreateChat(
         app.workerId,
         currentUser.id,
@@ -841,13 +849,10 @@ function EmployerMatches() {
   };
 
   const rejectPermApp = async (app: PermApplication) => {
-    const vacancy = permVacancies.find((v: PermVacancy) => v.id === app.vacancyId);
     setLoading(app.id + '_d');
     try {
+      // Уведомление и строку в чат ставит сервер — см. jt_perm_app_announce.
       await dbSetPermApplicationStatus(app.id, 'rejected');
-      if (vacancy) {
-        notifyWorkerPermApplicationRejected(app.workerId, vacancy.company, vacancy.title).catch(() => {});
-      }
       await refreshPermApplications();
       showToast('Отклонено', 'success');
     } catch {

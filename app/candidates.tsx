@@ -7,7 +7,6 @@ import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { notifyWorkerGotMatch } from '@/services/notifications';
 import { dbUpsertLike, dbCheckAndCreateMatch } from '@/services/db';
 import { getInitials, nameColorFromString } from '@/services/storage';
 
@@ -62,7 +61,8 @@ export default function CandidatesScreen() {
 
     if (result.matched) {
       const worker = getWorker(workerId);
-      notifyWorkerGotMatch(workerId, vacancy.company, vacancy.title).catch(() => {});
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+      // собирает тот, кто записал событие, и только другой стороне.
       showToast(`🎉 Мэтч с ${worker?.firstName ?? 'работником'}! Чат открыт`, 'match');
     } else {
       showToast('Отклик одобрен. Ждём подтверждения работника.', 'success');
@@ -145,6 +145,15 @@ export default function CandidatesScreen() {
                   {(worker.avgRating ?? 0) > 0 ? (
                     <Text style={styles.workerRating}>⭐ {(worker.avgRating ?? 0).toFixed(1)} ({worker.ratingCount} отз.)</Text>
                   ) : null}
+                  {/* Поручительство. Ровно ради этой строки программа
+                      приглашений и существует: денег мы за приглашение не
+                      платим, платит она — тем, что её видно здесь, когда
+                      работодатель выбирает из похожих анкет. Двоеточие с
+                      числом, а не «привёл N человек»: склонение при любом N
+                      здесь ничего не добавляет, а сломаться может. */}
+                  {(worker.referralWorked ?? 0) > 0 ? (
+                    <Text style={styles.workerVouch}>🤝 Привёл на смену: {worker.referralWorked}</Text>
+                  ) : null}
                 </View>
                 <Text style={styles.profileArrow}>Профиль ›</Text>
               </TouchableOpacity>
@@ -216,6 +225,7 @@ const styles = StyleSheet.create({
   workerName: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
   workerMeta: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
   workerRating: { fontSize: rf(12), color: '#FBBF24', fontWeight: '600', marginTop: rs(2) },
+  workerVouch: { fontSize: rf(12), color: Colors.green, fontWeight: '600', marginTop: rs(2) },
   profileArrow: { fontSize: rf(12), color: Colors.primary, fontWeight: '600' },
   bioSnippet: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18), backgroundColor: Colors.surface, borderRadius: rs(8), padding: rs(10) },
   infoGrid: { gap: rs(8), borderTopWidth: 1, borderTopColor: Colors.divider, paddingTop: rs(10) },

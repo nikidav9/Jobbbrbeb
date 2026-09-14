@@ -5,6 +5,7 @@ import {
   TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
 } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
+import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -58,8 +59,6 @@ import {
   dbRecordGuestEvent,
   dbStartGuestRegistration,
 } from '@/services/db';
-import { notifyEmployerGotMatch, notifyWorkerGotMatch,
-  notifyEmployerNewMessage } from '@/services/notifications';
 import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
@@ -1393,7 +1392,6 @@ function WorkerListModal({
 
   const onAccept = async (like: Like) => {
     if (!currentUser) return;
-    const vacTitle = vacancy?.title ?? 'Смена';
     setActionLoading(like.workerId);
     try {
       await dbUpsertLike(vacancyId, like.workerId, currentUser.id, { employerLiked: true });
@@ -1402,7 +1400,10 @@ function WorkerListModal({
         optimisticUpdateLike({ ...like, isMatch: true, employerLiked: true });
       }
       refreshLikes().catch(() => {});
-      notifyWorkerGotMatch(like.workerId, vacancy?.company ?? '', vacTitle).catch(() => {});
+      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+      // собирает тот, кто записал событие, и только другой стороне.
+      // Заодно ушла неправда: здесь уведомление слалось ВСЕГДА, даже когда
+      // мэтча не случилось, — работнику сообщали о мэтче, которого нет.
       showToast('Мэтч! Чат открыт', 'success');
       onClose();
       if (result.chatId) {
@@ -1782,6 +1783,7 @@ function WorkerFeed() {
     refreshAll, refreshLikes, refreshChats,
     showToast, vacanciesLoading, exitGuest,
     savedIds, optimisticAddSaved, optimisticRemoveSaved,
+    responsivenessMap, backendOffline,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [partnerShifts, setPartnerShifts] = useState<PartnerShiftCard[]>([]);
@@ -2128,7 +2130,6 @@ function WorkerFeed() {
           const result = await dbCheckAndCreateMatch(card.id, user.id);
           refreshLikes(user).catch(() => {});
           if (result.matched) {
-            notifyEmployerGotMatch(card.employerId, `${user.firstName} ${user.lastName}`, card.title).catch(() => {});
             router.push({ pathname: '/match', params: { vacancyId: card.id, chatId: result.chatId } });
           } else {
             // Уведомление директору шлёт сервер при записи отклика — см. dbUpsertLike.
@@ -2233,14 +2234,8 @@ function WorkerFeed() {
         true,   // сообщение от работника, а не от системы
       );
       refreshChats().catch(() => {});
-      // В уведомлении — сами слова человека: работодатель решает, отвечать
-      // ли, по ним, а не по казённому «Новый отклик».
-      notifyEmployerNewMessage(
-        card.employerId,
-        `${currentUser.firstName} ${currentUser.lastName}`,
-        message,
-        chatId,
-      ).catch(() => {});
+      // О первом сообщении извещает СЕРВЕР при заведении чата: в уведомлении
+      // по-прежнему сами слова человека, но собирает их тот, кто их записал.
       setApplyFor(null);
       router.push({ pathname: '/chat-room', params: { chatId } });
     } catch (e) {
@@ -2383,6 +2378,31 @@ function WorkerFeed() {
               // Пустой экран не должен быть тупиком: если стоит фильтр — даём его
               // снять; иначе подсказываем ближайший день, где смены реально есть.
               const nextDay = visibleDates.find(d => d !== selectedDate && getDateCount(d) > 0);
+              // Первым делом — не соврать. Если до сервера не достучались,
+              // лента пуста не потому, что работы нет, а потому что её не
+              // принесли. Разница для человека решающая: «смен нет» он читает
+              // как «здесь искать нечего» и уходит, причём молча — в отчёте
+              // это выглядит как обычный отток.
+              //
+              // Отличить одно от другого умеет refreshVacancies: он не трогает
+              // список при обрыве (остаются данные из кэша) и поднимает
+              // backendOffline. Экраны работодателя этим уже пользуются, а
+              // главная лента работника — нет.
+              if (backendOffline) {
+                return (
+                  <>
+                    <Text style={styles.emptyTitle}>Нет связи с сервером</Text>
+                    <Text style={styles.emptySubtitle}>
+                      Смены не загрузились — дело в связи, а не в пустой ленте.
+                      Проверьте интернет и попробуйте ещё раз.
+                    </Text>
+                    <TouchableOpacity style={eS.btn} activeOpacity={0.85} onPress={onRefresh}>
+                      <Ionicons name="refresh-outline" size={rf(17)} color="#fff" />
+                      <Text style={eS.btnTxt}>Попробовать снова</Text>
+                    </TouchableOpacity>
+                  </>
+                );
+              }
               if (filterStations.length) {
                 return (
                   <>
@@ -2499,6 +2519,28 @@ function WorkerFeed() {
                           {currentCard.noExperienceNeeded ? <Chip label="Без опыта" variant="neutral" icon="school-outline" /> : null}
                           {currentCard.address ? <Chip label={currentCard.address} variant="neutral" icon="location-outline" /> : null}
                         </View>
+
+                        {/* Как этот работодатель отвечает — здесь, а не только в
+                            подробностях. Решение принимается свайпом: это одно
+                            движение и ноль раздумий, и до «Читать полностью»
+                            доходят единицы. Предупреждать о молчуне после того,
+                            как отклик ушёл, поздно — отклик без ответа человек
+                            читает как «сервис не работает».
+
+                            Карта отзывчивости грузится одним запросом на всех
+                            ровно ради этого места (contexts/AppContext.tsx):
+                            ходить за ней на каждую карточку нельзя, лента
+                            превратится в слайд-шоу.
+
+                            Плашка сама молчит, когда переписок меньше двух: по
+                            одной вывод делать нельзя, а выглядел бы он как
+                            приговор. У партнёрских карточек employerId вида
+                            `external:...`, в карте его нет — там тоже пусто.
+
+                            Место выбрано до разделителя: cardSummary стоит
+                            flexShrink, поэтому ужмётся описание, а не уедет за
+                            край ссылка «Читать полностью». */}
+                        <ReplyBadge stats={responsivenessMap[currentCard.employerId]} />
                       </View>
 
                       <View style={styles.cardDivider} />
@@ -3006,11 +3048,10 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         refreshPermApplications().catch(() => {}),
         refreshChats().catch(() => {}),
       ]);
-      notifyEmployerNewMessage(
-        v.employerId,
-        `${currentUser.firstName} ${currentUser.lastName}`,
-        message,
-      ).catch(() => {});
+      // Уведомления отсюда больше нет: работодателя извещает сервер при
+      // создании отклика («Новая заявка»). Этот вызов слал ВТОРОЕ уведомление
+      // о том же событии — с другим заголовком, поэтому глушитель повторов в
+      // notify_user его и не гасил.
     } catch (e) {
       console.warn('[applyTo]', e);
       showToast('Не удалось отправить отклик', 'error');

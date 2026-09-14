@@ -5,4 +5,16 @@ Disallow: /admin
 Disallow: /analytics
 Disallow: /candidates
 
+# Мини-приложение в телеграме дописывает к адресу свои параметры. Для робота
+# это разные страницы с одинаковым содержимым, и обход тратится на дубли:
+# у конкурента на таких дублях сгорало 95% бюджета обхода — 462 запроса к
+# дублям против 24 к настоящим вакансиям за сутки.
+# Яндексу помогает Clean-param, остальным — канонический адрес на странице.
+Clean-param: tgWebAppStartParam&tgWebAppData&tgWebAppVersion&tgWebAppPlatform&tgWebAppThemeParams&tgWebAppBotInline&startapp
+
+# Ботов поисковых ИИ не закрываем намеренно: они отвечают за то, попадём ли мы
+# в ответы ассистентов, а запрет убрал бы нас оттуда целиком. Отдельных правил
+# им не нужно — они подпадают под «User-agent: *» выше.
+# OAI-SearchBot, ChatGPT-User, PerplexityBot, Claude-SearchBot, YandexAdditional
+
 Sitemap: https://jobtoo.ru/sitemap.xml

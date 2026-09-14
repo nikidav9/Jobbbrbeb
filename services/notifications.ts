@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { dbSavePushToken, dbGetPushToken, dbReleasePushToken, dbGetWebPushSubscription, dbSaveNotification } from '@/services/db';
+import { dbSavePushToken, dbReleasePushToken } from '@/services/db';
 
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
@@ -170,86 +170,9 @@ type ExpoPushTicket = {
   details?: { error?: string };
 };
 
-async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
-  if (Platform.OS === 'web') {
-    // exp.host blocks cross-origin requests from browsers — route through server proxy
-    const tokens = messages.map(m => m.to);
-    const first = messages[0];
-    await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET },
-      body: JSON.stringify({
-        fn: 'sendPushNotification',
-        args: [
-          tokens.length === 1 ? tokens[0] : tokens,
-          first.title,
-          first.body,
-          { channelId: first.channelId, ...first.data },
-        ],
-      }),
-    }).catch(e => console.warn('[push] Server proxy error:', e));
-    return;
-  }
-
-  const response = await fetch('https://exp.host/--/api/v2/push/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(messages.length === 1 ? messages[0] : messages),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    console.warn('[push] Expo API HTTP error:', response.status, text);
-    return;
-  }
-
-  const payload = await response.json().catch(() => null) as { data?: ExpoPushTicket[] | ExpoPushTicket; errors?: unknown } | null;
-  if (!payload) {
-    console.warn('[push] Expo API returned unreadable JSON payload.');
-    return;
-  }
-
-  if (payload.errors) {
-    console.warn('[push] Expo API top-level errors:', payload.errors);
-  }
-
-  const tickets = Array.isArray(payload.data) ? payload.data : payload.data ? [payload.data] : [];
-  tickets.forEach((ticket) => {
-    if (ticket.status === 'error') {
-      console.warn('[push] Expo push ticket error:', ticket.details?.error ?? ticket.message ?? 'unknown_error');
-    }
-  });
-}
 
 // ─── Web Push helper ──────────────────────────────────────────────────────────
 
-async function sendWebPushTo(
-  recipientUserId: string,
-  title: string,
-  body: string,
-  data: Record<string, unknown> = {},
-): Promise<void> {
-  if (!DASHBOARD_URL) return;
-  try {
-    const sub = await dbGetWebPushSubscription(recipientUserId);
-    if (!sub) return;
-    await fetch(`${DASHBOARD_URL}/api/webpush/send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-app-secret': APP_SECRET,
-      },
-      body: JSON.stringify({
-        subscription: { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        title,
-        body,
-        data,
-      }),
-    });
-  } catch {
-    // Never crash due to web push failure
-  }
-}
 
 // ─── Internal helper ──────────────────────────────────────────────────────────
 
@@ -260,209 +183,24 @@ function escapeHtml(s: string): string {
 
 // Зеркалим уведомление в Telegram, если пользователь привязал аккаунт.
 // Сервер сам находит telegram_id по userId (эндпоинт tgNotifyUser).
-async function sendTelegramTo(recipientUserId: string, title: string, body: string): Promise<void> {
-  try {
-    const html = `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(body)}`;
-    await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET },
-      body: JSON.stringify({ fn: 'tgNotifyUser', args: [recipientUserId, html, true] }),
-    });
-  } catch {
-    // Never crash due to a Telegram notification failure
-  }
-}
 
-/**
- * Отправить уведомление всеми каналами сразу.
- *
- * `abroad` — то, что можно выпускать за границу.
- *
- * Пуш уходит на exp.host, то есть в США. США нет в перечне государств с
- * адекватной защитой прав субъектов персональных данных (приказ РКН № 128
- * от 05.08.2022), и передача туда идёт по самому строгому порядку. А мы
- * отправляли туда имя работника и — в уведомлениях о чате — первые сто
- * символов самого сообщения. Переписка открытым текстом на чужой сервер.
- *
- * Остальные каналы текст не теряют:
- *   — колокольчик живёт в нашей базе в Москве;
- *   — веб-пуш шифруется на нашей стороне (RFC 8291), Apple и Google видят
- *     только шифртекст;
- *   — телеграм получает полный текст как и раньше.
- *
- * Если `abroad` не передан, наружу идёт обычный текст — так и должно быть
- * там, где персональных данных нет вовсе: «5 смен рядом с вашим метро».
- */
-async function pushTo(
-  recipientUserId: string,
-  title: string,
-  body: string,
-  type: string,
-  channelId = 'default',
-  data: Record<string, unknown> = {},
-  sendTelegram = true,
-  abroad?: { title?: string; body?: string },
-): Promise<void> {
-  // Save in-app notification so the bell always shows it. type/data кладём
-  // рядом — по ним колокольчик понимает, какой экран открыть по нажатию.
-  dbSaveNotification(recipientUserId, title, body, type, data).catch(() => {});
-  // Fire-and-forget web push alongside Expo push
-  sendWebPushTo(recipientUserId, title, body, { type, ...data }).catch(() => {});
-  // Mirror to Telegram (bell + push + web push + Telegram — все каналы)
-  if (sendTelegram) sendTelegramTo(recipientUserId, title, body).catch(() => {});
-  try {
-    const token = await dbGetPushToken(recipientUserId);
-    if (!token) return;
-    await sendExpoPush([{
-      to: token,
-      title: abroad?.title ?? title,
-      body: abroad?.body ?? body,
-      sound: 'default',
-      channelId,
-      data: { type, ...data },
-      priority: 'high',
-      ...(channelId === 'messages' ? { ttl: 60 } : {}),
-    }]);
-  } catch {
-    // Never crash the app due to a notification failure
-  }
-}
 
 // ─── Employer notifications ───────────────────────────────────────────────────
 
-export async function notifyEmployerNewApplicant(
-  employerId: string,
-  workerName: string,
-  vacancyTitle: string,
-): Promise<void> {
-  await pushTo(
-    employerId,
-    '📥 Новый отклик!',
-    `${workerName} хочет выйти на смену «${vacancyTitle}». Посмотрите кандидата!`,
-    'new_applicant',
-    'matches',
-    {}, true,
-    // Название смены — не персональные данные, его оставляем: без него
-    // уведомление перестаёт что-либо значить. Имя убираем.
-    { body: `Кто-то хочет выйти на смену «${vacancyTitle}». Посмотрите кандидата!` },
-  );
-}
 
-export async function notifyEmployerGotMatch(
-  employerId: string,
-  workerName: string,
-  vacancyTitle: string,
-): Promise<void> {
-  await pushTo(
-    employerId,
-    '🎉 Мэтч!',
-    `${workerName} готов выйти на смену «${vacancyTitle}». Откройте чат!`,
-    'match_employer',
-    'matches',
-    {}, true,
-    { body: `Кандидат готов выйти на смену «${vacancyTitle}». Откройте чат!` },
-  );
-}
 
-export async function notifyEmployerNewMessage(
-  employerId: string,
-  senderName: string,
-  preview: string,
-  chatId?: string,
-): Promise<void> {
-  await pushTo(
-    employerId,
-    `💬 ${senderName}`,
-    preview.slice(0, 100),
-    'message',
-    'messages',
-    chatId ? { chatId } : {},
-    true,
-    // Ни имени, ни текста: это переписка. Так же устроены WhatsApp и Signal
-    // со спрятанными предпросмотрами — на экране блокировки видно, что
-    // сообщение есть, а что в нём, знает только тот, кто откроет приложение.
-    { title: '💬 Новое сообщение', body: 'Откройте чат в JobToo' },
-  );
-}
 
-// ─── Worker notifications ─────────────────────────────────────────────────────
+// Уведомлений о сообщениях здесь больше нет. Их шлёт сервер при записи
+// сообщения и при заведении чата (jt_notify_new_message в php-proxy/db.php):
+// имя отправителя и текст он берёт из того, что сам записал, а не из того,
+// что прислал телефон. Отсюда они и терялись при обрыве, и позволяли послать
+// через нашего бота произвольный текст тому, с кем есть переписка.
 
-export async function notifyWorkerGotMatch(
-  workerId: string,
-  companyName: string,
-  vacancyTitle: string,
-): Promise<void> {
-  await pushTo(
-    workerId,
-    '🎉 Мэтч! Вас хотят взять!',
-    `${companyName} подтвердили ваш отклик на «${vacancyTitle}». Откройте чат!`,
-    'match_worker',
-    'matches',
-  );
-}
+// ─── Worker notifications ──────────────────────────────────────────────────
 
-export async function notifyWorkerShiftConfirmedByEmployer(
-  workerId: string,
-  companyName: string,
-  vacancyTitle: string,
-): Promise<void> {
-  await pushTo(
-    workerId,
-    '✅ Смена подтверждена работодателем',
-    `${companyName} подтвердил смену «${vacancyTitle}». Хотите оставить отзыв?`,
-    'shift_confirmed_by_employer',
-    'default',
-  );
-}
 
-/**
- * Смена не состоялась. Текст зависит от того, из-за чего.
- *
- * Прежде он был один на все случаи: «компания отменила смену». Работнику,
- * которого только что отметили не вышедшим, приходило письмо о том, что смену
- * отменил работодатель, — неправда, и вдобавок отметку, которая пойдёт ему в
- * рейтинг, он бы так и не увидел. Пусть видит: если это ошибка, он успеет
- * написать в поддержку, пока помнит, как всё было.
- */
-export async function notifyWorkerShiftCancelled(
-  workerId: string,
-  companyName: string,
-  vacancyTitle: string,
-  outcome?: 'no_show' | 'worker_cancelled' | 'employer_cancelled' | 'other_cancelled',
-): Promise<void> {
-  const [title, body] =
-    outcome === 'no_show'
-      ? ['⚠️ Отмечен невыход',
-         `${companyName} отметил, что вы не вышли на смену «${vacancyTitle}». Это влияет на рейтинг. Если это ошибка — напишите в поддержку.`]
-      : outcome === 'worker_cancelled'
-      ? ['Смена отменена',
-         `Ваш отказ от смены «${vacancyTitle}» (${companyName}) записан. На рейтинг он не влияет.`]
-      : outcome === 'other_cancelled'
-      ? ['Смена отменена',
-         `Смена «${vacancyTitle}» не состоялась по другой причине. На рейтинг сторон это не влияет.`]
-      : ['❌ Смена отменена',
-         `${companyName} отменил смену «${vacancyTitle}». Загляните в приложение — там много других подработок!`];
 
-  await pushTo(workerId, title, body, 'shift_cancelled', 'matches');
-}
 
-export async function notifyWorkerNewMessage(
-  workerId: string,
-  senderName: string,
-  preview: string,
-  chatId?: string,
-): Promise<void> {
-  await pushTo(
-    workerId,
-    `💬 ${senderName}`,
-    preview.slice(0, 100),
-    'message',
-    'messages',
-    chatId ? { chatId } : {},
-    true,
-    { title: '💬 Новое сообщение', body: 'Откройте чат в JobToo' },
-  );
-}
 
 // ─── Nearby vacancy broadcast ─────────────────────────────────────────────────
 
@@ -474,6 +212,18 @@ function formatDateRu(iso?: string): string {
   if (!m || !d) return iso;
   return `${d} ${MONTHS_RU[m - 1]}`;
 }
+
+// Уведомлений о событиях здесь больше нет — ни о сообщениях, ни о мэтче, ни об
+// итоге смены, ни о решении по заявке. Их шлёт сервер там же, где записывает
+// само событие: jt_notify_new_message, jt_notify_match, jt_notify_shift_outcome
+// и jt_perm_app_announce в php-proxy/db.php.
+//
+// Отсюда они уходили «выстрелил и забыл» — обрыв связи, и человек не узнавал.
+// И, что хуже, текст уведомления собирал телефон: через нашего бота можно было
+// послать что угодно тому, с кем есть переписка.
+//
+// Ниже осталось одно — объявление о новой вакансии: это не событие одного
+// человека, а рассылка, и у неё свой серверный обработчик.
 
 export async function notifyWorkersNewVacancy(params: {
   metroStation: string;
@@ -525,9 +275,13 @@ export async function notifyWorkersNewVacancy(params: {
 
     const headHtml = type === 'permanent' ? '💼 <b>Новая постоянная вакансия!</b>' : '⚡ <b>Новая подработка!</b>';
     const tgHtml = headHtml + detailsHtml + '\n\nУспей откликнуться 👇';
-    // Пост в группу «ПОДРАБОТКИ» — тот же формат + напоминание про приложение
-    const groupHtml = headHtml + detailsHtml
-      + '\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇';
+    // Текст поста в группу «ПОДРАБОТКИ» здесь больше не собирается: его делает
+    // сервер (jt_group_html в php-proxy/db.php) из строки вакансии. Раньше
+    // формат жил в двух местах, и второй — догоняющее задание — неизбежно
+    // разъехался бы с этим. Довод оставлен пустым, чтобы не сдвинуть номера
+    // остальных: старый сервер по пустому соберёт пост из tgHtml, как и до
+    // появления этого поля.
+    const groupHtml = '';
 
     const notifyPayload = JSON.stringify({
       fn: 'dbNotifyAllWorkersNewVacancy',
@@ -572,56 +326,5 @@ export async function notifyWorkersNewVacancy(params: {
 
 // ─── Permanent vacancy notifications ─────────────────────────────────────────
 
-export async function notifyEmployerNewPermApplicant(
-  employerId: string,
-  workerName: string,
-  vacancyTitle: string,
-  workerId?: string,
-  vacancyId?: string,
-): Promise<void> {
-  await pushTo(
-    employerId,
-    '📥 Новая заявка!',
-    `${workerName} откликнулся на вакансию «${vacancyTitle}». Посмотрите кандидата!`,
-    'new_perm_applicant', 'matches',
-    {}, false, // Telegram шлём отдельной карточкой ниже — не дублируем
-    { body: `Есть отклик на вакансию «${vacancyTitle}». Посмотрите кандидата!` },
-  );
-  // Telegram-карточка с кнопками «Одобрить/Отклонить» прямо в чате директора
-  if (workerId && vacancyId) {
-    fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET },
-      body: JSON.stringify({
-        fn: 'tgNotifyNewApplication',
-        args: [employerId, workerId, vacancyId, vacancyTitle],
-      }),
-    }).catch(() => {});
-  }
-}
 
-export async function notifyWorkerPermApplicationApproved(
-  workerId: string,
-  companyName: string,
-  vacancyTitle: string,
-): Promise<void> {
-  await pushTo(
-    workerId,
-    '✅ Заявка одобрена!',
-    `${companyName} одобрили вашу заявку на «${vacancyTitle}» и написали вам — ответьте в чате.`,
-    'perm_approved', 'matches',
-  );
-}
 
-export async function notifyWorkerPermApplicationRejected(
-  workerId: string,
-  companyName: string,
-  vacancyTitle: string,
-): Promise<void> {
-  await pushTo(
-    workerId,
-    '❌ Заявка отклонена',
-    `${companyName} отклонили вашу заявку на «${vacancyTitle}».`,
-    'perm_rejected', 'matches',
-  );
-}

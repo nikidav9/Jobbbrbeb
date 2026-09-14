@@ -20,6 +20,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 define('SB_STRICT', true);
 require_once __DIR__ . '/sb_lite.php';
+require_once __DIR__ . '/safe_url.php';
 
 function ing_secret(string $name): string
 {
@@ -248,42 +249,11 @@ function ing_normalize(array $it, string $sourceId): ?array
     return $row;
 }
 
-/**
- * Разрешаем только публичные HTTPS-адреса. URL источника задаётся из панели,
- * но панель — не повод давать сборщику доступ к localhost, служебным IP и
- * метаданным облака.
- */
-function ing_safe_https_url(string $url): bool
-{
-    if (!filter_var($url, FILTER_VALIDATE_URL)) return false;
-    $p = parse_url($url);
-    if (($p['scheme'] ?? '') !== 'https' || empty($p['host'])) return false;
-    $host = strtolower((string)$p['host']);
-    if ($host === 'localhost' || str_ends_with($host, '.local')) return false;
-
-    $ips = [];
-    if (filter_var($host, FILTER_VALIDATE_IP)) {
-        $ips[] = $host;
-    } else {
-        $records = @dns_get_record($host, DNS_A | DNS_AAAA);
-        foreach (is_array($records) ? $records : [] as $record) {
-            if (!empty($record['ip'])) $ips[] = $record['ip'];
-            if (!empty($record['ipv6'])) $ips[] = $record['ipv6'];
-        }
-    }
-    if (!$ips) return false;
-    foreach ($ips as $ip) {
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 /** Скачать одну страницу фида с жёстким ограничением размера. */
 function ing_fetch_page(string $url, array $hdrs, string $originHost): array
 {
-    if (!ing_safe_https_url($url)) {
+    $resolveEntries = ing_safe_https_resolve($url);
+    if ($resolveEntries === null) {
         return ['ok' => false, 'error' => 'запрещённый или непубличный HTTPS-адрес'];
     }
     $pageHost = strtolower((string)(parse_url($url, PHP_URL_HOST) ?? ''));
@@ -303,6 +273,7 @@ function ing_fetch_page(string $url, array $hdrs, string $originHost): array
         CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
         CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_RESOLVE => $resolveEntries,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
         CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {

@@ -17,7 +17,7 @@ import { ToastLayer } from '@/components/ui/ToastLayer';
 import { setupAndroidChannels } from '@/services/notifications';
 import { routeForNotification } from '@/services/notificationRoute';
 import { hideWebSplash, markWebBundleMounted } from '@/lib/webSplash';
-import { getSessionUser } from '@/services/storage';
+import { getSessionUser, savePendingReferral } from '@/services/storage';
 import { dbRecordGuestEvent } from '@/services/db';
 import { initTelegramMiniApp, isTelegramMiniApp, getTelegramStartParam, waitForTelegramMiniApp } from '@/lib/telegram';
 
@@ -57,6 +57,18 @@ function TelegramMiniAppController() {
       initTelegramMiniApp();
 
       const startParam = getTelegramStartParam();
+
+      // Приглашение по коду знакомого. Запоминаем ДО разбора остальных ссылок
+      // и до любых переходов: между открытием ссылки и регистрацией человек
+      // пройдёт несколько экранов, а мини-приложение может перезапуститься.
+      // Сам код здесь никуда не отправляем — его применит регистрация, и
+      // только она: приписать пригласившего тому, кто уже зарегистрирован,
+      // сервер не даст.
+      const refLink = startParam?.match(/^ref_([A-Za-z0-9]{8})$/);
+      if (refLink) {
+        void savePendingReferral(refLink[1].toUpperCase());
+      }
+
       const campaignLink = startParam?.match(/^(?:(share)_)?(shift|perm)_(.+)_([a-f0-9]{16})$/);
       if (campaignLink) {
         const [, shareMarker, kind, vacancyId, campaignId] = campaignLink;
@@ -232,6 +244,7 @@ export default function RootLayout() {
             <Stack.Screen name="user-profile" />
             <Stack.Screen name="create-perm-vacancy" />
             <Stack.Screen name="perm-vacancy-detail" />
+            <Stack.Screen name="invite" />
             {/* Шторкой: тест — короткий заход из профиля, а не место, куда
                 уходят насовсем. Закрыть крестиком и вернуться на прежний
                 экран должно быть очевидно. */}

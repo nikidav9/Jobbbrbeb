@@ -47,7 +47,11 @@ if [ -x "$REPO/infra/migrate.sh" ]; then
     log "MIGRATE $HEAD: ok"
   else
     log "MIGRATE_FAIL $HEAD: see /var/log/jt-apply.log"
+    exit 1
   fi
+else
+  log "MIGRATE_FAIL $HEAD: migrator unavailable"
+  exit 1
 fi
 
 # Берём публичный ключ карт из уже работающей сборки, если он ещё не записан

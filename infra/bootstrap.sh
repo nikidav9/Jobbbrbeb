@@ -445,7 +445,16 @@ chmod 644 /opt/jobtoo-php/zz-listen.conf
 
 PROXY=/opt/jobtoo-proxy
 mkdir -p "$PROXY"
-cp -f "$REPO"/php-proxy/*.php "$PROXY"/ 2>/dev/null || true
+MIGRATIONS_READY=1
+if [ -s "$PROXY/db.php" ] && [ -x "$REPO/infra/migrate.sh" ]; then
+  if ! bash "$REPO/infra/migrate.sh"; then
+    MIGRATIONS_READY=0
+    say "выкладка" "миграции не прошли — PHP и сайт оставлены прежними"
+  fi
+fi
+if [ "$MIGRATIONS_READY" = 1 ]; then
+  cp -f "$REPO"/php-proxy/*.php "$PROXY"/ 2>/dev/null || true
+fi
 # И описания рядом с кодом. Раньше копировались только .php, и оба json —
 # описание API для партнёра и образец фида — на сервер не попадали вовсе.
 # Снаружи это выглядело благополучно: адрес отвечает 200, а тело пустое.
@@ -668,7 +677,9 @@ print(next((str(a["id"]) for a in d.get("assets", []) if a.get("name") == sys.ar
 # Разворачиваем во временный каталог и подменяем готовым: если архив побит
 # или скачался наполовину, на месте останется прежний рабочий сайт, а не
 # половина нового.
-if gh_asset web dist.tar.gz /tmp/jt-web.tgz; then
+if [ "$MIGRATIONS_READY" != 1 ]; then
+  say "сайт" "обновление отложено до успешных миграций"
+elif gh_asset web dist.tar.gz /tmp/jt-web.tgz; then
   SUM=$(sha256sum /tmp/jt-web.tgz | cut -d' ' -f1)
   if [ "$SUM" != "$(cat /var/lib/jt-web.sha 2>/dev/null || true)" ]; then
     WEB_RELEASES=/var/www/jobtoo-releases

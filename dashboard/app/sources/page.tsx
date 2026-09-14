@@ -39,6 +39,7 @@ type Source = {
   connector_kind: string
   integration_mode: 'redirect' | 'embedded_test' | 'embedded'
   integration_configured: boolean
+  career_pages?: string[]
 }
 
 type PartnerReport = {
@@ -222,6 +223,7 @@ export default function SourcesPage() {
   const [costAmount, setCostAmount] = useState('')
   const [costDate, setCostDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [costNote, setCostNote] = useState('')
+  const [careerDrafts, setCareerDrafts] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -229,7 +231,12 @@ export default function SourcesPage() {
       const res = await fetch('/api/admin/ext-sources', { headers: { 'X-Admin-Token': getToken() } })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setItems((data.items ?? []) as Source[])
+      const loaded = (data.items ?? []) as Source[]
+      setItems(loaded)
+      setCareerDrafts(Object.fromEntries(
+        loaded.filter(s => s.connector_kind === 'career')
+          .map(s => [s.id, (s.career_pages ?? []).join('\n')]),
+      ))
       setStats(data.stats ?? null)
       setUpdated(new Date().toLocaleTimeString('ru-RU'))
     } catch (e: any) { setErr(e.message) }
@@ -284,9 +291,25 @@ export default function SourcesPage() {
   }
 
   async function toggle(s: Source) {
+    if (!s.enabled && s.connector_kind === 'career' && !(s.career_pages ?? []).length) {
+      setErr('Сначала сохраните хотя бы одну карьерную страницу')
+      return
+    }
     setBusy(s.id); setErr(null)
     try { await send({ ...s, enabled: !s.enabled }); await load() }
     catch (e: any) { setErr(e.message) }
+    setBusy(null)
+  }
+
+  async function saveCareerPages(s: Source) {
+    const pages = Array.from(new Set(
+      (careerDrafts[s.id] ?? '').split('\n').map(v => v.trim()).filter(Boolean),
+    ))
+    setBusy(s.id); setErr(null)
+    try {
+      await send({ ...s, career_pages: pages })
+      await load()
+    } catch (e: any) { setErr(e.message) }
     setBusy(null)
   }
 
@@ -492,6 +515,13 @@ export default function SourcesPage() {
                         {s.environment === 'sandbox' && <Chip tone="neutral">Sandbox</Chip>}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--ink-3)', wordBreak: 'break-all' }}>{s.url}</div>
+                      {s.connector_kind === 'career' ? (
+                        <textarea className="jt-input" rows={3}
+                          value={careerDrafts[s.id] ?? ''}
+                          onChange={e => setCareerDrafts(d => ({ ...d, [s.id]: e.target.value }))}
+                          placeholder="Один HTTPS-адрес карьерной страницы на строку"
+                          style={{ width: '100%', minWidth: 260, marginTop: 8, resize: 'vertical' }} />
+                      ) : null}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="num" style={{ color: 'var(--ink-2)' }}>{when(s.last_run_at)}</span>
@@ -545,6 +575,12 @@ export default function SourcesPage() {
                           onClick={() => toggle(s)} disabled={busy === s.id}>
                           {s.enabled ? 'Выключить' : 'Включить'}
                         </Button>
+                        {s.connector_kind === 'career' ? (
+                          <Button style={{ height: 28, padding: '0 10px' }}
+                            onClick={() => saveCareerPages(s)} disabled={busy === s.id}>
+                            Сохранить адреса
+                          </Button>
+                        ) : null}
                         <Button variant="danger" style={{ height: 28, padding: '0 10px' }}
                           onClick={() => remove(s)} disabled={busy === s.id}>
                           Удалить

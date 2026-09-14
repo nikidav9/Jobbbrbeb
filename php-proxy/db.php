@@ -16,6 +16,9 @@
 ob_start();
 require_once __DIR__ . '/partner_billing.php';
 require_once __DIR__ . '/superjob_oauth_lib.php';
+require_once __DIR__ . '/ext_health.php';
+require_once __DIR__ . '/referral.php';
+require_once __DIR__ . '/funnel.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -141,6 +144,7 @@ if (!$fn) { jt_respond(['error' => 'Missing fn'], 400); exit; }
 $adminFns = [
     'dbKeyKind', 'adminResetPassword', 'dbMigrateChatMedia', 'dbDeleteUser',
     'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges', 'cronShiftNudge',
+    'cronAnnounceMissed',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
     'extSourcesList', 'extSourceSave', 'extSourceDelete', 'extStats',
@@ -156,6 +160,22 @@ $adminFns = [
     'supportReply', 'supportThreads', 'botReply', 'botInbox',
     'tgGroupInfo', 'tgPostToGroup', 'tgSetWebhook', 'tgWebhookInfo',
     'dbGetWorkerTokensByMetro', 'dbGetAllWorkerTokens',
+    // Разовая уборка по ВСЕМ чатам сервиса и запись расходов по партнёрам.
+    // Приложение их не зовёт (dbMergeDuplicateChats — вообще никто, расходы —
+    // только дашборд), а любому вошедшему они были открыты.
+    'dbMergeDuplicateChats', 'extPartnerCostSave',
+    // Уведомления человеку приложение больше НЕ шлёт: их отправляет сервер
+    // там же, где записывает событие (jt_notify_new_message, jt_notify_match,
+    // jt_notify_shift_outcome, jt_perm_app_announce). Пока эти операции были
+    // открыты вошедшему, текст уведомления приходил с клиента — то есть через
+    // нашего бота можно было послать что угодно тому, с кем есть переписка.
+    // Теперь звать их может только админский токен.
+    //
+    // Старые сборки приложения их ещё зовут и получат отказ. Потери нет:
+    // уведомление к этому времени уже ушло с сервера, а отказ у них и так
+    // проглатывается пустым catch.
+    'tgNotifyUser', 'sendPushNotification', 'tgNotifyNewApplication',
+    'dbGetPushToken', 'dbSaveNotification',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -230,6 +250,7 @@ $selfArgFns = [
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
     'supportHistory' => 0, 'supportSend' => 0,
     'dbGetLikesForUser' => 0, 'dbGetChats' => 0,
+    'dbGetMyReferral' => 0,
     'dbGetSaved' => 0, 'dbAddSaved' => 0, 'dbRemoveSaved' => 0,
     'dbGetPermVacanciesByEmployer' => 0, 'dbGetPermApplications' => 0,
     'dbGetPermSaved' => 0, 'dbAddPermSaved' => 0, 'dbRemovePermSaved' => 0,
@@ -238,7 +259,7 @@ $selfArgFns = [
     'dbDeleteWebPushSubscription' => 0, 'dbGetNotifications' => 0,
     'dbMarkAllNotifsRead' => 0, 'dbDeleteAllNotifs' => 0,
     'dbRecordVacancyView' => 1, 'dbRecordPermVacancyView' => 1,
-    'dbGetLikeByVacancyWorker' => 1, 'dbRemoveLike' => 1,
+    'dbRemoveLike' => 1,
     'dbCheckAndCreateMatch' => 1, 'dbApplyPermVacancy' => 1,
 ];
 if (isset($selfArgFns[$fn])) {
@@ -293,6 +314,9 @@ $ownedVacancyFns = [
     'dbClosePermVacancy' => ['jm_perm_vacancies', 0],
     'dbDeletePermVacancy' => ['jm_perm_vacancies', 0],
     'dbGetPermApplicationsForVacancy' => ['jm_perm_vacancies', 0],
+    // Близнец dbGetVacancyViewers для постоянных вакансий стоял без проверки:
+    // список посмотревших чужую вакансию отдавался любому вошедшему.
+    'dbGetPermVacancyViewers' => ['jm_perm_vacancies', 0],
 ];
 if (isset($ownedVacancyFns[$fn])) {
     [$table, $pos] = $ownedVacancyFns[$fn];
@@ -340,6 +364,10 @@ function tg_pending_write(array $all): void {
 
 function uid(): string {
     return base_convert(time(), 10, 36) . substr(base_convert(mt_rand(), 10, 36), 2, 5);
+}
+
+function jt_new_user_id_is_valid(string $id): bool {
+    return preg_match('~\A[a-z0-9]{8,32}\z~', $id) === 1;
 }
 
 function now_iso(): string {
@@ -501,6 +529,10 @@ define('USER_PUBLIC_COLS', implode(',', [
     'metro_line_id', 'metro_station', 'work_types', 'company', 'bio',
     'avatar_url', 'avg_rating', 'rating_count', 'is_blocked',
     'created_at', 'last_seen_at',
+    // Поручительство: скольких приведённых этот человек довёл до смены.
+    // Отдаётся всем, кто видит карточку, — в этом и смысл награды: она
+    // работает, только если её видит работодатель.
+    'referral_worked',
 ]));
 
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
@@ -1501,9 +1533,30 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  * Если $pushBody не передан, в пуш идёт обычный текст — так и должно быть
  * для сообщений, где имён нет вовсе (а таких большинство).
  */
-function notify_user(string $userId, string $title, string $body, string $type = '',
-                     array $data = [], ?string $pushBody = null): void {
-    if ($userId === '') return;
+/**
+ * $pushTitle — заголовок ИМЕННО для пуша, когда он должен отличаться от
+ * заголовка в колокольчике. Нужен переписке: в колокольчике внутри приложения
+ * видно, кто написал, а на экране блокировки — только «Новое сообщение».
+ * Так же устроены WhatsApp и Signal со спрятанными предпросмотрами.
+ */
+/**
+ * Только колокольчик: строка в jm_notifications, без телеграма и без пуша.
+ *
+ * Есть новости, которые человек должен узнать, но за которые нельзя дёргать
+ * его телефон. Отказ по отклику — ровно такая: их много, они неприятные, и
+ * пуш по каждой кончается выключенными уведомлениями. А выключенные
+ * уведомления не вернуть — вместе с отказами человек перестанет получать и
+ * сообщения о мэтчах и о завтрашней смене, то есть ровно то, ради чего
+ * уведомления и нужны. Спрятать отказ тоже нельзя: молчание работодателя —
+ * самый опасный разрыв воронки, и он должен быть виден. Колокольчик и строка
+ * в переписке показывают его, не отнимая всего остального.
+ *
+ * Возвращает false, если писать не стали: пустой получатель или дубль в
+ * пределах минуты. notify_user на этом останавливается — раз строки нет, то
+ * и слать нечего.
+ */
+function notify_bell(string $userId, string $title, string $body, string $type = ''): bool {
+    if ($userId === '') return false;
 
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 60);
     $dup = sb_select('jm_notifications', [
@@ -1511,7 +1564,7 @@ function notify_user(string $userId, string $title, string $body, string $type =
         'title'      => 'eq.' . $title,
         'created_at' => 'gte.' . $since,
     ], 'id');
-    if ($dup) return;
+    if ($dup) return false;
 
     $row = ['user_id' => $userId, 'title' => $title, 'body' => $body];
     if ($type !== '') $row['type'] = $type;
@@ -1521,6 +1574,13 @@ function notify_user(string $userId, string $title, string $body, string $type =
         // Колонки type может не быть — пишем без неё, колокольчик важнее.
         sb_insert('jm_notifications', ['user_id' => $userId, 'title' => $title, 'body' => $body]);
     }
+    return true;
+}
+
+function notify_user(string $userId, string $title, string $body, string $type = '',
+                     array $data = [], ?string $pushBody = null,
+                     ?string $pushTitle = null, ?string $channelId = null): void {
+    if (!notify_bell($userId, $title, $body, $type)) return;
 
     $u = sb_single('jm_users', ['id' => 'eq.' . $userId], 'telegram_id,push_token');
     if (!$u) return;
@@ -1531,10 +1591,22 @@ function notify_user(string $userId, string $title, string $body, string $type =
     }
     if (!empty($u['push_token'])) {
         expo_push([[
-            'to' => $u['push_token'], 'title' => $title, 'body' => $pushBody ?? $body,
-            'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches',
+            'to' => $u['push_token'], 'title' => $pushTitle ?? $title, 'body' => $pushBody ?? $body,
+            'sound' => 'default', 'priority' => 'high', 'channelId' => $channelId ?? 'matches',
             'data' => array_merge(['type' => $type], $data),
         ]]);
+    }
+    // Ни телеграма, ни приложения — остаётся браузер. До этой правки такой
+    // человек не получал НИ ОДНОГО внешнего сигнала о личных событиях: о
+    // мэтче, о сообщении, об итоге своей смены. Веб-пуш на сервере был и
+    // работал, но звали его из одного места — массовой рассылки о новой
+    // вакансии. То есть о чужой смене человек узнавал, а о своём мэтче нет.
+    //
+    // Запасной путь, а не добавочный: у кого есть телеграм или приложение, тот
+    // уже извещён, и второй звонок о том же — это ровно то «просто так», от
+    // которого выключают уведомления.
+    if (empty($u['telegram_id']) && empty($u['push_token'])) {
+        web_push_to([$userId => true], $pushTitle ?? $title, $pushBody ?? $body, $type);
     }
 }
 
@@ -1820,10 +1892,20 @@ function web_push_to(array $userIds, string $title, string $body, string $dataTy
     if (empty($userIds)) return 0;
     $ok = 0;
     try {
-        $subs = sb_select('jm_web_push_subscriptions', [], 'user_id,endpoint,p256dh,auth');
+        // Спрашиваем подписки нужных людей, а не всю таблицу. Раньше выборка
+        // шла целиком и отсеивалась в PHP: для одной рассылки в сутки это
+        // ничего не стоило, но теперь сюда заходит каждое личное уведомление.
+        // Порциями по сто — идентификаторы уходят в адрес запроса, и длинный
+        // список сломал бы его целиком, а поломка здесь тихая: она под catch.
+        $subs = [];
+        foreach (array_chunk(array_keys($userIds), 100) as $chunk) {
+            foreach (sb_select('jm_web_push_subscriptions',
+                ['user_id' => sb_in_list($chunk)],
+                'user_id,endpoint,p256dh,auth') as $row) $subs[] = $row;
+        }
         $appSecret = jt_secret('APP_SECRET');
         foreach ($subs as $s) {
-            if (!isset($userIds[$s['user_id']]) || empty($s['endpoint'])) continue;
+            if (empty($s['endpoint'])) continue;
             $ch = curl_init(DASHBOARD_URL . '/api/webpush/send');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
@@ -1887,6 +1969,691 @@ const SCORE_EXPERIENCE_FULL = 30;
  * Ошибки наружу не выпускает: пересчёт идёт следом за записью исхода смены
  * или оценки, и сорвать саму запись из-за него нельзя.
  */
+
+/**
+ * Начислить приглашение, если эта смена — первая отработанная у приглашённого.
+ *
+ * Зовётся из обоих мест, где выставляется shift_completed. Правило «за что
+ * платим» живёт в referral.php и проверяется на выдуманных данных; здесь
+ * только поход в базу.
+ *
+ * Молчит при любой неудаче: начисление — не то, ради чего стоит заваливать
+ * человеку отметку об окончании смены. Несработавшее начисление видно в
+ * jm_referral_rewards, а несохранённый итог смены не видно нигде.
+ */
+
+/**
+ * Свободный код приглашения.
+ *
+ * Совпадение на восьми знаках из тридцати двух маловероятно, но «маловероятно»
+ * за год работы случается. Совпавший код увёл бы вознаграждение чужому
+ * человеку, поэтому проверяем, а не надеемся.
+ */
+
+/**
+ * Сверить, что смену закрывает её сторона, и вернуть строку.
+ *
+ * Эти операции требовали входа, но не спрашивали, ЧЬЯ смена: их нет в
+ * $selfArgFns, потому что владелец там не довод запроса, а поле в строке.
+ * Любой вошедший мог закрыть чужую смену любым итогом — и поставить человеку
+ * невыход, который бьёт по рейтингу сильнее всего остального.
+ *
+ * $employerOnly — для нынешней отметки об итоге: в приложении её ставит
+ * работодатель и только он (экран EmployerMatches). Старые операции
+ * подтверждения принимают обе стороны: какая из них зовёт их в давно
+ * установленном приложении, мы не знаем, а сломать его — ровно то, ради чего
+ * эти операции и оставлены.
+ */
+
+/**
+ * Название и компания смены — одной строкой на всех.
+ *
+ * Вакансию могли удалить, а отклик по ней остаться: связи в базе нет. Тогда
+ * подставляем общие слова, а не пустые кавычки.
+ */
+function jt_shift_titles(string $vacancyId): array
+{
+    $vac = $vacancyId !== ''
+        ? sb_single('jm_vacancies', ['id' => 'eq.' . $vacancyId], 'title,company') : null;
+    return [
+        trim((string)($vac['title'] ?? '')) ?: 'смену',
+        trim((string)($vac['company'] ?? '')) ?: 'Работодатель',
+    ];
+}
+
+/**
+ * Известить о мэтче ту сторону, которая его НЕ нажимала.
+ *
+ * Раньше это делал телефон нажавшего, и текст собирал сам. Событие целиком
+ * серверное — мэтч заводится здесь же, — так что телефону тут делать нечего:
+ * обрыв связи терял уведомление, а подпись под ним можно было подделать.
+ *
+ * Извещаем именно другую сторону: свой же нажим человек и так видит на экране.
+ */
+function jt_notify_match(string $vacancyId, string $workerId, string $employerId,
+                         ?string $actorUid): void
+{
+    [$title, $company] = jt_shift_titles($vacancyId);
+    $actor = (string)($actorUid ?? '');
+
+    if ($actor !== $workerId && $workerId !== '') {
+        notify_user($workerId, '🎉 Мэтч! Вас хотят взять!',
+            $company . ' подтвердили ваш отклик на «' . $title . '». Откройте чат!',
+            'match_worker');
+    }
+    if ($actor !== $employerId && $employerId !== '') {
+        $w = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'first_name,last_name');
+        $name = trim(((string)($w['first_name'] ?? '')) . ' ' . ((string)($w['last_name'] ?? ''))) ?: 'Кандидат';
+        notify_user($employerId, '🎉 Мэтч!',
+            $name . ' готов выйти на смену «' . $title . '». Откройте чат!',
+            'match_employer', [],
+            // В пуш — без имени: он уходит за границу. Название смены
+            // оставляем, без него уведомление перестаёт что-либо значить.
+            'Кандидат готов выйти на смену «' . $title . '». Откройте чат!');
+    }
+}
+
+/**
+ * Известить работника об итоге смены.
+ *
+ * Тексты разные не для красоты. Прежде на все случаи был один — «компания
+ * отменила смену», — и человек, которого отметили не вышедшим, получал письмо
+ * про отмену работодателем. Неправда, да ещё и отметку, которая пойдёт ему в
+ * рейтинг, он бы так и не увидел. Пусть видит: если это ошибка, успеет
+ * написать в поддержку, пока помнит, как всё было.
+ */
+function jt_notify_shift_outcome(string $likeId, string $outcome): void
+{
+    $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'worker_id,vacancy_id');
+    $workerId = (string)($like['worker_id'] ?? '');
+    if ($workerId === '') return;
+    [$title, $company] = jt_shift_titles((string)($like['vacancy_id'] ?? ''));
+
+    if ($outcome === 'worked') {
+        notify_user($workerId, '✅ Смена подтверждена работодателем',
+            $company . ' подтвердил смену «' . $title . '». Хотите оставить отзыв?',
+            'shift_confirmed_by_employer', [], null, null, 'default');
+        return;
+    }
+
+    [$t, $b] = match ($outcome) {
+        'no_show' => ['⚠️ Отмечен невыход',
+            $company . ' отметил, что вы не вышли на смену «' . $title
+            . '». Это влияет на рейтинг. Если это ошибка — напишите в поддержку.'],
+        'worker_cancelled' => ['Смена отменена',
+            'Ваш отказ от смены «' . $title . '» (' . $company . ') записан. На рейтинг он не влияет.'],
+        'other_cancelled' => ['Смена отменена',
+            'Смена «' . $title . '» не состоялась по другой причине. На рейтинг сторон это не влияет.'],
+        default => ['❌ Смена отменена',
+            $company . ' отменил смену «' . $title
+            . '». Загляните в приложение — там много других подработок!'],
+    };
+    notify_user($workerId, $t, $b, 'shift_cancelled');
+}
+
+/**
+ * Идентификаторы вакансий этого работодателя.
+ *
+ * Нужны там, где раньше выбирали таблицу целиком: счётчики откликов и
+ * просмотров читает экран «мои вакансии», а отдавались они по всему рынку.
+ */
+function jt_own_vacancy_ids(string $table, ?string $authUid): array
+{
+    $me = (string)($authUid ?? '');
+    if ($me === '') return [];
+    $rows = sb_select_all($table, ['employer_id' => 'eq.' . $me], 'id');
+    return array_values(array_filter(array_column($rows, 'id')));
+}
+
+/**
+ * Строки таблицы по списку вакансий, порциями.
+ *
+ * Порции нужны не для красоты: идентификаторы уходят в адрес запроса, и
+ * работодатель с сотней вакансий упёрся бы в его длину.
+ */
+function jt_rows_for_vacancies(string $table, array $vacancyIds, string $cols): array
+{
+    $out = [];
+    foreach (array_chunk($vacancyIds, 100) as $chunk) {
+        foreach (sb_select_all($table, ['vacancy_id' => sb_in_list($chunk)], $cols) as $r) {
+            $out[] = $r;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Строка сообщения для уведомления.
+ *
+ * Повторяет services/messagePreview.ts: фото и голосовые лежат в той же
+ * текстовой колонке, что и обычные сообщения, — служебная метка плюс ссылка.
+ * Показывать её человеку нельзя, поэтому значок и слово.
+ *
+ * Значки те же, что в списке чатов: список и шторка уведомлений должны
+ * говорить одно и то же.
+ */
+function jt_message_preview(string $text): string
+{
+    if (str_starts_with($text, '[voice]')) return '🎤 Голосовое сообщение';
+    if (str_starts_with($text, '[img]')) return '📷 Фото';
+    return mb_substr($text, 0, 100);
+}
+
+/**
+ * Известить вторую сторону переписки о новом сообщении.
+ *
+ * Раньше это делал телефон отправителя: собирал заголовок из своего имени,
+ * брал чужой пуш-токен и слал. Отсюда шли сразу две беды. Первая — обычная
+ * для этой породы: вызов «выстрелил и забыл», обрыв связи, и человек о
+ * сообщении не узнал. Вторая хуже: раз текст уведомления приходит с клиента,
+ * через НАШЕГО бота можно было послать что угодно тому, с кем есть переписка.
+ * Право писать я закрыл раньше, а вот содержание оставалось за клиентом.
+ *
+ * Теперь и имя отправителя, и текст сервер берёт из того, что сам записал.
+ */
+function jt_notify_new_message(array $chat, string $senderId, string $text): void
+{
+    $workerId = (string)($chat['worker_id'] ?? '');
+    $employerId = (string)($chat['employer_id'] ?? '');
+    $recipientId = $senderId === $workerId ? $employerId : $workerId;
+    if ($recipientId === '' || $recipientId === $senderId) return;
+
+    $u = sb_single('jm_users', ['id' => 'eq.' . $senderId], 'first_name,last_name');
+    $name = trim(((string)($u['first_name'] ?? '')) . ' ' . ((string)($u['last_name'] ?? '')));
+    if ($name === '') $name = 'Собеседник';
+
+    notify_user($recipientId, '💬 ' . $name, jt_message_preview($text),
+        'message', ['chatId' => (string)($chat['id'] ?? '')],
+        // На экране блокировки — ни имени, ни текста.
+        'Откройте чат в JobToo', '💬 Новое сообщение');
+}
+
+/**
+ * Сторона переписки — или отказ.
+ *
+ * Та же проверка, что стоит для $chatArgFns до switch, но вызываемая: файлы
+ * чата адресуются не идентификатором чата, а именем файла, и в общий список
+ * не укладываются.
+ */
+function jt_require_chat_party(?string $authUid, string $chatId): void
+{
+    $chat = $chatId !== ''
+        ? sb_single('jm_chats', ['id' => 'eq.' . $chatId], 'worker_id,employer_id') : null;
+    if (!$chat || ($authUid !== (string)$chat['worker_id'] && $authUid !== (string)$chat['employer_id'])) {
+        jt_respond(['error' => 'Chat access denied'], 403); exit;
+    }
+}
+
+/**
+ * Идентификатор чата из имени файла.
+ *
+ * Приложение складывает имена так: `chat/<id чата>_<время>.jpg` и
+ * `chat/voice_<id чата>_<время>.<расширение>`. Значит по имени видно, чей это
+ * файл, и подписывать ссылку или заливать можно только своей стороне.
+ *
+ * Нашлось сплошной ревизией прав: бакет закрытый, но подписать ссылку на ЛЮБОЙ
+ * файл чата мог любой вошедший — то есть прочитать чужую переписку в
+ * фотографиях и голосовых. Залить с чужим именем (и перезаписать, заголовок
+ * x-upsert стоит) — тоже.
+ */
+function jt_chat_id_from_media_path(string $path): string
+{
+    $name = basename($path);
+    if (str_starts_with($name, 'voice_')) $name = substr($name, 6);
+    $pos = strpos($name, '_');
+    return $pos === false ? '' : substr($name, 0, $pos);
+}
+
+/** Отказ по правилу выше. Один текст на все точки, чтобы не разъехались. */
+
+function jt_shift_party(string $likeId, ?string $authUid, bool $employerOnly): array
+{
+    $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'id,worker_id,employer_id,vacancy_id');
+    if (!$like) {
+        jt_respond(['error' => 'Смена не найдена'], 404); exit;
+    }
+    $employerId = trim((string)($like['employer_id'] ?? ''));
+    $workerId = trim((string)($like['worker_id'] ?? ''));
+    $uid = (string)($authUid ?? '');
+    $allowed = $uid !== '' && ($uid === $employerId || (!$employerOnly && $uid === $workerId));
+    if (!$allowed) {
+        jt_respond(['error' => 'Это не ваша смена'], 403); exit;
+    }
+    return $like;
+}
+
+
+/**
+ * Записать код приглашения и того, кто привёл, только что созданному человеку.
+ *
+ * Отдельно от создания профиля намеренно: см. комментарий в dbUpsertUser.
+ * Приглашение — приятное дополнение, регистрация — обязательна, и первое не
+ * имеет права ронять второе.
+ *
+ * Поле invited_by задаёт СЕРВЕР по коду: клиент его не присылает и прислать не
+ * может — в dbUpsertUser оно срезается белым списком.
+ */
+
+/**
+ * Объявить в группу вакансии, о которых объявить забыли.
+ *
+ * Зачем это вообще нужно. Объявление в группу «ПОДРАБОТКИ» до сих пор
+ * целиком зависело от телефона того, кто публикует: приложение зовёт
+ * dbNotifyAllWorkersNewVacancy отдельным запросом уже ПОСЛЕ того, как экран
+ * закрылся (router.back()), и даёт до трёх попыток с двадцатипятисекундным
+ * ожиданием — это полторы минуты. Человек нажал «Опубликовать», увидел
+ * «Вакансия опубликована» и свернул приложение: запрос не ушёл, сервер о
+ * вакансии не узнал, и починить это на сервере было нечем — он просто не
+ * знал, что объявлять.
+ *
+ * Так вакансия и провисела сутки в ленте без единого сообщения в группе.
+ *
+ * Теперь сервер догоняет сам. Раз в час смотрит свежие открытые вакансии и
+ * объявляет те, по которым отметки о доставке нет.
+ *
+ * Почему окно короткое и почему старые отметки тоже считаются: при первом
+ * запуске у всех прежних вакансий отметки gpost нет — она новая. Без обоих
+ * ограничений задание вывалило бы в группу всю историю. Поэтому берём только
+ * последние часы и считаем доставленной вакансию, у которой есть ЛЮБАЯ из
+ * двух отметок: gpost (новая) или bcast (её ставил прежний код, когда
+ * рассылка начиналась).
+ */
+function jt_announce_missed(int $hours = 6, int $limit = 5): array
+{
+    $cut = gmdate('Y-m-d\TH:i:s\Z', time() - $hours * 3600);
+    $announced = [];
+    $checked = 0;
+
+    $sources = [
+        ['table' => 'jm_perm_vacancies', 'kind' => 'perm',
+         'cols' => 'id,title,company,metro_station,salary,schedule,created_at'],
+        ['table' => 'jm_vacancies', 'kind' => 'shift',
+         'cols' => 'id,title,company,metro_station,salary,date,time_start,time_end,created_at'],
+    ];
+
+    foreach ($sources as $src) {
+        if (count($announced) >= $limit) break;
+        $rows = sb_select($src['table'], [
+            'status' => 'eq.open',
+            'created_at' => 'gte.' . $cut,
+            'order' => 'created_at.asc',
+        ], $src['cols']);
+
+        foreach ($rows as $v) {
+            if (count($announced) >= $limit) break;
+            $id = trim((string)($v['id'] ?? ''));
+            if ($id === '') continue;
+            $checked++;
+
+            // Любая из двух отметок означает «уже занимались».
+            if (sb_single('jm_settings', ['key' => 'eq.gpost:' . $id], 'key')) continue;
+            if (sb_single('jm_settings', ['key' => 'eq.bcast:' . $id], 'key')) continue;
+
+            $html = jt_group_html($v, $src['kind']);
+            if ($html === '') continue;
+
+            $campaign = bin2hex(random_bytes(8));
+            $btn = 'https://t.me/JobToo_bot/app?startapp=' . $src['kind'] . '_' . $id . '_' . $campaign;
+            if (TG_GROUP_CHAT_ID === 0) break;
+            if (!tg_send_message(TG_GROUP_CHAT_ID, $html, $btn)) continue;
+
+            sb_upsert('jm_settings', [
+                'key' => 'gpost:' . $id, 'value' => now_iso(), 'updated_at' => now_iso(),
+            ], 'key');
+            $announced[] = $id;
+        }
+    }
+
+    return ['checked' => $checked, 'announced' => count($announced), 'ids' => $announced];
+}
+
+/**
+ * Текст объявления в группу.
+ *
+ * Повторяет формат, который собирает приложение (services/notifications.ts).
+ * Повтор осознанный: догоняющее задание не может позвать клиентский код, а
+ * два разных вида объявления в одной группе выглядели бы как поломка. Меняя
+ * формат там — поменять и здесь.
+ */
+function jt_group_html(array $v, string $kind): string
+{
+    $title = trim((string)($v['title'] ?? ''));
+    $company = trim((string)($v['company'] ?? ''));
+    if ($title === '' || $company === '') return '';
+
+    $e = fn(string $x): string => htmlspecialchars($x, ENT_QUOTES, 'UTF-8');
+    $salary = (float)($v['salary'] ?? 0);
+    $head = $kind === 'perm' ? '💼 <b>Новая постоянная вакансия!</b>' : '⚡ <b>Новая подработка!</b>';
+
+    $out = $head . "\n\n👷 " . $e($title) . ' — ' . $e($company);
+
+    if ($kind === 'shift') {
+        $date = trim((string)($v['date'] ?? ''));
+        $time = trim(trim((string)($v['time_start'] ?? '')) . '–' . trim((string)($v['time_end'] ?? '')), '–');
+        if ($date !== '') $out .= "\n📅 " . $e($date) . ($time !== '' ? ', ' . $e($time) : '');
+        elseif ($time !== '') $out .= "\n🕐 " . $e($time);
+    } else {
+        $schedule = trim((string)($v['schedule'] ?? ''));
+        if ($schedule !== '') $out .= "\n🗓 " . $e($schedule);
+    }
+
+    $metro = trim((string)($v['metro_station'] ?? ''));
+    if ($metro !== '') $out .= "\n🚇 м. " . $e($metro);
+    if ($salary > 0) {
+        $out .= "\n💰 " . number_format($salary, 0, ',', ' ') . ' ₽' . ($kind === 'perm' ? '/мес' : '');
+    }
+
+    return $out . "\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇";
+}
+
+
+/**
+ * Строка в переписку об отказе по смене.
+ *
+ * Прежний текст — «Вы не подошли по данной вакансии. Чат закрыт.» — плох не
+ * тем, что врёт: переписка действительно закрывается, экран блокирует ввод по
+ * отклонённому отклику (isChatBlocked в app/chat-room.tsx). Плох он тем, что
+ * не говорит, ПО КАКОЙ вакансии отказ, — а чат один на пару людей, и речь в
+ * нём идёт о нескольких сменах подряд.
+ *
+ * Поэтому смену называем, а про закрытую переписку оставляем: без этого
+ * человек упрётся в серый ввод и не поймёт, почему. Форма безличная — чтобы
+ * не угадывать род названия компании.
+ */
+function jt_shift_reject_announce(string $workerId, string $employerId, string $vacTitle = ''): string
+{
+    if ($workerId === '' || $employerId === '') return '';
+
+    // Уведомление — ПЕРВЫМ и всегда, строка в переписку — если переписка есть.
+    //
+    // Порядок тут решает всё. Чат заводится только на мэтче: у человека,
+    // которому отказали с экрана «Кандидаты», переписки обычно нет вовсе, и
+    // одной строкой до него не достучаться никак. Именно этот случай и был
+    // самым частым молчанием.
+    //
+    // «Работодатель» в тексте не для вежливости: название компании бывает
+    // любого рода, а так глагол согласуется всегда.
+    //
+    // И только колокольчик — без пуша и без телеграма, см. notify_bell.
+    // Отказов много, они неприятные, и человек, разбуженный третьим за вечер,
+    // выключает уведомления целиком — вместе с теми, ради которых он их и
+    // включал. Узнать об отказе он всё равно узнает: колокольчик, строка в
+    // переписке и непрочитанное на вкладке никуда не делись, и в приложение
+    // он заходит сам, потому что ждёт ответа.
+    notify_bell($workerId, '❌ Отклик отклонён',
+        'Работодатель отклонил ваш отклик на смену'
+            . (trim($vacTitle) !== '' ? ' «' . trim($vacTitle) . '»' : '') . '.',
+        'shift_rejected');
+
+    $chat = sb_single('jm_chats',
+        ['worker_id' => 'eq.' . $workerId, 'employer_id' => 'eq.' . $employerId],
+        'id,unread_worker');
+    if (!$chat) return '';
+
+    $title = trim($vacTitle);
+    $named = $title !== '' ? ' «' . $title . '»' : '';
+    $text = 'Отклик на смену' . $named . ' отклонён. Переписка по ней закрыта.';
+
+    msg_insert(['id' => uid(), 'chat_id' => $chat['id'], 'sender_id' => 'system',
+        'text' => $text, 'created_at' => now_iso()]);
+    sb_update('jm_chats', ['id' => 'eq.' . $chat['id']],
+        ['unread_worker' => (int)($chat['unread_worker'] ?? 0) + 1]);
+    return $text;
+}
+
+/**
+ * Сказать соискателю о решении по его отклику на постоянную вакансию.
+ *
+ * Раньше это делал телефон директора: после записи статуса приложение
+ * отдельными вызовами слало уведомление и системную строку в чат, и оба
+ * вызова были «выстрелил и забыл». Уведомление терялось при любом обрыве, а
+ * системная строка НЕ ДОХОДИЛА ВООБЩЕ: писать сообщение от имени «system»
+ * приложению запрещено (проверка «Invalid sender» в начале файла), и отказ
+ * гасился пустым .catch(). Директор видел строку у себя — её дорисовывали на
+ * месте, — а соискатель не видел ничего.
+ *
+ * Теперь и то и другое делает сервер в том же запросе, что меняет статус.
+ *
+ * Заголовки уведомлений те же, что слало приложение. Это не случайность:
+ * notify_user гасит повтор с тем же заголовком в течение минуты, поэтому со
+ * старой сборки второе уведомление не придёт.
+ */
+function jt_perm_app_announce(array $app, string $status): void
+{
+    if ($status !== 'approved' && $status !== 'rejected') return;
+    $workerId = trim((string)($app['worker_id'] ?? ''));
+    $employerId = trim((string)($app['employer_id'] ?? ''));
+    if ($workerId === '') return;
+
+    $v = sb_single('jm_perm_vacancies',
+        ['id' => 'eq.' . (string)($app['vacancy_id'] ?? '')], 'title,company');
+    // Вакансию могли удалить. Тогда в уведомлении остаётся прежняя заглушка,
+    // а в строке чата название просто опускается: «на вакансию «вакансию»»
+    // читать невозможно.
+    $title = trim((string)($v['title'] ?? ''));
+    $named = $title !== '' ? ' «' . $title . '»' : '';
+    $company = trim((string)($v['company'] ?? '')) ?: 'Работодатель';
+
+    if ($status === 'approved') {
+        notify_user($workerId, '✅ Заявка одобрена!',
+            $company . ' одобрили вашу заявку на «' . ($title ?: 'вакансию')
+                . '» и написали вам — ответьте в чате.',
+            'perm_approved');
+        $line = 'Заявка на вакансию' . $named . ' одобрена. Обсудите детали выхода.';
+    } else {
+        // Здесь пуш остаётся, в отличие от отказа по смене (см. notify_bell).
+        // Разница не в вежливости, а в частоте: смен человек перебирает
+        // десятки за вечер, а заявку на постоянную работу подаёт осознанно и
+        // ответа ждёт — такой отказ приходит редко и «просто так» не будит.
+        notify_user($workerId, '❌ Заявка отклонена',
+            $company . ' отклонили вашу заявку на «' . ($title ?: 'вакансию') . '».',
+            'perm_rejected');
+        $line = 'Заявка на вакансию' . $named . ' отклонена. Переписка по ней закрыта.';
+    }
+
+    // Строку пишем только в УЖЕ существующий разговор. При одобрении из
+    // «Мэтчей» чат заводится следующим запросом и сразу с личным сообщением
+    // директора — системная строка там была бы лишней.
+    if ($employerId === '') return;
+    $chat = sb_single('jm_chats',
+        ['worker_id' => 'eq.' . $workerId, 'employer_id' => 'eq.' . $employerId],
+        'id,unread_worker');
+    if (!$chat) return;
+
+    msg_insert(['id' => uid(), 'chat_id' => $chat['id'], 'sender_id' => 'system',
+        'text' => $line, 'created_at' => now_iso()]);
+    sb_update('jm_chats', ['id' => 'eq.' . $chat['id']],
+        ['unread_worker' => (int)($chat['unread_worker'] ?? 0) + 1]);
+}
+
+/**
+ * Список значений для фильтра PostgREST `in.(…)`.
+ *
+ * Складывать значения через запятую напрямую нельзя: id пользователя приходит
+ * с клиента при регистрации и формат его никто не проверяет. Запятая внутри
+ * разорвала бы список на два значения, а скобка — сломала бы запрос целиком, и
+ * тогда падает всё, что этот запрос делает. Мой счётчик согласий в суточном
+ * отчёте именно так и уронил бы весь отчёт.
+ *
+ * PostgREST разрешает брать значение в двойные кавычки; внутри них кавычка
+ * экранируется обратной косой.
+ */
+function sb_in_list(array $values): string
+{
+    $quoted = [];
+    foreach ($values as $v) {
+        $quoted[] = '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], (string)$v) . '"';
+    }
+    return 'in.(' . implode(',', $quoted) . ')';
+}
+
+/**
+ * Записать согласие в тот же заход, что создал человека.
+ *
+ * Раньше согласие писалось ОТДЕЛЬНЫМ запросом с клиента, и запрос этот был
+ * «выстрелил и забыл»: void dbRecordConsent(...) без ожидания, без повтора,
+ * без обработки отказа. Регистрация идёт с телефона, часто на плохой связи —
+ * сеть моргнула, и человек зарегистрирован, а записи о том, что он принял
+ * условия, нет. Узнать об этом было неоткуда.
+ *
+ * Запись согласия — не аналитика, а доказательство: именно её предъявляют,
+ * когда спрашивают, на каком основании мы обрабатываем данные человека.
+ *
+ * Идентификатор строки тот же, что в dbRecordConsent: человек плюс отпечаток
+ * набора документов. Поэтому повторный вызов с клиента (старые версии
+ * приложения его ещё делают) перезаписывает ту же строку, а не плодит вторую.
+ *
+ * Отказ не роняет регистрацию — отказать человеку в регистрации из-за сбоя
+ * записи было бы хуже. Зато молчания больше нет: суточный отчёт считает тех,
+ * кто зарегистрировался без согласия, и поднимает тревогу.
+ */
+
+function jt_consent_attach(string $uid, $payload): void
+{
+    if (!is_array($payload)) return;
+    $stamp = trim((string)($payload['stamp'] ?? ''));
+    if ($stamp === '') return;
+    $docs = is_array($payload['docs'] ?? null) ? $payload['docs'] : [];
+
+    try {
+        sb_upsert('jm_consents', [
+            'id'          => $uid . ':' . substr(hash('sha256', $stamp), 0, 16),
+            'user_id'     => $uid,
+            'stamp'       => $stamp,
+            'docs'        => $docs,
+            'source'      => 'registration',
+            'accepted_at' => now_iso(),
+        ], 'id');
+    } catch (Throwable $e) {
+        // См. выше: регистрацию не роняем, но и не молчим — считается в отчёте.
+    }
+}
+
+function jt_referral_attach(string $uid, string $rawCode): void
+{
+    try {
+        $fields = ['referral_code' => jt_referral_code_unique()];
+
+        $code = ref_code_normalize($rawCode);
+        $inviterId = null;
+        if ($code !== null) {
+            $inviter = sb_single('jm_users', ['referral_code' => 'eq.' . $code], 'id');
+            $inviterId = $inviter['id'] ?? null;
+        }
+        $verdict = ref_can_attribute(
+            $inviterId !== null ? (string)$inviterId : null, $uid, false, null);
+        if ($verdict['ok']) {
+            $fields['invited_by'] = (string)$inviterId;
+            $fields['invited_at'] = now_iso();
+        }
+
+        sb_update('jm_users', ['id' => 'eq.' . $uid], $fields);
+    } catch (Throwable $e) {
+        // Колонок ещё нет (миграция 064 не применена) или база моргнула.
+        // Человек зарегистрирован — это главное.
+    }
+}
+
+function jt_referral_code_unique(): string
+{
+    for ($i = 0; $i < 5; $i++) {
+        $code = ref_code_new();
+        if (sb_single('jm_users', ['referral_code' => 'eq.' . $code], 'id') === null) return $code;
+    }
+    // Пять совпадений подряд — это не везение, а сломанный источник
+    // случайности. Молча выдать шестой код значило бы спрятать поломку.
+    throw new RuntimeException('не удалось подобрать свободный код приглашения');
+}
+
+function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUserId): void
+{
+    try {
+        $like = sb_single('jm_likes', ['id' => 'eq.' . $likeId], 'worker_id,employer_id');
+        $workerId = trim((string)($like['worker_id'] ?? ''));
+        if ($workerId === '') return;
+
+        // Начисляем, только если смену закрыл РАБОТОДАТЕЛЬ, и именно тот, чья
+        // она. Без этой проверки программа печатала бы деньги: dbSetShiftOutcome
+        // требует входа, но не проверяет, чья смена, — значит любой вошедший
+        // мог бы закрыть чужую смену как отработанную. Двух своих учёток и
+        // двух номеров хватило бы, чтобы начислить себе вознаграждение без
+        // единого настоящего выхода на смену.
+        //
+        // Берём именно $authUid из подписанной сессии. В строке есть поле
+        // outcome_by, но его присылает клиент, и доказывает оно ровно ничего.
+        $employerId = trim((string)($like['employer_id'] ?? ''));
+        if ($byUserId === null || $byUserId === '' || $byUserId !== $employerId) return;
+        // И работник не может быть работодателем сам себе.
+        if ($employerId === $workerId) return;
+
+        $worker = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'id,invited_by');
+        $invitedBy = trim((string)($worker['invited_by'] ?? ''));
+        if ($invitedBy === '') return;
+
+        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id,like_id,outcome');
+
+        // Отметку об итоге смены можно ИСПРАВИТЬ: dbSetShiftOutcome зовётся
+        // повторно, рейтинг пересчитывается. А поручительство до этой ветки
+        // не пересчитывалось: строка про первую смену уже была, и правка
+        // молча отбрасывалась. Работодатель, промахнувшийся мимо кнопки,
+        // навсегда портил поручителю карточку отметкой «не вышел».
+        //
+        // Правим только ту строку, что заведена этой же сменой. Итог ДРУГОЙ
+        // смены — не исправление, а вторая смена, а записываем мы первую.
+        if ($existing !== null
+            && trim((string)($existing['like_id'] ?? '')) === $likeId
+            && in_array($outcome, REF_OUTCOMES, true)
+            && (string)($existing['outcome'] ?? '') !== $outcome) {
+            sb_update('jm_referral_rewards', ['id' => 'eq.' . $existing['id']],
+                ['outcome' => $outcome, 'qualified_at' => now_iso()]);
+            jt_referral_bump($invitedBy, $outcome === 'worked' ? 1 : -1);
+            return;
+        }
+
+        $verdict = ref_should_record($outcome, $invitedBy, $workerId, $existing !== null, $employerId);
+        if (!$verdict['ok']) return;
+
+        // Денег здесь нет и не обещано: программа платит поручительством.
+        // Записываем оба итога — и выход, и невыход. Второй нужен не для
+        // наказания, а чтобы первый что-то значил: если считать только
+        // выходы, число на карточке набирается рассылкой кода сотне
+        // незнакомых людей, и работодателю оно ничего не говорит.
+        sb_insert('jm_referral_rewards', [
+            'id' => uid(),
+            'inviter_id' => $invitedBy,
+            'invitee_id' => $workerId,
+            'like_id' => $likeId,
+            'outcome' => $outcome,
+            'qualified_at' => now_iso(),
+        ]);
+
+        if ($outcome === 'worked') jt_referral_bump($invitedBy, 1);
+    } catch (Throwable $e) {
+        // См. выше: итог смены важнее начисления.
+    }
+}
+
+/**
+ * Подвинуть счётчик поручительств на карточке приглашающего.
+ *
+ * Зачем счётчик вообще нужен: карточку кандидата работодатель видит списком,
+ * и считать по журналу на каждого значило бы сорок запросов на один экран.
+ *
+ * Чтение и запись здесь раздельные — PostgREST не умеет «прибавь единицу»
+ * без хранимой функции. Две одновременные отметки об окончании смены у
+ * одного поручителя могут потерять инкремент. Журнал остаётся источником
+ * правды, и пересчёт из него — в миграции 065; её можно прогнать повторно.
+ */
+function jt_referral_bump(string $inviterId, int $delta): void
+{
+    $inviter = sb_single('jm_users', ['id' => 'eq.' . $inviterId], 'id,referral_worked');
+    if ($inviter === null) return;
+    // Ниже нуля счётчик не опускаем: отрицательное поручительство — не
+    // смысл, а расхождение, и на карточке оно выглядело бы поломкой.
+    $next = max(0, (int)($inviter['referral_worked'] ?? 0) + $delta);
+    sb_update('jm_users', ['id' => 'eq.' . $inviterId], ['referral_worked' => $next]);
+}
+
 function jt_recalc_score(string $uid): array {
     $out = [
         'score' => null, 'score_shifts' => 0,
@@ -2054,6 +2821,42 @@ try {
     switch ($fn) {
 
         // ── Users ──────────────────────────────────────────────────────────────
+        // Своё приглашение: код и что по нему вышло.
+        //
+        // Отдельная операция, а не поле в USER_PUBLIC_COLS: те колонки уходят
+        // при запросе ЛЮБОГО человека, и код приглашения утёк бы ко всем. Он
+        // не секрет, но чужой код в руках постороннего — это чужое
+        // вознаграждение.
+        //
+        // Код заводится при первом обращении: у всех, кто зарегистрировался до
+        // миграции 064, его нет, и выдавать им пустоту значило бы закрыть
+        // программу для существующих людей — то есть для тех, кто как раз и
+        // может кого-то позвать.
+        case 'dbGetMyReferral': {
+            $me = trim((string)($args[0] ?? ''));
+            $row = sb_single('jm_users', ['id' => 'eq.' . $me], 'id,referral_code');
+            if (!$row) throw new RuntimeException('Пользователь не найден');
+            $code = trim((string)($row['referral_code'] ?? ''));
+            if ($code === '') {
+                $code = jt_referral_code_unique();
+                sb_update('jm_users', ['id' => 'eq.' . $me], ['referral_code' => $code]);
+            }
+            // Суммы здесь нет и не будет: программа платит поручительством, а
+            // не деньгами. Три числа вместо одного бодрого — потому что смысл
+            // программы ровно в разрыве между ними: позвал, вышли, не вышли.
+            // Спрятать третье значило бы вернуться к счёту регистраций, за
+            // который Jobr и поплатился.
+            $data = [
+                'code' => $code,
+                'invited' => sb_count('jm_users', ['invited_by' => 'eq.' . $me]),
+                'worked' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.worked']),
+                'noShow' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.no_show']),
+            ];
+            break;
+        }
+
         case 'dbGetUserById':
             $data = sb_single('jm_users', ['id' => 'eq.' . $args[0]], USER_PUBLIC_COLS); break;
 
@@ -2110,6 +2913,9 @@ try {
             $uid = trim((string)($u['id'] ?? ''));
             if ($uid === '') throw new RuntimeException('Нужен id пользователя');
             $existing = sb_single('jm_users', ['id' => 'eq.' . $uid], 'id');
+            if (!$existing && !jt_new_user_id_is_valid($uid)) {
+                throw new RuntimeException('Некорректный id пользователя');
+            }
             if ($existing && $authUid !== $uid) {
                 jt_respond(['error' => 'Authentication required'], 401); exit;
             }
@@ -2154,6 +2960,25 @@ try {
                 $u['password'] = password_hash((string)$u['password'], PASSWORD_BCRYPT);
             }
             sb_upsert('jm_users', $u, 'id');
+            // Приглашение пишем ОТДЕЛЬНОЙ операцией и после того, как человек
+            // уже создан.
+            //
+            // Сначала я дописывал эти поля в ту же строку — и это сломало бы
+            // регистрацию всем. Миграция 064 применяется руками, деплой
+            // уезжает сам при слиянии; между этими моментами колонки
+            // referral_code в базе нет, PostgREST отвечает 400 на неизвестное
+            // поле, а sb() на 400 бросает исключение. То есть весь
+            // dbUpsertUser падал бы, и никто не смог бы зарегистрироваться.
+            //
+            // Теперь худшее, что может случиться до миграции, — человек
+            // зарегистрируется без кода приглашения. Код ему всё равно
+            // заведётся при первом заходе на экран приглашения.
+            if (!$existing) {
+                jt_referral_attach($uid, (string)($args[1] ?? ''));
+                // Согласие — в этом же заходе. Отдельным запросом оно терялось
+                // при любом обрыве связи, см. jt_consent_attach.
+                jt_consent_attach($uid, $args[2] ?? null);
+            }
             $data = ['session_token' => $existing ? null : jt_session_issue($uid)];
             break;
         }
@@ -2309,6 +3134,10 @@ try {
             if (!preg_match('#^chat/[A-Za-z0-9._-]{1,180}$#', $name) || str_contains($name, '..')) {
                 $data = ['error' => 'плохое имя файла']; break;
             }
+            // Заливать можно только в свою переписку. Имя задаёт клиент, а
+            // выше стоит x-upsert: без этой проверки чужой файл можно было и
+            // подменить.
+            jt_require_chat_party($authUid, jt_chat_id_from_media_path($name));
             // Бакет закрытый, но ссылку на него подписывают и отдают с того же
             // имени, что и сайт, — значит разметка, залитая сюда, тоже
             // выполнится как своя. Приложение шлёт только фотографии и
@@ -2360,6 +3189,9 @@ try {
         case 'dbSignMedia': {
             $raw = (string)($args[0] ?? '');
             if ($raw === '') { $data = ['error' => 'нужен путь']; break; }
+            // Подписать ссылку может только сторона этой переписки: id чата
+            // стоит в самом имени файла, см. jt_chat_id_from_media_path.
+            jt_require_chat_party($authUid, jt_chat_id_from_media_path($raw));
 
             // Из старой ссылки достаём путь после имени бакета.
             $path = $raw;
@@ -2747,30 +3579,150 @@ try {
                 'created_at' => 'gte.' . $cut24,
             ]);
             $applications = $shiftApplications + $permApplications;
+
+            // Сколько откликов получили ответ. Отчёт до сих пор считал только
+            // «сколько подали» — а это половина правды: отклик без ответа хуже
+            // отказа, человек читает молчание как «сервис не работает».
+            //
+            // Окно ВЧЕРАШНЕЕ (см. funnel_window): у отклика должны быть сутки
+            // на ответ, иначе поданный пять минут назад честно портит долю.
+            //
+            // Ответ по смене — это employer_liked, он boolean|null: null значит
+            // «работодатель ещё не решил». По постоянной вакансии — статус
+            // сдвинулся с pending.
+            //
+            // Оговорка, которую из данных не убрать: если работодатель лайкнул
+            // первым с «Кандидатов», а работник откликнулся после, отклик
+            // засчитается отвеченным сразу. Порядок сторон в строке не
+            // записан, различить нельзя, и выдумывать различение хуже, чем
+            // знать про перекос.
+            $fw = funnel_window($now);
+            $inWindow = "(created_at.gte.{$fw['from']},created_at.lt.{$fw['to']})";
+            $askedDay = sb_count('jm_likes', ['worker_liked' => 'eq.true', 'and' => $inWindow])
+                + sb_count('jm_perm_applications', ['and' => $inWindow]);
+            $answeredDay = sb_count('jm_likes', [
+                    'worker_liked' => 'eq.true', 'and' => $inWindow,
+                    'employer_liked' => 'not.is.null',
+                ])
+                + sb_count('jm_perm_applications', ['and' => $inWindow, 'status' => 'neq.pending']);
+            $replyLine = funnel_line($askedDay, $answeredDay);
+            $replyAlert = funnel_alert($askedDay, $answeredDay);
             $newShifts = sb_count('jm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $newVacancies = sb_count('jm_perm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $partnerVacancies = sb_count('jm_ext_vacancies', [
                 'environment' => 'eq.production', 'first_seen_at' => 'gte.' . $cut24,
             ]);
 
-            $lastImportTs = null;
-            $sources = sb_select_all('jm_ext_sources', [
+            $extSources = sb_select_all('jm_ext_sources', [
                 'environment' => 'eq.production', 'enabled' => 'is.true',
-            ], 'last_success_at');
-            foreach ($sources as $source) {
+            ], 'id,name,period_min,last_success_at');
+            // Живые вакансии считаем по источникам, а не одним числом: пока не
+            // видно, на ком держится витрина, зависимостью нельзя управлять.
+            // Выборка одноколоночная — строк много, но это та же цена, какую
+            // платит сводка extStats.
+            $liveCounts = [];
+            foreach (sb_select_all('jm_ext_vacancies', [
+                'active' => 'is.true', 'environment' => 'eq.production',
+            ], 'source_id') as $row) {
+                $k = (string)($row['source_id'] ?? '');
+                $liveCounts[$k] = ($liveCounts[$k] ?? 0) + 1;
+            }
+            $health = ext_source_health($extSources, $liveCounts, $now);
+
+            $lastImportTs = null;
+            foreach ($extSources as $source) {
                 $ts = !empty($source['last_success_at'])
                     ? strtotime((string)$source['last_success_at']) : false;
                 if ($ts !== false && ($lastImportTs === null || $ts > $lastImportTs)) {
                     $lastImportTs = $ts;
                 }
             }
-            $importSilent = $lastImportTs === null || $lastImportTs < $now - 86400;
             $lastImport = 'никогда';
             if ($lastImportTs !== null) {
                 $lastImport = (new DateTimeImmutable('@' . $lastImportTs))
                     ->setTimezone(new DateTimeZone('Europe/Moscow'))
                     ->format('d.m.Y H:i') . ' МСК';
             }
+
+            // Приглашения. Денег в программе нет, ждать решения нечему —
+            // смотреть надо на то, доходят ли приведённые до смены. Три числа
+            // и есть ответ: если «пришли» растёт, а «вышли» стоит, программа
+            // приводит людей, которые не работают, и это хуже, чем её
+            // отсутствие.
+            //
+            // Миграции 064 и 065 накатывает выкладка (infra/migrate.sh, до
+            // замены PHP), но отчёт запускается и на базе, где их ещё нет.
+            // Он от этого не падает: sb_count возвращает 0 на любой неудаче,
+            // включая отсутствующую таблицу и неизвестную колонку, — он не
+            // бросает исключений вовсе. То есть до миграции здесь будут
+            // честные нули, а не поломка.
+            $refWorked = sb_count('jm_referral_rewards', ['outcome' => 'eq.worked']);
+            $refNoShow = sb_count('jm_referral_rewards', ['outcome' => 'eq.no_show']);
+            $refDay = sb_count('jm_users', [
+                'invited_by' => 'not.is.null', 'created_at' => 'gte.' . $cut24,
+            ]);
+            $referralLine = "🎁 Приглашения: пришли по коду за сутки <b>{$refDay}</b>"
+                . ", всего вышли на первую смену <b>{$refWorked}</b>, не вышли <b>{$refNoShow}</b>";
+
+            // Согласия на обработку данных. Запись согласия — не аналитика, а
+            // доказательство: именно её предъявляют, когда спрашивают, на
+            // каком основании мы обрабатываем данные человека. Теперь она
+            // пишется в том же заходе, что создаёт человека, но если запись
+            // всё же не легла, молчать об этом нельзя.
+            $consentGap = 0;
+            $newIds = array_column(sb_select_all('jm_users', [
+                'created_at' => 'gte.' . $cut24,
+            ], 'id'), 'id');
+            if ($newIds) {
+                $withConsent = [];
+                foreach (array_chunk($newIds, 100) as $chunk) {
+                    foreach (sb_select_all('jm_consents', [
+                        'user_id' => sb_in_list($chunk),
+                    ], 'user_id') as $c) {
+                        $withConsent[(string)($c['user_id'] ?? '')] = true;
+                    }
+                }
+                foreach ($newIds as $id) {
+                    if (!isset($withConsent[(string)$id])) $consentGap++;
+                }
+            }
+            $consentLine = '📝 Согласий: ' . (count($newIds) - $consentGap) . ' из ' . count($newIds)
+                . ' зарегистрировавшихся за сутки';
+            $consentAlert = $consentGap > 0
+                ? "зарегистрировались без записи о согласии: {$consentGap}" : '';
+
+            // Публикация в группу «ПОДРАБОТКИ». Итог последней записывался в
+            // jm_settings и не читался НИГДЕ: в коде так и сказано — «иначе
+            // выяснять причину будет нечем», — а читателя не было. Из-за этого
+            // вакансия могла сутки висеть в ленте без объявления, и заметить
+            // это можно было только глазами в самой группе.
+            $groupLine = '';
+            $groupAlert = '';
+            $lastPost = sb_single('jm_settings', ['key' => 'eq.last_group_post'], 'value');
+            $post = json_decode((string)($lastPost['value'] ?? ''), true);
+            if (is_array($post)) {
+                $when = trim((string)($post['когда'] ?? ''));
+                $whenMsk = $when !== '' && strtotime($when) !== false
+                    ? (new DateTimeImmutable($when))->setTimezone(new DateTimeZone('Europe/Moscow'))->format('d.m H:i')
+                    : '—';
+                if (!empty($post['ok'])) {
+                    $groupLine = "📣 Последний пост в группу: {$whenMsk} МСК, доставлен";
+                } else {
+                    $why = $post['отказ'] ?? null;
+                    $whyText = is_array($why)
+                        ? trim((string)($why['описание'] ?? $why['description'] ?? json_encode($why, JSON_UNESCAPED_UNICODE)))
+                        : trim((string)$why);
+                    if ($whyText === '') $whyText = 'причина не записана';
+                    $groupLine = "📣 Последний пост в группу: {$whenMsk} МСК, <b>НЕ доставлен</b> — "
+                        . htmlspecialchars(mb_substr($whyText, 0, 160), ENT_QUOTES, 'UTF-8');
+                    $groupAlert = 'последний пост в группу «ПОДРАБОТКИ» не доставлен';
+                }
+            }
+            // Приглашённые, которые не выходят, — это не мелочь: поручительство
+            // держится на том, что число «вышли» чего-то стоит. Перекос в
+            // другую сторону значит, что кодом делятся с кем попало.
+            $referralAlert = $refNoShow > $refWorked && $refNoShow >= 3
+                ? "приглашённых не вышло на смену больше, чем вышло: {$refNoShow} против {$refWorked}" : '';
 
             $tomorrowMsk = gmdate('Y-m-d', $now + 3 * 3600 + 86400);
             $tomorrowShifts = sb_count('jm_vacancies', [
@@ -2779,7 +3731,13 @@ try {
 
             $alerts = [];
             if ($applications === 0) $alerts[] = 'откликов за сутки — 0';
-            if ($importSilent) $alerts[] = 'партнёрский импорт молчит больше 24 часов';
+            if ($replyAlert !== '') $alerts[] = $replyAlert;
+            // Тревога по каждому источнику отдельно: общий максимум по всем
+            // молчал, только когда умирали все сразу.
+            foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
+            if ($referralAlert !== '') $alerts[] = $referralAlert;
+            if ($groupAlert !== '') $alerts[] = $groupAlert;
+            if ($consentAlert !== '') $alerts[] = $consentAlert;
             if ($newWorkers === 0 && $previousWorkers > 0) {
                 $alerts[] = 'новых работников — 0, хотя накануне были';
             }
@@ -2793,15 +3751,20 @@ try {
             $lines[] = '';
             $lines[] = "👷 Новых работников: <b>{$newWorkers}</b>";
             $lines[] = "📨 Откликов: <b>{$applications}</b> (смены {$shiftApplications}, вакансии {$permApplications})";
+            $lines[] = $replyLine;
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
+            $lines[] = $health['line'];
+            $lines[] = $referralLine;
+            if ($groupLine !== '') $lines[] = $groupLine;
+            $lines[] = $consentLine;
             $lines[] = "📅 Открытых смен на завтра: <b>{$tomorrowShifts}</b>";
             $bounceRate = number_format($metrika['bounce_rate'], 1, ',', ' ');
-            $sources = $metrika['sources'];
+            $trafficSources = $metrika['sources'];
             $lines[] = '';
             $lines[] = "📈 Метрика за {$metrika['date']}: визиты <b>{$metrika['visits']}</b>, посетители <b>{$metrika['users']}</b>, отказы <b>{$bounceRate}%</b>";
-            $lines[] = "🧭 Источники: поиск <b>{$sources['organic']}</b>, прямые <b>{$sources['direct']}</b>, переходы <b>{$sources['referral']}</b>, соцсети <b>{$sources['social']}</b>";
+            $lines[] = "🧭 Источники трафика: поиск <b>{$trafficSources['organic']}</b>, прямые <b>{$trafficSources['direct']}</b>, переходы <b>{$trafficSources['referral']}</b>, соцсети <b>{$trafficSources['social']}</b>";
             $lines[] = "🔎 Поиск за 30 дней: <b>{$metrika['search_30d']}</b> визитов от <b>{$metrika['search_30d_users']}</b> человек";
             $text = implode("\n", $lines);
 
@@ -2977,6 +3940,16 @@ try {
         }
 
         // Отдельный вызов той же рассылки — чтобы прогнать вручную, не дожидаясь крона.
+        // Догоняющее объявление: вакансии, о которых не объявили, потому что
+        // запрос с телефона публикующего не дошёл. Подробности — в
+        // jt_announce_missed.
+        case 'cronAnnounceMissed': {
+            $hours = max(1, min(48, (int)($args[0] ?? 6)));
+            $limit = max(1, min(20, (int)($args[1] ?? 5)));
+            $data = jt_announce_missed($hours, $limit);
+            break;
+        }
+
         case 'cronShiftNudge':
             @set_time_limit(300);
             $data = shift_nudge_run(); break;
@@ -3248,6 +4221,12 @@ try {
                 $config = is_array($source['connector_config'] ?? null) ? $source['connector_config'] : [];
                 $source['integration_configured'] = !empty($config['application_submit_url'])
                     && !empty($source['webhook_secret']);
+                if ((string)($source['connector_kind'] ?? '') === 'career') {
+                    $source['career_pages'] = array_values(array_filter(
+                        is_array($config['pages'] ?? null) ? $config['pages'] : [],
+                        fn($url) => is_string($url)
+                    ));
+                }
                 unset($source['auth_header'], $source['connector_config'], $source['webhook_secret']);
             }
             unset($source);
@@ -3262,6 +4241,10 @@ try {
                 $data = ['error' => 'нужны имя и публичный HTTPS-адрес фида']; break;
             }
             $isNew = (string)($v['id'] ?? '') === '';
+            $previous = !$isNew
+                ? sb_single('jm_ext_sources', ['id' => 'eq.' . (string)$v['id']],
+                    'connector_kind,connector_config')
+                : null;
             $row = [
                 'id' => $isNew ? uid() : (string)$v['id'],
                 'name' => $name,
@@ -3300,11 +4283,34 @@ try {
                 if ($submitUrl !== '' && !preg_match('~^https://~i', $submitUrl)) {
                     $data = ['error' => 'endpoint отклика должен использовать HTTPS']; break;
                 }
-                $previous = !$isNew
-                    ? sb_single('jm_ext_sources', ['id' => 'eq.' . $row['id']], 'connector_config') : null;
                 $config = is_array($previous['connector_config'] ?? null)
                     ? $previous['connector_config'] : [];
                 $config['application_submit_url'] = $submitUrl;
+                $row['connector_config'] = $config;
+            }
+            if (array_key_exists('career_pages', $v)) {
+                $kind = (string)($row['connector_kind'] ?? $previous['connector_kind'] ?? 'redirect');
+                if ($kind !== 'career') {
+                    $data = ['error' => 'страницы можно задать только карьерному источнику']; break;
+                }
+                $rawPages = is_array($v['career_pages']) ? $v['career_pages'] : [];
+                $pages = [];
+                foreach ($rawPages as $pageUrl) {
+                    $pageUrl = trim((string)$pageUrl);
+                    if ($pageUrl === '') continue;
+                    if (strlen($pageUrl) > 2048 || !filter_var($pageUrl, FILTER_VALIDATE_URL)
+                            || strtolower((string)parse_url($pageUrl, PHP_URL_SCHEME)) !== 'https') {
+                        $data = ['error' => 'каждая карьерная страница должна быть HTTPS-адресом']; break 2;
+                    }
+                    $pages[$pageUrl] = true;
+                    if (count($pages) > 100) {
+                        $data = ['error' => 'не больше 100 карьерных страниц']; break 2;
+                    }
+                }
+                $config = is_array($row['connector_config'] ?? null)
+                    ? $row['connector_config']
+                    : (is_array($previous['connector_config'] ?? null) ? $previous['connector_config'] : []);
+                $config['pages'] = array_keys($pages);
                 $row['connector_config'] = $config;
             }
             if (array_key_exists('webhook_secret', $v)) {
@@ -4345,8 +5351,15 @@ try {
             sb_update('jm_vacancies', ['id' => 'eq.' . $args[0]], fill_coords($args[1])); break;
 
         // ── Likes ──────────────────────────────────────────────────────────────
-        case 'dbGetLikes':
-            $data = sb_select('jm_likes'); break;
+        // Своё и только своё. Прежде отдавалась ВСЯ таблица откликов сервиса:
+        // кто куда откликался, кому отказали, чем кончилась смена — любому
+        // вошедшему, одним запросом. Приложение и само звало это на каждом
+        // обновлении списка, так что заодно перестали гонять чужое.
+        case 'dbGetLikes': {
+            $me = (string)($authUid ?? '');
+            $data = $me === '' ? [] : sb_select('jm_likes',
+                ['or' => "(worker_id.eq.{$me},employer_id.eq.{$me})"]); break;
+        }
 
         case 'dbGetLikesForUser': {
             $field = $args[1] === 'worker' ? 'worker_id' : 'employer_id';
@@ -4356,9 +5369,16 @@ try {
         case 'dbGetLikesByVacancy':
             $data = sb_select('jm_likes', ['vacancy_id' => 'eq.' . $args[0]]); break;
 
+        // Счётчики по СВОИМ вакансиям. Карту читает экран «мои вакансии» и
+        // больше никто, а выбиралась она по всем двум таблицам целиком — то
+        // есть каждый вошедший получал отклики и просмотры всего рынка и
+        // заставлял базу читать эти таблицы от начала до конца.
         case 'dbGetVacancyStatsMap': {
-            $rows = sb_select_all('jm_likes', [], 'vacancy_id,worker_liked,employer_liked,worker_skipped,is_match');
-            $viewRows = sb_select_all('jm_vacancy_views', [], 'vacancy_id');
+            $mine = jt_own_vacancy_ids('jm_vacancies', $authUid);
+            if (!$mine) { $data = new stdClass(); break; }
+            $rows = jt_rows_for_vacancies('jm_likes', $mine,
+                'vacancy_id,worker_liked,employer_liked,worker_skipped,is_match');
+            $viewRows = jt_rows_for_vacancies('jm_vacancy_views', $mine, 'vacancy_id');
             $map = [];
             foreach ($rows as $r) {
                 $vid = $r['vacancy_id'];
@@ -4461,8 +5481,11 @@ try {
             break;
         }
 
+        // То же самое для постоянных вакансий.
         case 'dbGetPermVacancyViewsMap': {
-            $rows = sb_select_all('jm_perm_vacancy_views', [], 'vacancy_id');
+            $mine = jt_own_vacancy_ids('jm_perm_vacancies', $authUid);
+            if (!$mine) { $data = new stdClass(); break; }
+            $rows = jt_rows_for_vacancies('jm_perm_vacancy_views', $mine, 'vacancy_id');
             $map = [];
             foreach ($rows as $r) {
                 $vid = $r['vacancy_id'];
@@ -4481,29 +5504,64 @@ try {
             break;
         }
 
-        case 'dbGetLikeByVacancyWorker':
+        // Отклик видят обе стороны: сам работник и работодатель этой смены.
+        // Прежде операция была в $selfArgFns, то есть работодателю отвечала
+        // отказом, — и экран переписки обходил это, выкачивая ВСЕ отклики
+        // сервиса, чтобы найти в них один. Проверка, которую легко обойти
+        // мягким путём, хуже отсутствующей: она создаёт видимость.
+        case 'dbGetLikeByVacancyWorker': {
+            $me = (string)($authUid ?? '');
+            if ($me !== (string)($args[1] ?? '')) {
+                $vac = sb_single('jm_vacancies', ['id' => 'eq.' . (string)($args[0] ?? '')], 'employer_id');
+                if (!$vac || (string)($vac['employer_id'] ?? '') !== $me) {
+                    jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+                }
+            }
             $data = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $args[0], 'worker_id' => 'eq.' . $args[1]]); break;
+        }
 
         case 'dbUpsertLike': {
-            [$vid, $wid, $eid, $upd] = [$args[0], $args[1], $args[2], $args[3]];
-            $base = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid]) ?? [
-                'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid, 'employer_id' => $eid,
+            [$vid, $wid, $eid] = [$args[0], $args[1], $args[2]];
+            $upd = is_array($args[3] ?? null) ? $args[3] : [];
+
+            // Кто вправе что менять.
+            //
+            // Проверок здесь не было ни одной, а владельца смены брали с
+            // клиента доводом. То есть любой вошедший мог одобрить или
+            // отклонить чужого кандидата на чужую смену и отозвать чужой
+            // отклик. Настоящего владельца берём из самой вакансии.
+            $vac = sb_single('jm_vacancies', ['id' => 'eq.' . $vid], 'employer_id,title');
+            $existingLike = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid]);
+            // Смену можно удалить, а отклик по ней остаётся: связи в базе нет.
+            // Для такого сироты владельца берём из самого отклика — иначе
+            // работодатель не смог бы закрыть собственный старый отклик.
+            $vacEmployer = (string)($vac['employer_id'] ?? ($existingLike['employer_id'] ?? ''));
+            if ($vacEmployer === '') { jt_respond(['error' => 'Вакансия не найдена'], 404); exit; }
+            if (array_key_exists('employerLiked', $upd) && (string)$authUid !== $vacEmployer) {
+                jt_respond(['error' => 'Это не ваша вакансия'], 403); exit;
+            }
+            if ((array_key_exists('workerLiked', $upd) || array_key_exists('workerSkipped', $upd))
+                && (string)$authUid !== (string)$wid) {
+                jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+            }
+
+            $base = $existingLike ?? [
+                'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid, 'employer_id' => $vacEmployer,
                 'worker_liked' => false, 'employer_liked' => null, 'worker_skipped' => false,
                 'is_match' => false, 'matched_at' => null,
                 'worker_confirmed' => false, 'employer_confirmed' => false,
                 'worker_rated' => false, 'employer_rated' => false, 'shift_completed' => false,
             ];
+            // С клиента принимаем ТОЛЬКО эти три поля. Остальные — мэтч,
+            // отметки о выходе на смену и об оценках — ставит сервер в своих
+            // обработчиках, и раньше их можно было прислать сюда: подписать
+            // себе мэтч, выход на смену или снятие оценки. Ключи помимо этих
+            // молча пропускаем, а не отвергаем: ронять из-за них запись отклика
+            // было бы хуже самой подделки.
             $row = array_merge($base, [
                 'worker_liked'       => $upd['workerLiked']       ?? $base['worker_liked'],
                 'employer_liked'     => $upd['employerLiked']     ?? $base['employer_liked'],
                 'worker_skipped'     => $upd['workerSkipped']     ?? $base['worker_skipped'],
-                'is_match'           => $upd['isMatch']           ?? $base['is_match'],
-                'matched_at'         => $upd['matchedAt']         ?? $base['matched_at'],
-                'worker_confirmed'   => $upd['workerConfirmed']   ?? $base['worker_confirmed'],
-                'employer_confirmed' => $upd['employerConfirmed'] ?? $base['employer_confirmed'],
-                'worker_rated'       => $upd['workerRated']       ?? $base['worker_rated'],
-                'employer_rated'     => $upd['employerRated']     ?? $base['employer_rated'],
-                'shift_completed'    => $upd['shiftCompleted']    ?? $base['shift_completed'],
             ]);
             $written = sb_upsert('jm_likes', $row, 'vacancy_id,worker_id', true);
             if (empty($written)) throw new RuntimeException('Like not saved: permission denied');
@@ -4512,12 +5570,11 @@ try {
             // и с постоянными вакансиями: раньше сообщение слал телефон
             // соискателя уже после записи, и терялось оно молча.
             $justApplied = !empty($row['worker_liked']) && empty($base['worker_liked']);
-            if ($justApplied && !empty($eid)) {
+            if ($justApplied && $vacEmployer !== '') {
                 $w = sb_single('jm_users', ['id' => 'eq.' . $wid], 'first_name,last_name');
-                $v = sb_single('jm_vacancies', ['id' => 'eq.' . $vid], 'title');
                 $wName = trim(($w['first_name'] ?? '') . ' ' . ($w['last_name'] ?? '')) ?: 'Кандидат';
-                $vTitle = (string)($v['title'] ?? 'смена');
-                notify_user((string)$eid, '📥 Новый отклик!',
+                $vTitle = (string)($vac['title'] ?? 'смена');
+                notify_user($vacEmployer, '📥 Новый отклик!',
                     $wName . ' хочет выйти на смену «' . $vTitle . '». Посмотрите кандидата!',
                     'new_applicant', [],
                     // В пуш — без имени: он уходит за границу. Директор всё
@@ -4525,13 +5582,34 @@ try {
                     // и имя в шторке ничего не решает.
                     'Кто-то хочет выйти на смену «' . $vTitle . '». Посмотрите кандидата!');
             }
+
+            // Отказ по смене: строку в переписку пишет сервер.
+            //
+            // Её писало приложение вызовом dbInsertMessage от имени «system» —
+            // а это запрещено проверкой «Invalid sender», сервер отвечал 403,
+            // и отказ гасился пустым .catch(). Соискатель не видел ничего,
+            // зато счётчик непрочитанного ему исправно рос: значок был, а за
+            // ним пусто.
+            //
+            // Пишем со ВСЕХ экранов, где отказывают: из переписки, с
+            // «Кандидатов» и из «Мэтчей». Раньше две последние молчали вовсе —
+            // человек не узнавал об отказе никак; включено по решению
+            // владельца проекта.
+            $justRejected = $row['employer_liked'] === false && $base['employer_liked'] !== false;
+            if ($justRejected) {
+                jt_shift_reject_announce((string)$wid, $vacEmployer, (string)($vac['title'] ?? ''));
+            }
             $data = $row; break;
         }
 
         case 'dbRemoveLike':
             sb_delete('jm_likes', ['vacancy_id' => 'eq.' . $args[0], 'worker_id' => 'eq.' . $args[1]]); break;
 
+        // Удалить отклик может только его сторона. Проверки не было: любой
+        // вошедший стирал чужой отклик по id, а вместе с ним итог смены и
+        // основание рейтинга.
         case 'dbDeleteMatch':
+            jt_shift_party((string)($args[0] ?? ''), $authUid, false);
             sb_delete('jm_likes', ['id' => 'eq.' . $args[0]]); break;
 
         // ── Messages ───────────────────────────────────────────────────────────
@@ -4541,6 +5619,17 @@ try {
         case 'dbInsertMessage': {
             $msg = ['id' => uid(), 'chat_id' => $args[0], 'sender_id' => $args[1], 'text' => $args[2], 'created_at' => now_iso()];
             msg_insert($msg);
+            // Известить вторую сторону — здесь же, а не отдельным вызовом с
+            // телефона отправителя. Проверка «сторона переписки» уже прошла
+            // выше, в $chatArgFns, так что чат заведомо наш.
+            try {
+                $chatRow = sb_single('jm_chats', ['id' => 'eq.' . (string)$args[0]],
+                    'id,worker_id,employer_id');
+                if ($chatRow) jt_notify_new_message($chatRow, (string)$args[1], (string)$args[2]);
+            } catch (Throwable $e) {
+                // Сообщение записано — это главное. Уведомление не должно
+                // ронять отправку.
+            }
             $data = $msg; break;
         }
 
@@ -4662,6 +5751,22 @@ try {
             $data = chat_ensure($wid, $eid, (string)$vid, (string)$vt, (string)$cn,
                                 $sm, (int)$uw, (int)$ue,
                                 is_string($author) ? $author : (bool)$author);
+            // О первом сообщении извещаем здесь же. Раньше это делал телефон
+            // отправителя отдельным вызовом, с текстом уведомления от себя.
+            //
+            // Именно ЗДЕСЬ, а не внутри chat_ensure: её зовёт ещё и
+            // dbApplyPermVacancy, а та извещает работодателя своим
+            // «Новая заявка». Извещай chat_ensure — на одно событие приходило
+            // бы два пуша.
+            $senderId = ($author === true || $author === 'worker') ? (string)$wid
+                      : ($author === 'employer' ? (string)$eid : '');
+            if ($senderId !== '' && trim((string)$sm) !== '') {
+                try {
+                    jt_notify_new_message(
+                        ['id' => (string)$data, 'worker_id' => (string)$wid, 'employer_id' => (string)$eid],
+                        $senderId, (string)$sm);
+                } catch (Throwable $e) { /* чат заведён — это главное */ }
+            }
             break;
         }
 
@@ -4769,8 +5874,11 @@ try {
         // ── Complaints ─────────────────────────────────────────────────────────
         case 'dbFileComplaint': {
             $p = $args[0];
+            // Заявитель — из подписанной сессии, а не из тела запроса. Прежде
+            // можно было подать жалобу от чужого имени: reporterId брали как
+            // прислали.
             sb_insert('jm_complaints', [
-                'id' => uid(), 'reporter_id' => $p['reporterId'], 'reporter_phone' => $p['reporterPhone'],
+                'id' => uid(), 'reporter_id' => (string)($authUid ?? ''), 'reporter_phone' => $p['reporterPhone'],
                 'reporter_company' => $p['reporterCompany'] ?? null, 'target_id' => $p['targetId'],
                 'target_phone' => $p['targetPhone'], 'target_company' => $p['targetCompany'] ?? null,
                 'complaint_type' => $p['complaintType'], 'description' => $p['description'] ?? null,
@@ -4834,6 +5942,11 @@ try {
                 sb_update('jm_vacancies', ['id' => 'eq.' . $vid],
                     ['workers_found' => $nf, 'status' => $nf >= ($vac['workers_needed'] ?? 999) ? 'closed' : 'open']);
             }
+            // Известить другую сторону — здесь же. Раньше это делал телефон
+            // нажавшего, отдельным вызовом и со своим текстом.
+            try {
+                jt_notify_match((string)$vid, (string)$wid, (string)$eid, $authUid);
+            } catch (Throwable $e) { /* мэтч заведён — это главное */ }
             $data = ['matched' => true, 'chatId' => $cid]; break;
         }
 
@@ -4901,8 +6014,30 @@ try {
             break;
         }
 
-        case 'dbSetPermApplicationStatus':
-            sb_update('jm_perm_applications', ['id' => 'eq.' . $args[0]], ['status' => $args[1]]); break;
+        // Решение по отклику на постоянную вакансию.
+        //
+        // Было в одну строку: ни проверки, чей это отклик, ни следов решения.
+        // Проверки не было вовсе — то есть любой вошедший мог одобрить или
+        // отклонить чужого кандидата. А сказать соискателю о решении пытался
+        // телефон директора, и получалось это плохо: см. jt_perm_app_announce.
+        case 'dbSetPermApplicationStatus': {
+            $appId = (string)($args[0] ?? '');
+            $status = (string)($args[1] ?? '');
+            if (!in_array($status, ['approved', 'rejected', 'hired'], true)) {
+                throw new Exception('неизвестный статус отклика');
+            }
+            $app = $appId !== '' ? sb_single('jm_perm_applications', ['id' => 'eq.' . $appId],
+                'id,vacancy_id,worker_id,employer_id,status') : null;
+            if (!$app) { jt_respond(['error' => 'Отклик не найден'], 404); exit; }
+            if ((string)($app['employer_id'] ?? '') !== (string)$authUid) {
+                jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+            }
+            $wasStatus = (string)($app['status'] ?? '');
+            sb_update('jm_perm_applications', ['id' => 'eq.' . $appId], ['status' => $status]);
+            // Повторное нажатие не шлёт второго уведомления.
+            if ($wasStatus !== $status) jt_perm_app_announce($app, $status);
+            break;
+        }
 
         // ── Permanent saved ────────────────────────────────────────────────────
         case 'dbGetPermSaved': {
@@ -4917,8 +6052,30 @@ try {
             sb_delete('jm_perm_saved', ['user_id' => 'eq.' . $args[0], 'vacancy_id' => 'eq.' . $args[1]]); break;
 
         // ── Ratings ────────────────────────────────────────────────────────────
-        case 'dbGetRatingsForUser':
-            $data = sb_select('jm_ratings', ['to_user_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;
+        // Отзывы о человеке. КОЛОНКИ РАЗНЫЕ в зависимости от того, о ком
+        // спрашивают, и это не перестраховка — так уже устроены сами экраны.
+        //
+        // На СВОЁМ профиле приложение показывает имя и аватар оценившего:
+        // знать, кто и за какую смену тебя оценил, ты вправе.
+        // На ЧУЖОМ рисуются только звёзды, роль, дата и текст — без автора.
+        //
+        // А сервер до сих пор отдавал '*' по любому id. То есть экран обещал
+        // анонимность, а один запрос её снимал: смотришь профиль работодателя,
+        // видишь «⭐2, Работник, 03.09» — и узнаёшь, какой именно работник это
+        // написал. В складской среде, где к тому же работодателю возвращаются
+        // за следующей сменой, это ровно та цена, из-за которой честный отзыв
+        // перестают писать. like_id и vacancy_id выдают автора не хуже: по
+        // своей же смене работодатель вычислит его и без имени.
+        //
+        // Приложение эти поля с чужого профиля не читает вовсе — проверено по
+        // экранам, а не по названиям полей.
+        case 'dbGetRatingsForUser': {
+            $who = (string)($args[0] ?? '');
+            $mine = $authUid !== null && $authUid !== '' && $who === $authUid;
+            $cols = $mine ? '*' : 'id,rating,role,review_text,created_at';
+            $data = sb_select('jm_ratings', ['to_user_id' => 'eq.' . $who], $cols, 'created_at.desc');
+            break;
+        }
 
         // ── Итог смены ─────────────────────────────────────────────────────────
         // Раньше здесь было двое ворот: «подтвердить» и «отменить». Отмена
@@ -4931,12 +6088,16 @@ try {
             $opts = $args[2] ?? [];
             $ok = ['worked', 'no_show', 'worker_cancelled', 'employer_cancelled', 'other_cancelled'];
             if (!in_array($out, $ok, true)) throw new Exception('неизвестный итог смены');
+            jt_shift_party((string)$lid, $authUid, true);
             $worked = $out === 'worked';
             sb_update('jm_likes', ['id' => 'eq.' . $lid], [
                 'outcome'      => $out,
                 'late_minutes' => $worked ? (int)($opts['lateMinutes'] ?? 0) : null,
                 'outcome_at'   => now_iso(),
-                'outcome_by'   => $opts['by'] ?? null,
+                // Кто отметил — из подписанной сессии. Раньше сюда клался
+                // $opts['by'] с клиента: человек мог подписать чужой отметкой
+                // кого угодно.
+                'outcome_by'   => $authUid,
                 'employer_confirmed' => $worked,
                 'worker_confirmed'   => $worked,
                 'shift_completed'    => $worked,
@@ -4944,10 +6105,17 @@ try {
             ]);
             // Рейтинг работника меняется именно здесь: выход, невыход и
             // опоздание — это три четверти всего, из чего он складывается.
+            jt_referral_on_outcome((string)$lid, $out, $authUid);
             $lk = sb_single('jm_likes', ['id' => 'eq.' . $lid], 'worker_id,employer_id');
             if (!empty($lk['worker_id'])) jt_recalc_score((string)$lk['worker_id']);
             // И работодателя: отмена смены — это его ось, а не работника.
             if (!empty($lk['employer_id'])) jt_recalc_employer_score((string)$lk['employer_id']);
+            // Работник узнаёт об итоге отсюда же. Отметку, которая пойдёт ему
+            // в рейтинг, он должен увидеть: если это ошибка, успеет написать в
+            // поддержку, пока помнит, как всё было.
+            try {
+                jt_notify_shift_outcome((string)$lid, (string)$out);
+            } catch (Throwable $e) { /* итог записан — это главное */ }
             $data = true; break;
         }
 
@@ -4965,11 +6133,13 @@ try {
         // виноватого не знаем». Приписать сюда невыход значило бы испортить
         // человеку рейтинг за то, о чём его не спросили.
         case 'dbConfirmShift': {
+            jt_shift_party((string)$args[0], $authUid, false);
             sb_update('jm_likes', ['id' => 'eq.' . $args[0]], [
                 'outcome' => 'worked', 'late_minutes' => null, 'outcome_at' => now_iso(),
                 'employer_confirmed' => true, 'worker_confirmed' => true,
                 'shift_completed' => true, 'cancelled' => false,
             ]);
+            jt_referral_on_outcome((string)$args[0], 'worked', $authUid);
             $lk = sb_single('jm_likes', ['id' => 'eq.' . $args[0]], 'worker_id,employer_id');
             if (!empty($lk['worker_id'])) jt_recalc_score((string)$lk['worker_id']);
             if (!empty($lk['employer_id'])) jt_recalc_employer_score((string)$lk['employer_id']);
@@ -4977,6 +6147,7 @@ try {
         }
 
         case 'dbCancelShift': {
+            jt_shift_party((string)$args[0], $authUid, false);
             sb_update('jm_likes', ['id' => 'eq.' . $args[0]], [
                 'outcome' => 'cancelled_legacy', 'outcome_at' => now_iso(),
                 'cancelled' => true, 'shift_completed' => false,
@@ -5140,8 +6311,14 @@ try {
         // Разбор завалов: те, кто вышел до появления dbClearPushToken, так и
         // остались с токеном в базе, а войти и почиститься не могут — они же
         // вышли. Здесь ищем по самому токену, аккаунт знать не нужно.
+        // Отвязывают токен, когда он достался другому человеку на том же
+        // телефоне. Чужой токен отвязывать незачем ни при каком раскладе, а
+        // проверки не было: зная токен (его отдавала dbGetPushToken любому),
+        // можно было лишить человека уведомлений.
         case 'dbReleasePushToken':
-            sb_update('jm_users', ['push_token' => 'eq.' . $args[0]], ['push_token' => null]); break;
+            sb_update('jm_users',
+                ['push_token' => 'eq.' . $args[0], 'id' => 'eq.' . (string)($authUid ?? '')],
+                ['push_token' => null]); break;
 
         case 'dbGetPushToken': {
             $r = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'push_token');
@@ -5207,6 +6384,39 @@ try {
             $dataType = (string)($args[3] ?? 'nearby_shift');
             $deepKind = $dataType === 'nearby_perm' ? 'perm' : 'shift';
 
+            // Объявляет вакансию ТОЛЬКО тот, кто её разместил.
+            //
+            // Вход здесь требовался, а чья вакансия — не проверялось, и текст
+            // объявления приходил с клиента готовой разметкой. То есть любой
+            // зарегистрированный человек мог отправить в открытую группу
+            // «ПОДРАБОТКИ» и пушем каждому работнику произвольный текст со
+            // своей ссылкой. Для сервиса, где люди ищут работу, это готовая
+            // площадка для обмана.
+            //
+            // Заодно уходит дублирование формата (задача 16): текст для группы
+            // сервер собирает сам из строки вакансии тем же jt_group_html, что
+            // и догоняющее задание. Клиентскую разметку для группы больше не
+            // берём — второго вида объявления в одной группе не будет.
+            $vacancyRow = null;
+            if ($vacancyId !== '') {
+                $vacancyRow = sb_single(
+                    $deepKind === 'perm' ? 'jm_perm_vacancies' : 'jm_vacancies',
+                    ['id' => 'eq.' . $vacancyId],
+                    $deepKind === 'perm'
+                        ? 'id,employer_id,title,company,metro_station,salary,schedule'
+                        : 'id,employer_id,title,company,metro_station,salary,date,time_start,time_end'
+                );
+            }
+            if ($vacancyRow === null) {
+                // Без вакансии подтвердить право нечем. Отказ не теряет
+                // объявление: раз в час jt_announce_missed сам догоняет
+                // свежие вакансии без отметки о доставке.
+                jt_respond(['error' => 'Вакансия не найдена'], 404); exit;
+            }
+            if ((string)($vacancyRow['employer_id'] ?? '') !== (string)$authUid) {
+                jt_respond(['error' => 'Это не ваша вакансия'], 403); exit;
+            }
+
             // Идемпотентность по вакансии. Рассылка — отдельный вызов с клиента,
             // и при обрыве сети он молча терялся: вакансия в ленте есть, а
             // объявление в группе «ПОДРАБОТКИ» не пришло. Теперь клиент вправе
@@ -5214,16 +6424,35 @@ try {
             // и запостить в группу дважды. Поэтому «столбим» вакансию заранее:
             // если по ней уже начинали рассылку — сразу выходим. Отметку ставим
             // ДО работы (claim), чтобы гонка повторов не дала дублей.
+            //
+            // ВАЖНО: отметки ДВЕ, по одной на каждый вид доставки.
+            //
+            // Была одна на всё, и ставилась она ДО отправки. Из-за этого сбой
+            // при отправке в группу означал, что вакансия помечена разосланной
+            // навсегда: повтор с клиента получал already_sent и выходил, а в
+            // группе так ничего и не появлялось. Именно так вакансия могла
+            // висеть в ленте сутки без единого сообщения.
+            //
+            // Личные сообщения по-прежнему столбим ЗАРАНЕЕ: повторная рассылка
+            // всем работникам хуже неотправленной. А пост в группу — операция
+            // одна и быстрая, и его отметку ставим только ПОСЛЕ успеха, чтобы
+            // повтор мог доделать то, что не вышло.
+            $dmAlreadySent = false;
+            $groupAlreadySent = false;
             if ($vacancyId !== '') {
-                if (sb_single('jm_settings', ['key' => 'eq.bcast:' . $vacancyId], 'key')) {
+                $dmAlreadySent = sb_single('jm_settings', ['key' => 'eq.bcast:' . $vacancyId], 'key') !== null;
+                $groupAlreadySent = sb_single('jm_settings', ['key' => 'eq.gpost:' . $vacancyId], 'key') !== null;
+                if ($dmAlreadySent && $groupAlreadySent) {
                     $data = ['ok' => true, 'skipped' => 'already_sent'];
                     break;
                 }
-                sb_upsert('jm_settings', [
-                    'key' => 'bcast:' . $vacancyId,
-                    'value' => now_iso(),
-                    'updated_at' => now_iso(),
-                ], 'key');
+                if (!$dmAlreadySent) {
+                    sb_upsert('jm_settings', [
+                        'key' => 'bcast:' . $vacancyId,
+                        'value' => now_iso(),
+                        'updated_at' => now_iso(),
+                    ], 'key');
+                }
             }
             $dmCampaign = bin2hex(random_bytes(8));
             $groupCampaign = bin2hex(random_bytes(8));
@@ -5236,16 +6465,24 @@ try {
 
             // Пост в группу — ПЕРВЫМ (одна быстрая операция): длинные циклы
             // рассылки ниже могут упереться в лимит времени PHP
-            $groupHtml = (string)($args[4] ?? '');
-            // Старые клиенты не шлют groupHtml — собираем пост из tgHtml,
-            // чтобы группа получала ВСЕ вакансии независимо от версии приложения
-            if ($groupHtml === '' && (string)($args[2] ?? '') !== '') {
-                $groupHtml = (string)$args[2]
-                    . "\n\n⚡ В приложении смены появляются раньше — откликайся первым 👇";
-            }
+            // Текст собирает сервер из строки вакансии — один формат на оба
+            // пути, клиентский args[4] больше не участвует. Заодно снимается
+            // разнобой между версиями приложения: раньше старый клиент слал
+            // один вид поста, новый — другой.
+            $groupHtml = jt_group_html($vacancyRow, $deepKind);
             $groupOk = false;
-            if ($groupHtml !== '' && TG_GROUP_CHAT_ID !== 0) {
+            if ($groupAlreadySent) {
+                $groupOk = true;
+            } elseif ($groupHtml !== '' && TG_GROUP_CHAT_ID !== 0) {
                 $groupOk = tg_send_message(TG_GROUP_CHAT_ID, $groupHtml, $groupBtnUrl);
+                // Отметку ставим только после успеха: см. выше.
+                if ($groupOk && $vacancyId !== '') {
+                    sb_upsert('jm_settings', [
+                        'key' => 'gpost:' . $vacancyId,
+                        'value' => now_iso(),
+                        'updated_at' => now_iso(),
+                    ], 'key');
+                }
             }
             // Итог публикации сохраняем: иначе он теряется, а следующий раз
             // выяснять причину снова будет нечем.
@@ -5287,9 +6524,11 @@ try {
             // выбранного фильтра поведение всё равно остаётся прежним.
             $vacancyMetro = (string)($args[6] ?? '');
             $vacancyWorkType = (string)($args[7] ?? '');
-            $data = notify_workers((string)$args[0], (string)$args[1], (string)$args[2],
-                                   (string)($args[3] ?? 'nearby_shift'), $btnUrl,
-                                   $vacancyMetro, $vacancyWorkType);
+            $data = $dmAlreadySent
+                ? ['ok' => true, 'skipped' => 'dm_already_sent']
+                : notify_workers((string)$args[0], (string)$args[1], (string)$args[2],
+                                 (string)($args[3] ?? 'nearby_shift'), $btnUrl,
+                                 $vacancyMetro, $vacancyWorkType);
             $data['group'] = $groupOk;
 
             // DM-публикация существует только если Telegram действительно
@@ -5343,14 +6582,19 @@ try {
         case 'dbGetNotifications':
             $data = sb_select('jm_notifications', ['user_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;
 
+        // Своё и только своё. Прежде обе операции брали id уведомления и не
+        // смотрели, чьё оно: чужое можно было пометить прочитанным или стереть.
         case 'dbMarkNotifRead':
-            sb_update('jm_notifications', ['id' => 'eq.' . $args[0]], ['is_read' => true]); break;
+            sb_update('jm_notifications',
+                ['id' => 'eq.' . $args[0], 'user_id' => 'eq.' . (string)($authUid ?? '')],
+                ['is_read' => true]); break;
 
         case 'dbMarkAllNotifsRead':
             sb_update('jm_notifications', ['user_id' => 'eq.' . $args[0]], ['is_read' => true]); break;
 
         case 'dbDeleteNotif':
-            sb_delete('jm_notifications', ['id' => 'eq.' . $args[0]]); break;
+            sb_delete('jm_notifications',
+                ['id' => 'eq.' . $args[0], 'user_id' => 'eq.' . (string)($authUid ?? '')]); break;
 
         case 'dbDeleteAllNotifs':
             sb_delete('jm_notifications', ['user_id' => 'eq.' . $args[0]]); break;

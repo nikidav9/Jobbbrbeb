@@ -244,6 +244,7 @@ function rowToUser(r: any): User {
     empScorePay: r.emp_score_pay != null ? Number(r.emp_score_pay) : undefined,
     empScoreKept: r.emp_score_kept != null ? Number(r.emp_score_kept) : undefined,
     confirmedSkills: Array.isArray(r.confirmed_skills) ? r.confirmed_skills : [],
+    referralWorked: r.referral_worked ?? 0,
   };
 }
 // NB: telegram_id намеренно НЕ входит в userToRow — привязка живёт только
@@ -269,6 +270,32 @@ function userToRow(u: User) {
     password: u.password ?? '',
     bio: u.bio ?? null,
   };
+}
+
+/**
+ * Своё приглашение: код и что по нему вышло.
+ *
+ * Отдельная операция, а не поле пользователя: профиль любого человека
+ * запрашивает кто угодно, и код приглашения уехал бы вместе с ним.
+ *
+ * Денег в программе нет: вознаграждение — поручительство, которое видно
+ * работодателю на карточке. Поэтому три числа, а не одно: разрыв между
+ * «позвали» и «вышли» и есть весь её смысл, а невышедшие не прячутся — без
+ * них «вышли» набирается рассылкой кода кому попало.
+ */
+export type MyReferral = {
+  code: string;
+  /** Сколько человек зарегистрировались по коду. */
+  invited: number;
+  /** Из них вышли на первую смену. Это и есть поручительство. */
+  worked: number;
+  /** И не вышли. Число неприятное, но без него первое ничего не значит. */
+  noShow: number;
+};
+
+export async function dbGetMyReferral(userId: string): Promise<MyReferral | null> {
+  if (!IS_NATIVE) return null;
+  return await proxy<MyReferral>('dbGetMyReferral', [userId]);
 }
 
 export async function dbGetUserById(id: string): Promise<User | null> {
@@ -378,13 +405,32 @@ export async function dbChangePassword(
   return res;
 }
 
-export async function dbUpsertUser(u: User): Promise<void> {
+/**
+ * Сохранить профиль; при РЕГИСТРАЦИИ — передать код приглашения.
+ *
+ * Код идёт отдельным доводом, а не полем профиля: поля профиля человек
+ * назначает себе сам, а кто его привёл — решает сервер. Он же находит
+ * владельца кода и записывает связь, и только один раз, при создании.
+ */
+export type ConsentPayload = { stamp: string; docs: Record<string, string> };
+
+export async function dbUpsertUser(
+  u: User,
+  referralCode?: string,
+  consent?: ConsentPayload,
+): Promise<void> {
   const { avg_rating, rating_count, ...row } = userToRow(u);
   // Пустой пароль не отправляем: он означает «профиль пришёл без пароля»
   // (вход его больше не отдаёт), а не «стереть пароль».
   if (!row.password) delete (row as Partial<typeof row>).password;
   if (IS_NATIVE) {
-    const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', [row]);
+    // Согласие идёт ТЕМ ЖЕ запросом, что создаёт человека. Отдельным вызовом
+    // оно терялось при любом обрыве связи, а запись согласия — доказательство,
+    // а не аналитика.
+    const args: unknown[] = consent
+      ? [row, referralCode ?? '', consent]
+      : (referralCode ? [row, referralCode] : [row]);
+    const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', args);
     if (d?.session_token) await saveSessionToken(d.session_token);
     return;
   }
@@ -957,6 +1003,13 @@ export async function dbUpsertLike(
   vacancyId: string,
   workerId: string,
   employerId: string,
+  /**
+   * Сервер принимает отсюда только три поля: workerLiked, workerSkipped,
+   * employerLiked. Остальные он ставит сам в своих обработчиках.
+   *
+   * Об отказе он тоже пишет сам — строкой в переписку, со всех экранов, где
+   * отказывают. Просить его об этом не нужно.
+   */
   updates: Partial<Like>
 ): Promise<Like> {
   if (IS_NATIVE) { const d = await proxy<any>('dbUpsertLike', [vacancyId, workerId, employerId, updates]); return rowToLike(d); }
@@ -1512,12 +1565,19 @@ export async function dbRemovePermSaved(userId: string, vacancyId: string): Prom
 
 export interface UserRating {
   id: string;
-  fromUserId: string;
   rating: number;
   reviewText?: string;
   role: 'worker' | 'employer';
   createdAt: string;
-  vacancyId: string;
+  /**
+   * Кто оценил и за какую смену. Приходят ТОЛЬКО когда спрашиваешь отзывы о
+   * себе: на своём профиле приложение показывает имя оценившего, на чужом
+   * отзывы анонимны — звёзды, роль, дата, текст. Сервер отдаёт ровно столько,
+   * сколько рисует экран, иначе обещанная анонимность снимается одним
+   * запросом.
+   */
+  fromUserId?: string;
+  vacancyId?: string;
 }
 
 export async function dbGetRatingsForUser(toUserId: string): Promise<UserRating[]> {
@@ -1802,13 +1862,6 @@ export async function dbDeleteWebPushSubscription(userId: string): Promise<void>
   await withTimeout(supabase.from('jm_web_push_subscriptions').delete().eq('user_id', userId));
 }
 
-export async function dbGetPushToken(userId: string): Promise<string | null> {
-  if (IS_NATIVE) { return proxy<string | null>('dbGetPushToken', [userId]); }
-  const { data } = await withTimeout(
-    supabase.from('jm_users').select('push_token').eq('id', userId).maybeSingle()
-  );
-  return data?.push_token ?? null;
-}
 
 export async function dbSetEmployerCompany(userId: string, company: string): Promise<void> {
   if (IS_NATIVE) { await proxy('dbSetEmployerCompany', [userId, company]); return; }
@@ -1840,13 +1893,6 @@ export async function dbGetWorkerTokensByMetro(metroStation: string): Promise<{ 
 
 // ─── In-app notifications ──────────────────────────────────────────────────────
 
-export async function dbSaveNotification(
-  userId: string, title: string, body: string,
-  type?: string, payload?: Record<string, unknown>,
-): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbSaveNotification', [userId, title, body, type ?? null, payload ?? null]); return; }
-  await withTimeout(supabase.from('jm_notifications').insert({ user_id: userId, title, body, type, payload }));
-}
 
 /** Отметить, что пользователь сейчас в приложении. Ошибки глушим: это
  *  фоновая отметка, ради неё нельзя ломать экран. */
@@ -1940,9 +1986,6 @@ export async function dbBindTelegram(userId: string, initData: string): Promise<
 }
 
 /** Sends a Telegram message to a user's linked account (bot notification) */
-export async function dbTelegramNotifyUser(userId: string, text: string): Promise<boolean> {
-  return proxy<boolean>('tgNotifyUser', [userId, text]);
-}
 
 export async function dbAutoClosePastVacancies(): Promise<void> {
   await proxy('dbAutoClosePastVacancies');

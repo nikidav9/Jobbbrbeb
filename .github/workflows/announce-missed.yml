@@ -1,0 +1,52 @@
+name: Догнать необъявленные вакансии
+
+# Объявление в группу «ПОДРАБОТКИ» посылает приложение отдельным запросом уже
+# после того, как экран публикации закрылся. Свернул человек приложение — запрос
+# не ушёл, и сервер о вакансии даже не узнал. Так вакансия висела в ленте сутки
+# без единого сообщения.
+#
+# Это задание раз в час смотрит свежие открытые вакансии и объявляет те, по
+# которым отметки о доставке нет. Окно короткое и берётся не больше пяти за
+# заход: см. jt_announce_missed в php-proxy/db.php.
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'За сколько часов назад смотреть'
+        default: '6'
+      limit:
+        description: 'Сколько объявить максимум'
+        default: '5'
+
+jobs:
+  announce:
+    name: Объявить пропущенные
+    runs-on: ubuntu-latest
+    steps:
+      - name: Вызвать cronAnnounceMissed
+        env:
+          APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+          ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
+          HOURS: ${{ github.event.inputs.hours || '6' }}
+          LIMIT: ${{ github.event.inputs.limit || '5' }}
+        run: |
+          if [ -z "$APP_SECRET" ] || [ -z "$ADMIN_TOKEN" ]; then
+            echo "Серверные секреты для задания не настроены"; exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            RESP=$(curl -fsS -X POST "https://jobtoo.ru/api/db.php" \
+              -H "Content-Type: application/json" \
+              -H "X-App-Secret: $APP_SECRET" \
+              -H "X-Admin-Token: $ADMIN_TOKEN" \
+              -d "{\"fn\":\"cronAnnounceMissed\",\"args\":[$HOURS,$LIMIT]}") || RESP=''
+            echo "Ответ: $RESP"
+            # Успех — это наличие поля announced, даже если объявлять было нечего.
+            echo "$RESP" | grep -q '"announced"' && exit 0
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+
+          echo "cronAnnounceMissed не отработал"; exit 1

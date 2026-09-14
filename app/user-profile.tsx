@@ -206,6 +206,15 @@ export default function UserProfileScreen() {
           </View>
 
           <StarRow rating={user.avgRating ?? 0} count={user.ratingCount ?? 0} />
+
+          {/* Поручительство — здесь же, у имени, а не в анкете ниже: это
+              такой же ответ на вопрос «можно ли ему доверять», как звёзды, и
+              спрятанное под вкладку оно на решение не влияет. */}
+          {(user.referralWorked ?? 0) > 0 ? (
+            <Text style={styles.vouchLine}>
+              🤝 Привёл на смену: {user.referralWorked}
+            </Text>
+          ) : null}
         </View>
 
         {/* Tabs */}
@@ -375,6 +384,7 @@ const styles = StyleSheet.create({
   name: { fontSize: rf(22), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center', marginTop: rs(4) },
   roleBadge: { borderRadius: rs(100), paddingHorizontal: rs(16), paddingVertical: rs(5) },
   roleText: { fontSize: rf(13), fontWeight: '600' },
+  vouchLine: { fontSize: rf(13), color: Colors.green, fontWeight: '600', marginTop: rs(6) },
   starRow: { flexDirection: 'row', alignItems: 'center', gap: rs(3), marginTop: rs(4) },
   star: { fontSize: rf(20) },
   starOn: { color: '#FBBF24' },

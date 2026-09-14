@@ -47,6 +47,66 @@ jobs:
       - name: Isolated partner sandbox flow
         run: php tests/partner_sandbox_e2e_test.php
 
+      - name: Страница вакансии отдаёт содержимое и разметку
+        run: php tests/vacancy_page_test.php
+
+      - name: Сводные страницы считают, а не выдумывают
+        run: php tests/landing_page_test.php
+
+      - name: Смерть одного источника вакансий видна в отчёте
+        run: php tests/ext_health_test.php
+
+      - name: Карьерные страницы работодателей разбираются
+        run: php tests/career_feed_test.php
+
+      - name: Приглашение платит за выход на смену, а не за отклик
+        run: php tests/referral_test.php
+
+      - name: Смену закрывает её сторона, а не любой вошедший
+        run: php tests/shift_authz_test.php
+
+      - name: Объявление в группу доходит, а отказ виден
+        run: php tests/group_post_test.php
+
+      - name: Согласие на обработку данных пишется и его пропажу видно
+        run: php tests/consent_test.php
+
+      - name: Решение по отклику принимает владелец вакансии и оно доходит
+        run: php tests/perm_app_test.php
+
+      - name: Отклик на смену меняет его сторона, а отказ доходит до человека
+        run: php tests/like_authz_test.php
+
+      - name: Писать человеку можно только тому, с кем есть связь
+        run: php tests/notify_authz_test.php
+
+      - name: Чужие данные на чтение не отдаются
+        run: php tests/read_authz_test.php
+
+      - name: Уведомление о сообщении собирает сервер, а не телефон
+        run: php tests/message_notify_test.php
+
+      - name: Мэтч и итог смены извещает сервер
+        run: php tests/match_outcome_notify_test.php
+
+      - name: Счётчики по вакансиям — только по своим
+        run: php tests/stats_scope_test.php
+
+      - name: Уведомление доходит и до браузера
+        run: php tests/web_push_test.php
+
+      - name: Разрыв воронки — ответы на отклики
+        run: php tests/funnel_test.php
+
+      - name: Анонимность отзывов о чужом профиле
+        run: php tests/ratings_privacy_test.php
+
+      - name: Плашка отзывчивости доходит до свайпа
+        run: php tests/reply_badge_test.php
+
+      - name: Обрыв связи не выдаётся за пустоту
+        run: php tests/offline_states_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
@@ -56,7 +116,12 @@ jobs:
           python3 tests/superjob_infra_test.py
           python3 tests/headhunter_infra_test.py
           python3 tests/external_filter_count_test.py
+          python3 tests/feed_contract_test.py
+          python3 tests/career_infra_test.py
+          python3 tests/referral_chain_test.py
+          python3 tests/user_id_contract_test.py
           python3 tests/seo_infra_test.py
+          python3 tests/deploy_migration_order_test.py
 
       - name: Web build
         env:
