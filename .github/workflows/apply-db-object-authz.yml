@@ -30,12 +30,12 @@ jobs:
           php tests/like_authz_test.php
           php tests/read_authz_test.php
 
-      - name: Commit and push
+      - name: Commit source fixes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/apply-db-object-authz.yml scripts/apply_db_object_authz.py
-          git add php-proxy/db.php tests/db_object_authz_test.php .github/workflows/ci.yml
+          git checkout -- .github/workflows/ci.yml
+          git add php-proxy/db.php tests/db_object_authz_test.php
           git commit -m "fix: bind db mutations to authenticated objects"
           git fetch origin codex/release-candidate-2026-09-14
           git rebase origin/codex/release-candidate-2026-09-14
