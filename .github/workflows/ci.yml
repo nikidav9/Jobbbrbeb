@@ -104,6 +104,9 @@ jobs:
       - name: Плашка отзывчивости доходит до свайпа
         run: php tests/reply_badge_test.php
 
+      - name: Обрыв связи не выдаётся за пустоту
+        run: php tests/offline_states_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

@@ -1783,7 +1783,7 @@ function WorkerFeed() {
     refreshAll, refreshLikes, refreshChats,
     showToast, vacanciesLoading, exitGuest,
     savedIds, optimisticAddSaved, optimisticRemoveSaved,
-    responsivenessMap,
+    responsivenessMap, backendOffline,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [partnerShifts, setPartnerShifts] = useState<PartnerShiftCard[]>([]);
@@ -2378,6 +2378,31 @@ function WorkerFeed() {
               // Пустой экран не должен быть тупиком: если стоит фильтр — даём его
               // снять; иначе подсказываем ближайший день, где смены реально есть.
               const nextDay = visibleDates.find(d => d !== selectedDate && getDateCount(d) > 0);
+              // Первым делом — не соврать. Если до сервера не достучались,
+              // лента пуста не потому, что работы нет, а потому что её не
+              // принесли. Разница для человека решающая: «смен нет» он читает
+              // как «здесь искать нечего» и уходит, причём молча — в отчёте
+              // это выглядит как обычный отток.
+              //
+              // Отличить одно от другого умеет refreshVacancies: он не трогает
+              // список при обрыве (остаются данные из кэша) и поднимает
+              // backendOffline. Экраны работодателя этим уже пользуются, а
+              // главная лента работника — нет.
+              if (backendOffline) {
+                return (
+                  <>
+                    <Text style={styles.emptyTitle}>Нет связи с сервером</Text>
+                    <Text style={styles.emptySubtitle}>
+                      Смены не загрузились — дело в связи, а не в пустой ленте.
+                      Проверьте интернет и попробуйте ещё раз.
+                    </Text>
+                    <TouchableOpacity style={eS.btn} activeOpacity={0.85} onPress={onRefresh}>
+                      <Ionicons name="refresh-outline" size={rf(17)} color="#fff" />
+                      <Text style={eS.btnTxt}>Попробовать снова</Text>
+                    </TouchableOpacity>
+                  </>
+                );
+              }
               if (filterStations.length) {
                 return (
                   <>

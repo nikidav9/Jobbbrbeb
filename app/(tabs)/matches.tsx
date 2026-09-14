@@ -317,7 +317,7 @@ function partnerStatus(status: PartnerApplication['status']): {
 
 function WorkerMatches() {
   const router = useRouter();
-  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast } = useApp();
+  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast, backendOffline } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [detailVacancy, setDetailVacancy] = useState<Vacancy | null>(null);
   const [partnerApplications, setPartnerApplications] = useState<PartnerApplication[]>([]);
@@ -556,12 +556,24 @@ function WorkerMatches() {
 
       {shownItems.length === 0 ? (
         <View style={s.empty}>
-          <Ionicons name={emptyIcon[tab]} size={56} color={Colors.textMuted} />
+          {/* Обрыв связи и пустой список — разные вещи, и путать их тут
+              дороже, чем в ленте. «Нет активных заявок» человек, только что
+              откликнувшийся, читает как «мой отклик пропал»: он не узнает, что
+              список просто не принесли, и решит, что сервис его потерял. */}
+          <Ionicons
+            name={backendOffline ? 'cloud-offline-outline' : emptyIcon[tab]}
+            size={56}
+            color={Colors.textMuted}
+          />
           <Text style={s.emptyTitle}>
-            {tab === 'active' ? 'Нет активных заявок' : tab === 'rejected' ? 'Нет отказов' : 'Нет завершённых смен'}
+            {backendOffline
+              ? 'Нет связи с сервером'
+              : tab === 'active' ? 'Нет активных заявок' : tab === 'rejected' ? 'Нет отказов' : 'Нет завершённых смен'}
           </Text>
           <Text style={s.emptySub}>
-            {tab === 'active'
+            {backendOffline
+              ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
+              : tab === 'active'
               ? 'Откликайтесь на вакансии — они появятся здесь'
               : tab === 'rejected'
               ? 'Это хорошо! Продолжайте откликаться'

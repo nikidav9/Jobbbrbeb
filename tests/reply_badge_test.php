@@ -19,9 +19,16 @@ $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
 // ── Плашка на карточке свайпа ────────────────────────────────────────────────
 check('плашка подключена', str_contains($feed, "import { ReplyBadge } from '@/components/feature/ReplyBadge';"));
 check('плашка на карточке', str_contains($feed, '<ReplyBadge stats={responsivenessMap[currentCard.employerId]} />'));
+// Смотрим ВСЕ деструктуризации useApp, а не одну строку целиком: в ленте
+// useApp зовут несколько раз, и любая новая строка рядом ломала бы проверку
+// на ровном месте. Так и вышло, когда рядом добавился backendOffline.
+preg_match_all('~const \{([^}]*)\}\s*=\s*useApp\(\);~', $feed, $uses);
+$mapFromContext = false;
+foreach ($uses[1] ?? [] as $block) {
+    if (str_contains($block, 'responsivenessMap')) { $mapFromContext = true; break; }
+}
 check('карта берётся из контекста, а не запросом на карточку',
-    str_contains($feed, "    responsivenessMap,\n  } = useApp();")
-    && !preg_match('~dbResponsivenessMap\(~', $feed));
+    $mapFromContext && !preg_match('~dbResponsivenessMap\(~', $feed));
 
 // ── Место: до разделителя ────────────────────────────────────────────────────
 // cardSummary стоит flexShrink, поэтому лишняя высота съедает описание, а не
