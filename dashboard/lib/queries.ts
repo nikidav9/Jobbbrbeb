@@ -1,6 +1,6 @@
 import { supabase, supabaseAdmin } from './supabase'
 import { subDays, format, eachDayOfInterval, parseISO, startOfDay } from 'date-fns'
-import { buildWorkerShiftCohort } from './workerCohort'
+import { buildWorkerActivationCohort, buildWorkerShiftCohort } from './workerCohort'
 
 // Supabase режет выборку до 1000 строк. Для полных агрегатов (просмотры и т.п.)
 // тянем всю таблицу постранично, иначе счётчики занижаются.
@@ -1055,16 +1055,46 @@ export async function fetchFunnel() {
     { data: guestEvents },
     cohortUsers,
     cohortLikes,
+    cohortPermApps,
+    cohortShiftViews,
+    cohortPermViews,
   ] = await Promise.all([
     supabase.from('jm_users').select('id,role,created_at'),
     supabase.from('jm_likes').select('id,worker_id,is_match,worker_liked,worker_confirmed,employer_confirmed,shift_completed,created_at'),
     supabase.from('jm_perm_applications').select('id,worker_id,status,created_at'),
     supabase.from('jm_guest_events').select('anon_id,event_type,vacancy_kind,campaign_id,channel,occurred_at'),
-    selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
+    selectAllBetween(
+      'jm_users',
+      'id,role,created_at,first_name,last_name,metro_station,work_types',
+      'created_at',
+      cohortFrom,
+      cohortTo,
+    ),
     selectAllBetween(
       'jm_likes',
       'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
       'created_at',
+      cohortFrom,
+      funnelNow.toISOString(),
+    ),
+    selectAllBetween(
+      'jm_perm_applications',
+      'worker_id,status,created_at',
+      'created_at',
+      cohortFrom,
+      funnelNow.toISOString(),
+    ),
+    selectAllBetween(
+      'jm_vacancy_views',
+      'worker_id,viewed_at',
+      'viewed_at',
+      cohortFrom,
+      funnelNow.toISOString(),
+    ),
+    selectAllBetween(
+      'jm_perm_vacancy_views',
+      'worker_id,viewed_at',
+      'viewed_at',
       cohortFrom,
       funnelNow.toISOString(),
     ),
@@ -1200,12 +1230,28 @@ export async function fetchFunnel() {
     { name: 'Регистрации', value: referralRegistrations30, fill: PALETTE.green },
   ]
 
-  const cohortColors = [PALETTE.blue, PALETTE.cyan, PALETTE.purple, PALETTE.orange, PALETTE.green]
-  const workerCohort = buildWorkerShiftCohort(cohortUsers, cohortLikes, funnelNow)
-  const mainFunnel = workerCohort.steps
+  const cohortColors = [
+    PALETTE.blue, PALETTE.cyan, PALETTE.purple,
+    PALETTE.orange, PALETTE.amber, PALETTE.green,
+  ]
+  const workerActivation = buildWorkerActivationCohort(
+    cohortUsers,
+    cohortLikes,
+    cohortPermApps,
+    cohortShiftViews,
+    cohortPermViews,
+    funnelNow,
+  )
+  const mainFunnel = workerActivation.steps
     .map((step, index) => ({ ...step, fill: cohortColors[index] }))
-  const [cohortWorkers, cohortApplied, cohortMatched, cohortConfirmed, cohortWorked] =
-    workerCohort.steps.map(step => step.value)
+  const [
+    cohortWorkers,
+    cohortProfileReady,
+    cohortViewed,
+    cohortApplied,
+    cohortAccepted,
+    cohortWorked,
+  ] = workerActivation.steps.map(step => step.value)
 
   const eventFunnel = [
     { name: 'Лайки воркеров', value: likedLk.length, fill: PALETTE.blue },
@@ -1224,15 +1270,20 @@ export async function fetchFunnel() {
     kpi: {
       workers: workers.length,
       cohortWorkers,
+      cohortProfileReady,
+      cohortViewed,
       cohortApplied,
-      cohortMatched,
-      cohortConfirmed,
+      cohortAccepted,
       cohortWorked,
-      cohortApplyRate: pct(cohortApplied, cohortWorkers),
-      cohortMatchRate: pct(cohortMatched, cohortApplied),
-      cohortConfirmRate: pct(cohortConfirmed, cohortMatched),
+      cohortProfileRate: pct(cohortProfileReady, cohortWorkers),
+      cohortViewRate: pct(cohortViewed, cohortProfileReady),
+      cohortApplyRate: pct(cohortApplied, cohortProfileReady),
+      cohortAcceptRate: pct(cohortAccepted, cohortApplied),
       cohortWorkRate: pct(cohortWorked, cohortWorkers),
-      cohortBiggestDrop: workerCohort.biggestDrop,
+      cohortAppliedWithin7d: workerActivation.appliedWithin7d,
+      cohortAppliedWithin7dRate: pct(workerActivation.appliedWithin7d, cohortProfileReady),
+      cohortProfileAnomalies: workerActivation.legacyProfileAnomalies,
+      cohortBiggestDrop: workerActivation.biggestDrop,
       totalLikes: likedLk.length,
       totalMatches: matchedLk.length,
       matchRate: likedLk.length > 0 ? ((matchedLk.length / likedLk.length) * 100).toFixed(1) : '0',
