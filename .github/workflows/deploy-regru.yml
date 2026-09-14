@@ -189,12 +189,54 @@ jobs:
           rm -f payload.json resp.json
           [ "$code" = "200" ]
 
+      # ПОЧЕМУ ПУБЛИКАЦИЯ ТЕПЕРЬ ВЫШЕ ПРОВЕРКИ ВЕБХУКА.
+      #
+      # Она стояла ниже, и 14 сентября это остановило выкладку целиком: связь
+      # сервера с api.telegram.org отпала, tgtool вернул пустой ответ, шаг
+      # упал — и сайт на московский сервер не уехал вовсе, хотя к Telegram
+      # отношения не имел. Сбой одной внешней связи отменил доставку всего
+      # остального.
+      #
+      # Теперь сайт уезжает первым, а вебхук проверяется после и задачу не
+      # валит (continue-on-error). Молчать об отказе при этом нельзя — бот
+      # несёт вход в мини-приложение и уведомления, — поэтому следом стоит
+      # шаг, который поднимает предупреждение и пишет его в сводку прогона.
+
+      # Тот же сайт — для московского сервера.
+      #
+      # Туда нет ни FTP, ни ssh, и заводить их значит класть ключ в настройки
+      # репозитория. Поэтому наоборот: сервер забирает сборку сам, как он уже
+      # забирает infra/. Выпуск с постоянной меткой web — чтобы адрес не
+      # менялся, а в репозитории не копилась история сборок.
+      #
+      # Каталог api/ выбрасываем: PHP и секреты на сервере свои, из
+      # /opt/jobtoo-proxy. Иначе собранные здесь пароли уехали бы в выпуск,
+      # открытый всем.
+      - name: Publish web build for the Moscow server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf pack && mkdir pack
+          cp -a dist/. pack/
+          rm -rf pack/api pack/.htaccess
+          printf '{"sha":"%s","deployed_at":"%s","builder":"github-actions"}\n' \
+            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > pack/jobtoo-build.json
+          tar -czf dist.tar.gz -C pack .
+          ls -l dist.tar.gz
+          gh release view web >/dev/null 2>&1 \
+            || gh release create web --latest=false \
+                 -t "Веб-сборка" \
+                 -n "Собирается автоматически. Московский сервер забирает отсюда dist.tar.gz."
+          gh release upload web dist.tar.gz --clobber
+
       # Telegram silently removes the webhook when setWebhook is accidentally
       # called with an empty URL. Delivering the bot token alone does not put
       # it back, so every successful server release explicitly restores the
       # binding and verifies the URL through the server-side helper. The bot
       # token never leaves the Moscow server.
       - name: Restore and verify Telegram webhook
+        id: webhook
+        continue-on-error: true
         env:
           APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
         run: |
@@ -299,32 +341,18 @@ jobs:
           PY
           rm -f webhook-set.json webhook-info.json
 
-      # Тот же сайт — для московского сервера.
-      #
-      # Туда нет ни FTP, ни ssh, и заводить их значит класть ключ в настройки
-      # репозитория. Поэтому наоборот: сервер забирает сборку сам, как он уже
-      # забирает infra/. Выпуск с постоянной меткой web — чтобы адрес не
-      # менялся, а в репозитории не копилась история сборок.
-      #
-      # Каталог api/ выбрасываем: PHP и секреты на сервере свои, из
-      # /opt/jobtoo-proxy. Иначе собранные здесь пароли уехали бы в выпуск,
-      # открытый всем.
-      - name: Publish web build for the Moscow server
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Отказ вебхука не роняет выкладку, но и не должен потеряться.
+      - name: Сказать вслух, если вебхук не восстановился
+        if: steps.webhook.outcome == 'failure'
         run: |
-          rm -rf pack && mkdir pack
-          cp -a dist/. pack/
-          rm -rf pack/api pack/.htaccess
-          printf '{"sha":"%s","deployed_at":"%s","builder":"github-actions"}\n' \
-            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > pack/jobtoo-build.json
-          tar -czf dist.tar.gz -C pack .
-          ls -l dist.tar.gz
-          gh release view web >/dev/null 2>&1 \
-            || gh release create web --latest=false \
-                 -t "Веб-сборка" \
-                 -n "Собирается автоматически. Московский сервер забирает отсюда dist.tar.gz."
-          gh release upload web dist.tar.gz --clobber
+          echo "::warning title=Вебхук Telegram не восстановлен::Сайт выложен, но привязка бота не подтверждена. Вход в мини-приложение и уведомления могут не работать — проверьте связь сервера с api.telegram.org."
+          {
+            echo "### Вебхук Telegram не восстановлен"
+            echo
+            echo "Сайт выложен — этот отказ его не отменил."
+            echo "Но бот несёт вход в мини-приложение и уведомления, так что привязку надо проверить руками."
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
       # Выкладки по FTP на Reg.ru здесь больше нет.
       #
