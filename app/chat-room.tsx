@@ -204,6 +204,9 @@ export default function ChatRoom() {
   const foundChat = chats.find(c => c.id === chatId);
   if (foundChat) chatRef.current = foundChat;
   const [dbChat, setDbChat] = useState<Chat | null>(null);
+  const [loadingDbChat, setLoadingDbChat] = useState(!foundChat && !!chatId);
+  const [dbChatLoadFailed, setDbChatLoadFailed] = useState(false);
+  const [dbChatRetry, setDbChatRetry] = useState(0);
   const chat = foundChat ?? chatRef.current ?? dbChat;
 
   // Declare state/refs before effects that reference them
@@ -211,6 +214,8 @@ export default function ChatRoom() {
   const cached = chatId ? (msgCache.get(chatId) ?? chat?.messages ?? []) : (chat?.messages ?? []);
   const [messages, setMessages] = useState<Message[]>(cached);
   const [loadingMessages, setLoadingMessages] = useState(!hasCachedRef.current && !!chatId);
+  const [messageLoadFailed, setMessageLoadFailed] = useState(false);
+  const [messageRetry, setMessageRetry] = useState(0);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [inputH, setInputH] = useState(INPUT_MIN_H);
@@ -265,8 +270,10 @@ export default function ChatRoom() {
   // If chat is not in context (freshly created, or navigated from push notification),
   // fetch it directly from DB so the chat room is fully functional immediately.
   useEffect(() => {
-    if (!chatId || foundChat) return;
+    if (!chatId || foundChat) { setLoadingDbChat(false); return; }
     let isMounted = true;
+    setLoadingDbChat(true);
+    setDbChatLoadFailed(false);
     dbGetChatById(chatId).then(c => {
       if (!isMounted || !c) return;
       if (c.workerId !== currentUser?.id && c.employerId !== currentUser?.id) {
@@ -276,9 +283,13 @@ export default function ChatRoom() {
       setDbChat(c);
       setMessages(c.messages);
       lastCountRef.current = c.messages.length;
-    }).catch(() => {});
+    }).catch(() => {
+      if (isMounted) setDbChatLoadFailed(true);
+    }).finally(() => {
+      if (isMounted) setLoadingDbChat(false);
+    });
     return () => { isMounted = false; };
-  }, [chatId]);
+  }, [chatId, dbChatRetry]);
 
   // Clear dbChat once context has the chat (avoid stale fallback)
   useEffect(() => {
@@ -289,15 +300,21 @@ export default function ChatRoom() {
   useEffect(() => {
     if (!chatId || hasCachedRef.current) return;
     let mounted = true;
+    setLoadingMessages(true);
+    setMessageLoadFailed(false);
     dbGetMessages(chatId).then(msgs => {
       if (!mounted) return;
       setMessages(msgs);
       msgCache.set(chatId, msgs);
       lastCountRef.current = msgs.length;
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
-    }).catch(() => {}).finally(() => { if (mounted) setLoadingMessages(false); });
+    }).catch(() => {
+      // Keep preview/cache data if we have it. A transport error is not an
+      // empty chat and must never replace already visible messages.
+      if (mounted) setMessageLoadFailed(true);
+    }).finally(() => { if (mounted) setLoadingMessages(false); });
     return () => { mounted = false; };
-  }, [chatId]);
+  }, [chatId, messageRetry]);
 
   const isEmployer = currentUser?.role === 'employer';
   // Чат без вакансии. Такие остались от удалённого раздела «Биржа» — их два.
@@ -578,7 +595,7 @@ export default function ChatRoom() {
   const iAlreadyWrote = messages.some(m => m.senderId === currentUser?.id);
   const showSuggestions =
     suggestions.length > 0 && !iAlreadyWrote && !input.trim() &&
-    !isChatBlocked && !isRecording;
+    !messageLoadFailed && !isChatBlocked && !isRecording;
 
   // ── Отправка фото ────────────────────────────────────────────────────────
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -828,8 +845,25 @@ export default function ChatRoom() {
             <Text style={styles.backIconTxt}>‹</Text>
           </TouchableOpacity>
         </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: Colors.textMuted }}>Чат не найден</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(24), gap: rs(12) }}>
+          {!currentUser || loadingDbChat ? (
+            <ActivityIndicator size="large" color={Colors.primary} />
+          ) : dbChatLoadFailed ? (
+            <>
+              <Text style={{ color: Colors.textPrimary, fontSize: rf(16), fontWeight: '700', textAlign: 'center' }}>
+                Не удалось загрузить чат
+              </Text>
+              <Text style={{ color: Colors.textMuted, textAlign: 'center' }}>Проверьте связь и попробуйте ещё раз.</Text>
+              <TouchableOpacity
+                onPress={() => setDbChatRetry(x => x + 1)}
+                style={{ backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Повторить</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={{ color: Colors.textMuted }}>Чат не найден</Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -1101,15 +1135,30 @@ export default function ChatRoom() {
             <ActivityIndicator size="large" color={Colors.primary} />
           </View>
         ) : (
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={m => m.id}
-            renderItem={renderMessage}
-            contentContainerStyle={styles.msgList}
-            showsVerticalScrollIndicator={false}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          />
+          <View style={{ flex: 1 }}>
+            {messageLoadFailed ? (
+              <View style={{ paddingHorizontal: rs(16), paddingVertical: rs(10), backgroundColor: Colors.surface, gap: rs(6) }}>
+                <Text style={{ color: Colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>
+                  {messages.length > 0 ? 'Не удалось обновить сообщения' : 'Не удалось загрузить сообщения'}
+                </Text>
+                <Text style={{ color: Colors.textMuted, textAlign: 'center', fontSize: rf(12) }}>
+                  Уже показанные сообщения сохранены. Проверьте связь и повторите.
+                </Text>
+                <TouchableOpacity onPress={() => setMessageRetry(x => x + 1)} activeOpacity={0.8}>
+                  <Text style={{ color: Colors.primary, fontWeight: '700', textAlign: 'center' }}>Повторить</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={m => m.id}
+              renderItem={renderMessage}
+              contentContainerStyle={styles.msgList}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+            />
+          </View>
         )}
 
         {/* Подсказки: сразу после мэтча поле пустое и обе стороны молчат.

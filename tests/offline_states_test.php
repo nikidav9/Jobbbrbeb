@@ -119,6 +119,26 @@ check('поддержка: ошибка истории не выглядит п�
 check('поддержка: историю можно повторить',
     (bool)preg_match('~onPress=\{\(\) => void load\(\)\}[\s\S]{0,160}Повторить~', $support));
 
+// ── Чат, чужой профиль и отзывы: ошибка загрузки не равна пустоте ────────────
+$chatRoom = (string)file_get_contents(__DIR__ . '/../app/chat-room.tsx');
+check('чат: ошибка записи чата хранится отдельно', str_contains($chatRoom, 'dbChatLoadFailed'));
+check('чат: ошибка сообщений хранится отдельно', str_contains($chatRoom, 'messageLoadFailed'));
+check('чат: при ошибке сообщений есть диагноз', str_contains($chatRoom, 'Не удалось загрузить сообщения'));
+check('чат: при ошибке сообщений есть повтор',
+    (bool)preg_match('~setMessageRetry[\s\S]{0,220}Повторить~', $chatRoom));
+check('чат: сбой загрузки не включает подсказки как для нового чата',
+    str_contains($chatRoom, '!messageLoadFailed && !isChatBlocked'));
+
+$userProfile = (string)file_get_contents(__DIR__ . '/../app/user-profile.tsx');
+check('чужой профиль: ошибка загрузки не равна «не найден»',
+    str_contains($userProfile, 'userLoadFailed') && str_contains($userProfile, 'Не удалось загрузить профиль'));
+check('чужой профиль: отзывы имеют отдельную ошибку',
+    str_contains($userProfile, 'ratingsLoadFailed') && str_contains($userProfile, 'Не удалось загрузить отзывы'));
+
+$ownProfile = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
+check('свои отзывы: сетевой сбой не выглядит отсутствием отзывов',
+    str_contains($ownProfile, 'ratingsLoadFailed') && str_contains($ownProfile, 'Не удалось загрузить отзывы'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

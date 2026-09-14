@@ -80,12 +80,15 @@ const rS = StyleSheet.create({
 function RatingsModal({ userId, users, onClose }: { userId: string; users: any[]; onClose: () => void }) {
   const [ratings, setRatings] = useState<UserRating[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ratingsLoadFailed, setRatingsLoadFailed] = useState(false);
   const reviewsSwipe = useSwipeToDismiss(onClose);
 
   const fetchRatings = () => {
+    setLoading(true);
+    setRatingsLoadFailed(false);
     dbGetRatingsForUser(userId)
       .then(setRatings)
-      .catch(() => {})
+      .catch(() => setRatingsLoadFailed(true))
       .finally(() => setLoading(false));
   };
 
@@ -188,6 +191,14 @@ function RatingsModal({ userId, users, onClose }: { userId: string; users: any[]
           {loading ? (
             <View style={{ padding: 48, alignItems: 'center' }}>
               <ActivityIndicator size="large" color={Colors.primary} />
+            </View>
+          ) : ratingsLoadFailed && ratings.length === 0 ? (
+            <View style={rmS.empty}>
+              <Text style={rmS.emptyTitle}>Не удалось загрузить отзывы</Text>
+              <Text style={rmS.emptySub}>Проверьте связь и попробуйте ещё раз.</Text>
+              <TouchableOpacity onPress={fetchRatings} activeOpacity={0.8}>
+                <Text style={{ color: Colors.primary, fontWeight: '700', marginTop: rs(4) }}>Повторить</Text>
+              </TouchableOpacity>
             </View>
           ) : ratings.length === 0 ? (
             <View style={rmS.empty}>

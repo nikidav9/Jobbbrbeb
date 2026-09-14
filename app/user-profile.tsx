@@ -70,8 +70,11 @@ export default function UserProfileScreen() {
   const [tab, setTab] = useState<Tab>('info');
   const [ratings, setRatings] = useState<UserRating[]>([]);
   const [loadingRatings, setLoadingRatings] = useState(false);
+  const [ratingsLoadFailed, setRatingsLoadFailed] = useState(false);
   const [fetchedUser, setFetchedUser] = useState<import('@/constants/types').User | null>(null);
   const [fetchingUser, setFetchingUser] = useState(false);
+  const [userLoadFailed, setUserLoadFailed] = useState(false);
+  const [userRetry, setUserRetry] = useState(0);
   const [stats, setStats] = useState<UserStats | null>(null);
 
   const contextUser = users.find(u => u.id === userId);
@@ -80,17 +83,19 @@ export default function UserProfileScreen() {
   useEffect(() => {
     if (!userId || contextUser) return;
     setFetchingUser(true);
+    setUserLoadFailed(false);
     dbGetUserById(userId)
       .then(u => setFetchedUser(u))
-      .catch(() => {})
+      .catch(() => setUserLoadFailed(true))
       .finally(() => setFetchingUser(false));
-  }, [userId, contextUser]);
+  }, [userId, contextUser, userRetry]);
 
   const fetchRatings = (id: string) => {
     setLoadingRatings(true);
+    setRatingsLoadFailed(false);
     dbGetRatingsForUser(id)
       .then(setRatings)
-      .catch(() => {})
+      .catch(() => setRatingsLoadFailed(true))
       .finally(() => setLoadingRatings(false));
   };
 
@@ -139,6 +144,17 @@ export default function UserProfileScreen() {
         <View style={styles.center}>
           {fetchingUser ? (
             <ActivityIndicator size="large" color="#6C63FF" />
+          ) : userLoadFailed ? (
+            <>
+              <Text style={styles.errorText}>Не удалось загрузить профиль</Text>
+              <Text style={styles.emptyReviewsSub}>Проверьте связь и попробуйте ещё раз.</Text>
+              <TouchableOpacity
+                onPress={() => setUserRetry(x => x + 1)}
+                style={{ marginTop: rs(8), backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Повторить</Text>
+              </TouchableOpacity>
+            </>
           ) : (
             <Text style={styles.errorText}>Пользователь не найден</Text>
           )}
@@ -319,6 +335,14 @@ export default function UserProfileScreen() {
           loadingRatings ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={Colors.primary} />
+            </View>
+          ) : ratingsLoadFailed && ratings.length === 0 ? (
+            <View style={styles.emptyReviews}>
+              <Text style={styles.emptyReviewsTitle}>Не удалось загрузить отзывы</Text>
+              <Text style={styles.emptyReviewsSub}>Проверьте связь — уже загруженные отзывы не удаляются.</Text>
+              <TouchableOpacity onPress={() => fetchRatings(userId)} activeOpacity={0.8}>
+                <Text style={{ color: Colors.primary, fontWeight: '700', marginTop: rs(6) }}>Повторить</Text>
+              </TouchableOpacity>
             </View>
           ) : ratings.length === 0 ? (
             <View style={styles.emptyReviews}>
