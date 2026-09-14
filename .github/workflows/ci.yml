@@ -80,6 +80,9 @@ jobs:
       - name: Отклик на смену меняет его сторона, а отказ доходит до человека
         run: php tests/like_authz_test.php
 
+      - name: Объектные права чата, рейтинга и постоянного отклика
+        run: php tests/db_object_authz_test.php
+
       - name: Писать человеку можно только тому, с кем есть связь
         run: php tests/notify_authz_test.php
 
