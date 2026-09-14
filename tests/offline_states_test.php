@@ -139,6 +139,17 @@ $ownProfile = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
 check('свои отзывы: сетевой сбой не выглядит отсутствием отзывов',
     str_contains($ownProfile, 'ratingsLoadFailed') && str_contains($ownProfile, 'Не удалось загрузить отзывы'));
 
+// ── Telegram: пользовательские сетевые действия не молчат ───────────────────
+$tg = (string)file_get_contents(__DIR__ . '/../components/TelegramConnectButton.tsx');
+check('telegram: ошибка первого статуса не оставляет вечный спиннер',
+    str_contains($tg, 'statusFailed') && str_contains($tg, 'Не удалось проверить Telegram'));
+check('telegram: отключение сообщает об ошибке',
+    str_contains($tg, 'Не удалось отключить Telegram. Проверьте связь и попробуйте ещё раз.'));
+check('telegram: открытие бота сообщает об ошибке',
+    str_contains($tg, 'Не удалось открыть Telegram. Откройте бота вручную'));
+check('telegram: fire-and-forget заявка не даёт unhandled rejection',
+    str_contains($tg, 'void dbTgPrepareLink(userId).catch'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
