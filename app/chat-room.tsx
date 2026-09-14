@@ -20,7 +20,7 @@ import { Colors, Radius, Shadow } from '@/constants/theme';
 import { ReadTicks, isSeenByOther } from '@/components/ReadTicks';
 import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
-import { nameColorFromString, getInitials, formatDate, uid, nowISO } from '@/services/storage';
+import { nameColorFromString, getInitials, formatDate } from '@/services/storage';
 import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
 import { setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
@@ -482,17 +482,6 @@ export default function ChatRoom() {
     }
   }, [messages.length]);
 
-  const appendMessages = (newMsgs: Message[]) => {
-    setMessages(prev => {
-      const ids = new Set(prev.map(m => m.id));
-      const toAdd = newMsgs.filter(m => !ids.has(m.id));
-      const next = toAdd.length > 0 ? [...prev, ...toAdd] : prev;
-      lastCountRef.current = next.length;
-      return next;
-    });
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-  };
-
   // Employer: approve candidate
   const handleApprove = async () => {
     if (!chat || !currentUser || !isEmployer) return;
@@ -523,11 +512,9 @@ export default function ChatRoom() {
       const result = await dbCheckAndCreateMatch(vacId, workerId);
       setLikeStatus('approved');
       if (result.matched) {
-        const matchMsg: Message = { id: uid(), senderId: 'system', text: 'У вас мэтч! Вы подошли друг другу. Познакомьтесь и обсудите детали!', timestamp: nowISO() };
-        const safetyMsg: Message = { id: uid(), senderId: 'system_safety', text: 'Рекомендуем не переводить общение в сторонние мессенджеры или почту, а продолжить его в чате JobToo: так у мошенников будет меньше шансов вас обмануть.\n\nГде бы вы ни общались — не сообщайте свой CVV-код, код из SMS и не вводите данные карты по ссылке.', timestamp: nowISO() };
-        appendMessages([matchMsg, safetyMsg]);
-      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
-    // собирает тот, кто записал событие, и только другой стороне.
+        // Сервер уже записал обе системные строки. Перечитываем их, чтобы
+        // экран не показывал временную клиентскую редакцию того же события.
+        pollRef.current?.();
         const existingLike = likes.find(l => l.vacancyId === vacId && l.workerId === workerId);
         if (existingLike) optimisticUpdateLike({ ...existingLike, isMatch: true, employerLiked: true });
       }

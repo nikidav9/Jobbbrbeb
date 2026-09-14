@@ -123,7 +123,7 @@ export default function OverviewPage() {
 
               Теперь длина считается от наибольшего шага, а падение вынесено к
               названию — туда, где оно и означает переход от предыдущего. */}
-          <ChartCard title="Воронка" sub="Шаги считают разные сущности: люди → отклики → смены">
+          <ChartCard title="Воронка выхода на смену" sub="Когорта регистраций 30 дней · последние 7 дней дозревают">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 4 }}>
               {(() => {
                 const max = Math.max(...d.funnel.map(f => f.value), 1)

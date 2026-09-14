@@ -19,6 +19,8 @@ require_once __DIR__ . '/superjob_oauth_lib.php';
 require_once __DIR__ . '/ext_health.php';
 require_once __DIR__ . '/referral.php';
 require_once __DIR__ . '/funnel.php';
+require_once __DIR__ . '/shift_funnel.php';
+require_once __DIR__ . '/feed_funnel.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -210,9 +212,9 @@ $authUid = $authClaims['uid'] ?? null;
 if ($authUid !== null) {
     $acct = null;
     try {
-        $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked,sessions_valid_from');
+        $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked,sessions_valid_from,role');
     } catch (\Throwable $e) {
-        try { $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked'); }
+        try { $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked,role'); }
         catch (\Throwable $e2) { $acct = null; }
     }
     if (!is_array($acct)) {
@@ -283,12 +285,64 @@ if (isset($chatArgFns[$fn])) {
     if ($fn === 'dbInsertMessage' && (string)($args[1] ?? '') !== $authUid) {
         jt_respond(['error' => 'Invalid sender'], 403); exit;
     }
+    $actualChatRole = $authUid === (string)$chat['worker_id'] ? 'worker' : 'employer';
+    if ($fn === 'dbMarkRead' && (string)($args[1] ?? '') !== $actualChatRole) {
+        jt_respond(['error' => 'Read state role mismatch'], 403); exit;
+    }
+    if ($fn === 'dbIncrementUnread') {
+        $recipientRole = $actualChatRole === 'worker' ? 'employer' : 'worker';
+        if ((string)($args[1] ?? '') !== $recipientRole) {
+            jt_respond(['error' => 'Unread recipient mismatch'], 403); exit;
+        }
+    }
 }
 if ($fn === 'dbCreateChat') {
     $workerId = (string)($args[0] ?? '');
     $employerId = (string)($args[1] ?? '');
+    $vacancyId = (string)($args[2] ?? '');
     if ($authUid !== $workerId && $authUid !== $employerId) {
         jt_respond(['error' => 'Chat access denied'], 403); exit;
+    }
+
+    $chatVacancyKind = 'shift';
+    $chatVacancy = $vacancyId !== ''
+        ? sb_single('jm_vacancies', ['id' => 'eq.' . $vacancyId], 'employer_id')
+        : null;
+    if (!$chatVacancy) {
+        $chatVacancyKind = 'permanent';
+        $chatVacancy = $vacancyId !== ''
+            ? sb_single('jm_perm_vacancies', ['id' => 'eq.' . $vacancyId], 'employer_id')
+            : null;
+    }
+    if (!$chatVacancy || (string)($chatVacancy['employer_id'] ?? '') !== $employerId) {
+        jt_respond(['error' => 'Chat vacancy mismatch'], 403); exit;
+    }
+
+    $chatCallerRole = (string)($acct['role'] ?? '');
+    if ($authUid === $workerId) {
+        // На постоянной вакансии кнопка «Написать работодателю» доступна до
+        // отклика, поэтому работнику достаточно реальной вакансии и её владельца.
+        if ($chatCallerRole !== 'worker') {
+            jt_respond(['error' => 'Chat role mismatch'], 403); exit;
+        }
+    } else {
+        if ($chatCallerRole !== 'employer') {
+            jt_respond(['error' => 'Chat role mismatch'], 403); exit;
+        }
+        $chatRelation = $chatVacancyKind === 'shift'
+            ? sb_single('jm_likes', [
+                'vacancy_id' => 'eq.' . $vacancyId,
+                'worker_id' => 'eq.' . $workerId,
+                'employer_id' => 'eq.' . $employerId,
+            ], 'id')
+            : sb_single('jm_perm_applications', [
+                'vacancy_id' => 'eq.' . $vacancyId,
+                'worker_id' => 'eq.' . $workerId,
+                'employer_id' => 'eq.' . $employerId,
+            ], 'id');
+        if (!$chatRelation) {
+            jt_respond(['error' => 'Chat relation mismatch'], 403); exit;
+        }
     }
 }
 
@@ -335,6 +389,35 @@ if ($fn === 'dbSubmitRatingAndMaybeDelete') {
     $params = is_array($args[0] ?? null) ? $args[0] : [];
     if ((string)($params['fromUserId'] ?? '') !== $authUid) {
         jt_respond(['error' => 'Rating author mismatch'], 403); exit;
+    }
+    $ratingLikeId = (string)($params['likeId'] ?? '');
+    $ratingLike = $ratingLikeId !== ''
+        ? sb_single('jm_likes', ['id' => 'eq.' . $ratingLikeId], 'worker_id,employer_id,vacancy_id')
+        : null;
+    if (!$ratingLike) {
+        jt_respond(['error' => 'Rating relation not found'], 404); exit;
+    }
+    $ratingRole = $authUid === (string)$ratingLike['worker_id'] ? 'worker'
+        : ($authUid === (string)$ratingLike['employer_id'] ? 'employer' : '');
+    $ratingTarget = $ratingRole === 'worker'
+        ? (string)$ratingLike['employer_id']
+        : ($ratingRole === 'employer' ? (string)$ratingLike['worker_id'] : '');
+    if ($ratingRole === ''
+        || (string)($params['role'] ?? '') !== $ratingRole
+        || (string)($params['toUserId'] ?? '') !== $ratingTarget
+        || (string)($params['vacancyId'] ?? '') !== (string)$ratingLike['vacancy_id']) {
+        jt_respond(['error' => 'Rating relation mismatch'], 403); exit;
+    }
+    $ratingValue = (int)($params['rating'] ?? 0);
+    if ($ratingValue < 1 || $ratingValue > 5) {
+        jt_respond(['error' => 'Rating must be between 1 and 5'], 400); exit;
+    }
+    foreach (['quality', 'speed', 'matchedDesc', 'attitude', 'paidOnTime'] as $metric) {
+        if (!array_key_exists($metric, $params) || $params[$metric] === null) continue;
+        $metricValue = (int)$params[$metric];
+        if ($metricValue < 1 || $metricValue > 5) {
+            jt_respond(['error' => 'Rating metric must be between 1 and 5'], 400); exit;
+        }
     }
 }
 
@@ -3580,6 +3663,55 @@ try {
             ]);
             $applications = $shiftApplications + $permApplications;
 
+            $signedInOwnImpressions = sb_count('jm_vacancy_views', ['viewed_at' => 'gte.' . $cut24])
+                + sb_count('jm_perm_vacancy_views', ['viewed_at' => 'gte.' . $cut24]);
+            $partnerSets = ['impression' => [], 'click' => []];
+            foreach (sb_select_all('jm_ext_events', [
+                'event_type' => 'in.(impression,click)', 'occurred_at' => 'gte.' . $cut24,
+            ], 'ext_id,event_type,user_id') as $event) {
+                $type = (string)($event['event_type'] ?? '');
+                if (!isset($partnerSets[$type])) continue;
+                $key = (string)($event['user_id'] ?? '') . '|' . (string)($event['ext_id'] ?? '');
+                $partnerSets[$type][$key] = true;
+            }
+            $signedInPartnerImpressions = count($partnerSets['impression']);
+            $signedInPartnerClicks = count($partnerSets['click']);
+
+            $guestSets = array_fill_keys([
+                'vacancy_impression', 'external_click', 'apply_intent',
+                'registration_started', 'registration_completed',
+            ], []);
+            $guestOwnImpressions = [];
+            $guestPartnerImpressions = [];
+            foreach (sb_select_all('jm_guest_events', [
+                'event_type' => 'in.(vacancy_impression,external_click,apply_intent,registration_started,registration_completed)',
+                'occurred_at' => 'gte.' . $cut24,
+            ], 'anon_id,event_type,vacancy_id,vacancy_kind') as $event) {
+                $type = (string)($event['event_type'] ?? '');
+                if (!isset($guestSets[$type])) continue;
+                $key = (string)($event['anon_id'] ?? '') . '|' . (string)($event['vacancy_id'] ?? '');
+                $guestSets[$type][$key] = true;
+                if ($type !== 'vacancy_impression') continue;
+                if (($event['vacancy_kind'] ?? '') === 'external') $guestPartnerImpressions[$key] = true;
+                else $guestOwnImpressions[$key] = true;
+            }
+            $guestImpressions = count($guestSets['vacancy_impression']);
+            $guestExternalClicks = count($guestSets['external_click']);
+            $guestIntents = count($guestSets['apply_intent']);
+            $guestStarted = count($guestSets['registration_started']);
+            $guestCompleted = count($guestSets['registration_completed']);
+            $ownImpressions = $signedInOwnImpressions + count($guestOwnImpressions);
+            $partnerImpressions = $signedInPartnerImpressions + count($guestPartnerImpressions);
+            $partnerClicks = $signedInPartnerClicks + $guestExternalClicks;
+            $feedImpressionLine = feed_impression_line($ownImpressions, $partnerImpressions, $partnerClicks);
+            $guestFunnelLine = guest_funnel_line(
+                $guestImpressions, $guestExternalClicks, $guestIntents, $guestStarted, $guestCompleted
+            );
+            $zeroApplicationLine = zero_application_diagnosis(
+                $applications, $ownImpressions, $partnerImpressions, $partnerClicks,
+                $guestImpressions, $guestIntents, $guestCompleted
+            );
+
             // Сколько откликов получили ответ. Отчёт до сих пор считал только
             // «сколько подали» — а это половина правды: отклик без ответа хуже
             // отказа, человек читает молчание как «сервис не работает».
@@ -3607,6 +3739,34 @@ try {
                 + sb_count('jm_perm_applications', ['and' => $inWindow, 'status' => 'neq.pending']);
             $replyLine = funnel_line($askedDay, $answeredDay);
             $replyAlert = funnel_alert($askedDay, $answeredDay);
+
+            $shiftOutcomeCounts = array_fill_keys(SHIFT_OUTCOMES, 0);
+            foreach (sb_select_all('jm_likes', [
+                'outcome' => 'not.is.null', 'outcome_at' => 'gte.' . $cut24,
+            ], 'outcome') as $row) {
+                $outcome = (string)($row['outcome'] ?? '');
+                if (isset($shiftOutcomeCounts[$outcome])) $shiftOutcomeCounts[$outcome]++;
+            }
+            $shiftOutcomeLine = shift_outcome_line($shiftOutcomeCounts);
+
+            $shiftWindow = shift_application_window($now);
+            $shiftWindowFilter = "(created_at.gte.{$shiftWindow['from']},created_at.lt.{$shiftWindow['to']})";
+            $matureShiftApplications = sb_count('jm_likes', [
+                'worker_liked' => 'eq.true', 'and' => $shiftWindowFilter,
+            ]);
+            $matureWorked = sb_count('jm_likes', [
+                'worker_liked' => 'eq.true', 'and' => $shiftWindowFilter,
+                'outcome' => 'eq.worked',
+            ]);
+            $shiftConversionLine = shift_conversion_line($matureShiftApplications, $matureWorked);
+
+            $workedOnce = sb_count('jm_users', [
+                'role' => 'eq.worker', 'score_shifts' => 'gte.1',
+            ]);
+            $workedTwice = sb_count('jm_users', [
+                'role' => 'eq.worker', 'score_shifts' => 'gte.2',
+            ]);
+            $secondShiftLine = second_shift_line($workedOnce, $workedTwice);
             $newShifts = sb_count('jm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $newVacancies = sb_count('jm_perm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $partnerVacancies = sb_count('jm_ext_vacancies', [
@@ -3752,6 +3912,12 @@ try {
             $lines[] = "👷 Новых работников: <b>{$newWorkers}</b>";
             $lines[] = "📨 Откликов: <b>{$applications}</b> (смены {$shiftApplications}, вакансии {$permApplications})";
             $lines[] = $replyLine;
+            $lines[] = $shiftOutcomeLine;
+            $lines[] = $shiftConversionLine;
+            $lines[] = $secondShiftLine;
+            $lines[] = $feedImpressionLine;
+            $lines[] = $guestFunnelLine;
+            if ($zeroApplicationLine !== '') $lines[] = $zeroApplicationLine;
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
@@ -3777,6 +3943,27 @@ try {
                 'stats' => [
                     'new_workers' => $newWorkers,
                     'applications' => $applications,
+                    'shift_outcomes' => $shiftOutcomeCounts,
+                    'shift_application_to_worked' => [
+                        'applications' => $matureShiftApplications,
+                        'worked' => $matureWorked,
+                        'window' => $shiftWindow,
+                    ],
+                    'second_shift' => [
+                        'worked_once' => $workedOnce,
+                        'worked_twice' => $workedTwice,
+                    ],
+                    'feed_funnel' => [
+                        'own_impressions' => $ownImpressions,
+                        'partner_impressions' => $partnerImpressions,
+                        'partner_clicks' => $partnerClicks,
+                        'guest_impressions' => $guestImpressions,
+                        'guest_external_clicks' => $guestExternalClicks,
+                        'guest_apply_intents' => $guestIntents,
+                        'guest_registration_started' => $guestStarted,
+                        'guest_registration_completed' => $guestCompleted,
+                        'zero_application_diagnosis' => $zeroApplicationLine,
+                    ],
                     'new_vacancies' => $newVacancies,
                     'new_shifts' => $newShifts,
                     'partner_vacancies' => $partnerVacancies,
@@ -5411,18 +5598,22 @@ try {
             [$vid, $wid] = [$args[0], $args[1]];
             sb('POST', 'jm_vacancy_views', ['on_conflict' => 'vacancy_id,worker_id'],
                 ['vacancy_id' => $vid, 'worker_id' => $wid, 'viewed_at' => now_iso()],
-                ['Prefer: resolution=ignore-duplicates,return=minimal']);
+                ['Prefer: resolution=merge-duplicates,return=minimal']);
             break;
         }
 
         case 'dbLogOpen': {
-            // Событие «открыл приложение». args: [anon_id, user_id|null, role|null, platform|null]
+            // Событие «открыл приложение». anon_id и platform — технические
+            // поля клиента. Личность и роль берём только из подписанной сессии:
+            // публичный вызов без неё остаётся честно анонимным.
             $anon = isset($args[0]) ? (string)$args[0] : '';
             if ($anon === '') { $data = false; break; }
+            $eventUserId = $authUid !== null ? (string)$authUid : null;
+            $eventRole = $authUid !== null ? (string)($acct['role'] ?? '') : null;
             sb('POST', 'jm_app_opens', [], [
                 'anon_id'   => $anon,
-                'user_id'   => $args[1] ?? null,
-                'role'      => $args[2] ?? null,
+                'user_id'   => $eventUserId,
+                'role'      => $eventRole !== '' ? $eventRole : null,
                 'platform'  => $args[3] ?? null,
                 'opened_at' => now_iso(),
             ], ['Prefer: return=minimal']);
@@ -5500,7 +5691,7 @@ try {
             [$vid, $wid] = [$args[0], $args[1]];
             sb('POST', 'jm_perm_vacancy_views', ['on_conflict' => 'vacancy_id,worker_id'],
                 ['vacancy_id' => $vid, 'worker_id' => $wid, 'viewed_at' => now_iso()],
-                ['Prefer: resolution=ignore-duplicates,return=minimal']);
+                ['Prefer: resolution=merge-duplicates,return=minimal']);
             break;
         }
 
@@ -5747,10 +5938,11 @@ try {
             [$wid, $eid, $vid, $vt, $cn, $sm, $uw, $ue] =
                 [$args[0], $args[1], $args[2], $args[3], $args[4], $args[5] ?? null,
                  $args[6] ?? 0, $args[7] ?? 0];
-            $author = $args[8] ?? false;
+            $author = $authUid === (string)$wid ? 'worker' : 'employer';
+            $uw = $sm && $author === 'employer' ? 1 : 0;
+            $ue = $sm && $author === 'worker' ? 1 : 0;
             $data = chat_ensure($wid, $eid, (string)$vid, (string)$vt, (string)$cn,
-                                $sm, (int)$uw, (int)$ue,
-                                is_string($author) ? $author : (bool)$author);
+                                $sm, (int)$uw, (int)$ue, $author);
             // О первом сообщении извещаем здесь же. Раньше это делал телефон
             // отправителя отдельным вызовом, с текстом уведомления от себя.
             //
@@ -5981,6 +6173,15 @@ try {
 
         case 'dbApplyPermVacancy': {
             [$vid, $wid, $eid, $sm] = [$args[0], $args[1], $args[2], $args[3] ?? null];
+            $pv = sb_single('jm_perm_vacancies', ['id' => 'eq.' . $vid], 'employer_id,title,company');
+            if (!$pv) { jt_respond(['error' => 'Вакансия не найдена'], 404); exit; }
+            $vacEmployer = (string)($pv['employer_id'] ?? '');
+            if ($vacEmployer === '' || (string)$eid !== $vacEmployer) {
+                jt_respond(['error' => 'Vacancy owner mismatch'], 403); exit;
+            }
+            // Ни запись, ни чат, ни уведомление ниже больше не используют
+            // клиентский employerId как источник истины.
+            $eid = $vacEmployer;
             sb_upsert('jm_perm_applications', [
                 'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid,
                 'employer_id' => $eid, 'status' => 'pending', 'created_at' => now_iso(),
@@ -5991,7 +6192,6 @@ try {
             // списке и решал вслепую, а сказать о себе человеку было негде —
             // при том что именно на постоянные приходится большая часть
             // откликов. Теперь отклик открывает переписку, как и на сменах.
-            $pv = sb_single('jm_perm_vacancies', ['id' => 'eq.' . $vid], 'title,company');
             if ($sm) {
                 $data = chat_ensure($wid, $eid, (string)$vid,
                     (string)($pv['title'] ?? ''), (string)($pv['company'] ?? ''),
