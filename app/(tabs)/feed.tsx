@@ -5,6 +5,7 @@ import {
   TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
 } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
+import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -1782,6 +1783,7 @@ function WorkerFeed() {
     refreshAll, refreshLikes, refreshChats,
     showToast, vacanciesLoading, exitGuest,
     savedIds, optimisticAddSaved, optimisticRemoveSaved,
+    responsivenessMap,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [partnerShifts, setPartnerShifts] = useState<PartnerShiftCard[]>([]);
@@ -2492,6 +2494,28 @@ function WorkerFeed() {
                           {currentCard.noExperienceNeeded ? <Chip label="Без опыта" variant="neutral" icon="school-outline" /> : null}
                           {currentCard.address ? <Chip label={currentCard.address} variant="neutral" icon="location-outline" /> : null}
                         </View>
+
+                        {/* Как этот работодатель отвечает — здесь, а не только в
+                            подробностях. Решение принимается свайпом: это одно
+                            движение и ноль раздумий, и до «Читать полностью»
+                            доходят единицы. Предупреждать о молчуне после того,
+                            как отклик ушёл, поздно — отклик без ответа человек
+                            читает как «сервис не работает».
+
+                            Карта отзывчивости грузится одним запросом на всех
+                            ровно ради этого места (contexts/AppContext.tsx):
+                            ходить за ней на каждую карточку нельзя, лента
+                            превратится в слайд-шоу.
+
+                            Плашка сама молчит, когда переписок меньше двух: по
+                            одной вывод делать нельзя, а выглядел бы он как
+                            приговор. У партнёрских карточек employerId вида
+                            `external:...`, в карте его нет — там тоже пусто.
+
+                            Место выбрано до разделителя: cardSummary стоит
+                            flexShrink, поэтому ужмётся описание, а не уедет за
+                            край ссылка «Читать полностью». */}
+                        <ReplyBadge stats={responsivenessMap[currentCard.employerId]} />
                       </View>
 
                       <View style={styles.cardDivider} />

@@ -101,6 +101,9 @@ jobs:
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
+      - name: Плашка отзывчивости доходит до свайпа
+        run: php tests/reply_badge_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
