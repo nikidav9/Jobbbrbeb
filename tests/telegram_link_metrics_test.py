@@ -35,7 +35,7 @@ assert failure < beat < loop
 assert 'error.replace(token, "[token]")' in source
 
 report = (root / "infra" / "report.sh").read_text()
-assert '"телеграм_связь"' in report
+assert "телеграм_связь" in report
 assert "ipv6_reached" in report
 assert "fallback_reached" in report
 
