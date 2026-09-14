@@ -18,6 +18,32 @@ async function selectAll(table: string, columns: string): Promise<any[]> {
   return all
 }
 
+async function selectAllBetween(
+  table: string,
+  columns: string,
+  field: string,
+  fromValue: string,
+  toValue: string,
+): Promise<any[]> {
+  const page = 1000
+  let from = 0
+  const all: any[] = []
+  for (;;) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .gte(field, fromValue)
+      .lt(field, toValue)
+      .range(from, from + page - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all.push(...data)
+    if (data.length < page) break
+    from += page
+  }
+  return all
+}
+
 // ─── constants ───────────────────────────────────────────────────────────────
 
 export const WORK_TYPE_LABELS: Record<string, string> = {
@@ -105,6 +131,9 @@ export function growthChip(current: number, prev: number): { text: string; tone:
 // ─── overview ────────────────────────────────────────────────────────────────
 
 export async function fetchOverview() {
+  const now = new Date()
+  const cohortFrom = subDays(now, 37).toISOString()
+  const cohortTo = subDays(now, 7).toISOString()
   const [
     { data: users },
     { data: tempVacs },
@@ -114,6 +143,8 @@ export async function fetchOverview() {
     { data: messages },
     { data: ratings },
     { data: permApps },
+    cohortUsers,
+    cohortLikes,
   ] = await Promise.all([
     supabase.from('jm_users').select('id,role,created_at,is_blocked'),
     supabase.from('jm_vacancies').select('id,status,work_type,created_at,workers_needed,workers_found'),
@@ -123,6 +154,14 @@ export async function fetchOverview() {
     supabase.from('jm_messages').select('id,created_at'),
     supabase.from('jm_ratings').select('id,rating'),
     supabase.from('jm_perm_applications').select('id,status,created_at'),
+    selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
+    selectAllBetween(
+      'jm_likes',
+      'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
+      'created_at',
+      cohortFrom,
+      now.toISOString(),
+    ),
   ])
 
   const u = users ?? []
@@ -146,7 +185,6 @@ export async function fetchOverview() {
   const confirmed = lk.filter((x: any) => x.worker_confirmed && x.employer_confirmed)
   const completed = lk.filter((x: any) => x.shift_completed)
 
-  const now = new Date()
   const w7 = subDays(now, 7).toISOString()
   const w30 = subDays(now, 30).toISOString()
 
@@ -195,7 +233,7 @@ export async function fetchOverview() {
     .sort((a, b) => b.value - a.value)
 
   // Одна дозревшая когорта: каждый следующий шаг считает тех же работников.
-  const funnel = buildWorkerShiftCohort(workers, lk, now).steps
+  const funnel = buildWorkerShiftCohort(cohortUsers, cohortLikes, now).steps
 
   // ratings
   const avgRating = rt.length > 0
