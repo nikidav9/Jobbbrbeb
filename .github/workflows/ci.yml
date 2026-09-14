@@ -101,6 +101,9 @@ jobs:
       - name: Главная воронка — выходы и повторные смены
         run: php tests/shift_funnel_test.php
 
+      - name: Воронка ленты объясняет нулевые отклики
+        run: php tests/feed_funnel_test.php
+
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 

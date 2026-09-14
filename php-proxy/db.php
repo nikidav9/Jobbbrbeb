@@ -20,6 +20,7 @@ require_once __DIR__ . '/ext_health.php';
 require_once __DIR__ . '/referral.php';
 require_once __DIR__ . '/funnel.php';
 require_once __DIR__ . '/shift_funnel.php';
+require_once __DIR__ . '/feed_funnel.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -3581,6 +3582,55 @@ try {
             ]);
             $applications = $shiftApplications + $permApplications;
 
+            $signedInOwnImpressions = sb_count('jm_vacancy_views', ['viewed_at' => 'gte.' . $cut24])
+                + sb_count('jm_perm_vacancy_views', ['viewed_at' => 'gte.' . $cut24]);
+            $partnerSets = ['impression' => [], 'click' => []];
+            foreach (sb_select_all('jm_ext_events', [
+                'event_type' => 'in.(impression,click)', 'occurred_at' => 'gte.' . $cut24,
+            ], 'ext_id,event_type,user_id') as $event) {
+                $type = (string)($event['event_type'] ?? '');
+                if (!isset($partnerSets[$type])) continue;
+                $key = (string)($event['user_id'] ?? '') . '|' . (string)($event['ext_id'] ?? '');
+                $partnerSets[$type][$key] = true;
+            }
+            $signedInPartnerImpressions = count($partnerSets['impression']);
+            $signedInPartnerClicks = count($partnerSets['click']);
+
+            $guestSets = array_fill_keys([
+                'vacancy_impression', 'external_click', 'apply_intent',
+                'registration_started', 'registration_completed',
+            ], []);
+            $guestOwnImpressions = [];
+            $guestPartnerImpressions = [];
+            foreach (sb_select_all('jm_guest_events', [
+                'event_type' => 'in.(vacancy_impression,external_click,apply_intent,registration_started,registration_completed)',
+                'occurred_at' => 'gte.' . $cut24,
+            ], 'anon_id,event_type,vacancy_id,vacancy_kind') as $event) {
+                $type = (string)($event['event_type'] ?? '');
+                if (!isset($guestSets[$type])) continue;
+                $key = (string)($event['anon_id'] ?? '') . '|' . (string)($event['vacancy_id'] ?? '');
+                $guestSets[$type][$key] = true;
+                if ($type !== 'vacancy_impression') continue;
+                if (($event['vacancy_kind'] ?? '') === 'external') $guestPartnerImpressions[$key] = true;
+                else $guestOwnImpressions[$key] = true;
+            }
+            $guestImpressions = count($guestSets['vacancy_impression']);
+            $guestExternalClicks = count($guestSets['external_click']);
+            $guestIntents = count($guestSets['apply_intent']);
+            $guestStarted = count($guestSets['registration_started']);
+            $guestCompleted = count($guestSets['registration_completed']);
+            $ownImpressions = $signedInOwnImpressions + count($guestOwnImpressions);
+            $partnerImpressions = $signedInPartnerImpressions + count($guestPartnerImpressions);
+            $partnerClicks = $signedInPartnerClicks + $guestExternalClicks;
+            $feedImpressionLine = feed_impression_line($ownImpressions, $partnerImpressions, $partnerClicks);
+            $guestFunnelLine = guest_funnel_line(
+                $guestImpressions, $guestExternalClicks, $guestIntents, $guestStarted, $guestCompleted
+            );
+            $zeroApplicationLine = zero_application_diagnosis(
+                $applications, $ownImpressions, $partnerImpressions, $partnerClicks,
+                $guestImpressions, $guestIntents, $guestCompleted
+            );
+
             // Сколько откликов получили ответ. Отчёт до сих пор считал только
             // «сколько подали» — а это половина правды: отклик без ответа хуже
             // отказа, человек читает молчание как «сервис не работает».
@@ -3784,6 +3834,9 @@ try {
             $lines[] = $shiftOutcomeLine;
             $lines[] = $shiftConversionLine;
             $lines[] = $secondShiftLine;
+            $lines[] = $feedImpressionLine;
+            $lines[] = $guestFunnelLine;
+            if ($zeroApplicationLine !== '') $lines[] = $zeroApplicationLine;
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
@@ -3818,6 +3871,17 @@ try {
                     'second_shift' => [
                         'worked_once' => $workedOnce,
                         'worked_twice' => $workedTwice,
+                    ],
+                    'feed_funnel' => [
+                        'own_impressions' => $ownImpressions,
+                        'partner_impressions' => $partnerImpressions,
+                        'partner_clicks' => $partnerClicks,
+                        'guest_impressions' => $guestImpressions,
+                        'guest_external_clicks' => $guestExternalClicks,
+                        'guest_apply_intents' => $guestIntents,
+                        'guest_registration_started' => $guestStarted,
+                        'guest_registration_completed' => $guestCompleted,
+                        'zero_application_diagnosis' => $zeroApplicationLine,
                     ],
                     'new_vacancies' => $newVacancies,
                     'new_shifts' => $newShifts,
@@ -5453,7 +5517,7 @@ try {
             [$vid, $wid] = [$args[0], $args[1]];
             sb('POST', 'jm_vacancy_views', ['on_conflict' => 'vacancy_id,worker_id'],
                 ['vacancy_id' => $vid, 'worker_id' => $wid, 'viewed_at' => now_iso()],
-                ['Prefer: resolution=ignore-duplicates,return=minimal']);
+                ['Prefer: resolution=merge-duplicates,return=minimal']);
             break;
         }
 
@@ -5542,7 +5606,7 @@ try {
             [$vid, $wid] = [$args[0], $args[1]];
             sb('POST', 'jm_perm_vacancy_views', ['on_conflict' => 'vacancy_id,worker_id'],
                 ['vacancy_id' => $vid, 'worker_id' => $wid, 'viewed_at' => now_iso()],
-                ['Prefer: resolution=ignore-duplicates,return=minimal']);
+                ['Prefer: resolution=merge-duplicates,return=minimal']);
             break;
         }
 
