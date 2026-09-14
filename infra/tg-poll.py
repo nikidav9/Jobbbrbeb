@@ -28,6 +28,7 @@ import urllib.request
 
 OFFSET_FILE = "/var/lib/jt-tg-offset"
 BEAT_FILE = "/var/lib/jt-tg-beat"
+STATS_FILE = "/var/lib/jt-tg-poll-stats.json"
 # Через собственный домен, а не через петлю: на 127.0.0.1 шлюз
 # отвечает переадресацией на https, и обновление ушло бы в пустоту.
 LOCAL = "https://jobtoo.ru/api/tg.php"
@@ -48,35 +49,92 @@ def secret(name: str) -> str:
     return out.stdout.decode("utf-8", "replace").strip()
 
 
+def record_api_result(attempts: list[tuple[str, bool]], ok: bool,
+                      mode: str, error: str) -> None:
+    now = int(time.time())
+    try:
+        with open(STATS_FILE, encoding="utf-8") as f:
+            stats = json.load(f)
+        if not isinstance(stats, dict):
+            stats = {}
+    except Exception:
+        stats = {}
+
+    stats.setdefault("since", now)
+    stats["requests"] = int(stats.get("requests", 0)) + 1
+    for attempt_mode, reached in attempts:
+        key = "ipv6" if attempt_mode == "ipv6" else "fallback"
+        stats[f"{key}_attempts"] = int(stats.get(f"{key}_attempts", 0)) + 1
+        if reached:
+            stats[f"{key}_reached"] = int(stats.get(f"{key}_reached", 0)) + 1
+
+    stats["last_attempt"] = now
+    stats["last_mode"] = mode
+    if ok:
+        stats["ok"] = int(stats.get("ok", 0)) + 1
+        stats["consecutive_failures"] = 0
+        stats["last_success"] = now
+        stats["last_error"] = ""
+    else:
+        stats["failed"] = int(stats.get("failed", 0)) + 1
+        stats["consecutive_failures"] = int(stats.get("consecutive_failures", 0)) + 1
+        stats["last_failure"] = now
+        stats["last_error"] = error[:200]
+
+    tmp = f"{STATS_FILE}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, STATS_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def api(token: str, method: str, params: dict, timeout: int) -> dict:
-    """Запрос к Телеграму.
-
-    Через curl, а не через urllib: нужен ключ -6. Питон умеет выбирать
-    семейство адресов только вручную через свой сокет, и ради одной опции
-    пришлось бы переписать половину. А без -6 система нет-нет да и выберет
-    сломанный IPv4 — ровно то, от чего мы здесь и уходим.
-    """
+    """Запрос к Телеграму: сначала IPv6, затем системный маршрут."""
     url = f"https://api.telegram.org/bot{token}/{method}"
-    cmd = ["curl", "-s", "-6", "-m", str(timeout + 10), url]
-    for k, v in params.items():
-        cmd += ["-d", f"{k}={v}"]
-    try:
-        out = subprocess.run(cmd, capture_output=True, timeout=timeout + 20)
-        r = json.loads(out.stdout.decode("utf-8", "replace") or "null") or {}
-        if r:
-            return r
-    except Exception:
-        pass
-    # Запасной заход без указания стека. IPv6 в замерах даёт то 4 из 4, то
-    # 3 из 4, и на четвёртом цикл засыпал бы впустую — а это и есть те самые
-    # секунды, которые человек ждёт ответа.
-    try:
-        out = subprocess.run([c for c in cmd if c != "-6"], capture_output=True,
-                             timeout=timeout + 20)
-        return json.loads(out.stdout.decode("utf-8", "replace") or "null") or {}
-    except Exception:
-        return {}
+    base = ["curl", "-sS", "-m", str(timeout + 10), url]
+    for key, value in params.items():
+        base += ["-d", f"{key}={value}"]
 
+    def attempt(cmd: list[str]) -> tuple[dict, bool, str]:
+        try:
+            out = subprocess.run(cmd, capture_output=True, timeout=timeout + 20)
+        except Exception as exc:
+            return {}, False, type(exc).__name__
+
+        raw = out.stdout.decode("utf-8", "replace")
+        try:
+            payload = json.loads(raw or "null")
+        except json.JSONDecodeError:
+            payload = None
+        reached = out.returncode == 0 and isinstance(payload, dict) and bool(payload)
+        if reached:
+            error = str(payload.get("description") or payload.get("error_code") or "")
+            return payload, True, error
+        stderr = out.stderr.decode("utf-8", "replace").strip()
+        error = stderr or f"curl={out.returncode}, body={raw[:80]}"
+        return {}, False, error.replace(token, "[token]")
+
+    attempts: list[tuple[str, bool]] = []
+    payload, reached, error = attempt(base[:1] + ["-6"] + base[1:])
+    attempts.append(("ipv6", reached))
+    if reached:
+        ok = bool(payload.get("ok"))
+        record_api_result(attempts, ok, "ipv6", "" if ok else error)
+        return payload
+
+    payload, fallback_reached, fallback_error = attempt(base)
+    attempts.append(("fallback", fallback_reached))
+    ok = bool(payload.get("ok")) if fallback_reached else False
+    record_api_result(
+        attempts, ok, "fallback" if fallback_reached else "none",
+        "" if ok else (fallback_error or error),
+    )
+    return payload if fallback_reached else {}
 
 def deliver(update: dict, app_secret: str) -> None:
     """Отдать обновление своему обработчику — по петле, минуя интернет.
@@ -124,18 +182,19 @@ def main() -> int:
                 {"offset": offset, "timeout": 25, "allowed_updates":
                  '["message","callback_query","my_chat_member"]'}, 25)
 
-        # Отметка живости — для сторожа. Без неё «служба висит, но ничего не
-        # забирает» выглядит снаружи точно так же, как «всё хорошо».
-        try:
-            open(BEAT_FILE, "w").write(str(int(time.time())))
-        except Exception:
-            pass
-
         if not r.get("ok"):
             # Обрыв связи или отказ. Ждём и пробуем снова: сообщения у
             # Телеграма не пропадают, он отдаст их со следующего захода.
             time.sleep(3)
             continue
+
+        # Отметка живости означает успешный ответ Telegram, а не просто
+        # очередную попытку. Иначе сторож молчит именно во время тайм-аутов.
+        try:
+            with open(BEAT_FILE, "w", encoding="utf-8") as f:
+                f.write(str(int(time.time())))
+        except Exception:
+            pass
 
         for upd in r.get("result", []):
             # Со временем обработки. Жалоба «бот отвечает через двадцать
