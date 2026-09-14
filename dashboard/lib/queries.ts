@@ -1045,6 +1045,9 @@ export async function fetchCohorts() {
 // ─── funnel ──────────────────────────────────────────────────────────────────
 
 export async function fetchFunnel() {
+  const funnelNow = new Date()
+  const cohortFrom = subDays(funnelNow, 37).toISOString()
+  const cohortTo = subDays(funnelNow, 7).toISOString()
   const [
     { data: users },
     { data: likes },
@@ -1052,6 +1055,8 @@ export async function fetchFunnel() {
     { data: guestEvents },
     { data: shiftViews },
     { data: permViews },
+    cohortUsers,
+    cohortLikes,
   ] = await Promise.all([
     supabase.from('jm_users').select('id,role,created_at,first_name,last_name,metro_station,work_types'),
     supabase.from('jm_likes').select('id,worker_id,is_match,worker_liked,worker_confirmed,employer_confirmed,shift_completed,created_at'),
@@ -1059,6 +1064,14 @@ export async function fetchFunnel() {
     supabase.from('jm_guest_events').select('anon_id,event_type,vacancy_kind,campaign_id,channel,occurred_at'),
     supabase.from('jm_vacancy_views').select('worker_id'),
     supabase.from('jm_perm_vacancy_views').select('worker_id'),
+    selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
+    selectAllBetween(
+      'jm_likes',
+      'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
+      'created_at',
+      cohortFrom,
+      funnelNow.toISOString(),
+    ),
   ])
 
   const u = users ?? []
@@ -1169,9 +1182,8 @@ export async function fetchFunnel() {
     ).map((e: any) => e.anon_id)).size
   const guestEventsCount = (eventType: string, since?: string) =>
     ge.filter((e: any) => e.event_type === eventType && (!since || e.occurred_at >= since)).length
-  const nowIso = new Date()
-  const guestSince7 = subDays(nowIso, 7).toISOString()
-  const guestSince30 = subDays(nowIso, 30).toISOString()
+  const guestSince7 = subDays(funnelNow, 7).toISOString()
+  const guestSince30 = subDays(funnelNow, 30).toISOString()
   const guestStarted30 = guestUnique('guest_started', guestSince30)
   const guestCompleted30 = guestUnique('registration_completed', guestSince30)
   const guestByDay = (eventType: string) => groupByDate(
@@ -1239,14 +1251,9 @@ export async function fetchFunnel() {
     { name: 'Регистрации', value: referralRegistrations30, fill: PALETTE.green },
   ]
 
-  const mainFunnel = [
-    { name: 'Зарегистрировались', value: workers.length, fill: PALETTE.blue },
-    { name: 'Заполнили профиль', value: profileCompleteWorkers.length, fill: PALETTE.cyan },
-    { name: 'Посмотрели вакансию', value: viewedWorkerIds.size, fill: PALETTE.purple },
-    { name: 'Откликнулись', value: applicantWorkerIds.size, fill: PALETTE.orange },
-    { name: 'Получили одобрение', value: acceptedWorkerIds.size, fill: PALETTE.amber },
-    { name: 'Завершили смену', value: workersWithShiftSet.size, fill: PALETTE.green },
-  ]
+  const cohortColors = [PALETTE.blue, PALETTE.cyan, PALETTE.purple, PALETTE.orange, PALETTE.green]
+  const mainFunnel = buildWorkerShiftCohort(cohortUsers, cohortLikes, funnelNow).steps
+    .map((step, index) => ({ ...step, fill: cohortColors[index] }))
 
   const eventFunnel = [
     { name: 'Лайки воркеров', value: likedLk.length, fill: PALETTE.blue },
