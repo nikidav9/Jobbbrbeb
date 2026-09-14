@@ -178,6 +178,8 @@ TMP=/tmp/jt-status.$$
   echo "  \"забор_бота\": \"$(systemctl is-active jt-tgpoll.service 2>/dev/null) отметка=$(
     b=$(stat -c %Y /var/lib/jt-tg-beat 2>/dev/null || echo 0)
     [ "${b:-0}" -gt 0 ] && echo "$(( ($(date +%s) - b) ))с назад" || echo нет)\","
+  tgstats=$(jq -r '"запросы=\(.requests // 0) успех=\(.ok // 0) отказ=\(.failed // 0) IPv6=\(.ipv6_reached // 0)/\(.ipv6_attempts // 0) резерв=\(.fallback_reached // 0)/\(.fallback_attempts // 0) подряд=\(.consecutive_failures // 0) режим=\(.last_mode // "нет")"' /var/lib/jt-tg-poll-stats.json 2>/dev/null || echo "замеров нет")
+  echo "  \"телеграм_связь\": \"${tgstats}\","
   # Хвост журнала забора: там время обработки каждого сообщения. Без него
   # «бот медленный» — это ощущение, а не число.
   echo "  \"забор_журнал\": \"$(tail -4 /var/log/jt-tgpoll.log 2>/dev/null | tr -d '"\\\r' | tr '\n' ' ' | cut -c1-300)\","
