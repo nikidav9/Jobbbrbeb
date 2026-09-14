@@ -1,5 +1,6 @@
 import { supabase, supabaseAdmin } from './supabase'
 import { subDays, format, eachDayOfInterval, parseISO, startOfDay } from 'date-fns'
+import { buildWorkerShiftCohort } from './workerCohort'
 
 // Supabase режет выборку до 1000 строк. Для полных агрегатов (просмотры и т.п.)
 // тянем всю таблицу постранично, иначе счётчики занижаются.
@@ -117,7 +118,7 @@ export async function fetchOverview() {
     supabase.from('jm_users').select('id,role,created_at,is_blocked'),
     supabase.from('jm_vacancies').select('id,status,work_type,created_at,workers_needed,workers_found'),
     supabase.from('jm_perm_vacancies').select('id,status,created_at'),
-    supabase.from('jm_likes').select('id,is_match,matched_at,worker_confirmed,employer_confirmed,shift_completed,created_at'),
+    supabase.from('jm_likes').select('id,worker_id,worker_liked,is_match,matched_at,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at'),
     supabase.from('jm_chats').select('id,created_at'),
     supabase.from('jm_messages').select('id,created_at'),
     supabase.from('jm_ratings').select('id,rating'),
@@ -193,14 +194,8 @@ export async function fetchOverview() {
     .map(([k, v]) => ({ name: WORK_TYPE_LABELS[k] ?? k, value: v }))
     .sort((a, b) => b.value - a.value)
 
-  // funnel
-  const funnel = [
-    { name: 'Пользователи', value: u.length },
-    { name: 'Лайки', value: lk.length },
-    { name: 'Совпадения', value: matches.length },
-    { name: 'Подтверждено', value: confirmed.length },
-    { name: 'Смены завершены', value: completed.length },
-  ]
+  // Одна дозревшая когорта: каждый следующий шаг считает тех же работников.
+  const funnel = buildWorkerShiftCohort(workers, lk, now).steps
 
   // ratings
   const avgRating = rt.length > 0
