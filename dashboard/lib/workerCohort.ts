@@ -106,7 +106,7 @@ export function buildWorkerActivationCohort(
   const workedRaw = new Set<string>()
   const firstApplicationAt = new Map<string, number>()
 
-  for (const view of [...shiftViews, ...permViews]) {
+  for (const view of shiftViews.concat(permViews)) {
     const workerId = view.worker_id
     if (workerId && workerIds.has(workerId)) explicitViewed.add(workerId)
   }
@@ -152,7 +152,7 @@ export function buildWorkerActivationCohort(
   const applied = new Set<string>()
   const accepted = new Set<string>()
   const worked = new Set<string>()
-  for (const workerId of profileReady) {
+  for (const workerId of Array.from(profileReady)) {
     const didWork = workedRaw.has(workerId)
     const didAccept = didWork || acceptedRaw.has(workerId)
     const didApply = didAccept || appliedRaw.has(workerId)
@@ -163,17 +163,15 @@ export function buildWorkerActivationCohort(
     if (didWork) worked.add(workerId)
   }
 
-  const downstreamRaw = new Set([
-    ...explicitViewed,
-    ...appliedRaw,
-    ...acceptedRaw,
-    ...workedRaw,
-  ])
-  const legacyProfileAnomalies = [...downstreamRaw]
+  const downstreamRaw = new Set(
+    Array.from(explicitViewed)
+      .concat(Array.from(appliedRaw), Array.from(acceptedRaw), Array.from(workedRaw)),
+  )
+  const legacyProfileAnomalies = Array.from(downstreamRaw)
     .filter(workerId => workerIds.has(workerId) && !profileReady.has(workerId)).length
 
   let appliedWithin7d = 0
-  for (const workerId of profileReady) {
+  for (const workerId of Array.from(profileReady)) {
     const registered = registeredAt.get(workerId)
     const firstApplication = firstApplicationAt.get(workerId)
     if (registered === undefined || firstApplication === undefined) continue
