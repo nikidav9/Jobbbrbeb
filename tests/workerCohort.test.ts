@@ -26,6 +26,12 @@ test('worker cohort compares the same people through every shift stage', () => {
   assert.deepEqual(result.steps.map(step => step.value), [4, 3, 2, 1, 1])
   assert.equal(result.from, '2026-08-08T12:00:00.000Z')
   assert.equal(result.to, '2026-09-07T12:00:00.000Z')
+  assert.deepEqual(result.biggestDrop, {
+    from: 'Получили совпадение',
+    to: 'Подтвердили',
+    lost: 1,
+    rate: 50,
+  })
 })
 
 test('higher stages include implied earlier stages for legacy rows', () => {
