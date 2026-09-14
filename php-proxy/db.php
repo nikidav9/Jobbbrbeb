@@ -19,6 +19,7 @@ require_once __DIR__ . '/superjob_oauth_lib.php';
 require_once __DIR__ . '/ext_health.php';
 require_once __DIR__ . '/referral.php';
 require_once __DIR__ . '/funnel.php';
+require_once __DIR__ . '/shift_funnel.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -3607,6 +3608,34 @@ try {
                 + sb_count('jm_perm_applications', ['and' => $inWindow, 'status' => 'neq.pending']);
             $replyLine = funnel_line($askedDay, $answeredDay);
             $replyAlert = funnel_alert($askedDay, $answeredDay);
+
+            $shiftOutcomeCounts = array_fill_keys(SHIFT_OUTCOMES, 0);
+            foreach (sb_select_all('jm_likes', [
+                'outcome' => 'not.is.null', 'outcome_at' => 'gte.' . $cut24,
+            ], 'outcome') as $row) {
+                $outcome = (string)($row['outcome'] ?? '');
+                if (isset($shiftOutcomeCounts[$outcome])) $shiftOutcomeCounts[$outcome]++;
+            }
+            $shiftOutcomeLine = shift_outcome_line($shiftOutcomeCounts);
+
+            $shiftWindow = shift_application_window($now);
+            $shiftWindowFilter = "(created_at.gte.{$shiftWindow['from']},created_at.lt.{$shiftWindow['to']})";
+            $matureShiftApplications = sb_count('jm_likes', [
+                'worker_liked' => 'eq.true', 'and' => $shiftWindowFilter,
+            ]);
+            $matureWorked = sb_count('jm_likes', [
+                'worker_liked' => 'eq.true', 'and' => $shiftWindowFilter,
+                'outcome' => 'eq.worked',
+            ]);
+            $shiftConversionLine = shift_conversion_line($matureShiftApplications, $matureWorked);
+
+            $workedOnce = sb_count('jm_users', [
+                'role' => 'eq.worker', 'score_shifts' => 'gte.1',
+            ]);
+            $workedTwice = sb_count('jm_users', [
+                'role' => 'eq.worker', 'score_shifts' => 'gte.2',
+            ]);
+            $secondShiftLine = second_shift_line($workedOnce, $workedTwice);
             $newShifts = sb_count('jm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $newVacancies = sb_count('jm_perm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $partnerVacancies = sb_count('jm_ext_vacancies', [
@@ -3752,6 +3781,9 @@ try {
             $lines[] = "👷 Новых работников: <b>{$newWorkers}</b>";
             $lines[] = "📨 Откликов: <b>{$applications}</b> (смены {$shiftApplications}, вакансии {$permApplications})";
             $lines[] = $replyLine;
+            $lines[] = $shiftOutcomeLine;
+            $lines[] = $shiftConversionLine;
+            $lines[] = $secondShiftLine;
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
@@ -3777,6 +3809,16 @@ try {
                 'stats' => [
                     'new_workers' => $newWorkers,
                     'applications' => $applications,
+                    'shift_outcomes' => $shiftOutcomeCounts,
+                    'shift_application_to_worked' => [
+                        'applications' => $matureShiftApplications,
+                        'worked' => $matureWorked,
+                        'window' => $shiftWindow,
+                    ],
+                    'second_shift' => [
+                        'worked_once' => $workedOnce,
+                        'worked_twice' => $workedTwice,
+                    ],
                     'new_vacancies' => $newVacancies,
                     'new_shifts' => $newShifts,
                     'partner_vacancies' => $partnerVacancies,
