@@ -82,6 +82,20 @@ check('зарплата помесячная', ($ld['baseSalary']['value']['unit
 check('отклик у нас, а не на стороне', ($ld['directApply'] ?? null) === true);
 check('нет отметки о закрытии', !str_contains(mb_strtolower($html), 'вакансия закрыта'));
 
+// Старые вакансии встречаются без компании. Не рисуем тире перед пустотой,
+// не создаём пустой hiringOrganization и не показываем пустой абзац.
+$htmlNoCompany = render(array_merge($base, [
+    'company' => '',
+    'salary' => 90000,
+    'schedule' => '5/2',
+    'description' => '',
+]), 'perm');
+$ldNoCompany = json_ld($htmlNoCompany);
+check('пустая компания не ломает title', !str_contains($htmlNoCompany, '— ,'));
+check('пустой hiringOrganization не публикуется', !isset($ldNoCompany['hiringOrganization']));
+check('пустой абзац компании не публикуется', !str_contains($htmlNoCompany, '<p class="company"></p>'));
+check('fallback description остаётся осмысленным', str_contains($htmlNoCompany, 'Комплектовщик на склад'));
+
 // Пустые поля не выдумываем: за ложные данные в разметке наказывают.
 foreach ($ld as $k => $v) {
     if (is_string($v)) check("поле $k не пустое", trim($v) !== '');

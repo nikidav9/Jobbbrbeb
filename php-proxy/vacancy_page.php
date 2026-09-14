@@ -63,11 +63,15 @@ function vp_json_ld(array $v): string
         'title' => (string)$v['title'],
         'datePosted' => substr((string)$v['created_at'], 0, 10),
         'directApply' => true,
-        'hiringOrganization' => [
+    ];
+    // Название работодателя иногда отсутствует в старых карточках. Не
+    // выдумываем его и не публикуем пустой Organization в JSON-LD.
+    if ($v['company'] !== '') {
+        $ld['hiringOrganization'] = [
             '@type' => 'Organization',
             'name' => (string)$v['company'],
-        ],
-    ];
+        ];
+    }
     if ($v['description'] !== '') $ld['description'] = $v['description'];
     if ($v['valid_through'] !== '') $ld['validThrough'] = $v['valid_through'];
     if ($v['employment_type'] !== '') $ld['employmentType'] = $v['employment_type'];
@@ -221,14 +225,15 @@ function vp_render(array $v): void
     // разметки и переносов.
     $metaDesc = trim(preg_replace('/\s+/u', ' ', $v['description']));
     if ($metaDesc === '') {
-        $metaDesc = $v['company'] . ' ищет: ' . $v['title']
+        $metaDesc = ($v['company'] !== '' ? $v['company'] . ' ищет: ' : '') . $v['title']
             . ($v['address'] !== '' ? ', ' . $v['address'] : '');
     }
     if (function_exists('mb_substr') && mb_strlen($metaDesc, 'UTF-8') > 160) {
         $metaDesc = mb_substr($metaDesc, 0, 157, 'UTF-8') . '…';
     }
 
-    $pageTitle = $v['title'] . ' — ' . $v['company']
+    $pageTitle = $v['title']
+        . ($v['company'] !== '' ? ' — ' . $v['company'] : '')
         . ($v['metro'] !== '' ? ', ' . $v['metro'] : '') . ' | JobToo';
 
     $head = '<link rel="canonical" href="' . vp_e($url) . '">'
@@ -237,7 +242,7 @@ function vp_render(array $v): void
 
     $body = ($isClosed ? '<div class="closed">Эта вакансия закрыта. Похожие смены и вакансии — в приложении.</div>' : '')
         . '<h1>' . vp_e($v['title']) . '</h1>'
-        . '<p class="company">' . vp_e($v['company']) . '</p>'
+        . ($v['company'] !== '' ? '<p class="company">' . vp_e($v['company']) . '</p>' : '')
         . ($facts !== '' ? '<ul class="facts">' . $facts . '</ul>' : '')
         . $desc
         . '<p><a class="btn" href="' . VP_SITE . '/">'
