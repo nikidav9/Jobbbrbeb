@@ -136,14 +136,14 @@ export default function FunnelPage() {
           Активация
         </div>
         <div className="g-4">
-          <KpiCard label="Заполнили профиль" value={d.kpi.profileCompleteWorkers}
-            sub={`${d.kpi.profileCompleteRate}% от работников`} sparkColor={PALETTE.cyan} />
-          <KpiCard label="Посмотрели вакансии" value={d.kpi.viewedWorkers}
-            sub={`${d.kpi.viewedRate}% от работников`} sparkColor={PALETTE.purple} />
-          <KpiCard label="Откликнулись" value={d.kpi.activatedWorkers}
-            sub={`${d.kpi.activationRate}% от работников · смены и работа`} sparkColor={PALETTE.orange} />
-          <KpiCard label="Первый отклик ≤ 7 дней" value={`${d.kpi.activation7d}%`}
-            sub="скорость активации после регистрации" sparkColor={PALETTE.green} />
+          <KpiCard label="Работники в когорте" value={d.kpi.cohortWorkers}
+            sub="30 дней · последние 7 дней исключены" sparkColor={PALETTE.blue} />
+          <KpiCard label="Откликнулись на смену" value={d.kpi.cohortApplied}
+            sub={`${d.kpi.cohortApplyRate} от когорты`} sparkColor={PALETTE.cyan} />
+          <KpiCard label="Получили совпадение" value={d.kpi.cohortMatched}
+            sub={`${d.kpi.cohortMatchRate} от откликнувшихся`} sparkColor={PALETTE.purple} />
+          <KpiCard label="Вышли на смену" value={d.kpi.cohortWorked}
+            sub={`${d.kpi.cohortWorkRate} от когорты`} sparkColor={PALETTE.green} />
         </div>
 
         {/* Конверсия */}
@@ -176,8 +176,14 @@ export default function FunnelPage() {
 
         {/* Воронки */}
         <div className="g-2">
-          <ChartCard title="Полная активационная воронка" sub="Регистрация → профиль → просмотр → отклик → одобрение → завершённая смена">
+          <ChartCard title="Когорта выхода на смену" sub="Регистрации за 30 дней · последние 7 дней дозревают">
             <FunnelBar items={d.mainFunnel} />
+            {d.kpi.cohortBiggestDrop && d.kpi.cohortBiggestDrop.lost > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)', fontSize: 12, color: 'var(--negative)' }}>
+                Главная потеря: {d.kpi.cohortBiggestDrop.from} → {d.kpi.cohortBiggestDrop.to}
+                {' · '}−{d.kpi.cohortBiggestDrop.lost} ({d.kpi.cohortBiggestDrop.rate}%)
+              </div>
+            )}
           </ChartCard>
 
           <ChartCard title="Воронка по событиям" sub="Всего событий на каждом шаге · справа доля от предыдущего">

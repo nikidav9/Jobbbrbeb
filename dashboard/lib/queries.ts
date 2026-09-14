@@ -1,5 +1,6 @@
 import { supabase, supabaseAdmin } from './supabase'
 import { subDays, format, eachDayOfInterval, parseISO, startOfDay } from 'date-fns'
+import { buildWorkerShiftCohort } from './workerCohort'
 
 // Supabase режет выборку до 1000 строк. Для полных агрегатов (просмотры и т.п.)
 // тянем всю таблицу постранично, иначе счётчики занижаются.
@@ -10,6 +11,32 @@ async function selectAll(table: string, columns: string): Promise<any[]> {
   for (;;) {
     const { data, error } = await supabase.from(table).select(columns).range(from, from + page - 1)
     if (error || !data || data.length === 0) break
+    all.push(...data)
+    if (data.length < page) break
+    from += page
+  }
+  return all
+}
+
+async function selectAllBetween(
+  table: string,
+  columns: string,
+  field: string,
+  fromValue: string,
+  toValue: string,
+): Promise<any[]> {
+  const page = 1000
+  let from = 0
+  const all: any[] = []
+  for (;;) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .gte(field, fromValue)
+      .lt(field, toValue)
+      .range(from, from + page - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
     all.push(...data)
     if (data.length < page) break
     from += page
@@ -104,6 +131,9 @@ export function growthChip(current: number, prev: number): { text: string; tone:
 // ─── overview ────────────────────────────────────────────────────────────────
 
 export async function fetchOverview() {
+  const now = new Date()
+  const cohortFrom = subDays(now, 37).toISOString()
+  const cohortTo = subDays(now, 7).toISOString()
   const [
     { data: users },
     { data: tempVacs },
@@ -113,15 +143,25 @@ export async function fetchOverview() {
     { data: messages },
     { data: ratings },
     { data: permApps },
+    cohortUsers,
+    cohortLikes,
   ] = await Promise.all([
     supabase.from('jm_users').select('id,role,created_at,is_blocked'),
     supabase.from('jm_vacancies').select('id,status,work_type,created_at,workers_needed,workers_found'),
     supabase.from('jm_perm_vacancies').select('id,status,created_at'),
-    supabase.from('jm_likes').select('id,is_match,matched_at,worker_confirmed,employer_confirmed,shift_completed,created_at'),
+    supabase.from('jm_likes').select('id,worker_id,worker_liked,is_match,matched_at,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at'),
     supabase.from('jm_chats').select('id,created_at'),
     supabase.from('jm_messages').select('id,created_at'),
     supabase.from('jm_ratings').select('id,rating'),
     supabase.from('jm_perm_applications').select('id,status,created_at'),
+    selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
+    selectAllBetween(
+      'jm_likes',
+      'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
+      'created_at',
+      cohortFrom,
+      now.toISOString(),
+    ),
   ])
 
   const u = users ?? []
@@ -145,7 +185,6 @@ export async function fetchOverview() {
   const confirmed = lk.filter((x: any) => x.worker_confirmed && x.employer_confirmed)
   const completed = lk.filter((x: any) => x.shift_completed)
 
-  const now = new Date()
   const w7 = subDays(now, 7).toISOString()
   const w30 = subDays(now, 30).toISOString()
 
@@ -193,14 +232,8 @@ export async function fetchOverview() {
     .map(([k, v]) => ({ name: WORK_TYPE_LABELS[k] ?? k, value: v }))
     .sort((a, b) => b.value - a.value)
 
-  // funnel
-  const funnel = [
-    { name: 'Пользователи', value: u.length },
-    { name: 'Лайки', value: lk.length },
-    { name: 'Совпадения', value: matches.length },
-    { name: 'Подтверждено', value: confirmed.length },
-    { name: 'Смены завершены', value: completed.length },
-  ]
+  // Одна дозревшая когорта: каждый следующий шаг считает тех же работников.
+  const funnel = buildWorkerShiftCohort(cohortUsers, cohortLikes, now).steps
 
   // ratings
   const avgRating = rt.length > 0
@@ -1012,28 +1045,35 @@ export async function fetchCohorts() {
 // ─── funnel ──────────────────────────────────────────────────────────────────
 
 export async function fetchFunnel() {
+  const funnelNow = new Date()
+  const cohortFrom = subDays(funnelNow, 37).toISOString()
+  const cohortTo = subDays(funnelNow, 7).toISOString()
   const [
     { data: users },
     { data: likes },
     { data: permApps },
     { data: guestEvents },
-    { data: shiftViews },
-    { data: permViews },
+    cohortUsers,
+    cohortLikes,
   ] = await Promise.all([
-    supabase.from('jm_users').select('id,role,created_at,first_name,last_name,metro_station,work_types'),
+    supabase.from('jm_users').select('id,role,created_at'),
     supabase.from('jm_likes').select('id,worker_id,is_match,worker_liked,worker_confirmed,employer_confirmed,shift_completed,created_at'),
     supabase.from('jm_perm_applications').select('id,worker_id,status,created_at'),
     supabase.from('jm_guest_events').select('anon_id,event_type,vacancy_kind,campaign_id,channel,occurred_at'),
-    supabase.from('jm_vacancy_views').select('worker_id'),
-    supabase.from('jm_perm_vacancy_views').select('worker_id'),
+    selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
+    selectAllBetween(
+      'jm_likes',
+      'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
+      'created_at',
+      cohortFrom,
+      funnelNow.toISOString(),
+    ),
   ])
 
   const u = users ?? []
   const lk = likes ?? []
   const ap = permApps ?? []
   const ge = guestEvents ?? []
-  const sv = shiftViews ?? []
-  const pv = permViews ?? []
 
   const workers = u.filter((x: any) => x.role === 'worker')
 
@@ -1041,51 +1081,6 @@ export async function fetchFunnel() {
   const matchedLk = lk.filter((l: any) => l.is_match)
   const confirmedLk = lk.filter((l: any) => l.worker_confirmed && l.employer_confirmed)
   const completedLk = lk.filter((l: any) => l.shift_completed)
-
-  const workersWhoLiked = new Set(likedLk.map((l: any) => l.worker_id)).size
-  const workersWithMatch = new Set(matchedLk.map((l: any) => l.worker_id)).size
-  const workersWithShiftSet = new Set(completedLk.map((l: any) => l.worker_id))
-
-  const profileCompleteWorkers = workers.filter((w: any) => {
-    const types = Array.isArray(w.work_types) ? w.work_types : []
-    return Boolean(
-      String(w.first_name ?? '').trim()
-      && String(w.last_name ?? '').trim()
-      && String(w.metro_station ?? '').trim()
-      && types.length > 0
-    )
-  })
-  const viewedWorkerIds = new Set([
-    ...sv.map((v: any) => v.worker_id),
-    ...pv.map((v: any) => v.worker_id),
-  ].filter(Boolean))
-  const applicantWorkerIds = new Set([
-    ...likedLk.map((l: any) => l.worker_id),
-    ...ap.map((a: any) => a.worker_id),
-  ].filter(Boolean))
-  const acceptedWorkerIds = new Set([
-    ...matchedLk.map((l: any) => l.worker_id),
-    ...ap.filter((a: any) => ['approved', 'hired'].includes(a.status))
-      .map((a: any) => a.worker_id),
-  ].filter(Boolean))
-
-  const workerRegMap: Record<string, string> = {}
-  for (const usr of workers) workerRegMap[(usr as any).id] = (usr as any).created_at
-  const firstApplication: Record<string, string> = {}
-  for (const event of [...likedLk, ...ap]) {
-    const wid = (event as any).worker_id
-    const at = (event as any).created_at
-    if (wid && at && (!firstApplication[wid] || at < firstApplication[wid])) {
-      firstApplication[wid] = at
-    }
-  }
-  let activated7d = 0
-  for (const wid of Object.keys(firstApplication)) {
-    const reg = workerRegMap[wid]
-    if (!reg) continue
-    const elapsed = new Date(firstApplication[wid]).getTime() - new Date(reg).getTime()
-    if (elapsed >= 0 && elapsed <= 7 * 86400_000) activated7d++
-  }
 
   const shiftsByWorker: Record<string, number> = {}
   for (const l of completedLk) {
@@ -1136,9 +1131,8 @@ export async function fetchFunnel() {
     ).map((e: any) => e.anon_id)).size
   const guestEventsCount = (eventType: string, since?: string) =>
     ge.filter((e: any) => e.event_type === eventType && (!since || e.occurred_at >= since)).length
-  const nowIso = new Date()
-  const guestSince7 = subDays(nowIso, 7).toISOString()
-  const guestSince30 = subDays(nowIso, 30).toISOString()
+  const guestSince7 = subDays(funnelNow, 7).toISOString()
+  const guestSince30 = subDays(funnelNow, 30).toISOString()
   const guestStarted30 = guestUnique('guest_started', guestSince30)
   const guestCompleted30 = guestUnique('registration_completed', guestSince30)
   const guestByDay = (eventType: string) => groupByDate(
@@ -1206,14 +1200,12 @@ export async function fetchFunnel() {
     { name: 'Регистрации', value: referralRegistrations30, fill: PALETTE.green },
   ]
 
-  const mainFunnel = [
-    { name: 'Зарегистрировались', value: workers.length, fill: PALETTE.blue },
-    { name: 'Заполнили профиль', value: profileCompleteWorkers.length, fill: PALETTE.cyan },
-    { name: 'Посмотрели вакансию', value: viewedWorkerIds.size, fill: PALETTE.purple },
-    { name: 'Откликнулись', value: applicantWorkerIds.size, fill: PALETTE.orange },
-    { name: 'Получили одобрение', value: acceptedWorkerIds.size, fill: PALETTE.amber },
-    { name: 'Завершили смену', value: workersWithShiftSet.size, fill: PALETTE.green },
-  ]
+  const cohortColors = [PALETTE.blue, PALETTE.cyan, PALETTE.purple, PALETTE.orange, PALETTE.green]
+  const workerCohort = buildWorkerShiftCohort(cohortUsers, cohortLikes, funnelNow)
+  const mainFunnel = workerCohort.steps
+    .map((step, index) => ({ ...step, fill: cohortColors[index] }))
+  const [cohortWorkers, cohortApplied, cohortMatched, cohortConfirmed, cohortWorked] =
+    workerCohort.steps.map(step => step.value)
 
   const eventFunnel = [
     { name: 'Лайки воркеров', value: likedLk.length, fill: PALETTE.blue },
@@ -1231,16 +1223,16 @@ export async function fetchFunnel() {
   return {
     kpi: {
       workers: workers.length,
-      profileCompleteWorkers: profileCompleteWorkers.length,
-      profileCompleteRate: workers.length > 0
-        ? ((profileCompleteWorkers.length / workers.length) * 100).toFixed(1) : '0',
-      viewedWorkers: viewedWorkerIds.size,
-      viewedRate: workers.length > 0
-        ? ((viewedWorkerIds.size / workers.length) * 100).toFixed(1) : '0',
-      activatedWorkers: applicantWorkerIds.size,
-      activationRate: workers.length > 0
-        ? ((applicantWorkerIds.size / workers.length) * 100).toFixed(1) : '0',
-      activation7d: workers.length > 0 ? ((activated7d / workers.length) * 100).toFixed(1) : '0',
+      cohortWorkers,
+      cohortApplied,
+      cohortMatched,
+      cohortConfirmed,
+      cohortWorked,
+      cohortApplyRate: pct(cohortApplied, cohortWorkers),
+      cohortMatchRate: pct(cohortMatched, cohortApplied),
+      cohortConfirmRate: pct(cohortConfirmed, cohortMatched),
+      cohortWorkRate: pct(cohortWorked, cohortWorkers),
+      cohortBiggestDrop: workerCohort.biggestDrop,
       totalLikes: likedLk.length,
       totalMatches: matchedLk.length,
       matchRate: likedLk.length > 0 ? ((matchedLk.length / likedLk.length) * 100).toFixed(1) : '0',

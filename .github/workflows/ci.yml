@@ -53,6 +53,9 @@ jobs:
       - name: Сводные страницы считают, а не выдумывают
         run: php tests/landing_page_test.php
 
+      - name: Карта сайта не собирается заново на каждый запрос
+        run: php tests/sitemap_cache_test.php
+
       - name: Смерть одного источника вакансий видна в отчёте
         run: php tests/ext_health_test.php
 
@@ -98,6 +101,12 @@ jobs:
       - name: Разрыв воронки — ответы на отклики
         run: php tests/funnel_test.php
 
+      - name: Главная воронка — выходы и повторные смены
+        run: php tests/shift_funnel_test.php
+
+      - name: Воронка ленты объясняет нулевые отклики
+        run: php tests/feed_funnel_test.php
+
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
@@ -119,10 +128,14 @@ jobs:
           python3 tests/feed_contract_test.py
           python3 tests/career_infra_test.py
           python3 tests/referral_chain_test.py
+          python3 tests/referral_data_policy_test.py
           python3 tests/user_id_contract_test.py
           python3 tests/seo_infra_test.py
           python3 tests/deploy_migration_order_test.py
           python3 tests/deploy_webhook_order_test.py
+          python3 tests/chat_match_refresh_test.py
+          python3 tests/health_endpoint_test.py
+          python3 tests/telegram_link_metrics_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build
