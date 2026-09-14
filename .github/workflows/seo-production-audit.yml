@@ -1,16 +1,10 @@
 name: Production SEO audit
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - scripts/seo-production-audit.py
-      - php-proxy/vacancy_page.php
-      - php-proxy/landing_page.php
-      - php-proxy/sitemap.php
-      - public/robots.txt
-      - infra/nginx-site.conf
-      - .github/workflows/seo-production-audit.yml
+  workflow_run:
+    workflows:
+      - Сборка сайта и доставка на московский сервер
+    types: [completed]
   schedule:
     - cron: '17 5 * * *'
   workflow_dispatch:
@@ -24,10 +18,15 @@ concurrency:
 
 jobs:
   audit:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Проверить живой SEO-контур
         id: audit
