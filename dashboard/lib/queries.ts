@@ -1088,10 +1088,6 @@ export async function fetchFunnel() {
   const confirmedLk = lk.filter((l: any) => l.worker_confirmed && l.employer_confirmed)
   const completedLk = lk.filter((l: any) => l.shift_completed)
 
-  const workersWhoLiked = new Set(likedLk.map((l: any) => l.worker_id)).size
-  const workersWithMatch = new Set(matchedLk.map((l: any) => l.worker_id)).size
-  const workersWithShiftSet = new Set(completedLk.map((l: any) => l.worker_id))
-
   const profileCompleteWorkers = workers.filter((w: any) => {
     const types = Array.isArray(w.work_types) ? w.work_types : []
     return Boolean(
@@ -1109,12 +1105,6 @@ export async function fetchFunnel() {
     ...likedLk.map((l: any) => l.worker_id),
     ...ap.map((a: any) => a.worker_id),
   ].filter(Boolean))
-  const acceptedWorkerIds = new Set([
-    ...matchedLk.map((l: any) => l.worker_id),
-    ...ap.filter((a: any) => ['approved', 'hired'].includes(a.status))
-      .map((a: any) => a.worker_id),
-  ].filter(Boolean))
-
   const workerRegMap: Record<string, string> = {}
   for (const usr of workers) workerRegMap[(usr as any).id] = (usr as any).created_at
   const firstApplication: Record<string, string> = {}
