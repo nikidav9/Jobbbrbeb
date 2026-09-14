@@ -98,6 +98,9 @@ jobs:
       - name: Разрыв воронки — ответы на отклики
         run: php tests/funnel_test.php
 
+      - name: Анонимность отзывов о чужом профиле
+        run: php tests/ratings_privacy_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

@@ -1565,12 +1565,19 @@ export async function dbRemovePermSaved(userId: string, vacancyId: string): Prom
 
 export interface UserRating {
   id: string;
-  fromUserId: string;
   rating: number;
   reviewText?: string;
   role: 'worker' | 'employer';
   createdAt: string;
-  vacancyId: string;
+  /**
+   * Кто оценил и за какую смену. Приходят ТОЛЬКО когда спрашиваешь отзывы о
+   * себе: на своём профиле приложение показывает имя оценившего, на чужом
+   * отзывы анонимны — звёзды, роль, дата, текст. Сервер отдаёт ровно столько,
+   * сколько рисует экран, иначе обещанная анонимность снимается одним
+   * запросом.
+   */
+  fromUserId?: string;
+  vacancyId?: string;
 }
 
 export async function dbGetRatingsForUser(toUserId: string): Promise<UserRating[]> {
