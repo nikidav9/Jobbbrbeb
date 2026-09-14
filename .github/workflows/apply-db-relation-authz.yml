@@ -19,12 +19,15 @@ jobs:
           fetch-depth: 0
 
       - name: Apply guarded source patch
-        run: python3 scripts/apply_db_relation_authz.py
+        run: |
+          python3 scripts/apply_db_relation_authz.py
+          python3 scripts/fix_db_object_authz_test_quotes.py
 
       - name: Validate patch
         run: |
           git diff --check
           php -l php-proxy/db.php
+          php -l tests/db_object_authz_test.php
           php tests/db_object_authz_test.php
           php tests/perm_app_test.php
           php tests/like_authz_test.php
