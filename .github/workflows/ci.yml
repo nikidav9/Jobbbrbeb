@@ -92,6 +92,9 @@ jobs:
       - name: Счётчики по вакансиям — только по своим
         run: php tests/stats_scope_test.php
 
+      - name: Уведомление доходит и до браузера
+        run: php tests/web_push_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js

@@ -1595,6 +1595,18 @@ function notify_user(string $userId, string $title, string $body, string $type =
             'data' => array_merge(['type' => $type], $data),
         ]]);
     }
+    // Ни телеграма, ни приложения — остаётся браузер. До этой правки такой
+    // человек не получал НИ ОДНОГО внешнего сигнала о личных событиях: о
+    // мэтче, о сообщении, об итоге своей смены. Веб-пуш на сервере был и
+    // работал, но звали его из одного места — массовой рассылки о новой
+    // вакансии. То есть о чужой смене человек узнавал, а о своём мэтче нет.
+    //
+    // Запасной путь, а не добавочный: у кого есть телеграм или приложение, тот
+    // уже извещён, и второй звонок о том же — это ровно то «просто так», от
+    // которого выключают уведомления.
+    if (empty($u['telegram_id']) && empty($u['push_token'])) {
+        web_push_to([$userId => true], $pushTitle ?? $title, $pushBody ?? $body, $type);
+    }
 }
 
 
@@ -1879,10 +1891,20 @@ function web_push_to(array $userIds, string $title, string $body, string $dataTy
     if (empty($userIds)) return 0;
     $ok = 0;
     try {
-        $subs = sb_select('jm_web_push_subscriptions', [], 'user_id,endpoint,p256dh,auth');
+        // Спрашиваем подписки нужных людей, а не всю таблицу. Раньше выборка
+        // шла целиком и отсеивалась в PHP: для одной рассылки в сутки это
+        // ничего не стоило, но теперь сюда заходит каждое личное уведомление.
+        // Порциями по сто — идентификаторы уходят в адрес запроса, и длинный
+        // список сломал бы его целиком, а поломка здесь тихая: она под catch.
+        $subs = [];
+        foreach (array_chunk(array_keys($userIds), 100) as $chunk) {
+            foreach (sb_select('jm_web_push_subscriptions',
+                ['user_id' => 'in.(' . sb_in_list($chunk) . ')'],
+                'user_id,endpoint,p256dh,auth') as $row) $subs[] = $row;
+        }
         $appSecret = jt_secret('APP_SECRET');
         foreach ($subs as $s) {
-            if (!isset($userIds[$s['user_id']]) || empty($s['endpoint'])) continue;
+            if (empty($s['endpoint'])) continue;
             $ch = curl_init(DASHBOARD_URL . '/api/webpush/send');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
