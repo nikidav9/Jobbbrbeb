@@ -57,15 +57,28 @@ export function buildWorkerShiftCohort(
     if (didWork) worked.add(workerId)
   }
 
+  const steps = [
+    { name: 'Новые работники', value: workers.size },
+    { name: 'Откликнулись на смену', value: applied.size },
+    { name: 'Получили совпадение', value: matched.size },
+    { name: 'Подтвердили', value: confirmed.size },
+    { name: 'Вышли на смену', value: worked.size },
+  ]
+  const biggestDrop = steps.slice(1).map((step, index) => {
+    const previous = steps[index]
+    const lost = Math.max(0, previous.value - step.value)
+    return {
+      from: previous.name,
+      to: step.name,
+      lost,
+      rate: previous.value > 0 ? Math.round(lost * 100 / previous.value) : 0,
+    }
+  }).sort((a, b) => b.rate - a.rate || b.lost - a.lost)[0] ?? null
+
   return {
     from: from.toISOString(),
     to: to.toISOString(),
-    steps: [
-      { name: 'Новые работники', value: workers.size },
-      { name: 'Откликнулись на смену', value: applied.size },
-      { name: 'Получили совпадение', value: matched.size },
-      { name: 'Подтвердили', value: confirmed.size },
-      { name: 'Вышли на смену', value: worked.size },
-    ],
+    steps,
+    biggestDrop,
   }
 }
