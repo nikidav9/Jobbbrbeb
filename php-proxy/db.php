@@ -285,6 +285,16 @@ if (isset($chatArgFns[$fn])) {
     if ($fn === 'dbInsertMessage' && (string)($args[1] ?? '') !== $authUid) {
         jt_respond(['error' => 'Invalid sender'], 403); exit;
     }
+    $actualChatRole = $authUid === (string)$chat['worker_id'] ? 'worker' : 'employer';
+    if ($fn === 'dbMarkRead' && (string)($args[1] ?? '') !== $actualChatRole) {
+        jt_respond(['error' => 'Read state role mismatch'], 403); exit;
+    }
+    if ($fn === 'dbIncrementUnread') {
+        $recipientRole = $actualChatRole === 'worker' ? 'employer' : 'worker';
+        if ((string)($args[1] ?? '') !== $recipientRole) {
+            jt_respond(['error' => 'Unread recipient mismatch'], 403); exit;
+        }
+    }
 }
 if ($fn === 'dbCreateChat') {
     $workerId = (string)($args[0] ?? '');
@@ -337,6 +347,35 @@ if ($fn === 'dbSubmitRatingAndMaybeDelete') {
     $params = is_array($args[0] ?? null) ? $args[0] : [];
     if ((string)($params['fromUserId'] ?? '') !== $authUid) {
         jt_respond(['error' => 'Rating author mismatch'], 403); exit;
+    }
+    $ratingLikeId = (string)($params['likeId'] ?? '');
+    $ratingLike = $ratingLikeId !== ''
+        ? sb_single('jm_likes', ['id' => 'eq.' . $ratingLikeId], 'worker_id,employer_id,vacancy_id')
+        : null;
+    if (!$ratingLike) {
+        jt_respond(['error' => 'Rating relation not found'], 404); exit;
+    }
+    $ratingRole = $authUid === (string)$ratingLike['worker_id'] ? 'worker'
+        : ($authUid === (string)$ratingLike['employer_id'] ? 'employer' : '');
+    $ratingTarget = $ratingRole === 'worker'
+        ? (string)$ratingLike['employer_id']
+        : ($ratingRole === 'employer' ? (string)$ratingLike['worker_id'] : '');
+    if ($ratingRole === ''
+        || (string)($params['role'] ?? '') !== $ratingRole
+        || (string)($params['toUserId'] ?? '') !== $ratingTarget
+        || (string)($params['vacancyId'] ?? '') !== (string)$ratingLike['vacancy_id']) {
+        jt_respond(['error' => 'Rating relation mismatch'], 403); exit;
+    }
+    $ratingValue = (int)($params['rating'] ?? 0);
+    if ($ratingValue < 1 || $ratingValue > 5) {
+        jt_respond(['error' => 'Rating must be between 1 and 5'], 400); exit;
+    }
+    foreach (['quality', 'speed', 'matchedDesc', 'attitude', 'paidOnTime'] as $metric) {
+        if (!array_key_exists($metric, $params) || $params[$metric] === null) continue;
+        $metricValue = (int)$params[$metric];
+        if ($metricValue < 1 || $metricValue > 5) {
+            jt_respond(['error' => 'Rating metric must be between 1 and 5'], 400); exit;
+        }
     }
 }
 
@@ -5853,10 +5892,11 @@ try {
             [$wid, $eid, $vid, $vt, $cn, $sm, $uw, $ue] =
                 [$args[0], $args[1], $args[2], $args[3], $args[4], $args[5] ?? null,
                  $args[6] ?? 0, $args[7] ?? 0];
-            $author = $args[8] ?? false;
+            $author = $authUid === (string)$wid ? 'worker' : 'employer';
+            $uw = $sm && $author === 'employer' ? 1 : 0;
+            $ue = $sm && $author === 'worker' ? 1 : 0;
             $data = chat_ensure($wid, $eid, (string)$vid, (string)$vt, (string)$cn,
-                                $sm, (int)$uw, (int)$ue,
-                                is_string($author) ? $author : (bool)$author);
+                                $sm, (int)$uw, (int)$ue, $author);
             // О первом сообщении извещаем здесь же. Раньше это делал телефон
             // отправителя отдельным вызовом, с текстом уведомления от себя.
             //
@@ -6087,6 +6127,15 @@ try {
 
         case 'dbApplyPermVacancy': {
             [$vid, $wid, $eid, $sm] = [$args[0], $args[1], $args[2], $args[3] ?? null];
+            $pv = sb_single('jm_perm_vacancies', ['id' => 'eq.' . $vid], 'employer_id,title,company');
+            if (!$pv) { jt_respond(['error' => 'Вакансия не найдена'], 404); exit; }
+            $vacEmployer = (string)($pv['employer_id'] ?? '');
+            if ($vacEmployer === '' || (string)$eid !== $vacEmployer) {
+                jt_respond(['error' => 'Vacancy owner mismatch'], 403); exit;
+            }
+            // Ни запись, ни чат, ни уведомление ниже больше не используют
+            // клиентский employerId как источник истины.
+            $eid = $vacEmployer;
             sb_upsert('jm_perm_applications', [
                 'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid,
                 'employer_id' => $eid, 'status' => 'pending', 'created_at' => now_iso(),
@@ -6097,7 +6146,6 @@ try {
             // списке и решал вслепую, а сказать о себе человеку было негде —
             // при том что именно на постоянные приходится большая часть
             // откликов. Теперь отклик открывает переписку, как и на сменах.
-            $pv = sb_single('jm_perm_vacancies', ['id' => 'eq.' . $vid], 'title,company');
             if ($sm) {
                 $data = chat_ensure($wid, $eid, (string)$vid,
                     (string)($pv['title'] ?? ''), (string)($pv['company'] ?? ''),
