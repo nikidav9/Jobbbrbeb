@@ -24,8 +24,20 @@ require_once __DIR__ . '/vacancy_url.php';
 // Берём из сводных страниц только перечень: константа гасит их точку входа.
 define('LANDING_PAGE_LIB_ONLY', true);
 require_once __DIR__ . '/landing_page.php';
+require_once __DIR__ . '/sitemap_cache.php';
 
 const SM_SITE = 'https://jobtoo.ru';
+const SM_CACHE_TTL = 3600;
+const SM_CACHE_FILE = '/tmp/jobtoo-sitemap-v1.xml';
+
+$cached = sm_cache_read(SM_CACHE_FILE, time(), SM_CACHE_TTL);
+if ($cached !== null) {
+    header('Content-Type: application/xml; charset=utf-8');
+    header('Cache-Control: public, max-age=' . SM_CACHE_TTL);
+    header('X-JobToo-Sitemap-Cache: HIT');
+    echo $cached;
+    exit;
+}
 
 /** Адреса, которые есть всегда. */
 const SM_STATIC = [
@@ -91,11 +103,16 @@ foreach (lp_index() as $path) {
     exit;
 }
 
-header('Content-Type: application/xml; charset=utf-8');
-// Час: вакансии появляются в течение дня, но дёргать базу на каждый заход
-// робота незачем.
-header('Cache-Control: public, max-age=3600');
-echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+$xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
     . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n"
     . $body
     . '</urlset>' . "\n";
+
+// Записываем только карту, которую полностью собрали без исключений.
+// Неудача записи не прячет рабочий ответ и повторится на следующем запросе.
+sm_cache_write(SM_CACHE_FILE, $xml);
+
+header('Content-Type: application/xml; charset=utf-8');
+header('Cache-Control: public, max-age=' . SM_CACHE_TTL);
+header('X-JobToo-Sitemap-Cache: MISS');
+echo $xml;
