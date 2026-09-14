@@ -176,7 +176,7 @@ export default function FunnelPage() {
 
         {/* Воронки */}
         <div className="g-2">
-          <ChartCard title="Полная активационная воронка" sub="Регистрация → профиль → просмотр → отклик → одобрение → завершённая смена">
+          <ChartCard title="Когорта выхода на смену" sub="Регистрации за 30 дней · последние 7 дней дозревают">
             <FunnelBar items={d.mainFunnel} />
           </ChartCard>
 
