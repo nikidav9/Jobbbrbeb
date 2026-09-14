@@ -18,6 +18,7 @@ require_once __DIR__ . '/partner_billing.php';
 require_once __DIR__ . '/superjob_oauth_lib.php';
 require_once __DIR__ . '/ext_health.php';
 require_once __DIR__ . '/referral.php';
+require_once __DIR__ . '/funnel.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -3548,6 +3549,34 @@ try {
                 'created_at' => 'gte.' . $cut24,
             ]);
             $applications = $shiftApplications + $permApplications;
+
+            // Сколько откликов получили ответ. Отчёт до сих пор считал только
+            // «сколько подали» — а это половина правды: отклик без ответа хуже
+            // отказа, человек читает молчание как «сервис не работает».
+            //
+            // Окно ВЧЕРАШНЕЕ (см. funnel_window): у отклика должны быть сутки
+            // на ответ, иначе поданный пять минут назад честно портит долю.
+            //
+            // Ответ по смене — это employer_liked, он boolean|null: null значит
+            // «работодатель ещё не решил». По постоянной вакансии — статус
+            // сдвинулся с pending.
+            //
+            // Оговорка, которую из данных не убрать: если работодатель лайкнул
+            // первым с «Кандидатов», а работник откликнулся после, отклик
+            // засчитается отвеченным сразу. Порядок сторон в строке не
+            // записан, различить нельзя, и выдумывать различение хуже, чем
+            // знать про перекос.
+            $fw = funnel_window($now);
+            $inWindow = "(created_at.gte.{$fw['from']},created_at.lt.{$fw['to']})";
+            $askedDay = sb_count('jm_likes', ['worker_liked' => 'eq.true', 'and' => $inWindow])
+                + sb_count('jm_perm_applications', ['and' => $inWindow]);
+            $answeredDay = sb_count('jm_likes', [
+                    'worker_liked' => 'eq.true', 'and' => $inWindow,
+                    'employer_liked' => 'not.is.null',
+                ])
+                + sb_count('jm_perm_applications', ['and' => $inWindow, 'status' => 'neq.pending']);
+            $replyLine = funnel_line($askedDay, $answeredDay);
+            $replyAlert = funnel_alert($askedDay, $answeredDay);
             $newShifts = sb_count('jm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $newVacancies = sb_count('jm_perm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $partnerVacancies = sb_count('jm_ext_vacancies', [
@@ -3672,6 +3701,7 @@ try {
 
             $alerts = [];
             if ($applications === 0) $alerts[] = 'откликов за сутки — 0';
+            if ($replyAlert !== '') $alerts[] = $replyAlert;
             // Тревога по каждому источнику отдельно: общий максимум по всем
             // молчал, только когда умирали все сразу.
             foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
@@ -3691,6 +3721,7 @@ try {
             $lines[] = '';
             $lines[] = "👷 Новых работников: <b>{$newWorkers}</b>";
             $lines[] = "📨 Откликов: <b>{$applications}</b> (смены {$shiftApplications}, вакансии {$permApplications})";
+            $lines[] = $replyLine;
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
             $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
             $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
