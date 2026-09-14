@@ -45,15 +45,21 @@ check("карта сайта отдаётся страницей, а не фай
 check("статического sitemap.xml больше нет", not (root / "public/sitemap.xml").exists())
 check("robots.txt остался файлом", "try_files /robots.txt =404" in nginx)
 
-check("есть маршрут сводной страницы", "location ~ ^/rabota/" in nginx)
+# ВЫРАЖЕНИЯ ЗДЕСЬ ЖДУТСЯ В КАВЫЧКАХ, и это не придирка к оформлению. Без
+# кавычек nginx не поднимается вовсе: фигурные скобки квантификатора он
+# разбирает как границы блока. Так 14 сентября лёг весь сайт — а этот файл
+# тогда был зелёным, потому что искал строки как ТЕКСТ. Валидность текстом не
+# проверяется в принципе; для неё есть tests/nginx_config_test.sh, где конфиг
+# разбирает сам nginx. Здесь проверяется только СОСТАВ и ПОРЯДОК.
+check("есть маршрут сводной страницы", 'location ~ "^/rabota/' in nginx)
 check("сводные страницы подключены", "landing_page.php" in nginx)
-check("есть маршрут постоянной вакансии", "location ~ ^/v/" in nginx)
-check("есть маршрут смены", "location ~ ^/s/" in nginx)
+check("есть маршрут постоянной вакансии", 'location ~ "^/v/' in nginx)
+check("есть маршрут смены", 'location ~ "^/s/' in nginx)
 check("страница вакансии подключена", "vacancy_page.php" in nginx)
 
 # QUERY_STRING должен идти ПОСЛЕ include fastcgi_params: тот выставляет его из
 # $query_string и затёр бы наш, а страница осталась бы без идентификатора.
-for block in re.findall(r"location ~ \^/(?:[vs]|rabota)/[^{]*\{(.*?)\n    \}", nginx, re.S):
+for block in re.findall(r'location ~ "\^/(?:[vs]|rabota)/[^"]*"\s*\{(.*?)\n    \}', nginx, re.S):
     check(
         "QUERY_STRING задан после include fastcgi_params",
         block.index("include fastcgi_params") < block.index("fastcgi_param QUERY_STRING"),
@@ -63,9 +69,9 @@ for block in re.findall(r"location ~ \^/(?:[vs]|rabota)/[^{]*\{(.*?)\n    \}", n
 # путях с расширением обязано стоять ПОСЛЕ страниц вакансий: идентификатор может
 # содержать точку, и тогда вакансия отдавала бы 404 вместо страницы.
 ext_rule = nginx.index("(?!api/|rest/|realtime/|storage/)")
-check("страницы вакансий объявлены раньше правила о расширениях", nginx.index("location ~ ^/v/") < ext_rule)
-check("страницы смен объявлены раньше правила о расширениях", nginx.index("location ~ ^/s/") < ext_rule)
-check("сводные страницы объявлены раньше правила о расширениях", nginx.index("location ~ ^/rabota/") < ext_rule)
+check("страницы вакансий объявлены раньше правила о расширениях", nginx.index('location ~ "^/v/') < ext_rule)
+check("страницы смен объявлены раньше правила о расширениях", nginx.index('location ~ "^/s/') < ext_rule)
+check("сводные страницы объявлены раньше правила о расширениях", nginx.index('location ~ "^/rabota/') < ext_rule)
 
 # То, что чинили раньше, должно остаться целым.
 check("несуществующий файл отдаёт 404", "try_files $uri =404" in nginx)
