@@ -212,9 +212,9 @@ $authUid = $authClaims['uid'] ?? null;
 if ($authUid !== null) {
     $acct = null;
     try {
-        $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked,sessions_valid_from');
+        $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked,sessions_valid_from,role');
     } catch (\Throwable $e) {
-        try { $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked'); }
+        try { $acct = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,is_blocked,role'); }
         catch (\Throwable $e2) { $acct = null; }
     }
     if (!is_array($acct)) {
@@ -299,8 +299,50 @@ if (isset($chatArgFns[$fn])) {
 if ($fn === 'dbCreateChat') {
     $workerId = (string)($args[0] ?? '');
     $employerId = (string)($args[1] ?? '');
+    $vacancyId = (string)($args[2] ?? '');
     if ($authUid !== $workerId && $authUid !== $employerId) {
         jt_respond(['error' => 'Chat access denied'], 403); exit;
+    }
+
+    $chatVacancyKind = 'shift';
+    $chatVacancy = $vacancyId !== ''
+        ? sb_single('jm_vacancies', ['id' => 'eq.' . $vacancyId], 'employer_id')
+        : null;
+    if (!$chatVacancy) {
+        $chatVacancyKind = 'permanent';
+        $chatVacancy = $vacancyId !== ''
+            ? sb_single('jm_perm_vacancies', ['id' => 'eq.' . $vacancyId], 'employer_id')
+            : null;
+    }
+    if (!$chatVacancy || (string)($chatVacancy['employer_id'] ?? '') !== $employerId) {
+        jt_respond(['error' => 'Chat vacancy mismatch'], 403); exit;
+    }
+
+    $chatCallerRole = (string)($acct['role'] ?? '');
+    if ($authUid === $workerId) {
+        // На постоянной вакансии кнопка «Написать работодателю» доступна до
+        // отклика, поэтому работнику достаточно реальной вакансии и её владельца.
+        if ($chatCallerRole !== 'worker') {
+            jt_respond(['error' => 'Chat role mismatch'], 403); exit;
+        }
+    } else {
+        if ($chatCallerRole !== 'employer') {
+            jt_respond(['error' => 'Chat role mismatch'], 403); exit;
+        }
+        $chatRelation = $chatVacancyKind === 'shift'
+            ? sb_single('jm_likes', [
+                'vacancy_id' => 'eq.' . $vacancyId,
+                'worker_id' => 'eq.' . $workerId,
+                'employer_id' => 'eq.' . $employerId,
+            ], 'id')
+            : sb_single('jm_perm_applications', [
+                'vacancy_id' => 'eq.' . $vacancyId,
+                'worker_id' => 'eq.' . $workerId,
+                'employer_id' => 'eq.' . $employerId,
+            ], 'id');
+        if (!$chatRelation) {
+            jt_respond(['error' => 'Chat relation mismatch'], 403); exit;
+        }
     }
 }
 
@@ -5561,13 +5603,17 @@ try {
         }
 
         case 'dbLogOpen': {
-            // Событие «открыл приложение». args: [anon_id, user_id|null, role|null, platform|null]
+            // Событие «открыл приложение». anon_id и platform — технические
+            // поля клиента. Личность и роль берём только из подписанной сессии:
+            // публичный вызов без неё остаётся честно анонимным.
             $anon = isset($args[0]) ? (string)$args[0] : '';
             if ($anon === '') { $data = false; break; }
+            $eventUserId = $authUid !== null ? (string)$authUid : null;
+            $eventRole = $authUid !== null ? (string)($acct['role'] ?? '') : null;
             sb('POST', 'jm_app_opens', [], [
                 'anon_id'   => $anon,
-                'user_id'   => $args[1] ?? null,
-                'role'      => $args[2] ?? null,
+                'user_id'   => $eventUserId,
+                'role'      => $eventRole !== '' ? $eventRole : null,
                 'platform'  => $args[3] ?? null,
                 'opened_at' => now_iso(),
             ], ['Prefer: return=minimal']);

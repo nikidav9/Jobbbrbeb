@@ -53,6 +53,39 @@ check('permanent vacancy owner is checked before write',
     $guardAt !== false && $writeAt !== false && $guardAt < $writeAt);
 check('server owner is used after validation', str_contains($perm, '$eid = $vacEmployer;'));
 
+// A caller cannot invent the other chat party. The vacancy owner comes from
+// the database; an employer additionally needs a real application/like.
+check('chat vacancy owner is loaded server-side',
+    str_contains($db, "\$chatVacancy = \$vacancyId !== ''")
+    && str_contains($db, "sb_single('jm_vacancies', ['id' => 'eq.' . \$vacancyId], 'employer_id')")
+    && str_contains($db, "sb_single('jm_perm_vacancies', ['id' => 'eq.' . \$vacancyId], 'employer_id')"));
+check('forged chat employer is rejected',
+    str_contains($db, "(string)(\$chatVacancy['employer_id'] ?? '') !== \$employerId")
+    && str_contains($db, "'Chat vacancy mismatch'"));
+check('chat caller role comes from validated account',
+    str_contains($db, "\$chatCallerRole = (string)(\$acct['role'] ?? '');")
+    && str_contains($db, "'Chat role mismatch'"));
+check('employer needs a real chat relation',
+    str_contains($db, "sb_single('jm_likes', [")
+    && str_contains($db, "sb_single('jm_perm_applications', [")
+    && str_contains($db, "'Chat relation mismatch'"));
+$chatGuardAt = strpos($db, "'Chat vacancy mismatch'");
+$chatCreateAt = strpos($db, "case 'dbCreateChat': {");
+check('chat relation is checked before creation',
+    $chatGuardAt !== false && $chatCreateAt !== false && $chatGuardAt < $chatCreateAt);
+
+$logOpen = case_body($db, 'dbLogOpen');
+check('dbLogOpen found', $logOpen !== '');
+check('identified app open uses session identity',
+    str_contains($logOpen, '$eventUserId = $authUid !== null ? (string)$authUid : null;')
+    && str_contains($logOpen, "'user_id'   => \$eventUserId"));
+check('app open role uses validated account',
+    str_contains($logOpen, '$eventRole = $authUid !== null ? (string)($acct[\'role\'] ?? \'\') : null;')
+    && str_contains($logOpen, "'role'      => \$eventRole !== '' ? \$eventRole : null"));
+check('public app open cannot claim another identity',
+    !str_contains($logOpen, "'user_id'   => \$args[1] ?? null")
+    && !str_contains($logOpen, "'role'      => \$args[2] ?? null"));
+
 if ($failures) {
     echo "db object authz: FAIL\n";
     foreach ($failures as $failure) echo " - {$failure}\n";
