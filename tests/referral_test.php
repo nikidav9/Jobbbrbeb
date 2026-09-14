@@ -141,12 +141,16 @@ check('таблица закрыта политиками', str_contains($mig, '
 $api = (string)file_get_contents(__DIR__ . '/../php-proxy/api.php');
 check('журнал не отдаётся наружу', !str_contains($api, 'jm_referral_rewards'));
 
-$onOutcome = (function (string $src): string {
-    $start = strpos($src, 'function jt_referral_on_outcome(');
+// Искать по всему db.php нельзя: те же строки встречаются в соседних
+// функциях, и проверка прошла бы на сломанном коде. Вырезаем нужное тело.
+function fn_body(string $src, string $name): string
+{
+    $start = strpos($src, "function {$name}(");
     if ($start === false) return '';
     $end = strpos($src, "\n}\n", $start);
     return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
-})($db);
+}
+$onOutcome = fn_body($db, 'jt_referral_on_outcome');
 check('обработчик итога найден', $onOutcome !== '');
 
 // ── Денег в программе нет ─────────────────────────────────────────────────────
@@ -178,12 +182,38 @@ check('колонка итога ограничена базой',
 check('счётчик заведён в базе',
     str_contains($mig65, 'add column if not exists referral_worked integer not null default 0'));
 check('счётчик растёт только на выходе',
-    str_contains($onOutcome, "if (\$outcome === 'worked') {")
-    && str_contains($onOutcome, "['referral_worked' => (int)(\$inviter['referral_worked'] ?? 0) + 1]"));
+    str_contains($onOutcome, "if (\$outcome === 'worked') jt_referral_bump(\$invitedBy, 1);"));
+$bump = fn_body($db, 'jt_referral_bump');
+check('сдвиг счётчика найден', $bump !== '');
+check('счётчик не уходит в минус', str_contains($bump, 'max(0,'));
+
+// ── Ошибочную отметку можно исправить ────────────────────────────────────────
+// dbSetShiftOutcome зовётся повторно и рейтинг пересчитывает: работодатель,
+// промахнувшийся мимо кнопки, отметку правит. Поручительство до этой ветки
+// не правилось — строка про первую смену уже была, и правка молча
+// отбрасывалась. «Не вышел» оставался на карточке поручителя навсегда,
+// хотя человек вышел.
+check('правка итога доходит до поручительства',
+    str_contains($onOutcome, "trim((string)(\$existing['like_id'] ?? '')) === \$likeId"));
+check('правка двигает счётчик в обе стороны',
+    str_contains($onOutcome, "jt_referral_bump(\$invitedBy, \$outcome === 'worked' ? 1 : -1);"));
+// Но только та же смена: итог ДРУГОЙ смены — не исправление, а вторая смена,
+// а записываем мы первую. Без этого условия счётчик набирался бы стажем
+// приведённого, а не умением звать.
+check('чужую смену за исправление не принимаем',
+    str_contains($onOutcome, "'id,like_id,outcome'"));
+
 // Журнал остаётся источником правды: инкремент можно потерять на гонке двух
 // одновременных отметок, и миграция пересчитывает счётчик из журнала.
+//
+// Пересчёт подзапросом на каждого, а НЕ соединением с группировкой: при
+// соединении человек без единой строки 'worked' в него не попадал бы — то
+// есть единственный случай, ради которого пересчёт и нужен (счётчик больше
+// нуля при нуле поручительств), он бы и пропустил.
 check('счётчик пересчитывается из журнала',
-    str_contains($mig65, 'set referral_worked = coalesce(c.n, 0)'));
+    str_contains($mig65, "set referral_worked = (\n     select count(*) from public.jm_referral_rewards r"));
+check('пересчёт доходит до раздутых счётчиков',
+    !str_contains($mig65, 'group by inviter_id'));
 // Число бесполезно, если работодатель его не видит.
 check('счётчик уходит в карточку', str_contains($db, "'referral_worked',"));
 // Проверяем именно ВЫВОД числа, а не упоминание поля: условие «показывать,

@@ -1900,7 +1900,7 @@ function web_push_to(array $userIds, string $title, string $body, string $dataTy
         $subs = [];
         foreach (array_chunk(array_keys($userIds), 100) as $chunk) {
             foreach (sb_select('jm_web_push_subscriptions',
-                ['user_id' => 'in.(' . sb_in_list($chunk) . ')'],
+                ['user_id' => sb_in_list($chunk)],
                 'user_id,endpoint,p256dh,auth') as $row) $subs[] = $row;
         }
         $appSecret = jt_secret('APP_SECRET');
@@ -2590,7 +2590,26 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
         $invitedBy = trim((string)($worker['invited_by'] ?? ''));
         if ($invitedBy === '') return;
 
-        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
+        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id,like_id,outcome');
+
+        // Отметку об итоге смены можно ИСПРАВИТЬ: dbSetShiftOutcome зовётся
+        // повторно, рейтинг пересчитывается. А поручительство до этой ветки
+        // не пересчитывалось: строка про первую смену уже была, и правка
+        // молча отбрасывалась. Работодатель, промахнувшийся мимо кнопки,
+        // навсегда портил поручителю карточку отметкой «не вышел».
+        //
+        // Правим только ту строку, что заведена этой же сменой. Итог ДРУГОЙ
+        // смены — не исправление, а вторая смена, а записываем мы первую.
+        if ($existing !== null
+            && trim((string)($existing['like_id'] ?? '')) === $likeId
+            && in_array($outcome, REF_OUTCOMES, true)
+            && (string)($existing['outcome'] ?? '') !== $outcome) {
+            sb_update('jm_referral_rewards', ['id' => 'eq.' . $existing['id']],
+                ['outcome' => $outcome, 'qualified_at' => now_iso()]);
+            jt_referral_bump($invitedBy, $outcome === 'worked' ? 1 : -1);
+            return;
+        }
+
         $verdict = ref_should_record($outcome, $invitedBy, $workerId, $existing !== null, $employerId);
         if (!$verdict['ok']) return;
 
@@ -2608,20 +2627,31 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
             'qualified_at' => now_iso(),
         ]);
 
-        // Счётчик на самом поручителе. Карточку кандидата работодатель видит
-        // списком, и считать по журналу на каждого значило бы сорок запросов
-        // на один экран. Пишется он только здесь, в том же заходе, что и
-        // строка журнала; журнал остаётся источником правды, а миграция 065
-        // пересчитывает счётчик из него, если инкремент когда-нибудь
-        // потеряется на гонке двух одновременных отметок.
-        if ($outcome === 'worked') {
-            $inviter = sb_single('jm_users', ['id' => 'eq.' . $invitedBy], 'id,referral_worked');
-            sb_update('jm_users', ['id' => 'eq.' . $invitedBy],
-                ['referral_worked' => (int)($inviter['referral_worked'] ?? 0) + 1]);
-        }
+        if ($outcome === 'worked') jt_referral_bump($invitedBy, 1);
     } catch (Throwable $e) {
         // См. выше: итог смены важнее начисления.
     }
+}
+
+/**
+ * Подвинуть счётчик поручительств на карточке приглашающего.
+ *
+ * Зачем счётчик вообще нужен: карточку кандидата работодатель видит списком,
+ * и считать по журналу на каждого значило бы сорок запросов на один экран.
+ *
+ * Чтение и запись здесь раздельные — PostgREST не умеет «прибавь единицу»
+ * без хранимой функции. Две одновременные отметки об окончании смены у
+ * одного поручителя могут потерять инкремент. Журнал остаётся источником
+ * правды, и пересчёт из него — в миграции 065; её можно прогнать повторно.
+ */
+function jt_referral_bump(string $inviterId, int $delta): void
+{
+    $inviter = sb_single('jm_users', ['id' => 'eq.' . $inviterId], 'id,referral_worked');
+    if ($inviter === null) return;
+    // Ниже нуля счётчик не опускаем: отрицательное поручительство — не
+    // смысл, а расхождение, и на карточке оно выглядело бы поломкой.
+    $next = max(0, (int)($inviter['referral_worked'] ?? 0) + $delta);
+    sb_update('jm_users', ['id' => 'eq.' . $inviterId], ['referral_worked' => $next]);
 }
 
 function jt_recalc_score(string $uid): array {

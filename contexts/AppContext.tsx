@@ -148,12 +148,26 @@ export interface AppContextValue {
   /** true once the initial fresh-data fetch (vacancies, …) has completed */
   dataReady: boolean;
   /**
-   * true, когда обновление данных не дошло до сервера (сеть/маршрут упал).
-   * Приложение показывает последние сохранённые данные, а экран — плашку
-   * «нет связи», чтобы пустой список не читался как «вакансий нет».
+   * true, когда не принесли вакансии (сеть/маршрут упал). Приложение
+   * показывает последние сохранённые данные, а экран — плашку «нет связи»,
+   * чтобы пустой список не читался как «вакансий нет».
+   *
+   * Это признак ИМЕННО вакансий, а не сервера вообще. Экрану, который живёт
+   * с другого списка, он не подходит: чаты могут не прийти, когда вакансии
+   * пришли, и наоборот, — см. offline ниже.
    */
   backendOffline: boolean;
+  /**
+   * Какой именно список не принесли. Один общий признак врал бы в обе
+   * стороны: сказал бы «нет связи» на экране, чей список пришёл, и промолчал
+   * бы там, где не пришёл. Экран должен говорить о СВОЁМ списке.
+   */
+  offline: OfflineMap;
 }
+
+/** Списки, о доставке которых экраны спрашивают по отдельности. */
+export type OfflineKey = 'vacancies' | 'permVacancies' | 'likes' | 'permApplications' | 'chats';
+export type OfflineMap = Record<OfflineKey, boolean>;
 
 export const AppContext = createContext<AppContextValue | null>(null);
 
@@ -161,7 +175,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentUser, _setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [dataReady, setDataReady] = useState(false);
-  const [backendOffline, setBackendOffline] = useState(false);
+  const [offline, setOffline] = useState<OfflineMap>({
+    vacancies: false, permVacancies: false, likes: false, permApplications: false, chats: false,
+  });
+  // Ссылочное равенство важно: признак читают экраны, и лишний объект на
+  // каждом успешном обновлении перерисовывал бы их все.
+  const markOffline = useCallback((key: OfflineKey, value: boolean) => {
+    setOffline(prev => (prev[key] === value ? prev : { ...prev, [key]: value }));
+  }, []);
+  // Прежний общий признак. Значение то же, что и было: его поднимали и
+  // снимали ровно эти два обновления, и экраны ленты с ними и работают.
+  const backendOffline = offline.vacancies || offline.permVacancies;
   const [vacanciesLoading, setVacanciesLoading] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -301,7 +325,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             // При обновлении сайта/обрыве сети сохраняем локальный вход.
             // Выход делаем только после подтверждённо недействительной сессии.
             console.warn('[session] restore unavailable, keeping cached user', e);
-            setBackendOffline(true);
+            // Сессию не восстановили — сервер не ответил вовсе, а значит не
+            // принесут ни один список. Помечаем все: каждый снимет свой
+            // признак сам, когда его обновление пройдёт.
+            (['vacancies', 'permVacancies', 'likes', 'permApplications', 'chats'] as OfflineKey[])
+              .forEach(k => markOffline(k, true));
           }
         }
 
@@ -819,12 +847,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const data = await dbGetVacancies();
       setVacancies(data);
       saveCache(CACHE_KEYS.vacancies, data).catch(() => {});
-      setBackendOffline(false);
+      markOffline('vacancies', false);
     } catch (e) {
       // Сеть/маршрут до сервера упал: список НЕ трогаем (остаются последние
       // данные из кэша), только помечаем, что связи нет. Ошибку пробрасываем —
       // вызывающие её и так глотают через .catch.
-      setBackendOffline(true);
+      markOffline('vacancies', true);
       throw e;
     } finally {
       if (!silent) setVacanciesLoading(false);
@@ -840,17 +868,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setLikes([]);
       return;
     }
-    const data = await dbGetLikesForUser(user.id, user.role);
-    setLikes(data);
-    saveCache(CACHE_KEYS.likes(user.id), data).catch(() => {});
+    // Тот же уговор, что и с вакансиями: сбой не затирает список, а поднимает
+    // признак. Без него экран «Отклики» показывал бы «нет активных заявок» —
+    // и только что откликнувшийся прочитал бы это как «мой отклик пропал».
+    try {
+      const data = await dbGetLikesForUser(user.id, user.role);
+      setLikes(data);
+      saveCache(CACHE_KEYS.likes(user.id), data).catch(() => {});
+      markOffline('likes', false);
+    } catch (e) {
+      markOffline('likes', true);
+      throw e;
+    }
   };
 
   const refreshChats = async (u?: User) => {
     const user = u ?? currentUser;
     if (!user) return;
-    const data = await dbGetChats(user.id, user.role);
-    setChats(data);
-    saveCache(CACHE_KEYS.chats(user.id), data).catch(() => {});
+    try {
+      const data = await dbGetChats(user.id, user.role);
+      setChats(data);
+      saveCache(CACHE_KEYS.chats(user.id), data).catch(() => {});
+      markOffline('chats', false);
+    } catch (e) {
+      markOffline('chats', true);
+      throw e;
+    }
   };
 
   const refreshAll = useCallback(async () => {
@@ -889,10 +932,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         : await dbGetPermVacancies();
       setPermVacancies(data);
       saveCache(CACHE_KEYS.permVac(user.id), data).catch(() => {});
-      setBackendOffline(false);
+      markOffline('permVacancies', false);
     } catch (e) {
       // Не затираем список при сбое сети — остаются последние данные.
-      setBackendOffline(true);
+      markOffline('permVacancies', true);
       throw e;
     }
   };
@@ -900,9 +943,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshPermApplications = async (u?: User) => {
     const user = u ?? currentUser;
     if (!user) return;
-    const data = await dbGetPermApplications(user.id, user.role);
-    setPermApplications(data);
-    saveCache(CACHE_KEYS.permApps(user.id), data).catch(() => {});
+    try {
+      const data = await dbGetPermApplications(user.id, user.role);
+      setPermApplications(data);
+      saveCache(CACHE_KEYS.permApps(user.id), data).catch(() => {});
+      markOffline('permApplications', false);
+    } catch (e) {
+      markOffline('permApplications', true);
+      throw e;
+    }
   };
 
   const refreshPermSaved = async (u?: User) => {
@@ -948,6 +997,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         loading,
         dataReady,
         backendOffline,
+        offline,
         vacanciesLoading,
         toast,
         showToast,

@@ -317,7 +317,7 @@ function partnerStatus(status: PartnerApplication['status']): {
 
 function WorkerMatches() {
   const router = useRouter();
-  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast, backendOffline } = useApp();
+  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast, offline } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [detailVacancy, setDetailVacancy] = useState<Vacancy | null>(null);
   const [partnerApplications, setPartnerApplications] = useState<PartnerApplication[]>([]);
@@ -361,6 +361,15 @@ function WorkerMatches() {
     ['completed', 'no_show'].includes(a.status));
   const partnerActive = partnerApplications.filter(a =>
     !partnerRejected.includes(a) && !partnerCompleted.includes(a));
+
+  // Признак берётся с того списка, который экран показывает, — с откликов.
+  // Общий «сервер недоступен» врал бы в обе стороны: вакансии могут не
+  // прийти, когда отклики пришли, и наоборот.
+  //
+  // Смотрим на весь список, а не на вкладку: пустая вкладка «Отказы» при
+  // принесённых откликах — это правда, и «нет связи» поверх неё было бы
+  // неправдой. А если список не принесли, пусты все три по одной причине.
+  const offlineHere = offline.likes && myLikes.length === 0;
 
   const shownItems =
     tab === 'active'
@@ -561,17 +570,17 @@ function WorkerMatches() {
               откликнувшийся, читает как «мой отклик пропал»: он не узнает, что
               список просто не принесли, и решит, что сервис его потерял. */}
           <Ionicons
-            name={backendOffline ? 'cloud-offline-outline' : emptyIcon[tab]}
+            name={offlineHere ? 'cloud-offline-outline' : emptyIcon[tab]}
             size={56}
             color={Colors.textMuted}
           />
           <Text style={s.emptyTitle}>
-            {backendOffline
+            {offlineHere
               ? 'Нет связи с сервером'
               : tab === 'active' ? 'Нет активных заявок' : tab === 'rejected' ? 'Нет отказов' : 'Нет завершённых смен'}
           </Text>
           <Text style={s.emptySub}>
-            {backendOffline
+            {offlineHere
               ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
               : tab === 'active'
               ? 'Откликайтесь на вакансии — они появятся здесь'

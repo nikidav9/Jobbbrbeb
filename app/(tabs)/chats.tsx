@@ -142,7 +142,7 @@ function ChatRow({ item, currentUser, users, onPress, onDelete }: {
 
 export default function ChatsScreen() {
   const router = useRouter();
-  const { currentUser, chats, users, refreshChats, refreshAll, showToast, backendOffline } = useApp();
+  const { currentUser, chats, users, refreshChats, refreshAll, showToast, offline } = useApp();
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
@@ -171,6 +171,10 @@ export default function ChatsScreen() {
       currentUser.role === 'worker' ? c.workerId === currentUser.id : c.employerId === currentUser.id
     )
     .sort((a: Chat, b: Chat) => chatTime(b) - chatTime(a));
+
+  // Обрыв — это когда не принесли САМ список, а не когда поиск ничего не
+  // нашёл. Поэтому смотрим на myChats, до фильтра.
+  const offlineHere = offline.chats && myChats.length === 0;
 
   const filtered = myChats.filter(c => {
     if (!search.trim()) return true;
@@ -213,20 +217,35 @@ export default function ChatsScreen() {
         <View style={styles.empty}>
           {/* Обрыв связи не выдаём за отсутствие переписок: человек, который
               ждёт ответа работодателя, прочитает «Нет сообщений» как «мне не
-              ответили», а на деле список просто не принесли. */}
-          <Ionicons
-            name={backendOffline ? 'cloud-offline-outline' : 'chatbubble-ellipses-outline'}
-            size={56}
-            color={Colors.textMuted}
-          />
-          <Text style={styles.emptyTitle}>
-            {backendOffline ? 'Нет связи с сервером' : 'Нет сообщений'}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {backendOffline
-              ? 'Переписки не загрузились — дело в связи. Потяните вниз, чтобы обновить.'
-              : 'Чаты появятся после мэтча'}
-          </Text>
+              ответили», а на деле список просто не принесли.
+
+              Признак берётся с ТОГО списка, который этот экран показывает:
+              чаты могут не прийти, когда вакансии пришли, и наоборот.
+
+              И спрашиваем про chats, а не про filtered: пустой результат
+              поиска — не обрыв связи, и «переписки не загрузились» поверх
+              набранного запроса было бы прямой неправдой. */}
+          {offlineHere ? (
+            <>
+              <Ionicons name="cloud-offline-outline" size={56} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>Нет связи с сервером</Text>
+              <Text style={styles.emptySubtitle}>
+                Переписки не загрузились — дело в связи. Потяните вниз, чтобы обновить.
+              </Text>
+            </>
+          ) : search.trim() !== '' ? (
+            <>
+              <Ionicons name="search-outline" size={56} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>Ничего не найдено</Text>
+              <Text style={styles.emptySubtitle}>Попробуйте другое имя или название компании</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="chatbubble-ellipses-outline" size={56} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>Нет сообщений</Text>
+              <Text style={styles.emptySubtitle}>Чаты появятся после мэтча</Text>
+            </>
+          )}
         </View>
       ) : (
         <FlatList

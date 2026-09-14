@@ -50,13 +50,18 @@ alter table public.jm_users
 
 -- Пересчёт из журнала. Заодно чинит расхождение, если инкремент когда-нибудь
 -- потеряется: миграцию можно прогнать повторно, она идемпотентна.
+--
+-- Считаем подзапросом на каждого, а НЕ соединением с группировкой по журналу.
+-- Соединение было бы внутренним, и человек без единой строки 'worked' в нём
+-- просто не участвовал бы — то есть единственный случай, который и надо
+-- чинить, счётчик больше нуля при нуле поручительств, пересчёт бы пропустил.
+-- coalesce там стоял зря: в результат соединения null не приходит никогда.
 update public.jm_users u
-   set referral_worked = coalesce(c.n, 0)
-  from (select inviter_id, count(*) as n
-          from public.jm_referral_rewards
-         where outcome = 'worked'
-         group by inviter_id) c
- where c.inviter_id = u.id
-   and u.referral_worked is distinct from c.n;
+   set referral_worked = (
+     select count(*) from public.jm_referral_rewards r
+      where r.inviter_id = u.id and r.outcome = 'worked')
+ where u.referral_worked is distinct from (
+     select count(*) from public.jm_referral_rewards r
+      where r.inviter_id = u.id and r.outcome = 'worked');
 
 notify pgrst, 'reload schema';
