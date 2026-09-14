@@ -49,7 +49,7 @@ def secret(name: str) -> str:
     return out.stdout.decode("utf-8", "replace").strip()
 
 
-def record_api_result(attempts: list[tuple[str, bool]], ok: bool,
+def record_api_result(attempts, ok: bool,
                       mode: str, error: str) -> None:
     now = int(time.time())
     try:
@@ -100,7 +100,7 @@ def api(token: str, method: str, params: dict, timeout: int) -> dict:
     for key, value in params.items():
         base += ["-d", f"{key}={value}"]
 
-    def attempt(cmd: list[str]) -> tuple[dict, bool, str]:
+    def attempt(cmd):
         try:
             out = subprocess.run(cmd, capture_output=True, timeout=timeout + 20)
         except Exception as exc:
@@ -119,7 +119,7 @@ def api(token: str, method: str, params: dict, timeout: int) -> dict:
         error = stderr or f"curl={out.returncode}, body={raw[:80]}"
         return {}, False, error.replace(token, "[token]")
 
-    attempts: list[tuple[str, bool]] = []
+    attempts = []
     payload, reached, error = attempt(base[:1] + ["-6"] + base[1:])
     attempts.append(("ipv6", reached))
     if reached:
