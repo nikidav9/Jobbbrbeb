@@ -28,7 +28,10 @@ expect_cache(!sm_cache_write($path, '<urlset/>'), 'invalid write is rejected');
 
 expect_cache(sm_cache_write($path, $xml2), 'cache is replaced atomically');
 expect_cache(file_get_contents($path) === $xml2, 'replacement is complete');
+expect_cache(sm_cache_invalidate($path), 'cache can be invalidated after vacancy data changes');
+expect_cache(!is_file($path), 'invalidation removes stale sitemap');
+expect_cache(sm_cache_invalidate($path), 'invalidation is idempotent when cache is absent');
+expect_cache(sm_cache_default_path() === '/tmp/jobtoo-sitemap-v1.xml', 'production cache path is centralized');
 
-unlink($path);
 rmdir($dir);
 echo "sitemap_cache_test: OK\n";
