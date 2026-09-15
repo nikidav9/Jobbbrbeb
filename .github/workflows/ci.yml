@@ -134,6 +134,7 @@ jobs:
           python3 tests/referral_data_policy_test.py
           python3 tests/user_id_contract_test.py
           python3 tests/seo_infra_test.py
+          python3 tests/sitemap_invalidation_test.py
           python3 tests/deploy_migration_order_test.py
           python3 tests/deploy_webhook_order_test.py
           python3 tests/chat_match_refresh_test.py
