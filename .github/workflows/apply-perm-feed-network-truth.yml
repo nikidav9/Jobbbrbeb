@@ -1,0 +1,38 @@
+name: Apply permanent-feed network truth
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-perm-feed-network-truth.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Apply guarded patch
+        run: python3 scripts/apply_perm_feed_network_truth.py
+      - name: Validate regression and types
+        run: |
+          git diff --check
+          python3 tests/network_action_truth_test.py
+          npm ci
+          npm run typecheck
+      - name: Commit source fix
+        run: |
+          if git diff --quiet; then
+            echo 'No source changes'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 'app/(tabs)/feed.tsx' tests/network_action_truth_test.py
+          git commit -m 'fix: keep permanent partner feed truthful offline'
+          git pull --rebase origin main
+          git push origin HEAD:main
