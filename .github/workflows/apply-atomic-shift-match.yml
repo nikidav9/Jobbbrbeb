@@ -1,5 +1,6 @@
 name: Apply atomic shift match
 
+# One-shot guarded source patch. Delete after a successful source commit.
 on:
   push:
     branches: [main]
