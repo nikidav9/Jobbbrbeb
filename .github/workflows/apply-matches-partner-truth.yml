@@ -33,6 +33,7 @@ jobs:
           p.write_text(text.replace(r'numberOfLines=\"1\"', 'numberOfLines={1}'))
           PY
           python3 scripts/apply_matches_partner_truth.py
+          python3 scripts/update_matches_offline_guard.py
 
       - name: Validate
         run: |
