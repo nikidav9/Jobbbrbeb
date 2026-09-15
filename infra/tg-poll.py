@@ -29,7 +29,28 @@ import urllib.request
 OFFSET_FILE = "/var/lib/jt-tg-offset"
 BEAT_FILE = "/var/lib/jt-tg-beat"
 STATS_FILE = "/var/lib/jt-tg-poll-stats.json"
+DEAD_FILE = "/var/lib/jt-tg-dead-letters.jsonl"
 LOCAL = "https://jobtoo.ru/api/tg.php"
+
+# Сколько раз пытаться отдать ОДИН И ТОТ ЖЕ update, прежде чем признать его
+# неотправляемым и пойти дальше.
+#
+# Предел здесь не про аккуратность, а про то, чтобы бот вообще жил. Без него
+# неудачная доставка возвращала offset на место и делала break: Телеграм отдавал
+# тот же update снова каждые три секунды, и так вечно. Один update, который наш
+# обработчик принять не может, останавливал бота НАВСЕГДА — вместе со всеми
+# сообщениями и нажатиями кнопок, вставшими за ним в очередь. Снаружи это
+# выглядит как «бот молчит», а сторож при этом зелёный: отметку живости
+# обновляет успешный getUpdates, который и продолжает успешно приходить.
+#
+# Пять попыток с паузой в три секунды — это четверть минуты на перезапуск
+# обработчика. Больше ждать незачем: если он не поднялся, следующие update
+# тоже не пройдут и упрутся в свой предел.
+DELIVER_MAX_ATTEMPTS = 5
+
+# Полтора мегабайта мёртвых писем — это уже не «редкий сбой», а поломка,
+# которую видно в отчёте. Держим один прошлый файл и не растём бесконечно.
+DEAD_FILE_MAX_BYTES = 1_500_000
 
 
 def secret(name: str) -> str:
@@ -130,8 +151,19 @@ def api(token: str, method: str, params: dict, timeout: int) -> dict:
     return payload if fallback_reached else {}
 
 
-def deliver(update: dict, app_secret: str) -> bool:
-    """Отдать update своему обработчику и подтвердить только реальный успех."""
+def deliver(update: dict, app_secret: str) -> tuple:
+    """Отдать update обработчику. Возвращает (успех, отказ_окончательный).
+
+    Второе значение — разница между «обработчик сейчас недоступен» и
+    «обработчик посмотрел и сказал, что принять это не может». Раньше наружу
+    шёл один bool, и эти два случая лечились одинаково — повтором. Для второго
+    случая повтор не поможет никогда, сколько ни жди.
+
+    Окончательными считаем 400, 404, 413 и 422: обработчик разобрал запрос и
+    отказался. А вот 401 и 403 — НЕ окончательные, хотя тоже 4xx: их даёт
+    разъехавшийся APP_SECRET, и он подхватывается при следующей попытке. Пусть
+    такие отказы уходят в общий предел попыток, а не отбрасывают update сразу.
+    """
     body = json.dumps(update, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(LOCAL, data=body, headers={
         "Content-Type": "application/json",
@@ -139,12 +171,58 @@ def deliver(update: dict, app_secret: str) -> bool:
     })
     try:
         urllib.request.urlopen(req, timeout=30).read()
-        return True
+        return True, False
     except urllib.error.HTTPError as e:
         print(f"обработчик ответил {e.code}", file=sys.stderr, flush=True)
+        return False, e.code in (400, 404, 413, 422)
     except Exception as e:
         print(f"обработчик недоступен: {e}", file=sys.stderr, flush=True)
-    return False
+    return False, False
+
+
+def drop_update(update: dict, reason: str) -> None:
+    """Признать update неотправляемым: записать и пойти дальше.
+
+    Молча выбрасывать нельзя — это чьё-то сообщение боту. Поэтому кладём его
+    целиком в отдельный файл: разобрать причину можно будет потом, а бот
+    продолжит работать сейчас.
+    """
+    try:
+        if os.path.getsize(DEAD_FILE) > DEAD_FILE_MAX_BYTES:
+            os.replace(DEAD_FILE, DEAD_FILE + ".old")
+    except OSError:
+        pass
+    try:
+        with open(DEAD_FILE, "a", encoding="utf-8") as f:
+            json.dump({"at": int(time.time()), "reason": reason, "update": update},
+                      f, ensure_ascii=False, separators=(",", ":"))
+            f.write("\n")
+    except Exception:
+        pass
+
+    # Счётчик — в тот же файл замеров, что читает суточный отчёт. Брошенный
+    # update обязан быть видимым: иначе починка превратит «бот стоит» в «бот
+    # тихо теряет сообщения», а это не лучше.
+    try:
+        try:
+            with open(STATS_FILE, encoding="utf-8") as f:
+                stats = json.load(f)
+            if not isinstance(stats, dict):
+                stats = {}
+        except Exception:
+            stats = {}
+        stats["dropped"] = int(stats.get("dropped", 0)) + 1
+        stats["last_drop"] = int(time.time())
+        stats["last_drop_reason"] = reason[:200]
+        tmp = f"{STATS_FILE}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, STATS_FILE)
+    except Exception:
+        pass
+
+    print(f"update {update.get('update_id')} брошен: {reason}",
+          file=sys.stderr, flush=True)
 
 
 def webhook_conflict(payload: dict) -> bool:
@@ -178,6 +256,13 @@ def main() -> int:
         offset = int(open(OFFSET_FILE).read().strip())
     except Exception:
         offset = 0
+
+    # Какой update сейчас застрял и сколько раз мы уже пробовали его отдать.
+    # Снаружи цикла: неудачная доставка возвращает нас к getUpdates, и тот же
+    # update приходит заново — счётчик внутри цикла обнулялся бы каждый раз, а
+    # предел попыток не набирался бы никогда.
+    stuck_id = None
+    stuck_attempts = 0
 
     while True:
         r = api(token, "getUpdates",
@@ -218,20 +303,46 @@ def main() -> int:
 
         for upd in r.get("result", []):
             t0 = time.time()
-            ok = deliver(upd, app_secret)
+            uid = int(upd.get("update_id", 0))
+            ok, permanent = deliver(upd, app_secret)
             if not ok:
                 # APP_SECRET мог смениться без рестарта poller. Перечитываем и
-                # пробуем ровно один раз. Если обработчик всё ещё недоступен,
-                # НЕ двигаем offset: Telegram отдаст этот update снова.
+                # пробуем ровно один раз.
                 fresh_secret = secret("APP_SECRET")
                 if fresh_secret:
                     app_secret = fresh_secret
-                ok = deliver(upd, app_secret)
+                ok, permanent = deliver(upd, app_secret)
             if not ok:
-                print("update не подтверждён — offset сохранён для повтора",
+                # Считаем попытки именно по этому update_id. Счётчик живёт
+                # снаружи цикла: после break мы вернёмся к getUpdates и получим
+                # тот же update заново — без памяти между заходами предел
+                # никогда бы не набрался.
+                if uid == stuck_id:
+                    stuck_attempts += 1
+                else:
+                    stuck_id, stuck_attempts = uid, 1
+
+                if permanent or stuck_attempts >= DELIVER_MAX_ATTEMPTS:
+                    drop_update(upd, "обработчик отказал окончательно" if permanent
+                                else f"не доставлен за {stuck_attempts} попыток")
+                    offset = max(offset, uid + 1)
+                    try:
+                        open(OFFSET_FILE, "w").write(str(offset))
+                    except Exception:
+                        pass
+                    stuck_id, stuck_attempts = None, 0
+                    # Именно continue, а не break: очередь за битым update
+                    # должна идти дальше, ради этого всё и делается.
+                    continue
+
+                print(f"update {uid} не подтверждён (попытка {stuck_attempts}"
+                      f" из {DELIVER_MAX_ATTEMPTS}) — offset сохранён для повтора",
                       file=sys.stderr, flush=True)
                 time.sleep(3)
                 break
+
+            if uid == stuck_id:
+                stuck_id, stuck_attempts = None, 0
 
             dt = time.time() - t0
             kind = "сообщение" if "message" in upd else "кнопка" if "callback_query" in upd else "прочее"

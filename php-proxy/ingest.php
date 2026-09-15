@@ -155,6 +155,16 @@ function ing_work_type(?string $raw, string $title): ?string
     if (mb_strpos($t, 'старш') !== false || mb_strpos($t, 'бригадир') !== false) return 'shift_supervisor';
     if (mb_strpos($t, 'кладовщик') !== false || mb_strpos($t, 'склад') !== false
         || mb_strpos($t, 'грузчик') !== false) return 'stocker';
+    // Ниже — названия из тех же ролей hh, которые запрашивает headhunter.php
+    // (HH_ROLES). Без них вакансия, пришедшая по нашему же фильтру, не
+    // раскладывалась бы ни в один вид работ и её выбрасывал бы отсев в
+    // ing_normalize: роль «Повар, пекарь, кондитер» мы попросили сами, а
+    // «Пекаря» потом не узнали бы.
+    if (mb_strpos($t, 'пекар') !== false || mb_strpos($t, 'кондитер') !== false
+        || mb_strpos($t, 'мойщик посуды') !== false) return 'cook';
+    if (mb_strpos($t, 'упаковщик') !== false || mb_strpos($t, 'маркировщик') !== false) return 'picker';
+    if (mb_strpos($t, 'приемщик') !== false || mb_strpos($t, 'приёмщик') !== false
+        || mb_strpos($t, 'разнорабоч') !== false) return 'stocker';
     return null;
 }
 
@@ -216,6 +226,26 @@ function ing_normalize(array $it, string $sourceId): ?array
     if (ing_discriminatory($it)) return null;
 
     $kind = ($it['kind'] ?? 'shift') === 'permanent' ? 'permanent' : 'shift';
+
+    // Профессия обязательна ТОЛЬКО для подработки, и в этом вся суть правила.
+    //
+    // У сервиса два раздела, и они живут по разным законам. «Подработка» —
+    // смены линейного персонала, там наши четыре вида работ и есть весь
+    // ассортимент: вакансия, которую не отнести ни к одному из них, человеку,
+    // ищущему смену, просто мусор. Так в ленту и попадали бухгалтеры с
+    // Java-разработчиками, пока hh-адаптер тянул всю Москву без фильтра.
+    //
+    // «Работа» — постоянные вакансии компаний, и там Java-разработчик не мусор,
+    // а товар. Требовать от него work_type из складского списка значит
+    // выбросить весь раздел: ни Arbihunter, ни карьерные страницы в эти четыре
+    // вида не укладываются и не должны.
+    //
+    // Отсев именно на приёме, а не на выдаче: хранить чужую смену, которую мы
+    // не смогли отнести ни к одному своему виду работ, незачем. Счётчик уже
+    // есть — вызывающий считает каждый null как skipped, и тот виден в статусе
+    // источника и в last_skipped, который читает дашборд.
+    $workType = ing_work_type($it['work_type'] ?? null, $title);
+    if ($workType === null && $kind !== 'permanent') return null;
     $loc = is_array($it['location'] ?? null) ? $it['location'] : [];
 
     // Исходное написание оставляем в metro_station, приведённое кладём
@@ -235,7 +265,7 @@ function ing_normalize(array $it, string $sourceId): ?array
         'lng'           => isset($loc['lon']) ? (float)$loc['lon'] : null,
         'metro_station_norm' => $станция,
         'metro_line_id'      => $ветка,
-        'work_type'     => ing_work_type($it['work_type'] ?? null, $title),
+        'work_type'     => $workType,
         'kind'          => $kind,
         'date'          => ing_date($it['date'] ?? null),
         'time_start'    => ing_time($it['time_start'] ?? null),

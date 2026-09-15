@@ -10,7 +10,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "eas:update": "eas update --channel production --non-interactive",
     "eas:build": "eas build --platform android --profile production --non-interactive"

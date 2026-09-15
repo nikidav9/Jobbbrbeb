@@ -110,6 +110,12 @@ jobs:
       - name: Воронка ленты объясняет нулевые отклики
         run: php tests/feed_funnel_test.php
 
+      - name: Карьерный коннектор читает JSON сайтов
+        run: php tests/career_json_test.php
+
+      - name: В ленту берём только свои виды работ
+        run: php tests/feed_relevance_test.php
+
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
@@ -143,6 +149,7 @@ jobs:
           python3 tests/shift_match_atomicity_test.py
           python3 tests/health_endpoint_test.py
           python3 tests/telegram_link_metrics_test.py
+          python3 tests/tg_poll_stuck_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build

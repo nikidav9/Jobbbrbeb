@@ -204,3 +204,132 @@ function cf_items(string $html, string $pageUrl, int $now): array
     }
     return array_values($items);
 }
+
+// ── Второй способ чтения: собственный JSON карьерного сайта ──────────────────
+//
+// Зачем он понадобился. Разметку schema.org/JobPosting ставят почти одни
+// IT-компании, да и то не все: из восемнадцати проверенных карьерных сайтов
+// (Сбер, МТС, Яндекс, Ozon, ВТБ, VK, Т-Банк, Самокат, X5, Магнит, ВкусВилл и
+// другие) её нет ни у одного. Разбор выше на них не находит ничего — и это не
+// поломка, а отсутствие предмета.
+//
+// Но почти все они SPA: страница приходит пустой, вакансии подгружает скрипт.
+// Значит за страницей всегда стоит источник данных, и он отдаёт готовый JSON.
+// Проверено дважды: у cofinder это `/api/v1/vacancies/`, у карьерных сайтов на
+// Хантфлоу — `/api/vacancy`, одинаково у пяти разных клиентов платформы.
+//
+// Читать JSON лучше, чем разбирать HTML, по двум причинам. Он не ломается от
+// смены вёрстки — а именно на этом у cofinder из 111 российских парсеров
+// сломаны 15. И это штатный интерфейс сайта, а не разбор чужой разметки.
+//
+// Соответствие полей описывает НАСТРОЙКА источника, а не код: у каждого сайта
+// свои имена, и заводить под каждый по функции значило бы повторить те самые
+// 160 парсеров. Код здесь один на всех, различия живут в connector_config.
+
+/** Значение по пути вида «data.items» или «items»; null, если пути нет. */
+function cf_dig($data, string $path)
+{
+    if ($path === '') return $data;
+    foreach (explode('.', $path) as $key) {
+        if (!is_array($data) || !array_key_exists($key, $data)) return null;
+        $data = $data[$key];
+    }
+    return $data;
+}
+
+/**
+ * Вакансии из JSON карьерного сайта.
+ *
+ * $map описывает, где что лежит:
+ *   list  — путь к массиву вакансий («items», «data», «» для голого массива);
+ *   title — поле с названием (обязательно);
+ *   url   — поле с готовой ссылкой ИЛИ url_template с «{поле}» внутри;
+ *   id, company, address, pay, description, schedule, closed — необязательные.
+ *
+ * Правило про ссылку то же, что и для разметки: без пути к первоисточнику
+ * вакансию не берём. Это не формальность — именно этим мы отличаемся от
+ * swipejobs, который выдаёт чужие вакансии за свои.
+ */
+function cf_json_items($data, array $map, string $pageUrl, int $now): array
+{
+    $rows = cf_dig($data, (string)($map['list'] ?? ''));
+    if (!is_array($rows)) return [];
+
+    $items = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+
+        // cf_name, а не cf_text: поле сплошь и рядом оказывается объектом
+        // {id, name} или списком таких объектов. У Yadro, например, город
+        // приходит как [{"id":2,"name":"Москва"},{"id":3,"name":"СПб"}] —
+        // cf_text вернул бы на этом пустую строку и город потерялся бы молча.
+        $title = cf_name(cf_dig($row, (string)($map['title'] ?? 'title')));
+        if ($title === '') continue;
+
+        $url = cf_json_url($row, $map, $pageUrl);
+        if ($url === '') continue;
+
+        // Закрытую вакансию не берём: человек поедет туда, где его не ждут.
+        $closedField = (string)($map['closed'] ?? '');
+        if ($closedField !== '') {
+            $closed = cf_dig($row, $closedField);
+            if ($closed !== null && $closed !== false && $closed !== '' && $closed !== 0) continue;
+        }
+
+        $ext = cf_name(cf_dig($row, (string)($map['id'] ?? '')));
+        // Своего номера может не быть — тогда имя вакансии это её адрес. Адрес
+        // устойчив: при следующем обходе узнаем ту же вакансию, а не заведём
+        // дубль. То же правило, что и в cf_normalize.
+        if ($ext === '') $ext = substr(hash('sha256', $url), 0, 24);
+
+        $item = ['id' => $ext, 'title' => $title, 'kind' => 'permanent',
+                 'url' => $url, 'active' => true];
+
+        foreach (['company' => 'company', 'address' => 'address',
+                  'description' => 'description', 'schedule' => 'schedule'] as $to => $_) {
+            $field = (string)($map[$to] ?? '');
+            if ($field === '') continue;
+            $value = cf_name(cf_dig($row, $field));
+            if ($value !== '') $item[$to] = $value;
+        }
+
+        $payField = (string)($map['pay'] ?? '');
+        if ($payField !== '') {
+            $pay = cf_dig($row, $payField);
+            // Сумма приходит и числом, и строкой «от 80 000 ₽»: вытаскиваем
+            // первое число, а мусор вроде «по договорённости» отбрасываем.
+            if (is_string($pay)) {
+                $digits = preg_replace('~[^\d]~', '', explode('-', $pay)[0] ?? '');
+                $pay = $digits !== '' ? (float)$digits : null;
+            }
+            if (is_numeric($pay) && (float)$pay > 0) $item['pay'] = (float)$pay;
+        }
+
+        $items[$item['id']] = $item;
+    }
+    return array_values($items);
+}
+
+/** Ссылка на вакансию: готовое поле либо шаблон с подстановкой полей строки. */
+function cf_json_url(array $row, array $map, string $pageUrl): string
+{
+    $template = (string)($map['url_template'] ?? '');
+    if ($template !== '') {
+        $url = preg_replace_callback('~\{([a-zA-Z0-9_.]+)\}~', function ($m) use ($row) {
+            return rawurlencode(cf_name(cf_dig($row, $m[1])));
+        }, $template);
+        if (preg_match('~^https://~i', $url) && !str_contains($url, '{')) return $url;
+    }
+    $field = (string)($map['url'] ?? 'url');
+    $url = trim((string)cf_dig($row, $field));
+    if (preg_match('~^https://~i', $url)) return $url;
+    // Относительный адрес достраиваем от страницы источника: «/vacancy/go-3»
+    // сам по себе никуда не ведёт.
+    if ($url !== '' && str_starts_with($url, '/')) {
+        $base = parse_url($pageUrl);
+        if (($base['scheme'] ?? '') === 'https' && ($base['host'] ?? '') !== '') {
+            return 'https://' . $base['host'] . $url;
+        }
+    }
+    return '';
+}
