@@ -1,0 +1,90 @@
+name: Разведка карьерных сайтов
+
+# Запускается только руками. Это не проверка кода, а поход по чужим сайтам:
+# гонять его на каждый push незачем и невежливо.
+#
+# Зачем через Actions. Разведке нужен браузер с прямым выходом в сеть: карьерные
+# сайты почти сплошь SPA, и вакансии видны только после выполнения скриптов. В
+# облачной сессии агента браузер ходит через прокси, который требует CONNECT и
+# подменяет сертификат, — обойти это можно лишь отключением проверки TLS, чего
+# делать нельзя. Здесь такого ограничения нет.
+#
+# Результат — артефакт career-discovery.json с готовыми кусками connector_config
+# для источника `career`. Разбор этого формата уже работает: cf_json_items в
+# php-proxy/career_feed.php.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Сколько компаний взять из каталога'
+        required: false
+        default: '30'
+      sites:
+        description: 'Свои адреса через пробел (пусто — берём каталог)'
+        required: false
+        default: ''
+      pause_ms:
+        description: 'Пауза между сайтами, мс'
+        required: false
+        default: '1500'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: career-discover
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: Найти, откуда сайты берут вакансии
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      # Та же закреплённая версия, что и у проверки узких экранов: браузер
+      # нужен инструменту, а не приложению, поэтому не трогаем lockfile.
+      - name: Install pinned browser harness
+        run: |
+          npm install --no-save --package-lock=false playwright@1.51.1
+          npx playwright install --with-deps chromium
+
+      - name: Проверить разбор до похода в сеть
+        run: node --test tests/career-discover.test.mjs
+
+      - name: Разведка
+        env:
+          DISCOVER_LIMIT: ${{ inputs.limit }}
+          DISCOVER_PAUSE_MS: ${{ inputs.pause_ms }}
+          DISCOVER_OUT: career-discovery.json
+          SITES: ${{ inputs.sites }}
+        run: |
+          set -u
+          if [ -n "${SITES}" ]; then
+            # Адреса приходят одной строкой через пробел — раскладываем по
+            # строкам, скрипт читает файл именно так.
+            printf '%s\n' ${SITES} > sites.txt
+            echo "Свой список: $(wc -l < sites.txt) адрес(ов)"
+            node scripts/career-discover.mjs sites.txt
+          else
+            node scripts/career-discover.mjs
+          fi
+
+      - name: Забрать результат
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-discovery-${{ github.run_id }}
+          path: career-discovery.json
+          if-no-files-found: warn
+          retention-days: 14
