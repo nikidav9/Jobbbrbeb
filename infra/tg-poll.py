@@ -3,19 +3,19 @@
 
 Почему не вебхук. Телеграм отвечает на попытку его поставить дословно:
 «bad webhook: IPv6-only addresses are not allowed». То есть адрес без записи
-A он не принимает вовсе. А по IPv4 эта машина с Телеграмом не разговаривает
-ни в одну сторону: наружу 0 ответов из 2 в каждом замере, внутрь —
+A он не принимает вовсе. А по IPv4 эта машина с ним не разговаривает ни в
+одну сторону: наружу 0 ответов из 2 в каждом замере, внутрь —
 «Connection timed out». Путь сломан, и починить его с нашей стороны нечем.
 
 Отсюда обратный ход: не ждать звонка, а звонить самим. getUpdates — это
-исходящий запрос, а исходящие по IPv6 работают: 4 из 4, изо дня в день.
-Заодно исчезает пересылка через Vercel, а с ней и весь сегодняшний узел с
-двумя ключами, сторожем и откатами.
+исходящий запрос, а исходящие по IPv6 работают. Вебхук и getUpdates у одного
+бота взаимоисключающие, поэтому этот процесс является единственным владельцем
+входящего Telegram-контура и снимает любой случайно поставленный webhook.
 
 Устройство простое до скуки. Держим соединение 25 секунд, получаем пачку
-обновлений, отдаём каждое своему же обработчику по петле, запоминаем номер
-последнего. Номер — на диске: перезапуск службы не должен приводить к тому,
-что человек получит вчерашний ответ дважды.
+обновлений, отдаём каждое своему же обработчику, запоминаем номер последнего
+только ПОСЛЕ успешной обработки. Номер — на диске: перезапуск службы не должен
+приводить к тому, что человек получит вчерашний ответ дважды.
 """
 
 import json
@@ -29,17 +29,11 @@ import urllib.request
 OFFSET_FILE = "/var/lib/jt-tg-offset"
 BEAT_FILE = "/var/lib/jt-tg-beat"
 STATS_FILE = "/var/lib/jt-tg-poll-stats.json"
-# Через собственный домен, а не через петлю: на 127.0.0.1 шлюз
-# отвечает переадресацией на https, и обновление ушло бы в пустоту.
 LOCAL = "https://jobtoo.ru/api/tg.php"
 
 
 def secret(name: str) -> str:
-    """Секреты лежат в app_secrets.php, а он написан через base64_decode.
-
-    Разбирать его текстом нельзя, поэтому спрашиваем сам PHP — тот же
-    способ, каким это делают все остальные части.
-    """
+    """Прочитать актуальный серверный секрет через тот же PHP-контейнер."""
     out = subprocess.run(
         ["docker", "compose", "exec", "-T", "php", "php", "-r",
          '$s = @include "/var/www/api/app_secrets.php";'
@@ -49,8 +43,7 @@ def secret(name: str) -> str:
     return out.stdout.decode("utf-8", "replace").strip()
 
 
-def record_api_result(attempts, ok: bool,
-                      mode: str, error: str) -> None:
+def record_api_result(attempts, ok: bool, mode: str, error: str) -> None:
     now = int(time.time())
     try:
         with open(STATS_FILE, encoding="utf-8") as f:
@@ -136,13 +129,9 @@ def api(token: str, method: str, params: dict, timeout: int) -> dict:
     )
     return payload if fallback_reached else {}
 
-def deliver(update: dict, app_secret: str) -> None:
-    """Отдать обновление своему обработчику — по петле, минуя интернет.
 
-    Заголовок с пропуском обязателен: tg.php с некоторых пор проверяет, что
-    обновление пришло от Телеграма, а не от постороннего. Здесь «от
-    Телеграма» удостоверяем мы сами, потому что сами его и забрали.
-    """
+def deliver(update: dict, app_secret: str) -> bool:
+    """Отдать update своему обработчику и подтвердить только реальный успех."""
     body = json.dumps(update, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(LOCAL, data=body, headers={
         "Content-Type": "application/json",
@@ -150,10 +139,20 @@ def deliver(update: dict, app_secret: str) -> None:
     })
     try:
         urllib.request.urlopen(req, timeout=30).read()
+        return True
     except urllib.error.HTTPError as e:
         print(f"обработчик ответил {e.code}", file=sys.stderr, flush=True)
     except Exception as e:
         print(f"обработчик недоступен: {e}", file=sys.stderr, flush=True)
+    return False
+
+
+def webhook_conflict(payload: dict) -> bool:
+    """Telegram не даст getUpdates, пока у того же бота висит webhook."""
+    if int(payload.get("error_code") or 0) != 409:
+        return False
+    text = str(payload.get("description") or "").lower()
+    return "webhook" in text or "getupdates" in text
 
 
 def main() -> int:
@@ -163,14 +162,17 @@ def main() -> int:
         print("нет токена бота", file=sys.stderr)
         return 1
 
-    # Вебхук и getUpdates у Телеграма взаимоисключающие: пока висит вебхук,
-    # getUpdates отвечает отказом. Снимаем — но только свой; если там чужой
-    # адрес, значит кто-то поставил его намеренно, и ломать это молча нельзя.
+    # Polling — канонический ingress. Любой webhook на этом же боте блокирует
+    # getUpdates, независимо от того, кто и зачем его поставил. Снимаем без
+    # удаления накопленной очереди.
     info = api(token, "getWebhookInfo", {}, 15).get("result", {})
     url = info.get("url", "")
     if url:
-        api(token, "deleteWebhook", {"drop_pending_updates": "false"}, 15)
-        print(f"снял вебхук {url}", flush=True)
+        cleared = api(token, "deleteWebhook", {"drop_pending_updates": "false"}, 15)
+        if cleared.get("ok"):
+            print(f"снял конфликтующий вебхук {url}", flush=True)
+        else:
+            print(f"не удалось снять конфликтующий вебхук {url}", file=sys.stderr, flush=True)
 
     try:
         offset = int(open(OFFSET_FILE).read().strip())
@@ -183,8 +185,26 @@ def main() -> int:
                  '["message","callback_query","my_chat_member"]'}, 25)
 
         if not r.get("ok"):
-            # Обрыв связи или отказ. Ждём и пробуем снова: сообщения у
-            # Телеграма не пропадают, он отдаст их со следующего захода.
+            # Если кто-то поставил webhook уже ПОСЛЕ старта службы, не ждём
+            # рестарта: снимаем конфликт сами и продолжаем с тем же offset.
+            if webhook_conflict(r):
+                cleared = api(token, "deleteWebhook", {"drop_pending_updates": "false"}, 15)
+                if cleared.get("ok"):
+                    print("снял webhook, мешавший getUpdates", file=sys.stderr, flush=True)
+                    time.sleep(1)
+                    continue
+
+            # Ротация токена не должна требовать ручного рестарта службы.
+            if int(r.get("error_code") or 0) == 401:
+                fresh = secret("TG_BOT_TOKEN")
+                if fresh and fresh != token:
+                    token = fresh
+                    print("подхватил новый токен бота", file=sys.stderr, flush=True)
+                    time.sleep(1)
+                    continue
+
+            # Обрыв связи или иной отказ. Сообщения не подтверждаем и
+            # следующий успешный запрос продолжит с прежнего offset.
             time.sleep(3)
             continue
 
@@ -197,11 +217,22 @@ def main() -> int:
             pass
 
         for upd in r.get("result", []):
-            # Со временем обработки. Жалоба «бот отвечает через двадцать
-            # секунд» без замера неотличима от «связь медленная», а это
-            # разные починки: одно лечится здесь, другое — в обработчике.
             t0 = time.time()
-            deliver(upd, app_secret)
+            ok = deliver(upd, app_secret)
+            if not ok:
+                # APP_SECRET мог смениться без рестарта poller. Перечитываем и
+                # пробуем ровно один раз. Если обработчик всё ещё недоступен,
+                # НЕ двигаем offset: Telegram отдаст этот update снова.
+                fresh_secret = secret("APP_SECRET")
+                if fresh_secret:
+                    app_secret = fresh_secret
+                ok = deliver(upd, app_secret)
+            if not ok:
+                print("update не подтверждён — offset сохранён для повтора",
+                      file=sys.stderr, flush=True)
+                time.sleep(3)
+                break
+
             dt = time.time() - t0
             kind = "сообщение" if "message" in upd else "кнопка" if "callback_query" in upd else "прочее"
             print(f"{time.strftime('%H:%M:%S')} {kind} обработано за {dt:.1f}с", flush=True)
