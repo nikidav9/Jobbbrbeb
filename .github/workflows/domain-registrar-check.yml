@@ -1,0 +1,28 @@
+name: Domain registrar check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/domain-registrar-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  whois:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install WHOIS tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq whois dnsutils
+      - name: Check jobtoo.ru registrar and nameservers
+        run: |
+          set -o pipefail
+          echo '=== WHOIS jobtoo.ru ==='
+          whois jobtoo.ru | tee /tmp/jobtoo-whois.txt
+          echo '=== registrar markers ==='
+          grep -Ei '^(registrar|reg-ch|state|nserver):' /tmp/jobtoo-whois.txt || true
+          echo '=== authoritative NS ==='
+          dig +short NS jobtoo.ru | sort
