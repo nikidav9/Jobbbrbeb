@@ -21,7 +21,7 @@ import { ReadTicks, isSeenByOther } from '@/components/ReadTicks';
 import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate } from '@/services/storage';
-import { dbGetMessages, dbInsertMessage, dbMarkRead, dbIncrementUnread, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
+import { dbGetMessages, dbInsertMessage, dbMarkRead, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
 import { setActiveChat } from '@/services/notifications';
 import { useIsFocused } from '@react-navigation/native';
 import { getSupabaseClient } from '@/template';
@@ -651,8 +651,6 @@ export default function ChatRoom() {
         return next;
       });
       lastCountRef.current += 1;
-      const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
-      dbIncrementUnread(chat.id, forRole).catch(() => {});
       // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
       // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
       // заодно текст уведомления приходил с клиента — то есть через нашего
@@ -775,8 +773,6 @@ export default function ChatRoom() {
         return next;
       });
       lastCountRef.current += 1;
-      const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
-      dbIncrementUnread(chat.id, forRole).catch(() => {});
       // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
       // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
       // заодно текст уведомления приходил с клиента — то есть через нашего
@@ -820,8 +816,6 @@ export default function ChatRoom() {
         return next;
       });
       lastCountRef.current += 1;
-      const forRole = currentUser.role === 'worker' ? 'employer' : 'worker';
-      dbIncrementUnread(chat.id, forRole).catch(() => {});
       // Уведомление второй стороне шлёт СЕРВЕР при записи сообщения
       // (jt_notify_new_message). Отсюда оно уходило «выстрелил и забыл», а
       // заодно текст уведомления приходил с клиента — то есть через нашего

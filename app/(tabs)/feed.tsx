@@ -30,7 +30,6 @@ import {
   dbUpdateVacancy,
   dbCreateChat,
   dbInsertMessage,
-  dbIncrementUnread,
   dbApplyPermVacancy,
   dbClosePermVacancy,
   dbDeleteVacancy,
@@ -1504,7 +1503,6 @@ function WorkerListModal({
           ? `Здравствуйте, ${worker.firstName}! Хотелось бы обсудить вашу заявку на вакансию «${vacTitle}».`
           : `Здравствуйте! Хотелось бы обсудить вашу заявку на вакансию «${vacTitle}».`);
       await dbInsertMessage(chatId, currentUser.id, text);
-      dbIncrementUnread(chatId, 'worker').catch(() => {});
       refreshChats().catch(() => {});
 
       showToast('Сообщение отправлено. Открываем чат...', 'success');

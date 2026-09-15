@@ -15,6 +15,8 @@ $chat = (string)file_get_contents(__DIR__ . '/../app/chat-room.tsx');
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
 $notif = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
 $preview = (string)file_get_contents(__DIR__ . '/../services/messagePreview.ts');
+$service = (string)file_get_contents(__DIR__ . '/../services/db.ts');
+$atomic = (string)file_get_contents(__DIR__ . '/../supabase/migrations/070_atomic_message_insert.sql');
 
 $failures = [];
 function check(string $name, bool $ok): void
@@ -84,6 +86,39 @@ check('заведение чата извещает о первом сообще
     str_contains($create, 'jt_notify_new_message('));
 check('от системы не извещаем',
     str_contains($create, "\$senderId !== '' && trim((string)\$sm) !== ''"));
+
+// ── Сообщение и unread — одна идемпотентная транзакция ───────────────────────
+check('атомарный RPC блокирует строку чата',
+    str_contains($atomic, 'from public.jm_chats') && str_contains($atomic, 'for update;'));
+check('атомарный RPC пишет сообщение',
+    str_contains($atomic, 'insert into public.jm_messages'));
+check('атомарный RPC двигает unread противоположной стороны',
+    str_contains($atomic, 'set unread_employer = coalesce(unread_employer, 0) + 1')
+    && str_contains($atomic, 'set unread_worker = coalesce(unread_worker, 0) + 1'));
+check('повтор id не пишет второй раз',
+    str_contains($atomic, 'where id = p_message_id;')
+    && str_contains($atomic, 'false;')
+    && str_contains($atomic, 'message id collision'));
+check('RPC закрыт от клиента',
+    str_contains($atomic, 'from public, anon, authenticated;')
+    && str_contains($atomic, 'to service_role;'));
+
+check('dbInsertMessage использует атомарный RPC',
+    str_contains($insert, "sb_rpc('jm_insert_message_atomic'")
+    && str_contains($insert, "'p_message_id' => \$messageId"));
+check('dbInsertMessage не пишет сообщение отдельно', !str_contains($insert, 'msg_insert($msg)'));
+check('повтор запроса не дублирует пуш', str_contains($insert, "if (!empty(\$result['inserted']))"));
+
+$inc = case_body($db, 'dbIncrementUnread');
+check('старый increment оставлен безопасным no-op',
+    str_contains($inc, 'migration 070')
+    && str_contains($inc, '$data = null; break;')
+    && !str_contains($inc, 'sb_update('));
+check('клиент создаёт id сообщения до proxy',
+    str_contains($service, 'const messageId = uid();')
+    && str_contains($service, "proxy<any>('dbInsertMessage', [chatId, senderId, text, messageId])"));
+check('текущий клиент больше не увеличивает unread вторым запросом',
+    !str_contains($chat, 'dbIncrementUnread(') && !str_contains($feed, 'dbIncrementUnread('));
 
 // ── Клиент это делать перестал ──────────────────────────────────────────────
 foreach ([['переписка', $chat], ['лента', $feed]] as [$where, $src]) {

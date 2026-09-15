@@ -1086,11 +1086,11 @@ export async function dbGetMessages(chatId: string): Promise<Message[]> {
 }
 
 export async function dbInsertMessage(chatId: string, senderId: string, text: string): Promise<Message> {
-  if (IS_NATIVE) { const d = await proxy<any>('dbInsertMessage', [chatId, senderId, text]); return rowToMessage(d); }
-  const msg = { id: uid(), chat_id: chatId, sender_id: senderId, text, created_at: nowISO() };
-  const { error } = await withTimeout(supabase.from('jm_messages').insert(msg));
-  if (error) throwOnError('dbInsertMessage', error);
-  return rowToMessage(msg);
+  // ID рождается до proxy(): внутренняя повторная попытка запроса использует
+  // те же args, поэтому потерянный HTTP-ответ не создаёт второе сообщение.
+  const messageId = uid();
+  const d = await proxy<any>('dbInsertMessage', [chatId, senderId, text, messageId]);
+  return rowToMessage(d);
 }
 
 // ─── Файлы ────────────────────────────────────────────────────────────────────

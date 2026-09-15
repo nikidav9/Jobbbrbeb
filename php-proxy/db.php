@@ -5808,35 +5808,47 @@ try {
             $data = sb_select('jm_messages', ['chat_id' => 'eq.' . $args[0]], '*', 'created_at.asc'); break;
 
         case 'dbInsertMessage': {
-            $msg = ['id' => uid(), 'chat_id' => $args[0], 'sender_id' => $args[1], 'text' => $args[2], 'created_at' => now_iso()];
-            msg_insert($msg);
-            // Известить вторую сторону — здесь же, а не отдельным вызовом с
-            // телефона отправителя. Проверка «сторона переписки» уже прошла
-            // выше, в $chatArgFns, так что чат заведомо наш.
-            try {
-                $chatRow = sb_single('jm_chats', ['id' => 'eq.' . (string)$args[0]],
-                    'id,worker_id,employer_id');
-                if ($chatRow) jt_notify_new_message($chatRow, (string)$args[1], (string)$args[2]);
-            } catch (Throwable $e) {
-                // Сообщение записано — это главное. Уведомление не должно
-                // ронять отправку.
+            $chatId = (string)($args[0] ?? '');
+            $senderId = (string)($args[1] ?? '');
+            $text = (string)($args[2] ?? '');
+            // Новые клиенты создают id до proxy(): обе сетевые попытки одного
+            // логического действия несут один id. Для старых сборок без 4-го
+            // аргумента оставляем серверный id — совместимость без падения.
+            $messageId = trim((string)($args[3] ?? ''));
+            if ($messageId === '') $messageId = uid();
+
+            $rows = sb_rpc('jm_insert_message_atomic', [
+                'p_message_id' => $messageId,
+                'p_chat_id' => $chatId,
+                'p_sender_id' => $senderId,
+                'p_text' => $text,
+            ]);
+            $result = is_array($rows) && isset($rows[0]) && is_array($rows[0]) ? $rows[0] : null;
+            if (!$result) throw new Exception('Не удалось записать сообщение');
+
+            $msg = [
+                'id' => (string)($result['message_id'] ?? $messageId),
+                'chat_id' => (string)($result['chat_id'] ?? $chatId),
+                'sender_id' => (string)($result['sender_id'] ?? $senderId),
+                'text' => (string)($result['message_text'] ?? $text),
+                'created_at' => (string)($result['created_at'] ?? now_iso()),
+            ];
+
+            // На retry RPC вернёт inserted=false: строка уже есть, unread уже
+            // увеличен. Повторный пуш тогда тоже не нужен.
+            if (!empty($result['inserted'])) {
+                try {
+                    $chatRow = sb_single('jm_chats', ['id' => 'eq.' . $chatId],
+                        'id,worker_id,employer_id');
+                    if ($chatRow) jt_notify_new_message($chatRow, $senderId, $text);
+                } catch (Throwable $e) {
+                    // Сообщение и unread уже атомарно записаны — внешнее
+                    // уведомление не должно превращать успех в ошибку.
+                }
             }
             $data = $msg; break;
         }
 
-        // ── Файлы ──────────────────────────────────────────────────────────────
-        // Аватары, фотографии и голосовые из чатов.
-        //
-        // Раньше приложение клало их в хранилище само, ключом, который лежит
-        // в каждой установленной сборке. Чтобы это работало, тому ключу нужно
-        // право записи — то есть любой, кто достанет его из сборки, мог бы
-        // залить в наше хранилище что угодно и сколько угодно.
-        //
-        // Теперь файл идёт сюда, а отсюда в хранилище служебным ключом,
-        // который не покидает сервер. Заодно здесь же проверяется пропуск
-        // приложения — там его не было вовсе.
-        //
-        // args: [имя файла, содержимое в base64, тип]
         case 'dbUploadFile': {
             $name = (string)($args[0] ?? '');
             $b64  = (string)($args[1] ?? '');
@@ -5972,20 +5984,14 @@ try {
         }
 
         case 'dbIncrementUnread': {
-            $row = sb_single('jm_chats', ['id' => 'eq.' . $args[0]], 'unread_worker,unread_employer');
-            if (!$row) break;
-            $f = $args[1] === 'worker' ? 'unread_worker' : 'unread_employer';
-            $cur = $args[1] === 'worker' ? ($row['unread_worker'] ?? 0) : ($row['unread_employer'] ?? 0);
-            sb_update('jm_chats', ['id' => 'eq.' . $args[0]], [$f => $cur + 1]); break;
+            // Совместимость со старыми установленными клиентами. Начиная с
+            // migration 070 unread увеличивается в той же транзакции, что и
+            // dbInsertMessage. Старые сборки после успешной отправки всё ещё
+            // вызывают этот endpoint; второй increment дал бы двойной badge.
+            // Авторизационная проверка операции выше остаётся в силе.
+            $data = null; break;
         }
 
-        // Разовая уборка после перехода на «один чат — одна пара людей».
-        // Пары, у которых чатов больше одного, сливаем в старший: перед каждым
-        // блоком ставим карточку его вакансии, сообщения переносим с их
-        // временем, лишний чат удаляем (сообщения к этому моменту уже не его).
-        //
-        // args: [apply] — без true только считает и показывает план.
-        // Повторный запуск безопасен: сливать станет нечего.
         case 'dbMergeDuplicateChats': {
             @set_time_limit(300);
             $apply = ($args[0] ?? false) === true;
