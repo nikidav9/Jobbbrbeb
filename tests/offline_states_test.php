@@ -220,6 +220,25 @@ check('избранное постоянной вакансии: UI меняет
 check('избранное постоянной вакансии: ошибка видна',
     str_contains($permDetail, 'Не удалось сохранить вакансию') && str_contains($permDetail, 'Не удалось удалить из избранного'));
 
+// ── Лента: ошибки загрузки/избранного не выдаются за пустоту/успех ───────────
+$feedTruth = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
+check('регулярные подработки: ошибка не выглядит пустой выдачей',
+    str_contains($feedTruth, 'Не удалось загрузить регулярные подработки') &&
+    str_contains($feedTruth, 'loadFailed'));
+check('список откликов работодателя: ошибка не выглядит пустым списком',
+    str_contains($feedTruth, 'dataLoadFailed') && str_contains($feedTruth, 'Не удалось загрузить список'));
+check('избранное смены: добавление подтверждается сервером до UI',
+    (bool)preg_match('~await dbAddSaved\(user\.id, id\);[\s\S]{0,140}optimisticAddSaved~', $feedTruth));
+check('избранное смены: удаление подтверждается сервером до UI',
+    (bool)preg_match('~await dbRemoveSaved\(user\.id, id\);[\s\S]{0,140}optimisticRemoveSaved~', $feedTruth));
+check('избранное работы: добавление подтверждается сервером до UI',
+    (bool)preg_match('~await dbAddPermSaved\(currentUser\.id, v\.id\);[\s\S]{0,160}optimisticAddPermSaved~', $feedTruth));
+check('избранное работы: удаление подтверждается сервером до UI',
+    (bool)preg_match('~await dbRemovePermSaved\(currentUser\.id, v\.id\);[\s\S]{0,160}optimisticRemovePermSaved~', $feedTruth));
+check('избранное ленты: сетевые ошибки видны',
+    str_contains($feedTruth, 'Не удалось добавить в избранное') &&
+    str_contains($feedTruth, 'Не удалось сохранить в избранное'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

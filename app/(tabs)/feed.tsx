@@ -1000,13 +1000,16 @@ function RegularLocked() {
   const [items, setItems] = useState<ExternalVacancy[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true); else setLoading(true);
+    setLoadFailed(false);
     try {
       const rows = await dbGetExternalVacancies();
       setItems(rows.filter(isRegularExternalVacancy));
     } catch {
+      setLoadFailed(true);
       showToast('Не удалось обновить регулярные подработки', 'error');
     } finally {
       setLoading(false);
@@ -1034,10 +1037,22 @@ function RegularLocked() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={Colors.primary} colors={[Colors.primary]} />}
       >
         <View style={rl.ring}>
-          <Ionicons name="repeat-outline" size={30} color={Colors.primary} />
+          <Ionicons name={loadFailed ? 'cloud-offline-outline' : 'repeat-outline'} size={30} color={Colors.primary} />
         </View>
-        <Text style={rl.title}>Регулярных подработок пока нет</Text>
-        <Text style={rl.desc}>Потяните вниз, чтобы обновить предложения партнёров.</Text>
+        {loadFailed ? (
+          <>
+            <Text style={rl.title}>Не удалось загрузить регулярные подработки</Text>
+            <Text style={rl.desc}>Проверьте связь и попробуйте ещё раз.</Text>
+            <TouchableOpacity onPress={() => void load()} activeOpacity={0.8} style={{ marginTop: rs(12) }}>
+              <Text style={{ color: Colors.primary, fontWeight: '700' }}>Повторить</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={rl.title}>Регулярных подработок пока нет</Text>
+            <Text style={rl.desc}>Потяните вниз, чтобы обновить предложения партнёров.</Text>
+          </>
+        )}
       </ScrollView>
     );
   }
@@ -1291,6 +1306,8 @@ function WorkerListModal({
   const { currentUser, users, vacancies, chats, showToast, refreshLikes, refreshChats, optimisticUpdateLike } = useApp();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
+  const [dataLoadFailed, setDataLoadFailed] = useState(false);
+  const [dataRetry, setDataRetry] = useState(0);
   const listSwipe = useSwipeToDismiss(onClose);
   const [localLikes, setLocalLikes] = useState<Like[]>([]);
   const [localWorkers, setLocalWorkers] = useState<User[]>([]);
@@ -1301,6 +1318,7 @@ function WorkerListModal({
   useEffect(() => {
     const init = async () => {
       setDataLoading(true);
+      setDataLoadFailed(false);
       try {
         const vacLikes = await dbGetLikesByVacancy(vacancyId);
         setLocalLikes(vacLikes);
@@ -1319,12 +1337,13 @@ function WorkerListModal({
         }
       } catch (e) {
         console.warn('[WorkerListModal] init error', e);
+        setDataLoadFailed(true);
       } finally {
         setDataLoading(false);
       }
     };
     init();
-  }, [vacancyId]);
+  }, [vacancyId, dataRetry]);
 
   const titleMap: Record<typeof type, { title: string; icon: IconName; color: string; bg: string; empty: IconName; emptyTxt: string }> = {
     applicants: { title: 'Отклики',     icon: 'people-outline',           color: Colors.primary, bg: Colors.primaryLight, empty: 'people-outline',      emptyTxt: 'Нет новых откликов' },
@@ -1522,6 +1541,14 @@ function WorkerListModal({
             <View style={wS.empty}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={[wS.emptyTxt, { marginTop: 12 }]}>Загрузка данных...</Text>
+            </View>
+          ) : dataLoadFailed ? (
+            <View style={wS.empty}>
+              <EmptyIcon name="cloud-offline-outline" />
+              <Text style={wS.emptyTxt}>Не удалось загрузить список</Text>
+              <TouchableOpacity onPress={() => setDataRetry(x => x + 1)} activeOpacity={0.8} style={{ marginTop: rs(12) }}>
+                <Text style={{ color: Colors.primary, fontWeight: '700' }}>Повторить</Text>
+              </TouchableOpacity>
             </View>
           ) : filteredLikes.length === 0 ? (
             <View style={wS.empty}>
@@ -1877,6 +1904,7 @@ function WorkerFeed() {
 
   const cardAreaRef = useRef<View>(null);
   const pendingLikeIds = useRef<Set<string>>(new Set());
+  const savedMutationIds = useRef<Set<string>>(new Set());
   const swipingRef = useRef(false);
   const messagingRef = useRef(false);
   // Карточка, по которой человек сейчас пишет отклик (null — окно закрыто)
@@ -2150,19 +2178,28 @@ function WorkerFeed() {
   // ★ работает как переход к источнику (см. кнопку). Гостю — предложение
   // зарегистрироваться, как и на остальных действиях.
   const isCurrentSaved = !!currentCard && !('external' in currentCard) && savedIds.includes(currentCard.id);
-  const toggleSavedShift = useCallback(() => {
+  const toggleSavedShift = useCallback(async () => {
     if (!currentCard || 'external' in currentCard) return;
     const user = currentUser;
     if (!user) return;
     if (user.isGuest) { promptRegister({ vacancyKind: 'shift' }); return; }
     const id = currentCard.id;
-    if (savedIds.includes(id)) {
-      optimisticRemoveSaved(id);
-      dbRemoveSaved(user.id, id).catch(() => {});
-    } else {
-      optimisticAddSaved(id);
-      dbAddSaved(user.id, id).catch(() => {});
-      showToast('Добавлено в избранное', 'success');
+    if (savedMutationIds.current.has(id)) return;
+    savedMutationIds.current.add(id);
+    try {
+      if (savedIds.includes(id)) {
+        await dbRemoveSaved(user.id, id);
+        optimisticRemoveSaved(id);
+        showToast('Удалено из избранного', 'success');
+      } else {
+        await dbAddSaved(user.id, id);
+        optimisticAddSaved(id);
+        showToast('Добавлено в избранное', 'success');
+      }
+    } catch {
+      showToast(savedIds.includes(id) ? 'Не удалось удалить из избранного' : 'Не удалось добавить в избранное', 'error');
+    } finally {
+      savedMutationIds.current.delete(id);
     }
   }, [currentCard, currentUser, savedIds, optimisticAddSaved, optimisticRemoveSaved, promptRegister, showToast]);
 
@@ -2816,6 +2853,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const [superJobConnectFor, setSuperJobConnectFor] = useState<ExternalVacancy | null>(null);
   const [superJobConnecting, setSuperJobConnecting] = useState(false);
   const [superJobConnectError, setSuperJobConnectError] = useState<string | null>(null);
+  const permSavedMutationIds = useRef<Set<string>>(new Set());
 
   const externalLoadId = useRef(0);
   const loadExternalVacancies = useCallback(async (sourceIds?: string[]) => {
@@ -3098,20 +3136,28 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     rejected: { label: 'Отказ',           icon: 'close-circle',      color: Colors.red,   bg: '#FEE2E2' },
   };
 
-  const toggleSaved = (v: PermVacancy) => {
+  const toggleSaved = async (v: PermVacancy) => {
     if (!currentUser) return;
     if (currentUser.isGuest) {
       promptRegister({ vacancyId: v.id, vacancyKind: 'permanent' });
       return;
     }
-    if (permSavedIds.includes(v.id)) {
-      optimisticRemovePermSaved(v.id);
-      dbRemovePermSaved(currentUser.id, v.id).catch(() => {});
-      showToast('Удалено из избранного', 'success');
-    } else {
-      optimisticAddPermSaved(v.id);
-      dbAddPermSaved(currentUser.id, v.id).catch(() => {});
-      showToast('Сохранено в избранное', 'success');
+    if (permSavedMutationIds.current.has(v.id)) return;
+    permSavedMutationIds.current.add(v.id);
+    try {
+      if (permSavedIds.includes(v.id)) {
+        await dbRemovePermSaved(currentUser.id, v.id);
+        optimisticRemovePermSaved(v.id);
+        showToast('Удалено из избранного', 'success');
+      } else {
+        await dbAddPermSaved(currentUser.id, v.id);
+        optimisticAddPermSaved(v.id);
+        showToast('Сохранено в избранное', 'success');
+      }
+    } catch {
+      showToast(permSavedIds.includes(v.id) ? 'Не удалось удалить из избранного' : 'Не удалось сохранить в избранное', 'error');
+    } finally {
+      permSavedMutationIds.current.delete(v.id);
     }
   };
 
