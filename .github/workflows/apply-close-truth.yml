@@ -1,0 +1,51 @@
+name: Apply vacancy close truth
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply_close_truth.py
+      - .github/workflows/apply-close-truth.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply guarded patch
+        run: python3 scripts/apply_close_truth.py
+
+      - name: Network action truth regression
+        run: python3 tests/network_action_truth_test.py
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Diff sanity
+        run: git diff --check
+
+      - name: Commit source changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 'app/(tabs)/feed.tsx' tests/network_action_truth_test.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: wait for server before closing vacancies'
+          git pull --rebase origin main
+          git push origin HEAD:main
