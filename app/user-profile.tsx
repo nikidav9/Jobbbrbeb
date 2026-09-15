@@ -76,6 +76,8 @@ export default function UserProfileScreen() {
   const [userLoadFailed, setUserLoadFailed] = useState(false);
   const [userRetry, setUserRetry] = useState(0);
   const [stats, setStats] = useState<UserStats | null>(null);
+  const [statsLoadFailed, setStatsLoadFailed] = useState(false);
+  const [statsRetry, setStatsRetry] = useState(0);
 
   const contextUser = users.find(u => u.id === userId);
   const user = contextUser ?? fetchedUser;
@@ -105,10 +107,18 @@ export default function UserProfileScreen() {
   }, [userId]);
 
   // Отзывчивость считает сервер: сообщения всех чатов на клиент не грузятся.
+  // При смене профиля не показываем статистику предыдущего человека, а сетевой
+  // сбой не выдаём за отсутствие данных — пользователь может повторить запрос.
   useEffect(() => {
     if (!userId) return;
-    dbUserStats(userId).then(setStats).catch(() => {});
-  }, [userId]);
+    setStats(null);
+    setStatsLoadFailed(false);
+    let cancelled = false;
+    dbUserStats(userId)
+      .then(next => { if (!cancelled) setStats(next); })
+      .catch(() => { if (!cancelled) setStatsLoadFailed(true); });
+    return () => { cancelled = true; };
+  }, [userId, statsRetry]);
 
   // Real-time: refresh ratings list when a new rating is submitted for this user (web only)
   useEffect(() => {
@@ -299,7 +309,7 @@ export default function UserProfileScreen() {
               const enough = stats?.enough === true ? stats : null;
               const speed = enough ? replySpeedLabel(enough.medianSeconds) : null;
               const rate = enough ? replyRateLabel(enough.answered, enough.chats) : null;
-              if (!seen && !speed && !rate) return null;
+              if (!seen && !speed && !rate && !statsLoadFailed) return null;
               return (
                 <View style={styles.infoCard}>
                   <Text style={styles.sectionTitle}>Активность</Text>
@@ -311,6 +321,16 @@ export default function UserProfileScreen() {
                   ) : null}
                   {speed ? (
                     <InfoRow label="Скорость" value={<Text style={styles.valText}>{speed}</Text>} />
+                  ) : null}
+                  {statsLoadFailed ? (
+                    <View style={{ marginTop: rs(10), gap: rs(6) }}>
+                      <Text style={{ color: Colors.red, fontSize: rf(13), fontWeight: '600' }}>
+                        Не удалось загрузить отзывчивость
+                      </Text>
+                      <TouchableOpacity onPress={() => setStatsRetry(x => x + 1)} activeOpacity={0.8}>
+                        <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: rf(13) }}>Повторить</Text>
+                      </TouchableOpacity>
+                    </View>
                   ) : null}
                 </View>
               );

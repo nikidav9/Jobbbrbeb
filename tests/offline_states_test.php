@@ -136,6 +136,14 @@ check('чужой профиль: ошибка загрузки не равна 
     str_contains($userProfile, 'userLoadFailed') && str_contains($userProfile, 'Не удалось загрузить профиль'));
 check('чужой профиль: отзывы имеют отдельную ошибку',
     str_contains($userProfile, 'ratingsLoadFailed') && str_contains($userProfile, 'Не удалось загрузить отзывы'));
+check('чужой профиль: ошибка отзывчивости не выглядит отсутствием данных',
+    str_contains($userProfile, 'statsLoadFailed') && str_contains($userProfile, 'Не удалось загрузить отзывчивость'));
+check('чужой профиль: отзывчивость можно загрузить повторно',
+    str_contains($userProfile, 'setStatsRetry(x => x + 1)'));
+check('чужой профиль: старый ответ статистики не попадает в новый профиль',
+    str_contains($userProfile, 'let cancelled = false;')
+    && str_contains($userProfile, 'if (!cancelled) setStats(next);')
+    && str_contains($userProfile, 'return () => { cancelled = true; };'));
 
 $ownProfile = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
 check('свои отзывы: сетевой сбой не выглядит отсутствием отзывов',
