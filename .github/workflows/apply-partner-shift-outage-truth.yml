@@ -42,4 +42,7 @@ jobs:
           git add 'app/(tabs)/feed.tsx' tests/network_action_truth_test.py
           git diff --cached --quiet && exit 0
           git commit -m 'fix: keep partner shift outages truthful'
+          # main может продвинуться, пока идут npm ci/typecheck. Переносим
+          # проверенный коммит поверх свежего head; конфликт останавливает run.
+          git pull --rebase origin main
           git push origin HEAD:main
