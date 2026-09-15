@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../app/candidates.tsx', import.meta.url), 'utf8');
+const source = readFileSync(resolve(process.cwd(), 'app/candidates.tsx'), 'utf8');
 
 const decideStart = source.indexOf('  const onDecide = async');
 const shownStart = source.indexOf('  const shown =', decideStart);
