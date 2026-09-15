@@ -22,6 +22,54 @@ export const FIELD_HINTS = {
 };
 
 /**
+ * Признаки, которые есть у вакансии и которых нет у справочника.
+ *
+ * Добыто разбором прогона по 111 компаниям. Четыре «готовых» источника из семи
+ * оказались не вакансиями: у Ростелекома выбрался справочник из 655 городов, у
+ * МТС — дерево категорий, у Золотого Яблока — меню шапки, у Wildberries —
+ * список направлений. Все они выглядят как `[{id, name}]` и все длиннее
+ * настоящего списка вакансий, а выбор шёл по длине.
+ *
+ * Название сюда НЕ входит: оно есть и у города, и у категории. Считаем только
+ * то, что у справочника взяться неоткуда, — деньги, место, текст обязанностей,
+ * график, работодателя.
+ */
+export const VACANCY_EVIDENCE = {
+  pay: ['salary', 'salaryFrom', 'salaryTo', 'salary_from', 'salary_min', 'salary_max', 'money',
+    'compensation', 'pay', 'wage'],
+  address: ['city', 'cities', 'town', 'location', 'address', 'region', 'office', 'workPlace'],
+  text: ['description', 'shortDescription', 'intro', 'annotation', 'requirements', 'duties',
+    'conditions', 'tasks', 'responsibilities', 'content', 'shortInfo', 'whatWeToDo'],
+  schedule: ['employment', 'empl', 'workFormat', 'work_format', 'schedule', 'workSchedule',
+    'employmentType', 'employment_types', 'experience', 'experienceId', 'experience_type_title'],
+  company: ['company', 'employer', 'organization', 'direction', 'directions', 'department',
+    'team', 'division'],
+  published: ['publicationDate', 'publishedAt', 'published_at', 'createdAt', 'created_at',
+    'updatedAt', 'updated_at', 'externalPublicationDate'],
+};
+
+/**
+ * Сколько признаков вакансии в образце. Ноль-один — почти наверняка справочник.
+ *
+ * Считаем ГРУППЫ, а не поля: три названия зарплаты в одной записи — это всё
+ * ещё один довод, а зарплата вместе с городом и графиком — три разных.
+ */
+export function scoreList(sample) {
+  if (!sample || typeof sample !== 'object') return 0;
+  // Сравниваем по НАЧАЛУ имени, приведя обе стороны к буквам: одно и то же поле
+  // зовут `city`, `city_title` и `cityName`. Перечислять все хвосты бесполезно —
+  // на Wildberries это `city_title` и `direction_role_title`, на следующем сайте
+  // будет свой. Начало имени задаёт смысл, хвост — только огранку.
+  const flat = k => String(k).toLowerCase().replace(/[^a-zа-я]/gi, '');
+  const keys = Object.keys(sample).map(flat);
+  let score = 0;
+  for (const group of Object.values(VACANCY_EVIDENCE)) {
+    if (group.some(h => keys.some(k => k.startsWith(flat(h))))) score += 1;
+  }
+  return score;
+}
+
+/**
  * Похож ли массив на список вакансий.
  *
  * Требуем минимум два элемента: одиночный объект с полем name встречается в
@@ -46,7 +94,7 @@ export function looksLikeVacancies(value) {
 export function findLists(node, path = '', depth = 0, out = []) {
   if (depth > 8 || out.length >= 12) return out;
   if (looksLikeVacancies(node)) {
-    out.push({ path, count: node.length, sample: node[0] });
+    out.push({ path, count: node.length, sample: node[0], score: scoreList(node[0]) });
     return out;
   }
   if (Array.isArray(node)) {
@@ -98,4 +146,40 @@ export function parseSiteList(text) {
     out.push({ name: name || host, url });
   }
   return out;
+}
+
+/** Параметры, которые НЕ сужают выдачу: разбивка на страницы и язык. */
+const HARMLESS_PARAMS = /^(limit|offset|page|per_?page|take|skip|size|count|start|pagination|lang|language|locale|sort|order)$/i;
+
+/**
+ * Не сужен ли найденный адрес фильтром.
+ *
+ * Разведка приходит на конкретный раздел сайта, и сайт зовёт своё API уже с
+ * фильтром этого раздела. Записать такой адрес в настройку значит навсегда
+ * забрать только кусок: у X5 это `?business_units=10`, то есть одно
+ * подразделение из всех. Нам нужны ВСЕ виды вакансий, поэтому такой адрес надо
+ * показать человеку, а не молча принять.
+ *
+ * Пустое значение не в счёт: `search=&minExperience=` у Lamoda — это незаполненные
+ * поля формы, они ничего не сужают.
+ */
+export function endpointWarning(url) {
+  let params;
+  try {
+    params = new URL(url).searchParams;
+  } catch {
+    return null;
+  }
+  const narrowing = [];
+  for (const [key, value] of params) {
+    if (!value) continue;
+    // Имена вида `pagination[limit]` смотрим и целиком, и по внутренней части:
+    // разбивку на страницы так пишет Strapi и всё, что на нём, — у Lamoda
+    // именно так. А вот `filter[city]` внутренней частью и выдаст себя.
+    const inner = key.replace(/^.*\[|\]$/g, '') || key;
+    if (HARMLESS_PARAMS.test(key) || HARMLESS_PARAMS.test(inner)) continue;
+    narrowing.push(`${key}=${value}`);
+  }
+  if (!narrowing.length) return null;
+  return `адрес сужен фильтром (${narrowing.join(', ')}) — возможно, это только часть вакансий`;
 }

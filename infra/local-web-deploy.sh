@@ -63,76 +63,23 @@ set -a
 . "$SECRETS"
 set +a
 
-# jm_ext_sources уже используется работающим сборщиком Arbihunter. Если общий
-# журнал миграций застрял на старой, не связанной с web ошибке, новый
-# системный источник не должен из-за этого исчезать из production. Upsert
-# меняет только конфигурационную строку trudvsem и безопасен при повторах.
-if (
-  cd "$REPO/infra"
-  docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
-    psql -v ON_ERROR_STOP=1 -U supabase_admin -d postgres <<'SQL'
-insert into public.jm_ext_sources
-  (id, name, url, enabled, period_min, environment)
-values
-  ('trudvsem', 'Работа в России', 'https://jobtoo.ru/api/trudvsem.php?v=2', true, 120, 'production')
-on conflict (id) do update
-set name = excluded.name,
-    url = excluded.url,
-    enabled = true,
-    period_min = excluded.period_min,
-    environment = excluded.environment,
-    last_run_at = null,
-    consecutive_failures = 0;
-notify pgrst, 'reload schema';
-SQL
-) >/tmp/jt-trudvsem-source.log 2>&1; then
-  log "SOURCE $HEAD: trudvsem ready"
-else
-  log "SOURCE_FAIL $HEAD: trudvsem registration failed"
-fi
+# Источник «Работа в России» (trudvsem) здесь когда-то заводился заново при
+# каждом выкате — upsert со `set enabled = true`. Из-за этого миграция 072,
+# которая его ВЫКЛЮЧАЛА, отменялась следующим же деплоем, и выключение
+# фактически не работало ни дня. Источник удалён миграцией 073, блок убран.
+# Урок общий: строка, включающая источник на каждом выкате, сильнее любой
+# миграции, которая его выключает.
 
 
-# Постоянный worker полного импорта. Один вызов ingest.php ограничен по времени,
-# поэтому service повторяет его с сохранённого checkpoint до последней страницы.
-# Timer затем делает полный московский обход каждые два часа.
-cat >/etc/systemd/system/jt-trudvsem-import.service <<'UNIT'
-[Unit]
-Description=JobToo full trudvsem vacancy import
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /opt/jobtoo/infra/trudvsem-import-loop.sh
-Nice=10
-# Полный обход официального API состоит из сотен страниц и при медленном
-# upstream занимает заметно больше стандартных 90 секунд некоторых systemd-
-# конфигураций. Не даём manager оборвать worker посреди сохранённого обхода.
-TimeoutStartSec=8h
-Restart=on-failure
-RestartSec=1min
-UNIT
-
-cat >/etc/systemd/system/jt-trudvsem-import.timer <<'TIMER'
-[Unit]
-Description=Run full JobToo trudvsem import regularly
-
-[Timer]
-OnBootSec=2min
-OnUnitInactiveSec=2h
-Persistent=true
-RandomizedDelaySec=2min
-Unit=jt-trudvsem-import.service
-
-[Install]
-WantedBy=timers.target
-TIMER
-
+# Таймер полного импорта «Работы в России» удалён вместе с источником. Юнит
+# остаётся на уже выкаченных машинах, поэтому гасим его явно: иначе он и дальше
+# будет раз в два часа дёргать ingest.php по несуществующему источнику.
+# Команды безопасны при повторах и на машине, где юнита никогда не было.
+systemctl disable --now jt-trudvsem-import.timer >/dev/null 2>&1 || true
+systemctl disable --now jt-trudvsem-import.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/jt-trudvsem-import.timer /etc/systemd/system/jt-trudvsem-import.service
 systemctl daemon-reload
-systemctl enable --now jt-trudvsem-import.timer >/dev/null
-systemctl reset-failed jt-trudvsem-import.service >/dev/null 2>&1 || true
-systemctl start --no-block jt-trudvsem-import.service || true
-log "INGEST_TIMER $HEAD: trudvsem full import started"
+log "INGEST_TIMER $HEAD: trudvsem import timer removed"
 
 # SuperJob также отдаёт каталог страницами. Отдельный worker не даёт ему
 # ждать, пока долгий обход другого источника освободит общий ingest.php.

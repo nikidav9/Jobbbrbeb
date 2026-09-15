@@ -130,7 +130,6 @@ jobs:
           node --check public/sw.js
           bash -n infra/bootstrap.sh
           find infra -maxdepth 1 -name '*.sh' -print0 | xargs -0 -n1 bash -n
-          python3 tests/trudvsem_infra_test.py
           python3 tests/superjob_infra_test.py
           python3 tests/headhunter_infra_test.py
           python3 tests/external_filter_count_test.py

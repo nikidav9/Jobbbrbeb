@@ -1,72 +1,186 @@
 # Карьерные сайты российских компаний — цель разведки.
 #
-# Список составлен владельцем проекта под ДВА раздела JobToo:
-#   «Подработка» — линейный персонал (ритейл, склад, доставка, общепит);
-#   «Работа»     — постоянная занятость в крупных компаниях.
-# Этим он отличается от каталога cofinder, где все категории офисно-айтишные,
-# а в «Логистике» ноль вакансий (docs/источники-вакансий-разбор.md).
+# Один список на всё: собственный перечень владельца (62 компании под оба
+# раздела приложения) плюс 111 российских компаний из каталога cofinder.
+#
+# Что здесь считается повтором. ОДИН И ТОТ ЖЕ АДРЕС — повтор, таких нет ни
+# одного. Разные разделы одного сайта повтором НЕ считаются: у Самоката корень
+# и /vacancies-business ведут к разным наборам вакансий, а нам нужны ВСЕ виды,
+# не один. Поэтому у шести компаний по две строки, и раздел дописан к названию,
+# чтобы в отчёте они не сливались. Задвоиться в ленте им не даст отпечаток
+# «компания + должность + адрес» (ing_dedupe_key в php-proxy/ingest.php).
+#
+# Иностранные компании каталога (49 штук: Кипр, Армения, США) не взяты —
+# решение владельца, нас интересуют только российские.
 #
 # Формат строки: Название<TAB>адрес. Пустые строки и # игнорируются.
-# Все 62 домена проверены на резолвинг 15.09.2026 — мёртвых нет.
 Пятёрочка	https://rabota5ka.ru/vacancies
 Перекрёсток	https://rabota.perekrestok.ru/vacancies
-Магнит	https://rabota.magnit.ru/
-Лента	https://career.lenta.com/
-ВкусВилл	https://vkusvill.ru/job/vacancys/
+Магнит	https://rabota.magnit.ru
+Лента	https://career.lenta.com
+ВкусВилл	https://vkusvill.ru/job/vacancys
 METRO	https://rabota.metro-cc.ru/vacancies/store
-О'КЕЙ	https://www.okmarket.ru/career/vacancies/
-Глобус	https://rabota.globus.ru/
-Красное&Белое	https://krasnoeibeloe.ru/job/
+О'КЕЙ	https://www.okmarket.ru/career/vacancies
+Глобус	https://rabota.globus.ru
+Красное&Белое	https://krasnoeibeloe.ru/job
 Fix Price	https://fix-price.com/work/store
-Чижик	https://chizhik.club/rabota/
-ДИКСИ	https://dixy.ru/group/career/vacancy/
-Монетка	https://career.monetka.ru/
-SPAR	https://myspar.ru/career/
-Слата	https://www.slata.ru/vacancy/
-Мария-Ра	https://www.maria-ra.ru/karera-v-seti/vakansii/
-Ярче!	https://работаярче.рф/
+Чижик	https://chizhik.club/rabota
+ДИКСИ	https://dixy.ru/group/career/vacancy
+Монетка	https://career.monetka.ru
+SPAR	https://myspar.ru/career
+Слата	https://www.slata.ru/vacancy
+Мария-Ра	https://www.maria-ra.ru/karera-v-seti/vakansii
+Ярче!	https://работаярче.рф
 Wildberries / РВБ	https://career.rwb.ru/vacancies
-Ozon	https://career.ozon.ru/vacancy/
+Ozon	https://career.ozon.ru/vacancy
 Lamoda	https://job.lamoda.ru/vacancies
-Самокат	https://vacancy.samokat.ru/
-Спортмастер	https://job.sportmaster.ru/
+Самокат · /	https://vacancy.samokat.ru
+Спортмастер · /	https://job.sportmaster.ru
 М.Видео-Эльдорадо	https://career.mvideoeldorado.ru/vacancies
-DNS	https://www.dns-shop.ru/jobs/
-Hoff	https://job.hoff.ru/
+DNS	https://www.dns-shop.ru/jobs
+Hoff	https://job.hoff.ru
 Лемана ПРО	https://rabota.lemanapro.ru/vacancies
-Петрович	https://petrovichjob.ru/
-Детский мир	https://jobs.detmir.ru/
-Золотое Яблоко	https://job.goldapple.ru/
+Петрович	https://petrovichjob.ru
+Детский мир	https://jobs.detmir.ru
+Золотое Яблоко · /	https://job.goldapple.ru
 РИВ ГОШ	https://rivegauche.ru/work
-Улыбка радуги	https://rabota.r-ulybka.ru/
-Подружка	https://rabotavpodrygke.ru/
-kari	https://kari.com/job/
-Gloria Jeans	https://lookbook.gloria-jeans.ru/
+Улыбка радуги	https://rabota.r-ulybka.ru
+Подружка	https://rabotavpodrygke.ru
+kari	https://kari.com/job
+Gloria Jeans	https://lookbook.gloria-jeans.ru
 Befree	https://befree.ru/job
-HENDERSON	https://henderson.ru/company/vacancies/
+HENDERSON	https://henderson.ru/company/vacancies
 CDEK	https://rabota.cdek.ru/vacancies
-Деловые Линии	https://job.dellin.ru/
+Деловые Линии	https://job.dellin.ru
 ПЭК	https://hr.pecom.ru
 DPD Россия	https://dpd.ru/vacancy
 Почта России	https://www.pochta.ru/vacancy-list
 РЖД	https://team.rzd.ru/career/vacancies
-Аэрофлот	https://vacancy.aeroflot.ru/
-Шереметьево	https://job.svo.su/
+Аэрофлот	https://vacancy.aeroflot.ru
+Шереметьево	https://job.svo.su
 Черкизово	https://vacancies.cherkizovo.com/vacancies
-Северсталь	https://career.severstal.com/vacancies/
-СИБУР	https://career.sibur.ru/vacancies/
-Балтика	https://career.baltika.ru/
-Норникель	https://career.nornickel.ru/vacancies/
-ФосАгро	https://www.phosagro.ru/career-education/vacancies/
-РУСАЛ	https://www.rusal.ru/career/vacancies/
-Додо Пицца	https://rabotavdodo.ru/
-Вкусно — и точка	https://rabotaitochka.ru/
+Северсталь	https://career.severstal.com/vacancies
+СИБУР	https://career.sibur.ru/vacancies
+Балтика	https://career.baltika.ru
+Норникель	https://career.nornickel.ru/vacancies
+ФосАгро	https://www.phosagro.ru/career-education/vacancies
+РУСАЛ	https://www.rusal.ru/career/vacancies
+Додо Пицца	https://rabotavdodo.ru
+Вкусно — и точка	https://rabotaitochka.ru
 ROSTIC'S	https://rostics.ru/ru/career
 Burger King Россия	https://burgerkingrus.ru/rabota
-Теремок	https://rabota.teremok.ru/vacancies/
-Кофемания	https://rabota.coffeemania.ru/
-Шоколадница	https://regions.shoko.ru/career/
+Теремок	https://rabota.teremok.ru/vacancies
+Кофемания	https://rabota.coffeemania.ru
+Шоколадница	https://regions.shoko.ru/career
 AZIMUT Hotels	https://azimuthotels.com/ru/info/career
-Сбер	https://rabota.sber.ru/
-МегаФон	https://job.megafon.ru/
-Яндекс	https://yandex.ru/jobs
+Сбер · /	https://rabota.sber.ru
+МегаФон · /	https://job.megafon.ru
+Яндекс · /jobs	https://yandex.ru/jobs
+Авиасейлс	https://www.aviasales.ru/about/vacancies
+VK	https://team.vk.company/vacancy
+Яндекс · /jobs/vacancies	https://yandex.ru/jobs/vacancies
+Т-Банк · /career/vacancies/it	https://www.tbank.ru/career/vacancies/it
+Т-Банк · /career/vacancies	https://www.tbank.ru/career/vacancies
+Avito	https://career.avito.com/vacancies
+Золотое Яблоко · /search/all	https://job.goldapple.ru/search/all
+МТС	https://job.mts.ru/vacancies
+Иви	https://corp.ivi.ru/vacancies
+Росатом	https://rosatom-career.ru/vacancies
+2ГИС	https://job.2gis.ru
+Сбер · /search	https://rabota.sber.ru/search
+Twinby	https://twinby.ru/career
+GRASS	https://job.thgrass.com/vacancies
+Островок	https://career.ostrovok.ru/vacancy
+X5 Tech	https://x5.tech/vacancy
+Альфа-Банк	https://job.alfabank.ru/vacancies
+Cloud.ru	https://cloud.ru/career/vacancies
+Kaspersky	https://careers.kaspersky.ru/vacancies
+Точка Банк	https://hr.tochka.com/vacancies
+Контур	https://kontur.ru/career/vacancies
+Yadro	https://careers.yadro.com/vacancies
+Ростелеком	https://job.rt.ru/search
+КРОК	https://careers.croc.ru/vacancies
+IBS	https://ibs.ru/career/jobs
+ВТБ	https://rabota-vtb.ru/career
+Самокат · /vacancies-business	https://vacancy.samokat.ru/vacancies-business
+M2 Tech	https://tech.m2.ru
+Macroscop	https://pro.macroscop.com/vacancies
+Циан	https://krasnodar.cian.ru/vacancies
+Stepik	https://welcome.stepik.org/ru/careers
+Aston	https://career.astondevs.ru/vacancy
+amoCRM	https://www.amocrm.ru/jobs
+Evercode Lab	https://evercodelab.ru/vacancies
+IT_One	https://www.it-one.ru/vacancies
+Гараж 8	https://garage-eight.com/vacancies
+Positive Technologies	https://ptsecurity.com/about/vacancy
+Пачка	https://pachca.com/career
+МегаФон · /vacancy/all/any	https://job.megafon.ru/vacancy/all/any
+КОРУС Консалтинг	https://career.korusconsulting.ru/vacancies
+Selecty	https://selecty.ru/it-vacancy
+Lesta Games	https://join.lesta.team
+Axenix	https://axenix.pro/career
+Тензор	https://tensor.ru/vacancies
+Deloitte	https://careers.delret.ru
+iSpring	https://www.ispring.ru/company/jobs/vacancies
+Билайн	https://job.beeline.ru/vacancies
+1С	https://1c.ru/rus/firm1c/vacan/search
+Spotware Systems	https://spotware.applytojob.com/apply
+Спортмастер · /vacancies	https://job.sportmaster.ru/vacancies
+Coral	https://coral.tech/it-main
+kokos group	https://career.kokocgroup.ru/vacancies
+ГНИВЦ	https://career.gnivc.ru/vacancies
+Группа Астра	https://astra.ru/about/career/vacancies
+Agima	https://www.agima.ru/careers
+RedLab	https://redlab.dev/career
+Bell Integrator	https://bellintegrator.ru/information/vacancies
+НСПК	https://www.nspk.ru/vacancies
+Navio	https://navio.auto/vacancies
+Инфосистемы Джет	https://jet.su/career/vacancies
+Mish	https://mish.design/ru/vacancies
+Протей	https://protei.ru/vacancies
+Индасофт	https://indusoft.ru/about/vacancies
+Селектел	https://selectel.ru/careers/all
+Performance Lab	https://www.performance-lab.ru/vacancy
+Техвилл	https://techvill.ru/vacancies
+Koronatech	https://koronatech.ru/vacancy
+ДатаРу	https://dataru.ru/career/vacancy
+Наумен	https://www.naumen.ru/career/vacancies
+Inline Group	https://inlinegroup.ru/about/jobs
+Just AI	https://careers.just-ai.com/vakansii
+TerraLink	https://terralink.ru/career/vacancies
+Спортс	https://www.sports.ru/football/blogs/3271770.html
+BSL	https://bsl.dev/vacancies.html
+Globus IT	https://globus-ltd.ru/vacancies
+Softline	https://softline.ru/about/vacancies
+Reksoft	https://career.reksoft.com/vacancies
+Солар	https://team.rt-solar.ru/vacancies
+iFellow	https://ifellow.ru/vacancy
+Галактика	https://galaktika.ru/career
+Cloud Networks	https://cloudnetworks.ru/vacancies
+Notamedia	https://nota.media/career
+С-Терра	https://www.s-terra.ru/company/rabota-u-nas
+Orion soft	https://career.orionsoft.ru/vacancy
+Centicore Group	https://centicore.ru/vacancies
+Адвантум	https://advantum.ru/jobs
+Юзтех	https://usetech.ru/career
+Baum	https://baum.ru/job
+BINOM	https://binom.systems/vakansii
+Effective Technologies	https://career.effective-group.ru
+Rush Agency	https://www.rush-agency.ru/jobs
+Directum	https://career.directum.ru/vacancy?from=main_button_vacancy
+Rubius	https://rubius.com/ru/company/career
+Arenadata	https://career.arenadata.tech
+Crosstech	https://crosstech.ru/vacancies
+Хоулмонт	https://job.haulmont.ru/career
+PrideInBrains	https://prideinbrains.com/%D0%92%D0%B0%D0%BA%D0%B0%D0%BD%D1%81%D0%B8%D0%B8
+Траектория технологий	https://trctech.ru/karera
+PIX Robotics	https://pix.ru/company/vacancy
+Лоция	https://loodsen.ru/vacancies
+SimbirSoft	https://www.simbirsoft.com/vacancies
+SearchInform	https://searchinform.ru/company/jobs
+Аурига	https://hr.auriga.ru
+Linx	https://linx.ru/about/career
+Контакт	https://itcontact.ru/vacancies
+РДВ Технолоджи	https://rdwcomp.ru/kompaniya/vakansii
+ITG	https://itglobal.com/ru-ru/company/vacancies
+Дельта Компьютерс	https://deltacomputers.ru/vacancies

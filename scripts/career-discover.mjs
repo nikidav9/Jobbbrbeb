@@ -41,7 +41,7 @@
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-import { findLists, guessMap, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
+import { endpointWarning, findLists, guessMap, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
 import process from 'node:process';
 
 // Сколько компаний брать. Пусто или 0 — весь список: своих сайтов 62, и
@@ -61,6 +61,11 @@ const UA = 'Mozilla/5.0 (compatible; JobToo/1.0; +https://jobtoo.ru; support@job
 // Свой список компаний. Путь считаем от файла скрипта, а не от рабочего
 // каталога: запускают его и из корня репозитория, и из Actions.
 const OWN_LIST = new URL('./career-sites.tsv', import.meta.url).pathname;
+// Сколько признаков вакансии (деньги, место, обязанности, график, работодатель)
+// должно быть в записи, чтобы считать список вакансиями. См. scoreList.
+const MIN_EVIDENCE = Number(process.env.DISCOVER_MIN_EVIDENCE || 2);
+// Сколько адресов вакансии пробовать браузером, прежде чем сдаться.
+const PROBE_TRIES = Number(process.env.DISCOVER_PROBE_TRIES || 8);
 
 /** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -73,22 +78,55 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  * cf_normalize, и в cf_json_items, поэтому шаблон адреса надо не угадать, а
  * проверить: подставляем значение и смотрим, отвечает ли страница.
  */
-async function probeUrlTemplate(page, origin, sample, map) {
+async function probeUrlTemplate(context, origin, sample, map) {
   const direct = map.url && typeof sample[map.url] === 'string' ? sample[map.url] : '';
   if (/^https:\/\//i.test(direct)) return { url_template: '', checked: direct, ok: true };
 
-  const idField = map.id || 'id';
-  const value = sample[idField];
-  if (value === undefined || value === null || value === '') return { ok: false };
+  // Проверяем адрес БРАУЗЕРОМ, а не запросом. Прежняя проверка смотрела на код
+  // ответа, и на одностраничных сайтах это не значило ничего: job.rt.ru отдаёт
+  // 26 КБ своей оболочки и на выдуманный /vacancy/jobtoo-probe-404 — замерено.
+  // От этого разом шло и ложное «готов» (адрес подтверждался у кого угодно), и
+  // ложное «нет адреса» у Сбера и Lamoda, где страница вакансии есть, но её
+  // рисует скрипт. Признак настоящей страницы один: на ней виден заголовок
+  // именно этой вакансии, а на выдуманном адресе — нет.
+  const titleField = map.title;
+  const title = titleField ? String(sample[titleField] ?? '').trim() : '';
+  if (title.length < 8) return { ok: false, reason: 'нечем опознать страницу вакансии' };
 
-  for (const shape of URL_SHAPES) {
-    const candidate = origin + shape.replace('{v}', encodeURIComponent(String(value)));
+  const probePage = await context.newPage();
+  const render = async url => {
     try {
-      const res = await page.request.get(candidate, { timeout: 12000, maxRedirects: 3 });
-      if (res.status() === 200) {
-        return { url_template: origin + shape.replace('{v}', `{${idField}}`), checked: candidate, ok: true };
+      await probePage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await probePage.waitForTimeout(1500);
+      return await probePage.evaluate(() => document.body?.innerText || '');
+    } catch { return null; }
+  };
+  try {
+    // Контроль: что показывает сайт по заведомо несуществующему адресу. Если
+    // там уже есть наш заголовок, сайт показывает одно и то же везде.
+    const bogus = (await render(`${origin}/vacancy/jobtoo-probe-404`)) || '';
+    if (bogus.includes(title)) return { ok: false, reason: 'сайт показывает одно и то же по любому адресу' };
+
+    // Slug в адресе встречается чаще числового id, поэтому пробуем оба. Каждая
+    // попытка — загрузка страницы браузером, поэтому их число ограничено: пять
+    // форм на два поля дали бы десяток загрузок на компанию, а список вырос до
+    // 163 сайтов.
+    const fields = [map.id || 'id', 'slug', 'id'].filter((f, i, a) => a.indexOf(f) === i);
+    let tries = 0;
+    for (const idField of fields) {
+      const value = sample[idField];
+      if (value === undefined || value === null || value === '') continue;
+      for (const shape of URL_SHAPES) {
+        if (tries++ >= PROBE_TRIES) return { ok: false, reason: `типовые пути не подошли (${tries})` };
+        const candidate = origin + shape.replace('{v}', encodeURIComponent(String(value)));
+        const text = await render(candidate);
+        if (text && text.includes(title)) {
+          return { url_template: origin + shape.replace('{v}', `{${idField}}`), checked: candidate, ok: true };
+        }
       }
-    } catch { /* следующий вариант */ }
+    }
+  } finally {
+    try { await probePage.close(); } catch { /* вкладка уже мертва */ }
   }
   return { ok: false };
 }
@@ -129,8 +167,9 @@ async function inspect(target, i) {
 
   // Картинки, шрифты, видео и рекламу не грузим вовсе. Нас интересуют только
   // данные, а на карьерных страницах именно тяжёлые ресурсы занимают почти всё
-  // время загрузки.
-  await page.route('**/*', route => {
+  // время загрузки. Правило на контексте, а не на вкладке: его должна унаследовать
+  // и вкладка, которой проверяется адрес вакансии.
+  await context.route('**/*', route => {
     const type = route.request().resourceType();
     // Стили НЕ блокируем: экономия от них мала, а часть сайтов без CSS
     // рендерится иначе или не рендерится вовсе. Режем только заведомо
@@ -165,38 +204,44 @@ async function inspect(target, i) {
       await page.waitForTimeout(250);
     }
 
-    // Сначала сетевые ответы, затем — состояние страницы. Второе спасает те
-    // сайты, что кладут данные прямо в HTML (Next.js, Nuxt): сетевого запроса
-    // там нет вовсе.
+    // Смотрим И сетевые ответы, И состояние страницы. Второе спасает сайты,
+    // кладущие данные прямо в HTML (Next.js, Nuxt), а перебирать оба источника
+    // надо всегда: у сайта может быть и справочник в запросе, и вакансии в HTML.
     let best = null;
+    const consider = (found, endpoint, from) => {
+      const candidate = { ...found, endpoint, from };
+      if (!best || candidate.score > best.score
+        || (candidate.score === best.score && candidate.count > best.count)) best = candidate;
+    };
     for (const cap of captured) {
-      for (const found of findLists(cap.body)) {
-        if (!best || found.count > best.count) best = { ...found, endpoint: cap.url, from: 'запрос' };
-      }
+      for (const found of findLists(cap.body)) consider(found, cap.url, 'запрос');
     }
-    if (!best) {
-      const embedded = await page.evaluate(() => {
-        const out = [];
-        const next = document.getElementById('__NEXT_DATA__');
-        if (next?.textContent) out.push(next.textContent);
-        for (const key of ['__NUXT__', '__INITIAL_STATE__', '__APOLLO_STATE__']) {
-          const value = window[key];
-          if (value) { try { out.push(JSON.stringify(value)); } catch { /* циклы */ } }
-        }
-        return out;
-      });
-      for (const raw of embedded) {
-        let data; try { data = JSON.parse(raw); } catch { continue; }
-        for (const found of findLists(data)) {
-          if (!best || found.count > best.count) best = { ...found, endpoint: '(в HTML страницы)', from: 'HTML' };
-        }
+    const embedded = await page.evaluate(() => {
+      const out = [];
+      const next = document.getElementById('__NEXT_DATA__');
+      if (next?.textContent) out.push(next.textContent);
+      for (const key of ['__NUXT__', '__INITIAL_STATE__', '__APOLLO_STATE__']) {
+        const value = window[key];
+        if (value) { try { out.push(JSON.stringify(value)); } catch { /* циклы */ } }
       }
+      return out;
+    });
+    for (const raw of embedded) {
+      let data; try { data = JSON.parse(raw); } catch { continue; }
+      for (const found of findLists(data)) consider(found, '(в HTML страницы)', 'HTML');
+    }
+    // Один признак вакансии или ноль — это справочник, а не вакансии. Прогон по
+    // 111 компаниям дал четыре таких «находки» из семи: города, категории,
+    // меню шапки, направления. Лучше честное «не нашли», чем источник-пустышка.
+    if (best && best.score < MIN_EVIDENCE) {
+      console.log(`${label} — нашёлся только справочник (${best.count} шт., ${best.path || 'корень'})`);
+      best = null;
     }
 
     if (best) {
       const origin = new URL(target.url).origin;
       const map = guessMap(best.sample);
-      const probe = await probeUrlTemplate(page, origin, best.sample, map);
+      const probe = await probeUrlTemplate(context, origin, best.sample, map);
       if (probe.url_template) map.url_template = probe.url_template;
       // Догадка про ссылку не подтвердилась — честно говорим об этом: без
       // адреса вакансии источник включать нельзя, коннектор её отбросит.
@@ -204,13 +249,18 @@ async function inspect(target, i) {
         name: target.name, url: target.url,
         status: probe.ok ? 'готов' : 'нет адреса вакансии',
         source: best.from, endpoint: best.endpoint, count: best.count,
+        evidence: best.score,
         list_path: best.path, fields: Object.keys(best.sample).slice(0, 20),
+        ...(probe.ok ? {} : { url_note: probe.reason || 'ни один типовой адрес не подошёл' }),
+        ...(endpointWarning(best.endpoint) ? { filter_note: endpointWarning(best.endpoint) } : {}),
         connector_config: probe.ok
           ? { endpoints: [{ url: best.endpoint, map: { list: best.path, ...map } }] }
           : null,
       };
       console.log(`${label} ${probe.ok ? '✓' : '~'} ${best.count} вакансий, ${best.from}: ${String(best.endpoint).slice(0, 70)}`);
-      if (!probe.ok) console.log(`${' '.repeat(28)}адрес вакансии не подтверждён — нужен вручную`);
+      const narrowed = endpointWarning(best.endpoint);
+      if (narrowed) console.log(`${' '.repeat(28)}${narrowed}`);
+      if (!probe.ok) console.log(`${' '.repeat(28)}адрес не подтверждён: ${probe.reason || 'типовые пути не подошли'}`);
     } else {
       console.log(`${label} — вакансий не видно`);
     }
