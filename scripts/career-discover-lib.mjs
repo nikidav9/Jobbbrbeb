@@ -72,3 +72,30 @@ export function guessMap(sample) {
 
 /** Варианты адреса вакансии, которые стоит проверить, если ссылки в ответе нет. */
 export const URL_SHAPES = ['/vacancy/{v}', '/vacancies/{v}', '/job/{v}', '/jobs/{v}', '/v/{v}'];
+
+/**
+ * Разбор списка сайтов: `Название<TAB>адрес`, `#` — комментарий.
+ *
+ * Название берём из файла, а не из имени хоста: в отчёте «Пятёрочка» читается,
+ * а `rabota5ka.ru` — нет, и сверять результат разведки со списком владельца
+ * придётся глазами. Строка без табуляции — просто адрес, имя тогда хостовое.
+ */
+export function parseSiteList(text) {
+  const out = [];
+  for (const raw of String(text).split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const tab = line.indexOf('\t');
+    const name = tab > 0 ? line.slice(0, tab).trim() : '';
+    const url = (tab > 0 ? line.slice(tab + 1) : line).trim();
+    if (!/^https?:\/\//i.test(url)) continue;
+    let host;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      continue;
+    }
+    out.push({ name: name || host, url });
+  }
+  return out;
+}

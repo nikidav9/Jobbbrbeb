@@ -20,12 +20,12 @@
  * DevTools, только само и по списку.
  *
  * Запуск:
- *   node scripts/career-discover.mjs                     # список из cofinder
- *   node scripts/career-discover.mjs sites.txt           # свой список, по адресу в строке
+ *   node scripts/career-discover.mjs                     # свой список career-sites.tsv
+ *   node scripts/career-discover.mjs sites.tsv           # другой список: Название<TAB>адрес
  *   node scripts/career-discover.mjs https://job.x.ru/   # один сайт
  *
  * Настройки через окружение:
- *   DISCOVER_LIMIT=30      сколько компаний взять из списка (по умолчанию 30)
+ *   DISCOVER_LIMIT=0       сколько компаний взять из списка (0 — весь)
  *   DISCOVER_OUT=путь      куда писать результат (по умолчанию career-discovery.json)
  *   DISCOVER_CONCURRENCY=5 сколько сайтов смотрим одновременно (максимум 8)
  *   DISCOVER_SETTLE_MS     сколько ждать догрузку вакансий, по умолчанию 5000
@@ -41,10 +41,12 @@
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-import { findLists, guessMap, URL_SHAPES } from './career-discover-lib.mjs';
+import { findLists, guessMap, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
 import process from 'node:process';
 
-const LIMIT = Number(process.env.DISCOVER_LIMIT || 30);
+// Сколько компаний брать. Пусто или 0 — весь список: своих сайтов 62, и
+// прежний предел в 30 молча отрезал бы половину.
+const LIMIT = Number(process.env.DISCOVER_LIMIT || 0) || Infinity;
 const OUT = process.env.DISCOVER_OUT || 'career-discovery.json';
 // Сколько сайтов смотрим одновременно. Пауза между сайтами защищала бы от
 // долбёжки ОДНОГО хоста, но мы ходим по разным: на каждый всё равно один заход.
@@ -56,6 +58,9 @@ const TIMEOUT = Number(process.env.DISCOVER_TIMEOUT_MS || 30000);
 // как только список найден, — это и есть основная экономия времени.
 const SETTLE_MS = Number(process.env.DISCOVER_SETTLE_MS || 5000);
 const UA = 'Mozilla/5.0 (compatible; JobToo/1.0; +https://jobtoo.ru; support@jobtoo.ru)';
+// Свой список компаний. Путь считаем от файла скрипта, а не от рабочего
+// каталога: запускают его и из корня репозитория, и из Actions.
+const OWN_LIST = new URL('./career-sites.tsv', import.meta.url).pathname;
 
 /** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -88,15 +93,15 @@ async function probeUrlTemplate(page, origin, sample, map) {
   return { ok: false };
 }
 
-/** Список карьерных сайтов: из аргумента, из файла или из каталога cofinder. */
+/** Список карьерных сайтов: из аргумента, из файла или свой из репозитория. */
 async function loadTargets(arg) {
   if (arg && /^https?:\/\//i.test(arg)) return [{ name: new URL(arg).hostname, url: arg }];
-  if (arg && fs.existsSync(arg)) {
-    return fs.readFileSync(arg, 'utf8').split('\n').map(s => s.trim()).filter(s => /^https?:\/\//i.test(s))
-      .map(u => ({ name: new URL(u).hostname, url: u }));
-  }
-  // По умолчанию берём каталог конкурента: там 160 компаний вместе с адресами
-  // их карьерных сайтов, и это готовый перечень, а не догадки.
+  if (arg && fs.existsSync(arg)) return parseSiteList(fs.readFileSync(arg, 'utf8')).slice(0, LIMIT);
+  // По умолчанию — свой список (scripts/career-sites.tsv). Каталог cofinder
+  // тоже перечень компаний, но его категории сплошь офисно-айтишные: в
+  // «Логистике» у него ноль вакансий, поиск по «комплектовщик» пуст. Для
+  // раздела «Подработка» он бесполезен, а наш список собран под оба раздела.
+  if (fs.existsSync(OWN_LIST)) return parseSiteList(fs.readFileSync(OWN_LIST, 'utf8')).slice(0, LIMIT);
   const res = await fetch('https://cofinder.ru/api/v1/companies/?limit=500', {
     headers: { 'User-Agent': UA },
   });

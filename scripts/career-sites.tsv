@@ -1,0 +1,72 @@
+# Карьерные сайты российских компаний — цель разведки.
+#
+# Список составлен владельцем проекта под ДВА раздела JobToo:
+#   «Подработка» — линейный персонал (ритейл, склад, доставка, общепит);
+#   «Работа»     — постоянная занятость в крупных компаниях.
+# Этим он отличается от каталога cofinder, где все категории офисно-айтишные,
+# а в «Логистике» ноль вакансий (docs/источники-вакансий-разбор.md).
+#
+# Формат строки: Название<TAB>адрес. Пустые строки и # игнорируются.
+# Все 62 домена проверены на резолвинг 15.09.2026 — мёртвых нет.
+Пятёрочка	https://rabota5ka.ru/vacancies
+Перекрёсток	https://rabota.perekrestok.ru/vacancies
+Магнит	https://rabota.magnit.ru/
+Лента	https://career.lenta.com/
+ВкусВилл	https://vkusvill.ru/job/vacancys/
+METRO	https://rabota.metro-cc.ru/vacancies/store
+О'КЕЙ	https://www.okmarket.ru/career/vacancies/
+Глобус	https://rabota.globus.ru/
+Красное&Белое	https://krasnoeibeloe.ru/job/
+Fix Price	https://fix-price.com/work/store
+Чижик	https://chizhik.club/rabota/
+ДИКСИ	https://dixy.ru/group/career/vacancy/
+Монетка	https://career.monetka.ru/
+SPAR	https://myspar.ru/career/
+Слата	https://www.slata.ru/vacancy/
+Мария-Ра	https://www.maria-ra.ru/karera-v-seti/vakansii/
+Ярче!	https://работаярче.рф/
+Wildberries / РВБ	https://career.rwb.ru/vacancies
+Ozon	https://career.ozon.ru/vacancy/
+Lamoda	https://job.lamoda.ru/vacancies
+Самокат	https://vacancy.samokat.ru/
+Спортмастер	https://job.sportmaster.ru/
+М.Видео-Эльдорадо	https://career.mvideoeldorado.ru/vacancies
+DNS	https://www.dns-shop.ru/jobs/
+Hoff	https://job.hoff.ru/
+Лемана ПРО	https://rabota.lemanapro.ru/vacancies
+Петрович	https://petrovichjob.ru/
+Детский мир	https://jobs.detmir.ru/
+Золотое Яблоко	https://job.goldapple.ru/
+РИВ ГОШ	https://rivegauche.ru/work
+Улыбка радуги	https://rabota.r-ulybka.ru/
+Подружка	https://rabotavpodrygke.ru/
+kari	https://kari.com/job/
+Gloria Jeans	https://lookbook.gloria-jeans.ru/
+Befree	https://befree.ru/job
+HENDERSON	https://henderson.ru/company/vacancies/
+CDEK	https://rabota.cdek.ru/vacancies
+Деловые Линии	https://job.dellin.ru/
+ПЭК	https://hr.pecom.ru
+DPD Россия	https://dpd.ru/vacancy
+Почта России	https://www.pochta.ru/vacancy-list
+РЖД	https://team.rzd.ru/career/vacancies
+Аэрофлот	https://vacancy.aeroflot.ru/
+Шереметьево	https://job.svo.su/
+Черкизово	https://vacancies.cherkizovo.com/vacancies
+Северсталь	https://career.severstal.com/vacancies/
+СИБУР	https://career.sibur.ru/vacancies/
+Балтика	https://career.baltika.ru/
+Норникель	https://career.nornickel.ru/vacancies/
+ФосАгро	https://www.phosagro.ru/career-education/vacancies/
+РУСАЛ	https://www.rusal.ru/career/vacancies/
+Додо Пицца	https://rabotavdodo.ru/
+Вкусно — и точка	https://rabotaitochka.ru/
+ROSTIC'S	https://rostics.ru/ru/career
+Burger King Россия	https://burgerkingrus.ru/rabota
+Теремок	https://rabota.teremok.ru/vacancies/
+Кофемания	https://rabota.coffeemania.ru/
+Шоколадница	https://regions.shoko.ru/career/
+AZIMUT Hotels	https://azimuthotels.com/ru/info/career
+Сбер	https://rabota.sber.ru/
+МегаФон	https://job.megafon.ru/
+Яндекс	https://yandex.ru/jobs
