@@ -59,6 +59,13 @@ jobs:
           npm install --no-save --package-lock=false playwright@1.51.1
           npx playwright install --with-deps chromium
 
+      # Первый прогон упал на `sleep is not defined`: скрипт синтаксически
+      # верен, а имени в рантайме нет. `node --check` такое не видит, eslint
+      # видит — и ходить по чужим сайтам ради этого не нужно. Шаг стоит после
+      # установки playwright, иначе импорт не разрешится.
+      - name: Проверить скрипт целиком
+        run: npx eslint scripts/career-discover.mjs scripts/career-discover-lib.mjs
+
       - name: Проверить разбор до похода в сеть
         run: node --test tests/career-discover.test.mjs
 
