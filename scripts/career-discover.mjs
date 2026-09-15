@@ -41,7 +41,7 @@
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-import { findLists, guessMap, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
+import { endpointWarning, findLists, guessMap, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
 import process from 'node:process';
 
 // Сколько компаний брать. Пусто или 0 — весь список: своих сайтов 62, и
@@ -252,11 +252,14 @@ async function inspect(target, i) {
         evidence: best.score,
         list_path: best.path, fields: Object.keys(best.sample).slice(0, 20),
         ...(probe.ok ? {} : { url_note: probe.reason || 'ни один типовой адрес не подошёл' }),
+        ...(endpointWarning(best.endpoint) ? { filter_note: endpointWarning(best.endpoint) } : {}),
         connector_config: probe.ok
           ? { endpoints: [{ url: best.endpoint, map: { list: best.path, ...map } }] }
           : null,
       };
       console.log(`${label} ${probe.ok ? '✓' : '~'} ${best.count} вакансий, ${best.from}: ${String(best.endpoint).slice(0, 70)}`);
+      const narrowed = endpointWarning(best.endpoint);
+      if (narrowed) console.log(`${' '.repeat(28)}${narrowed}`);
       if (!probe.ok) console.log(`${' '.repeat(28)}адрес не подтверждён: ${probe.reason || 'типовые пути не подошли'}`);
     } else {
       console.log(`${label} — вакансий не видно`);

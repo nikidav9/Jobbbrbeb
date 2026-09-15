@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { findLists, guessMap, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
+import { endpointWarning, findLists, guessMap, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
 
 test('находит список вакансий в ответе Yadro', () => {
   const body = { vacancies: [
@@ -128,12 +128,14 @@ test('свой список компаний разбирается целико
   assert.equal(rows.length, meaningful.length, 'какая-то строка списка не разобралась');
   assert.ok(rows.length >= 150, `компаний слишком мало: ${rows.length}`);
   assert.ok(rows.every(r => r.name && !r.name.includes('http')), 'имя компании потерялось');
-  assert.equal(new Set(rows.map(r => r.url)).size, rows.length, 'адрес повторяется');
-  // Компания ровно один раз. Два адреса одного сайта — это два прохода
-  // разведки по одному и тому же и двойники в ленте следом.
-  const hosts = rows.map(r => new URL(r.url).hostname);
-  assert.equal(new Set(hosts).size, hosts.length,
-    `хост повторяется: ${hosts.filter((h, i) => hosts.indexOf(h) !== i).join(', ')}`);
+  // Повтор — это ОДИН И ТОТ ЖЕ адрес. Разные разделы одного сайта повтором не
+  // считаются: у Самоката корень и /vacancies-business — разные наборы
+  // вакансий, и нужны оба. Поэтому хост проверять нельзя, а адрес — нужно.
+  const urls = rows.map(r => r.url);
+  assert.equal(new Set(urls).size, urls.length,
+    `адрес повторяется: ${urls.filter((u, i) => urls.indexOf(u) !== i).join(', ')}`);
+  // Название при этом должно оставаться различимым, иначе в отчёте две строки
+  // «Самокат» и не понять, какая из какого раздела.
   const names = rows.map(r => r.name);
   assert.equal(new Set(names).size, names.length,
     `название повторяется: ${names.filter((n, i) => names.indexOf(n) !== i).join(', ')}`);
@@ -185,4 +187,43 @@ test('вакансии выигрывают у справочника, даже 
   const best = [...found].sort((a, b) => b.score - a.score || b.count - a.count)[0];
   assert.equal(best.path, 'vacancies', `выбран не тот список: ${best.path}`);
   assert.ok(best.score > found.find(f => f.path === 'cities').score);
+});
+
+test('сужающий фильтр в адресе замечен', () => {
+  const note = endpointWarning('https://prod-lkk-back.x5.ru/api/v1/public/vacancies/filters/?business_units=10');
+  assert.ok(note && note.includes('business_units=10'), `не заметили фильтр: ${note}`);
+});
+
+test('разбивка на страницы и язык фильтром не считаются', () => {
+  assert.equal(endpointWarning('https://careers.yadro.com/api/v1/vacancies/?limit=15'), null);
+  assert.equal(endpointWarning('https://vacancies-app.aviasales.ru/api/vacancies?language=ru'), null);
+});
+
+test('пустые поля формы фильтром не считаются', () => {
+  assert.equal(
+    endpointWarning('https://job.lamoda.ru/api/hr/vacancies/compact?search=&minExperience=&pagination[limit]=10'),
+    null);
+});
+
+test('адрес без параметров и мусор не роняют проверку', () => {
+  assert.equal(endpointWarning('https://job.rt.ru/backend/api/vacancies'), null);
+  assert.equal(endpointWarning('(в HTML страницы)'), null);
+});
+
+// У шести компаний в списке по два раздела. Проверяем, что это именно так
+// задумано, а не расползлось само: раздел должен быть виден в названии.
+test('у компании с несколькими разделами раздел виден в названии', () => {
+  const rows = parseSiteList(fs.readFileSync(new URL('../scripts/career-sites.tsv', import.meta.url), 'utf8'));
+  const byHost = new Map();
+  for (const r of rows) {
+    const h = new URL(r.url).hostname;
+    byHost.set(h, [...(byHost.get(h) || []), r]);
+  }
+  const multi = [...byHost.values()].filter(v => v.length > 1);
+  assert.ok(multi.length >= 1, 'разделов ни у кого нет — склейка съела их');
+  for (const group of multi) {
+    for (const r of group) {
+      assert.ok(r.name.includes(' · '), `раздел не помечен в названии: ${r.name}`);
+    }
+  }
 });

@@ -2,13 +2,13 @@
 #
 # Один список на всё: собственный перечень владельца (62 компании под оба
 # раздела приложения) плюс 111 российских компаний из каталога cofinder.
-# Склеены по хосту, поэтому компания встречается РОВНО ОДИН РАЗ: подавать одну
-# и ту же дважды значит гонять разведку по кругу и тащить в ленту двойники.
 #
-# Где адреса расходились, взят более глубокий — он ведёт прямо на список
-# вакансий, а корень сайта только на входную страницу. Исключение одно:
-# у Самоката оставлен корень, потому что путь /vacancies-business сужает выдачу
-# до офиса, а нам нужны и курьеры.
+# Что здесь считается повтором. ОДИН И ТОТ ЖЕ АДРЕС — повтор, таких нет ни
+# одного. Разные разделы одного сайта повтором НЕ считаются: у Самоката корень
+# и /vacancies-business ведут к разным наборам вакансий, а нам нужны ВСЕ виды,
+# не один. Поэтому у шести компаний по две строки, и раздел дописан к названию,
+# чтобы в отчёте они не сливались. Задвоиться в ленте им не даст отпечаток
+# «компания + должность + адрес» (ing_dedupe_key в php-proxy/ingest.php).
 #
 # Иностранные компании каталога (49 штук: Кипр, Армения, США) не взяты —
 # решение владельца, нас интересуют только российские.
@@ -34,15 +34,15 @@ SPAR	https://myspar.ru/career
 Wildberries / РВБ	https://career.rwb.ru/vacancies
 Ozon	https://career.ozon.ru/vacancy
 Lamoda	https://job.lamoda.ru/vacancies
-Самокат	https://vacancy.samokat.ru
-Спортмастер	https://job.sportmaster.ru/vacancies
+Самокат · /	https://vacancy.samokat.ru
+Спортмастер · /	https://job.sportmaster.ru
 М.Видео-Эльдорадо	https://career.mvideoeldorado.ru/vacancies
 DNS	https://www.dns-shop.ru/jobs
 Hoff	https://job.hoff.ru
 Лемана ПРО	https://rabota.lemanapro.ru/vacancies
 Петрович	https://petrovichjob.ru
 Детский мир	https://jobs.detmir.ru
-Золотое Яблоко	https://job.goldapple.ru/search/all
+Золотое Яблоко · /	https://job.goldapple.ru
 РИВ ГОШ	https://rivegauche.ru/work
 Улыбка радуги	https://rabota.r-ulybka.ru
 Подружка	https://rabotavpodrygke.ru
@@ -73,17 +73,20 @@ Burger King Россия	https://burgerkingrus.ru/rabota
 Кофемания	https://rabota.coffeemania.ru
 Шоколадница	https://regions.shoko.ru/career
 AZIMUT Hotels	https://azimuthotels.com/ru/info/career
-Сбер	https://rabota.sber.ru/search
-МегаФон	https://job.megafon.ru/vacancy/all/any
-Яндекс	https://yandex.ru/jobs/vacancies
+Сбер · /	https://rabota.sber.ru
+МегаФон · /	https://job.megafon.ru
+Яндекс · /jobs	https://yandex.ru/jobs
 Авиасейлс	https://www.aviasales.ru/about/vacancies
 VK	https://team.vk.company/vacancy
+Яндекс · /jobs/vacancies	https://yandex.ru/jobs/vacancies
 Т-Банк	https://www.tbank.ru/career/vacancies/it
 Avito	https://career.avito.com/vacancies
+Золотое Яблоко · /search/all	https://job.goldapple.ru/search/all
 МТС	https://job.mts.ru/vacancies
 Иви	https://corp.ivi.ru/vacancies
 Росатом	https://rosatom-career.ru/vacancies
 2ГИС	https://job.2gis.ru
+Сбер · /search	https://rabota.sber.ru/search
 Twinby	https://twinby.ru/career
 GRASS	https://job.thgrass.com/vacancies
 Островок	https://career.ostrovok.ru/vacancy
@@ -98,6 +101,7 @@ Yadro	https://careers.yadro.com/vacancies
 КРОК	https://careers.croc.ru/vacancies
 IBS	https://ibs.ru/career/jobs
 ВТБ	https://rabota-vtb.ru/career
+Самокат · /vacancies-business	https://vacancy.samokat.ru/vacancies-business
 M2 Tech	https://tech.m2.ru
 Macroscop	https://pro.macroscop.com/vacancies
 Циан	https://krasnodar.cian.ru/vacancies
@@ -109,6 +113,7 @@ IT_One	https://www.it-one.ru/vacancies
 Гараж 8	https://garage-eight.com/vacancies
 Positive Technologies	https://ptsecurity.com/about/vacancy
 Пачка	https://pachca.com/career
+МегаФон · /vacancy/all/any	https://job.megafon.ru/vacancy/all/any
 КОРУС Консалтинг	https://career.korusconsulting.ru/vacancies
 Selecty	https://selecty.ru/it-vacancy
 Lesta Games	https://join.lesta.team
@@ -119,6 +124,7 @@ iSpring	https://www.ispring.ru/company/jobs/vacancies
 Билайн	https://job.beeline.ru/vacancies
 1С	https://1c.ru/rus/firm1c/vacan/search
 Spotware Systems	https://spotware.applytojob.com/apply
+Спортмастер · /vacancies	https://job.sportmaster.ru/vacancies
 Coral	https://coral.tech/it-main
 kokos group	https://career.kokocgroup.ru/vacancies
 ГНИВЦ	https://career.gnivc.ru/vacancies

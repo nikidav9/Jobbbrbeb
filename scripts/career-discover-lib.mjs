@@ -147,3 +147,39 @@ export function parseSiteList(text) {
   }
   return out;
 }
+
+/** Параметры, которые НЕ сужают выдачу: разбивка на страницы и язык. */
+const HARMLESS_PARAMS = /^(limit|offset|page|per_?page|take|skip|size|count|start|pagination|lang|language|locale|sort|order)$/i;
+
+/**
+ * Не сужен ли найденный адрес фильтром.
+ *
+ * Разведка приходит на конкретный раздел сайта, и сайт зовёт своё API уже с
+ * фильтром этого раздела. Записать такой адрес в настройку значит навсегда
+ * забрать только кусок: у X5 это `?business_units=10`, то есть одно
+ * подразделение из всех. Нам нужны ВСЕ виды вакансий, поэтому такой адрес надо
+ * показать человеку, а не молча принять.
+ *
+ * Пустое значение не в счёт: `search=&minExperience=` у Lamoda — это незаполненные
+ * поля формы, они ничего не сужают.
+ */
+export function endpointWarning(url) {
+  let params;
+  try {
+    params = new URL(url).searchParams;
+  } catch {
+    return null;
+  }
+  const narrowing = [];
+  for (const [key, value] of params) {
+    if (!value) continue;
+    // Имена вида `pagination[limit]` смотрим и целиком, и по внутренней части:
+    // разбивку на страницы так пишет Strapi и всё, что на нём, — у Lamoda
+    // именно так. А вот `filter[city]` внутренней частью и выдаст себя.
+    const inner = key.replace(/^.*\[|\]$/g, '') || key;
+    if (HARMLESS_PARAMS.test(key) || HARMLESS_PARAMS.test(inner)) continue;
+    narrowing.push(`${key}=${value}`);
+  }
+  if (!narrowing.length) return null;
+  return `адрес сужен фильтром (${narrowing.join(', ')}) — возможно, это только часть вакансий`;
+}
