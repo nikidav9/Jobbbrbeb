@@ -93,10 +93,4 @@ replace_exact(
     "            sb_delete('jm_ext_sources', ['id' => 'eq.' . $id]);\n            sm_cache_invalidate();\n            $data = ['ok' => true]; break;",
 )
 
-replace_exact(
-    '.github/workflows/ci.yml',
-    "          python3 tests/seo_infra_test.py\n",
-    "          python3 tests/seo_infra_test.py\n          python3 tests/sitemap_invalidation_test.py\n",
-)
-
 print('sitemap freshness patch applied')
