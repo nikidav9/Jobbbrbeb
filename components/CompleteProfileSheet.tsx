@@ -87,19 +87,37 @@ export default function CompleteProfileSheet() {
     setSaving(true);
     try {
       let avatarUrl = currentUser.avatarUrl;
+      let photoUploadFailed = false;
       if (photoUri) {
         try {
           avatarUrl = await uploadAvatar(photoUri, currentUser.id);
         } catch {
-          // Фото необязательное: не залилось — сохраняем хотя бы возраст.
-          showToast('Фото не загрузилось, но возраст сохранён', 'error');
+          photoUploadFailed = true;
         }
       }
+
+      // Если менялось только фото и оно не загрузилось, серверу нечего
+      // сохранять. Оставляем sheet открытым: человек может повторить попытку,
+      // а просьба не будет ошибочно помечена как завершённая.
+      if (photoUploadFailed && !needsAge) {
+        showToast('Фото не загрузилось. Проверьте связь и попробуйте ещё раз.', 'error');
+        return;
+      }
+
       await updateUser({
         ...currentUser,
         age: needsAge ? n : currentUser.age,
         avatarUrl,
       });
+
+      if (photoUploadFailed) {
+        // Возраст к этому моменту уже подтверждён сервером. Фото — нет.
+        // Не закрываем sheet и не remember(): после rerender останется только
+        // недостающая фотография, которую можно отправить ещё раз.
+        showToast('Возраст сохранён. Фото не загрузилось — попробуйте ещё раз.', 'error');
+        return;
+      }
+
       remember();
       setVisible(false);
       showToast('Спасибо, профиль стал полнее', 'success');
