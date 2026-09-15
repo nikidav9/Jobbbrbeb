@@ -31,22 +31,44 @@ class Fetch:
     body: bytes
     content_type: str
     elapsed_ms: int
+    error: str = ""
+    attempts: int = 1
 
 
-def fetch(url: str, timeout: float) -> Fetch:
+def fetch(url: str, timeout: float, attempts: int = 3) -> Fetch:
+    """Fetch URL, retrying only transport failures.
+
+    A transient timeout must not crash the whole audit before its JSON report
+    is written. HTTP responses (including 4xx/5xx) are definitive and are not
+    retried here; repeated transport failures are returned as status=0 so the
+    caller can report them as a normal, actionable audit failure.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
     started = time.monotonic()
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            body = r.read()
-            status = int(getattr(r, "status", 200))
-            ctype = r.headers.get("Content-Type", "")
-    except urllib.error.HTTPError as e:
-        body = e.read()
-        status = int(e.code)
-        ctype = e.headers.get("Content-Type", "") if e.headers else ""
+    total_attempts = max(1, attempts)
+    last_error = ""
+
+    for attempt in range(1, total_attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                body = r.read()
+                status = int(getattr(r, "status", 200))
+                ctype = r.headers.get("Content-Type", "")
+            elapsed = round((time.monotonic() - started) * 1000)
+            return Fetch(url, status, body, ctype, elapsed, attempts=attempt)
+        except urllib.error.HTTPError as e:
+            body = e.read()
+            status = int(e.code)
+            ctype = e.headers.get("Content-Type", "") if e.headers else ""
+            elapsed = round((time.monotonic() - started) * 1000)
+            return Fetch(url, status, body, ctype, elapsed, attempts=attempt)
+        except (TimeoutError, urllib.error.URLError, ConnectionError, OSError) as e:
+            last_error = f"{type(e).__name__}: {e}"
+            if attempt < total_attempts:
+                time.sleep(min(0.5 * attempt, 1.0))
+
     elapsed = round((time.monotonic() - started) * 1000)
-    return Fetch(url, status, body, ctype, elapsed)
+    return Fetch(url, 0, b"", "", elapsed, error=last_error, attempts=total_attempts)
 
 
 class PageFacts(HTMLParser):
@@ -144,23 +166,35 @@ def main() -> int:
 
     robots = fetch(base + "/robots.txt", args.timeout)
     robots_text = robots.body.decode("utf-8", errors="replace")
-    report["robots"] = {"status": robots.status, "ms": robots.elapsed_ms}
-    if robots.status != 200:
+    report["robots"] = {
+        "status": robots.status,
+        "ms": robots.elapsed_ms,
+        "attempts": robots.attempts,
+        "error": robots.error,
+    }
+    if robots.error:
+        failures.append(f"robots.txt transport после {robots.attempts} попыток: {robots.error}")
+    elif robots.status != 200:
         failures.append(f"robots.txt HTTP {robots.status}")
-    if f"Sitemap: {base}/sitemap.xml" not in robots_text:
-        failures.append("robots.txt не указывает production sitemap")
-    if re.search(r"(?mi)^User-agent:\s*\*\s*$[\s\S]{0,200}^Disallow:\s*/\s*$", robots_text):
-        failures.append("robots.txt закрывает весь сайт")
+    else:
+        if f"Sitemap: {base}/sitemap.xml" not in robots_text:
+            failures.append("robots.txt не указывает production sitemap")
+        if re.search(r"(?mi)^User-agent:\s*\*\s*$[\s\S]{0,200}^Disallow:\s*/\s*$", robots_text):
+            failures.append("robots.txt закрывает весь сайт")
 
     sitemap = fetch(base + "/sitemap.xml", args.timeout)
     report["sitemap_fetch"] = {
         "status": sitemap.status,
         "ms": sitemap.elapsed_ms,
+        "attempts": sitemap.attempts,
+        "error": sitemap.error,
         "content_type": sitemap.content_type,
         "bytes": len(sitemap.body),
     }
     urls: list[str] = []
-    if sitemap.status != 200:
+    if sitemap.error:
+        failures.append(f"sitemap transport после {sitemap.attempts} попыток: {sitemap.error}")
+    elif sitemap.status != 200:
         failures.append(f"sitemap HTTP {sitemap.status}")
     else:
         try:
@@ -185,7 +219,7 @@ def main() -> int:
         "static_pages": len(static_urls),
         "foreign_hosts": len(foreign),
     }
-    if len(urls) < 5:
+    if sitemap.status == 200 and len(urls) < 5:
         failures.append(f"sitemap подозрительно мал: {len(urls)} URL")
 
     checks: list[dict[str, object]] = []
@@ -199,23 +233,37 @@ def main() -> int:
         for url in chosen:
             r = fetch(url, args.timeout)
             timings.append(r.elapsed_ms)
-            facts = page_facts(r.body)
             item: dict[str, object] = {
                 "kind": kind,
                 "url": url,
                 "status": r.status,
                 "ms": r.elapsed_ms,
+                "attempts": r.attempts,
+                "error": r.error,
+                "canonical": "",
+                "title": "",
+                "description_len": 0,
+                "h1": 0,
+                "robots": "",
+                "jobposting": False,
+            }
+            checks.append(item)
+            if r.error:
+                failures.append(f"{kind} {url}: transport после {r.attempts} попыток: {r.error}")
+                continue
+            if r.status != 200:
+                failures.append(f"{kind} {url}: HTTP {r.status}")
+                continue
+
+            facts = page_facts(r.body)
+            item.update({
                 "canonical": facts.canonical,
                 "title": facts.title.strip(),
                 "description_len": len(facts.description.strip()),
                 "h1": facts.h1,
                 "robots": facts.robots,
                 "jobposting": has_jobposting(facts),
-            }
-            checks.append(item)
-            if r.status != 200:
-                failures.append(f"{kind} {url}: HTTP {r.status}")
-                continue
+            })
             if facts.canonical.rstrip("/") != url.rstrip("/"):
                 failures.append(f"{kind} {url}: canonical={facts.canonical!r}")
             if not facts.title.strip():
