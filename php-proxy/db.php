@@ -262,7 +262,7 @@ $selfArgFns = [
     'dbMarkAllNotifsRead' => 0, 'dbDeleteAllNotifs' => 0,
     'dbRecordVacancyView' => 1, 'dbRecordPermVacancyView' => 1,
     'dbRemoveLike' => 1,
-    'dbCheckAndCreateMatch' => 1, 'dbApplyPermVacancy' => 1,
+    'dbApplyPermVacancy' => 1,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -6080,66 +6080,60 @@ try {
 
         // ── Match logic ────────────────────────────────────────────────────────
         case 'dbCheckAndCreateMatch': {
-            [$vid, $wid] = [$args[0], $args[1]];
-            $like = sb_single('jm_likes', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid]);
+            $vid = (string)($args[0] ?? '');
+            $wid = (string)($args[1] ?? '');
+            if ($vid === '' || $wid === '') {
+                jt_respond(['error' => 'Vacancy and worker required'], 400); exit;
+            }
+
+            // Проверяем право по фактической связи, а не по положению аргумента.
+            // Раньше workerId лежал в $selfArgFns: работник проходил, а
+            // работодатель — владелец вакансии — получал 403 и не мог завершить
+            // взаимный лайк в мэтч. Теперь допустимы ровно две стороны отклика.
+            $like = sb_single('jm_likes', [
+                'vacancy_id' => 'eq.' . $vid,
+                'worker_id' => 'eq.' . $wid,
+            ], 'id,worker_id,employer_id,worker_liked,employer_liked,is_match');
             if (!$like) { $data = ['matched' => false]; break; }
-            $eid = $like['employer_id'];
-            if ($like['is_match']) {
-                $ec = sb_single('jm_chats', ['worker_id' => 'eq.' . $wid, 'employer_id' => 'eq.' . $eid], 'id');
-                $data = ['matched' => false, 'chatId' => $ec['id'] ?? null]; break;
-            }
-            if (!$like['worker_liked'] || $like['employer_liked'] !== true) { $data = ['matched' => false]; break; }
-            sb_update('jm_likes', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid],
-                ['is_match' => true, 'matched_at' => now_iso()]);
-            $vac = sb_single('jm_vacancies', ['id' => 'eq.' . $vid]);
 
-            // Чат ищем по паре людей: со вторым мэтчем разговор продолжается
-            // там же, где начался, а не заводится заново.
-            $ec2 = sb_single('jm_chats', ['worker_id' => 'eq.' . $wid, 'employer_id' => 'eq.' . $eid], 'id');
-            $isNewChat = !$ec2;
-            $cid = $ec2['id'] ?? uid();
-            if ($isNewChat) {
-                sb_insert('jm_chats', [
-                    'id' => $cid, 'vacancy_id' => $vid, 'worker_id' => $wid,
-                    'employer_id' => $eid, 'vac_title' => $vac['title'] ?? '',
-                    'company_name' => $vac['company'] ?? '', 'unread_worker' => 1, 'unread_employer' => 1,
-                    'created_at' => now_iso(),
-                ]);
-            } else {
-                sb_update('jm_chats', ['id' => 'eq.' . $cid], [
-                    'vacancy_id' => $vid,
-                    'vac_title' => $vac['title'] ?? '',
-                    'company_name' => $vac['company'] ?? '',
-                ]);
+            $eid = (string)($like['employer_id'] ?? '');
+            $callerIsWorker = (string)$authUid === $wid;
+            $callerIsEmployer = (string)$authUid === $eid;
+            if (!$callerIsWorker && !$callerIsEmployer) {
+                jt_respond(['error' => 'Match access denied'], 403); exit;
             }
 
-            // Карточка смены открывает блок: дальше в чате может идти речь о
-            // другой смене, и без неё непонятно, к чему относится разговор.
-            $card = vacancy_card_text($vid);
-            if ($card) {
-                msg_insert(['id' => uid(), 'chat_id' => $cid, 'sender_id' => 'system',
-                    'text' => $card, 'created_at' => now_iso()]);
+            // Старые строки могли пережить прежнюю доверчивую запись employer_id.
+            // Перед SECURITY DEFINER RPC подтверждаем владельца по самой вакансии.
+            $vac = sb_single('jm_vacancies', ['id' => 'eq.' . $vid], 'employer_id');
+            if (!$vac || (string)($vac['employer_id'] ?? '') !== $eid) {
+                jt_respond(['error' => 'Match vacancy mismatch'], 403); exit;
             }
-            msg_insert(['id' => uid(), 'chat_id' => $cid, 'sender_id' => 'system',
-                'text' => '🎉 У вас мэтч! Вы подошли друг другу. Познакомьтесь и обсудите детали!', 'created_at' => now_iso()]);
-            // Предупреждение о безопасности — один раз, при заведении чата.
-            // Повторять его на каждую смену незачем: читать перестанут.
-            if ($isNewChat) {
-                msg_insert(['id' => uid(), 'chat_id' => $cid, 'sender_id' => 'system_safety',
-                    'text' => "🔒 Рекомендуем не переводить общение в сторонние мессенджеры или почту, а продолжить его в чате JobToo: так у мошенников будет меньше шансов вас обмануть.\n\nГде бы вы ни общались — не сообщайте свой CVV-код, код из SMS и не вводите данные карты по ссылке.",
-                    'created_at' => now_iso()]);
+
+            $rows = sb_rpc('jm_match_shift_atomic', [
+                'p_vacancy_id' => $vid,
+                'p_worker_id' => $wid,
+                'p_chat_id' => uid(),
+            ]);
+            $result = $rows[0] ?? null;
+            if (!is_array($result)) {
+                throw new Exception('atomic shift match returned no result');
             }
-            if ($vac) {
-                $nf = ($vac['workers_found'] ?? 0) + 1;
-                sb_update('jm_vacancies', ['id' => 'eq.' . $vid],
-                    ['workers_found' => $nf, 'status' => $nf >= ($vac['workers_needed'] ?? 999) ? 'closed' : 'open']);
+
+            $matched = ($result['matched'] ?? false) === true;
+            $cid = trim((string)($result['chat_id'] ?? ''));
+
+            // Push/Telegram — побочный эффект после commit. Его сбой не должен
+            // откатывать уже созданные мэтч и чат; повтор RPC тоже безопасен.
+            if ($matched) {
+                try {
+                    jt_notify_match((string)$vid, (string)$wid, (string)$eid, $authUid);
+                } catch (Throwable $e) { /* основной commit уже состоялся */ }
             }
-            // Известить другую сторону — здесь же. Раньше это делал телефон
-            // нажавшего, отдельным вызовом и со своим текстом.
-            try {
-                jt_notify_match((string)$vid, (string)$wid, (string)$eid, $authUid);
-            } catch (Throwable $e) { /* мэтч заведён — это главное */ }
-            $data = ['matched' => true, 'chatId' => $cid]; break;
+
+            $data = ['matched' => $matched];
+            if ($cid !== '') $data['chatId'] = $cid;
+            break;
         }
 
         // ── Permanent vacancies ────────────────────────────────────────────────

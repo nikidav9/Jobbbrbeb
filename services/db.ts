@@ -1355,50 +1355,13 @@ export async function dbCheckAndCreateMatch(
   vacancyId: string,
   workerId: string
 ): Promise<{ matched: boolean; chatId?: string }> {
-  if (IS_NATIVE) { return proxy<{ matched: boolean; chatId?: string }>('dbCheckAndCreateMatch', [vacancyId, workerId]); }
-  const { data: likeRow } = await withTimeout(
-    supabase.from('jm_likes').select('*').eq('vacancy_id', vacancyId).eq('worker_id', workerId).maybeSingle()
+  const data = await proxy<{ matched?: boolean; chatId?: string | null }>(
+    'dbCheckAndCreateMatch',
+    [vacancyId, workerId],
   );
-
-  if (!likeRow) return { matched: false };
-  if (likeRow.is_match) {
-    const { data: existingChat } = await withTimeout(
-      supabase.from('jm_chats').select('id').eq('vacancy_id', vacancyId).eq('worker_id', workerId).maybeSingle()
-    );
-    return { matched: false, chatId: existingChat?.id };
-  }
-  if (!likeRow.worker_liked || likeRow.employer_liked !== true) return { matched: false };
-
-  const [, { data: vac }] = await Promise.all([
-    withTimeout(supabase.from('jm_likes').update({ is_match: true, matched_at: nowISO() }).eq('vacancy_id', vacancyId).eq('worker_id', workerId)),
-    withTimeout(supabase.from('jm_vacancies').select('*').eq('id', vacancyId).maybeSingle()),
-  ]);
-
-  const matchMsg = 'У вас мэтч! Вы подошли друг другу. Познакомьтесь и обсудите детали!';
-  const safetyMsg = 'Рекомендуем не переводить общение в сторонние мессенджеры или почту, а продолжить его в чате JobToo: так у мошенников будет меньше шансов вас обмануть.\n\nГде бы вы ни общались — не сообщайте свой CVV-код, код из SMS и не вводите данные карты по ссылке.';
-
-  const chatId = await dbCreateChat(
-    workerId,
-    likeRow.employer_id,
-    vacancyId,
-    vac?.title ?? '',
-    vac?.company ?? '',
-    undefined,
-    1,
-    1
-  );
-
-  const newWorkersFound = (vac?.workers_found || 0) + 1;
-  const newStatus = newWorkersFound >= (vac?.workers_needed ?? 999) ? 'closed' : 'open';
-  await Promise.all([
-    dbInsertMessage(chatId, 'system', matchMsg),
-    dbInsertMessage(chatId, 'system_safety', safetyMsg),
-    vac
-      ? withTimeout(supabase.from('jm_vacancies').update({ workers_found: newWorkersFound, status: newStatus }).eq('id', vacancyId))
-      : Promise.resolve(),
-  ]);
-
-  return { matched: true, chatId };
+  return data?.chatId
+    ? { matched: data.matched === true, chatId: data.chatId }
+    : { matched: data?.matched === true };
 }
 
 // ─── Permanent vacancies ─────────────────────────────────────────────────────
