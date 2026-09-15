@@ -79,6 +79,16 @@ if ! bash "$REPO/infra/verify-rls.sh" >/tmp/jt-rls.log 2>&1; then
   exit 1
 fi
 
+# Наружу нужен только факт: какая миграция реально применена и прошёл ли
+# живой RLS guard. Подробный status.json намеренно остаётся закрытым: там
+# порты, логи и топология БД. Пишем атомарно, чтобы монитор не увидел полфайла.
+latest_migration=$(q -tAc "select name from jm_migrations order by name desc limit 1" 2>/dev/null | tr -d '\r\n')
+status_tmp=$(mktemp /var/www/html/security-status.json.XXXXXX)
+printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" > "$status_tmp"
+chmod 644 "$status_tmp"
+mv -f "$status_tmp" /var/www/html/security-status.json
+
 if [ "$applied" -gt 0 ]; then
   # PostgREST держит устройство базы в памяти и сам о новых таблицах не
   # узнаёт. Без этой строки миграция «применена», таблица есть, а на запрос

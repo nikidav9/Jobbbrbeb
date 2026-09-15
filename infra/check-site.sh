@@ -60,26 +60,42 @@ record() {
 # checkout этого monitor-run.
 expected_migration=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
   | LC_ALL=C sort | tail -1)
-status_json="$RUNNER_TEMP/jobtoo-status.json"
-probe_url migration_status "https://$FALLBACK_HOST/status.json" -4 "$status_json"
+status_json="$RUNNER_TEMP/jobtoo-security-status.json"
+probe_url security_status "https://$FALLBACK_HOST/security-status.json" -4 "$status_json"
 if [[ $PROBE_OK -eq 1 ]]; then
-  applied_migration=$(python3 - "$status_json" <<'PY'
-import json, sys
+  read -r applied_migration rls_guard status_age < <(python3 - "$status_json" <<'PY'
+import datetime as dt
+import json
+import sys
+
 try:
     with open(sys.argv[1], encoding='utf-8') as f:
-        value = json.load(f).get('последняя_миграция', '')
-    print(value if isinstance(value, str) else '')
+        value = json.load(f)
+    migration = value.get('latest_migration', '')
+    rls = value.get('rls_guard') is True
+    raw_time = value.get('generated_at', '')
+    stamp = dt.datetime.fromisoformat(raw_time.replace('Z', '+00:00'))
+    age = int((dt.datetime.now(dt.timezone.utc) - stamp).total_seconds())
+    print(migration if isinstance(migration, str) else '', 'true' if rls else 'false', age)
 except Exception:
-    print('')
+    print('', 'false', 999999)
 PY
   )
-  echo "migration_expected=${expected_migration:-нет} migration_applied=${applied_migration:-нет}"
+  echo "migration_expected=${expected_migration:-нет} migration_applied=${applied_migration:-нет} rls_guard=$rls_guard status_age=${status_age}s"
   if [[ -z "$expected_migration" || "$applied_migration" != "$expected_migration" ]]; then
     echo "ERROR: production migration mismatch: expected=${expected_migration:-нет} applied=${applied_migration:-нет}"
     failed=1
   fi
+  if [[ "$rls_guard" != true ]]; then
+    echo "ERROR: production RLS guard is not green"
+    failed=1
+  fi
+  if [[ ! "$status_age" =~ ^-?[0-9]+$ || "$status_age" -lt 0 || "$status_age" -gt 300 ]]; then
+    echo "ERROR: production security status is stale: age=${status_age:-unknown}s"
+    failed=1
+  fi
 else
-  echo "ERROR: production status report unavailable; migration parity unknown"
+  echo "ERROR: production security status unavailable; migration/RLS parity unknown"
   failed=1
 fi
 
