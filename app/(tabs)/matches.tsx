@@ -667,6 +667,7 @@ function EmployerMatches() {
   } = useApp();
   const [actionLoading, setLoading] = useState<string | null>(null);
   const [approvingApp, setApprovingApp] = useState<PermApplication | null>(null);
+  const [localPermStatus, setLocalPermStatus] = useState<Record<string, PermApplication['status']>>({});
   const [tab, setTab] = useState<'pending' | 'matched' | 'completed'>('pending');
   const [refreshing, setRefreshing] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
@@ -721,7 +722,9 @@ function EmployerMatches() {
   const completed = employerCompleted(allLikes);
 
   // Отклики на постоянные вакансии — тоже сюда, а не только на карточку вакансии
-  const myPermApps: PermApplication[] = employerPermApps(permApplications, currentUserId);
+  const myPermApps: PermApplication[] = employerPermApps(permApplications, currentUserId).map(app =>
+    localPermStatus[app.id] ? { ...app, status: localPermStatus[app.id] } : app
+  );
   const permPending = myPermApps.filter(a => a.status === 'pending');
   const permApproved = myPermApps.filter(a => a.status === 'approved');
   // hired — работодатель нажал «Завершить»: кандидат закрыт, карточка ушла
@@ -868,9 +871,14 @@ function EmployerMatches() {
       // Статус, чат и первое сообщение — одна серверная транзакция.
       // Повтор после потерянного ответа идемпотентен и не плодит сообщения.
       const chatId = await dbApprovePermApplication(app.id, message);
+      setLocalPermStatus(prev => ({ ...prev, [app.id]: 'approved' }));
       setApprovingApp(null);
-      await refreshPermApplications();
-      await refreshChats(currentUser);
+      // Транзакция уже завершилась. Последующие чтения только синхронизируют
+      // локальный список и не имеют права превратить успех в «Ошибка».
+      await Promise.all([
+        refreshPermApplications().catch(() => {}),
+        refreshChats(currentUser).catch(() => {}),
+      ]);
       showToast('Одобрено! Чат открыт 🎉', 'match');
       router.push({ pathname: '/chat-room', params: { chatId } });
     } catch {
@@ -885,7 +893,12 @@ function EmployerMatches() {
     try {
       // Уведомление и строку в чат ставит сервер — см. jt_perm_app_announce.
       await dbSetPermApplicationStatus(app.id, 'rejected');
-      await refreshPermApplications();
+      setLocalPermStatus(prev => ({ ...prev, [app.id]: 'rejected' }));
+      try {
+        await refreshPermApplications();
+      } catch {
+        // Сервер уже принял решение; локальный статус выше остаётся правдой.
+      }
       showToast('Отклонено', 'success');
     } catch {
       showToast('Ошибка', 'error');
@@ -904,7 +917,12 @@ function EmployerMatches() {
     setLoading(app.id + '_f');
     try {
       await dbSetPermApplicationStatus(app.id, 'hired');
-      await refreshPermApplications();
+      setLocalPermStatus(prev => ({ ...prev, [app.id]: 'hired' }));
+      try {
+        await refreshPermApplications();
+      } catch {
+        // Статус hired уже записан; refresh — только синхронизация списка.
+      }
       showToast('Кандидат закрыт. Вакансия осталась в поиске — закрыть её можно во вкладке «Активные»', 'success');
     } catch (e: any) {
       // Голое «Ошибка» ничего не объясняет. Отдельно ловим случай, когда база

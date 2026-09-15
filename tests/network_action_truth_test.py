@@ -25,6 +25,18 @@ rate_submit = rate[rate_submit_start:rate_submit_end] if rate_submit_start >= 0 
 perm_apply_start = perm_detail.find('  const sendApply = async')
 perm_apply_end = perm_detail.find('  const toggleSave = async', perm_apply_start)
 perm_apply = perm_detail[perm_apply_start:perm_apply_end] if perm_apply_start >= 0 and perm_apply_end > perm_apply_start else ''
+employer_approve_start = matches.find('  const approvePermApp = async')
+employer_reject_start = matches.find('  const rejectPermApp = async', employer_approve_start)
+employer_finish_start = matches.find('  const finishPermApp = async', employer_reject_start)
+employer_render_start = matches.find('  const approveInfo =', employer_finish_start)
+employer_approve = matches[employer_approve_start:employer_reject_start] if employer_approve_start >= 0 and employer_reject_start > employer_approve_start else ''
+employer_reject = matches[employer_reject_start:employer_finish_start] if employer_reject_start >= 0 and employer_finish_start > employer_reject_start else ''
+employer_finish = matches[employer_finish_start:employer_render_start] if employer_finish_start >= 0 and employer_render_start > employer_finish_start else ''
+sheet_approve_start = perm.find('  const approve = async')
+sheet_reject_start = perm.find('  const reject = async', sheet_approve_start)
+sheet_render_start = perm.find('  const approvingWorker =', sheet_reject_start)
+sheet_approve = perm[sheet_approve_start:sheet_reject_start] if sheet_approve_start >= 0 and sheet_reject_start > sheet_approve_start else ''
+sheet_reject = perm[sheet_reject_start:sheet_render_start] if sheet_reject_start >= 0 and sheet_render_start > sheet_reject_start else ''
 
 rating_write = 'const { bothRated } = await dbSubmitRatingAndMaybeDelete({'
 rating_refresh = "try {\n        await refreshAll();\n      } catch {\n        // Следующий обычный refresh подтянет уже сохранённое состояние.\n      }"
@@ -60,6 +72,15 @@ checks = {
     'сбой refresh не отменяет успех постоянного отклика': "showToast('Отклик отправлен! 📨', 'success');" in perm_apply and perm_apply.find('await refreshPermApplications();') < perm_apply.find("showToast('Отклик отправлен! 📨', 'success');"),
     'после подтверждённой записи нельзя отправить постоянный отклик повторно': "const isApplied = !!myApp || applySubmitted;" in perm_detail,
     'локально подтверждённый отклик показывает ожидание': "const appStatus = myApp ? STATUS_MAP[myApp.status] : (applySubmitted ? STATUS_MAP.pending : null);" in perm_detail,
+    'одобрение постоянного кандидата фиксирует локальный статус после RPC': "setLocalPermStatus(prev => ({ ...prev, [app.id]: 'approved' }));" in employer_approve and employer_approve.find('await dbApprovePermApplication') < employer_approve.find('setLocalPermStatus'),
+    'refresh после одобрения не отменяет успех': "refreshPermApplications().catch(() => {})" in employer_approve and "refreshChats(currentUser).catch(() => {})" in employer_approve and employer_approve.find("showToast('Одобрено! Чат открыт 🎉'") > employer_approve.find('refreshChats'),
+    'отказ постоянному кандидату фиксируется до refresh': "[app.id]: 'rejected'" in employer_reject and employer_reject.find("await dbSetPermApplicationStatus(app.id, 'rejected');") < employer_reject.find("[app.id]: 'rejected'"),
+    'refresh после отказа изолирован': "try {\n        await refreshPermApplications();\n      } catch {" in employer_reject and employer_reject.find("showToast('Отклонено', 'success');") > employer_reject.find('await refreshPermApplications();'),
+    'завершение постоянного кандидата фиксируется до refresh': "[app.id]: 'hired'" in employer_finish and employer_finish.find("await dbSetPermApplicationStatus(app.id, 'hired');") < employer_finish.find("[app.id]: 'hired'"),
+    'refresh после hired изолирован': "try {\n        await refreshPermApplications();\n      } catch {" in employer_finish and employer_finish.find('status_check') > employer_finish.find("showToast('Кандидат закрыт."),
+    'локальный статус переставляет карточку между вкладками': "localPermStatus[app.id] ? { ...app, status: localPermStatus[app.id] } : app" in matches,
+    'шторка одобрения тоже не зависит от refresh': "refreshPermApplications().catch(() => {})" in sheet_approve and "refreshChats(currentUser).catch(() => {})" in sheet_approve and "[app.id]: 'approved'" in sheet_approve,
+    'шторка отказа сохраняет серверную правду локально': "[app.id]: 'rejected'" in sheet_reject and "try {\n        await refreshPermApplications();\n      } catch {" in sheet_reject,
     'статус отклика не наследуется от прошлого чата': "setLikeStatus(null);\n    setLikeStatusLoadFailed(false);\n    let cancelled = false;" in chat_room,
     'устаревший ответ статуса отклика игнорируется': "if (cancelled) return;" in chat_room and "return () => { cancelled = true; };" in chat_room,
     'сбой загрузки статуса отклика виден': "setLikeStatusLoadFailed(true);" in chat_room and 'Не удалось загрузить статус отклика' in chat_room,

@@ -60,9 +60,12 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [approving, setApproving] = useState<PermApplication | null>(null);
+  const [localPermStatus, setLocalPermStatus] = useState<Record<string, PermApplication['status']>>({});
 
   const vacancy = permVacancies.find(v => v.id === vacancyId);
-  const apps = permApplications.filter(a => a.vacancyId === vacancyId);
+  const apps = permApplications
+    .filter(a => a.vacancyId === vacancyId)
+    .map(app => localPermStatus[app.id] ? { ...app, status: localPermStatus[app.id] } : app);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -83,9 +86,13 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
       // Статус, чат и первое сообщение теперь коммитятся одной транзакцией.
       // Обрыв связи больше не оставляет «Одобрено» без разговора.
       const chatId = await dbApprovePermApplication(app.id, message);
+      setLocalPermStatus(prev => ({ ...prev, [app.id]: 'approved' }));
       setApproving(null);
-      await refreshPermApplications();
-      await refreshChats(currentUser);
+      // Решение и чат уже закоммичены; refresh не меняет исход операции.
+      await Promise.all([
+        refreshPermApplications().catch(() => {}),
+        refreshChats(currentUser).catch(() => {}),
+      ]);
       showToast('Одобрено! Чат открыт', 'match');
       // Окно письма лежит внутри этой шторки, и убирать оба разом нельзя:
       // на iOS второе закрытие приходит, пока первое ещё идёт, и экран
@@ -106,7 +113,12 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
     setActionLoading(app.id + '_r');
     try {
       await dbSetPermApplicationStatus(app.id, 'rejected');
-      await refreshPermApplications();
+      setLocalPermStatus(prev => ({ ...prev, [app.id]: 'rejected' }));
+      try {
+        await refreshPermApplications();
+      } catch {
+        // Отказ уже записан; не возвращаем кнопку из-за сбоя чтения.
+      }
       showToast('Отклонено', 'success');
     } catch (e) {
       showToast('Ошибка', 'error');
