@@ -1,0 +1,45 @@
+name: Apply atomic message delivery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply_atomic_message.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - name: Apply guarded patch
+        run: python3 scripts/apply_atomic_message.py
+      - name: PHP syntax
+        run: php -l php-proxy/db.php
+      - name: Message atomicity regression
+        run: php tests/message_notify_test.php
+      - name: Object authorization regression
+        run: php tests/db_object_authz_test.php
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Commit source changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add php-proxy/db.php services/db.ts 'app/chat-room.tsx' 'app/(tabs)/feed.tsx' tests/message_notify_test.php
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: make chat messages atomic and idempotent'
+          git pull --rebase origin main
+          git push origin HEAD:main
