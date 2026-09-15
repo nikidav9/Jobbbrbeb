@@ -1880,7 +1880,9 @@ export async function dbTouchLastSeen(userId: string): Promise<void> {
  * привязываться. Заявка живёт 15 минут.
  */
 export async function dbTgPrepareLink(userId: string): Promise<void> {
-  try { await proxy('tgPrepareLink', [userId]); } catch {}
+  // Ошибка должна дойти до UI: оба места вызова уже завершают fire-and-forget
+  // собственным .catch(...) и показывают человеку, что привязку подготовить не удалось.
+  await proxy('tgPrepareLink', [userId]);
 }
 
 export async function dbGetNotifications(userId: string): Promise<{ id: string; title: string; body: string; is_read: boolean; created_at: string; type?: string | null; payload?: any }[]> {

@@ -159,6 +159,10 @@ check('telegram: открытие бота сообщает об ошибке',
     str_contains($tg, 'Не удалось открыть Telegram. Откройте бота вручную'));
 check('telegram: fire-and-forget заявка не даёт unhandled rejection',
     str_contains($tg, 'void dbTgPrepareLink(userId).catch'));
+$db = (string)file_get_contents(__DIR__ . '/../services/db.ts');
+check('telegram: prepare-link не скрывает сетевую ошибку от UI',
+    str_contains($db, "await proxy('tgPrepareLink', [userId]);")
+    && !str_contains($db, "try { await proxy('tgPrepareLink', [userId]); } catch {}"));
 
 // ── Уведомления: ошибка сети не выглядит пустотой/успехом ────────────────────
 $bell = (string)file_get_contents(__DIR__ . '/../components/ui/NotifBell.tsx');
@@ -166,7 +170,9 @@ check('уведомления: ошибка загрузки хранится о
 check('уведомления: ошибка загрузки не выглядит пустым списком',
     str_contains($bell, 'Не удалось загрузить уведомления') && str_contains($bell, 'Повторить'));
 check('уведомления: прочитать все меняет UI только после сервера',
-    (bool)preg_match('~await dbMarkAllNotifsRead\(userId\);[\s\S]{0,180}setNotifs~', $bell));
+    str_contains($bell, 'const op = app?.markAllNotifsRead')
+    && str_contains($bell, ': dbMarkAllNotifsRead(userId);')
+    && (bool)preg_match('~await op;[\s\S]{0,180}setNotifs~', $bell));
 check('уведомления: удаление одного меняет UI только после сервера',
     (bool)preg_match('~await dbDeleteNotif\(id\);[\s\S]{0,180}setNotifs~', $bell));
 check('уведомления: удаление всех меняет UI только после сервера',
