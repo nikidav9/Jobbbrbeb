@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { findLists, guessMap, looksLikeVacancies, parseSiteList } from '../scripts/career-discover-lib.mjs';
+import { findLists, guessMap, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
 
 test('находит список вакансий в ответе Yadro', () => {
   const body = { vacancies: [
@@ -129,4 +129,52 @@ test('свой список компаний разбирается целико
   assert.ok(rows.length >= 60, `компаний слишком мало: ${rows.length}`);
   assert.ok(rows.every(r => r.name && !r.name.includes('http')), 'имя компании потерялось');
   assert.equal(new Set(rows.map(r => r.url)).size, rows.length, 'адрес повторяется');
+});
+
+// Ниже — разбор провала: прогон по 111 компаниям дал семь «готовых» источников,
+// и четыре из них оказались справочниками. Выбор шёл по ДЛИНЕ списка, а
+// справочник всегда длиннее: у Ростелекома 655 городов против 382 вакансий.
+// Образцы настоящие, снятые с тех самых ответов.
+
+test('справочник городов Ростелекома не набирает признаков вакансии', () => {
+  assert.equal(scoreList({ id: 2, name: 'г. Самара' }), 0);
+});
+
+test('дерево категорий МТС не набирает признаков вакансии', () => {
+  assert.ok(scoreList({ id: 'w8n0', slug: 'hr-6037', title: 'HR', vacancyCount: 12 }) < 2);
+});
+
+test('направления Wildberries не набирают признаков вакансии', () => {
+  assert.ok(scoreList({ description: '', id: 2, title: 'Аналитика', vacancies_count: 17 }) < 2);
+});
+
+test('настоящая вакансия Ростелекома набирает признаки', () => {
+  const vac = {
+    id: 14488, name: 'Бригадир монтажников', address: 'ул. Советская, д. 136',
+    salaryFrom: 94750, salaryTo: 94750, city: { id: 159, name: 'г. Йошкар-Ола' },
+    directions: [{ id: 4, name: 'Технический блок' }], whatWeToDo: '<p>Определение порядка</p>',
+  };
+  assert.ok(scoreList(vac) >= 4, `признаков мало: ${scoreList(vac)}`);
+});
+
+test('настоящая вакансия Wildberries набирает признаки', () => {
+  const vac = {
+    id: 34863, city_title: 'Московская область, дер. Коледино', direction_role_title: 'Повар',
+    direction_title: 'Производство питания', experience_type_title: 'От 1 года',
+    employment_types: [{ id: 3, title: 'Офис' }],
+  };
+  assert.ok(scoreList(vac) >= 2, `признаков мало: ${scoreList(vac)}`);
+});
+
+test('вакансии выигрывают у справочника, даже будучи короче', () => {
+  const body = {
+    cities: Array.from({ length: 655 }, (_, i) => ({ id: i, name: `город ${i}` })),
+    vacancies: Array.from({ length: 20 }, (_, i) => ({
+      id: i, name: 'Комплектовщик', city: 'Москва', salaryFrom: 60000, description: 'смены',
+    })),
+  };
+  const found = findLists(body);
+  const best = [...found].sort((a, b) => b.score - a.score || b.count - a.count)[0];
+  assert.equal(best.path, 'vacancies', `выбран не тот список: ${best.path}`);
+  assert.ok(best.score > found.find(f => f.path === 'cities').score);
 });
