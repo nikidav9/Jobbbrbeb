@@ -45,8 +45,14 @@ replace_once(
 
 replace_once(
     'tests/network_action_truth_test.py',
+    "feed = (root / 'app/(tabs)/feed.tsx').read_text(encoding='utf-8')\nrate = (root / 'app/rate.tsx').read_text(encoding='utf-8')",
+    "feed = (root / 'app/(tabs)/feed.tsx').read_text(encoding='utf-8')\nchat_room = (root / 'app/chat-room.tsx').read_text(encoding='utf-8')\nrate = (root / 'app/rate.tsx').read_text(encoding='utf-8')",
+)
+
+replace_once(
+    'tests/network_action_truth_test.py',
     "    'ошибка сохранения остаётся для неуспешной записи': \"showToast('Ошибка при сохранении', 'error');\" in rate_submit,\n    'план фиксирует нагрузочный прогон':",
-    "    'ошибка сохранения остаётся для неуспешной записи': \"showToast('Ошибка при сохранении', 'error');\" in rate_submit,\n    'статус отклика не наследуется от прошлого чата': \"setLikeStatus(null);\\n    setLikeStatusLoadFailed(false);\\n    let cancelled = false;\" in chats,\n    'устаревший ответ статуса отклика игнорируется': \"if (cancelled) return;\" in chats and \"return () => { cancelled = true; };\" in chats,\n    'сбой загрузки статуса отклика виден': \"setLikeStatusLoadFailed(true);\" in chats and 'Не удалось загрузить статус отклика' in chats,\n    'статус отклика можно загрузить повторно': \"setLikeStatusRetry(x => x + 1)\" in chats and 'likeStatusRetry]);' in chats,\n    'план фиксирует нагрузочный прогон':",
+    "    'ошибка сохранения остаётся для неуспешной записи': \"showToast('Ошибка при сохранении', 'error');\" in rate_submit,\n    'статус отклика не наследуется от прошлого чата': \"setLikeStatus(null);\\n    setLikeStatusLoadFailed(false);\\n    let cancelled = false;\" in chat_room,\n    'устаревший ответ статуса отклика игнорируется': \"if (cancelled) return;\" in chat_room and \"return () => { cancelled = true; };\" in chat_room,\n    'сбой загрузки статуса отклика виден': \"setLikeStatusLoadFailed(true);\" in chat_room and 'Не удалось загрузить статус отклика' in chat_room,\n    'статус отклика можно загрузить повторно': \"setLikeStatusRetry(x => x + 1)\" in chat_room and 'likeStatusRetry]);' in chat_room,\n    'план фиксирует нагрузочный прогон':",
 )
 
 print('chat like status truth patch applied')
