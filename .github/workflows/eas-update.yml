@@ -3,6 +3,10 @@ name: EAS Update
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.gitignore'
 
 jobs:
   update:
