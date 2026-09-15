@@ -75,6 +75,17 @@ if (!function_exists('sb')) {
         sb('PATCH', $t, $f, $data, ['Prefer: return=minimal']);
     }
 
+    /**
+     * Условное обновление с возвратом реально изменённых строк.
+     *
+     * Нулевой массив важен: это не «ошибка PATCH», а проигранный optimistic
+     * CAS — кто-то успел изменить строку между нашим SELECT и UPDATE.
+     */
+    function sb_update_returning(string $t, array $f, array $data): array
+    {
+        return sb('PATCH', $t, $f, $data, ['Prefer: return=representation']);
+    }
+
     /** Вставить или обновить по ключу конфликта — одним запросом на пачку. */
     function sb_upsert_rows(string $t, array $rows, string $on_conflict): void
     {

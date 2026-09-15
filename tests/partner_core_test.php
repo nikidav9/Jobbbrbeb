@@ -108,4 +108,15 @@ expect_true(str_contains($partnerWebhook, "'processing_started_at' => null"), 'w
 $ingest = file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
 expect_true($ingest !== false && str_contains($ingest, "INGEST_LIBRARY_ONLY"), 'feed normalizer can be load-tested without production I/O');
 
-echo "partner core: ok\\n";
+$lite = file_get_contents(__DIR__ . '/../php-proxy/sb_lite.php');
+expect_true($lite !== false && str_contains($lite, 'function sb_update_returning'), 'conditional updates can report CAS misses');
+$callback = file_get_contents(__DIR__ . '/../php-proxy/partner_webhook.php');
+expect_true($callback !== false && str_contains($callback, "sb_update_returning('jm_partner_applications'"), 'callback uses conditional application update');
+expect_true(str_contains($callback, "'status_version' => 'eq.' . (int)\$application['status_version']"), 'callback CAS includes previous version');
+expect_true(str_contains($callback, "'status' => 'eq.' . (string)\$application['status']"), 'callback CAS includes previous status');
+expect_true(str_contains($callback, 'for ($casAttempt = 0; $casAttempt < 4; $casAttempt++)'), 'callback retries a lost CAS');
+expect_true(str_contains($callback, "http_response_code(409)"), 'out-of-order callback is retryable instead of false 200');
+expect_true(str_contains($callback, "http_response_code(\$retryable ? 503 : 422)"), 'transient callback failures return 503');
+expect_true(!preg_match("~sb_update\\('jm_partner_applications',[\\s\\S]{0,260}'status' => \\$next\\['status'\\]~", $callback), 'callback no longer blindly overwrites application status');
+
+echo "partner core: ok\n";
