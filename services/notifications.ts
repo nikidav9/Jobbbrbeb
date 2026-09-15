@@ -95,35 +95,37 @@ function getExpoProjectId(): string | undefined {
   );
 }
 
-export async function registerForPushNotifications(userId: string): Promise<void> {
-  if (Platform.OS === 'web') return;
+export async function registerForPushNotifications(userId: string): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   if (!Device.isDevice) {
     console.info('[push] Skipped push token registration: simulator/emulator detected.');
-    return;
-  }
-
-  // Never trigger the OS permission dialog here — boot-time calls must stay
-  // silent. The dialog is requested only from NotificationPermissionSheet.
-  const { status } = await Notifications.getPermissionsAsync();
-  if (status !== 'granted') {
-    console.info('[push] Permission not granted yet: skipping token registration.');
-    return;
-  }
-
-  await setupAndroidChannels();
-
-  const projectId = getExpoProjectId();
-  if (!projectId) {
-    console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
-    return;
+    return false;
   }
 
   try {
+    // Never trigger the OS permission dialog here — boot-time calls must stay
+    // silent. The dialog is requested only from NotificationPermissionSheet.
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      console.info('[push] Permission not granted yet: skipping token registration.');
+      return false;
+    }
+
+    await setupAndroidChannels();
+
+    const projectId = getExpoProjectId();
+    if (!projectId) {
+      console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
+      return false;
+    }
+
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbSavePushToken(userId, token);
     console.info('[push] Expo push token saved for user:', userId);
+    return true;
   } catch (error) {
     console.warn('[push] Failed to register Expo push token:', error);
+    return false;
   }
 }
 

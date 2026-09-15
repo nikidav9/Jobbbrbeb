@@ -166,6 +166,20 @@ $tgBanner = (string)file_get_contents(__DIR__ . '/../components/TelegramLinkBann
 check('telegram banner: готовит резервную привязку', str_contains($tgBanner, 'void dbTgPrepareLink(userId).catch'));
 check('telegram banner: ошибка открытия видна', str_contains($tgBanner, 'Не удалось открыть Telegram. Откройте вручную'));
 
+// ── Push: разрешение ОС не выдаётся за рабочую доставку ─────────────────────
+$push = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
+$pushSheet = (string)file_get_contents(__DIR__ . '/../components/NotificationPermissionSheet.tsx');
+check('push: регистрация возвращает явный результат',
+    str_contains($push, 'Promise<boolean>') && str_contains($push, 'return true;') && str_contains($push, 'return false;'));
+check('push: экран ждёт регистрацию токена после уже выданного разрешения',
+    str_contains($pushSheet, "status === 'granted'") &&
+    str_contains($pushSheet, 'withTimeout(registerForPushNotifications(userId)'));
+check('push: enabled сохраняется только после успешной регистрации',
+    str_contains($pushSheet, 'if (ok) {') &&
+    str_contains($pushSheet, "AsyncStorage.setItem(CHOICE_KEY, 'enabled')"));
+check('push: ошибка токена объяснена и не закрывает лист как успех',
+    str_contains($pushSheet, 'push-токен не зарегистрировался'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

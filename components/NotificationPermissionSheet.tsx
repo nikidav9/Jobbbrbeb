@@ -72,8 +72,14 @@ export default function NotificationPermissionSheet() {
         } else {
           const { status } = await Notifications.getPermissionsAsync();
           if (status === 'granted') {
-            await AsyncStorage.setItem(CHOICE_KEY, 'enabled');
-            return;
+            // Разрешение ОС само по себе ещё не означает работающий push:
+            // токен должен реально получиться и сохраниться на сервере.
+            const ok = await withTimeout(registerForPushNotifications(userId), ENABLE_TIMEOUT_MS).catch(() => false);
+            if (ok) {
+              await AsyncStorage.setItem(CHOICE_KEY, 'enabled');
+              return;
+            }
+            // Токен не зарегистрировался — показываем лист и даём повторить.
           }
           // iOS: after a hard OS-level deny the dialog can't be re-shown — stop nagging
           if (status === 'denied' && Platform.OS === 'ios') {
@@ -170,10 +176,20 @@ export default function NotificationPermissionSheet() {
       } else {
         const { status } = await withTimeout(Notifications.requestPermissionsAsync(), ENABLE_TIMEOUT_MS);
         if (status === 'granted') {
-          await AsyncStorage.setItem(CHOICE_KEY, 'enabled');
-          if (userId) registerForPushNotifications(userId).catch(() => {});
+          const ok = userId
+            ? await withTimeout(registerForPushNotifications(userId), ENABLE_TIMEOUT_MS)
+            : false;
+          if (ok) {
+            await AsyncStorage.setItem(CHOICE_KEY, 'enabled');
+            close();
+          } else {
+            setErrorMsg('Разрешение получено, но push-токен не зарегистрировался. Проверьте связь и попробуйте ещё раз.');
+          }
+        } else {
+          // Пользователь отказал на уровне ОС. Не выдаём это за включённые
+          // уведомления; лист просто закроется и сможет появиться позже.
+          close();
         }
-        close();
       }
     } catch {
       setErrorMsg('Не получилось включить (нет ответа). Попробуйте ещё раз.');
