@@ -4010,10 +4010,12 @@ function EmployerHome() {
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   const [closingPermIds, setClosingPermIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   // Отклики на постоянную вакансию — шторкой поверх списка, а не отдельным
   // экраном: директор смотрит их между делом и возвращается к вакансиям.
   const [appsVacancyId, setAppsVacancyId] = useState<string | null>(null);
   const [deletingPermIds, setDeletingPermIds] = useState<Set<string>>(new Set());
+  const [deletedPermIds, setDeletedPermIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmDeletePerm, setConfirmDeletePerm] = useState<string | null>(null);
 
@@ -4045,14 +4047,14 @@ function EmployerHome() {
   }, [vacancies]);
 
   const shown = myVacancies.filter(v => {
-    if (deletingIds.has(v.id)) return false;
+    if (deletedIds.has(v.id)) return false;
     const isClosing = closingIds.has(v.id);
     if (tab === 'active') return !isClosing && v.status === 'open' && v.date >= todayISO;
     return isClosing || v.status === 'closed' || (v.status === 'open' && v.date < todayISO);
   });
 
   const shownPerm = myPermVacancies.filter(v => {
-    if (deletingPermIds.has(v.id)) return false;
+    if (deletedPermIds.has(v.id)) return false;
     const isClosing = closingPermIds.has(v.id);
     if (tab === 'active') return !isClosing && v.status === 'open';
     return isClosing || v.status === 'closed';
@@ -4090,22 +4092,56 @@ function EmployerHome() {
       .catch(e => console.warn('[closePermVacancy]', e));
   };
 
-  const deleteVacancy = (id: string) => {
+  const deleteVacancy = async (id: string) => {
+    if (deletingIds.has(id)) return;
     setConfirmDelete(null);
     setDeletingIds(prev => new Set([...prev, id]));
-    showToast('Вакансия удалена', 'success');
-    dbDeleteVacancy(id)
-      .then(() => refreshVacancies().catch(() => {}))
-      .catch(e => console.warn('[deleteVacancy]', e));
+    try {
+      await dbDeleteVacancy(id);
+      // Строку прячем только после подтверждения сервера. До этого пользователь
+      // видит прежнее состояние, а не ложный успешный результат.
+      setDeletedIds(prev => new Set([...prev, id]));
+      try {
+        await refreshVacancies();
+        showToast('Вакансия удалена', 'success');
+      } catch {
+        showToast('Вакансия удалена, но список не обновился. Потяните вниз.', 'info');
+      }
+    } catch (e) {
+      showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');
+      console.warn('[deleteVacancy]', e);
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
-  const deletePermVacancy = (id: string) => {
+  const deletePermVacancy = async (id: string) => {
+    if (deletingPermIds.has(id)) return;
     setConfirmDeletePerm(null);
     setDeletingPermIds(prev => new Set([...prev, id]));
-    showToast('Вакансия удалена', 'success');
-    dbDeletePermVacancy(id)
-      .then(() => refreshPermVacancies().catch(() => {}))
-      .catch(e => console.warn('[deletePermVacancy]', e));
+    try {
+      await dbDeletePermVacancy(id);
+      setDeletedPermIds(prev => new Set([...prev, id]));
+      try {
+        await refreshPermVacancies();
+        showToast('Вакансия удалена', 'success');
+      } catch {
+        showToast('Вакансия удалена, но список не обновился. Потяните вниз.', 'info');
+      }
+    } catch (e) {
+      showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');
+      console.warn('[deletePermVacancy]', e);
+    } finally {
+      setDeletingPermIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   return (
