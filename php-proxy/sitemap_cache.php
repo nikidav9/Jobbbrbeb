@@ -1,5 +1,11 @@
 <?php
 
+/** Единственное место, где задан путь к production-кэшу sitemap. */
+function sm_cache_default_path(): string
+{
+    return '/tmp/jobtoo-sitemap-v1.xml';
+}
+
 function sm_cache_valid(string $xml): bool
 {
     $trimmed = ltrim($xml);
@@ -27,4 +33,16 @@ function sm_cache_write(string $path, string $xml): bool
 
     @unlink($tmp);
     return false;
+}
+
+/**
+ * Состав sitemap зависит от живых вакансий и /rabota/ порога. Когда эти
+ * данные меняются, старую карту нельзя продолжать отдавать до истечения TTL:
+ * она может рекламировать URL, который уже честно отвечает 404.
+ */
+function sm_cache_invalidate(?string $path = null): bool
+{
+    $path = $path ?? sm_cache_default_path();
+    if (!is_file($path)) return true;
+    return @unlink($path);
 }
