@@ -259,7 +259,11 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
     foreach ($rows as $row) {
         if (!is_array($row)) continue;
 
-        $title = cf_text(cf_dig($row, (string)($map['title'] ?? 'title')));
+        // cf_name, а не cf_text: поле сплошь и рядом оказывается объектом
+        // {id, name} или списком таких объектов. У Yadro, например, город
+        // приходит как [{"id":2,"name":"Москва"},{"id":3,"name":"СПб"}] —
+        // cf_text вернул бы на этом пустую строку и город потерялся бы молча.
+        $title = cf_name(cf_dig($row, (string)($map['title'] ?? 'title')));
         if ($title === '') continue;
 
         $url = cf_json_url($row, $map, $pageUrl);
@@ -272,7 +276,7 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
             if ($closed !== null && $closed !== false && $closed !== '' && $closed !== 0) continue;
         }
 
-        $ext = cf_text(cf_dig($row, (string)($map['id'] ?? '')));
+        $ext = cf_name(cf_dig($row, (string)($map['id'] ?? '')));
         // Своего номера может не быть — тогда имя вакансии это её адрес. Адрес
         // устойчив: при следующем обходе узнаем ту же вакансию, а не заведём
         // дубль. То же правило, что и в cf_normalize.
@@ -285,7 +289,7 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
                   'description' => 'description', 'schedule' => 'schedule'] as $to => $_) {
             $field = (string)($map[$to] ?? '');
             if ($field === '') continue;
-            $value = cf_text(cf_dig($row, $field));
+            $value = cf_name(cf_dig($row, $field));
             if ($value !== '') $item[$to] = $value;
         }
 
@@ -312,7 +316,7 @@ function cf_json_url(array $row, array $map, string $pageUrl): string
     $template = (string)($map['url_template'] ?? '');
     if ($template !== '') {
         $url = preg_replace_callback('~\{([a-zA-Z0-9_.]+)\}~', function ($m) use ($row) {
-            return rawurlencode(cf_text(cf_dig($row, $m[1])));
+            return rawurlencode(cf_name(cf_dig($row, $m[1])));
         }, $template);
         if (preg_match('~^https://~i', $url) && !str_contains($url, '{')) return $url;
     }
