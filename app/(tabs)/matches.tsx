@@ -691,8 +691,13 @@ function EmployerMatches() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refreshAll();
-    setRefreshing(false);
+    try {
+      await refreshAll();
+    } catch {
+      showToast('Не удалось обновить отклики. Проверьте связь.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const currentUserId = currentUser?.id ?? '';

@@ -1847,8 +1847,13 @@ function WorkerFeed() {
   const onRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    await Promise.all([refreshAll(), loadPartnerShifts()]);
-    setRefreshing(false);
+    try {
+      await Promise.all([refreshAll(), loadPartnerShifts()]);
+    } catch {
+      showToast('Не удалось обновить ленту. Проверьте связь.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const [dates, setDates] = useState(() => getTodayDates());

@@ -49,10 +49,11 @@ function ChatRow({ item, currentUser, users, onPress, onDelete }: {
   currentUser: any;
   users: any[];
   onPress: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void>;
 }) {
   const pan = useRef(new Animated.Value(0)).current;
   const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState(false);
 
   const panResponder = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy),
@@ -88,24 +89,33 @@ function ChatRow({ item, currentUser, users, onPress, onDelete }: {
       [
         { text: 'Отмена', style: 'cancel', onPress: () => Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start() },
         {
-          text: 'Удалить', style: 'destructive', onPress: () => {
+          text: 'Удалить', style: 'destructive', onPress: async () => {
+            if (deleting) return;
             setDeleting(true);
-            onDelete();
+            try {
+              // Строка исчезает только после подтверждённого удаления на сервере.
+              // Иначе любой обрыв связи выглядел как успешно удалённый чат.
+              await onDelete();
+              setDeleted(true);
+            } catch {
+              setDeleting(false);
+              Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
+            }
           },
         },
       ]
     );
   };
 
-  if (deleting) return null;
+  if (deleted) return null;
 
   return (
     <View style={styles.swipeRow}>
       {/* Delete button revealed on left swipe */}
       <View style={styles.deleteAction}>
-        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
           <Ionicons name="trash-outline" size={22} color="#fff" />
-          <Text style={styles.deleteBtnLabel}>Удалить</Text>
+          <Text style={styles.deleteBtnLabel}>{deleting ? 'Удаляем…' : 'Удалить'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -149,8 +159,13 @@ export default function ChatsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refreshAll();
-    setRefreshing(false);
+    try {
+      await refreshAll();
+    } catch {
+      showToast('Не удалось обновить переписки. Проверьте связь.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
@@ -191,9 +206,20 @@ export default function ChatsScreen() {
   });
 
   const handleDelete = async (chatId: string) => {
-    await dbDeleteChat(chatId);
-    await refreshChats();
-    showToast('Переписка удалена', 'success');
+    try {
+      await dbDeleteChat(chatId);
+      // Удаление уже подтверждено. Сбой последующего перечитывания списка не
+      // превращаем в «не удалилось» и не просим человека жать кнопку второй раз.
+      try {
+        await refreshChats();
+      } catch {
+        showToast('Переписка удалена, но список не обновился. Потяните вниз.', 'info');
+      }
+      showToast('Переписка удалена', 'success');
+    } catch {
+      showToast('Не удалось удалить переписку. Проверьте связь.', 'error');
+      throw new Error('chat delete failed');
+    }
   };
 
   return (

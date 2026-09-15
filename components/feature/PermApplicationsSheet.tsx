@@ -66,8 +66,13 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refreshPermApplications();
-    setRefreshing(false);
+    try {
+      await refreshPermApplications();
+    } catch {
+      showToast('Не удалось обновить отклики. Проверьте связь.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   /** Одобрение — это первое сообщение директора, а не уведомление о нём. */
