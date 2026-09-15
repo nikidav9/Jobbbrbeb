@@ -7,6 +7,7 @@ matches = (root / 'app/(tabs)/matches.tsx').read_text(encoding='utf-8')
 feed = (root / 'app/(tabs)/feed.tsx').read_text(encoding='utf-8')
 chat_room = (root / 'app/chat-room.tsx').read_text(encoding='utf-8')
 rate = (root / 'app/rate.tsx').read_text(encoding='utf-8')
+perm_detail = (root / 'app/perm-vacancy-detail.tsx').read_text(encoding='utf-8')
 perm = (root / 'components/feature/PermApplicationsSheet.tsx').read_text(encoding='utf-8')
 plan = (root / 'docs/план-разработки.md').read_text(encoding='utf-8')
 
@@ -21,6 +22,9 @@ perm_close = feed[perm_close_start:shift_delete_start] if perm_close_start >= 0 
 rate_submit_start = rate.find('  const submit = async')
 rate_submit_end = rate.find('  const skip =', rate_submit_start)
 rate_submit = rate[rate_submit_start:rate_submit_end] if rate_submit_start >= 0 and rate_submit_end > rate_submit_start else ''
+perm_apply_start = perm_detail.find('  const sendApply = async')
+perm_apply_end = perm_detail.find('  const toggleSave = async', perm_apply_start)
+perm_apply = perm_detail[perm_apply_start:perm_apply_end] if perm_apply_start >= 0 and perm_apply_end > perm_apply_start else ''
 
 rating_write = 'const { bothRated } = await dbSubmitRatingAndMaybeDelete({'
 rating_refresh = "try {\n        await refreshAll();\n      } catch {\n        // Следующий обычный refresh подтянет уже сохранённое состояние.\n      }"
@@ -50,6 +54,12 @@ checks = {
     'refresh оценки изолирован после успешной записи': rating_refresh in rate_submit and rate_submit.find(rating_write) < rate_submit.find(rating_refresh),
     'сбой refresh оценки не отменяет успешный результат': rating_refresh in rate_submit and rate_submit.find(rating_refresh) < rate_submit.find(rating_success),
     'ошибка сохранения остаётся для неуспешной записи': "showToast('Ошибка при сохранении', 'error');" in rate_submit,
+    'постоянный отклик ждёт серверную запись': "await dbApplyPermVacancy(vacancy.id, currentUser.id, vacancy.employerId, message);" in perm_apply,
+    'успешный постоянный отклик фиксируется локально до refresh': "setApplySubmitted(true);" in perm_apply and perm_apply.find('await dbApplyPermVacancy') < perm_apply.find('setApplySubmitted(true);'),
+    'refresh постоянного отклика изолирован после записи': "try {\n        await refreshPermApplications();\n      } catch {" in perm_apply and perm_apply.find('setApplySubmitted(true);') < perm_apply.find('await refreshPermApplications();'),
+    'сбой refresh не отменяет успех постоянного отклика': "showToast('Отклик отправлен! 📨', 'success');" in perm_apply and perm_apply.find('await refreshPermApplications();') < perm_apply.find("showToast('Отклик отправлен! 📨', 'success');"),
+    'после подтверждённой записи нельзя отправить постоянный отклик повторно': "const isApplied = !!myApp || applySubmitted;" in perm_detail,
+    'локально подтверждённый отклик показывает ожидание': "const appStatus = myApp ? STATUS_MAP[myApp.status] : (applySubmitted ? STATUS_MAP.pending : null);" in perm_detail,
     'статус отклика не наследуется от прошлого чата': "setLikeStatus(null);\n    setLikeStatusLoadFailed(false);\n    let cancelled = false;" in chat_room,
     'устаревший ответ статуса отклика игнорируется': "if (cancelled) return;" in chat_room and "return () => { cancelled = true; };" in chat_room,
     'сбой загрузки статуса отклика виден': "setLikeStatusLoadFailed(true);" in chat_room and 'Не удалось загрузить статус отклика' in chat_room,

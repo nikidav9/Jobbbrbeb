@@ -49,6 +49,9 @@ export default function PermVacancyDetailScreen() {
     showToast, responsivenessMap } = useApp();
 
   const [applying, setApplying] = useState(false);
+  // Серверная запись важнее последующего refresh: если отклик уже принят,
+  // не даём отправить его повторно только потому, что сеть оборвалась на чтении.
+  const [applySubmitted, setApplySubmitted] = useState(false);
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [authModalDismissed, setAuthModalDismissed] = useState(Platform.OS === 'web');
@@ -118,7 +121,7 @@ export default function PermVacancyDetailScreen() {
     return permApplications.find(a => a.vacancyId === vacancy.id && a.workerId === currentUser.id) ?? null;
   }, [permApplications, currentUser, vacancy]);
 
-  const isApplied = !!myApp;
+  const isApplied = !!myApp || applySubmitted;
   // hired значит «кандидата закрыли» — для работника это тот же одобренный
   // отклик, просто работодатель уже завершил подбор.
   const isApproved = myApp?.status === 'approved' || myApp?.status === 'hired';
@@ -286,8 +289,14 @@ export default function PermVacancyDetailScreen() {
     setApplying(true);
     try {
       await dbApplyPermVacancy(vacancy.id, currentUser.id, vacancy.employerId, message);
+      setApplySubmitted(true);
       setApplyOpen(false);
-      await refreshPermApplications();
+      try {
+        await refreshPermApplications();
+      } catch {
+        // Отклик уже записан на сервере. Сбой последующего чтения не должен
+        // превращать успешную запись в «Не удалось отправить отклик».
+      }
       // Директора уведомляет сервер при создании отклика — и сообщением, и
       // карточкой с кнопками в телеграме. Раньше это делал телефон соискателя
       // уже после записи: старая версия или обрыв связи — и директор не
@@ -326,7 +335,7 @@ export default function PermVacancyDetailScreen() {
     rejected: { label: 'Отказ',           icon: 'close-circle-outline',     color: Colors.red,   bg: '#FEE2E2' },
   };
 
-  const appStatus = myApp ? STATUS_MAP[myApp.status] : null;
+  const appStatus = myApp ? STATUS_MAP[myApp.status] : (applySubmitted ? STATUS_MAP.pending : null);
 
   return (
     <SafeAreaView style={styles.safe}>
