@@ -11,6 +11,12 @@ api.telegram.org отпала, tgtool вернул пустой ответ, ша
 валит. Но и молчать об отказе нельзя — бот несёт вход в мини-приложение и
 уведомления, — поэтому следом обязан стоять шаг, срабатывающий именно при
 отказе вебхука.
+
+Второй инвариант появился 15 сентября: быстрые последовательные push запускали
+несколько deploy одновременно, а все они делали --clobber одного и того же
+release asset. Один прогон мог удалить asset, пока другой его загружал, и
+uploads.github.com отвечал 404. Production publish поэтому обязан быть
+сериализован, а сам внешний upload иметь ограниченный retry.
 """
 
 import sys
@@ -19,9 +25,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STEPS = yaml.safe_load(
+WORKFLOW = yaml.safe_load(
     (ROOT / ".github/workflows/deploy-regru.yml").read_text(encoding="utf-8")
-)["jobs"]["deploy"]["steps"]
+)
+STEPS = WORKFLOW["jobs"]["deploy"]["steps"]
 
 failures = []
 
@@ -44,6 +51,24 @@ webhook = find("Restore and verify Telegram webhook")
 
 check("шаг публикации сайта на месте", publish >= 0)
 check("шаг проверки вебхука на месте", webhook >= 0)
+
+# Один fixed release asset не допускает двух писателей одновременно. Старый
+# deploy не нужен, когда уже пришёл новый main: отмена здесь корректнее очереди
+# из устаревших сборок.
+concurrency = WORKFLOW.get("concurrency", {})
+check("production deploy имеет отдельную concurrency group",
+      concurrency.get("group") == "production-web-deploy")
+check("устаревший production deploy отменяется",
+      concurrency.get("cancel-in-progress") is True)
+
+if publish >= 0:
+    publish_body = str(STEPS[publish].get("run", ""))
+    check("release asset публикуется через clobber",
+          "gh release upload web dist.tar.gz --clobber" in publish_body)
+    check("release upload имеет ограниченный retry",
+          "for attempt in 1 2 3" in publish_body and "published=0" in publish_body)
+    check("после трёх отказов publish остаётся красным",
+          '[ "$published" = 1 ]' in publish_body)
 
 if publish >= 0 and webhook >= 0:
     # Главное. Публикация раньше — тогда отказ Telegram её не отменит.
