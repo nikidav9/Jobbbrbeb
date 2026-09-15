@@ -316,7 +316,13 @@ function cf_json_url(array $row, array $map, string $pageUrl): string
     $template = (string)($map['url_template'] ?? '');
     if ($template !== '') {
         $url = preg_replace_callback('~\{([a-zA-Z0-9_.]+)\}~', function ($m) use ($row) {
-            return rawurlencode(cf_name(cf_dig($row, $m[1])));
+            // Кодируем каждый кусок пути отдельно, а не целиком. Сплошной
+            // rawurlencode превращал «/» в «%2F», и у Lamoda ссылка
+            // /vacancy/moskva/frontend-vue-developer--1946 ломалась: её slug
+            // состоит из двух сегментов. Защита при этом остаётся — «?», «#»
+            // и «:» по-прежнему экранируются, чужой адрес не подставить.
+            $value = cf_name(cf_dig($row, $m[1]));
+            return implode('/', array_map('rawurlencode', explode('/', $value)));
         }, $template);
         if (preg_match('~^https://~i', $url) && !str_contains($url, '{')) return $url;
     }
@@ -332,4 +338,65 @@ function cf_json_url(array $row, array $map, string $pageUrl): string
         }
     }
     return '';
+}
+
+/**
+ * Адрес одной порции JSON-источника.
+ *
+ * Карьерные API почти все отдают вакансии порциями, и без этого источник
+ * приносил бы только первую: у Сбера это 50 вакансий из 1795, у Ростелекома
+ * 20 из 382. Раньше листать было нечем — `career.php` умел лишь разметку
+ * JobPosting, и разбор JSON, уже написанный рядом, никуда не был подключён.
+ *
+ * $paging описывает, как источник просит следующую порцию:
+ *   type=offset — `?limit=100&offset=200` (Сбер зовёт их take/skip, поэтому
+ *                 имена параметров настраиваются);
+ *   type=page   — `?page=3`, начиная с `start` (у кого-то 0, у кого-то 1).
+ * Пустой $paging — источник отдаёт всё разом, порция ровно одна.
+ */
+function cf_page_url(string $url, array $paging, int $sub): string
+{
+    $type = (string)($paging['type'] ?? '');
+    if ($type === '' || $sub === 0 && $type === 'none') return $url;
+
+    $limit = max(1, (int)($paging['limit'] ?? 100));
+    $parts = parse_url($url);
+    if (!is_array($parts) || !isset($parts['host'])) return $url;
+    parse_str((string)($parts['query'] ?? ''), $query);
+
+    if ($type === 'offset') {
+        $query[(string)($paging['limit_param'] ?? 'limit')] = $limit;
+        $query[(string)($paging['param'] ?? 'offset')] = $sub * $limit;
+    } elseif ($type === 'page') {
+        $query[(string)($paging['param'] ?? 'page')] = (int)($paging['start'] ?? 1) + $sub;
+        if (!empty($paging['limit_param'])) $query[(string)$paging['limit_param']] = $limit;
+    } else {
+        return $url;
+    }
+
+    $rebuilt = $parts['scheme'] . '://' . $parts['host']
+        . (isset($parts['port']) ? ':' . $parts['port'] : '')
+        . ($parts['path'] ?? '');
+    $q = http_build_query($query);
+    return $q === '' ? $rebuilt : $rebuilt . '?' . $q;
+}
+
+/**
+ * Брать ли следующую порцию у того же источника.
+ *
+ * Признак «порция полная» надёжнее счётчика total: total присылают не все, а
+ * врут в нём многие. Предел страниц обязателен — иначе сломанный источник,
+ * отдающий одно и то же, крутил бы обход вечно.
+ */
+function cf_has_next_sub(int $got, array $paging, int $sub): bool
+{
+    // $got — число СЫРЫХ записей в ответе, а не принятых нами. Разница
+    // принципиальная: у Wildberries сервер отдаёт 50 записей, из них после
+    // отсева (нет должности, вакансия закрыта, нет ссылки) остаётся 31. По
+    // принятым обход решил бы, что порция неполная, и остановился бы на первой
+    // полусотне из 97. Замерено, а не предположено.
+    if ((string)($paging['type'] ?? '') === '') return false;
+    $limit = max(1, (int)($paging['limit'] ?? 100));
+    $maxPages = max(1, (int)($paging['max_pages'] ?? 20));
+    return $got >= $limit && $sub + 1 < $maxPages;
 }

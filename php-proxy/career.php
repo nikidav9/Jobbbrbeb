@@ -36,6 +36,9 @@ if ($sourceId === '' || !preg_match('~^[A-Za-z0-9._-]{1,64}$~', $sourceId)) {
     cf_fail(400, 'нет источника');
 }
 $page = max(0, (int)($_GET['page'] ?? 0));
+// Порция внутри одного источника. Карьерные API отдают вакансии по частям, и
+// без этого мы брали бы только первую: у Сбера 50 из 1795.
+$sub  = max(0, (int)($_GET['sub'] ?? 0));
 
 $source = sb_single('jm_ext_sources', ['id' => 'eq.' . $sourceId], 'id,connector_kind,connector_config,enabled');
 if (!$source || (string)($source['connector_kind'] ?? '') !== 'career') {
@@ -50,15 +53,35 @@ if (empty($source['enabled'])) {
 }
 
 $config = is_array($source['connector_config'] ?? null) ? $source['connector_config'] : [];
-$pages = is_array($config['pages'] ?? null) ? array_values($config['pages']) : [];
+// Источник бывает двух видов, и обходим мы их одним списком. `pages` — адрес
+// страницы с разметкой JobPosting, `endpoints` — найденный разведкой адрес
+// JSON вместе с картой полей. Второй вид разбирался в career_feed.php
+// (cf_json_items), но сюда подключён не был: настройку было некуда вписать.
+$units = [];
+foreach (is_array($config['pages'] ?? null) ? $config['pages'] : [] as $u) {
+    if (is_string($u)) $units[] = ['url' => $u, 'kind' => 'html', 'map' => [], 'paging' => []];
+}
+foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $e) {
+    if (!is_array($e) || !is_string($e['url'] ?? null)) continue;
+    $units[] = [
+        'url'    => $e['url'],
+        'kind'   => 'json',
+        'map'    => is_array($e['map'] ?? null) ? $e['map'] : [],
+        'paging' => is_array($e['paging'] ?? null) ? $e['paging'] : [],
+    ];
+}
 // Список задаёт администратор в панели. Это не повод пускать сборщик куда
 // угодно: адрес всё равно проходит ту же проверку, что и адрес источника —
 // только публичный HTTPS, без localhost, служебных сетей и метаданных облака.
-$pages = array_values(array_filter($pages, fn($u) => is_string($u) && ing_safe_https_url($u)));
-if (!$pages) cf_fail(422, 'у источника нет годных адресов карьерных страниц');
-if ($page >= count($pages)) cf_fail(404, 'страница за пределами списка');
+$units = array_values(array_filter($units, fn($u) => ing_safe_https_url($u['url'])));
+if (!$units) cf_fail(422, 'у источника нет годных адресов карьерных страниц');
+if ($page >= count($units)) cf_fail(404, 'страница за пределами списка');
 
-$pageUrl = $pages[$page];
+$unit = $units[$page];
+// Адрес порции строим до похода, но проверяем заново: подставляются только
+// числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
+$pageUrl = $unit['kind'] === 'json' ? cf_page_url($unit['url'], $unit['paging'], $sub) : $unit['url'];
+if (!ing_safe_https_url($pageUrl)) cf_fail(422, 'адрес порции не проходит проверку');
 $resolveEntries = ing_safe_https_resolve($pageUrl);
 if ($resolveEntries === null) cf_fail(422, 'адрес страницы больше не разрешается безопасно');
 
@@ -67,7 +90,9 @@ $tooLarge = false;
 $ch = curl_init($pageUrl);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => false,
-    CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml'],
+    CURLOPT_HTTPHEADER => [$unit['kind'] === 'json'
+        ? 'Accept: application/json'
+        : 'Accept: text/html,application/xhtml+xml'],
     CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 45,
@@ -109,17 +134,30 @@ if ($ok === false || $code < 200 || $code >= 300) {
     cf_fail(502, "страница недоступна ($code $error)");
 }
 
-$items = cf_items($body, $pageUrl, time());
+if ($unit['kind'] === 'json') {
+    $data = json_decode($body, true);
+    if (!is_array($data)) cf_fail(502, 'источник ответил не JSON');
+    $items = cf_json_items($data, $unit['map'], $pageUrl, time());
+    // Считаем сырые записи, а не принятые: см. cf_has_next_sub.
+    $rawRows = cf_dig($data, (string)($unit['map']['list'] ?? ''));
+    $raw = is_array($rawRows) ? count($rawRows) : count($items);
+    $more = cf_has_next_sub($raw, $unit['paging'], $sub);
+} else {
+    $items = cf_items($body, $pageUrl, time());
+    $more = false;
+}
 
-$hasMore = $page + 1 < count($pages);
+// Сначала дочитываем порции текущего источника, потом переходим к следующему.
+$hasMore = $more || $page + 1 < count($units);
 $out = [
     'items' => $items,
     'has_more' => $hasMore,
     'page' => $page,
+    'sub' => $sub,
     'total' => null,
 ];
 if ($hasMore) {
     $out['next_url'] = 'https://jobtoo.ru/api/career.php?source=' . rawurlencode($sourceId)
-        . '&page=' . ($page + 1);
+        . '&page=' . ($more ? $page : $page + 1) . '&sub=' . ($more ? $sub + 1 : 0);
 }
 echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
