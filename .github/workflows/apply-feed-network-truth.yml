@@ -1,0 +1,46 @@
+name: Apply truthful feed network states
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-feed-network-truth.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply guarded patch
+        run: python3 scripts/apply_feed_network_truth.py
+
+      - name: Validate
+        run: |
+          git diff --check
+          php tests/offline_states_test.php
+          npm ci
+          npm test
+          npm run typecheck
+
+      - name: Commit source fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 'app/(tabs)/feed.tsx' tests/offline_states_test.php
+          git commit -m "fix: keep feed network states truthful"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
