@@ -3,15 +3,12 @@ name: Сборка сайта и доставка на московский се
 on:
   push:
     branches: [main]
-  # Ручной запуск: пригодится, когда меняются не файлы, а секреты — тогда
-  # выкладку надо повторить, а коммитить нечего.
   workflow_dispatch:
 
 jobs:
   deploy:
     name: Сборка и доставка
     runs-on: ubuntu-latest
-    # Нужно, чтобы выложить собранный сайт выпуском — его забирает московский сервер.
     permissions:
       contents: write
     steps:
@@ -25,18 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Отделяем ошибки TypeScript от Metro: иначе в мобильном интерфейсе
-      # GitHub виден только хвост WorkerFarm без исходного файла и строки.
       - name: Typecheck
         run: npm run typecheck
 
-      # Что из настроек репозитория реально доехало до сборки.
-      #
-      # Значения не печатаем — только длину. Сегодня выяснилось, что ключ
-      # считался заданным, а в собранной версии его не было вовсе: живые
-      # обновления и загрузка файлов молча не работали месяцами. Отличить
-      # «вписал» от «доехало» по самим настройкам невозможно, а по этой
-      # строке — за две секунды.
       - name: Which build secrets arrived
         env:
           U: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
@@ -45,19 +33,13 @@ jobs:
           S: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
         run: |
           say() { [ -n "$2" ] && echo "$1: задан, ${#2} символов" || echo "$1: ПУСТО"; }
-          say EXPO_PUBLIC_SUPABASE_URL      "$U"
+          say EXPO_PUBLIC_SUPABASE_URL "$U"
           say EXPO_PUBLIC_SUPABASE_ANON_KEY "$K"
-          say EXPO_PUBLIC_API_URL           "$A"
-          say EXPO_PUBLIC_APP_SECRET        "$S"
-          # Адрес не секрет — его показываем целиком: по нему сразу видно,
-          # смотрит сборка на облако или на свой сервер.
+          say EXPO_PUBLIC_API_URL "$A"
+          say EXPO_PUBLIC_APP_SECRET "$S"
           echo "адрес бэкенда: ${U:-нет}"
 
       - name: Build Expo web
-        # На hosted runner Metro раньше поднимал worker на каждое доступное
-        # ядро. Пиковая память нескольких минификаторов завершала один worker,
-        # а в логе оставался только стек DeltaBundler/WorkerFarm. Два worker и
-        # явный heap делают сборку медленнее на секунды, но воспроизводимой.
         run: npx expo export --platform web --max-workers 2
         env:
           NODE_OPTIONS: --max-old-space-size=4096
@@ -65,24 +47,12 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
-          # Не секрет и никогда им не был — обычный публичный адрес. В
-          # настройках он указывал на Vercel, и одна забытая строка там
-          # утянула бы приложение обратно на чужой хостинг.
           EXPO_PUBLIC_DASHBOARD_URL: https://admin.jobtoo.ru
           EXPO_PUBLIC_YANDEX_MAPS_KEY: ${{ secrets.EXPO_PUBLIC_YANDEX_MAPS_KEY }}
 
-      # Раньше здесь же PHP прокси копировался в dist/api/ и уезжал по FTP на
-      # Reg.ru. Хостинга больше нет, а в выпуск для Москвы каталог api/ и так
-      # не попадает — его вырезают ниже. PHP на московский сервер приходит
-      # прямо из репозитория, в /opt/jobtoo-proxy (см. infra/bootstrap.sh).
-      #
-      # Значок остаётся: он лежит в корне сборки и в выпуск попадает.
       - name: Replace favicon
         run: cp assets/images/favicon.ico dist/favicon.ico
 
-      # Статика остаётся на том же origin, что и HTML.
-      # Технический Timeweb CDN отключён: он отвечал 403 и делал свежую сборку
-      # недоступной, даже когда сам origin работал.
       - name: Verify same-origin static assets
         run: |
           if grep -R "j8a6jds2at.cdn.twcstorage.ru" dist --include='*.html'; then
@@ -90,34 +60,31 @@ jobs:
             exit 1
           fi
 
-      # Здесь же собирались файлы секретов для Reg.ru: app_secrets.php,
-      # sb_url.php, sb_service_key.php, admin_credentials.php. Они клались в
-      # dist/api/ и уезжали по FTP. Хостинга больше нет, а в выпуск для
-      # Москвы каталог api/ не попадает — то есть шаг писал файлы, которые
-      # никто не забирал, и делал это с настоящими паролями.
-      #
-      # На московский сервер секреты уходят ниже, шагом «Deliver secrets»:
-      # не файлами в сборке, а отдельным запросом к deploy.php.
+      # Сначала публикуем артефакт. Московский сервер забирает его сам, поэтому
+      # краткий отказ deploy.php не должен отменять уже готовую веб-сборку.
+      - name: Publish web build for the Moscow server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf pack && mkdir pack
+          cp -a dist/. pack/
+          rm -rf pack/api pack/.htaccess
+          printf '{"sha":"%s","deployed_at":"%s","builder":"github-actions"}\n' \
+            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > pack/jobtoo-build.json
+          tar -czf dist.tar.gz -C pack .
+          ls -l dist.tar.gz
+          gh release view web >/dev/null 2>&1 \
+            || gh release create web --latest=false \
+                 -t "Веб-сборка" \
+                 -n "Собирается автоматически. Московский сервер забирает отсюда dist.tar.gz."
+          gh release upload web dist.tar.gz --clobber
 
-      # Яндекс.Метрику больше НЕ вставляем в index.html: она грузилась бы до
-      # согласия посетителя. Теперь её подключает компонент CookieConsent
-      # (components/CookieConsent.tsx) — только после нажатия «Принять» в баннере
-      # про cookie. Счётчик тот же (109805381).
-
-      # Секреты — на московский сервер.
-      #
-      # Ни FTP, ни ssh туда нет, и заводить их значит класть ключ от машины в
-      # настройки репозитория. Поэтому отдельный запрос к deploy.php: сервер
-      # сам раскладывает пришедшее по файлам. Первый раз пропуск приложения
-      # пришлось нести руками, разовой формой, и повторять это при каждой
-      # смене пароля — верный способ однажды забыть.
-      #
-      # Адрес по IP, а не по имени: канал заводился, когда jobtoo.ru ещё
-      # указывал на Reg.ru. Менять работающую доставку без нужды не стоит.
-      #
-      # Токен не задан — шаг пропускается: значит канал ещё не заведён, и
-      # выкладка не должна из-за этого падать.
+      # Секреты синхронизируем отдельно. На обычном code deploy сервер уже
+      # имеет рабочий набор; временная недоступность deploy.php теперь видна,
+      # но не блокирует публикацию сайта.
       - name: Deliver secrets to the Moscow server
+        id: secrets_delivery
+        continue-on-error: true
         env:
           JT_DEPLOY_TOKEN: ${{ secrets.JT_DEPLOY_TOKEN }}
           APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
@@ -149,11 +116,11 @@ jobs:
           e = os.environ.get
           print(json.dumps({
               "app": {
-                  "APP_SECRET":          e("APP_SECRET", ""),
-                  "APP_SECRET_PREV":     e("APP_SECRET_PREV", ""),
-                  "TG_BOT_TOKEN":        e("TG_BOT_TOKEN", ""),
+                  "APP_SECRET": e("APP_SECRET", ""),
+                  "APP_SECRET_PREV": e("APP_SECRET_PREV", ""),
+                  "TG_BOT_TOKEN": e("TG_BOT_TOKEN", ""),
                   "YANDEX_GEOCODER_KEY": e("YANDEX_GEOCODER_KEY", ""),
-                  "YANDEX_SUGGEST_KEY":  e("YANDEX_SUGGEST_KEY", ""),
+                  "YANDEX_SUGGEST_KEY": e("YANDEX_SUGGEST_KEY", ""),
                   "SUPERJOB_SECRET_KEY": e("SUPERJOB_SECRET_KEY", ""),
                   "SUPERJOB_CLIENT_ID": e("SUPERJOB_CLIENT_ID", ""),
                   "SUPERJOB_CLIENT_SECRET": e("SUPERJOB_CLIENT_SECRET", ""),
@@ -161,79 +128,47 @@ jobs:
                   "HH_CLIENT_SECRET": e("HH_CLIENT_SECRET", ""),
               },
               "admin": {
-                  "login":    e("DASHBOARD_LOGIN", ""),
+                  "login": e("DASHBOARD_LOGIN", ""),
                   "password": e("DASHBOARD_PASSWORD", ""),
               },
-              # Вход в панель базы. Пустое — сервер оставит прежний пароль.
               "studio": {
-                  "login":    e("STUDIO_LOGIN", ""),
+                  "login": e("STUDIO_LOGIN", ""),
                   "password": e("STUDIO_PASSWORD", ""),
               },
-              # Чтение репозитория. Нужен, только если его закроют.
-              "github": { "token": e("GH_READ_TOKEN", "") },
-              # Второй адрес хранения копий. Пустое — сервер оставит прежнее.
+              "github": {"token": e("GH_READ_TOKEN", "")},
               "backup": {
                   "endpoint": e("BACKUP_S3_ENDPOINT", ""),
-                  "bucket":   e("BACKUP_S3_BUCKET", ""),
-                  "key":      e("BACKUP_S3_KEY", ""),
-                  "secret":   e("BACKUP_S3_SECRET", ""),
+                  "bucket": e("BACKUP_S3_BUCKET", ""),
+                  "key": e("BACKUP_S3_KEY", ""),
+                  "secret": e("BACKUP_S3_SECRET", ""),
               },
           }))
           PY
-          code=$(curl -sS -o resp.json -w '%{http_code}' -m 60 \
+          set +e
+          code=$(curl -sS -o resp.json -w '%{http_code}' \
+            --retry 2 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 8 --max-time 30 \
             -H "X-Deploy-Token: $JT_DEPLOY_TOKEN" \
             -H 'Content-Type: application/json' \
             --data-binary @payload.json \
             https://147.45.184.99.sslip.io/api/deploy.php)
-          echo "ответ $code: $(cat resp.json)"
+          rc=$?
+          set -e
+          echo "curl=$rc ответ ${code:-000}: $(cat resp.json 2>/dev/null || true)"
           rm -f payload.json resp.json
-          [ "$code" = "200" ]
+          [ "$rc" = 0 ] && [ "$code" = "200" ]
 
-      # ПОЧЕМУ ПУБЛИКАЦИЯ ТЕПЕРЬ ВЫШЕ ПРОВЕРКИ ВЕБХУКА.
-      #
-      # Она стояла ниже, и 14 сентября это остановило выкладку целиком: связь
-      # сервера с api.telegram.org отпала, tgtool вернул пустой ответ, шаг
-      # упал — и сайт на московский сервер не уехал вовсе, хотя к Telegram
-      # отношения не имел. Сбой одной внешней связи отменил доставку всего
-      # остального.
-      #
-      # Теперь сайт уезжает первым, а вебхук проверяется после и задачу не
-      # валит (continue-on-error). Молчать об отказе при этом нельзя — бот
-      # несёт вход в мини-приложение и уведомления, — поэтому следом стоит
-      # шаг, который поднимает предупреждение и пишет его в сводку прогона.
-
-      # Тот же сайт — для московского сервера.
-      #
-      # Туда нет ни FTP, ни ssh, и заводить их значит класть ключ в настройки
-      # репозитория. Поэтому наоборот: сервер забирает сборку сам, как он уже
-      # забирает infra/. Выпуск с постоянной меткой web — чтобы адрес не
-      # менялся, а в репозитории не копилась история сборок.
-      #
-      # Каталог api/ выбрасываем: PHP и секреты на сервере свои, из
-      # /opt/jobtoo-proxy. Иначе собранные здесь пароли уехали бы в выпуск,
-      # открытый всем.
-      - name: Publish web build for the Moscow server
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Сказать вслух, если секреты не доставлены
+        if: steps.secrets_delivery.outcome == 'failure'
         run: |
-          rm -rf pack && mkdir pack
-          cp -a dist/. pack/
-          rm -rf pack/api pack/.htaccess
-          printf '{"sha":"%s","deployed_at":"%s","builder":"github-actions"}\n' \
-            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > pack/jobtoo-build.json
-          tar -czf dist.tar.gz -C pack .
-          ls -l dist.tar.gz
-          gh release view web >/dev/null 2>&1 \
-            || gh release create web --latest=false \
-                 -t "Веб-сборка" \
-                 -n "Собирается автоматически. Московский сервер забирает отсюда dist.tar.gz."
-          gh release upload web dist.tar.gz --clobber
+          echo "::warning title=Секреты не синхронизированы::Веб-сборка опубликована, но deploy.php временно недоступен. Рабочие секреты на сервере не удалялись; повторите workflow после восстановления связи."
+          {
+            echo "### Секреты не синхронизированы"
+            echo
+            echo "Веб-сборка опубликована и этот отказ её не отменил."
+            echo "deploy.php не подтвердил обновление секретов — нужен повтор после восстановления связи."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      # Telegram silently removes the webhook when setWebhook is accidentally
-      # called with an empty URL. Delivering the bot token alone does not put
-      # it back, so every successful server release explicitly restores the
-      # binding and verifies the URL through the server-side helper. The bot
-      # token never leaves the Moscow server.
       - name: Restore and verify Telegram webhook
         id: webhook
         continue-on-error: true
@@ -255,8 +190,6 @@ jobs:
               https://jobtoo.ru/api/tgtool.php > "$output"
           }
 
-          # Повторяем ответ именно Telegram, а не только HTTP-запрос к нашему
-          # серверу: tgtool может ответить 200, когда его исходящий запрос упал.
           call_tgtool_with_retry() {
             action="$1"
             output="$2"
@@ -265,7 +198,6 @@ jobs:
               if ACTION="$action" OUTPUT="$output" python3 - <<'PY'
           import json
           import os
-
           with open(os.environ['OUTPUT'], encoding='utf-8') as fh:
               response = json.load(fh)
           if os.environ['ACTION'] == 'setWebhook':
@@ -289,7 +221,6 @@ jobs:
             ACTION="$action" OUTPUT="$output" python3 - <<'PY'
           import json
           import os
-
           with open(os.environ['OUTPUT'], encoding='utf-8') as fh:
               response = json.load(fh)
           telegram = response.get('telegram', response)
@@ -320,17 +251,15 @@ jobs:
 
           call_tgtool_with_retry setWebhook webhook-set.json \
             || explain_tgtool_failure setWebhook webhook-set.json
-
           call_tgtool_with_retry webhookInfo webhook-info.json \
             || explain_tgtool_failure webhookInfo webhook-info.json
+
           python3 - <<'PY'
           import json
-
           with open('webhook-set.json', encoding='utf-8') as fh:
               changed = json.load(fh)
           with open('webhook-info.json', encoding='utf-8') as fh:
               current = json.load(fh)
-
           target = changed.get('target', '')
           if not current.get('ok'):
               raise SystemExit(f"getWebhookInfo завершился ошибкой: {current}")
@@ -341,7 +270,6 @@ jobs:
           PY
           rm -f webhook-set.json webhook-info.json
 
-      # Отказ вебхука не роняет выкладку, но и не должен потеряться.
       - name: Сказать вслух, если вебхук не восстановился
         if: steps.webhook.outcome == 'failure'
         run: |
@@ -350,19 +278,5 @@ jobs:
             echo "### Вебхук Telegram не восстановлен"
             echo
             echo "Сайт выложен — этот отказ его не отменил."
-            echo "Но бот несёт вход в мини-приложение и уведомления, так что привязку надо проверить руками."
+            echo "Но бот несёт вход в мини-приложение и уведомления, так что привязку надо проверить."
           } >> "$GITHUB_STEP_SUMMARY"
-
-
-      # Выкладки по FTP на Reg.ru здесь больше нет.
-      #
-      # 17 августа 2026 домен jobtoo.ru переехал на универсальные серверы имён,
-      # и все записи теперь указывают на московский сервер. На хостинг Reg.ru
-      # не приходит ни один запрос, а сам хостинг отключается.
-      #
-      # Шаг оставался бы последним и падал бы после отключения — доставка в
-      # Москву проходит выше и не пострадала бы, но красная сборка мешает
-      # заметить настоящую поломку.
-      #
-      # Секреты REGRU_FTP_HOST, REGRU_FTP_USER и REGRU_FTP_PASSWORD в
-      # настройках репозитория больше не нужны — их стоит удалить.
