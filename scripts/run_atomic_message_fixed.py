@@ -4,6 +4,7 @@ import runpy
 # Основной patcher уже корректно меняет бизнес-код; первый guard остановился
 # только на PHP-экранировании двух проверочных строк. Выполняем его и правим
 # именно сгенерированный regression-файл перед запуском тестов.
+# Этот файл запускается одноразовым guarded workflow и после успеха удаляется.
 runpy.run_path('scripts/apply_atomic_message.py', run_name='__main__')
 
 p = Path('tests/message_notify_test.php')
