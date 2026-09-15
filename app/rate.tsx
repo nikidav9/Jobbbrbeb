@@ -73,8 +73,15 @@ export default function RateScreen() {
         paidOnTime: !оцениваетРаботника && paidOnTime > 0 ? paidOnTime : undefined,
       });
 
-      // Instant optimistic update: refresh all data from server immediately
-      await refreshAll();
+      // Запись оценки уже подтверждена сервером. Обновление общего кэша —
+      // только синхронизация экрана: его сетевой сбой не должен превращать
+      // успешную запись в «Ошибка при сохранении» и провоцировать повторную
+      // отправку той же оценки.
+      try {
+        await refreshAll();
+      } catch {
+        // Следующий обычный refresh подтянет уже сохранённое состояние.
+      }
 
       if (bothRated) {
         showToast('Оценки выставлены. Мэтч завершён! 🏁', 'success');
