@@ -74,9 +74,13 @@ export function NotifBell() {
   async function handleMarkAll() {
     if (!userId) return;
     try {
-      await dbMarkAllNotifsRead(userId);
+      // Один серверный запрос — через контекст, чтобы локальный список и
+      // глобальный badge переходили в read после одного и того же commit.
+      const op = app?.markAllNotifsRead
+        ? app.markAllNotifsRead()
+        : dbMarkAllNotifsRead(userId);
+      await op;
       setNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
-      app?.markAllNotifsRead?.();
     } catch {
       app?.showToast?.('Не удалось отметить уведомления прочитанными', 'error');
     }
@@ -103,10 +107,15 @@ export function NotifBell() {
     // счётчик в ложном состоянии, если сервер запись не принял.
     if (!n.isRead) {
       setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
-      app?.markNotifRead?.(n.id);
-      void dbMarkNotifRead(n.id).catch(() => {
+      // Навигацию не ждём, но серверный write теперь ровно один. Контекст
+      // обновит глобальный badge только после успеха; при отказе локальный
+      // optimistic state откатываем.
+      const markPromise = app?.markNotifRead
+        ? app.markNotifRead(n.id)
+        : dbMarkNotifRead(n.id);
+      void markPromise.catch(() => {
         setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, isRead: false } : x));
-        app?.refreshNotifications?.();
+        void app?.refreshNotifications?.();
       });
     }
 

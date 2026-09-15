@@ -229,15 +229,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const markNotifRead = useCallback(async (id: string) => {
+    // Глобальный badge меняем только после подтверждения сервера. Иначе при
+    // обрыве связи уведомление оставалось unread в БД, но исчезало из счётчика
+    // до следующего успешного refresh.
+    await dbMarkNotifRead(id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-    await dbMarkNotifRead(id).catch(() => {});
   }, []);
 
   const markAllNotifsRead = useCallback(async () => {
     const user = await getSessionUser();
     if (!user) return;
+    await dbMarkAllNotifsRead(user.id);
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    await dbMarkAllNotifsRead(user.id).catch(() => {});
   }, []);
   const [permSavedIds, setPermSavedIds] = useState<string[]>([]);
 
