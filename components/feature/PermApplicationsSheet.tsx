@@ -23,8 +23,8 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 import { rs, rf } from '@/constants/scale';
 
 import {
+  dbApprovePermApplication,
   dbSetPermApplicationStatus,
-  dbCreateChat,
 } from '@/services/db';
 import {
 } from '@/services/notifications';
@@ -80,20 +80,9 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
     if (!currentUser || !vacancy) return;
     setActionLoading(app.id);
     try {
-      // Уведомление соискателю шлёт сервер тем же запросом, что меняет статус
-      // (jt_perm_app_announce). Отсюда оно уходило «выстрелил и забыл».
-      await dbSetPermApplicationStatus(app.id, 'approved');
-      const chatId = await dbCreateChat(
-        app.workerId,
-        currentUser.id,
-        app.vacancyId,
-        vacancy.title,
-        vacancy.company,
-        message,
-        1,
-        0,
-        'employer',
-      );
+      // Статус, чат и первое сообщение теперь коммитятся одной транзакцией.
+      // Обрыв связи больше не оставляет «Одобрено» без разговора.
+      const chatId = await dbApprovePermApplication(app.id, message);
       setApproving(null);
       await refreshPermApplications();
       await refreshChats(currentUser);

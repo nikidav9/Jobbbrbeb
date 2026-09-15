@@ -2501,7 +2501,7 @@ function jt_shift_reject_announce(string $workerId, string $employerId, string $
  * notify_user гасит повтор с тем же заголовком в течение минуты, поэтому со
  * старой сборки второе уведомление не придёт.
  */
-function jt_perm_app_announce(array $app, string $status): void
+function jt_perm_app_announce(array $app, string $status, bool $writeChat = true): void
 {
     if ($status !== 'approved' && $status !== 'rejected') return;
     $workerId = trim((string)($app['worker_id'] ?? ''));
@@ -2537,7 +2537,7 @@ function jt_perm_app_announce(array $app, string $status): void
     // Строку пишем только в УЖЕ существующий разговор. При одобрении из
     // «Мэтчей» чат заводится следующим запросом и сразу с личным сообщением
     // директора — системная строка там была бы лишней.
-    if ($employerId === '') return;
+    if (!$writeChat || $employerId === '') return;
     $chat = sb_single('jm_chats',
         ['worker_id' => 'eq.' . $workerId, 'employer_id' => 'eq.' . $employerId],
         'id,unread_worker');
@@ -6220,6 +6220,59 @@ try {
         // Проверки не было вовсе — то есть любой вошедший мог одобрить или
         // отклонить чужого кандидата. А сказать соискателю о решении пытался
         // телефон директора, и получалось это плохо: см. jt_perm_app_announce.
+        // Одобрение постоянного отклика: статус, чат и первое сообщение —
+        // одна транзакция в БД. Два последовательных HTTP-запроса оставляли
+        // status=approved без чата при обрыве между ними.
+        // args: [applicationId, firstEmployerMessage]
+        case 'dbApprovePermApplication': {
+            $appId = trim((string)($args[0] ?? ''));
+            $message = trim((string)($args[1] ?? ''));
+            if ($appId === '' || $message === '') {
+                jt_respond(['error' => 'Нужны отклик и сообщение'], 400); exit;
+            }
+            if (mb_strlen($message) > 4000) {
+                jt_respond(['error' => 'Сообщение слишком длинное'], 400); exit;
+            }
+
+            $app = sb_single('jm_perm_applications', ['id' => 'eq.' . $appId]);
+            if (!$app) { jt_respond(['error' => 'Отклик не найден'], 404); exit; }
+            if ((string)($app['employer_id'] ?? '') !== (string)$authUid) {
+                jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
+            }
+
+            $rows = sb_rpc('jm_approve_perm_application', [
+                'p_application_id' => $appId,
+                'p_employer_id' => (string)$authUid,
+                'p_chat_id' => uid(),
+                'p_message' => $message,
+            ]);
+            $result = $rows[0] ?? null;
+            if (!is_array($result) || empty($result['chat_id'])) {
+                throw new RuntimeException('Не удалось создать чат одобрения');
+            }
+
+            // Уведомления не являются частью транзакции: внешний push/Telegram
+            // не должен откатывать уже подтверждённое решение. При новом
+            // одобрении сообщаем о решении, но системную строку в чат не пишем:
+            // личное сообщение директора уже создано той же транзакцией.
+            try {
+                if (!empty($result['status_changed'])) {
+                    jt_perm_app_announce($app, 'approved', false);
+                }
+                if (!empty($result['message_created'])) {
+                    $chatRow = sb_single('jm_chats', ['id' => 'eq.' . (string)$result['chat_id']],
+                        'id,worker_id,employer_id');
+                    if ($chatRow) jt_notify_new_message($chatRow, (string)$authUid, $message);
+                }
+            } catch (Throwable $e) {
+                // Основное действие уже атомарно завершено; сбой внешней
+                // доставки не превращаем в ложное «одобрение не удалось».
+            }
+
+            $data = ['chat_id' => (string)$result['chat_id']];
+            break;
+        }
+
         case 'dbSetPermApplicationStatus': {
             $appId = (string)($args[0] ?? '');
             $status = (string)($args[1] ?? '');

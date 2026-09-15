@@ -1526,6 +1526,18 @@ export async function dbApplyPermVacancy(
   if (error) throwOnError('dbApplyPermVacancy', error);
 }
 
+/**
+ * Одобрить кандидата и открыть разговор одним серверным действием.
+ *
+ * Всегда через proxy, даже в web: status + chat + первое сообщение должны
+ * коммититься одной транзакцией, чего два прямых Supabase-запроса не дают.
+ */
+export async function dbApprovePermApplication(appId: string, message: string): Promise<string> {
+  const d = await proxy<{ chat_id?: string }>('dbApprovePermApplication', [appId, message]);
+  if (!d?.chat_id) throw new Error('Не удалось открыть чат после одобрения');
+  return d.chat_id;
+}
+
 export async function dbSetPermApplicationStatus(appId: string, status: PermApplicationStatus): Promise<void> {
   if (IS_NATIVE) { await proxy('dbSetPermApplicationStatus', [appId, status]); return; }
   const { error } = await withTimeout(

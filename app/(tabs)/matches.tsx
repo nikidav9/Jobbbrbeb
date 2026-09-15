@@ -14,7 +14,7 @@ import { Like, User, Vacancy, PermApplication, PermVacancy, PartnerApplication, 
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
-  dbSetPermApplicationStatus, dbCreateChat, dbGetPartnerApplications,
+  dbApprovePermApplication, dbSetPermApplicationStatus, dbGetPartnerApplications,
 } from '@/services/db';
 import { TabHeader } from '@/components/ui/TabHeader';
 import GuestGate from '@/components/GuestGate';
@@ -865,20 +865,9 @@ function EmployerMatches() {
     if (!vacancy) return;
     setLoading(app.id);
     try {
-      // Уведомление соискателю шлёт сервер тем же запросом: отсюда оно
-      // уходило «выстрелил и забыл» и терялось при любом обрыве связи.
-      await dbSetPermApplicationStatus(app.id, 'approved');
-      const chatId = await dbCreateChat(
-        app.workerId,
-        currentUser.id,
-        app.vacancyId,
-        vacancy.title,
-        vacancy.company,
-        message,
-        1,
-        0,
-        'employer',
-      );
+      // Статус, чат и первое сообщение — одна серверная транзакция.
+      // Повтор после потерянного ответа идемпотентен и не плодит сообщения.
+      const chatId = await dbApprovePermApplication(app.id, message);
       setApprovingApp(null);
       await refreshPermApplications();
       await refreshChats(currentUser);
