@@ -27,13 +27,17 @@
  * Настройки через окружение:
  *   DISCOVER_LIMIT=30      сколько компаний взять из списка (по умолчанию 30)
  *   DISCOVER_OUT=путь      куда писать результат (по умолчанию career-discovery.json)
- *   DISCOVER_PAUSE_MS=1500 пауза между сайтами; меньше 500 не ставить
+ *   DISCOVER_CONCURRENCY=5 сколько сайтов смотрим одновременно (максимум 8)
+ *   DISCOVER_SETTLE_MS     сколько ждать догрузку вакансий, по умолчанию 5000
  *   DISCOVER_TIMEOUT_MS    ожидание страницы, по умолчанию 30000
+ *   DISCOVER_PAUSE_MS=0    пауза после сайта; нужна, только если хост общий
  *
- * Про вежливость к чужим сайтам. Идём последовательно, с паузой, честным
- * User-Agent и адресом поддержки. Открываем одну страницу на компанию. Из
- * ответов берём только СТРУКТУРУ — имена полей и количество, — а не содержимое
- * вакансий: цель разведки узнать, где данные, а не собрать их.
+ * Про вежливость к чужим сайтам. На каждую компанию — ОДИН заход, и
+ * параллелим мы разные сайты, а не запросы к одному: пауза защищала бы от
+ * долбёжки одного хоста, здесь её роль играет ограничение параллельности.
+ * User-Agent честный, с адресом поддержки. Картинки и шрифты не качаем вовсе.
+ * Из ответов берём только СТРУКТУРУ — имена полей и количество, — а не
+ * содержимое вакансий: цель разведки узнать, где данные, а не собрать их.
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -42,8 +46,15 @@ import process from 'node:process';
 
 const LIMIT = Number(process.env.DISCOVER_LIMIT || 30);
 const OUT = process.env.DISCOVER_OUT || 'career-discovery.json';
-const PAUSE = Math.max(500, Number(process.env.DISCOVER_PAUSE_MS || 1500));
+// Сколько сайтов смотрим одновременно. Пауза между сайтами защищала бы от
+// долбёжки ОДНОГО хоста, но мы ходим по разным: на каждый всё равно один заход.
+// Поэтому вместо паузы — ограниченная параллельность.
+const CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.DISCOVER_CONCURRENCY || 5)));
+const PAUSE = Math.max(0, Number(process.env.DISCOVER_PAUSE_MS || 0));
 const TIMEOUT = Number(process.env.DISCOVER_TIMEOUT_MS || 30000);
+// Сколько ждать догрузку вакансий после готовности разметки. Выходим раньше,
+// как только список найден, — это и есть основная экономия времени.
+const SETTLE_MS = Number(process.env.DISCOVER_SETTLE_MS || 5000);
 const UA = 'Mozilla/5.0 (compatible; JobToo/1.0; +https://jobtoo.ru; support@jobtoo.ru)';
 
 /** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
@@ -100,15 +111,29 @@ async function loadTargets(arg) {
 }
 
 const targets = await loadTargets(process.argv[2]);
-console.log(`Разведка: ${targets.length} сайт(ов), пауза ${PAUSE} мс\n`);
+console.log(`Разведка: ${targets.length} сайт(ов), по ${CONCURRENCY} одновременно\n`);
 
 const browser = await chromium.launch({ headless: true });
 const results = [];
 
-for (const [i, target] of targets.entries()) {
+/** Разведка одного сайта. Ошибка здесь — строка в отчёте, а не конец прогона. */
+async function inspect(target, i) {
   const label = `${String(i + 1).padStart(3)}. ${target.name.slice(0, 22).padEnd(22)}`;
   const context = await browser.newContext({ userAgent: UA });
   const page = await context.newPage();
+
+  // Картинки, шрифты, видео и рекламу не грузим вовсе. Нас интересуют только
+  // данные, а на карьерных страницах именно тяжёлые ресурсы занимают почти всё
+  // время загрузки.
+  await page.route('**/*', route => {
+    const type = route.request().resourceType();
+    // Стили НЕ блокируем: экономия от них мала, а часть сайтов без CSS
+    // рендерится иначе или не рендерится вовсе. Режем только заведомо
+    // бесполезное для разведки.
+    if (['image', 'font', 'media'].includes(type)) return route.abort();
+    if (/analytics|metrika|gtm|doubleclick|adservice|sentry/i.test(route.request().url())) return route.abort();
+    return route.continue();
+  });
 
   // Копим ответы, похожие на JSON. Тело читаем сразу: после перехода на
   // следующую страницу оно уже недоступно.
@@ -127,9 +152,13 @@ for (const [i, target] of targets.entries()) {
   let entry = { name: target.name, url: target.url, status: 'нет данных' };
   try {
     await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-    // Ждём догрузку: вакансии почти всегда приходят отдельным запросом уже
-    // после того, как разметка готова.
-    await page.waitForTimeout(4000);
+    // Ждём догрузку, но не вслепую: как только в перехваченных ответах появился
+    // список вакансий, ждать оставшееся время незачем. На быстрых сайтах это
+    // экономит по три-четыре секунды на каждом.
+    for (let waited = 0; waited < SETTLE_MS; waited += 250) {
+      if (captured.some(c => findLists(c.body).length)) break;
+      await page.waitForTimeout(250);
+    }
 
     // Сначала сетевые ответы, затем — состояние страницы. Второе спасает те
     // сайты, что кладут данные прямо в HTML (Next.js, Nuxt): сетевого запроса
@@ -189,15 +218,20 @@ for (const [i, target] of targets.entries()) {
   results.push(entry);
   // Пишем после каждого сайта, а не в конце. Первый прогон упал на середине, и
   // артефакт не сохранился вовсе — при том что по Сберу результат уже был.
-  // Разведка идёт полчаса по чужим сайтам: терять её из-за сбоя на предпоследнем
-  // нельзя.
   try { fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8'); } catch { /* допишем в конце */ }
-
-  // Закрытие вкладки и пауза не должны ронять прогон: одна упавшая страница —
-  // это одна строка «ошибка» в отчёте, а не конец разведки.
   try { await context.close(); } catch { /* вкладка уже мертва */ }
-  if (i < targets.length - 1) await sleep(PAUSE);
 }
+
+// Пул из CONCURRENCY работников разбирает общую очередь. Пауза между сайтами не
+// нужна: заходов к одному хосту всё равно один, а параллелим мы разные.
+let cursor = 0;
+await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, async () => {
+  while (cursor < targets.length) {
+    const i = cursor++;
+    await inspect(targets[i], i);
+    if (PAUSE) await sleep(PAUSE);
+  }
+}));
 
 await browser.close();
 fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8');

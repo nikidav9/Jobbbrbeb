@@ -24,10 +24,10 @@ on:
         description: 'Свои адреса через пробел (пусто — берём каталог)'
         required: false
         default: ''
-      pause_ms:
-        description: 'Пауза между сайтами, мс'
+      concurrency:
+        description: 'Сколько сайтов смотреть одновременно (1-8)'
         required: false
-        default: '1500'
+        default: '5'
 
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
   discover:
     name: Найти, откуда сайты берут вакансии
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +72,7 @@ jobs:
       - name: Разведка
         env:
           DISCOVER_LIMIT: ${{ inputs.limit }}
-          DISCOVER_PAUSE_MS: ${{ inputs.pause_ms }}
+          DISCOVER_CONCURRENCY: ${{ inputs.concurrency }}
           DISCOVER_OUT: career-discovery.json
           SITES: ${{ inputs.sites }}
         run: |
