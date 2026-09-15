@@ -149,6 +149,65 @@ function nested(int $depth): string
 check('вакансия в разумной вложенности найдена', count(cf_items(page_with(nested(3)), $page, $now)) === 1);
 check('слишком глубокая вложенность отброшена', cf_items(page_with(nested(60)), $page, $now) === []);
 
+
+// ─── Листание JSON-источников ───────────────────────────────────────────────
+// Карьерные API отдают вакансии порциями, и без листания источник приносил бы
+// только первую: у Сбера 50 из 1795, у Ростелекома 20 из 382. Всё, что ниже,
+// снято с живых ответов, а не придумано.
+
+check('offset: первая порция без смещения',
+    cf_page_url('https://x.ru/api/v1/vacancies', ['type' => 'offset', 'limit' => 100], 0)
+    === 'https://x.ru/api/v1/vacancies?limit=100&offset=0');
+
+check('offset: вторая порция смещена на размер порции',
+    cf_page_url('https://x.ru/api/v1/vacancies', ['type' => 'offset', 'limit' => 100], 2)
+    === 'https://x.ru/api/v1/vacancies?limit=100&offset=200');
+
+// Сбер зовёт те же параметры take/skip, поэтому имена настраиваются.
+check('offset: имена параметров берутся из настройки',
+    cf_page_url('https://rabota.sber.ru/api/v1/publications',
+        ['type' => 'offset', 'param' => 'skip', 'limit_param' => 'take', 'limit' => 50], 3)
+    === 'https://rabota.sber.ru/api/v1/publications?take=50&skip=150');
+
+// У Ростелекома и МегаФона нумерация страниц с единицы, у других с нуля.
+check('page: нумерация начинается с заданного числа',
+    cf_page_url('https://job.rt.ru/backend/api/vacancies', ['type' => 'page', 'start' => 1], 2)
+    === 'https://job.rt.ru/backend/api/vacancies?page=3');
+
+// Параметр из самого адреса терять нельзя: у Авиасейлса там язык выдачи.
+check('уже имеющийся параметр адреса сохраняется',
+    str_contains(cf_page_url('https://x.ru/api/vacancies?language=ru',
+        ['type' => 'offset', 'limit' => 10], 1), 'language=ru'));
+
+check('без настройки листания адрес не трогаем',
+    cf_page_url('https://x.ru/api/vacancies', [], 0) === 'https://x.ru/api/vacancies');
+
+// Полная порция — берём следующую. Признак «полная» надёжнее счётчика total:
+// total присылают не все, а врут в нём многие.
+check('полная порция — идём дальше', cf_has_next_sub(50, ['type' => 'offset', 'limit' => 50], 0) === true);
+check('неполная порция — останавливаемся', cf_has_next_sub(31, ['type' => 'offset', 'limit' => 50], 0) === false);
+
+// Предел страниц обязателен: сломанный источник, отдающий одно и то же, крутил
+// бы обход вечно.
+check('предел страниц останавливает обход',
+    cf_has_next_sub(50, ['type' => 'offset', 'limit' => 50, 'max_pages' => 3], 2) === false);
+check('без листания следующей порции нет', cf_has_next_sub(50, [], 0) === false);
+
+// ─── Ссылка на вакансию из шаблона ──────────────────────────────────────────
+// Сплошной rawurlencode превращал «/» в «%2F», и ссылка Lamoda ломалась: её
+// slug состоит из двух сегментов пути.
+check('slug из двух сегментов не ломается',
+    cf_json_url(['slug' => 'moskva/frontend-vue-developer--1946'],
+        ['url_template' => 'https://job.lamoda.ru/vacancy/{slug}'], 'https://job.lamoda.ru/')
+    === 'https://job.lamoda.ru/vacancy/moskva/frontend-vue-developer--1946');
+
+// При этом подставить чужой адрес по-прежнему нельзя: «?», «:» и «#» уходят
+// в экранированном виде, и увести человека на другой хост не получится.
+$evil = cf_json_url(['slug' => 'x?next=https://evil.ru'],
+    ['url_template' => 'https://job.lamoda.ru/vacancy/{slug}'], 'https://job.lamoda.ru/');
+check('чужой адрес через slug не подставить',
+    str_starts_with($evil, 'https://job.lamoda.ru/vacancy/') && !str_contains($evil, '?next='));
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
