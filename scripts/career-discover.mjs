@@ -46,6 +46,9 @@ const PAUSE = Math.max(500, Number(process.env.DISCOVER_PAUSE_MS || 1500));
 const TIMEOUT = Number(process.env.DISCOVER_TIMEOUT_MS || 30000);
 const UA = 'Mozilla/5.0 (compatible; JobToo/1.0; +https://jobtoo.ru; support@jobtoo.ru)';
 
+/** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Проверить догадку об адресе вакансии.
  *
@@ -184,7 +187,15 @@ for (const [i, target] of targets.entries()) {
   }
 
   results.push(entry);
-  await context.close();
+  // Пишем после каждого сайта, а не в конце. Первый прогон упал на середине, и
+  // артефакт не сохранился вовсе — при том что по Сберу результат уже был.
+  // Разведка идёт полчаса по чужим сайтам: терять её из-за сбоя на предпоследнем
+  // нельзя.
+  try { fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8'); } catch { /* допишем в конце */ }
+
+  // Закрытие вкладки и пауза не должны ронять прогон: одна упавшая страница —
+  // это одна строка «ошибка» в отчёте, а не конец разведки.
+  try { await context.close(); } catch { /* вкладка уже мертва */ }
   if (i < targets.length - 1) await sleep(PAUSE);
 }
 
