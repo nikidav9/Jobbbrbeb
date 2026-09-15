@@ -271,18 +271,28 @@ export default function ProfileScreen() {
   const [consent, setConsent] = useState<{
     stamp: string; docs: Record<string, string>; accepted_at: string;
   } | null>(null);
+  const [consentLoadFailed, setConsentLoadFailed] = useState(false);
+  const [consentRetry, setConsentRetry] = useState(0);
 
   useEffect(() => {
     if (!currentUser) return;
     let alive = true;
+    setConsent(null);
+    setConsentLoadFailed(false);
     dbGetConsent(currentUser.id)
-      .then(c => { if (alive) setConsent(c); })
-      .catch(() => {});
+      .then(c => {
+        if (!alive) return;
+        setConsent(c);
+        setConsentLoadFailed(false);
+      })
+      .catch(() => { if (alive) setConsentLoadFailed(true); });
     return () => { alive = false; };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, consentRetry]);
 
-  const consentLine = !consent
-    ? 'Соглашения и обучение'
+  const consentLine = consentLoadFailed && !consent
+    ? 'Не удалось проверить статус согласий'
+    : !consent
+    ? 'Проверяем соглашения…'
     : consent.stamp === ''
     // Так у тех, кто регистрировался до 25 июня 2026: экрана с документами
     // тогда не было, и записывать им согласие задним числом мы не стали.
@@ -635,6 +645,20 @@ export default function ProfileScreen() {
           open={openSection === 'docs'}
           onToggle={() => toggleSection('docs')}
         >
+          {consentLoadFailed && !consent ? (
+            <TouchableOpacity
+              style={sS.actionRow}
+              onPress={() => setConsentRetry(value => value + 1)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="cloud-offline-outline" size={17} color="#92400E" />
+              <View style={{ flex: 1 }}>
+                <Text style={sS.actionLabel}>Не удалось проверить, какие редакции вы принимали</Text>
+                <Text style={sS.docVersion}>Проверьте связь · нажмите, чтобы повторить</Text>
+              </View>
+              <Ionicons name="refresh" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
           {[
             { label: 'Пользовательское соглашение', doc: 'terms' as const },
             { label: 'Политика конфиденциальности', doc: 'privacy' as const },

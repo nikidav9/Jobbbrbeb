@@ -9,6 +9,7 @@ chat_room = (root / 'app/chat-room.tsx').read_text(encoding='utf-8')
 rate = (root / 'app/rate.tsx').read_text(encoding='utf-8')
 perm_detail = (root / 'app/perm-vacancy-detail.tsx').read_text(encoding='utf-8')
 perm = (root / 'components/feature/PermApplicationsSheet.tsx').read_text(encoding='utf-8')
+profile = (root / 'app/(tabs)/profile.tsx').read_text(encoding='utf-8')
 plan = (root / 'docs/план-разработки.md').read_text(encoding='utf-8')
 
 shift_delete_start = feed.find('  const deleteVacancy = async')
@@ -89,6 +90,10 @@ checks = {
     'сбой партнёрского фида не очищает уже загруженные смены': 'setPartnerShifts([])' not in feed,
     'refresh различает частичный сбой партнёрского фида': 'const [, partnerOk] = await Promise.all([refreshAll(), loadPartnerShifts()]);' in feed and "if (!partnerOk)" in feed,
     'частичный сбой партнёрского фида виден и имеет retry': 'Партнёрские смены не обновились' in feed and 'onPress={() => void loadPartnerShifts()}' in feed,
+    'статус согласий не проглатывает сетевую ошибку': 'setConsentLoadFailed(true);' in profile and 'Не удалось проверить статус согласий' in profile,
+    'статус согласий можно проверить повторно': 'setConsentRetry(value => value + 1)' in profile and 'consentRetry]);' in profile,
+    'успешная загрузка согласий снимает ошибку': 'setConsent(c);' in profile and 'setConsentLoadFailed(false);' in profile,
+    'план фиксирует завершение сетевой ревизии': '~~Системная ревизия ошибок сети, пустых состояний и малых экранов~~' in plan and '**сделано 15.09.**' in plan,
     'план фиксирует нагрузочный прогон': '~~Нагрузочный прогон крупного фида и очереди callback перед пилотом~~' in plan,
 }
 
