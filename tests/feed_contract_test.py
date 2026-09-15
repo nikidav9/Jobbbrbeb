@@ -21,7 +21,7 @@ ingest = (root / "php-proxy/ingest.php").read_text(encoding="utf-8")
 known = set(re.findall(r"\$it\['([a-z_]+)'\]", ingest))
 assert "title" in known and "metro" in known, "не разобрали ing_normalize"
 
-adapters = ["headhunter.php", "superjob.php", "trudvsem.php", "arbihunter.php"]
+adapters = ["headhunter.php", "superjob.php", "arbihunter.php"]
 
 failures = []
 for name in adapters:

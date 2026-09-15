@@ -979,10 +979,9 @@ function ShiftSubTabs({ value, onChange }: {
 }
 
 // «Регулярная» — не разовая смена на конкретную дату, а повторяющаяся
-// сменная/гибкая подработка из внешнего источника. В первую очередь сюда
-// попадает «Работа в России»: у неё такие предложения приходят как обычные
-// вакансии с графиком «Сменная работа», поэтому не превращаем их в фиктивные
-// смены JobToo и не придумываем дату/время.
+// сменная/гибкая подработка из внешнего источника: такие предложения приходят
+// как обычные вакансии с графиком «Сменная работа», поэтому не превращаем их в
+// фиктивные смены JobToo и не придумываем дату/время.
 function isRegularExternalVacancy(v: ExternalVacancy): boolean {
   if (v.kind !== 'permanent') return false;
   const source = `${v.sourceName ?? ''} ${v.sourceId}`.toLowerCase();
@@ -1067,7 +1066,7 @@ function RegularLocked() {
         const salary = typeof v.salary === 'number' && v.salary > 0
           ? `${v.salary.toLocaleString('ru-RU')} ₽${v.payPeriod === 'hour' ? '/ч' : v.payPeriod === 'shift' ? '/смена' : '/мес'}`
           : null;
-        const sourceName = v.sourceName ?? (v.sourceId.toLowerCase().includes('trudvsem') ? 'Работа в России' : 'Партнёр');
+        const sourceName = v.sourceName ?? 'Партнёр';
         return (
           <TouchableOpacity style={rl.card} onPress={() => openSource(v)} activeOpacity={0.9}>
             <View style={styles.cardTop}>
