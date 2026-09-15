@@ -143,6 +143,7 @@ jobs:
           python3 tests/shift_match_atomicity_test.py
           python3 tests/health_endpoint_test.py
           python3 tests/telegram_link_metrics_test.py
+          python3 tests/tg_poll_stuck_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build
