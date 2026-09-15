@@ -1,0 +1,21 @@
+name: Verify production now
+
+on:
+  push:
+    branches: [ops/production-verify]
+    paths:
+      - .github/workflows/verify-production-now.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run production health and migration parity probe
+        run: |
+          REPORT="$RUNNER_TEMP/site-health.log" bash infra/check-site.sh
+          cat "$RUNNER_TEMP/site-health.log"
