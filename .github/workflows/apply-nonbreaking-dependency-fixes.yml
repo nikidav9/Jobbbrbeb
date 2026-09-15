@@ -1,0 +1,103 @@
+name: Apply nonbreaking dependency fixes
+
+on:
+  push:
+    branches:
+      - chore/nonbreaking-dependency-audit-fixes
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/nonbreaking-dependency-audit-fixes
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dashboard/package-lock.json
+
+      - name: Install current app dependencies
+        run: npm ci
+
+      - name: Apply app fixes without force
+        shell: bash
+        run: |
+          set +e
+          npm audit fix --package-lock-only
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "npm audit fix failed with unexpected exit code $status"
+            exit "$status"
+          fi
+
+      - name: Install current dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Apply dashboard fixes without force
+        working-directory: dashboard
+        shell: bash
+        run: |
+          set +e
+          npm audit fix --package-lock-only
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "dashboard npm audit fix failed with unexpected exit code $status"
+            exit "$status"
+          fi
+
+      - name: Refuse manifest or major-policy changes
+        run: |
+          git diff --exit-code -- package.json dashboard/package.json
+          git diff --check
+
+      - name: Reinstall from updated locks
+        run: |
+          npm ci
+          (cd dashboard && npm ci)
+
+      - name: Verify no critical production vulnerabilities
+        run: |
+          npm audit --omit=dev --audit-level=critical
+          (cd dashboard && npm audit --omit=dev --audit-level=critical)
+
+      - name: Validate app
+        run: |
+          npm run lint
+          npm test
+          npm run typecheck
+          npx expo export --platform web --output-dir /tmp/jobtoo-web
+
+      - name: Validate dashboard
+        working-directory: dashboard
+        run: npm run build
+
+      - name: Commit lockfiles only
+        shell: bash
+        run: |
+          git status --short
+          git add package-lock.json dashboard/package-lock.json
+          if git diff --cached --quiet; then
+            echo "No nonbreaking dependency fixes available"
+            exit 0
+          fi
+          test -z "$(git status --short | grep -vE '^(M | M|A |D ) (package-lock.json|dashboard/package-lock.json)$' || true)" || {
+            echo "Unexpected files changed"
+            git status --short
+            exit 1
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: apply nonbreaking dependency security fixes'
+          git push origin HEAD:chore/nonbreaking-dependency-audit-fixes
