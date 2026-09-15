@@ -64,6 +64,8 @@ const OWN_LIST = new URL('./career-sites.tsv', import.meta.url).pathname;
 // Сколько признаков вакансии (деньги, место, обязанности, график, работодатель)
 // должно быть в записи, чтобы считать список вакансиями. См. scoreList.
 const MIN_EVIDENCE = Number(process.env.DISCOVER_MIN_EVIDENCE || 2);
+// Сколько адресов вакансии пробовать браузером, прежде чем сдаться.
+const PROBE_TRIES = Number(process.env.DISCOVER_PROBE_TRIES || 8);
 
 /** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -105,12 +107,17 @@ async function probeUrlTemplate(context, origin, sample, map) {
     const bogus = (await render(`${origin}/vacancy/jobtoo-probe-404`)) || '';
     if (bogus.includes(title)) return { ok: false, reason: 'сайт показывает одно и то же по любому адресу' };
 
-    // Slug в адресе встречается чаще числового id, поэтому пробуем оба.
+    // Slug в адресе встречается чаще числового id, поэтому пробуем оба. Каждая
+    // попытка — загрузка страницы браузером, поэтому их число ограничено: пять
+    // форм на два поля дали бы десяток загрузок на компанию, а список вырос до
+    // 163 сайтов.
     const fields = [map.id || 'id', 'slug', 'id'].filter((f, i, a) => a.indexOf(f) === i);
+    let tries = 0;
     for (const idField of fields) {
       const value = sample[idField];
       if (value === undefined || value === null || value === '') continue;
       for (const shape of URL_SHAPES) {
+        if (tries++ >= PROBE_TRIES) return { ok: false, reason: `типовые пути не подошли (${tries})` };
         const candidate = origin + shape.replace('{v}', encodeURIComponent(String(value)));
         const text = await render(candidate);
         if (text && text.includes(title)) {

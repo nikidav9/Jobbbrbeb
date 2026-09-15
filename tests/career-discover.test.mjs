@@ -126,9 +126,17 @@ test('свой список компаний разбирается целико
   const rows = parseSiteList(text);
   const meaningful = text.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
   assert.equal(rows.length, meaningful.length, 'какая-то строка списка не разобралась');
-  assert.ok(rows.length >= 60, `компаний слишком мало: ${rows.length}`);
+  assert.ok(rows.length >= 150, `компаний слишком мало: ${rows.length}`);
   assert.ok(rows.every(r => r.name && !r.name.includes('http')), 'имя компании потерялось');
   assert.equal(new Set(rows.map(r => r.url)).size, rows.length, 'адрес повторяется');
+  // Компания ровно один раз. Два адреса одного сайта — это два прохода
+  // разведки по одному и тому же и двойники в ленте следом.
+  const hosts = rows.map(r => new URL(r.url).hostname);
+  assert.equal(new Set(hosts).size, hosts.length,
+    `хост повторяется: ${hosts.filter((h, i) => hosts.indexOf(h) !== i).join(', ')}`);
+  const names = rows.map(r => r.name);
+  assert.equal(new Set(names).size, names.length,
+    `название повторяется: ${names.filter((n, i) => names.indexOf(n) !== i).join(', ')}`);
 });
 
 // Ниже — разбор провала: прогон по 111 компаниям дал семь «готовых» источников,
