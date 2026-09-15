@@ -28,6 +28,8 @@ export function AddressSuggestField({
   const [results, setResults] = useState<AddressSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [retrySeq, setRetrySeq] = useState(0);
   const [picked, setPicked] = useState<AddressSuggestion | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqId = useRef(0);
@@ -36,6 +38,7 @@ export function AddressSuggestField({
     setQuery(value || '');
     setResults([]);
     setTouched(false);
+    setSearchFailed(false);
     setPicked(null);
     setOpen(true);
   };
@@ -58,6 +61,7 @@ export function AddressSuggestField({
 
   const onType = (t: string) => {
     setQuery(t);
+    setSearchFailed(false);
     if (picked && picked.name !== t) setPicked(null); // текст изменили — координаты сбрасываем
   };
 
@@ -67,18 +71,32 @@ export function AddressSuggestField({
     if (timer.current) clearTimeout(timer.current);
     const q = query.trim();
     // если только что выбрали подсказку — не ищем снова
-    if (q.length < 3 || (picked && picked.name === q)) { setResults([]); setLoading(false); return; }
+    if (q.length < 3 || (picked && picked.name === q)) {
+      setResults([]);
+      setLoading(false);
+      setSearchFailed(false);
+      return;
+    }
     setLoading(true);
+    setSearchFailed(false);
     const my = ++reqId.current;
     timer.current = setTimeout(async () => {
-      const r = await dbAddressSuggest(q);
-      if (my !== reqId.current) return;
-      setResults(r);
-      setLoading(false);
-      setTouched(true);
+      try {
+        const r = await dbAddressSuggest(q);
+        if (my !== reqId.current) return;
+        setResults(r);
+        setTouched(true);
+      } catch {
+        if (my !== reqId.current) return;
+        setResults([]);
+        setTouched(false);
+        setSearchFailed(true);
+      } finally {
+        if (my === reqId.current) setLoading(false);
+      }
     }, 450);
     return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [query, open, picked]);
+  }, [query, open, picked, retrySeq]);
 
   const trimmed = query.trim();
 
@@ -160,7 +178,14 @@ export function AddressSuggestField({
                 ) : null
               }
               ListEmptyComponent={
-                loading || (picked && picked.name === trimmed) ? null : (
+                loading || (picked && picked.name === trimmed) ? null : searchFailed ? (
+                  <View style={s.searchError}>
+                    <Text style={s.hint}>Не удалось загрузить подсказки. Проверьте связь или подтвердите адрес как есть.</Text>
+                    <TouchableOpacity onPress={() => setRetrySeq(x => x + 1)} activeOpacity={0.8}>
+                      <Text style={s.retry}>Повторить</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
                   <Text style={s.hint}>
                     {trimmed.length < 3
                       ? 'Введите улицу и дом — подскажем адрес'
@@ -226,6 +251,8 @@ const s = StyleSheet.create({
   rowHead: { fontSize: rf(15), fontWeight: '600', color: Colors.textPrimary },
   rowSub: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
   hint: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', paddingVertical: rs(24), paddingHorizontal: rs(8) },
+  searchError: { alignItems: 'center', paddingHorizontal: rs(8) },
+  retry: { color: Colors.primary, fontSize: rf(14), fontWeight: '700', paddingVertical: rs(8), paddingHorizontal: rs(18) },
   footer: {
     paddingHorizontal: rs(16), paddingTop: rs(8), paddingBottom: rs(10),
     borderTopWidth: 1, borderTopColor: Colors.divider,

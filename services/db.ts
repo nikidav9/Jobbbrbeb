@@ -1954,11 +1954,9 @@ export type AddressSuggestion = { name: string; lat: number | null; lng: number 
 
 export async function dbAddressSuggest(query: string): Promise<AddressSuggestion[]> {
   if (query.trim().length < 3) return [];
-  try {
-    return await withTimeout(proxy<AddressSuggestion[]>('addressSuggest', [query]), 9000);
-  } catch {
-    return [];
-  }
+  // Ошибку сети не превращаем в []: вызывающему коду важно отличать
+  // «ничего не найдено» от «подсказки сейчас не загрузились».
+  return withTimeout(proxy<AddressSuggestion[]>('addressSuggest', [query]), 9000);
 }
 
 export async function dbGetAllWorkerTokens(): Promise<{ id: string; push_token: string }[]> {
