@@ -1,0 +1,49 @@
+name: Apply partner callback CAS hardening
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-partner-callback-cas.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply guarded patch
+        run: python3 scripts/apply_partner_callback_cas.py
+
+      - name: Validate
+        run: |
+          git diff --check
+          php -l php-proxy/sb_lite.php
+          php -l php-proxy/partner_webhook.php
+          php tests/partner_core_test.php
+          php tests/partner_sandbox_e2e_test.php
+          npm ci
+          npm test
+          npm run typecheck
+
+      - name: Commit source fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add php-proxy/sb_lite.php php-proxy/partner_webhook.php tests/partner_core_test.php
+          git commit -m "fix: serialize partner status callbacks"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
