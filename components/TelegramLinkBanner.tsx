@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Linking, AppState } from 'rea
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Colors, Radius } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { dbGetUserById } from '@/services/db';
+import { dbGetUserById, dbTgPrepareLink } from '@/services/db';
 import { isTelegramMiniApp } from '@/lib/telegram';
 
 import { rs, rf } from '@/constants/scale';
@@ -39,6 +39,7 @@ export function TelegramLinkBanner() {
   const userId = app?.currentUser?.id ?? null;
   const isEmployer = app?.currentUser?.role === 'employer';
   const [linked, setLinked] = useState<boolean>(!!app?.currentUser?.telegramId);
+  const [linkError, setLinkError] = useState('');
 
   useEffect(() => {
     if (!userId || linked) return;
@@ -53,16 +54,32 @@ export function TelegramLinkBanner() {
 
   if (!userId || !isEmployer || linked || isTelegramMiniApp()) return null;
 
+  const openTelegram = () => {
+    setLinkError('');
+    // Как и большая кнопка в шапке, заранее регистрируем намерение привязки:
+    // если чат с ботом уже существовал, Telegram может прислать голый /start.
+    void dbTgPrepareLink(userId).catch(() => {
+      setLinkError('Не удалось подготовить привязку. Проверьте связь и попробуйте ещё раз.');
+    });
+    Linking.openURL(`${BOT_URL}?start=link_${userId}`).catch(() => {
+      setLinkError('Не удалось открыть Telegram. Откройте вручную: t.me/JobToo_bot');
+    });
+  };
+
   return (
     <TouchableOpacity
       style={st.banner}
-      onPress={() => Linking.openURL(`${BOT_URL}?start=link_${userId}`).catch(() => {})}
+      onPress={openTelegram}
       activeOpacity={0.85}
     >
       <TgLogo size={34} />
       <View style={{ flex: 1 }}>
         <Text style={st.title}>Привяжите Telegram</Text>
-        <Text style={st.sub}>Отклики на эту вакансию придут вам в Телеграм с кнопками «Одобрить / Отклонить»</Text>
+        {linkError ? (
+          <Text style={st.error}>{linkError}</Text>
+        ) : (
+          <Text style={st.sub}>Отклики на эту вакансию придут вам в Телеграм с кнопками «Одобрить / Отклонить»</Text>
+        )}
       </View>
       <View style={st.cta}><Text style={st.ctaTxt}>Привязать</Text></View>
     </TouchableOpacity>
@@ -77,6 +94,7 @@ const st = StyleSheet.create({
   },
   title: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
   sub: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2), lineHeight: rf(16) },
+  error: { fontSize: rf(12), color: Colors.red, marginTop: rs(2), lineHeight: rf(16) },
   cta: {
     backgroundColor: '#2AABEE', borderRadius: rs(100),
     paddingHorizontal: rs(12), paddingVertical: rs(7),

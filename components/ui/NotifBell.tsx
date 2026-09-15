@@ -35,6 +35,7 @@ export function NotifBell() {
   const [open, setOpen] = useState(false);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
   const count = app?.unreadNotifCount ?? 0;
@@ -42,6 +43,7 @@ export function NotifBell() {
 
   const fetchNotifs = useCallback(async (uid: string) => {
     setLoading(true);
+    setLoadFailed(false);
     try {
       const rows = await dbGetNotifications(uid);
       setNotifs(rows.map((n: any) => ({
@@ -55,7 +57,9 @@ export function NotifBell() {
       })));
       app?.refreshNotifications?.();
     } catch {
-      // keep current list on error
+      // Уже загруженный список оставляем на экране, но явно помечаем его как
+      // не обновившийся. Пустой локальный массив при обрыве — не «уведомлений нет».
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -69,9 +73,13 @@ export function NotifBell() {
 
   async function handleMarkAll() {
     if (!userId) return;
-    setNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
-    await dbMarkAllNotifsRead(userId).catch(() => {});
-    app?.markAllNotifsRead?.();
+    try {
+      await dbMarkAllNotifsRead(userId);
+      setNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
+      app?.markAllNotifsRead?.();
+    } catch {
+      app?.showToast?.('Не удалось отметить уведомления прочитанными', 'error');
+    }
   }
 
   /** Чат с этим человеком — для старых уведомлений «💬 Имя», у которых
@@ -91,9 +99,16 @@ export function NotifBell() {
   }
 
   async function handleTap(n: Notif) {
-    setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
-    dbMarkNotifRead(n.id).catch(() => {});
-    app?.markNotifRead?.(n.id);
+    // Навигацию не задерживаем запросом «прочитано», но и не оставляем локальный
+    // счётчик в ложном состоянии, если сервер запись не принял.
+    if (!n.isRead) {
+      setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
+      app?.markNotifRead?.(n.id);
+      void dbMarkNotifRead(n.id).catch(() => {
+        setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, isRead: false } : x));
+        app?.refreshNotifications?.();
+      });
+    }
 
     // Уведомление — это ссылка: открываем экран, о котором оно говорит
     let target = routeForNotification(n.type, n.payload);
@@ -109,18 +124,26 @@ export function NotifBell() {
   }
 
   async function handleDelete(id: string) {
-    setNotifs(prev => prev.filter(n => n.id !== id));
-    await dbDeleteNotif(id).catch(() => {});
-    app?.refreshNotifications?.();
+    try {
+      await dbDeleteNotif(id);
+      setNotifs(prev => prev.filter(n => n.id !== id));
+      app?.refreshNotifications?.();
+    } catch {
+      app?.showToast?.('Не удалось удалить уведомление', 'error');
+    }
   }
 
   async function handleDeleteAll() {
     if (!userId) return;
     if (!confirmDeleteAll) { setConfirmDeleteAll(true); return; }
     setConfirmDeleteAll(false);
-    setNotifs([]);
-    await dbDeleteAllNotifs(userId).catch(() => {});
-    app?.refreshNotifications?.();
+    try {
+      await dbDeleteAllNotifs(userId);
+      setNotifs([]);
+      app?.refreshNotifications?.();
+    } catch {
+      app?.showToast?.('Не удалось удалить уведомления', 'error');
+    }
   }
 
   const unread = notifs.filter(n => !n.isRead).length;
@@ -180,10 +203,29 @@ export function NotifBell() {
               )}
             </View>
 
+            {!loading && loadFailed && notifs.length > 0 ? (
+              <View style={{ paddingHorizontal: rs(20), paddingVertical: rs(10), backgroundColor: Colors.surface, gap: rs(4) }}>
+                <Text style={{ color: Colors.textPrimary, fontWeight: '700', textAlign: 'center', fontSize: rf(12.5) }}>
+                  Не удалось обновить уведомления
+                </Text>
+                <TouchableOpacity onPress={() => userId && void fetchNotifs(userId)} activeOpacity={0.8}>
+                  <Text style={{ color: Colors.primary, fontWeight: '700', textAlign: 'center', fontSize: rf(12.5) }}>Повторить</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <ScrollView contentContainerStyle={s.list}>
               {loading ? (
                 <View style={s.empty}>
                   <ActivityIndicator color={Colors.primary} size="large" />
+                </View>
+              ) : loadFailed && notifs.length === 0 ? (
+                <View style={s.empty}>
+                  <Ionicons name="cloud-offline-outline" size={52} color={Colors.textMuted} style={{ marginBottom: 16 }} />
+                  <Text style={s.emptyTitle}>Не удалось загрузить уведомления</Text>
+                  <Text style={s.emptySub}>Проверьте связь и попробуйте ещё раз.</Text>
+                  <TouchableOpacity onPress={() => userId && void fetchNotifs(userId)} activeOpacity={0.8} style={{ marginTop: rs(12) }}>
+                    <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: rf(14) }}>Повторить</Text>
+                  </TouchableOpacity>
                 </View>
               ) : notifs.length === 0 ? (
                 <View style={s.empty}>

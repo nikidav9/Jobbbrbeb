@@ -150,6 +150,22 @@ check('telegram: открытие бота сообщает об ошибке',
 check('telegram: fire-and-forget заявка не даёт unhandled rejection',
     str_contains($tg, 'void dbTgPrepareLink(userId).catch'));
 
+// ── Уведомления: ошибка сети не выглядит пустотой/успехом ────────────────────
+$bell = (string)file_get_contents(__DIR__ . '/../components/ui/NotifBell.tsx');
+check('уведомления: ошибка загрузки хранится отдельно', str_contains($bell, 'loadFailed'));
+check('уведомления: ошибка загрузки не выглядит пустым списком',
+    str_contains($bell, 'Не удалось загрузить уведомления') && str_contains($bell, 'Повторить'));
+check('уведомления: прочитать все меняет UI только после сервера',
+    (bool)preg_match('~await dbMarkAllNotifsRead\(userId\);[\s\S]{0,180}setNotifs~', $bell));
+check('уведомления: удаление одного меняет UI только после сервера',
+    (bool)preg_match('~await dbDeleteNotif\(id\);[\s\S]{0,180}setNotifs~', $bell));
+check('уведомления: удаление всех меняет UI только после сервера',
+    (bool)preg_match('~await dbDeleteAllNotifs\(userId\);[\s\S]{0,180}setNotifs\(\[\]\)~', $bell));
+
+$tgBanner = (string)file_get_contents(__DIR__ . '/../components/TelegramLinkBanner.tsx');
+check('telegram banner: готовит резервную привязку', str_contains($tgBanner, 'void dbTgPrepareLink(userId).catch'));
+check('telegram banner: ошибка открытия видна', str_contains($tgBanner, 'Не удалось открыть Telegram. Откройте вручную'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
