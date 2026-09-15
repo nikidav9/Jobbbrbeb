@@ -17,6 +17,11 @@ api.telegram.org отпала, tgtool вернул пустой ответ, ша
 release asset. Один прогон мог удалить asset, пока другой его загружал, и
 uploads.github.com отвечал 404. Production publish поэтому обязан быть
 сериализован, а сам внешний upload иметь ограниченный retry.
+
+Третий инвариант — документация и локальная git-метаинформация не являются
+релизом приложения. Такие push не должны занимать production deploy или EAS
+OTA и отменять настоящую сборку, поэтому оба release workflow обязаны иметь
+одинаковый минимальный paths-ignore для docs/Markdown/.gitignore.
 """
 
 import sys
@@ -25,9 +30,11 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = yaml.safe_load(
-    (ROOT / ".github/workflows/deploy-regru.yml").read_text(encoding="utf-8")
-)
+DEPLOY_PATH = ROOT / ".github/workflows/deploy-regru.yml"
+EAS_PATH = ROOT / ".github/workflows/eas-update.yml"
+DEPLOY_TEXT = DEPLOY_PATH.read_text(encoding="utf-8")
+EAS_TEXT = EAS_PATH.read_text(encoding="utf-8")
+WORKFLOW = yaml.safe_load(DEPLOY_TEXT)
 STEPS = WORKFLOW["jobs"]["deploy"]["steps"]
 
 failures = []
@@ -60,6 +67,15 @@ check("production deploy имеет отдельную concurrency group",
       concurrency.get("group") == "production-web-deploy")
 check("устаревший production deploy отменяется",
       concurrency.get("cancel-in-progress") is True)
+
+# Документационный push не меняет web/OTA bundle. Без этого фильтра правка
+# roadmap или README сама занимала release runner и могла отменить реальный
+# deploy, потому что production-web-deploy намеренно cancel-in-progress.
+for workflow_name, text in (("web deploy", DEPLOY_TEXT), ("EAS Update", EAS_TEXT)):
+    check(f"{workflow_name}: есть paths-ignore", "paths-ignore:" in text)
+    check(f"{workflow_name}: docs не запускают релиз", "- 'docs/**'" in text)
+    check(f"{workflow_name}: Markdown не запускает релиз", "- '**/*.md'" in text)
+    check(f"{workflow_name}: .gitignore не запускает релиз", "- '.gitignore'" in text)
 
 if publish >= 0:
     publish_body = str(STEPS[publish].get("run", ""))
