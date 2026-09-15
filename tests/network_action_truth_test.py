@@ -85,6 +85,10 @@ checks = {
     'устаревший ответ статуса отклика игнорируется': "if (cancelled) return;" in chat_room and "return () => { cancelled = true; };" in chat_room,
     'сбой загрузки статуса отклика виден': "setLikeStatusLoadFailed(true);" in chat_room and 'Не удалось загрузить статус отклика' in chat_room,
     'статус отклика можно загрузить повторно': "setLikeStatusRetry(x => x + 1)" in chat_room and 'likeStatusRetry]);' in chat_room,
+    'сбой партнёрского фида отмечается отдельно': 'setPartnerShiftsLoadFailed(true);' in feed and 'setPartnerShiftsLoadFailed(false);' in feed,
+    'сбой партнёрского фида не очищает уже загруженные смены': 'setPartnerShifts([])' not in feed,
+    'refresh различает частичный сбой партнёрского фида': 'const [, partnerOk] = await Promise.all([refreshAll(), loadPartnerShifts()]);' in feed and "if (!partnerOk)" in feed,
+    'частичный сбой партнёрского фида виден и имеет retry': 'Партнёрские смены не обновились' in feed and 'onPress={() => void loadPartnerShifts()}' in feed,
     'план фиксирует нагрузочный прогон': '~~Нагрузочный прогон крупного фида и очереди callback перед пилотом~~' in plan,
 }
 

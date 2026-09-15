@@ -1812,17 +1812,23 @@ function WorkerFeed() {
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [partnerShifts, setPartnerShifts] = useState<PartnerShiftCard[]>([]);
+  const [partnerShiftsLoadFailed, setPartnerShiftsLoadFailed] = useState(false);
 
-  const loadPartnerShifts = useCallback(async () => {
+  const loadPartnerShifts = useCallback(async (): Promise<boolean> => {
     try {
       const rows = await dbGetExternalVacancies();
       setPartnerShifts(rows.map(partnerShiftToCard).filter((v): v is PartnerShiftCard => !!v));
+      setPartnerShiftsLoadFailed(false);
+      return true;
     } catch {
-      // Свои смены остаются доступны при временной ошибке партнёрского фида.
+      // Не очищаем уже загруженные партнёрские смены: временный сбой фида не
+      // должен выглядеть как будто у партнёров внезапно закончились вакансии.
+      setPartnerShiftsLoadFailed(true);
+      return false;
     }
   }, []);
 
-  useEffect(() => { loadPartnerShifts(); }, [loadPartnerShifts]);
+  useEffect(() => { void loadPartnerShifts(); }, [loadPartnerShifts]);
 
   // Гость смотрит ленту, но откликнуться/написать не может — любое такое
   // действие ведёт на выбор роли и регистрацию.
@@ -1846,7 +1852,10 @@ function WorkerFeed() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await Promise.all([refreshAll(), loadPartnerShifts()]);
+      const [, partnerOk] = await Promise.all([refreshAll(), loadPartnerShifts()]);
+      if (!partnerOk) {
+        showToast('Свои смены обновлены, но партнёрские не удалось обновить.', 'error');
+      }
     } catch {
       showToast('Не удалось обновить ленту. Проверьте связь.', 'error');
     } finally {
@@ -2337,6 +2346,18 @@ function WorkerFeed() {
           <Text style={gB.bannerCta}>Войти</Text>
         </TouchableOpacity>
       )}
+      {partnerShiftsLoadFailed ? (
+        <TouchableOpacity
+          style={pS.offlineBar}
+          onPress={() => void loadPartnerShifts()}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
+          <Text style={pS.offlineTxt}>
+            Партнёрские смены не обновились — свои и ранее загруженные остаются доступны. Нажмите, чтобы повторить.
+          </Text>
+        </TouchableOpacity>
+      ) : null}
       {/* Разовая / Регулярная */}
       <ShiftSubTabs value={subMode} onChange={setSubMode} />
       {subMode === 'regular' ? (
