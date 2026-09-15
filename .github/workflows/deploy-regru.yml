@@ -5,6 +5,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Все прогоны пишут один и тот же release asset `web/dist.tar.gz`. Без
+# сериализации быстрые последовательные push одновременно делали --clobber:
+# один прогон удалял asset ровно в момент upload другого, и GitHub отвечал 404.
+# Нужна только самая свежая сборка — старую безопасно отменять.
+concurrency:
+  group: production-web-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Сборка и доставка
@@ -77,7 +85,22 @@ jobs:
             || gh release create web --latest=false \
                  -t "Веб-сборка" \
                  -n "Собирается автоматически. Московский сервер забирает отсюда dist.tar.gz."
-          gh release upload web dist.tar.gz --clobber
+
+          # GitHub uploads endpoint иногда кратко отвечает 404/5xx после
+          # clobber. Сериализация убирает нашу гонку, а ограниченный retry —
+          # внешний transient. После трёх отказов deploy остаётся красным.
+          published=0
+          for attempt in 1 2 3; do
+            if gh release upload web dist.tar.gz --clobber; then
+              published=1
+              break
+            fi
+            echo "Публикация release asset: попытка $attempt не удалась"
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 3))
+            fi
+          done
+          [ "$published" = 1 ]
 
       # Секреты синхронизируем отдельно. На обычном code deploy сервер уже
       # имеет рабочий набор; временная недоступность deploy.php теперь видна,
