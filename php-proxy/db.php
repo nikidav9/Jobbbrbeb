@@ -21,6 +21,7 @@ require_once __DIR__ . '/referral.php';
 require_once __DIR__ . '/funnel.php';
 require_once __DIR__ . '/shift_funnel.php';
 require_once __DIR__ . '/feed_funnel.php';
+require_once __DIR__ . '/sitemap_cache.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -4504,6 +4505,7 @@ try {
                 $row['webhook_secret'] = trim((string)($v['webhook_secret'] ?? '')) ?: null;
             }
             sb_upsert('jm_ext_sources', $row, 'id');
+            sm_cache_invalidate();
             $data = ['ok' => true, 'id' => $row['id']]; break;
         }
 
@@ -4512,6 +4514,7 @@ try {
             if ($id === '') { $data = ['error' => 'нужен id']; break; }
             sb_delete('jm_ext_vacancies', ['source_id' => 'eq.' . $id]);
             sb_delete('jm_ext_sources', ['id' => 'eq.' . $id]);
+            sm_cache_invalidate();
             $data = ['ok' => true]; break;
         }
 
@@ -5511,7 +5514,8 @@ try {
         case 'dbUpsertVacancy':
             vacancy_dates_guard([$args[0]]);
             vacancy_content_guard($args[0]);
-            save_then_geocode('jm_vacancies', $args[0]); break;
+            save_then_geocode('jm_vacancies', $args[0]);
+            sm_cache_invalidate(); break;
 
         case 'dbUpsertVacancyBatch': {
             // $args[0] — массив строк вакансий, пишется одним запросом.
@@ -5527,7 +5531,8 @@ try {
                 $rows[$k]['lat'] = $cache[$a]['lat'] ?? null;
                 $rows[$k]['lng'] = $cache[$a]['lng'] ?? null;
             }
-            sb_upsert('jm_vacancies', $rows, 'id'); break;
+            sb_upsert('jm_vacancies', $rows, 'id');
+            sm_cache_invalidate(); break;
         }
 
         case 'dbUpdateVacancy':
@@ -5535,7 +5540,8 @@ try {
             // осталась бы висеть на старом месте.
             vacancy_dates_guard([$args[1]]);
             vacancy_content_guard($args[1]);
-            sb_update('jm_vacancies', ['id' => 'eq.' . $args[0]], fill_coords($args[1])); break;
+            sb_update('jm_vacancies', ['id' => 'eq.' . $args[0]], fill_coords($args[1]));
+            sm_cache_invalidate(); break;
 
         // ── Likes ──────────────────────────────────────────────────────────────
         // Своё и только своё. Прежде отдавалась ВСЯ таблица откликов сервиса:
@@ -6157,7 +6163,8 @@ try {
             sb_update('jm_perm_vacancies', ['id' => 'eq.' . $args[0]], ['status' => 'closed']); break;
 
         case 'dbDeleteVacancy':
-            sb_delete('jm_vacancies', ['id' => 'eq.' . $args[0]]); break;
+            sb_delete('jm_vacancies', ['id' => 'eq.' . $args[0]]);
+            sm_cache_invalidate(); break;
 
         case 'dbDeletePermVacancy':
             sb_delete('jm_perm_vacancies', ['id' => 'eq.' . $args[0]]); break;
@@ -6878,6 +6885,7 @@ try {
                 sb_update('jm_vacancies', ['id' => 'eq.' . $row['id']], ['status' => 'closed']);
             }
             $data = count($toClose);
+            if ($data > 0) sm_cache_invalidate();
             break;
         }
 

@@ -21,6 +21,7 @@ header('Content-Type: application/json; charset=utf-8');
 define('SB_STRICT', true);
 require_once __DIR__ . '/sb_lite.php';
 require_once __DIR__ . '/safe_url.php';
+require_once __DIR__ . '/sitemap_cache.php';
 
 function ing_secret(string $name): string
 {
@@ -378,6 +379,7 @@ function ing_run_source(array $src): array
         }
         foreach (array_chunk($rows, 200) as $chunk) {
             sb_upsert_rows('jm_ext_vacancies', $chunk, 'source_id,external_id');
+            sm_cache_invalidate();
         }
         $received += count($rows);
         // SuperJob обходится по рубрикам из-за лимита API в 500 результатов
@@ -435,6 +437,7 @@ function ing_run_source(array $src): array
             sb_update('jm_ext_vacancies', ['id' => 'in.(' . implode(',', $chunk) . ')'], ['active' => false]);
         }
         $gone = count($stale);
+        if ($gone > 0) sm_cache_invalidate();
     }
 
     if (is_file($stateFile)) unlink($stateFile);

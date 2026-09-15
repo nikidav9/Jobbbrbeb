@@ -28,12 +28,13 @@ require_once __DIR__ . '/sitemap_cache.php';
 
 const SM_SITE = 'https://jobtoo.ru';
 const SM_CACHE_TTL = 3600;
-const SM_CACHE_FILE = '/tmp/jobtoo-sitemap-v1.xml';
+const SM_HTTP_CACHE_TTL = 300;
+$smCacheFile = sm_cache_default_path();
 
-$cached = sm_cache_read(SM_CACHE_FILE, time(), SM_CACHE_TTL);
+$cached = sm_cache_read($smCacheFile, time(), SM_CACHE_TTL);
 if ($cached !== null) {
     header('Content-Type: application/xml; charset=utf-8');
-    header('Cache-Control: public, max-age=' . SM_CACHE_TTL);
+    header('Cache-Control: public, max-age=' . SM_HTTP_CACHE_TTL);
     header('X-JobToo-Sitemap-Cache: HIT');
     echo $cached;
     exit;
@@ -110,9 +111,9 @@ $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
 
 // Записываем только карту, которую полностью собрали без исключений.
 // Неудача записи не прячет рабочий ответ и повторится на следующем запросе.
-sm_cache_write(SM_CACHE_FILE, $xml);
+sm_cache_write($smCacheFile, $xml);
 
 header('Content-Type: application/xml; charset=utf-8');
-header('Cache-Control: public, max-age=' . SM_CACHE_TTL);
+header('Cache-Control: public, max-age=' . SM_HTTP_CACHE_TTL);
 header('X-JobToo-Sitemap-Cache: MISS');
 echo $xml;
