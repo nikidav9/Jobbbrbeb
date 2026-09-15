@@ -5,6 +5,7 @@ root = Path(__file__).resolve().parents[1]
 chats = (root / 'app/(tabs)/chats.tsx').read_text(encoding='utf-8')
 matches = (root / 'app/(tabs)/matches.tsx').read_text(encoding='utf-8')
 feed = (root / 'app/(tabs)/feed.tsx').read_text(encoding='utf-8')
+rate = (root / 'app/rate.tsx').read_text(encoding='utf-8')
 perm = (root / 'components/feature/PermApplicationsSheet.tsx').read_text(encoding='utf-8')
 plan = (root / 'docs/план-разработки.md').read_text(encoding='utf-8')
 
@@ -16,6 +17,13 @@ shift_close_start = feed.find('  const closeVacancy = async')
 perm_close_start = feed.find('  const closePermVacancy = async')
 shift_close = feed[shift_close_start:perm_close_start] if shift_close_start >= 0 and perm_close_start > shift_close_start else ''
 perm_close = feed[perm_close_start:shift_delete_start] if perm_close_start >= 0 and shift_delete_start > perm_close_start else ''
+rate_submit_start = rate.find('  const submit = async')
+rate_submit_end = rate.find('  const skip =', rate_submit_start)
+rate_submit = rate[rate_submit_start:rate_submit_end] if rate_submit_start >= 0 and rate_submit_end > rate_submit_start else ''
+
+rating_write = 'const { bothRated } = await dbSubmitRatingAndMaybeDelete({'
+rating_refresh = "try {\n        await refreshAll();\n      } catch {\n        // Следующий обычный refresh подтянет уже сохранённое состояние.\n      }"
+rating_success = "showToast('Оценка сохранена! Спасибо 🌟', 'success');"
 
 checks = {
     'чаты отпускают refresh в finally': "showToast('Не удалось обновить переписки. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in chats,
@@ -37,6 +45,10 @@ checks = {
     'ошибка закрытия сменной вакансии видна и откатывает UI': "showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');" in shift_close and 'next.delete(id);' in shift_close,
     'ошибка закрытия постоянной вакансии видна и откатывает UI': "showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');" in perm_close and 'next.delete(id);' in perm_close,
     'закрытие вакансий больше не fire-and-forget': ".then(() => refreshVacancies()" not in shift_close and ".then(() => refreshPermVacancies()" not in perm_close,
+    'оценка ждёт подтверждение серверной записи': rating_write in rate_submit,
+    'refresh оценки изолирован после успешной записи': rating_refresh in rate_submit and rate_submit.find(rating_write) < rate_submit.find(rating_refresh),
+    'сбой refresh оценки не отменяет успешный результат': rating_refresh in rate_submit and rate_submit.find(rating_refresh) < rate_submit.find(rating_success),
+    'ошибка сохранения остаётся для неуспешной записи': "showToast('Ошибка при сохранении', 'error');" in rate_submit,
     'план фиксирует нагрузочный прогон': '~~Нагрузочный прогон крупного фида и очереди callback перед пилотом~~' in plan,
 }
 
