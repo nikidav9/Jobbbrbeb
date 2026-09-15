@@ -54,6 +54,8 @@ export default function ConsentGate() {
   const [needed, setNeeded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checkRetry, setCheckRetry] = useState(0);
   // Раскрытый документ. Тексты показываем прямо здесь, а не отправляем на
   // экран /legal: окно перекрывает всё, что под ним, — человек ушёл бы читать
   // и упёрся в него же поверх документа.
@@ -64,23 +66,30 @@ export default function ConsentGate() {
     // некому. Требовать его — тупик (запись за синтетического гостя не
     // сохраняется, отсюда «Согласие не сохранилось»). Согласие спросим при
     // регистрации, как и раньше.
-    if (!user || user.isGuest) { setChecked(false); setNeeded(false); return; }
+    if (!user || user.isGuest) {
+      setChecked(false);
+      setNeeded(false);
+      setCheckFailed(false);
+      return;
+    }
     let alive = true;
     setChecked(false);
+    setCheckFailed(false);
     dbGetConsent(user.id)
       .then(c => {
         if (!alive) return;
         setNeeded(needsReconsent(c?.stamp));
+        setCheckFailed(false);
         setChecked(true);
       })
       .catch(() => {
-        // Не достучались до базы — молчим и пропускаем. Показать окно из-за
-        // сорвавшегося запроса значит запереть человека на ровном месте:
-        // он нажмёт «Принять», согласие снова не запишется, и так по кругу.
-        if (alive) { setNeeded(false); setChecked(true); }
+        // Невозможность проверить согласие — не доказательство, что оно есть.
+        // Не пропускаем человека дальше молча: показываем понятную ошибку и
+        // даём повторить проверку или выйти из аккаунта.
+        if (alive) { setCheckFailed(true); setChecked(true); }
       });
     return () => { alive = false; };
-  }, [user?.id]);
+  }, [user?.id, checkRetry]);
 
   async function accept() {
     if (!user || busy) return;
@@ -108,7 +117,35 @@ export default function ConsentGate() {
     }
   }
 
-  if (!user || !checked || !needed) return null;
+  if (!user || !checked) return null;
+
+  if (checkFailed) {
+    return (
+      <View style={[styles.overlay, { paddingTop: insets.top + rs(24) }]}>
+        <View style={styles.card}>
+          <View style={styles.iconWrap}>
+            <Ionicons name="cloud-offline-outline" size={rf(26)} color={Colors.primary} />
+          </View>
+          <Text style={styles.title}>Не удалось проверить документы</Text>
+          <Text style={styles.lead}>
+            Сервер не ответил, поэтому JobToo не может подтвердить, что у аккаунта есть актуальное согласие. Проверьте связь и повторите проверку.
+          </Text>
+          <TouchableOpacity
+            style={styles.accept}
+            activeOpacity={0.85}
+            onPress={() => setCheckRetry(v => v + 1)}
+          >
+            <Text style={styles.acceptText}>Повторить</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.leave} activeOpacity={0.7} onPress={() => app?.logout()}>
+            <Text style={styles.leaveText}>Выйти</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (!needed) return null;
 
   const дата = formatLegalDate(LEGAL_DOCS.terms.version);
 

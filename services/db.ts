@@ -638,18 +638,11 @@ export function dbWarmup(): void {
 }
 
 export async function dbCheckPhoneExists(phone: string): Promise<boolean> {
-  if (IS_NATIVE) {
-    try { return await proxy<boolean>('dbCheckPhoneExists', [phone]); } catch { return false; }
-  }
-  try {
-    const { data } = await withTimeout(
-      supabase.from('jm_users').select('id').eq('phone', phone).maybeSingle(),
-      8_000
-    );
-    return !!data;
-  } catch {
-    return false;
-  }
+  // Ошибка запроса — это НЕ ответ «номер свободен». Экран регистрации сам
+  // показывает понятный текст и оставляет человека на первом шаге для повтора.
+  // Если проглотить ошибку здесь, внешний catch никогда не сработает и при
+  // обрыве связи мы разрешим создать второй аккаунт с тем же номером.
+  return proxy<boolean>('dbCheckPhoneExists', [phone]);
 }
 
 export async function dbGetUserByPhone(phone: string): Promise<User | null> {
