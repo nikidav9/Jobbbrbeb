@@ -34,6 +34,7 @@ jobs:
           PY
           python3 scripts/apply_matches_partner_truth.py
           python3 scripts/update_matches_offline_guard.py
+          git restore scripts/apply_matches_partner_truth.py
 
       - name: Validate
         run: |
