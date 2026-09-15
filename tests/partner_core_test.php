@@ -95,4 +95,17 @@ expect_true(str_contains($partnerRoute, "format === 'xlsx'"), 'XLSX export exist
 $consentSheet = file_get_contents(__DIR__ . '/../components/feature/PartnerConsentSheet.tsx');
 expect_true($consentSheet !== false && str_contains($consentSheet, 'Получатель:'), 'specific partner is shown before transfer');
 
+$queueMigration = file_get_contents(__DIR__ . '/../supabase/migrations/067_partner_queue_claims.sql');
+expect_true($queueMigration !== false, 'partner queue claim migration exists');
+expect_true(str_contains($queueMigration, 'for update skip locked'), 'outbox claims use row locking');
+expect_true(str_contains($queueMigration, "'conflict'::text"), 'webhook event id cannot be reused with another payload');
+$outboxWorker = file_get_contents(__DIR__ . '/../php-proxy/partner_outbox.php');
+expect_true($outboxWorker !== false && str_contains($outboxWorker, "sb_rpc('jm_claim_partner_outbox'"), 'outbox is claimed atomically');
+expect_true(!str_contains($outboxWorker, "sb_select('jm_partner_outbox'"), 'outbox no longer uses select-then-send race');
+$partnerWebhook = file_get_contents(__DIR__ . '/../php-proxy/partner_webhook.php');
+expect_true($partnerWebhook !== false && str_contains($partnerWebhook, "sb_rpc('jm_claim_partner_inbox'"), 'webhook inbox is claimed atomically');
+expect_true(str_contains($partnerWebhook, "'processing_started_at' => null"), 'webhook claim is released after processing');
+$ingest = file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
+expect_true($ingest !== false && str_contains($ingest, "INGEST_LIBRARY_ONLY"), 'feed normalizer can be load-tested without production I/O');
+
 echo "partner core: ok\\n";

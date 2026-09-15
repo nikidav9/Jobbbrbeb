@@ -26,18 +26,31 @@ $version = (int)($event['status_version'] ?? 0);
 if ($eventId === '' || $applicationId === '' || $status === '' || $version < 1) {
     http_response_code(400); echo json_encode(['error' => 'Invalid event']); exit;
 }
-$seen = sb_single('jm_partner_inbox', [
-    'source_id' => 'eq.' . $sourceId, 'partner_event_id' => 'eq.' . $eventId,
-], 'id,processed_at');
-if ($seen && !empty($seen['processed_at'])) {
+$claimRows = sb_rpc('jm_claim_partner_inbox', [
+    'p_id' => bin2hex(random_bytes(12)),
+    'p_source_id' => $sourceId,
+    'p_partner_event_id' => $eventId,
+    'p_event_kind' => 'application.status',
+    'p_payload' => $event,
+]);
+$claim = $claimRows[0] ?? null;
+if (!is_array($claim)) {
+    http_response_code(503); echo json_encode(['error' => 'Inbox unavailable']); exit;
+}
+$inboxId = (string)($claim['inbox_id'] ?? '');
+$claimStatus = (string)($claim['claim_status'] ?? '');
+if ($claimStatus === 'duplicate') {
     echo json_encode(['ok' => true, 'duplicate' => true]); exit;
 }
-$inboxId = $seen['id'] ?? bin2hex(random_bytes(12));
-if (!$seen) sb_insert('jm_partner_inbox', [
-    'id' => $inboxId, 'source_id' => $sourceId, 'partner_event_id' => $eventId,
-    'event_kind' => 'application.status', 'payload' => $event,
-    'signature_valid' => true, 'received_at' => now_iso(),
-]);
+if ($claimStatus === 'busy') {
+    http_response_code(202); echo json_encode(['ok' => true, 'processing' => true]); exit;
+}
+if ($claimStatus === 'conflict') {
+    http_response_code(409); echo json_encode(['error' => 'Event id reused with different payload']); exit;
+}
+if ($claimStatus !== 'claimed' || $inboxId === '') {
+    http_response_code(503); echo json_encode(['error' => 'Inbox claim failed']); exit;
+}
 
 try {
     $application = sb_single('jm_partner_applications', [
@@ -57,12 +70,13 @@ try {
         ]);
     }
     sb_update('jm_partner_inbox', ['id' => 'eq.' . $inboxId], [
-        'processed_at' => now_iso(), 'processing_error' => null,
+        'processed_at' => now_iso(), 'processing_started_at' => null, 'processing_error' => null,
     ]);
     echo json_encode(['ok' => true, 'applied' => !empty($transition['applied']),
         'reason' => $transition['reason'] ?? null]);
 } catch (Throwable $e) {
     sb_update('jm_partner_inbox', ['id' => 'eq.' . $inboxId], [
+        'processing_started_at' => null,
         'processing_error' => substr($e->getMessage(), 0, 500),
     ]);
     http_response_code(422); echo json_encode(['error' => 'Event was not applied']);

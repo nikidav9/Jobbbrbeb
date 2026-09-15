@@ -83,6 +83,12 @@ if (!function_exists('sb')) {
            ['Prefer: return=minimal,resolution=merge-duplicates']);
     }
 
+    /** Вызов PostgREST RPC. Возвращаем строки результата как обычный массив. */
+    function sb_rpc(string $name, array $args = []): array
+    {
+        return sb('POST', 'rpc/' . $name, [], $args, ['Prefer: return=representation']);
+    }
+
     function now_iso(): string
     {
         return gmdate('Y-m-d\TH:i:s') . '.000Z';

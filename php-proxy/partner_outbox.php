@@ -49,15 +49,17 @@ function po_send(string $url, array $headers, array $body): array {
     return is_array($decoded) ? $decoded : [];
 }
 
-$events = sb_select('jm_partner_outbox', [
-    'delivery_status' => 'in.(pending,failed)',
-    'next_attempt_at' => 'lte.' . now_iso(),
-    'limit' => '50',
-    'order' => 'next_attempt_at.asc',
-], '*');
-$delivered = 0; $failed = 0; $dead = 0;
-
-foreach ($events as $event) {
+$delivered = 0; $failed = 0; $dead = 0; $selected = 0;
+// Не резервируем пачку на минуты вперёд: если партнёр тормозит, процесс может
+// закончиться по лимиту времени и оставить ещё не начатые события в sending.
+// Берём одно событие атомарно прямо перед отправкой. Параллельные cron-воркеры
+// получают разные события благодаря FOR UPDATE SKIP LOCKED в RPC.
+$deadline = microtime(true) + 95;
+while ($selected < 50 && microtime(true) < $deadline) {
+    $claimed = sb_rpc('jm_claim_partner_outbox', ['p_limit' => 1]);
+    $event = $claimed[0] ?? null;
+    if (!is_array($event)) break;
+    $selected++;
     $attempt = (int)($event['attempts'] ?? 0) + 1;
     try {
         if (($event['event_kind'] ?? '') !== 'application.submit')
@@ -126,5 +128,5 @@ foreach ($events as $event) {
     }
 }
 
-echo json_encode(['ok' => true, 'selected' => count($events), 'delivered' => $delivered,
+echo json_encode(['ok' => true, 'selected' => $selected, 'delivered' => $delivered,
     'retrying' => $failed, 'dead' => $dead], JSON_UNESCAPED_UNICODE);

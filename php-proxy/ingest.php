@@ -38,15 +38,17 @@ function ing_secret(string $name): string
 // Сборщик меняет партнёрские данные, поэтому публичный APP_SECRET здесь
 // недопустим. Приоритет — отдельный ADMIN_API_TOKEN; на переходном этапе
 // подходит пароль закрытого дашборда, который уже хранится только на сервере.
-$expectedAdmin = ing_secret('ADMIN_API_TOKEN');
-if ($expectedAdmin === '') {
-    $credFile = __DIR__ . '/admin_credentials.php';
-    $creds = is_readable($credFile) ? @include $credFile : null;
-    $expectedAdmin = is_array($creds) ? (string)($creds['password'] ?? '') : '';
-}
-$givenAdmin = (string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '');
-if ($expectedAdmin === '' || !hash_equals($expectedAdmin, $givenAdmin)) {
-    http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
+if (!defined('INGEST_LIBRARY_ONLY')) {
+    $expectedAdmin = ing_secret('ADMIN_API_TOKEN');
+    if ($expectedAdmin === '') {
+        $credFile = __DIR__ . '/admin_credentials.php';
+        $creds = is_readable($credFile) ? @include $credFile : null;
+        $expectedAdmin = is_array($creds) ? (string)($creds['password'] ?? '') : '';
+    }
+    $givenAdmin = (string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '');
+    if ($expectedAdmin === '' || !hash_equals($expectedAdmin, $givenAdmin)) {
+        http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
+    }
 }
 
 /** Отпечаток «та же самая работа». */
@@ -447,6 +449,7 @@ function ing_run_source(array $src): array
 
 // ── Сам заход ─────────────────────────────────────────────────────────────
 
+if (!defined('INGEST_LIBRARY_ONLY')) {
 $only = trim((string)($_GET['source'] ?? ''));   // для кнопки «проверить сейчас»
 $force = ($_GET['force'] ?? '') !== '';
 
@@ -501,3 +504,4 @@ foreach ($sources as $src) {
 }
 
 echo json_encode(['ok' => true, 'sources' => count($sources), 'run' => $done], JSON_UNESCAPED_UNICODE);
+}
