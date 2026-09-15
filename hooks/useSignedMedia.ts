@@ -24,6 +24,8 @@ const inflight = new Map<string, Promise<string | null>>();
 
 /** На минуту меньше часа: чтобы ссылка не протухла ровно в момент показа. */
 const TTL = 59 * 60 * 1000;
+const MAX_TRANSIENT_RETRIES = 3;
+const RETRY_DELAY_MS = 1_200;
 
 async function resolve(key: string): Promise<string | null> {
   const hit = cache.get(key);
@@ -32,11 +34,16 @@ async function resolve(key: string): Promise<string | null> {
   const running = inflight.get(key);
   if (running) return running;
 
-  const p = dbSignMedia(key).then(url => {
-    if (url) cache.set(key, { url, until: Date.now() + TTL });
-    inflight.delete(key);
-    return url;
-  }).catch(() => { inflight.delete(key); return null; });
+  // Сетевую ошибку не превращаем в честный null. null означает, что сервер
+  // ответил «ссылки нет», а rejected Promise — что ответа вообще не получили.
+  // Hook ниже повторит только второй случай, поэтому временный обрыв связи не
+  // оставит вложение серым до следующего открытия чата.
+  const p = dbSignMedia(key)
+    .then(url => {
+      if (url) cache.set(key, { url, until: Date.now() + TTL });
+      return url;
+    })
+    .finally(() => { inflight.delete(key); });
 
   inflight.set(key, p);
   return p;
@@ -51,9 +58,34 @@ export function useSignedMedia(pathOrUrl: string | null | undefined): string | n
 
   useEffect(() => {
     if (!pathOrUrl) { setUrl(null); return; }
+
     let alive = true;
-    resolve(pathOrUrl).then(u => { if (alive) setUrl(u); });
-    return () => { alive = false; };
+    let attempts = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // При смене сообщения не оставляем на месте ссылку от предыдущего файла.
+    const hit = cache.get(pathOrUrl);
+    setUrl(hit && hit.until > Date.now() ? hit.url : null);
+
+    const load = () => {
+      resolve(pathOrUrl)
+        .then(nextUrl => {
+          if (alive) setUrl(nextUrl);
+        })
+        .catch(() => {
+          if (!alive) return;
+          attempts += 1;
+          if (attempts < MAX_TRANSIENT_RETRIES) {
+            retryTimer = setTimeout(load, RETRY_DELAY_MS * attempts);
+          }
+        });
+    };
+
+    load();
+    return () => {
+      alive = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [pathOrUrl]);
 
   return url;
