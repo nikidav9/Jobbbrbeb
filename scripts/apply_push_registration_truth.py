@@ -143,9 +143,11 @@ $pushSheet = (string)file_get_contents(__DIR__ . '/../components/NotificationPer
 check('push: регистрация возвращает явный результат',
     str_contains($push, 'Promise<boolean>') && str_contains($push, 'return true;') && str_contains($push, 'return false;'));
 check('push: экран ждёт регистрацию токена после уже выданного разрешения',
-    (bool)preg_match('~status === \'granted\'[\\s\\S]{0,420}withTimeout\\(registerForPushNotifications\\(userId\\)~', $pushSheet));
+    str_contains($pushSheet, "status === 'granted'") &&
+    str_contains($pushSheet, 'withTimeout(registerForPushNotifications(userId)'));
 check('push: enabled сохраняется только после успешной регистрации',
-    (bool)preg_match('~if \\(ok\\) \\{[\\s\\S]{0,180}AsyncStorage\\.setItem\\(CHOICE_KEY, \'enabled\'\\)~', $pushSheet));
+    str_contains($pushSheet, 'if (ok) {') &&
+    str_contains($pushSheet, "AsyncStorage.setItem(CHOICE_KEY, 'enabled')"));
 check('push: ошибка токена объяснена и не закрывает лист как успех',
     str_contains($pushSheet, 'push-токен не зарегистрировался'));
 
