@@ -1,0 +1,91 @@
+name: Production migration parity
+
+on:
+  workflow_run:
+    workflows:
+      - Сборка сайта и доставка на московский сервер
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-migration-parity
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Migration and RLS parity
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Для workflow_run проверяем именно тот commit, который только что
+          # выложили. Иначе быстрый следующий push заставит ждать миграцию из
+          # будущего commit и создаст ложную регрессию.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Wait for production migration and RLS guard
+        run: |
+          set -u
+          expected=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
+            | LC_ALL=C sort | tail -1)
+          [ -n "$expected" ] || { echo "Не найдено ни одной SQL-миграции"; exit 1; }
+          echo "Ожидаем production migration: $expected"
+
+          status_file="$RUNNER_TEMP/jobtoo-security-status.json"
+          last_http=000
+          for attempt in $(seq 1 16); do
+            rm -f "$status_file"
+            set +e
+            last_http=$(curl -4 -sS --location \
+              --connect-timeout 8 --max-time 20 \
+              -o "$status_file" -w '%{http_code}' \
+              https://147.45.184.99.sslip.io/security-status.json)
+            curl_rc=$?
+            set -e
+
+            if [ "$curl_rc" = 0 ] && [ "$last_http" = 200 ] && \
+               EXPECTED="$expected" STATUS_FILE="$status_file" python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+
+          try:
+              with open(os.environ['STATUS_FILE'], encoding='utf-8') as fh:
+                  value = json.load(fh)
+              expected = os.environ['EXPECTED']
+              applied = value.get('latest_migration')
+              guard = value.get('rls_guard') is True
+              raw = value.get('generated_at', '')
+              stamp = dt.datetime.fromisoformat(raw.replace('Z', '+00:00'))
+              age = (dt.datetime.now(dt.timezone.utc) - stamp).total_seconds()
+              ok = applied == expected and guard and 0 <= age <= 300
+              print(
+                  f"applied={applied or 'нет'} expected={expected} "
+                  f"rls_guard={guard} status_age={int(age)}s"
+              )
+              raise SystemExit(0 if ok else 1)
+          except Exception as exc:
+              print(f"security-status не подтверждён: {exc}")
+              raise SystemExit(1)
+          PY
+            then
+              echo "Production DB parity: OK"
+              exit 0
+            fi
+
+            echo "Попытка $attempt/16: production ещё не подтвердила $expected (HTTP ${last_http:-000})"
+            if [ "$attempt" -lt 16 ]; then
+              sleep 15
+            fi
+          done
+
+          echo "::error title=Production migration parity::Сервер не подтвердил $expected и зелёный RLS guard за 4 минуты"
+          [ -f "$status_file" ] && { echo "Последний security-status:"; cat "$status_file"; echo; }
+          exit 1
