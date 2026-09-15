@@ -256,6 +256,23 @@ check('партнёрские отклики: старый молчаливый 
 check('партнёрские отклики: общая пустота учитывает их сбой',
     str_contains($matchesTruth, 'partnerApplicationsLoadFailed && partnerApplications.length === 0 && myLikes.length === 0'));
 
+// ── Профиль: успех показывается только после серверной записи ─────────────────
+$profileCtx = (string)file_get_contents(__DIR__ . '/../contexts/AppContext.tsx');
+$profileScreen = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
+$upsertPos = strpos($profileCtx, 'await dbUpsertUser(u);');
+$localPos = strpos($profileCtx, '_setCurrentUser(u);', $upsertPos === false ? 0 : $upsertPos);
+check('профиль: сервер подтверждает изменение до локального UI',
+    $upsertPos !== false && $localPos !== false && $upsertPos < $localPos);
+check('профиль: форма ждёт сервер перед успехом',
+    (bool)preg_match("~await updateUser\\(updated\\);[\\s\\S]{0,180}showToast\\('Сохранено', 'success'\\)~", $profileScreen));
+check('профиль: фоновый ложный успех удалён',
+    !str_contains($profileScreen, "updateUser(updated).catch(() => showToast('Ошибка синхронизации'"));
+check('профиль: ошибка оставляет форму для повтора',
+    str_contains($profileScreen, 'Не удалось сохранить. Проверьте связь и попробуйте ещё раз'));
+check('фото профиля: ошибка записи не запускает опасный откат',
+    !str_contains($profileScreen, 'prevAvatarUrl') &&
+    !preg_match('~processAndUpload error[\\s\\S]{0,160}updateUser\\(~', $profileScreen));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

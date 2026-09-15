@@ -798,10 +798,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const updateUser = async (u: User) => {
-    _setCurrentUser(u);
-    await saveSessionUser(u);
+    // Профиль считаем изменённым только после подтверждения сервера. Раньше
+    // UI и локальная сессия менялись первыми: при сетевой ошибке человек видел
+    // новые данные, хотя после перезапуска сервер возвращал старые.
     await dbUpsertUser(u);
-    await refreshUsers();
+    _setCurrentUser(u);
+    setUsers(prev => {
+      const index = prev.findIndex(x => x.id === u.id);
+      if (index < 0) return [...prev, u];
+      const next = [...prev];
+      next[index] = u;
+      return next;
+    });
+    // Кэш сессии не является подтверждением операции: если локальное хранилище
+    // недоступно, серверная запись всё равно уже состоялась.
+    saveSessionUser(u).catch(e => console.warn('[AppContext] session cache update failed', e));
   };
 
   // ─── Гостевой просмотр без регистрации (Фаза 2) ────────────────────────────

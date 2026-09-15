@@ -358,13 +358,13 @@ export default function ProfileScreen() {
       if (editSection === 'worktypes') updated.workTypes = editWorkTypes;
       if (editSection === 'company') { updated.company = editCompany; updated.bio = editBio; }
       if (editSection === 'bio') updated.bio = editBio;
-      // Close modal immediately — sync to server in background
+      await updateUser(updated);
       setEditSection(null);
-      setSavingEdit(false);
       showToast('Сохранено', 'success');
-      updateUser(updated).catch(() => showToast('Ошибка синхронизации', 'error'));
     } catch {
-      showToast('Ошибка при сохранении', 'error');
+      // Форму не закрываем: введённые значения остаются на месте для повтора.
+      showToast('Не удалось сохранить. Проверьте связь и попробуйте ещё раз', 'error');
+    } finally {
       setSavingEdit(false);
     }
   };
@@ -376,15 +376,13 @@ export default function ProfileScreen() {
   // чтение файла в браузере и обязательная проверка ошибки загрузки.
   const processAndUpload = async (sourceUri: string) => {
     setUploadingPhoto(true);
-    const prevAvatarUrl = currentUser.avatarUrl;
     try {
       const avatarUrl = await uploadAvatar(sourceUri, currentUser.id);
       await updateUser({ ...currentUser, avatarUrl });
       showToast('Фото обновлено', 'success');
     } catch (e) {
       console.error('[Avatar] processAndUpload error', e);
-      updateUser({ ...currentUser, avatarUrl: prevAvatarUrl }).catch(() => {});
-      showToast('Не удалось обновить фото. Проверьте доступ к памяти.', 'error');
+      showToast('Не удалось обновить фото. Проверьте связь или доступ к памяти.', 'error');
     } finally {
       setUploadingPhoto(false);
     }
