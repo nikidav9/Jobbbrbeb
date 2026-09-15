@@ -206,6 +206,20 @@ check('адрес: ошибка подсказок не выглядит как 
 check('адрес: настоящий пустой поиск всё ещё объяснён',
     str_contains($addr, 'Ничего не нашлось. Можно подтвердить адрес как есть.'));
 
+// ── Постоянная вакансия: сетевой сбой не выглядит удалением/успехом ─────────
+$permDetail = (string)file_get_contents(__DIR__ . '/../app/perm-vacancy-detail.tsx');
+check('постоянная вакансия: гостевая загрузка имеет отдельную ошибку',
+    str_contains($permDetail, 'guestVacancyLoadFailed'));
+check('постоянная вакансия: ошибка гостевой загрузки не выглядит 404',
+    str_contains($permDetail, 'Не удалось загрузить вакансию') && str_contains($permDetail, 'Повторить'));
+check('постоянная вакансия: настоящий not-found сохранён',
+    str_contains($permDetail, 'Вакансия не найдена'));
+check('избранное постоянной вакансии: UI меняется только после сервера',
+    (bool)preg_match('~await dbAddPermSaved\(currentUser\.id, vacancy\.id\);[\s\S]{0,160}optimisticAddPermSaved~', $permDetail) &&
+    (bool)preg_match('~await dbRemovePermSaved\(currentUser\.id, vacancy\.id\);[\s\S]{0,160}optimisticRemovePermSaved~', $permDetail));
+check('избранное постоянной вакансии: ошибка видна',
+    str_contains($permDetail, 'Не удалось сохранить вакансию') && str_contains($permDetail, 'Не удалось удалить из избранного'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

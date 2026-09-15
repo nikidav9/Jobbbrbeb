@@ -53,6 +53,10 @@ export default function PermVacancyDetailScreen() {
   const [applyOpen, setApplyOpen] = useState(false);
   const [authModalDismissed, setAuthModalDismissed] = useState(Platform.OS === 'web');
   const [guestVacancy, setGuestVacancy] = useState<any>(null);
+  const [guestVacancyChecked, setGuestVacancyChecked] = useState(false);
+  const [guestVacancyLoadFailed, setGuestVacancyLoadFailed] = useState(false);
+  const [guestVacancyRetry, setGuestVacancyRetry] = useState(0);
+  const [savingFavorite, setSavingFavorite] = useState(false);
 
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
@@ -90,11 +94,20 @@ export default function PermVacancyDetailScreen() {
 
   useEffect(() => {
     if (!vacancyId || vacancy || currentUser || loading) return;
+    let alive = true;
+    setGuestVacancyChecked(false);
+    setGuestVacancyLoadFailed(false);
     dbGetPermVacancies().then(list => {
+      if (!alive) return;
       const found = list.find((v: any) => v.id === vacancyId);
       if (found) setGuestVacancy(found);
-    }).catch(() => {});
-  }, [vacancyId, vacancy, currentUser, loading]);
+    }).catch(() => {
+      if (alive) setGuestVacancyLoadFailed(true);
+    }).finally(() => {
+      if (alive) setGuestVacancyChecked(true);
+    });
+    return () => { alive = false; };
+  }, [vacancyId, vacancy, currentUser, loading, guestVacancyRetry]);
   const employer = vacancy ? users.find(u => u.id === vacancy.employerId) : null;
 
   const employerDisplayName = normalizeCompany(employer?.company || vacancy?.company);
@@ -169,7 +182,9 @@ export default function PermVacancyDetailScreen() {
     </TouchableOpacity>
   ) : null;
 
-  if (loading) {
+  const guestLookupPending = !currentUser && !loading && !!vacancyId && !vacancy && !guestVacancyChecked;
+
+  if (loading || guestLookupPending) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
@@ -197,8 +212,27 @@ export default function PermVacancyDetailScreen() {
         </View>
         {openAppBannerJSX}
         <View style={styles.emptyCenter}>
-          <Ionicons name="search-outline" size={48} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>Вакансия не найдена</Text>
+          {guestVacancyLoadFailed ? (
+            <>
+              <Ionicons name="cloud-offline-outline" size={48} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>Не удалось загрузить вакансию</Text>
+              <Text style={{ color: Colors.textMuted, textAlign: 'center', marginTop: rs(6) }}>
+                Проверьте связь и попробуйте ещё раз.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setGuestVacancyRetry(x => x + 1)}
+                activeOpacity={0.8}
+                style={{ marginTop: rs(14), backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Повторить</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Ionicons name="search-outline" size={48} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>Вакансия не найдена</Text>
+            </>
+          )}
         </View>
         {authModalJSX}
       </SafeAreaView>
@@ -267,15 +301,22 @@ export default function PermVacancyDetailScreen() {
   };
 
   const toggleSave = async () => {
-    if (!currentUser) return;
-    if (isSaved) {
-      optimisticRemovePermSaved(vacancy.id);
-      dbRemovePermSaved(currentUser.id, vacancy.id).catch(() => {});
-      showToast('Удалено из избранного', 'success');
-    } else {
-      optimisticAddPermSaved(vacancy.id);
-      dbAddPermSaved(currentUser.id, vacancy.id).catch(() => {});
-      showToast('Сохранено ❤️', 'success');
+    if (!currentUser || savingFavorite) return;
+    setSavingFavorite(true);
+    try {
+      if (isSaved) {
+        await dbRemovePermSaved(currentUser.id, vacancy.id);
+        optimisticRemovePermSaved(vacancy.id);
+        showToast('Удалено из избранного', 'success');
+      } else {
+        await dbAddPermSaved(currentUser.id, vacancy.id);
+        optimisticAddPermSaved(vacancy.id);
+        showToast('Сохранено ❤️', 'success');
+      }
+    } catch {
+      showToast(isSaved ? 'Не удалось удалить из избранного' : 'Не удалось сохранить вакансию', 'error');
+    } finally {
+      setSavingFavorite(false);
     }
   };
 
@@ -306,7 +347,8 @@ export default function PermVacancyDetailScreen() {
         {currentUser?.role === 'worker' ? (
           <TouchableOpacity
             onPress={toggleSave}
-            style={styles.saveHeaderBtn}
+            style={[styles.saveHeaderBtn, savingFavorite && { opacity: 0.5 }]}
+            disabled={savingFavorite}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons name={isSaved ? 'heart' : 'heart-outline'} size={24} color={isSaved ? Colors.red : Colors.textMuted} />
