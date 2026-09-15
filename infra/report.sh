@@ -43,6 +43,17 @@ TMP=/tmp/jt-status.$$
   # даже когда Docker не отвечает вовсе.
   echo "  \"порты\": \"$(ss -ltn 2>/dev/null | awk 'NR>1{print $4}' | grep -oE '[0-9]+$' | sort -un | tr '\n' ' ')\","
   echo "  \"версия\": \"$(cd /opt/jobtoo 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo нет)\","
+
+  # Не только «файл миграции есть в репозитории», а что реально применено к
+  # живой БД. Внешний монитор сравнивает это поле с последним SQL в main.
+  # Значение — только имя файла, никаких данных или секретов наружу не уходит.
+  latest_migration=$(cd /opt/jobtoo/infra 2>/dev/null && timeout 15 docker compose exec -T \
+       -e PGPASSWORD="$(grep -m1 '^POSTGRES_PASSWORD=' /opt/jobtoo-secrets/env | cut -d= -f2)" db \
+       psql -tAq -U supabase_admin -d postgres -c \
+       "select name from jm_migrations order by name desc limit 1" 2>/dev/null \
+       | tr -d '\"\r\n' | cut -c1-160)
+  echo "  \"последняя_миграция\": \"${latest_migration:-не прочитать}\","
+
   # Отдельной строкой, с адресом, а не только номером порта: прокси работает
   # в сети машины, и разница между 127.0.0.1:9000 и 0.0.0.0:9000 — это
   # разница между «закрыто» и «обработчик PHP открыт всему интернету».

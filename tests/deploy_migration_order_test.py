@@ -7,6 +7,8 @@ bootstrap = (root / "infra/bootstrap.sh").read_text(encoding="utf-8")
 local = (root / "infra/local-web-deploy.sh").read_text(encoding="utf-8")
 migrate = (root / "infra/migrate.sh").read_text(encoding="utf-8")
 guard = (root / "infra/verify-rls.sh").read_text(encoding="utf-8")
+report = (root / "infra/report.sh").read_text(encoding="utf-8")
+availability = (root / "infra/check-site.sh").read_text(encoding="utf-8")
 lockdown = (root / "supabase/migrations/013_lock_down_rls.sql").read_text(encoding="utf-8")
 
 protected = sorted(set(re.findall(r"'((?:jm_)[a-z0-9_]+)'", lockdown)))
@@ -33,6 +35,14 @@ checks = {
     ),
     "мигратор проверяет живой RLS-контур": (
         'verify-rls.sh' in migrate and 'RLS GUARD' in migrate
+    ),
+    "публичный статус показывает реально применённую миграцию": (
+        'последняя_миграция' in report and 'from jm_migrations order by name desc limit 1' in report
+    ),
+    "внешний монитор сверяет production с последним SQL в main": (
+        'expected_migration=' in availability
+        and 'migration_applied=' in availability
+        and 'production migration mismatch' in availability
     ),
     "RLS guard проверяет факт применения migration 013": (
         "013_lock_down_rls.sql" in guard and "jm_migrations" in guard

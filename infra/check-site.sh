@@ -54,6 +54,35 @@ record() {
   [[ $PROBE_OK -eq 1 ]] || { fails[$key]=$(( fails[$key]+1 )); }
 }
 
+# Сайт может отвечать 200, пока PHP уже новый, а БД ещё старая. Это самый
+# опасный «зелёный» deploy: ошибка проявится только при первом запросе к новой
+# функции/колонке. Сверяем то, что применено на сервере, с последним SQL в
+# checkout этого monitor-run.
+expected_migration=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
+  | LC_ALL=C sort | tail -1)
+status_json="$RUNNER_TEMP/jobtoo-status.json"
+probe_url migration_status "https://$FALLBACK_HOST/status.json" -4 "$status_json"
+if [[ $PROBE_OK -eq 1 ]]; then
+  applied_migration=$(python3 - "$status_json" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding='utf-8') as f:
+        value = json.load(f).get('последняя_миграция', '')
+    print(value if isinstance(value, str) else '')
+except Exception:
+    print('')
+PY
+  )
+  echo "migration_expected=${expected_migration:-нет} migration_applied=${applied_migration:-нет}"
+  if [[ -z "$expected_migration" || "$applied_migration" != "$expected_migration" ]]; then
+    echo "ERROR: production migration mismatch: expected=${expected_migration:-нет} applied=${applied_migration:-нет}"
+    failed=1
+  fi
+else
+  echo "ERROR: production status report unavailable; migration parity unknown"
+  failed=1
+fi
+
 for i in $(seq 1 "$SAMPLES"); do
   echo "sample $i/$SAMPLES @ $(date -u +'%H:%M:%SZ')"
   site_html="$RUNNER_TEMP/jobtoo-site-$i.html"
