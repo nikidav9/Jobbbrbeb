@@ -296,6 +296,21 @@ check('согласие: после ошибки есть повтор и вых
     str_contains($consentGate, '<Text style={styles.acceptText}>Повторить</Text>') &&
     str_contains($consentGate, 'onPress={() => app?.logout()}'));
 
+// ── Свайп «пропустить»: сетевой сбой не превращается в локальный успех ───────
+$feedSkip = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
+$skipStart = strpos($feedSkip, 'const doSkip = useCallback');
+$skipEnd = strpos($feedSkip, 'const doWant = useCallback', $skipStart === false ? 0 : $skipStart);
+$skipBody = ($skipStart !== false && $skipEnd !== false)
+    ? substr($feedSkip, $skipStart, $skipEnd - $skipStart)
+    : '';
+check('пропуск смены: ошибка серверной записи возвращает карточку',
+    $skipBody !== '' &&
+    str_contains($skipBody, 'setCards(prev => [card, ...prev.filter(v => v.id !== card.id)])'));
+check('пропуск смены: ошибка убирает ложную запись из истории',
+    str_contains($skipBody, '[date]: (h[date] ?? []).filter(v => v.id !== card.id)'));
+check('пропуск смены: ошибка видна пользователю',
+    str_contains($skipBody, 'Не удалось пропустить вакансию. Проверьте связь и попробуйте ещё раз.'));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');

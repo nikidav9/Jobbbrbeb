@@ -2114,9 +2114,21 @@ function WorkerFeed() {
       if (user.isGuest || 'external' in card) return;
       dbUpsertLike(card.id, user.id, card.employerId, { workerLiked: false, workerSkipped: true })
         .then(() => refreshLikes(user))
-        .catch(() => { pendingLikeIds.current.delete(card.id); });
+        .catch(() => {
+          // Свайп уже анимирован, но сервер не принял решение. Возвращаем
+          // карточку на вершину и убираем её из локальной истории: иначе UI
+          // утверждал бы, что вакансия пропущена, а после обновления она
+          // появилась бы снова без объяснения.
+          pendingLikeIds.current.delete(card.id);
+          setHistory(h => ({
+            ...h,
+            [date]: (h[date] ?? []).filter(v => v.id !== card.id),
+          }));
+          setCards(prev => [card, ...prev.filter(v => v.id !== card.id)]);
+          showToast('Не удалось пропустить вакансию. Проверьте связь и попробуйте ещё раз.', 'error');
+        });
     });
-  }, [currentCard, currentUser, swiping, selectedDate, animateCard, refreshLikes, promptRegister]);
+  }, [currentCard, currentUser, swiping, selectedDate, animateCard, refreshLikes, promptRegister, showToast]);
 
   const doWant = useCallback((vx = 0.5) => {
     if (!currentCard || !currentUser || swiping) return;
