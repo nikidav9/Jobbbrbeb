@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../components/CompleteProfileSheet.tsx', import.meta.url), 'utf8');
+const source = readFileSync(resolve(process.cwd(), 'components/CompleteProfileSheet.tsx'), 'utf8');
 const saveStart = source.indexOf('  const save = async');
 const renderStart = source.indexOf('  if (!visible || !currentUser', saveStart);
 const save = saveStart >= 0 && renderStart > saveStart
