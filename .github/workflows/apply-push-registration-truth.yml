@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
 
+# One-shot guarded source patch; remove after a green run.
 jobs:
   patch:
     runs-on: ubuntu-latest
