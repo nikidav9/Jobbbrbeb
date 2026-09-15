@@ -88,11 +88,13 @@ export default function CreatePermVacancy() {
       await dbUpsertPermVacancy(vac);
       if (isEdit) optimisticUpdatePermVacancy(vac); else optimisticAddPermVacancy(vac);
       if (!isEdit && metroStation) {
-        notifyWorkersNewVacancy({
+        void notifyWorkersNewVacancy({
           metroStation, title: title.trim(), company: vac.company, type: 'permanent',
           workType: vac.workType,
           salary: vac.salary, schedule: vac.schedule, vacancyId: vac.id,
-        }).catch(() => {});
+        }).then(ok => {
+          if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить. Вакансия остаётся доступна в ленте.', 'error');
+        });
       }
       showToast(isEdit ? 'Вакансия обновлена' : 'Вакансия опубликована', 'success');
       router.back();

@@ -241,7 +241,7 @@ export async function notifyWorkersNewVacancy(params: {
   vacancyId?: string;  // кнопка ведёт прямо на вакансию
   workType?: string;   // для добровольного фильтра по профессиям
   estimated?: boolean; // сдельная оплата: сумма — ориентир, а не обещание
-}): Promise<void> {
+}): Promise<boolean> {
   try {
     const { metroStation, title, company, type, date, daysCount, timeStart, timeEnd, salary, schedule, vacancyId, workType, estimated } = params;
 
@@ -312,7 +312,7 @@ export async function notifyWorkersNewVacancy(params: {
             body: notifyPayload,
             signal: ctrl.signal,
           });
-          if (res.ok) break;
+          if (res.ok) return true;
         } finally {
           clearTimeout(timer);
         }
@@ -321,8 +321,11 @@ export async function notifyWorkersNewVacancy(params: {
       }
       if (canRetry && attempt < 2) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
     }
+    return false;
   } catch {
-    // Never crash the app due to a notification failure
+    // Не роняем публикацию вакансии из-за вторичной рассылки, но возвращаем
+    // честный результат, чтобы форма могла предупредить работодателя.
+    return false;
   }
 }
 

@@ -374,13 +374,15 @@ export default function CreateVacancy() {
         await upsertWithTimeout(dbUpsertVacancyBatch(vacs));
         vacs.forEach(v => optimisticAddVacancy(v));
         if (metroStation) {
-          notifyWorkersNewVacancy({
+          void notifyWorkersNewVacancy({
             metroStation, title: meta.label, company: base.company, type: 'shift',
             workType: base.workType,
             date: vacs[0]?.date, daysCount: vacs.length, vacancyId: vacs[0]?.id,
             timeStart: base.timeStart, timeEnd: base.timeEnd, salary: base.salary,
             estimated: isStorcker,
-          }).catch(() => {});
+          }).then(ok => {
+            if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить. Вакансия остаётся доступна в ленте.', 'error');
+          });
         }
         showToast(`Опубликовано ${dates.length} вакансий`, 'success');
       } else {
@@ -395,12 +397,14 @@ export default function CreateVacancy() {
         await upsertWithTimeout(dbUpsertVacancy(vac));
         optimisticAddVacancy(vac);
         if (metroStation) {
-          notifyWorkersNewVacancy({
+          void notifyWorkersNewVacancy({
             metroStation, title: meta.label, company: base.company, type: 'shift',
             workType: base.workType,
             date: vac.date, vacancyId: vac.id, timeStart: base.timeStart, timeEnd: base.timeEnd, salary: base.salary,
             estimated: isStorcker,
-          }).catch(() => {});
+          }).then(ok => {
+            if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить. Вакансия остаётся доступна в ленте.', 'error');
+          });
         }
         showToast('Вакансия опубликована', 'success');
       }

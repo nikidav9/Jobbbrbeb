@@ -180,6 +180,21 @@ check('push: enabled сохраняется только после успешн
 check('push: ошибка токена объяснена и не закрывает лист как успех',
     str_contains($pushSheet, 'push-токен не зарегистрировался'));
 
+// ── Рассылка вакансии: вторичный сбой не выдаётся за доставку ────────────────
+$notifSvc = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
+$createShift = (string)file_get_contents(__DIR__ . '/../app/create-vacancy.tsx');
+$createPerm = (string)file_get_contents(__DIR__ . '/../app/create-perm-vacancy.tsx');
+check('рассылка вакансии: helper возвращает результат',
+    str_contains($notifSvc, 'export async function notifyWorkersNewVacancy') &&
+    str_contains($notifSvc, '): Promise<boolean>') &&
+    str_contains($notifSvc, 'if (res.ok) return true;'));
+check('рассылка вакансии: исчерпанные повторы дают false',
+    str_contains($notifSvc, 'return false;'));
+check('смена: неудачная рассылка видна, но публикация не откатывается',
+    str_contains($createShift, "if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить."));
+check('постоянная: неудачная рассылка видна, но публикация не откатывается',
+    str_contains($createPerm, "if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить."));
+
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
