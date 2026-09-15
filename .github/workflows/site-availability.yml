@@ -7,6 +7,16 @@ on:
     # проверки лишь раз в 2–4 часа и создавал ложное чувство наблюдения.
     - cron: '*/30 * * * *'
   workflow_dispatch:
+  # Изменения самого production-probe и его migration/RLS-контракта должны
+  # проверяться сразу, а не ждать следующего неточного schedule.
+  push:
+    branches: [main]
+    paths:
+      - 'infra/check-site.sh'
+      - 'infra/migrate.sh'
+      - 'infra/verify-rls.sh'
+      - 'supabase/migrations/**'
+      - '.github/workflows/site-availability.yml'
 
 concurrency:
   group: jobtoo-site-availability
