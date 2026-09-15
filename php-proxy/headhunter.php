@@ -23,10 +23,40 @@ $userAgent = hh_cfg('HH_USER_AGENT', 'JobToo/1.0 (support@jobtoo.ru)');
 $area = max(1, (int)hh_cfg('HH_AREA_ID', '1')); // 1 — Москва
 $page = max(0, (int)($_GET['page'] ?? 0));
 $limit = 100;
-$url = $apiBase . '/vacancies?' . http_build_query([
+
+// Профессии, которыми занимается JobToo, в справочнике hh
+// (`GET https://api.hh.ru/professional_roles`).
+//
+// Зачем это появилось. Раньше здесь стоял запрос всей Москвы без единого
+// фильтра по профессии. Дальше ing_work_type пытался угадать профессию по
+// названию и возвращал null для всего остального, но строка с null всё равно
+// попадала в базу и в ленту. То есть человеку, который ищет смену на складе,
+// приложение показывало бухгалтеров и разработчиков. Это и есть разгадка
+// записанного в очереди «2000+ новых вакансий за сутки — ноль откликов»: не
+// мало вакансий, а не те.
+//
+// Список намеренно узкий — ровно то, что умеет разложить ing_work_type в свои
+// четыре типа. Официанта, курьера и продавца сюда не берём: у них work_type
+// вышел бы null, и отсев на приёме выбросил бы их следующим же шагом. Появятся
+// эти типы в приложении — появятся и роли здесь.
+const HH_ROLES = [
+    '131' => 'picker',  // Упаковщик, комплектовщик, маркировщик
+    '52'  => 'stocker', // Кладовщик, приёмщик товаров
+    '31'  => 'stocker', // Грузчик
+    '102' => 'stocker', // Разнорабочий
+    '94'  => 'cook',    // Повар, пекарь, кондитер
+    '184' => 'cook',    // Мойщик посуды, помощник повара
+];
+
+$query = [
     'area' => $area, 'page' => $page, 'per_page' => $limit,
     'order_by' => 'publication_time',
-], '', '&', PHP_QUERY_RFC3986);
+];
+$url = $apiBase . '/vacancies?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986)
+    // professional_role повторяется по разу на каждую роль, а http_build_query
+    // с обычным массивом выдал бы professional_role[0]=…, чего hh не понимает.
+    . '&' . implode('&', array_map(
+        fn($r) => 'professional_role=' . rawurlencode($r), array_keys(HH_ROLES)));
 
 $body = '';
 $tooLarge = false;
@@ -87,10 +117,22 @@ foreach ($decoded['items'] as $vacancy) {
     $metro = is_array($addressData['metro'] ?? null) ? trim((string)($addressData['metro']['station_name'] ?? '')) : '';
     $company = is_array($vacancy['employer'] ?? null) ? trim((string)($vacancy['employer']['name'] ?? '')) : '';
 
+    // Профессию берём из ответа hh, а не гадаем по названию: вакансию уже
+    // классифицировал тот, кто её опубликовал. Гадание оставлено запасным
+    // путём — ing_work_type разберёт название сам, если роли в ответе не
+    // окажется. Без этой подстраховки правка была бы опасной: пропало поле —
+    // work_type стал null — отсев на приёме выбросил бы вообще всё.
+    $workType = '';
+    foreach ((array)($vacancy['professional_roles'] ?? []) as $role) {
+        $rid = (string)($role['id'] ?? '');
+        if (isset(HH_ROLES[$rid])) { $workType = HH_ROLES[$rid]; break; }
+    }
+
     $item = [
         'id' => $id, 'title' => $title, 'kind' => 'permanent',
         'url' => $link, 'active' => true, 'pay_period' => 'month',
     ];
+    if ($workType !== '') $item['work_type'] = $workType;
     if ($company !== '') $item['company'] = $company;
     if ($address !== '') $item['address'] = $address;
     // Ключ именно 'metro': ingest.php читает его, а не 'metro_station'.

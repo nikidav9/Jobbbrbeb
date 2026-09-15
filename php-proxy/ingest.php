@@ -155,6 +155,16 @@ function ing_work_type(?string $raw, string $title): ?string
     if (mb_strpos($t, 'старш') !== false || mb_strpos($t, 'бригадир') !== false) return 'shift_supervisor';
     if (mb_strpos($t, 'кладовщик') !== false || mb_strpos($t, 'склад') !== false
         || mb_strpos($t, 'грузчик') !== false) return 'stocker';
+    // Ниже — названия из тех же ролей hh, которые запрашивает headhunter.php
+    // (HH_ROLES). Без них вакансия, пришедшая по нашему же фильтру, не
+    // раскладывалась бы ни в один вид работ и её выбрасывал бы отсев в
+    // ing_normalize: роль «Повар, пекарь, кондитер» мы попросили сами, а
+    // «Пекаря» потом не узнали бы.
+    if (mb_strpos($t, 'пекар') !== false || mb_strpos($t, 'кондитер') !== false
+        || mb_strpos($t, 'мойщик посуды') !== false) return 'cook';
+    if (mb_strpos($t, 'упаковщик') !== false || mb_strpos($t, 'маркировщик') !== false) return 'picker';
+    if (mb_strpos($t, 'приемщик') !== false || mb_strpos($t, 'приёмщик') !== false
+        || mb_strpos($t, 'разнорабоч') !== false) return 'stocker';
     return null;
 }
 
@@ -215,6 +225,19 @@ function ing_normalize(array $it, string $sourceId): ?array
     if ($ext === '' || $title === '' || !preg_match('~^https://~i', $url)) return null;
     if (ing_discriminatory($it)) return null;
 
+    // Профессия обязательна. Раньше нераспознанная профессия давала null, и
+    // строка всё равно писалась: фильтра по work_type нет ни здесь, ни на
+    // выдаче в ленту. Так к человеку, ищущему смену на складе, приезжали
+    // бухгалтеры и разработчики — вся Москва, которую тянул hh-адаптер без
+    // фильтра по профессии.
+    //
+    // Отсев именно здесь, а не на выдаче: показывать чужую вакансию, которую
+    // мы не смогли отнести ни к одному своему виду работ, незачем, и хранить
+    // её тоже незачем. Счётчик пропущенных уже есть — вызывающий считает
+    // каждый null как skipped, так что отсев виден в отчёте, а не молчит.
+    $workType = ing_work_type($it['work_type'] ?? null, $title);
+    if ($workType === null) return null;
+
     $kind = ($it['kind'] ?? 'shift') === 'permanent' ? 'permanent' : 'shift';
     $loc = is_array($it['location'] ?? null) ? $it['location'] : [];
 
@@ -235,7 +258,7 @@ function ing_normalize(array $it, string $sourceId): ?array
         'lng'           => isset($loc['lon']) ? (float)$loc['lon'] : null,
         'metro_station_norm' => $станция,
         'metro_line_id'      => $ветка,
-        'work_type'     => ing_work_type($it['work_type'] ?? null, $title),
+        'work_type'     => $workType,
         'kind'          => $kind,
         'date'          => ing_date($it['date'] ?? null),
         'time_start'    => ing_time($it['time_start'] ?? null),

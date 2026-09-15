@@ -110,6 +110,9 @@ jobs:
       - name: Воронка ленты объясняет нулевые отклики
         run: php tests/feed_funnel_test.php
 
+      - name: В ленту берём только свои виды работ
+        run: php tests/feed_relevance_test.php
+
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
