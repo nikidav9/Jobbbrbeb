@@ -28,7 +28,7 @@ jobs:
       - name: Validate typecheck and focused test
         run: |
           npm run typecheck
-          node --import tsx --test tests/notificationReadTruth.test.ts
+          node --experimental-strip-types --experimental-transform-types --test tests/notificationReadTruth.test.ts
           git diff --check
       - name: Commit source fix
         run: |
