@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -12,16 +12,29 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 
 import { rs, rf } from '@/constants/scale';
 
+type LocalDecision = 'rejected' | 'accepted' | 'matched';
+
 export default function CandidatesScreen() {
   const router = useRouter();
   const { vacancyId } = useLocalSearchParams<{ vacancyId: string }>();
   const { currentUser, users, vacancies, likes, refreshAll, showToast } = useApp();
   const [tab, setTab] = useState<'want' | 'matched'>('want');
+  const [decidingIds, setDecidingIds] = useState<Set<string>>(new Set());
+  // Серверная запись уже могла пройти, а следующий refresh — нет. Храним
+  // только подтверждённый сервером результат, чтобы карточка не предлагала
+  // повторить то же решение и не врала до следующей синхронизации.
+  const [localDecisions, setLocalDecisions] = useState<Record<string, LocalDecision>>({});
 
   const vacancy = vacancies.find(v => v.id === vacancyId);
   if (!vacancy || !currentUser) return null;
 
-  const vacLikes = likes.filter(l => l.vacancyId === vacancyId);
+  const vacLikes = likes.filter(l => l.vacancyId === vacancyId).map(l => {
+    const local = localDecisions[l.workerId];
+    if (local === 'rejected') return { ...l, employerLiked: false };
+    if (local === 'matched') return { ...l, employerLiked: true, isMatch: true };
+    if (local === 'accepted') return { ...l, employerLiked: true };
+    return l;
+  });
   const getWorker = (workerId: string) => users.find(u => u.id === workerId);
 
   /**
@@ -41,31 +54,72 @@ export default function CandidatesScreen() {
     })
     .sort((a, b) => b.rank.score - a.rank.score);
 
-  const wantLikes = ranked(vacLikes.filter(l => l.workerLiked && !l.isMatch));
+  // employerLiked=false — уже принятое решение «нет», а не новый кандидат.
+  // accepted без мэтча тоже не должен снова предлагать кнопку «Взять!».
+  const wantLikes = ranked(vacLikes.filter(l =>
+    l.workerLiked && !l.isMatch && l.employerLiked !== false
+    && localDecisions[l.workerId] !== 'accepted'
+  ));
   const matchedLikes = ranked(vacLikes.filter(l => l.isMatch));
+
+  const rememberDecision = (workerId: string, decision: LocalDecision) => {
+    setLocalDecisions(prev => ({ ...prev, [workerId]: decision }));
+  };
+
+  const refreshAfterDecision = () => {
+    // Решение уже записано. Сбой перечитывания не превращает успешную запись
+    // в «ошибку сохранения»: локальный подтверждённый статус доживёт до
+    // следующей обычной синхронизации.
+    void refreshAll().catch(() => {});
+  };
 
   const onDecide = async (workerId: string, decide: 'accept' | 'skip') => {
     const like = vacLikes.find(l => l.workerId === workerId);
-    if (!like) return;
+    if (!like || decidingIds.has(workerId)) return;
 
-    if (decide === 'skip') {
-      await dbUpsertLike(vacancyId, workerId, currentUser.id, { employerLiked: false });
-      await refreshAll();
-      showToast('Отклонено', 'success');
-      return;
-    }
+    setDecidingIds(prev => new Set(prev).add(workerId));
+    try {
+      if (decide === 'skip') {
+        await dbUpsertLike(vacancyId, workerId, currentUser.id, { employerLiked: false });
+        rememberDecision(workerId, 'rejected');
+        showToast('Отклонено', 'success');
+        refreshAfterDecision();
+        return;
+      }
 
-    await dbUpsertLike(vacancyId, workerId, currentUser.id, { employerLiked: true });
-    const result = await dbCheckAndCreateMatch(vacancyId, workerId);
-    await refreshAll();
+      await dbUpsertLike(vacancyId, workerId, currentUser.id, { employerLiked: true });
 
-    if (result.matched) {
-      const worker = getWorker(workerId);
-      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
-      // собирает тот, кто записал событие, и только другой стороне.
-      showToast(`🎉 Мэтч с ${worker?.firstName ?? 'работником'}! Чат открыт`, 'match');
-    } else {
-      showToast('Отклик одобрен. Ждём подтверждения работника.', 'success');
+      let result: Awaited<ReturnType<typeof dbCheckAndCreateMatch>>;
+      try {
+        result = await dbCheckAndCreateMatch(vacancyId, workerId);
+      } catch {
+        // Лайк работодателя уже подтверждён сервером. Запрос мэтча мог не
+        // дойти либо ответ мог потеряться после commit, поэтому говорить
+        // «решение не сохранилось» нельзя.
+        rememberDecision(workerId, 'accepted');
+        showToast('Решение сохранено, но статус мэтча не подтверждён. Обновите экран.', 'error');
+        refreshAfterDecision();
+        return;
+      }
+
+      rememberDecision(workerId, result.matched ? 'matched' : 'accepted');
+      if (result.matched) {
+        const worker = getWorker(workerId);
+        // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
+        // собирает тот, кто записал событие, и только другой стороне.
+        showToast(`🎉 Мэтч с ${worker?.firstName ?? 'работником'}! Чат открыт`, 'match');
+      } else {
+        showToast('Отклик одобрен. Ждём подтверждения работника.', 'success');
+      }
+      refreshAfterDecision();
+    } catch {
+      showToast('Не удалось сохранить решение. Проверьте связь и попробуйте ещё раз.', 'error');
+    } finally {
+      setDecidingIds(prev => {
+        const next = new Set(prev);
+        next.delete(workerId);
+        return next;
+      });
     }
   };
 
@@ -113,6 +167,7 @@ export default function CandidatesScreen() {
           const worker = getWorker(like.workerId);
           if (!worker) return null;
           const isMatch = like.isMatch;
+          const deciding = decidingIds.has(like.workerId);
           const workerColor = nameColorFromString(worker.id);
           const initials = getInitials(`${worker.firstName} ${worker.lastName}`);
           return (
@@ -186,11 +241,21 @@ export default function CandidatesScreen() {
                 </TouchableOpacity>
               ) : (
                 <View style={styles.actions}>
-                  <TouchableOpacity style={styles.skipBtn} onPress={() => onDecide(like.workerId, 'skip')} activeOpacity={0.8}>
-                    <Text style={styles.skipText}>👎 Пропустить</Text>
+                  <TouchableOpacity
+                    style={[styles.skipBtn, deciding && styles.actionDisabled]}
+                    onPress={() => onDecide(like.workerId, 'skip')}
+                    disabled={deciding}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.skipText}>{deciding ? 'Сохраняем…' : '👎 Пропустить'}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.acceptBtn} onPress={() => onDecide(like.workerId, 'accept')} activeOpacity={0.8}>
-                    <Text style={styles.acceptText}>✅ Взять!</Text>
+                  <TouchableOpacity
+                    style={[styles.acceptBtn, deciding && styles.actionDisabled]}
+                    onPress={() => onDecide(like.workerId, 'accept')}
+                    disabled={deciding}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.acceptText}>{deciding ? 'Сохраняем…' : '✅ Взять!'}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -239,6 +304,7 @@ const styles = StyleSheet.create({
   skipText: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary },
   acceptBtn: { flex: 1, backgroundColor: Colors.primary, borderRadius: rs(100), paddingVertical: rs(10), alignItems: 'center' },
   acceptText: { fontSize: rf(13), fontWeight: '700', color: '#fff' },
+  actionDisabled: { opacity: 0.55 },
   chatBtn: { borderWidth: 1.5, borderColor: Colors.blue, borderRadius: rs(100), paddingVertical: rs(10), alignItems: 'center' },
   chatBtnText: { fontSize: rf(13), fontWeight: '600', color: Colors.blue },
   empty: { alignItems: 'center', paddingTop: rs(60), gap: rs(8) },
