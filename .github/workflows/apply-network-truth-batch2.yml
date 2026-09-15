@@ -1,0 +1,46 @@
+name: Apply network truth batch 2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-network-truth-batch2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply guarded patch
+        run: python3 scripts/apply_network_truth_batch2.py
+
+      - name: Validate
+        run: |
+          git diff --check
+          python3 tests/network_action_truth_test.py
+          npm ci
+          npm test
+          npm run typecheck
+
+      - name: Commit source fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/(tabs)/chats.tsx app/(tabs)/matches.tsx app/(tabs)/feed.tsx components/feature/PermApplicationsSheet.tsx docs/план-разработки.md tests/network_action_truth_test.py
+          git commit -m "fix: keep network actions truthful"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
