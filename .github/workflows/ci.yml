@@ -139,6 +139,7 @@ jobs:
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py
           python3 tests/perm_app_atomicity_test.py
+          python3 tests/shift_match_atomicity_test.py
           python3 tests/health_endpoint_test.py
           python3 tests/telegram_link_metrics_test.py
           bash tests/nginx_config_test.sh
