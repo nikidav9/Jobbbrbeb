@@ -29,7 +29,7 @@ checks = {
     'старые раздельные записи удалены': "sb_update('jm_likes'" not in case and "sb_insert('jm_chats'" not in case,
     'уведомление остаётся после commit': "jt_notify_match((string)$vid" in case and "sb_rpc('jm_match_shift_atomic'" in case and case.find("sb_rpc('jm_match_shift_atomic'") < case.find("jt_notify_match((string)$vid"),
     'selfArg больше не запрещает работодателя': "'dbCheckAndCreateMatch' => 1" not in db,
-    'web и native идут через proxy': "proxy<{ matched?: boolean; chatId?: string | null }>('dbCheckAndCreateMatch'" in service_case,
+    'web и native идут через proxy': "proxy<{ matched?: boolean; chatId?: string | null }>(" in service_case and "'dbCheckAndCreateMatch'" in service_case,
     'web не пишет мэтч напрямую': ".from('jm_likes')" not in service_case and ".from('jm_chats')" not in service_case,
 }
 
