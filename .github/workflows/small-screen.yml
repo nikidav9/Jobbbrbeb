@@ -1,0 +1,80 @@
+name: Small-screen layout
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'constants/**'
+      - 'services/**'
+      - 'assets/**'
+      - 'scripts/check-small-screens.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/small-screen.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'constants/**'
+      - 'services/**'
+      - 'assets/**'
+      - 'scripts/check-small-screens.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/small-screen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: small-screen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layout:
+    name: Chromium 320/360 px
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      # Playwright нужен только этому browser-guard. Не тащим браузер в
+      # production dependencies и не меняем lockfile ради CI-инструмента.
+      # Версия закреплена; случайный latest не может сломать проверку ночью.
+      - name: Install pinned browser harness
+        run: |
+          npm install --no-save --package-lock=false playwright@1.51.1
+          npx playwright install --with-deps chromium
+
+      - name: Build web app for layout test
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          EXPO_PUBLIC_SUPABASE_URL: https://example.invalid
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: small-screen-placeholder
+          EXPO_PUBLIC_API_URL: https://example.invalid
+          EXPO_PUBLIC_APP_SECRET: small-screen-placeholder
+          EXPO_PUBLIC_DASHBOARD_URL: https://example.invalid
+        run: npx expo export --platform web --max-workers 2
+
+      - name: Check rendered narrow layouts
+        run: node scripts/check-small-screens.mjs
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: small-screen-${{ github.run_id }}
+          path: .small-screen-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
