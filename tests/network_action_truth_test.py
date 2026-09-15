@@ -5,6 +5,7 @@ root = Path(__file__).resolve().parents[1]
 chats = (root / 'app/(tabs)/chats.tsx').read_text(encoding='utf-8')
 matches = (root / 'app/(tabs)/matches.tsx').read_text(encoding='utf-8')
 feed = (root / 'app/(tabs)/feed.tsx').read_text(encoding='utf-8')
+chat_room = (root / 'app/chat-room.tsx').read_text(encoding='utf-8')
 rate = (root / 'app/rate.tsx').read_text(encoding='utf-8')
 perm = (root / 'components/feature/PermApplicationsSheet.tsx').read_text(encoding='utf-8')
 plan = (root / 'docs/план-разработки.md').read_text(encoding='utf-8')
@@ -49,6 +50,10 @@ checks = {
     'refresh оценки изолирован после успешной записи': rating_refresh in rate_submit and rate_submit.find(rating_write) < rate_submit.find(rating_refresh),
     'сбой refresh оценки не отменяет успешный результат': rating_refresh in rate_submit and rate_submit.find(rating_refresh) < rate_submit.find(rating_success),
     'ошибка сохранения остаётся для неуспешной записи': "showToast('Ошибка при сохранении', 'error');" in rate_submit,
+    'статус отклика не наследуется от прошлого чата': "setLikeStatus(null);\n    setLikeStatusLoadFailed(false);\n    let cancelled = false;" in chat_room,
+    'устаревший ответ статуса отклика игнорируется': "if (cancelled) return;" in chat_room and "return () => { cancelled = true; };" in chat_room,
+    'сбой загрузки статуса отклика виден': "setLikeStatusLoadFailed(true);" in chat_room and 'Не удалось загрузить статус отклика' in chat_room,
+    'статус отклика можно загрузить повторно': "setLikeStatusRetry(x => x + 1)" in chat_room and 'likeStatusRetry]);' in chat_room,
     'план фиксирует нагрузочный прогон': '~~Нагрузочный прогон крупного фида и очереди callback перед пилотом~~' in plan,
 }
 

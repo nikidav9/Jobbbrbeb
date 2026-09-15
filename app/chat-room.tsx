@@ -261,6 +261,8 @@ export default function ChatRoom() {
   const [decidingLike, setDecidingLike] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [likeStatus, setLikeStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+  const [likeStatusLoadFailed, setLikeStatusLoadFailed] = useState(false);
+  const [likeStatusRetry, setLikeStatusRetry] = useState(0);
   const listRef = useRef<FlatList<Message>>(null);
   const lastCountRef = useRef(cached.length);
   // Перечитать чат по сигналу от сервера. Хранится ссылкой, чтобы подписка
@@ -399,9 +401,14 @@ export default function ChatRoom() {
   // Статус отклика для панели решений. У чатов без вакансии его нет.
   useEffect(() => {
     if (!chat || !currentUser) return;
-    if (chat.bulletinId || chat.workerSlotId) { setLikeStatus(null); return; }
+    if (chat.bulletinId || chat.workerSlotId) {
+      setLikeStatus(null);
+      setLikeStatusLoadFailed(false);
+      return;
+    }
     // Постоянная вакансия — статус берём из отклика, а не из лайков
     if (permVacancy) {
+      setLikeStatusLoadFailed(false);
       // hired — тоже решённый: иначе после «Завершить» чат снова предложил бы
       // выбрать «Подходит / Не подходит» по уже закрытому кандидату.
       setLikeStatus(permApp
@@ -414,13 +421,22 @@ export default function ChatRoom() {
     // отклики сервиса, чтобы найти в них этот: dbGetLikeByVacancyWorker была
     // доступна только самому работнику, и экран обходил отказ мягким путём.
     // Теперь операция отвечает обеим сторонам смены, и обходить нечего.
+    // Новый чат не должен на мгновение наследовать решение из предыдущего.
+    // И старый сетевой ответ не должен перезаписать уже открытый другой чат.
+    setLikeStatus(null);
+    setLikeStatusLoadFailed(false);
+    let cancelled = false;
     dbGetLikeByVacancyWorker(chat.vacancyId, chat.workerId).then(like => {
+      if (cancelled) return;
       if (!like) { setLikeStatus('pending'); return; }
       if (like.isMatch || like.employerLiked === true) setLikeStatus('approved');
       else if (like.employerLiked === false) setLikeStatus('rejected');
       else setLikeStatus('pending');
-    }).catch(() => {});
-  }, [chat?.id, currentUser?.id, permVacancy?.id, permApp?.status]);
+    }).catch(() => {
+      if (!cancelled) setLikeStatusLoadFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [chat?.id, currentUser?.id, permVacancy?.id, permApp?.status, likeStatusRetry]);
 
   // Mark as read on mount
   useEffect(() => {
@@ -1002,7 +1018,19 @@ export default function ChatRoom() {
       ) : null}
 
       {/* Employer decision bar — shown at the top */}
-      {isEmployer && !isChatWithoutVacancy && likeStatus === 'pending' ? (
+      {isEmployer && !isChatWithoutVacancy && likeStatusLoadFailed ? (
+        <View style={styles.decisionBar}>
+          <View style={styles.decisionStatusRow}>
+            <Ionicons name="cloud-offline-outline" size={16} color={Colors.red} />
+            <Text style={[styles.decisionBarLabel, { color: Colors.red }]}>
+              Не удалось загрузить статус отклика
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setLikeStatusRetry(x => x + 1)} activeOpacity={0.8}>
+            <Text style={{ color: Colors.primary, fontWeight: '700' }}>Повторить</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isEmployer && !isChatWithoutVacancy && likeStatus === 'pending' ? (
         <View style={styles.decisionBar}>
           <Text style={styles.decisionBarLabel} numberOfLines={2}>
             {chat.vacTitle ? `Решение по кандидату — «${chat.vacTitle}»:` : 'Принять решение по кандидату:'}
