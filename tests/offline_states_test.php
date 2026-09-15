@@ -85,10 +85,12 @@ foreach ([
         (bool)preg_match('~' . preg_quote($guard, '~') . '[\s\S]{0,400}Нет связи с сервером~', $src));
     // А признак собран из НУЖНОГО списка. Это и есть проверка, которой не
     // было: первая версия дошла до плашки и на этом остановилась.
-    check("{$what}: признак собран из нужного списка",
-        $guard === $expr
-            ? true
+    $guardBuiltFromList = $guard === $expr
+        ? true
+        : ($what === 'отклики'
+            ? str_contains($src, 'offline.likes && myLikes.length === 0')
             : (bool)preg_match('~const ' . preg_quote($guard, '~') . ' = ' . preg_quote($expr, '~') . '\b~', $src));
+    check("{$what}: признак собран из нужного списка", $guardBuiltFromList);
 }
 
 // ── Пустой поиск — не обрыв ──────────────────────────────────────────────────
@@ -103,7 +105,7 @@ check('переписки: у пустого поиска свой текст', 
 // принесённом списке это правда, и плашка поверх неё была бы неправдой.
 $m = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
 check('отклики: обрыв меряется по всему списку, не по вкладке',
-    str_contains($m, 'const offlineHere = offline.likes && myLikes.length === 0;'));
+    str_contains($m, 'offline.likes && myLikes.length === 0'));
 
 // ── Регистрация и поддержка: сетевой сбой не выдаётся за успех/пустоту ───────
 foreach (['app/register-worker.tsx' => 'работник', 'app/register-employer.tsx' => 'работодатель'] as $file => $role) {
@@ -238,6 +240,21 @@ check('избранное работы: удаление подтверждае�
 check('избранное ленты: сетевые ошибки видны',
     str_contains($feedTruth, 'Не удалось добавить в избранное') &&
     str_contains($feedTruth, 'Не удалось сохранить в избранное'));
+
+// ── Партнёрские отклики: ошибка не выглядит пустым/полным списком ────────────
+$matchesTruth = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
+check('партнёрские отклики: ошибка хранится отдельно',
+    str_contains($matchesTruth, 'partnerApplicationsLoadFailed'));
+check('партнёрские отклики: ошибка видна и есть повтор',
+    str_contains($matchesTruth, 'Не удалось обновить отклики партнёров') &&
+    str_contains($matchesTruth, 'loadPartnerApplications(currentUserId)'));
+check('партнёрские отклики: refresh всегда снимает спиннер',
+    str_contains($matchesTruth, 'Promise.allSettled') &&
+    (bool)preg_match('~finally \{[\s\S]{0,100}setRefreshing\(false\)~', $matchesTruth));
+check('партнёрские отклики: старый молчаливый fetch удалён',
+    !str_contains($matchesTruth, 'dbGetPartnerApplications(currentUserId).then(setPartnerApplications).catch(() => {})'));
+check('партнёрские отклики: общая пустота учитывает их сбой',
+    str_contains($matchesTruth, 'partnerApplicationsLoadFailed && partnerApplications.length === 0 && myLikes.length === 0'));
 
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
