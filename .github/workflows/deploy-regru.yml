@@ -3,6 +3,10 @@ name: Сборка сайта и доставка на московский се
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.gitignore'
   workflow_dispatch:
 
 # Все прогоны пишут один и тот же release asset `web/dist.tar.gz`. Без
