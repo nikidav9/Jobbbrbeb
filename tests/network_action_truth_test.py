@@ -12,6 +12,10 @@ shift_delete_start = feed.find('  const deleteVacancy = async')
 perm_delete_start = feed.find('  const deletePermVacancy = async')
 shift_delete = feed[shift_delete_start:perm_delete_start] if shift_delete_start >= 0 and perm_delete_start > shift_delete_start else ''
 perm_delete = feed[perm_delete_start:perm_delete_start + 2600] if perm_delete_start >= 0 else ''
+shift_close_start = feed.find('  const closeVacancy = async')
+perm_close_start = feed.find('  const closePermVacancy = async')
+shift_close = feed[shift_close_start:perm_close_start] if shift_close_start >= 0 and perm_close_start > shift_close_start else ''
+perm_close = feed[perm_close_start:shift_delete_start] if perm_close_start >= 0 and shift_delete_start > perm_close_start else ''
 
 checks = {
     'чаты отпускают refresh в finally': "showToast('Не удалось обновить переписки. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in chats,
@@ -28,6 +32,11 @@ checks = {
     'постоянная вакансия ждёт сервер': "await dbDeletePermVacancy(id);" in perm_delete and perm_delete.find("await dbDeletePermVacancy(id);") < perm_delete.find("setDeletedPermIds(prev"),
     'ошибка удаления сменной вакансии видна': "showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');" in shift_delete,
     'ошибка удаления постоянной вакансии видна': "showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');" in perm_delete,
+    'закрытие сменной вакансии ждёт сервер перед успехом': "await dbUpdateVacancy(id, { status: 'closed' });" in shift_close and shift_close.find("await dbUpdateVacancy(id, { status: 'closed' });") < shift_close.find("showToast('Вакансия закрыта', 'success');"),
+    'закрытие постоянной вакансии ждёт сервер перед успехом': "await dbClosePermVacancy(id);" in perm_close and perm_close.find('await dbClosePermVacancy(id);') < perm_close.find("showToast('Вакансия закрыта', 'success');"),
+    'ошибка закрытия сменной вакансии видна и откатывает UI': "showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');" in shift_close and 'next.delete(id);' in shift_close,
+    'ошибка закрытия постоянной вакансии видна и откатывает UI': "showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');" in perm_close and 'next.delete(id);' in perm_close,
+    'закрытие вакансий больше не fire-and-forget': ".then(() => refreshVacancies()" not in shift_close and ".then(() => refreshPermVacancies()" not in perm_close,
     'план фиксирует нагрузочный прогон': '~~Нагрузочный прогон крупного фида и очереди callback перед пилотом~~' in plan,
 }
 

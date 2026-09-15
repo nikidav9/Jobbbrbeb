@@ -4083,23 +4083,44 @@ function EmployerHome() {
   const permApplicantCount = (vacId: string) =>
     permApplications.filter(a => a.vacancyId === vacId).length;
 
-  const closeVacancy = (id: string) => {
+  const closeVacancy = async (id: string) => {
     if (closingIds.has(id)) return;
     setConfirmClose(null);
     setClosingIds(prev => new Set([...prev, id]));
-    showToast('Вакансия закрыта', 'success');
-    dbUpdateVacancy(id, { status: 'closed' })
-      .then(() => refreshVacancies().catch(() => {}))
-      .catch(e => console.warn('[closeVacancy]', e));
+    try {
+      await dbUpdateVacancy(id, { status: 'closed' });
+      // Успех показываем только после подтверждения сервера. closingIds
+      // оставляем до refresh: если сам refresh сорвётся, уже закрытая на
+      // сервере вакансия не должна на мгновение вернуться в «Активные».
+      showToast('Вакансия закрыта', 'success');
+      refreshVacancies().catch(() => {});
+    } catch (e) {
+      setClosingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');
+      console.warn('[closeVacancy]', e);
+    }
   };
 
-  const closePermVacancy = (id: string) => {
+  const closePermVacancy = async (id: string) => {
     if (closingPermIds.has(id)) return;
     setClosingPermIds(prev => new Set([...prev, id]));
-    showToast('Вакансия закрыта', 'success');
-    dbClosePermVacancy(id)
-      .then(() => refreshPermVacancies().catch(() => {}))
-      .catch(e => console.warn('[closePermVacancy]', e));
+    try {
+      await dbClosePermVacancy(id);
+      showToast('Вакансия закрыта', 'success');
+      refreshPermVacancies().catch(() => {});
+    } catch (e) {
+      setClosingPermIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');
+      console.warn('[closePermVacancy]', e);
+    }
   };
 
   const deleteVacancy = async (id: string) => {
