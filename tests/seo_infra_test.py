@@ -6,6 +6,7 @@
 файла, а то, что маршруты ведут туда, куда задумано, и что порядок правил
 в nginx не сломан.
 """
+import importlib.util
 import re
 import subprocess
 import sys
@@ -139,6 +140,64 @@ for name, text in (("карта сайта", sitemap_src), ("сводные ст
 landing = (root / "php-proxy/landing_page.php").read_text(encoding="utf-8")
 check("у сводных страниц есть порог", "LP_MIN" in landing)
 check("карта сайта берёт перечень у самих страниц", "lp_index()" in (root / "php-proxy/sitemap.php").read_text(encoding="utf-8"))
+
+# ── production SEO monitor: transport failures are retried and reported ──────
+# Это поведенческая проверка без сети. Один TimeoutError не должен ронять
+# Python до записи JSON; устойчивый отказ после трёх попыток должен вернуться
+# как status=0 с причиной, чтобы main() оформил его обычной ошибкой аудита.
+audit_path = root / "scripts/seo-production-audit.py"
+spec = importlib.util.spec_from_file_location("jobtoo_seo_production_audit", audit_path)
+check("production SEO audit загружается", spec is not None and spec.loader is not None)
+if spec is not None and spec.loader is not None:
+    audit = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = audit
+    spec.loader.exec_module(audit)
+
+    class FakeResponse:
+        status = 200
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b"ok"
+
+    real_urlopen = audit.urllib.request.urlopen
+    real_sleep = audit.time.sleep
+    audit.time.sleep = lambda _seconds: None
+    try:
+        transient_calls = {"n": 0}
+
+        def transient_urlopen(_request, timeout):
+            transient_calls["n"] += 1
+            if transient_calls["n"] < 3:
+                raise TimeoutError("temporary timeout")
+            return FakeResponse()
+
+        audit.urllib.request.urlopen = transient_urlopen
+        recovered = audit.fetch("https://example.invalid/page", 0.01)
+        check("SEO audit повторяет транспортный таймаут", transient_calls["n"] == 3)
+        check("SEO audit восстанавливается после временного таймаута",
+              recovered.status == 200 and recovered.attempts == 3 and not recovered.error)
+
+        persistent_calls = {"n": 0}
+
+        def persistent_timeout(_request, timeout):
+            persistent_calls["n"] += 1
+            raise TimeoutError("persistent timeout")
+
+        audit.urllib.request.urlopen = persistent_timeout
+        failed = audit.fetch("https://example.invalid/page", 0.01)
+        check("SEO audit ограничивает число повторов", persistent_calls["n"] == 3)
+        check("SEO audit возвращает транспортную ошибку вместо traceback",
+              failed.status == 0 and failed.attempts == 3 and "TimeoutError" in failed.error)
+    finally:
+        audit.urllib.request.urlopen = real_urlopen
+        audit.time.sleep = real_sleep
 
 if failures:
     print("seo infrastructure: ПРОВАЛЫ")
