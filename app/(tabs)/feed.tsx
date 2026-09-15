@@ -2878,6 +2878,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const [chatLoading, setChatLoading] = useState<string | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [externalVacancies, setExternalVacancies] = useState<ExternalVacancy[]>([]);
+  const [externalVacanciesLoadFailed, setExternalVacanciesLoadFailed] = useState(false);
   const [externalSourceOptions, setExternalSourceOptions] = useState<VacancySourceOption[]>([]);
   // Redirect-источник открываем с подтверждением. Для embedded-источника
   // отдельно получаем согласие на передачу данных и создаём отклик у нас.
@@ -2896,8 +2897,10 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     const loadId = ++externalLoadId.current;
     if (sourceIds && sourceIds.length === 0) {
       setExternalVacancies([]);
+      setExternalVacanciesLoadFailed(false);
       return;
     }
+    setExternalVacanciesLoadFailed(false);
     const pageSize = 1000;
     const loaded: ExternalVacancy[] = [];
     const seen = new Set<string>();
@@ -2923,6 +2926,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     } catch {
       // Уже загруженные страницы остаются видимыми. Свои вакансии продолжают
       // работать, даже если очередная страница партнёрского фида недоступна.
+      setExternalVacanciesLoadFailed(true);
     }
   }, []);
 
@@ -3006,12 +3010,18 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   });
 
   const onRefresh = async () => {
+    if (refreshing) return;
     setRefreshing(true);
-    await Promise.all([
-      refreshPermVacancies(), refreshPermApplications(), refreshPermVacancyViews(),
-      loadExternalVacancies(),
-    ]);
-    setRefreshing(false);
+    try {
+      await Promise.all([
+        refreshPermVacancies(), refreshPermApplications(), refreshPermVacancyViews(),
+        loadExternalVacancies(externalSelection),
+      ]);
+    } catch {
+      showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Все hooks свайп-колоды объявлены до раннего возврата: порядок hooks
@@ -3773,6 +3783,18 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
 
   return (
     <View style={{ flex: 1 }}>
+      {externalVacanciesLoadFailed ? (
+        <TouchableOpacity
+          style={pS.offlineBar}
+          onPress={() => void loadExternalVacancies(externalSelection)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
+          <Text style={pS.offlineTxt}>
+            Партнёрские вакансии не обновились — свои и ранее загруженные остаются доступны. Нажмите, чтобы повторить.
+          </Text>
+        </TouchableOpacity>
+      ) : null}
       {filterStations.length > 0 ? (
         <TouchableOpacity style={pS.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
           <Ionicons name="location" size={13} color={Colors.primary} />
