@@ -42,11 +42,27 @@ if pinned and local:
 check("браузеры ищутся внутри образа",
       "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright" in runner)
 
+# ── Пакет должен находиться, иначе прогон умирает молча ─────────────────────
+# Первая версия полагалась на NODE_PATH. Для ES-модулей он не работает вовсе:
+# по имени 'playwright' Node идёт вверх по node_modules от файла, который
+# делает import. Прогон умирал на ERR_MODULE_NOT_FOUND, не написав ни строки.
+check("на NODE_PATH не полагаемся", "NODE_PATH=" not in runner)
+check("скрипт запускается рядом с node_modules",
+      "cd /deps/run && node career-discover.mjs" in runner)
+# Проверяем саму команду копирования, а не упоминание имени: в первой редакции
+# проверка проходила и тогда, когда файл выпал из cp, — имя оставалось в
+# комментарии выше.
+_cp = re.search(r"cp /repo/scripts/.*?/deps/run/", runner, re.S)
+_cp_text = _cp.group(0) if _cp else ""
+for _needed in ("career-discover.mjs", "career-discover-lib.mjs", "career-sites.tsv"):
+    check(f"копируется {_needed}", _needed in _cp_text)
+check("копируется именно в каталог запуска", _cp_text.rstrip().endswith("/deps/run/"))
+
 # ── Результат не должен теряться и не должен появляться недописанным ────────
 check("пишем во временный файл", 'tmp="$OUT.tmp"' in runner)
 check("готовый файл появляется одним движением", 'mv -f "$tmp" "$OUT"' in runner)
 check("пустой результат не подменяет прежний",
-      '[ -s "$tmp" ]' in runner and 'rm -f "$tmp"; exit 1' in runner)
+      '[ -s "$tmp" ]' in runner and 'rm -f "$tmp"; fail "пустой результат"' in runner)
 
 # ── Забитый диск: образ весит около полутора гигабайт ────────────────────────
 check("свободное место проверяется до выкачки образа",
@@ -69,6 +85,18 @@ check("первый прогон не ждёт неделю",
 # Прогон тянет браузер и ходит по ста семидесяти сайтам: приложение важнее.
 check("разведка уступает приложению", "Nice=15" in deploy)
 check("у прогона есть предел по времени", "TimeoutStartSec=45min" in deploy)
+
+# ── Отказ не должен быть невидимым ──────────────────────────────────────────
+# Первый же запуск это и показал: лог лежит в /var/log, куда со стороны не
+# заглянешь, и отличить «ещё идёт» от «молча упала» было нечем. Тот самый изъян,
+# за который в этот же день ругали источник career_owner.
+check("состояние пишется рядом с результатом", "STATUS=${STATUS:-/var/www/html/career-discovery-status.json}" in runner)
+check("о начале работы сообщается", 'state running' in runner)
+check("об успехе сообщается", 'state done' in runner)
+check("любой отказ пишет состояние", "fail() { say \"$1\"; state error \"$1\"; exit 1; }" in runner)
+for reason in ("docker не установлен", "мало места на диске", "пустой результат", "разведка упала"):
+    check(f"отказ «{reason}» виден снаружи", f'fail "{reason}' in runner)
+check("nginx отдаёт состояние", "location = /career-discovery-status.json {" in nginx)
 
 # ── Результат можно прочитать снаружи ───────────────────────────────────────
 check("nginx отдаёт результат", "location = /career-discovery.json {" in nginx)
