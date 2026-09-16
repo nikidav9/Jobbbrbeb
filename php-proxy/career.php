@@ -32,6 +32,83 @@ function cf_fail(int $code, string $message): void
 }
 
 /**
+ * Один HTTP-запрос, жёстко закреплённый на уже проверенном публичном DNS-IP.
+ * Сеть здесь одна на все режимы (HTML/JSON/embedded), чтобы сторожа SSRF,
+ * размера ответа, TLS и таймаутов не расходились между адаптерами.
+ */
+function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): array
+{
+    $body = '';
+    $tooLarge = false;
+    $ch = curl_init($pageUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_HTTPHEADER => array_merge(
+            [$unit['kind'] === 'json'
+                ? 'Accept: application/json'
+                : 'Accept: text/html,application/xhtml+xml'],
+            empty($unit['post']) ? [] : ['Content-Type: application/json']
+        ),
+        // Пустая строка включает все сжатия, которые умеет curl: карьерные страницы
+        // бывают по несколько мегабайт.
+        CURLOPT_ENCODING => '',
+        CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 45,
+        // Переход по редиректу увёл бы нас на адрес, который проверку не проходил:
+        // так обходят запрет на служебные сети.
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+        // POST только если он прямо задан в настройке источника.
+        CURLOPT_POST => !empty($unit['post']),
+        CURLOPT_POSTFIELDS => empty($unit['post']) ? null : (string)$unit['body'],
+        CURLOPT_RESOLVE => $resolveEntries,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {
+            // Карьерная страница — это текст. Четыре мегабайта её с запасом
+            // покрывают, а без предела чужой сервер кормил бы нас, пока не кончится
+            // память.
+            if (strlen($body) + strlen($chunk) > 4 * 1024 * 1024) {
+                $tooLarge = true;
+                return 0;
+            }
+            $body .= $chunk;
+            return strlen($chunk);
+        },
+    ]);
+    $ok = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    return [
+        'body' => $body,
+        'too_large' => $tooLarge,
+        'ok' => $ok,
+        'code' => $code,
+        'served_by' => $servedBy,
+        'error' => $error,
+    ];
+}
+
+/**
+ * Когда имеет смысл попробовать соседний DNS edge.
+ *
+ * 401/403 — запрет доступа, 429 — rate limit: искать другой IP в этих случаях
+ * было бы обходом политики удалённого сайта. Ретраим только сетевой отказ,
+ * 404 на CDN edge (наблюдалось у Сбера) и серверные 5xx.
+ */
+function cf_retryable_edge_fetch(array $fetch): bool
+{
+    if (!empty($fetch['too_large'])) return false;
+    if (($fetch['ok'] ?? false) === false) return true;
+    $code = (int)($fetch['code'] ?? 0);
+    return $code === 404 || $code >= 500;
+}
+
+/**
  * Ответ приёмнику: что нашли и куда идти дальше.
  *
  * $failed — адрес, на котором споткнулись прямо сейчас. Он НЕ делает ответ
@@ -150,62 +227,44 @@ $skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $to
 // числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
 $pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub);
 if (!ing_safe_https_url($pageUrl)) $skipUnit('адрес порции не проходит проверку');
+// Сохраняем общий предварительный guard: он является контрактом с ingest и
+// старым security regression. Ниже для фактического похода адреса разделяются
+// по одному, но исходный URL обязан пройти то же правило целиком.
 $resolveEntries = ing_safe_https_resolve($pageUrl);
 if ($resolveEntries === null) $skipUnit('адрес страницы больше не разрешается безопасно');
+$resolveCandidates = ing_safe_https_resolve_candidates($pageUrl);
+if ($resolveCandidates === null) $skipUnit('адрес страницы больше не разрешается безопасно');
 
-$body = '';
-$tooLarge = false;
-$ch = curl_init($pageUrl);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => false,
-    CURLOPT_HTTPHEADER => array_merge(
-        [$unit['kind'] === 'json'
-            ? 'Accept: application/json'
-            : 'Accept: text/html,application/xhtml+xml'],
-        empty($unit['post']) ? [] : ['Content-Type: application/json']
-    ),
-    // Пустая строка включает все сжатия, которые умеет curl: карьерные страницы
-    // бывают по несколько мегабайт. (Прежний комментарий здесь говорил про
-    // Accept-Language — неправда, этот заголовок мы не шлём вовсе. Если
-    // понадобится русская версия у какого-то сайта, это будет отдельная правка
-    // с проверкой, что остальные восемнадцать от неё не пострадали.)
-    CURLOPT_ENCODING => '',
-    CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 45,
-    // Переход по редиректу увёл бы нас на адрес, который проверку не проходил:
-    // так обходят запрет на служебные сети.
-    CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-    // POST только если он прямо задан в настройке источника.
-    CURLOPT_POST => !empty($unit['post']),
-    CURLOPT_POSTFIELDS => empty($unit['post']) ? null : (string)$unit['body'],
-    CURLOPT_RESOLVE => $resolveEntries,
-    CURLOPT_SSL_VERIFYPEER => true,
-    CURLOPT_SSL_VERIFYHOST => 2,
-    CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {
-        // Карьерная страница — это текст. Четыре мегабайта её с запасом
-        // покрывают, а без предела чужой сервер кормил бы нас, пока не кончится
-        // память.
-        if (strlen($body) + strlen($chunk) > 4 * 1024 * 1024) {
-            $tooLarge = true;
-            return 0;
-        }
-        $body .= $chunk;
-        return strlen($chunk);
-    },
-]);
-$ok = curl_exec($ch);
-$code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
-$error = curl_error($ch);
-curl_close($ch);
+// Один DNS-ответ может содержать несколько CDN edge. curl умеет принять их
+// списком, но HTTP 404/5xx для него считается успешным соединением и на
+// соседний edge он не переключается. Поэтому пробуем проверенные IP по одному.
+// Четырёх достаточно для failover и это не превращает один заход в шторм.
+$fetch = null;
+$unsafeEdge = false;
+foreach (array_slice($resolveCandidates, 0, 4) as $resolveEntries) {
+    $fetch = cf_fetch_pinned($pageUrl, $unit, $resolveEntries);
+    $servedBy = (string)($fetch['served_by'] ?? '');
+    if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        $unsafeEdge = true;
+        break;
+    }
+    if (!cf_retryable_edge_fetch($fetch)) break;
+}
+if ($fetch === null) $skipUnit('у адреса нет проверенного DNS edge');
+
+$body = (string)$fetch['body'];
+$tooLarge = !empty($fetch['too_large']);
+$ok = $fetch['ok'];
+$code = (int)$fetch['code'];
+$servedBy = (string)$fetch['served_by'];
+$error = (string)$fetch['error'];
 
 // CURLOPT_RESOLVE выше не даёт повторно разрешить имя, а эта проверка остаётся
 // вторым рубежом: если curl всё же пришёл не к закреплённому публичному адресу,
 // ответ не разбираем.
-if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
-        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+if ($unsafeEdge || ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))) {
     $skipUnit('страница увела на непубличный адрес');
 }
 

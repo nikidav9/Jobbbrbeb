@@ -30,6 +30,8 @@ def check(name: str, condition: bool) -> None:
 # ── Правило адреса одно на всех ───────────────────────────────────────────────
 check("правило адреса живёт отдельно", "function ing_safe_https_url" in safe)
 check("правило возвращает проверенный адрес для curl", "function ing_safe_https_resolve" in safe)
+check("правило умеет вернуть проверенные DNS edge по одному",
+      "function ing_safe_https_resolve_candidates" in safe)
 check("приёмник берёт общее правило", "require_once __DIR__ . '/safe_url.php';" in ingest)
 check("сборщик берёт общее правило", "require_once __DIR__ . '/safe_url.php';" in career)
 # Своя копия рано или поздно разойдётся с оригиналом — и всегда в сторону
@@ -77,6 +79,21 @@ check("сборщик закрепляет проверенный DNS-адрес
 check("приёмник закрепляет проверенный DNS-адрес", "CURLOPT_RESOLVE => $resolveEntries" in ingest)
 check("сертификат проверяется", "CURLOPT_SSL_VERIFYPEER => true" in career)
 check("имя в сертификате проверяется", "CURLOPT_SSL_VERIFYHOST => 2" in career)
+# CDN может объявить несколько публичных edge. Один из них иногда отвечает 404,
+# хотя соседний уже обслуживает маршрут. Повтор допустим только по адресам из
+# того же проверенного DNS-ответа и с небольшим жёстким пределом.
+check("failover берёт только проверенные DNS edge",
+      "$resolveCandidates = ing_safe_https_resolve_candidates($pageUrl);" in career
+      and "foreach (array_slice($resolveCandidates, 0, 4) as $resolveEntries)" in career)
+check("failover ограничен четырьмя edge",
+      "array_slice($resolveCandidates, 0, 4)" in career)
+# 401/403 — запрет, 429 — rate limit. Их нельзя превращать в повод перебирать
+# адреса; это уже было бы обходом политики удалённого сайта.
+check("failover не обходит auth и rate limit",
+      "return $code === 404 || $code >= 500;" in career
+      and "$code === 401" not in career
+      and "$code === 403" not in career
+      and "$code === 429" not in career)
 # Без предела чужой сервер кормил бы нас, пока не кончится память.
 check("размер страницы ограничен", "$tooLarge = true" in career)
 check("есть время ожидания", "CURLOPT_TIMEOUT" in career and "CURLOPT_CONNECTTIMEOUT" in career)
@@ -90,8 +107,8 @@ check("этот адрес проходит проверку на служебн
       and "FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {" in career)
 # Сравнивать надо с местом, где адрес ПРОВЕРЯЕТСЯ, а не где читается. Раньше
 # здесь стоял CURLINFO_PRIMARY_IP — то есть строка чтения, которая идёт сразу
-# за curl_exec. Разбор, поставленный между чтением и проверкой, такую версию
-# проверки проходил: мутация «разобрать ответ до проверки адреса» оставалась
+# за curl_exec. Разбор, поставленный между чтением и проверкой адреса, такую
+# версию проверки проходил: мутация «разобрать ответ до проверки адреса» оставалась
 # зелёной. Проверено на этой самой мутации.
 _guard = career.index("if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,")
 check("непубличный ответ выбрасывается до разбора",
