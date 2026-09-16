@@ -119,6 +119,9 @@ jobs:
       - name: Одна и та же вакансия не теряется в отпечатке
         run: php tests/ingest_dedupe_test.php
 
+      - name: Разведка с московского сервера собрана правильно
+        run: python3 tests/career_discover_local_test.py
+
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 

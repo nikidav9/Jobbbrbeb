@@ -115,6 +115,51 @@ TIMER
 
 systemctl daemon-reload
 systemctl enable --now jt-superjob-import.timer >/dev/null
+
+# Разведка карьерных сайтов — с ЭТОЙ машины, а не из GitHub Actions.
+#
+# Actions стоит на американских адресах, а за вакансиями потом ходит сервер, из
+# Москвы, — и они видят разный интернет. Из Actions Альфа-Банк, Точка, НСПК и
+# Positive Technologies отдают ошибку сертификата, а РЖД и ПЭК не открываются
+# вовсе; отсюда, наоборот, 403 отдают Пятёрочка, Ростелеком, Wildberries и МТС.
+# Никаких обходов: просто проверяем оттуда, откуда работаем.
+#
+# Раз в неделю: карьерные страницы меняются медленно, а прогон тянет браузер и
+# ходит по ста семидесяти чужим сайтам — чаще незачем и невежливо.
+cat >/etc/systemd/system/jt-career-discover.service <<'UNIT'
+[Unit]
+Description=JobToo career site discovery from the Moscow server
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/jobtoo/infra/career-discover-local.sh
+Nice=15
+TimeoutStartSec=45min
+UNIT
+
+cat >/etc/systemd/system/jt-career-discover.timer <<'TIMER'
+[Unit]
+Description=Run JobToo career site discovery weekly
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=1w
+Persistent=true
+RandomizedDelaySec=30min
+Unit=jt-career-discover.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+systemctl daemon-reload
+systemctl enable --now jt-career-discover.timer >/dev/null
+systemctl reset-failed jt-career-discover.service >/dev/null 2>&1 || true
+# Первый прогон сразу: ради него всё и заводится, ждать неделю незачем.
+systemctl start --no-block jt-career-discover.service || true
+log "CAREER_DISCOVER $HEAD: local discovery scheduled and started"
 systemctl reset-failed jt-superjob-import.service >/dev/null 2>&1 || true
 systemctl start --no-block jt-superjob-import.service || true
 log "INGEST_TIMER $HEAD: superjob full import started"
