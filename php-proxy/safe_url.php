@@ -7,11 +7,14 @@
 // в сторону «чуть мягче».
 
 /**
- * Разрешаем только публичные HTTPS-адреса. URL источника задаётся из панели,
- * но панель — не повод давать сборщику доступ к localhost, служебным IP и
- * метаданным облака.
+ * Проверенный HTTPS-хост и все его публичные DNS-адреса.
+ *
+ * Возвращаем адреса отдельно: CDN может объявить несколько edge-IP, и один из
+ * них временно отвечать HTTP 404/5xx, хотя соседний уже обслуживает свежий
+ * маршрут. career.php умеет безопасно повторить запрос на другом ИМЕННО ИЗ
+ * ЭТОГО проверенного списка. Никаких произвольных адресов сюда не подмешать.
  */
-function ing_safe_https_resolve(string $url): ?array
+function ing_safe_https_target(string $url): ?array
 {
     if (!filter_var($url, FILTER_VALIDATE_URL)) return null;
     $p = parse_url($url);
@@ -36,14 +39,42 @@ function ing_safe_https_resolve(string $url): ?array
         }
     }
 
-    // Передаём curl тот же адрес, который проверили. Иначе домен может между
-    // двумя DNS-запросами сменить публичный IP на внутренний (DNS rebinding).
     $addresses = array_map(
         fn($ip) => str_contains((string)$ip, ':') ? '[' . $ip . ']' : (string)$ip,
         array_values(array_unique($ips))
     );
     $port = isset($p['port']) ? (int)$p['port'] : 443;
-    return [$host . ':' . $port . ':' . implode(',', $addresses)];
+    return ['host' => $host, 'port' => $port, 'addresses' => $addresses];
+}
+
+/**
+ * Разрешаем только публичные HTTPS-адреса. URL источника задаётся из панели,
+ * но панель — не повод давать сборщику доступ к localhost, служебным IP и
+ * метаданным облака.
+ */
+function ing_safe_https_resolve(string $url): ?array
+{
+    $target = ing_safe_https_target($url);
+    if ($target === null) return null;
+
+    // Передаём curl тот же адрес, который проверили. Иначе домен может между
+    // двумя DNS-запросами сменить публичный IP на внутренний (DNS rebinding).
+    return [$target['host'] . ':' . $target['port'] . ':' . implode(',', $target['addresses'])];
+}
+
+/**
+ * Те же проверенные адреса, но по одному CURLOPT_RESOLVE на попытку.
+ * Нужны career.php для HTTP-failover между CDN edge без нового DNS-запроса.
+ */
+function ing_safe_https_resolve_candidates(string $url): ?array
+{
+    $target = ing_safe_https_target($url);
+    if ($target === null) return null;
+
+    return array_map(
+        fn($address) => [$target['host'] . ':' . $target['port'] . ':' . $address],
+        $target['addresses']
+    );
 }
 
 function ing_safe_https_url(string $url): bool
