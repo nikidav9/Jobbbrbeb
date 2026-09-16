@@ -1,0 +1,32 @@
+name: Career source regressions
+
+on:
+  pull_request:
+    paths:
+      - 'php-proxy/career*.php'
+      - 'tests/career_new_sources_test.php'
+      - 'supabase/migrations/*career*.sql'
+      - 'supabase/migrations/092_kaspersky_selectel_koronatech.sql'
+  push:
+    branches:
+      - main
+    paths:
+      - 'php-proxy/career*.php'
+      - 'tests/career_new_sources_test.php'
+      - 'supabase/migrations/*career*.sql'
+      - 'supabase/migrations/092_kaspersky_selectel_koronatech.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  career-sources:
+    name: Direct employer career sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: php -l php-proxy/career_feed.php && php -l tests/career_new_sources_test.php
+      - name: Kaspersky, Селектел и Koronatech regressions
+        run: php tests/career_new_sources_test.php
