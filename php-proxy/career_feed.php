@@ -64,7 +64,10 @@ function cf_walk(array $node, array &$found, int $depth): void
 /** Человеческий текст из значения разметки: без тегов, сущностей и лишних пробелов. */
 function cf_text($value): string
 {
-    if (is_array($value)) $value = $value['name'] ?? $value['@value'] ?? '';
+    // `title` в списке не случайно: у МТС город приходит как
+    // [{id, slug, title}], и без него адрес вакансии терялся молча — карточка
+    // показывала должность без города.
+    if (is_array($value)) $value = $value['name'] ?? $value['@value'] ?? $value['title'] ?? '';
     $text = html_entity_decode(strip_tags((string)$value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     return trim(preg_replace('~\s+~u', ' ', $text));
 }
@@ -284,6 +287,10 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
 
         $item = ['id' => $ext, 'title' => $title, 'kind' => 'permanent',
                  'url' => $url, 'active' => true];
+        // Постоянное название компании: в ответе его часто нет вовсе, а в
+        // карточке «ПАО Сбербанк» читается, «Карьерные страницы» — нет.
+        $const = trim((string)($map['company_const'] ?? ''));
+        if ($const !== '') $item['company'] = $const;
 
         foreach (['company' => 'company', 'address' => 'address',
                   'description' => 'description', 'schedule' => 'schedule'] as $to => $_) {
@@ -399,4 +406,128 @@ function cf_has_next_sub(int $got, array $paging, int $sub): bool
     $limit = max(1, (int)($paging['limit'] ?? 100));
     $maxPages = max(1, (int)($paging['max_pages'] ?? 20));
     return $got >= $limit && $sub + 1 < $maxPages;
+}
+
+/**
+ * Слова-пустышки: ссылка есть, а должности в ней нет.
+ *
+ * Собраны с живых страниц, а не придуманы: «Подробнее» у Протея и ДатаРу,
+ * «Показать все (10)» у Иви, «Санкт-Петербург» у СИБУРа. Без этого списка
+ * лента наполнилась бы карточками «Подробнее», и это было бы хуже пустой.
+ */
+const CF_LINK_NOISE = [
+    'подробнее', 'показать', 'смотреть', 'все вакансии', 'все города',
+    'все направления', 'ещё', 'еще', 'открыть', 'откликнуться', 'узнать',
+    'читать', 'подать заявку', 'вакансии', 'вакансия', 'перейти', 'далее',
+    'назад', 'поиск', 'найти', 'кандидатам', 'наши вакансии', 'работа в',
+    'как мы нанимаем', 'согласие', 'политика', 'linkedin', 'telegram',
+    'подписаться', 'карьера', 'все предложения',
+];
+
+/**
+ * Вакансии, выложенные на странице обычными ссылками.
+ *
+ * Третий вид источника рядом с разметкой JobPosting и JSON API. Замерено по
+ * 111 карьерным сайтам: разметки JobPosting нет почти ни у кого (2 сайта),
+ * JSON отдают немногие, а вот список ссылок вида `/vacancy/...` с названием
+ * должности внутри лежит в разметке у 24 компаний. Это самый крупный кусок,
+ * который берётся без браузера.
+ *
+ * $map:
+ *   link_path  — что должно быть в адресе ссылки («/vacancy/»), обязательно;
+ *   min_title  — короче скольких букв текст за должность не считаем (8);
+ *   company    — постоянное название компании, если на странице его нет.
+ */
+function cf_html_links(string $html, string $pageUrl, array $map, int $now): array
+{
+    $needle = trim((string)($map['link_path'] ?? ''));
+    if ($needle === '') return [];
+    $minTitle = max(3, (int)($map['min_title'] ?? 8));
+
+    $doc = new DOMDocument();
+    $prev = libxml_use_internal_errors(true);
+    // Чужая разметка почти всегда кривая. Разбираем молча: выводить чужие
+    // ошибки в наш ответ незачем.
+    $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+    libxml_use_internal_errors($prev);
+
+    $items = [];
+    $seen = [];
+    foreach ($doc->getElementsByTagName('a') as $a) {
+        if (count($items) >= 500) break;
+        $href = trim($a->getAttribute('href'));
+        if ($href === '' || !str_contains($href, $needle)) continue;
+
+        // Ссылка должна вести на КОНКРЕТНУЮ вакансию, а не на сам список.
+        // Без этого в ленту лезли «Все вакансии», «Все города», «Кандидатам» —
+        // ссылки на разделы, у которых после `/vacancy/` ничего нет. Замерено
+        // на живых страницах СИБУРа, МегаФона и Контура.
+        $tail = substr($href, strpos($href, $needle) + strlen($needle));
+        $tail = trim(explode('?', explode('#', $tail)[0])[0], '/');
+        if ($tail === '') continue;
+
+        $title = cf_link_title($a);
+        if (mb_strlen($title) < $minTitle) continue;
+        $lower = mb_strtolower($title);
+        foreach (CF_LINK_NOISE as $noise) {
+            if (str_starts_with($lower, $noise)) { $title = ''; break; }
+        }
+        if ($title === '') continue;
+
+        $url = cf_json_url(['href' => $href], ['url' => 'href'], $pageUrl);
+        if ($url === '') continue;
+        // Одна вакансия часто висит двумя ссылками — с картинки и с заголовка.
+        if (isset($seen[$url])) continue;
+        $seen[$url] = true;
+
+        $items[] = [
+            'id' => substr(hash('sha256', $url), 0, 24),
+            'title' => $title,
+            'kind' => 'permanent',
+            'url' => $url,
+            'company' => (string)($map['company'] ?? '') ?: null,
+            'active' => true,
+            'seen_at' => $now,
+        ];
+    }
+    return $items;
+}
+
+/**
+ * Название должности из ссылки.
+ *
+ * Голый textContent склеивает вложенные элементы без пробелов: у VK выходило
+ * «Бизнес-ассистентДзенМосква», у Иви — «ClickhouseFlinkJavaKafkapython
+ * Java-разработчик», где перед должностью слиплись метки технологий. Поэтому
+ * сначала ищем внутри ссылки заголовок — h1..h6 или элемент с «title»/«name»
+ * в классе, — и только если его нет, берём весь текст, расставляя пробелы на
+ * границах элементов.
+ */
+function cf_link_title(DOMElement $a): string
+{
+    $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
+
+    foreach (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as $tag) {
+        foreach ($a->getElementsByTagName($tag) as $h) {
+            $text = $clean($h->textContent ?? '');
+            if ($text !== '') return $text;
+        }
+    }
+    foreach ($a->getElementsByTagName('*') as $el) {
+        $class = strtolower($el->getAttribute('class'));
+        if ($class !== '' && (str_contains($class, 'title') || str_contains($class, 'name'))) {
+            $text = $clean($el->textContent ?? '');
+            if ($text !== '') return $text;
+        }
+    }
+    // Запасной ход: весь текст ссылки, но с пробелом на каждой границе узла.
+    $parts = [];
+    $walk = function (DOMNode $node) use (&$walk, &$parts): void {
+        foreach ($node->childNodes ?? [] as $child) {
+            if ($child->nodeType === XML_TEXT_NODE) $parts[] = $child->nodeValue;
+            else $walk($child);
+        }
+    };
+    $walk($a);
+    return $clean(implode(' ', $parts));
 }

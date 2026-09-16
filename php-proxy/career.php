@@ -63,9 +63,14 @@ foreach (is_array($config['pages'] ?? null) ? $config['pages'] : [] as $u) {
 }
 foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $e) {
     if (!is_array($e) || !is_string($e['url'] ?? null)) continue;
+    // `mode` различает JSON API и страницу со ссылками на вакансии. Третий вид
+    // появился потому, что замер по 111 карьерным сайтам показал: разметку
+    // JobPosting держат двое, JSON отдают немногие, а список обычных ссылок
+    // лежит у двух десятков.
+    $mode = (string)($e['mode'] ?? 'json');
     $units[] = [
         'url'    => $e['url'],
-        'kind'   => 'json',
+        'kind'   => $mode === 'html_links' ? 'html_links' : 'json',
         'map'    => is_array($e['map'] ?? null) ? $e['map'] : [],
         'paging' => is_array($e['paging'] ?? null) ? $e['paging'] : [],
     ];
@@ -80,7 +85,7 @@ if ($page >= count($units)) cf_fail(404, 'страница за пределам
 $unit = $units[$page];
 // Адрес порции строим до похода, но проверяем заново: подставляются только
 // числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
-$pageUrl = $unit['kind'] === 'json' ? cf_page_url($unit['url'], $unit['paging'], $sub) : $unit['url'];
+$pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub);
 if (!ing_safe_https_url($pageUrl)) cf_fail(422, 'адрес порции не проходит проверку');
 $resolveEntries = ing_safe_https_resolve($pageUrl);
 if ($resolveEntries === null) cf_fail(422, 'адрес страницы больше не разрешается безопасно');
@@ -93,6 +98,9 @@ curl_setopt_array($ch, [
     CURLOPT_HTTPHEADER => [$unit['kind'] === 'json'
         ? 'Accept: application/json'
         : 'Accept: text/html,application/xhtml+xml'],
+    // Часть сайтов без Accept-Language отдаёт англоязычную версию, а нам нужны
+    // русские названия должностей.
+    CURLOPT_ENCODING => '',
     CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 45,
@@ -134,7 +142,10 @@ if ($ok === false || $code < 200 || $code >= 300) {
     cf_fail(502, "страница недоступна ($code $error)");
 }
 
-if ($unit['kind'] === 'json') {
+if ($unit['kind'] === 'html_links') {
+    $items = cf_html_links($body, $pageUrl, $unit['map'], time());
+    $more = cf_has_next_sub(count($items), $unit['paging'], $sub);
+} elseif ($unit['kind'] === 'json') {
     $data = json_decode($body, true);
     if (!is_array($data)) cf_fail(502, 'источник ответил не JSON');
     $items = cf_json_items($data, $unit['map'], $pageUrl, time());
