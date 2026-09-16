@@ -287,10 +287,6 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
 
         $item = ['id' => $ext, 'title' => $title, 'kind' => 'permanent',
                  'url' => $url, 'active' => true];
-        // Постоянное название компании: в ответе его часто нет вовсе, а в
-        // карточке «ПАО Сбербанк» читается, «Карьерные страницы» — нет.
-        $const = trim((string)($map['company_const'] ?? ''));
-        if ($const !== '') $item['company'] = $const;
 
         foreach (['company' => 'company', 'address' => 'address',
                   'description' => 'description', 'schedule' => 'schedule'] as $to => $_) {
@@ -299,6 +295,12 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
             $value = cf_name(cf_dig($row, $field));
             if ($value !== '') $item[$to] = $value;
         }
+
+        // Постоянное название компании — ПОСЛЕ разбора полей, иначе его
+        // перебивает поле из ответа. У Ростелекома так и вышло: в карточке
+        // стояло «Технический блок» — это направление, а не работодатель.
+        $const = trim((string)($map['company_const'] ?? ''));
+        if ($const !== '') $item['company'] = $const;
 
         $payField = (string)($map['pay'] ?? '');
         if ($payField !== '') {
@@ -415,6 +417,10 @@ function cf_has_next_sub(int $got, array $paging, int $sub): bool
  * «Показать все (10)» у Иви, «Санкт-Петербург» у СИБУРа. Без этого списка
  * лента наполнилась бы карточками «Подробнее», и это было бы хуже пустой.
  */
+/** Слова, которые сами по себе являются разделом, а не вакансией. */
+const CF_SECTION_WORDS = ['vacancy', 'vacancies', 'job', 'jobs', 'vakansii',
+    'search', 'all', 'list', 'index'];
+
 const CF_LINK_NOISE = [
     'подробнее', 'показать', 'смотреть', 'все вакансии', 'все города',
     'все направления', 'ещё', 'еще', 'открыть', 'откликнуться', 'узнать',
@@ -465,6 +471,11 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         $tail = substr($href, strpos($href, $needle) + strlen($needle));
         $tail = trim(explode('?', explode('#', $tail)[0])[0], '/');
         if ($tail === '') continue;
+        // Хвост, который сам является названием раздела, — не вакансия.
+        // У Яндекса все 68 «вакансий» оказались ссылками вида
+        // /jobs/vacancies?profession=backend: это фильтры каталога, а
+        // заголовком шло «Разработка», «Аналитика». Проверено на проде.
+        if (in_array(mb_strtolower($tail), CF_SECTION_WORDS, true)) continue;
 
         $title = cf_link_title($a);
         if (mb_strlen($title) < $minTitle) continue;
@@ -485,7 +496,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
             'title' => $title,
             'kind' => 'permanent',
             'url' => $url,
-            'company' => (string)($map['company'] ?? '') ?: null,
+            'company' => (string)($map['company_const'] ?? $map['company'] ?? '') ?: null,
             'active' => true,
             'seen_at' => $now,
         ];
