@@ -18,6 +18,7 @@ import {
   looksClickable,
   looksLikeVacancies,
   parseSiteList,
+  pickLinkPattern,
   replayRequestConfig,
   scoreList,
 } from '../scripts/career-discover-lib.mjs';
@@ -287,4 +288,95 @@ test('разведчик сохраняет request metadata и настоящи
   assert.match(discover, /replayRequestConfig\(cap\.method, cap\.postData\)/);
   assert.match(discover, /config:\s*\{\s*mode:\s*'embedded'\s*\}/);
   assert.doesNotMatch(discover, /consider\(found, '\(в HTML страницы\)'/);
+});
+
+/**
+ * Ссылки на вакансии прямо в разметке.
+ *
+ * Самый частый и самый простой случай, который разведка раньше не видела
+ * вовсе: сайт отдаёт готовый HTML со ссылками, JSON-запроса нет, и в отчёте
+ * стояло «нет данных». Найденный здесь `link_path` уходит в `mode: html_links`
+ * — тот же разбор, что на проде делает cf_html_links.
+ */
+const ANCHORS_TYPICAL = [
+  { href: 'https://job.x.ru/vacancy/101', text: 'Комплектовщик на склад' },
+  { href: 'https://job.x.ru/vacancy/102', text: 'Упаковщик товара' },
+  { href: 'https://job.x.ru/vacancy/103', text: 'Оператор call-центра' },
+];
+
+test('находит путь ссылки на вакансию среди якорей страницы', () => {
+  const got = pickLinkPattern(ANCHORS_TYPICAL, 'https://job.x.ru/vacancies');
+  assert.equal(got.link_path, '/vacancy/');
+  assert.equal(got.tails, 3);
+});
+
+test('новости не выигрывают у вакансий, даже когда их больше', () => {
+  // Без веса на «вакансионное» слово в пути побеждал бы раздел с бо́льшим
+  // числом разных хвостов — то есть разведка уверенно предложила бы читать
+  // новости. Поэтому новостей здесь намеренно БОЛЬШЕ.
+  const anchors = [
+    ...ANCHORS_TYPICAL,
+    { href: 'https://job.x.ru/news/a-very-long-news-title', text: 'Мы открыли новый склад' },
+    { href: 'https://job.x.ru/news/b-another-long-title', text: 'Итоги полугодия компании' },
+    { href: 'https://job.x.ru/news/c-third-long-title', text: 'Как мы нанимаем людей' },
+    { href: 'https://job.x.ru/news/d-fourth-long-title', text: 'Новый офис в Казани' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/vacancy/');
+});
+
+test('ссылка на сам раздел не считается вакансией', () => {
+  // «Все вакансии» ведёт на /vacancy без хвоста: хвоста нет — и группы нет.
+  // Плюс текст раздела не даёт признака «с должностью».
+  const anchors = [
+    { href: 'https://job.x.ru/vacancy', text: 'Все вакансии' },
+    { href: 'https://job.x.ru/vacancy/', text: 'Вакансии в Москве' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('без единого человеческого заголовка шаблон не принимается', () => {
+  // Ссылки с картинок: href есть, текста нет. cf_html_links на проде отбросит
+  // такие по min_title и вернёт пусто — значит и разведке принимать нечего.
+  const anchors = ANCHORS_TYPICAL.map(a => ({ href: a.href, text: '' }));
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('чужой домен в ссылках не попадает в шаблон', () => {
+  // Кнопка «откликнуться на hh» есть почти на каждой карьерной странице.
+  // Взять её путь значит завести источник, ведущий на агрегатор, — прямо
+  // против решения владельца.
+  const anchors = [
+    { href: 'https://hh.ru/vacancy/901', text: 'Откликнуться на hh.ru' },
+    { href: 'https://hh.ru/vacancy/902', text: 'Смотреть на hh.ru подробно' },
+    { href: 'https://hh.ru/vacancy/903', text: 'Ещё одна вакансия на hh.ru' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('двух разных вакансий мало: нужен порог', () => {
+  // Две ссылки даёт любая пара «о компании / контакты» внутри одного раздела.
+  const anchors = ANCHORS_TYPICAL.slice(0, 2);
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('путь берётся целиком, а не по первому сегменту', () => {
+  // У части сайтов вакансии лежат глубже: /career/vacancies/<id>. Если
+  // отрезать по первому сегменту, в конфиг уйдёт /career/ — а под ним же
+  // лежат «о нас» и «льготы», и лента наберёт разделов вместо вакансий.
+  const anchors = [
+    { href: 'https://job.x.ru/career/vacancies/101', text: 'Комплектовщик на склад' },
+    { href: 'https://job.x.ru/career/vacancies/102', text: 'Упаковщик товара' },
+    { href: 'https://job.x.ru/career/vacancies/103', text: 'Оператор call-центра' },
+    { href: 'https://job.x.ru/career/about', text: 'О компании и наших людях' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/career/vacancies/');
+});
+
+test('относительные ссылки разбираются от адреса страницы', () => {
+  const anchors = [
+    { href: '/vacancy/101', text: 'Комплектовщик на склад' },
+    { href: '/vacancy/102', text: 'Упаковщик товара' },
+    { href: '/vacancy/103', text: 'Оператор call-центра' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/vacancy/');
 });

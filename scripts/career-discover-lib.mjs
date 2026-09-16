@@ -244,3 +244,92 @@ export function replayRequestConfig(method, postData) {
   }
   return { ok: true, config: { method: 'POST', body } };
 }
+
+/**
+ * Слова, по которым путь опознаётся как «вакансия», а не раздел сайта.
+ *
+ * Латиница и транслит вперемешку намеренно: у российских работодателей путь
+ * бывает и `/vacancy/`, и `/rabota/`, и `/karera/`.
+ */
+const VACANCY_PATH_WORD = /vacan|vakans|job|career|karier|karer|rabota|position|opening/i;
+
+/**
+ * Ссылки-пустышки, которые есть на любой карьерной странице.
+ *
+ * Отсекаем по НАЧАЛУ текста: «Все вакансии», «Вакансии в Москве» — это
+ * разделы, а не должности, и попадание такой ссылки в ленту выглядит как
+ * поломка. Замерено на живых страницах — cf_html_links на проде режет их же.
+ */
+const LINK_SECTION_TEXT = /^(все|всего|показать|смотреть|перейти|подробн|ещё|еще|вакансии|каталог|назад)/i;
+
+/**
+ * Найти шаблон ссылки на вакансию среди якорей страницы.
+ *
+ * Зачем отдельно от findLists. Разведка искала вакансии только в JSON, и когда
+ * сайт отдаёт готовый HTML — самый частый и самый простой случай — она писала
+ * «нет данных». Конкурент при этом такие сайты читает. Здесь мы повторяем то,
+ * что на проде уже умеет cf_html_links: найти в разметке кусок пути, общий для
+ * ссылок на отдельные вакансии.
+ *
+ * Возвращает `{link_path, tails, titled}` или null. `link_path` — ровно то,
+ * что ложится в `map.link_path` конфигурации `mode: html_links`.
+ *
+ * @param {Array<{href: string, text: string}>} anchors якоря отрендеренной страницы
+ * @param {string} pageUrl адрес самой карьерной страницы
+ */
+export function pickLinkPattern(anchors, pageUrl, minTails = 3) {
+  let host;
+  try { host = new URL(pageUrl).hostname; } catch { return null; }
+  const groups = new Map();
+  for (const a of anchors || []) {
+    let u;
+    try { u = new URL(a.href, pageUrl); } catch { continue; }
+    if (u.hostname !== host) continue;
+    const segments = u.pathname.split('/').filter(Boolean);
+    if (segments.length < 2) continue;
+    const text = String(a.text || '').trim();
+    // Считаем ссылку «с должностью», только если текст похож на название
+    // вакансии: не раздел и достаточно длинный. Пустой текст бывает у ссылки
+    // с картинки — она дублирует заголовочную и роли не играет.
+    const titled = text.length >= 8 && !LINK_SECTION_TEXT.test(text);
+    for (let i = 1; i < segments.length; i += 1) {
+      const prefix = `/${segments.slice(0, i).join('/')}/`;
+      const tail = segments.slice(i).join('/');
+      if (!tail) continue;
+      let g = groups.get(prefix);
+      if (!g) { g = { tails: new Set(), leaves: new Set(), titled: 0 }; groups.set(prefix, g); }
+      g.tails.add(tail);
+      if (!tail.includes('/')) g.leaves.add(tail);
+      if (titled) g.titled += 1;
+    }
+  }
+
+  let best = null;
+  for (const [prefix, g] of groups) {
+    const tails = g.tails.size;
+    if (tails < minTails) continue;
+    // Путь со словом «вакансия» весит больше любого другого: на карьерном
+    // сайте `/news/` тоже даст десяток разных хвостов, и без этого правила
+    // разведка уверенно предложила бы читать новости.
+    //
+    // Дальше решает ЧИСТОТА, а не длина списка. Считать по числу хвостов
+    // нельзя: у `/career/vacancies/` их ровно столько, сколько вакансий, а у
+    // более короткого `/career/` — те же вакансии ПЛЮС «о нас» и «льготы»,
+    // то есть всегда больше. Побеждал бы короткий путь, и в ленту шли бы
+    // разделы сайта.
+    const purity = g.titled / tails;
+    // И «листовость»: у ссылки на вакансию хвост — один сегмент (`101`), а не
+    // `vacancies/101`. Без этого побеждает более КОРОТКИЙ путь: под `/career/`
+    // лежат те же вакансии плюс «о нас», то есть хвостов у него всегда больше,
+    // а текст «О компании и наших людях» ничем не хуже названия должности.
+    const leaves = g.leaves.size / tails;
+    const score = (VACANCY_PATH_WORD.test(prefix) ? 10000 : 0)
+      + purity * 1000 + leaves * 500 + Math.min(tails, 50);
+    if (!best || score > best.score) best = { link_path: prefix, tails, titled: g.titled, score };
+  }
+  if (!best) return null;
+  // Без единой ссылки с человеческим заголовком это не список вакансий:
+  // cf_html_links на проде отбросит такие ссылки по min_title и вернёт пусто.
+  if (best.titled === 0) return null;
+  return { link_path: best.link_path, tails: best.tails, titled: best.titled };
+}
