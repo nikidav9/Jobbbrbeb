@@ -450,18 +450,28 @@ const CF_COUNT_LABEL = '~^\d+\s+ваканс~ui';
  *   min_title  — короче скольких букв текст за должность не считаем (8);
  *   company    — постоянное название компании, если на странице его нет.
  */
+/**
+ * Разбор чужой разметки. Она почти всегда кривая, поэтому разбираем молча:
+ * выводить чужие ошибки в наш ответ незачем.
+ */
+function cf_dom(string $html): ?DOMDocument
+{
+    if (trim($html) === '') return null;
+    $doc = new DOMDocument();
+    $prev = libxml_use_internal_errors(true);
+    $ok = $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+    libxml_use_internal_errors($prev);
+    return $ok ? $doc : null;
+}
+
 function cf_html_links(string $html, string $pageUrl, array $map, int $now): array
 {
     $needle = trim((string)($map['link_path'] ?? ''));
     if ($needle === '') return [];
     $minTitle = max(3, (int)($map['min_title'] ?? 8));
 
-    $doc = new DOMDocument();
-    $prev = libxml_use_internal_errors(true);
-    // Чужая разметка почти всегда кривая. Разбираем молча: выводить чужие
-    // ошибки в наш ответ незачем.
-    $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
-    libxml_use_internal_errors($prev);
+    $doc = cf_dom($html);
+    if ($doc === null) return [];
 
     $items = [];
     $seen = [];
@@ -602,4 +612,80 @@ function cf_next_step(int $page, int $sub, int $units, bool $more, bool $failed)
     if ($more) return ['page' => $page, 'sub' => $sub + 1];
     if ($page + 1 < $units) return ['page' => $page + 1, 'sub' => 0];
     return null;
+}
+
+/**
+ * Описание вакансии с её собственной страницы.
+ *
+ * Зачем. Список вакансий почти нигде не содержит описания: у страниц со
+ * ссылками (`html_links`) его нет вовсе, а API отдают короткую карточку — у
+ * МТС поле description в списке есть, но пустое у всех двадцати пяти. Поэтому
+ * в ленте стояло «Источник не прислал описания», хотя на сайте текст есть.
+ * Считано по проду: описание было у 725 вакансий из 1583.
+ *
+ * Берём первое, что нашлось, в порядке убывания надёжности:
+ *   1. schema.org/JobPosting — размеченное описание, ровно то, что нужно;
+ *   2. meta description и og:description — их пишут под выдачу поисковика,
+ *      то есть человеку, а не роботу;
+ *   3. самый длинный кусок текста страницы — запасной путь для вёрстки без
+ *      разметки вовсе.
+ *
+ * Возвращает пустую строку, если ничего осмысленного не нашлось: короткий
+ * обрывок хуже честного «описания нет».
+ */
+function cf_page_description(string $html): string
+{
+    $clean = static function (string $s): string {
+        $s = preg_replace('/\s+/u', ' ', strip_tags(html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+        return trim((string)$s);
+    };
+
+    // 1. Размеченное описание вакансии.
+    foreach (cf_job_postings($html) as $posting) {
+        $text = $clean((string)($posting['description'] ?? ''));
+        if (mb_strlen($text) >= 80) return mb_substr($text, 0, 2000);
+    }
+
+    // 2. Описание для поисковой выдачи.
+    if (preg_match_all('~<meta[^>]+>~i', $html, $tags)) {
+        foreach ($tags[0] as $tag) {
+            if (!preg_match('~(?:name|property)\s*=\s*["\']?(?:og:)?description["\']?~i', $tag)) continue;
+            if (!preg_match('~content\s*=\s*"([^"]*)"~i', $tag, $m)
+                && !preg_match("~content\\s*=\\s*'([^']*)'~i", $tag, $m)) continue;
+            $text = $clean($m[1]);
+            if (mb_strlen($text) >= 80) return mb_substr($text, 0, 2000);
+        }
+    }
+
+    // 3. Самый длинный кусок текста. Путь запасной и самый опасный: на первом
+    // же замере по 23 работодателям он принёс у BSL политику конфиденциальности,
+    // а у kokos group — форму отклика («Прикрепить резюме»). Поэтому здесь два
+    // ограничения, и оба взяты из этого замера.
+    $doc = cf_dom($html);
+    if ($doc === null) return '';
+    $xp = new DOMXPath($doc);
+    // Меню, подвал и формы на карьерной странице длиннее самой вакансии.
+    foreach ($xp->query('//script|//style|//nav|//header|//footer|//noscript|//form') as $node) {
+        $node->parentNode?->removeChild($node);
+    }
+    $longest = static function (string $query) use ($xp, $clean): string {
+        $best = '';
+        foreach ($xp->query($query) as $node) {
+            $text = $clean($node->textContent);
+            if (mb_strlen($text) > mb_strlen($best)) $best = $text;
+        }
+        return $best;
+    };
+    // Сначала смысловые контейнеры: любой div утащил бы обёртку всей страницы
+    // вместе с меню. Но у части сайтов их нет вовсе — у Just AI ни одного
+    // main/article/section на 71 div. Для таких страниц берём div, иначе
+    // описание теряется на ровном месте.
+    $best = $longest('//main|//article|//section');
+    if (mb_strlen($best) < 200) $best = $longest('//div');
+    if (mb_strlen($best) < 200) return '';
+    // Текст про обработку данных и про отклик — не описание вакансии. Человеку
+    // такое показывать хуже, чем честное «описания нет».
+    if (preg_match('~политик\w* (?:конфиденциальн|обработк)|согласи\w* на обработку|'
+        . 'прикрепить резюме|файл\w* cookie~ui', $best)) return '';
+    return mb_substr($best, 0, 2000);
 }

@@ -435,6 +435,92 @@ check('проверка безопасности адреса осталась �
 check('увод на непубличный адрес по-прежнему не разбирается',
     str_contains($career, "\$skipUnit('страница увела на непубличный адрес');"));
 
+// ── Описание со страницы вакансии ─────────────────────────────────────────
+//
+// В ленте стояло «Источник не прислал описания» у 858 вакансий из 1583: в
+// списке описания почти нигде нет, оно живёт на странице самой вакансии.
+
+$jobPosting = '<html><body><script type="application/ld+json">'
+    . json_encode(['@type' => 'JobPosting', 'title' => 'Продавец',
+        'description' => '<p>' . str_repeat('Работа в магазине рядом с домом. ', 4) . '</p>'],
+        JSON_UNESCAPED_UNICODE)
+    . '</script></body></html>';
+check('описание берётся из разметки JobPosting',
+    str_starts_with(cf_page_description($jobPosting), 'Работа в магазине рядом с домом.'));
+check('разметку очищаем от тегов', !str_contains(cf_page_description($jobPosting), '<p>'));
+
+$meta = '<html><head><meta name="description" content="'
+    . str_repeat('Ищем кассира в магазин у дома. ', 4) . '"></head><body></body></html>';
+check('без разметки берём описание для поисковой выдачи',
+    str_starts_with(cf_page_description($meta), 'Ищем кассира в магазин у дома.'));
+
+$og = '<html><head><meta property="og:description" content="'
+    . str_repeat('Смена восемь часов, выплаты еженедельно. ', 3) . '"></head><body></body></html>';
+check('og:description тоже годится',
+    str_starts_with(cf_page_description($og), 'Смена восемь часов, выплаты еженедельно.'));
+
+// Запасной путь. Он самый опасный: на замере по 23 работодателям приносил у
+// BSL политику конфиденциальности, а у kokos group — форму отклика.
+// Меню и подвал кладём ВНУТРЬ выбранного контейнера: снаружи они и так не
+// попали бы, и мутация «не выбрасывать служебные узлы» оставалась зелёной.
+$plain = '<html><body><main><nav>Главная Вакансии Контакты</nav><p>'
+    . str_repeat('Обязанности: принимать товар, работать с кассой. ', 6)
+    . '</p><footer>Политика сайта, карта сайта, реквизиты</footer></main></body></html>';
+$got = cf_page_description($plain);
+check('без разметки и meta берём самый длинный кусок текста',
+    str_contains($got, 'Обязанности: принимать товар'));
+check('меню и подвал в описание не попадают',
+    !str_contains($got, 'Контакты') && !str_contains($got, 'реквизиты'));
+
+$policy = '<html><body><main><p>'
+    . str_repeat('Политика конфиденциальности определяет порядок обработки данных. ', 6)
+    . '</p></main></body></html>';
+check('политика конфиденциальности за описание не выдаётся', cf_page_description($policy) === '');
+
+// В тексте формы намеренно НЕТ слов, которые ловит отсев: иначе проверка
+// проходила бы и без выбрасывания самой формы.
+$form = '<html><body><main><form><p>'
+    . str_repeat('Имя, фамилия, телефон, город, желаемая должность, дата выхода. ', 6)
+    . '</p></form></main></body></html>';
+check('форма отклика за описание не выдаётся', cf_page_description($form) === '');
+
+check('пустая страница описания не даёт', cf_page_description('') === '');
+check('короткий обрывок лучше не показывать',
+    cf_page_description('<html><body><main>Вакансия</main></body></html>') === '');
+// Отдельно — обрывок, дошедший до запасного пути по div: предел длины стоит в
+// двух местах, и без этой пары мутация «снять второй» оставалась зелёной.
+check('короткий обрывок не проходит и запасным путём',
+    cf_page_description('<html><body><div>' . str_repeat('Нужен кассир. ', 6)
+        . '</div></body></html>') === '');
+
+// У части сайтов нет ни main, ни article, ни section — у Just AI на 71 div ни
+// одного. Такие страницы тоже должны отдавать описание.
+$divs = '<html><body><div><div>' . str_repeat('Мы команда разработки платформы. ', 8)
+    . '</div></div></body></html>';
+check('страница на одних div описание всё равно отдаёт',
+    str_contains(cf_page_description($divs), 'Мы команда разработки платформы'));
+
+// ── Сборщик: добор описаний ───────────────────────────────────────────────
+$ingest = file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
+check('описания добираются только у карьерных источников',
+    str_contains($ingest, "if ((\$src['connector_kind'] ?? '') === 'career') {")
+    && str_contains($ingest, '$described += ing_fill_descriptions($rows, $deadline);'));
+check('добор укладывается в общий бюджет захода',
+    str_contains($ingest, 'if (microtime(true) >= $deadline) break;'));
+check('за описанием не ходим, если источник его прислал',
+    str_contains($ingest, "if (trim((string)(\$row['description'] ?? '')) !== '') continue;"));
+// Страница вакансии — чужой адрес. Сторожа те же, что у остального обхода.
+check('страница вакансии проходит проверку адреса',
+    str_contains($ingest, 'if ($url === \'\' || !ing_safe_https_url($url)) return null;')
+    && str_contains($ingest, '$resolveEntries = ing_safe_https_resolve($url);'));
+check('за редиректом со страницы вакансии не идём',
+    str_contains($ingest, 'CURLOPT_FOLLOWLOCATION => false'));
+check('адрес, к которому пришли, проверяется повторно',
+    str_contains($ingest, 'CURLINFO_PRIMARY_IP')
+    && str_contains($ingest, 'FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE'));
+check('размер страницы вакансии ограничен',
+    str_contains($ingest, '$tooLarge = true; return 0;'));
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

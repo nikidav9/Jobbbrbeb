@@ -116,6 +116,9 @@ jobs:
       - name: В ленту берём только свои виды работ
         run: php tests/feed_relevance_test.php
 
+      - name: Одна и та же вакансия не теряется в отпечатке
+        run: php tests/ingest_dedupe_test.php
+
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
