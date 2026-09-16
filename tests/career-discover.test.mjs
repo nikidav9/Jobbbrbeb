@@ -11,7 +11,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { endpointWarning, findLists, guessMap, looksClickable, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
+import {
+  endpointWarning,
+  findLists,
+  guessMap,
+  looksClickable,
+  looksLikeVacancies,
+  parseSiteList,
+  replayRequestConfig,
+  scoreList,
+} from '../scripts/career-discover-lib.mjs';
 
 test('находит список вакансий в ответе Yadro', () => {
   const body = { vacancies: [
@@ -245,4 +254,37 @@ test('обычные кнопки не трогаем', () => {
 
 test('длинный текст — это абзац, а не кнопка', () => {
   assert.equal(looksClickable('Здесь вы найдёте вакансии нашей компании по всей стране и сможете откликнуться'), false);
+});
+
+// Cofinder держит отдельные парсеры, и часть карьерных сайтов грузит вакансии
+// POST/GraphQL. Разведка должна сохранить способ запроса, а не превратить его в GET.
+test('GET можно повторить без дополнительных настроек', () => {
+  assert.deepEqual(replayRequestConfig('GET', null), { ok: true, config: {} });
+});
+
+test('POST JSON сохраняет метод и тело', () => {
+  assert.deepEqual(
+    replayRequestConfig('POST', '{"page":1,"filters":{"city":[]}}'),
+    { ok: true, config: { method: 'POST', body: { page: 1, filters: { city: [] } } } },
+  );
+});
+
+test('секреты из браузерной сессии в connector_config не попадают', () => {
+  const result = replayRequestConfig('POST', '{"variables":{"access_token":"secret"}}');
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /секрет|сесси/i);
+});
+
+test('форму и неподдерживаемый метод не выдаём за готовый источник', () => {
+  assert.equal(replayRequestConfig('POST', 'city=Moscow&page=1').ok, false);
+  assert.equal(replayRequestConfig('PUT', '{"page":1}').ok, false);
+});
+
+test('разведчик сохраняет request metadata и настоящий embedded endpoint', () => {
+  const discover = fs.readFileSync(new URL('../scripts/career-discover.mjs', import.meta.url), 'utf8');
+  assert.match(discover, /method:\s*request\.method\(\)/);
+  assert.match(discover, /postData:\s*request\.postData\(\)/);
+  assert.match(discover, /replayRequestConfig\(cap\.method, cap\.postData\)/);
+  assert.match(discover, /config:\s*\{\s*mode:\s*'embedded'\s*\}/);
+  assert.doesNotMatch(discover, /consider\(found, '\(в HTML страницы\)'/);
 });

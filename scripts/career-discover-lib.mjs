@@ -202,3 +202,45 @@ export function looksClickable(text) {
   if (t.length < 3 || t.length > 40) return false;
   return CLICK_WORDS.test(t);
 }
+
+/**
+ * Что из браузерного запроса можно безопасно повторить обычным curl.
+ *
+ * Раньше разведка сохраняла только URL ответа. Для POST/GraphQL это превращало
+ * рабочий браузерный запрос в GET без тела — прод закономерно получал 404/405
+ * или пустой список. Тело сохраняем только если это небольшой JSON без ключей,
+ * похожих на секреты. Cookies/Authorization намеренно не переносим: такой
+ * источник требует отдельного согласованного адаптера, а не копирования сессии.
+ */
+const SENSITIVE_REQUEST_KEY = /(^|[_-])(auth|authorization|token|secret|password|passwd|cookie|session|csrf|api[_-]?key|access[_-]?key)($|[_-])/i;
+
+function hasSensitiveRequestKey(value, depth = 0) {
+  if (depth > 8 || value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(v => hasSensitiveRequestKey(v, depth + 1));
+  return Object.entries(value).some(([key, child]) =>
+    SENSITIVE_REQUEST_KEY.test(key) || hasSensitiveRequestKey(child, depth + 1));
+}
+
+export function replayRequestConfig(method, postData) {
+  const verb = String(method || 'GET').toUpperCase();
+  if (verb === 'GET') return { ok: true, config: {} };
+  if (verb !== 'POST') return { ok: false, reason: `метод ${verb} требует отдельного адаптера` };
+  if (typeof postData !== 'string' || postData.trim() === '') {
+    return { ok: false, reason: 'POST без JSON-тела требует отдельного адаптера' };
+  }
+  if (Buffer.byteLength(postData, 'utf8') > 32 * 1024) {
+    return { ok: false, reason: 'POST-тело больше 32 КБ — не сохраняем автоматически' };
+  }
+
+  let body;
+  try { body = JSON.parse(postData); } catch {
+    return { ok: false, reason: 'POST-тело не JSON — нужен отдельный адаптер' };
+  }
+  if (body === null || typeof body !== 'object') {
+    return { ok: false, reason: 'POST JSON не объект/массив — нужен отдельный адаптер' };
+  }
+  if (hasSensitiveRequestKey(body)) {
+    return { ok: false, reason: 'POST-тело похоже на секрет/сессию — автоматически не сохраняем' };
+  }
+  return { ok: true, config: { method: 'POST', body } };
+}

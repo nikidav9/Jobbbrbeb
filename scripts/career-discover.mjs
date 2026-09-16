@@ -10,7 +10,7 @@
  *
  * Конкурент cofinder решает это браузером: в его собственном ответе у
  * Альфа-Банка лежит Selenium stacktrace. Но держать браузер в бою дорого, и у
- * него же 15 парсеров из 111 сломаны.
+ * него же часть парсеров бывает сломана.
  *
  * Здесь браузер работает ОДИН РАЗ на компанию и только ради разведки: открывает
  * страницу, слушает её сетевые запросы и находит настоящий адрес, откуда
@@ -41,7 +41,15 @@
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-import { endpointWarning, findLists, guessMap, looksClickable, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
+import {
+  endpointWarning,
+  findLists,
+  guessMap,
+  looksClickable,
+  parseSiteList,
+  replayRequestConfig,
+  URL_SHAPES,
+} from './career-discover-lib.mjs';
 import process from 'node:process';
 
 // Сколько компаний брать. Пусто или 0 — весь список: своих сайтов 62, и
@@ -184,8 +192,9 @@ async function inspect(target, i) {
     return route.continue();
   });
 
-  // Копим ответы, похожие на JSON. Тело читаем сразу: после перехода на
-  // следующую страницу оно уже недоступно.
+  // Копим ответы, похожие на JSON. Помимо URL запоминаем метод и JSON-тело
+  // исходного запроса: POST/GraphQL нельзя потом бездумно повторять как GET.
+  // Cookies и Authorization сюда не попадают и в конфиг никогда не сохраняются.
   const captured = [];
   page.on('response', async res => {
     try {
@@ -194,7 +203,13 @@ async function inspect(target, i) {
       const url = res.url();
       if (/analytics|metrika|sentry|gtm|counter|pixel/i.test(url)) return;
       const body = await res.json();
-      captured.push({ url, body });
+      const request = res.request();
+      captured.push({
+        url,
+        body,
+        method: request.method(),
+        postData: request.postData(),
+      });
     } catch { /* не JSON или ответ уже ушёл */ }
   });
 
@@ -264,13 +279,14 @@ async function inspect(target, i) {
     // кладущие данные прямо в HTML (Next.js, Nuxt), а перебирать оба источника
     // надо всегда: у сайта может быть и справочник в запросе, и вакансии в HTML.
     let best = null;
-    const consider = (found, endpoint, from) => {
-      const candidate = { ...found, endpoint, from };
+    const consider = (found, endpoint, from, transport = { ok: true, config: {} }) => {
+      const candidate = { ...found, endpoint, from, transport };
       if (!best || candidate.score > best.score
         || (candidate.score === best.score && candidate.count > best.count)) best = candidate;
     };
     for (const cap of captured) {
-      for (const found of findLists(cap.body)) consider(found, cap.url, 'запрос');
+      const transport = replayRequestConfig(cap.method, cap.postData);
+      for (const found of findLists(cap.body)) consider(found, cap.url, 'запрос', transport);
     }
     const embedded = await page.evaluate(() => {
       const out = [];
@@ -284,7 +300,11 @@ async function inspect(target, i) {
     });
     for (const raw of embedded) {
       let data; try { data = JSON.parse(raw); } catch { continue; }
-      for (const found of findLists(data)) consider(found, '(в HTML страницы)', 'HTML');
+      // Embedded-данные читаются повторной загрузкой самой карьерной страницы,
+      // а не по выдуманному URL «(в HTML страницы)». career.php уже умеет mode=embedded.
+      for (const found of findLists(data)) {
+        consider(found, target.url, 'HTML', { ok: true, config: { mode: 'embedded' } });
+      }
     }
     // Один признак вакансии или ноль — это справочник, а не вакансии. Прогон по
     // 111 компаниям дал четыре таких «находки» из семи: города, категории,
@@ -299,23 +319,38 @@ async function inspect(target, i) {
       const map = guessMap(best.sample);
       const probe = await probeUrlTemplate(context, origin, best.sample, map);
       if (probe.url_template) map.url_template = probe.url_template;
+
+      const transportOk = best.transport?.ok !== false;
+      const ready = probe.ok && transportOk;
+      const endpointConfig = {
+        url: best.endpoint,
+        ...(best.transport?.config || {}),
+        map: { list: best.path, ...map },
+      };
+      const status = ready
+        ? 'готов'
+        : (!transportOk ? 'нужен ручной адаптер' : 'нет адреса вакансии');
+
       // Догадка про ссылку не подтвердилась — честно говорим об этом: без
       // адреса вакансии источник включать нельзя, коннектор её отбросит.
+      // Если запрос нельзя безопасно повторить без сессии/секрета, тоже не
+      // превращаем его в сломанный GET — показываем отдельный статус.
       entry = {
         name: target.name, url: target.url,
-        status: probe.ok ? 'готов' : 'нет адреса вакансии',
+        status,
         source: best.from, endpoint: best.endpoint, count: best.count,
         evidence: best.score,
         list_path: best.path, fields: Object.keys(best.sample).slice(0, 20),
+        ...(best.from === 'запрос' ? { request_method: endpointConfig.method || 'GET' } : {}),
+        ...(!transportOk ? { transport_note: best.transport.reason } : {}),
         ...(probe.ok ? {} : { url_note: probe.reason || 'ни один типовой адрес не подошёл' }),
         ...(endpointWarning(best.endpoint) ? { filter_note: endpointWarning(best.endpoint) } : {}),
-        connector_config: probe.ok
-          ? { endpoints: [{ url: best.endpoint, map: { list: best.path, ...map } }] }
-          : null,
+        connector_config: ready ? { endpoints: [endpointConfig] } : null,
       };
-      console.log(`${label} ${probe.ok ? '✓' : '~'} ${best.count} вакансий, ${best.from}: ${String(best.endpoint).slice(0, 70)}`);
+      console.log(`${label} ${ready ? '✓' : '~'} ${best.count} вакансий, ${best.from}: ${String(best.endpoint).slice(0, 70)}`);
       const narrowed = endpointWarning(best.endpoint);
       if (narrowed) console.log(`${' '.repeat(28)}${narrowed}`);
+      if (!transportOk) console.log(`${' '.repeat(28)}запрос не повторить автоматически: ${best.transport.reason}`);
       if (!probe.ok) console.log(`${' '.repeat(28)}адрес не подтверждён: ${probe.reason || 'типовые пути не подошли'}`);
     } else {
       console.log(`${label} — вакансий не видно`);
@@ -349,8 +384,10 @@ fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8');
 
 const ready = results.filter(r => r.status === 'готов');
 const partial = results.filter(r => r.status === 'нет адреса вакансии');
+const manual = results.filter(r => r.status === 'нужен ручной адаптер');
 console.log(`\nГотовых источников: ${ready.length} из ${results.length}`);
 if (partial.length) console.log(`Нашлись, но без адреса вакансии: ${partial.length}`);
+if (manual.length) console.log(`Нашлись, но нужен ручной адаптер: ${manual.length}`);
 console.log(`Подробности: ${OUT}`);
 
 if (ready.length) {
