@@ -428,7 +428,13 @@ const CF_LINK_NOISE = [
     'назад', 'поиск', 'найти', 'кандидатам', 'наши вакансии', 'работа в',
     'как мы нанимаем', 'согласие', 'политика', 'linkedin', 'telegram',
     'подписаться', 'карьера', 'все предложения',
+    // Найдено сплошной проверкой на проде: «Рекомендовать друга» у Контура,
+    // «Разработчикам» у iSpring — ссылки на разделы, а не вакансии.
+    'рекомендовать', 'разработчикам', 'студентам', 'выпускникам', 'стажировк',
 ];
+
+/** Счётчик вместо должности: «2 вакансии», «17 вакансий» — так у IBS. */
+const CF_COUNT_LABEL = '~^\d+\s+ваканс~ui';
 
 /**
  * Вакансии, выложенные на странице обычными ссылками.
@@ -479,6 +485,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
 
         $title = cf_link_title($a);
         if (mb_strlen($title) < $minTitle) continue;
+        if (preg_match(CF_COUNT_LABEL, $title)) continue;
         $lower = mb_strtolower($title);
         foreach (CF_LINK_NOISE as $noise) {
             if (str_starts_with($lower, $noise)) { $title = ''; break; }
