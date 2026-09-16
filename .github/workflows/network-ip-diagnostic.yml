@@ -1,0 +1,38 @@
+name: Диагностика второго IP Timeweb
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/network-ip-diagnostic.sh'
+      - 'infra/bootstrap.sh'
+      - '.github/workflows/network-ip-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  collect:
+    name: Забрать сетевую конфигурацию VDS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the server pull timer
+        run: sleep 90
+
+      - name: Fetch diagnostics through the primary IP
+        run: |
+          curl -fsSk --retry 4 --retry-delay 15 --max-time 30 \
+            --resolve jobtoo.ru:443:147.45.184.99 \
+            https://jobtoo.ru/network-ip-diagnostic.txt \
+            -o network-ip-diagnostic.txt
+          sed -n '1,360p' network-ip-diagnostic.txt
+
+      - name: Confirm the secondary IP is still untouched
+        run: |
+          code=$(curl -kIsS --connect-timeout 8 --max-time 12 \
+            -o /dev/null -w '%{http_code}' https://195.58.34.214/ 2>/dev/null || true)
+          echo "195.58.34.214 before change: HTTP ${code:-unreachable}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: network-ip-diagnostic
+          path: network-ip-diagnostic.txt
+          retention-days: 7
