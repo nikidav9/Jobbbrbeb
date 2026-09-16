@@ -1,7 +1,10 @@
 #!/bin/bash
 # Синхронизирует scripts/career-sites.tsv с production-источником career_owner.
-# Файл — единый master-list: сейчас 163 компании / 169 карьерных разделов.
-# Повторный запуск безопасен; migrate.sh вызывает этот скрипт после миграций.
+# Файл — единый master-list целей для browser-discovery: сейчас 163 компании.
+# В runtime не скармливаем все страницы напрямую как основной источник: у
+# большинства нет JobPosting, поэтому «полный каталог» показывал одну вакансию.
+# Вместо этого берём проверенные endpoints из старого source=career, а весь
+# master-list сохраняем в catalog_pages для аудита/разведки.
 set -Eeuo pipefail
 
 REPO=${REPO:-/opt/jobtoo}
@@ -13,7 +16,7 @@ SECRETS=${SECRETS:-/opt/jobtoo-secrets/env}
 
 # Строим JSON только после полной проверки файла. Unicode-домены переводим в
 # IDNA/punycode: серверная SSRF-проверка принимает только обычный ASCII host.
-pages=$(python3 - "$LIST" <<'PY'
+catalog_pages=$(python3 - "$LIST" <<'PY'
 import json
 import sys
 from urllib.parse import urlsplit, urlunsplit
@@ -57,13 +60,56 @@ cd "$REPO/infra"
 q() { docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
         psql -v ON_ERROR_STOP=1 -U supabase_admin -d postgres "$@"; }
 
-# last_run_at сбрасываем только когда список реально поменялся: иначе минутный
-# migrate-loop заставлял бы карьерный источник бесконечно начинать заново.
-q -v pages="$pages" <<'SQL'
+# Проверенные JSON/HTML endpoint'ы уже живут в source=career. Это результат
+# ручной и browser-разведки: именно они дают сотни/тысячи реальных вакансий.
+# После объединения legacy-source остаётся в базе выключенным как резервная
+# копия конфигурации; если его когда-нибудь удалят, берём endpoints из
+# career_owner. Пустой набор считаем ошибкой выкладки — иначе незаметно вернёмся
+# к состоянию «полный каталог = 1 вакансия».
+q -v catalog_pages="$catalog_pages" <<'SQL'
+do $$
+declare
+  ep jsonb;
+begin
+  select coalesce(
+    (select connector_config->'endpoints'
+       from public.jm_ext_sources
+      where id = 'career' and jsonb_typeof(connector_config->'endpoints') = 'array'),
+    (select connector_config->'endpoints'
+       from public.jm_ext_sources
+      where id = 'career_owner' and jsonb_typeof(connector_config->'endpoints') = 'array'),
+    '[]'::jsonb
+  ) into ep;
+
+  if jsonb_array_length(ep) = 0 then
+    raise exception 'нет проверенных карьерных endpoints — полный каталог не обновлён';
+  end if;
+end
+$$;
+
+with verified as (
+  select coalesce(
+    (select connector_config->'endpoints'
+       from public.jm_ext_sources
+      where id = 'career' and jsonb_typeof(connector_config->'endpoints') = 'array'),
+    (select connector_config->'endpoints'
+       from public.jm_ext_sources
+      where id = 'career_owner' and jsonb_typeof(connector_config->'endpoints') = 'array'),
+    '[]'::jsonb
+  ) as endpoints
+), desired as (
+  select jsonb_build_object(
+    'endpoints', endpoints,
+    'catalog_pages', :'catalog_pages'::jsonb,
+    'catalog_file', 'scripts/career-sites.tsv'
+  ) as cfg
+  from verified
+)
 insert into public.jm_ext_sources (
   id, name, url, enabled, period_min, environment,
   connector_kind, integration_mode, connector_config
-) values (
+)
+select
   'career_owner',
   'Карьерные сайты — полный каталог',
   'https://jobtoo.ru/api/career.php?source=career_owner',
@@ -72,11 +118,8 @@ insert into public.jm_ext_sources (
   'production',
   'career',
   'redirect',
-  jsonb_build_object(
-    'pages', :'pages'::jsonb,
-    'catalog_file', 'scripts/career-sites.tsv'
-  )
-)
+  cfg
+from desired
 on conflict (id) do update
 set name = excluded.name,
     url = excluded.url,
