@@ -74,7 +74,7 @@ done
 # каждого pull синхронизируем его в connector_config. Так новые компании из
 # Cofinder/разведки не требуют вручную копировать сотни URL в SQL-миграцию.
 # Скрипт идемпотентен и сбрасывает last_run_at только если список изменился.
-if [ -x "$REPO/infra/sync-career-catalog.sh" ]; then
+if [ -f "$REPO/infra/sync-career-catalog.sh" ]; then
   if ! bash "$REPO/infra/sync-career-catalog.sh" >/tmp/jt-career-sync.log 2>&1; then
     say "миграции" "CAREER CATALOG: $(tail -8 /tmp/jt-career-sync.log | tr '\n' ' ' | cut -c1-500)"
     exit 1
