@@ -1,0 +1,43 @@
+name: Временная разведка Росатома
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rosatom-discover-tmp.yml'
+      - 'scripts/career-discover.mjs'
+      - 'scripts/career-discover-lib.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.51.1
+          npx playwright install --with-deps chromium
+      - name: Discover Rosatom endpoint
+        env:
+          DISCOVER_OUT: rosatom-discovery.json
+          DISCOVER_CONCURRENCY: '1'
+          DISCOVER_SETTLE_MS: '8000'
+          DISCOVER_TAIL_MS: '6000'
+        run: node scripts/career-discover.mjs https://rosatom-career.ru/vacancies
+      - name: Upload discovery
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rosatom-discovery-${{ github.run_id }}
+          path: rosatom-discovery.json
+          if-no-files-found: warn
+          retention-days: 2
