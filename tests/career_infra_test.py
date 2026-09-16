@@ -67,8 +67,15 @@ check("JSON-источник не заводит свой запрос",
 # вместе с адресом — но идти POST должен по тому же проверенному адресу и с
 # теми же сторожами, иначе это дыра в обход всего написанного выше.
 check("POST включается только настройкой источника",
-      'CURLOPT_POST => !empty($unit[\'post\'])' in career
+      "$curlOptions[CURLOPT_POST] = true;" in career
+      and "$curlOptions[CURLOPT_POSTFIELDS] = (string)$unit['body'];" in career
       and "strtoupper((string)($e['method'] ?? 'GET')) === 'POST'" in career)
+# Для GET нельзя даже ставить CURLOPT_POSTFIELDS=null: PHP/libcurl воспринимает
+# сам факт установки этой опции как переключение на POST. Именно так GET API
+# Сбера, Selectel и Lesta раньше фактически вызывались методом POST.
+check("GET задаётся явно и не получает POSTFIELDS",
+      "$curlOptions[CURLOPT_HTTPGET] = true;" in career
+      and "CURLOPT_POSTFIELDS => empty($unit['post']) ? null" not in career)
 check("тело POST берётся из настройки, а не из запроса",
       "$_GET['body']" not in career and "$_POST" not in career
       and "json_encode(is_array($e['body'] ?? null) ? $e['body'] : []" in career)
