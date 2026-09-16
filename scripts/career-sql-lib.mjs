@@ -24,3 +24,15 @@ export function jsonbLiteral(value) {
   if (value === null || value === undefined) return `'null'::jsonb`;
   return `to_jsonb(${sqlString(value)}::text)`;
 }
+
+/**
+ * Имя работодателя для карточки.
+ *
+ * В списке целей у шести компаний по два раздела, и различаются они хвостом
+ * после « · »: «Золотое Яблоко · /», «Яндекс · /jobs/vacancies». Хвост —
+ * пометка для нас, а не название компании. Без очистки он уехал бы прямо в
+ * карточку вакансии и в фильтр «Компания», где одна компания стала бы двумя.
+ */
+export function companyName(target) {
+  return String(target || '').split(' · ')[0].trim();
+}

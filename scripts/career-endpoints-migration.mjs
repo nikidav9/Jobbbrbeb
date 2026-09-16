@@ -15,7 +15,7 @@
  */
 import fs from 'node:fs';
 import process from 'node:process';
-import { jsonbLiteral, sqlString } from './career-sql-lib.mjs';
+import { companyName, jsonbLiteral, sqlString } from './career-sql-lib.mjs';
 
 const IN = process.argv[2] || 'career-verified.json';
 const SOURCE = process.env.MIGRATION_SOURCE || 'career';
@@ -31,7 +31,7 @@ if (!rows.length) {
 // а не из ответа сайта: в ответах оно бывает пустым или служебным.
 const endpoints = rows.map(r => {
   const e = { ...r.connector_config.endpoints[0] };
-  e.map = { ...e.map, company_const: e.map?.company_const || r.name };
+  e.map = { ...e.map, company_const: companyName(e.map?.company_const || r.name) };
   return e;
 });
 

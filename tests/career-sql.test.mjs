@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { jsonbLiteral, sqlString } from '../scripts/career-sql-lib.mjs';
+import { companyName, jsonbLiteral, sqlString } from '../scripts/career-sql-lib.mjs';
 
 test('одинарная кавычка в названии компании не рвёт SQL', () => {
   // «О'КЕЙ» есть в нашем списке компаний. Без удвоения кавычки миграция
@@ -41,4 +41,14 @@ test('массив печатается массивом', () => {
 test('пустой объект остаётся пустым объектом', () => {
   // jsonb_build_object() без аргументов — синтаксическая ошибка в Postgres.
   assert.equal(jsonbLiteral({}), "'{}'::jsonb");
+});
+
+test('пометка раздела не уезжает в название компании', () => {
+  // В списке целей у шести компаний по два раздела: «Золотое Яблоко · /» и
+  // «Золотое Яблоко · /search/all». Хвост — наша пометка, а не имя. Без
+  // очистки в фильтре «Компания» одна компания стала бы двумя.
+  assert.equal(companyName('Золотое Яблоко · /search/all'), 'Золотое Яблоко');
+  assert.equal(companyName('Яндекс · /jobs'), 'Яндекс');
+  assert.equal(companyName('Wildberries / РВБ'), 'Wildberries / РВБ');
+  assert.equal(companyName(''), '');
 });
