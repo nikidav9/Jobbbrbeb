@@ -11,7 +11,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { endpointWarning, findLists, guessMap, looksClickable, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
+import {
+  endpointWarning,
+  findLists,
+  guessMap,
+  looksClickable,
+  looksLikeVacancies,
+  parseSiteList,
+  replayRequestConfig,
+  scoreList,
+} from '../scripts/career-discover-lib.mjs';
 
 test('находит список вакансий в ответе Yadro', () => {
   const body = { vacancies: [
@@ -53,8 +62,6 @@ test('угадывает поля формата 2ГИС', () => {
 });
 
 test('одиночный объект с полем name — не список вакансий', () => {
-  // Хлебные крошки, карточка компании и меню выглядят так же. Требование
-  // «минимум два элемента» отсекает эти ложные находки.
   assert.equal(looksLikeVacancies([{ name: 'О компании' }]), false);
   assert.equal(looksLikeVacancies([{ name: 'Раздел' }, { name: 'Другой' }]), true);
 });
@@ -66,8 +73,6 @@ test('список строк и список чисел не принимают
 });
 
 test('берёт самый длинный список, а не первый попавшийся', () => {
-  // Фильтры и справочники в ответе идут раньше самих вакансий и тоже выглядят
-  // как [{id, name}]. Выбор по длине защищает от подмены.
   const body = {
     filters: { towns: [{ id: 1, name: 'Москва' }, { id: 2, name: 'СПб' }] },
     items: Array.from({ length: 25 }, (_, i) => ({ id: i, title: `Вакансия ${i}` })),
@@ -116,11 +121,6 @@ test('список сайтов: кириллический домен не ро
   assert.equal(rows[0].name, 'Ярче!');
 });
 
-// Сам файл — тоже вход, и опечатка в нём тихо выкидывает компанию: строка на
-// месте, а в отчёте её нет. Ловится именно это — пробел вместо табуляции,
-// «htps://» вместо «https://» (обе мутации проверены, обе валят тест).
-// Удаление целой строки тест НЕ ловит и ловить не должен: это правка списка
-// владельцем, а не поломка разбора.
 test('свой список компаний разбирается целиком', () => {
   const text = fs.readFileSync(new URL('../scripts/career-sites.tsv', import.meta.url), 'utf8');
   const rows = parseSiteList(text);
@@ -128,23 +128,13 @@ test('свой список компаний разбирается целико
   assert.equal(rows.length, meaningful.length, 'какая-то строка списка не разобралась');
   assert.ok(rows.length >= 150, `компаний слишком мало: ${rows.length}`);
   assert.ok(rows.every(r => r.name && !r.name.includes('http')), 'имя компании потерялось');
-  // Повтор — это ОДИН И ТОТ ЖЕ адрес. Разные разделы одного сайта повтором не
-  // считаются: у Самоката корень и /vacancies-business — разные наборы
-  // вакансий, и нужны оба. Поэтому хост проверять нельзя, а адрес — нужно.
   const urls = rows.map(r => r.url);
   assert.equal(new Set(urls).size, urls.length,
     `адрес повторяется: ${urls.filter((u, i) => urls.indexOf(u) !== i).join(', ')}`);
-  // Название при этом должно оставаться различимым, иначе в отчёте две строки
-  // «Самокат» и не понять, какая из какого раздела.
   const names = rows.map(r => r.name);
   assert.equal(new Set(names).size, names.length,
     `название повторяется: ${names.filter((n, i) => names.indexOf(n) !== i).join(', ')}`);
 });
-
-// Ниже — разбор провала: прогон по 111 компаниям дал семь «готовых» источников,
-// и четыре из них оказались справочниками. Выбор шёл по ДЛИНЕ списка, а
-// справочник всегда длиннее: у Ростелекома 655 городов против 382 вакансий.
-// Образцы настоящие, снятые с тех самых ответов.
 
 test('справочник городов Ростелекома не набирает признаков вакансии', () => {
   assert.equal(scoreList({ id: 2, name: 'г. Самара' }), 0);
@@ -210,8 +200,6 @@ test('адрес без параметров и мусор не роняют п�
   assert.equal(endpointWarning('(в HTML страницы)'), null);
 });
 
-// У шести компаний в списке по два раздела. Проверяем, что это именно так
-// задумано, а не расползлось само: раздел должен быть виден в названии.
 test('у компании с несколькими разделами раздел виден в названии', () => {
   const rows = parseSiteList(fs.readFileSync(new URL('../scripts/career-sites.tsv', import.meta.url), 'utf8'));
   const byHost = new Map();
@@ -228,8 +216,6 @@ test('у компании с несколькими разделами разд�
   }
 });
 
-// Тридцать сайтов из шестидесяти двух отдают вакансии только после нажатия
-// кнопки. Слова на ней решают, куда разведка ткнёт, — проверяем их отдельно.
 test('надписи, обещающие список вакансий, узнаются', () => {
   for (const t of ['Показать вакансии', 'Все вакансии', 'Смотреть вакансии',
                    'Подобрать вакансию', 'Найти работу', 'ВАКАНСИИ']) {
@@ -245,4 +231,37 @@ test('обычные кнопки не трогаем', () => {
 
 test('длинный текст — это абзац, а не кнопка', () => {
   assert.equal(looksClickable('Здесь вы найдёте вакансии нашей компании по всей стране и сможете откликнуться'), false);
+});
+
+// Cofinder держит отдельные парсеры, и часть карьерных сайтов грузит вакансии
+// POST/GraphQL. Разведка должна сохранить способ запроса, а не превратить его в GET.
+test('GET можно повторить без дополнительных настроек', () => {
+  assert.deepEqual(replayRequestConfig('GET', null), { ok: true, config: {} });
+});
+
+test('POST JSON сохраняет метод и тело', () => {
+  assert.deepEqual(
+    replayRequestConfig('POST', '{"page":1,"filters":{"city":[]}}'),
+    { ok: true, config: { method: 'POST', body: { page: 1, filters: { city: [] } } } },
+  );
+});
+
+test('секреты из браузерной сессии в connector_config не попадают', () => {
+  const result = replayRequestConfig('POST', '{"variables":{"access_token":"secret"}}');
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /секрет|сесси/i);
+});
+
+test('форму и неподдерживаемый метод не выдаём за готовый источник', () => {
+  assert.equal(replayRequestConfig('POST', 'city=Moscow&page=1').ok, false);
+  assert.equal(replayRequestConfig('PUT', '{"page":1}').ok, false);
+});
+
+test('разведчик сохраняет request metadata и настоящий embedded endpoint', () => {
+  const discover = fs.readFileSync(new URL('../scripts/career-discover.mjs', import.meta.url), 'utf8');
+  assert.match(discover, /method:\s*request\.method\(\)/);
+  assert.match(discover, /postData:\s*request\.postData\(\)/);
+  assert.match(discover, /replayRequestConfig\(cap\.method, cap\.postData\)/);
+  assert.match(discover, /config:\s*\{\s*mode:\s*'embedded'\s*\}/);
+  assert.doesNotMatch(discover, /consider\(found, '\(в HTML страницы\)'/);
 });
