@@ -63,5 +63,9 @@ test('production smoke проходит всю next_url цепочку и пад
   assert.match(smoke, /totalItems < MIN_ITEMS/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /Сборка сайта и доставка на московский сервер/);
+  assert.match(workflow, /workflow_run\.conclusion == 'success'/);
+  assert.match(workflow, /sleep 75/);
   assert.match(workflow, /node scripts\/career-runtime-smoke\.mjs/);
 });
