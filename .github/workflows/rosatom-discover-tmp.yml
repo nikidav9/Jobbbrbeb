@@ -5,8 +5,6 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/rosatom-discover-tmp.yml'
-      - 'scripts/career-discover.mjs'
-      - 'scripts/career-discover-lib.mjs'
 
 permissions:
   contents: read
@@ -14,30 +12,49 @@ permissions:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22.13.0
-          cache: npm
-      - run: npm ci
-      - name: Install Chromium
+      - name: Inspect current Next.js bundles
+        shell: bash
         run: |
-          npm install --no-save --package-lock=false playwright@1.51.1
-          npx playwright install --with-deps chromium
-      - name: Discover Rosatom endpoint
-        env:
-          DISCOVER_OUT: rosatom-discovery.json
-          DISCOVER_CONCURRENCY: '1'
-          DISCOVER_SETTLE_MS: '8000'
-          DISCOVER_TAIL_MS: '6000'
-        run: node scripts/career-discover.mjs https://rosatom-career.ru/vacancies
-      - name: Upload discovery
+          node <<'NODE' | tee rosatom-bundle-hints.txt
+          const origin = 'https://rosatom-career.ru';
+          const ua = 'Mozilla/5.0 (compatible; JobToo/1.0; +https://jobtoo.ru; support@jobtoo.ru)';
+          const get = async url => {
+            const r = await fetch(url, { headers: { 'user-agent': ua, accept: '*/*' }, signal: AbortSignal.timeout(20000) });
+            console.log(`FETCH ${r.status} ${url}`);
+            return { status: r.status, text: await r.text() };
+          };
+          const page = await get(origin + '/vacancies');
+          const srcs = [...page.text.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)]
+            .map(m => new URL(m[1], origin).href);
+          console.log(`SCRIPTS ${srcs.length}`);
+          for (const src of srcs) console.log(`SCRIPT ${src}`);
+          const needles = ['65812:', 'vacanciesSearchEndpoint', 'vacanciesAutocompleteEndpoint', 'vacanciesFilterFormEndpoint', 'dictOrganizationsRecordsEndpoint', 'recommendationSearchEndpoint'];
+          for (const src of srcs) {
+            if (!src.includes('/_next/static/')) continue;
+            let body = '';
+            try { body = (await get(src)).text; } catch (e) { console.log(`ERR ${src} ${e.message}`); continue; }
+            for (const needle of needles) {
+              let at = body.indexOf(needle);
+              while (at >= 0) {
+                const a = Math.max(0, at - 1200), b = Math.min(body.length, at + 3500);
+                console.log(`\n=== HIT ${needle} @ ${src} ===\n${body.slice(a,b)}\n=== END HIT ===\n`);
+                at = body.indexOf(needle, at + needle.length);
+                if (needle !== '65812:') break;
+              }
+            }
+          }
+          NODE
+      - name: Upload hints
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rosatom-discovery-${{ github.run_id }}
-          path: rosatom-discovery.json
-          if-no-files-found: warn
+          name: rosatom-bundle-hints-${{ github.run_id }}
+          path: rosatom-bundle-hints.txt
+          if-no-files-found: error
           retention-days: 2
