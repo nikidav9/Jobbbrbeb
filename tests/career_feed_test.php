@@ -208,6 +208,31 @@ $evil = cf_json_url(['slug' => 'x?next=https://evil.ru'],
 check('чужой адрес через slug не подставить',
     str_starts_with($evil, 'https://job.lamoda.ru/vacancy/') && !str_contains($evil, '?next='));
 
+
+// ─── Поля, на которых погорели на живых источниках ──────────────────────────
+
+// У МТС город лежит как {id, documentId, title}: разбор искал только `name` и
+// `@value`, и город терялся молча — карточка была без места работы.
+check('имя берётся и из поля title', cf_name(['id' => 1, 'title' => 'Уфа']) === 'Уфа');
+check('name важнее title', cf_name(['name' => 'Москва', 'title' => 'Уфа']) === 'Москва');
+check('title работает и в списке объектов',
+    cf_name([['id' => 1, 'title' => 'Бутово']]) === 'Бутово');
+
+// Названия компании в ответе чаще всего нет вовсе, а в карточке «Wildberries»
+// читается, «Карьерные страницы» — нет.
+$wb = cf_json_items(
+    ['items' => [['id' => 7, 'name' => 'пекарь-тандырщик'], ['id' => 8, 'name' => 'Буфетчик']]],
+    ['list' => 'items', 'title' => 'name', 'id' => 'id',
+     'company_const' => 'Wildberries',
+     'url_template' => 'https://career.rwb.ru/vacancy/{id}'],
+    'https://career.rwb.ru/', $now);
+check('постоянное название компании проставилось',
+    count($wb) === 2 && $wb[0]['company'] === 'Wildberries' && $wb[1]['company'] === 'Wildberries');
+check('заголовок берётся из name, а не из категории',
+    $wb[0]['title'] === 'пекарь-тандырщик');
+check('ссылка собрана по шаблону',
+    $wb[0]['url'] === 'https://career.rwb.ru/vacancy/7');
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

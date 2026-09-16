@@ -66,6 +66,9 @@ const OWN_LIST = new URL('./career-sites.tsv', import.meta.url).pathname;
 const MIN_EVIDENCE = Number(process.env.DISCOVER_MIN_EVIDENCE || 2);
 // Сколько адресов вакансии пробовать браузером, прежде чем сдаться.
 const PROBE_TRIES = Number(process.env.DISCOVER_PROBE_TRIES || 8);
+// Сколько ждать после прокрутки до самого низа. Отдельно от SETTLE_MS: эти
+// секунды тратятся только там, где иначе ушли бы с пустыми руками.
+const TAIL_MS = Number(process.env.DISCOVER_TAIL_MS || 4000);
 
 /** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -196,12 +199,32 @@ async function inspect(target, i) {
   let entry = { name: target.name, url: target.url, status: 'нет данных' };
   try {
     await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-    // Ждём догрузку, но не вслепую: как только в перехваченных ответах появился
-    // список вакансий, ждать оставшееся время незачем. На быстрых сайтах это
-    // экономит по три-четыре секунды на каждом.
+    // Ждём догрузку, но не вслепую: как только в ответах появился список,
+    // похожий именно на ВАКАНСИИ, ждать оставшееся время незачем.
+    //
+    // Здесь была моя ошибка. Раньше выход срабатывал на любом найденном
+    // списке, а справочники приходят раньше вакансий и выглядят так же. То
+    // есть ожидание обрывалось ровно перед тем, ради чего оно и было, — и это
+    // одна из причин, по которым 82 сайта из 111 дали «нет данных».
+    const found = () => captured.some(c => findLists(c.body).some(l => l.score >= MIN_EVIDENCE));
+    // Крутим страницу: на карьерных сайтах список вакансий сплошь и рядом
+    // подгружается при прокрутке, и стоящая на месте страница его не запросит
+    // никогда — сколько ни жди.
     for (let waited = 0; waited < SETTLE_MS; waited += 250) {
-      if (captured.some(c => findLists(c.body).length)) break;
+      if (found()) break;
+      if (waited % 1000 === 0) {
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2)).catch(() => {});
+      }
       await page.waitForTimeout(250);
+    }
+    // Если после прокрутки список так и не появился, даём последний заход до
+    // самого низа: часть сайтов подгружает вакансии только у подвала.
+    if (!found()) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+      for (let waited = 0; waited < TAIL_MS; waited += 250) {
+        if (found()) break;
+        await page.waitForTimeout(250);
+      }
     }
 
     // Смотрим И сетевые ответы, И состояние страницы. Второе спасает сайты,
