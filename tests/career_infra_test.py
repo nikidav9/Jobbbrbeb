@@ -56,6 +56,15 @@ check("адрес порции проверяется заново",
 # мимо них был бы дырой ровно там, где мы её только что закрыли.
 check("JSON-источник не заводит свой запрос",
       career.count("curl_init(") == 1)
+# POST нужен METRO: на GET их API отвечает 405. Тело задаёт администратор
+# вместе с адресом — но идти POST должен по тому же проверенному адресу и с
+# теми же сторожами, иначе это дыра в обход всего написанного выше.
+check("POST включается только настройкой источника",
+      'CURLOPT_POST => !empty($unit[\'post\'])' in career
+      and "strtoupper((string)($e['method'] ?? 'GET')) === 'POST'" in career)
+check("тело POST берётся из настройки, а не из запроса",
+      "$_GET['body']" not in career and "$_POST" not in career
+      and "json_encode(is_array($e['body'] ?? null) ? $e['body'] : []" in career)
 # Редирект увёл бы нас на адрес, который проверку не проходил: так её и обходят.
 check("переходы по редиректу выключены", "CURLOPT_FOLLOWLOCATION => false" in career)
 check("только https на уровне curl", "CURLOPT_PROTOCOLS => CURLPROTO_HTTPS" in career)

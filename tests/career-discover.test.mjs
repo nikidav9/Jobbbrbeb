@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { endpointWarning, findLists, guessMap, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
+import { endpointWarning, findLists, guessMap, looksClickable, looksLikeVacancies, parseSiteList, scoreList } from '../scripts/career-discover-lib.mjs';
 
 test('находит список вакансий в ответе Yadro', () => {
   const body = { vacancies: [
@@ -226,4 +226,23 @@ test('у компании с несколькими разделами разд�
       assert.ok(r.name.includes(' · '), `раздел не помечен в названии: ${r.name}`);
     }
   }
+});
+
+// Тридцать сайтов из шестидесяти двух отдают вакансии только после нажатия
+// кнопки. Слова на ней решают, куда разведка ткнёт, — проверяем их отдельно.
+test('надписи, обещающие список вакансий, узнаются', () => {
+  for (const t of ['Показать вакансии', 'Все вакансии', 'Смотреть вакансии',
+                   'Подобрать вакансию', 'Найти работу', 'ВАКАНСИИ']) {
+    assert.ok(looksClickable(t), `не узнали: ${t}`);
+  }
+});
+
+test('обычные кнопки не трогаем', () => {
+  for (const t of ['Отправить резюме', 'Войти', 'Принять cookies', 'Наверх', '']) {
+    assert.equal(looksClickable(t), false, `зря нажали бы: ${t}`);
+  }
+});
+
+test('длинный текст — это абзац, а не кнопка', () => {
+  assert.equal(looksClickable('Здесь вы найдёте вакансии нашей компании по всей стране и сможете откликнуться'), false);
 });
