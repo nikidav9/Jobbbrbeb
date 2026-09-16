@@ -96,11 +96,12 @@
 - `php-proxy/career.php` + `career_feed.php` — карьерные страницы работодателей,
   два вида источника в одном обходе:
   `connector_config.pages` — разбор разметки `JobPosting` со страницы;
-  `connector_config.endpoints` — адрес JSON API вместе с картой полей и
-  настройкой листания (`cf_page_url`, `cf_has_next_sub`). Второй вид включён
-  миграцией `074`: девять проверенных источников (Сбер, МТС, МегаФон, Yadro,
-  Ростелеком, Lamoda, Wildberries, Авиасейлс, 2ГИС). Проверки —
-  `tests/career_feed_test.php` и `tests/career_infra_test.py`.
+  `connector_config.endpoints` — адрес JSON API с картой полей и настройкой
+  листания (`cf_page_url`, `cf_has_next_sub`), либо `mode: html_links` —
+  вакансии обычными ссылками со страницы (`cf_html_links`). Сейчас 25
+  источников: 7 JSON (миграции `074`, `075`) и 18 по ссылкам (`076`). Каждый
+  адрес вакансии проверен открытием — после случая, когда Сбер вёл на 404.
+  Проверки — `tests/career_feed_test.php` и `tests/career_infra_test.py`.
 - `php-proxy/safe_url.php` — одно правило на всех, куда сборщику можно ходить.
   Своей копии не заводить: см. заголовок файла. Проверенный публичный IP
   закрепляется через `CURLOPT_RESOLVE`, чтобы закрыть DNS rebinding.
