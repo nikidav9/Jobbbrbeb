@@ -95,46 +95,54 @@ source_check('Koronatech: URL построен из id', ($items[0]['url'] ?? ''
 source_check('Koronatech: город сохранён', ($items[0]['address'] ?? '') === 'Удаленно');
 source_check('Koronatech: компания нормализована', ($items[0]['company'] ?? '') === 'Koronatech');
 
-// У Сбера publicationId — UUID, но живой URL карточки строится из internalId.
-// /search/vacancy-4570914/ проверен браузером: 200 и redirect на slug той же
-// вакансии «SQL разработчик», поэтому старый /vacancy/{publicationId} не нужен.
-$sberData = [
-    'data' => [
-        'vacancies' => [[
-            'internalId' => 4570914,
-            'publicationId' => '4b402da8-9ccf-4a36-a6a2-9ea970db5cda',
-            'title' => 'SQL разработчик',
-            'city' => 'г Екатеринбург',
-            'company' => 'ПАО Сбербанк',
-            'introduction' => 'Ищем опытного специалиста баз данных',
-            'salary_min' => 180000,
-        ]],
-    ],
+// Production backend JobToo получает 404 от общего API rabota.sber.ru, поэтому
+// не обходим edge-защиту и используем другой официальный раздел самого Сбера.
+// developers.sber.ru хранит весь текущий IT/AI/R&D каталог в __NEXT_DATA__.
+$sberState = [
+    'props' => ['pageProps' => ['page' => ['MainContent' => [[
+        'vacancies' => [
+            [
+                'slug' => 'vision-services',
+                'Title' => 'Computer Vision Engineer',
+                'City' => 'Москва',
+                'Graphic' => 'Hybrid',
+                'Salary' => '200 000',
+                'ShowSalary' => false,
+            ],
+            [
+                'slug' => 'nlp-engineer',
+                'Title' => 'NLP Engineer в центр робототехники',
+                'City' => 'Москва',
+                'Graphic' => 'Office',
+                'Salary' => '380 000',
+                'ShowSalary' => false,
+            ],
+        ],
+    ]]]]],
 ];
+$sberHtml = '<html><body><script id="__NEXT_DATA__" type="application/json">'
+    . json_encode($sberState, JSON_UNESCAPED_UNICODE)
+    . '</script></body></html>';
+$state = cf_embedded_state($sberHtml);
+source_check('Сбер Developers: Next.js state прочитан', is_array($state));
 $sberMap = [
-    'list' => 'data.vacancies',
-    'title' => 'title',
-    'id' => 'internalId',
-    'address' => 'city',
-    'description' => 'introduction',
-    'pay' => 'salary_min',
+    'list' => 'props.pageProps.page.MainContent.0.vacancies',
+    'title' => 'Title',
+    'id' => 'slug',
+    'address' => 'City',
+    'schedule' => 'Graphic',
     'company_const' => 'Сбер',
-    'url_template' => 'https://rabota.sber.ru/search/vacancy-{internalId}/',
+    'url_template' => 'https://developers.sber.ru/kak-v-sbere/vacancies/{slug}',
 ];
-$items = cf_json_items($sberData, $sberMap, 'https://rabota.sber.ru/search', $now);
-source_check('Сбер: JSON-вакансия разобрана', count($items) === 1);
-source_check('Сбер: internalId используется как внешний id', ($items[0]['id'] ?? '') === '4570914');
-source_check('Сбер: прямой employer URL построен из internalId',
-    ($items[0]['url'] ?? '') === 'https://rabota.sber.ru/search/vacancy-4570914/');
-source_check('Сбер: компания канонична', ($items[0]['company'] ?? '') === 'Сбер');
-source_check('Сбер: город сохранён', ($items[0]['address'] ?? '') === 'г Екатеринбург');
-source_check('Сбер: зарплата сохранена', ($items[0]['pay'] ?? 0) === 180000.0);
-source_check('Сбер: offset-пагинация до 3500+',
-    cf_page_url(
-        'https://rabota.sber.ru/public/app-candidate-public-api-gateway/api/v1/publications',
-        ['type' => 'offset', 'param' => 'skip', 'limit_param' => 'take', 'limit' => 100, 'max_pages' => 50],
-        34
-    ) === 'https://rabota.sber.ru/public/app-candidate-public-api-gateway/api/v1/publications?take=100&skip=3400');
+$items = cf_json_items($state, $sberMap, 'https://developers.sber.ru/kak-v-sbere/vacancies', $now);
+source_check('Сбер Developers: список разобран полностью', count($items) === 2);
+source_check('Сбер Developers: slug используется как id', ($items[0]['id'] ?? '') === 'vision-services');
+source_check('Сбер Developers: прямой employer URL',
+    ($items[0]['url'] ?? '') === 'https://developers.sber.ru/kak-v-sbere/vacancies/vision-services');
+source_check('Сбер Developers: компания канонична', ($items[0]['company'] ?? '') === 'Сбер');
+source_check('Сбер Developers: город сохранён', ($items[0]['address'] ?? '') === 'Москва');
+source_check('Сбер Developers: формат работы сохранён', ($items[0]['schedule'] ?? '') === 'Hybrid');
+source_check('Сбер Developers: скрытая зарплата не утекла', !array_key_exists('pay', $items[0]));
 
 if ($failures) {
     fwrite(STDERR, "FAIL:\n - " . implode("\n - ", $failures) . "\n");
