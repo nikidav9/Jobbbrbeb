@@ -227,6 +227,11 @@ $skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $to
 // числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
 $pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub);
 if (!ing_safe_https_url($pageUrl)) $skipUnit('адрес порции не проходит проверку');
+// Сохраняем общий предварительный guard: он является контрактом с ingest и
+// старым security regression. Ниже для фактического похода адреса разделяются
+// по одному, но исходный URL обязан пройти то же правило целиком.
+$resolveEntries = ing_safe_https_resolve($pageUrl);
+if ($resolveEntries === null) $skipUnit('адрес страницы больше не разрешается безопасно');
 $resolveCandidates = ing_safe_https_resolve_candidates($pageUrl);
 if ($resolveCandidates === null) $skipUnit('адрес страницы больше не разрешается безопасно');
 
