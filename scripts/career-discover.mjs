@@ -169,7 +169,9 @@ async function readyHtmlLinks(page, target) {
       .slice(0, 2000)
       .map(a => ({ href: a.href, text: (a.innerText || '').trim().slice(0, 120) })),
   ).catch(() => []);
-  const pattern = pickLinkPattern(anchors, target.url);
+  // Строгий режим: находка уходит прямо в production-источник, и путь без
+  // слова о вакансиях принимать нельзя — см. pickLinkPattern.
+  const pattern = pickLinkPattern(anchors, target.url, 3, true);
   if (!pattern) return null;
 
   let html = '';

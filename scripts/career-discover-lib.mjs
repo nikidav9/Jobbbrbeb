@@ -277,7 +277,7 @@ const LINK_SECTION_TEXT = /^(все|всего|показать|смотреть
  * @param {Array<{href: string, text: string}>} anchors якоря отрендеренной страницы
  * @param {string} pageUrl адрес самой карьерной страницы
  */
-export function pickLinkPattern(anchors, pageUrl, minTails = 3) {
+export function pickLinkPattern(anchors, pageUrl, minTails = 3, requireVacancyWord = false) {
   let host;
   try { host = new URL(pageUrl).hostname; } catch { return null; }
   const groups = new Map();
@@ -331,5 +331,46 @@ export function pickLinkPattern(anchors, pageUrl, minTails = 3) {
   // Без единой ссылки с человеческим заголовком это не список вакансий:
   // cf_html_links на проде отбросит такие ссылки по min_title и вернёт пусто.
   if (best.titled === 0) return null;
+  // Когда находка пойдёт в production-источник, «лучший из имеющихся» путь не
+  // годится: на сайте без вакансий побеждает что угодно с тремя разными
+  // хвостами. Замерено на живом прогоне — Koronatech предложил `/about/`.
+  // В ленту это принесло бы разделы сайта вместо должностей.
+  if (requireVacancyWord && !VACANCY_PATH_WORD.test(best.link_path)) return null;
   return { link_path: best.link_path, tails: best.tails, titled: best.titled };
+}
+
+/** Значение по пути вида `data.items` или `items[].vacancies`. */
+export function dig(node, path) {
+  if (!path) return node;
+  let cur = node;
+  for (const step of path.split('.')) {
+    if (cur == null) return null;
+    if (step.endsWith('[]')) {
+      const key = step.slice(0, -2);
+      cur = key ? cur[key] : cur;
+      if (!Array.isArray(cur)) return null;
+      cur = cur[0];
+    } else {
+      cur = cur[step];
+    }
+  }
+  return cur;
+}
+
+/** Ссылка на вакансию из записи: прямая, относительная или по шаблону. */
+export function itemUrl(item, map, origin) {
+  const direct = map.url ? item[map.url] : '';
+  if (typeof direct === 'string' && direct) {
+    try { return new URL(direct, origin).href; } catch { /* не адрес */ }
+  }
+  const template = map.url_template || '';
+  if (!template) return '';
+  // Каждый сегмент пути кодируется отдельно — ровно как cf_json_url на проде.
+  // Сплошной encodeURIComponent превращает «/» в «%2F», и слаг Lamoda
+  // `moskva/analitik--3020` ломается: он состоит из двух сегментов. «?», «#»
+  // и «:» при этом всё равно экранируются, чужой адрес не подставить.
+  return template.replace(/\{(\w+)\}/g, (_, field) => String(item[field] ?? '')
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/'));
 }

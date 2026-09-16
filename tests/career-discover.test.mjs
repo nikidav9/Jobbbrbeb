@@ -18,6 +18,8 @@ import {
   looksClickable,
   looksLikeVacancies,
   parseSiteList,
+  dig,
+  itemUrl,
   pickLinkPattern,
   replayRequestConfig,
   scoreList,
@@ -379,4 +381,62 @@ test('относительные ссылки разбираются от адр
     { href: '/vacancy/103', text: 'Оператор call-центра' },
   ];
   assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/vacancy/');
+});
+
+test('строгий режим не принимает путь без слова о вакансиях', () => {
+  // На живом прогоне Koronatech предложил `/about/`: вакансий на странице нет,
+  // и победило единственное, у чего набралось три разных хвоста. Такой путь
+  // уходит прямо в production-источник, поэтому «лучший из имеющихся» здесь
+  // не годится.
+  const anchors = [
+    { href: 'https://x.ru/about/history', text: 'История компании с 1998 года' },
+    { href: 'https://x.ru/about/team', text: 'Наша команда и ценности' },
+    { href: 'https://x.ru/about/offices', text: 'Офисы и представительства' },
+  ];
+  assert.ok(pickLinkPattern(anchors, 'https://x.ru/career'), 'в обычном режиме находка есть');
+  assert.equal(pickLinkPattern(anchors, 'https://x.ru/career', 3, true), null);
+});
+
+test('строгий режим пропускает настоящий путь вакансий', () => {
+  assert.equal(
+    pickLinkPattern(ANCHORS_TYPICAL, 'https://job.x.ru/vacancies', 3, true).link_path,
+    '/vacancy/',
+  );
+});
+
+/**
+ * Сборка ссылки на вакансию — то же правило, что у cf_json_url на проде.
+ * Здесь проверка, что проверялка не соврёт: она решает, включать источник или
+ * нет, и ошибка в ней пропустит в ленту вакансию с битой ссылкой.
+ */
+test('слаг из двух сегментов не превращается в %2F', () => {
+  // Слаг Lamoda — `moskva/analitik--3020`. Сплошное кодирование ломает адрес,
+  // и вакансия открывается в никуда. На проде это уже ловили.
+  assert.equal(
+    itemUrl({ slug: 'moskva/analitik--3020' },
+      { url_template: 'https://job.lamoda.ru/vacancies/{slug}' }, 'https://job.lamoda.ru'),
+    'https://job.lamoda.ru/vacancies/moskva/analitik--3020',
+  );
+});
+
+test('опасные знаки в значении всё-таки экранируются', () => {
+  // Кодирование посегментно не должно открывать подстановку чужого адреса.
+  const got = itemUrl({ id: 'x?a=1#b' }, { url_template: 'https://x.ru/v/{id}' }, 'https://x.ru');
+  assert.equal(got, 'https://x.ru/v/x%3Fa%3D1%23b');
+});
+
+test('готовая ссылка из ответа важнее шаблона', () => {
+  assert.equal(
+    itemUrl({ link: '/vacancy/7', id: 99 },
+      { url: 'link', url_template: 'https://x.ru/job/{id}' }, 'https://x.ru'),
+    'https://x.ru/vacancy/7',
+  );
+});
+
+test('путь до списка разбирается и через массив', () => {
+  assert.deepEqual(dig({ data: { items: [1, 2] } }, 'data.items'), [1, 2]);
+  assert.equal(dig({ a: [{ b: 5 }] }, 'a[].b'), 5);
+  // Нет такого пути — null, а не исключение: коннектор дальше просто не
+  // возьмёт этот источник, а падение уронило бы весь обход.
+  assert.equal(dig({ a: 1 }, 'нет.такого'), null);
 });
