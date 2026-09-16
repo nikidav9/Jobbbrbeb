@@ -41,7 +41,7 @@ function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): a
     $body = '';
     $tooLarge = false;
     $ch = curl_init($pageUrl);
-    curl_setopt_array($ch, [
+    $curlOptions = [
         CURLOPT_RETURNTRANSFER => false,
         CURLOPT_HTTPHEADER => array_merge(
             [$unit['kind'] === 'json'
@@ -59,9 +59,6 @@ function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): a
         // так обходят запрет на служебные сети.
         CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-        // POST только если он прямо задан в настройке источника.
-        CURLOPT_POST => !empty($unit['post']),
-        CURLOPT_POSTFIELDS => empty($unit['post']) ? null : (string)$unit['body'],
         CURLOPT_RESOLVE => $resolveEntries,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
@@ -76,7 +73,16 @@ function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): a
             $body .= $chunk;
             return strlen($chunk);
         },
-    ]);
+    ];
+    // CURLOPT_POSTFIELDS сам переключает libcurl на POST даже после
+    // CURLOPT_POST=false. Поэтому для GET его нельзя задавать вообще — даже null.
+    if (!empty($unit['post'])) {
+        $curlOptions[CURLOPT_POST] = true;
+        $curlOptions[CURLOPT_POSTFIELDS] = (string)$unit['body'];
+    } else {
+        $curlOptions[CURLOPT_HTTPGET] = true;
+    }
+    curl_setopt_array($ch, $curlOptions);
     $ok = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
