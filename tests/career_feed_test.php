@@ -549,3 +549,18 @@ if ($failures) {
     exit(1);
 }
 echo "career feed: OK\n";
+
+// ─── Постраничная выдача Strapi ─────────────────────────────────────────────
+// У МТС обычные `page` и `limit` не работают вовсе: он всегда отдаёт 25 из
+// 2554. Листается только через `pagination[page]`, и имя параметра со скобками
+// должно доехать до адреса в закодированном виде, а `pageSize` из самого
+// адреса — уцелеть.
+$mtsPage = cf_page_url(
+    'https://job.mts.ru/api/v2/vacancies?pagination%5BpageSize%5D=100',
+    ['type' => 'page', 'param' => 'pagination[page]', 'start' => 1, 'limit' => 100],
+    2
+);
+check('скобки в имени параметра листалки кодируются',
+    str_contains($mtsPage, 'pagination%5Bpage%5D=3'));
+check('pageSize из адреса не теряется при листании',
+    str_contains($mtsPage, 'pagination%5BpageSize%5D=100'));
