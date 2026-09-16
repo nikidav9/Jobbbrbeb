@@ -159,91 +159,12 @@ if ($path === 'openapi.json') {
     exit;
 }
 
-// Образец фида — того вида, в котором мы принимаем чужие вакансии. Тоже без
-// ключа: партнёр должен видеть, что от него хотят, до всяких договорённостей.
-if ($path === 'sample-feed.json') {
-    readfile(__DIR__ . '/sample-feed.json');
-    exit;
-}
-
 if ($path === 'health') {
     api_out(200, ['status' => 'ok', 'time' => now_iso()]);
 }
 
-if ($method === 'POST' && $path === 'conversions') {
-    $key = api_key_row();
-    api_require_scope($key, 'conversions:write');
-    $payload = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($payload)) api_error(400, 'invalid_json', 'Тело должно быть JSON-объектом');
-
-    $partnerEventId = trim((string)($payload['event_id'] ?? ''));
-    $clickId = trim((string)($payload['click_id'] ?? ''));
-    $extId = trim((string)($payload['ext_id'] ?? ''));
-    if ($partnerEventId === '' || ($clickId === '' && $extId === '')) {
-        api_error(400, 'invalid_event', 'Нужны event_id и click_id (либо ext_id для старой интеграции)');
-    }
-
-    $sourceId = '';
-    if ($clickId !== '') {
-        $click = sb_single('jm_ext_clicks', ['id' => 'eq.' . $clickId], 'id,ext_id,source_id,user_id');
-        if (!$click) api_error(404, 'click_not_found', 'Переход с таким click_id не найден');
-        $extId = (string)$click['ext_id'];
-        $sourceId = (string)$click['source_id'];
-    } else {
-        $vacancy = sb_single('jm_ext_vacancies', ['id' => 'eq.' . $extId], 'id,source_id');
-        if (!$vacancy) api_error(404, 'vacancy_not_found', 'Внешняя вакансия не найдена');
-        $sourceId = (string)$vacancy['source_id'];
-    }
-
-    // Если партнёр передал время события, сохраняем его, но не принимаем
-    // очевидно ошибочные даты. Без поля используется время получения callback.
-    $occurredAt = now_iso();
-    $rawOccurred = trim((string)($payload['occurred_at'] ?? ''));
-    if ($rawOccurred !== '') {
-        $ts = strtotime($rawOccurred);
-        if ($ts === false || $ts < time() - 90 * 86400 || $ts > time() + 86400) {
-            api_error(400, 'invalid_occurred_at', 'occurred_at должен быть ISO-временем не старше 90 дней');
-        }
-        $occurredAt = gmdate('Y-m-d\\TH:i:s\\Z', $ts);
-    }
-
-    $newCandidate = null;
-    if (array_key_exists('new_candidate', $payload)) {
-        if (!is_bool($payload['new_candidate'])) {
-            api_error(400, 'invalid_new_candidate', 'new_candidate должен быть true или false');
-        }
-        $newCandidate = $payload['new_candidate'];
-    }
-
-    try {
-        sb_insert('jm_ext_events', [
-            'id' => bin2hex(random_bytes(12)),
-            'ext_id' => $extId,
-            'source_id' => $sourceId,
-            'event_type' => 'conversion',
-            'partner_event_id' => $partnerEventId,
-            'attribution_id' => $clickId !== '' ? $clickId : null,
-            'user_id' => $clickId !== '' ? ($click['user_id'] ?? null) : null,
-            'new_candidate' => $newCandidate,
-            'occurred_at' => $occurredAt,
-        ]);
-    } catch (Throwable $e) {
-        // Повтор одного event_id идемпотентен: партнёр может безопасно ретраить.
-        if (stripos($e->getMessage(), 'duplicate') === false
-            && stripos($e->getMessage(), 'unique') === false) {
-            api_error(502, 'event_store_failed', 'Не удалось сохранить конверсию');
-        }
-    }
-    api_out(202, [
-        'accepted' => true,
-        'event_id' => $partnerEventId,
-        'click_id' => $clickId !== '' ? $clickId : null,
-        'new_candidate' => $newCandidate,
-    ]);
-}
-
 if ($method !== 'GET') {
-    api_error(405, 'method_not_allowed', 'Поддерживаются GET и POST /conversions');
+    api_error(405, 'method_not_allowed', 'Поддерживается только GET');
 }
 
 $key = api_key_row();

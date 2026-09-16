@@ -81,88 +81,18 @@ rm -f /etc/systemd/system/jt-trudvsem-import.timer /etc/systemd/system/jt-trudvs
 systemctl daemon-reload
 log "INGEST_TIMER $HEAD: trudvsem import timer removed"
 
-# SuperJob также отдаёт каталог страницами. Отдельный worker не даёт ему
-# ждать, пока долгий обход другого источника освободит общий ingest.php.
-cat >/etc/systemd/system/jt-superjob-import.service <<'UNIT'
-[Unit]
-Description=JobToo full SuperJob vacancy import
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /opt/jobtoo/infra/superjob-import-loop.sh
-Nice=10
-TimeoutStartSec=2h
-Restart=on-failure
-RestartSec=1min
-UNIT
-
-cat >/etc/systemd/system/jt-superjob-import.timer <<'TIMER'
-[Unit]
-Description=Run full JobToo SuperJob import regularly
-
-[Timer]
-OnBootSec=1min
-OnUnitInactiveSec=30min
-Persistent=true
-RandomizedDelaySec=1min
-Unit=jt-superjob-import.service
-
-[Install]
-WantedBy=timers.target
-TIMER
-
+# Все интеграции с внешними источниками вакансий удалены (SuperJob, карьерные
+# страницы работодателей и т.д.) — оставляем только вакансии, размещённые в
+# JobToo напрямую. Юниты остаются на уже выкаченных машинах, поэтому гасим их
+# явно: иначе они и дальше будут дёргать удалённые ingest.php/career-discover.
+# Команды безопасны при повторах и на машине, где юнита никогда не было.
+for unit in jt-superjob-import jt-career-discover; do
+  systemctl disable --now "${unit}.timer" >/dev/null 2>&1 || true
+  systemctl disable --now "${unit}.service" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/${unit}.timer" "/etc/systemd/system/${unit}.service"
+done
 systemctl daemon-reload
-systemctl enable --now jt-superjob-import.timer >/dev/null
-
-# Разведка карьерных сайтов — с ЭТОЙ машины, а не из GitHub Actions.
-#
-# Actions стоит на американских адресах, а за вакансиями потом ходит сервер, из
-# Москвы, — и они видят разный интернет. Из Actions Альфа-Банк, Точка, НСПК и
-# Positive Technologies отдают ошибку сертификата, а РЖД и ПЭК не открываются
-# вовсе; отсюда, наоборот, 403 отдают Пятёрочка, Ростелеком, Wildberries и МТС.
-# Никаких обходов: просто проверяем оттуда, откуда работаем.
-#
-# Раз в неделю: карьерные страницы меняются медленно, а прогон тянет браузер и
-# ходит по ста семидесяти чужим сайтам — чаще незачем и невежливо.
-cat >/etc/systemd/system/jt-career-discover.service <<'UNIT'
-[Unit]
-Description=JobToo career site discovery from the Moscow server
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /opt/jobtoo/infra/career-discover-local.sh
-Nice=15
-TimeoutStartSec=45min
-UNIT
-
-cat >/etc/systemd/system/jt-career-discover.timer <<'TIMER'
-[Unit]
-Description=Run JobToo career site discovery weekly
-
-[Timer]
-OnBootSec=10min
-OnUnitInactiveSec=1w
-Persistent=true
-RandomizedDelaySec=30min
-Unit=jt-career-discover.service
-
-[Install]
-WantedBy=timers.target
-TIMER
-
-systemctl daemon-reload
-systemctl enable --now jt-career-discover.timer >/dev/null
-systemctl reset-failed jt-career-discover.service >/dev/null 2>&1 || true
-# Первый прогон сразу: ради него всё и заводится, ждать неделю незачем.
-systemctl start --no-block jt-career-discover.service || true
-log "CAREER_DISCOVER $HEAD: local discovery scheduled and started"
-systemctl reset-failed jt-superjob-import.service >/dev/null 2>&1 || true
-systemctl start --no-block jt-superjob-import.service || true
-log "INGEST_TIMER $HEAD: superjob full import started"
+log "INGEST_TIMER $HEAD: external source timers removed"
 
 MAPS_KEY=${EXPO_PUBLIC_YANDEX_MAPS_KEY:-}
 if [ -z "$MAPS_KEY" ] && [ -d /var/www/jobtoo ]; then

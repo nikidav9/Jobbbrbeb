@@ -9,9 +9,8 @@
  * страницы, как во всей остальной панели TailAdmin, и второй список разделов
  * больше не нужен — а именно он раньше молча расходился с боковым.
  *
- * Что осталось прежним: проверка входа и два адреса, которые её не проходят —
- * страница входа и закрытый кабинет партнёра. Партнёр не администратор, у него
- * свой токен и своя страница без меню.
+ * Что осталось прежним: проверка входа и адрес, который её не проходит —
+ * страница входа.
  */
 
 import { useEffect, useState } from 'react'
@@ -31,11 +30,6 @@ function getBase(): string {
 function isOnLoginPage(): boolean {
   if (typeof window === 'undefined') return false
   return window.location.pathname.replace(/\/$/, '').endsWith('/login')
-}
-
-function isPartnerPortal(): boolean {
-  if (typeof window === 'undefined') return false
-  return window.location.pathname.replace(/\/$/, '').endsWith('/partner')
 }
 
 /** Содержимое сдвигается ровно на ширину меню — иначе оно уедет под него. */
@@ -64,15 +58,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   // Адрес берётся хуком, а не из window: window на сервере нет, там любая
   // проверка по нему ложна. Если решать по ней, сервер нарисует заглушку, а
   // браузер — саму страницу, и React ругается на несовпадение разметки.
-  // Так уже было: кабинет партнёра ронял гидратацию именно из-за этого.
   // Проверки по window остаются рядом — они нужны для варианта, когда панель
   // открыта в подкаталоге /JobToo, где путь из хука не совпадает с адресом.
   const rawPath = usePathname()
   const path = rawPath.replace(/\/$/, '') || '/'
-  const outsidePanel = path === '/login' || path === '/partner'
+  const outsidePanel = path === '/login'
 
   useEffect(() => {
-    if (outsidePanel || isOnLoginPage() || isPartnerPortal()) {
+    if (outsidePanel || isOnLoginPage()) {
       setAuthed(true)
       return
     }
@@ -83,7 +76,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
   }, [outsidePanel])
 
-  if (outsidePanel || isOnLoginPage() || isPartnerPortal()) {
+  if (outsidePanel || isOnLoginPage()) {
     return <>{children}</>
   }
 

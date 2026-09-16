@@ -112,12 +112,7 @@ function lp_place(array $r, string $station): string
     return $place;
 }
 
-/**
- * Живые вакансии этого вида работ.
- *
- * Свои и партнёрские вместе: сводка тем и ценна, что показывает всё, что есть
- * у станции, а не только наши две штуки.
- */
+/** Живые вакансии этого вида работ, размещённые напрямую в JobToo. */
 function lp_collect(string $workType): array
 {
     $out = [];
@@ -130,45 +125,7 @@ function lp_collect(string $workType): array
             'place' => (string)($r['address'] ?? ''),
             'salary' => (float)($r['salary'] ?? 0),
             'per' => 'смена',
-            'own' => true,
             'url' => vacancy_id_is_url_safe((string)($r['id'] ?? '')) ? LP_SITE . '/s/' . $r['id'] : '',
-        ];
-    }
-    // Партнёрские берём ровно по тем же правилам, что и лента приложения
-    // (см. extVacancies в db.php): только рабочее окружение и только
-    // включённые источники.
-    //
-    // Без этого на публичную страницу и в карту сайта попадали бы вакансии
-    // песочницы — миграция 046 заводила её словами «никогда не попадают в
-    // публичную ленту», — и вакансии источников, выключенных вручную. Они же
-    // считались бы в пороге LP_MIN и в «столько-то вакансий», то есть страница
-    // могла существовать целиком за счёт того, чего людям показывать нельзя.
-    $allowed = [];
-    foreach (sb_select_all('jm_ext_sources', [
-        'enabled' => 'is.true', 'environment' => 'eq.production',
-    ], 'id') as $src) {
-        $id = trim((string)($src['id'] ?? ''));
-        if ($id !== '') $allowed[] = $id;
-    }
-    if (!$allowed) return $out;
-
-    $extFilters = [
-        'active' => 'is.true',
-        'environment' => 'eq.production',
-        'work_type' => 'eq.' . $workType,
-        'source_id' => 'in.(' . implode(',', $allowed) . ')',
-    ];
-    foreach (sb_select_all('jm_ext_vacancies', $extFilters,
-        'id,title,company,metro_station,address,salary,pay_period,url') as $r) {
-        $out[] = [
-            'title' => (string)($r['title'] ?? ''),
-            'company' => (string)($r['company'] ?? ''),
-            'metro' => (string)($r['metro_station'] ?? ''),
-            'place' => (string)($r['address'] ?? ''),
-            'salary' => (float)($r['salary'] ?? 0),
-            'per' => ((string)($r['pay_period'] ?? 'shift')) === 'month' ? 'месяц' : 'смена',
-            'own' => false,
-            'url' => (string)($r['url'] ?? ''),
         ];
     }
     return $out;
@@ -282,8 +239,6 @@ function lp_render(string $workSlug, string $stationSlug): void
     if (count($rows) < LP_MIN) throw new LpNotFound();
 
     $count = count($rows);
-    $own = 0;
-    foreach ($rows as $r) if ($r['own']) $own++;
 
     $lead = 'Сейчас открыто ' . lp_plural($count, 'вакансия', 'вакансии', 'вакансий') . '. ';
     $salaryLine = lp_salary_line($rows);
@@ -335,8 +290,6 @@ function lp_render(string $workSlug, string $stationSlug): void
     $body = '<h1>' . lp_e($h1) . '</h1>'
         . '<p class="lead">' . lp_e($lead) . '</p>'
         . '<p><a class="btn" href="' . LP_SITE . '/">Смотреть в приложении</a></p>'
-        . ($own > 0 ? '<p class="meta">' . lp_plural($own, 'вакансия', 'вакансии', 'вакансий')
-            . ' из них размещена работодателем напрямую у нас.</p>' : '')
         . '<h2>Что открыто сейчас</h2><ul class="list">' . $list . '</ul>'
         . ($count > LP_LIST ? '<p class="meta">Показаны первые ' . LP_LIST . ' из '
             . $count . '. Остальные — в приложении.</p>' : '')

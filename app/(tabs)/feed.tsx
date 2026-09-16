@@ -13,7 +13,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
-import { ExternalVacancy, Like, User, Vacancy, PermVacancy } from '@/constants/types';
+import { Like, User, Vacancy, PermVacancy } from '@/constants/types';
 import {
   formatDate,
   getInitials,
@@ -21,7 +21,6 @@ import {
   nameColorFromString,
 } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
-import { isRegularShift } from '@/services/regularShift';
 import { agoRu } from '@/services/time';
 import { scoreVacancyForWorker } from '@/services/matching';
 import { METRO_LINES } from '@/constants/metro';
@@ -45,28 +44,14 @@ import {
   dbRemovePermSaved,
   dbAddSaved,
   dbRemoveSaved,
-  dbGetExternalVacancies,
-  dbGetExternalVacancyPage,
-  dbGetExternalSourceOptions,
-  dbGetExternalCompanyOptions,
-  dbCountExternalVacancies,
-  dbRecordExternalImpression,
-  dbRecordExternalClick,
-  dbRecordPartnerDataConsent,
-  dbCreatePartnerApplication,
-  dbStartSuperJobOAuth,
-  dbGetSuperJobOAuthStatus,
-  dbApplyViaSuperJob,
   dbRecordGuestEvent,
   dbStartGuestRegistration,
 } from '@/services/db';
 import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
-import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { Chip } from '@/components/ui/Chip';
 import { VacancyDetailModal } from '@/components/feature/VacancyDetailModal';
-import { ExternalVacancyDetail } from '@/components/feature/ExternalVacancyDetail';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -81,27 +66,6 @@ import { ApplySheet } from '@/components/feature/ApplySheet';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { payShort } from '@/services/pay';
 import { vacancyInfoLines, permVacancyInfoLines } from '@/services/vacancyCard';
-import { PartnerConsentSheet, PARTNER_CONSENT_VERSION } from '@/components/feature/PartnerConsentSheet';
-
-// Закрывает OAuth popup на web после возврата с SuperJob. На native вызов
-// безопасен и ничего не делает.
-WebBrowser.maybeCompleteAuthSession();
-
-function partnerAttributionUrl(raw: string, clickId: string, sourceId: string): string {
-  try {
-    const url = new URL(raw);
-    url.searchParams.set('jt_click_id', clickId);
-    url.searchParams.set('utm_source', 'jobtoo');
-    url.searchParams.set('utm_medium', 'aggregator');
-    url.searchParams.set('utm_campaign', sourceId);
-    return url.toString();
-  } catch {
-    // Сам импорт принимает только корректный HTTPS URL; fallback нужен для
-    // старой карточки, которая могла сохраниться до появления этой проверки.
-    const sep = raw.includes('?') ? '&' : '?';
-    return `${raw}${sep}jt_click_id=${encodeURIComponent(clickId)}&utm_source=jobtoo&utm_medium=aggregator&utm_campaign=${encodeURIComponent(sourceId)}`;
-  }
-}
 
 // Гостю даём несколько бесплатных «отклонить», дальше — стена регистрации.
 // Счётчик модульный: общий для колод «Подработка» и «Работа», чтобы гость не
@@ -501,33 +465,10 @@ const END_RANGES: TimeRange[] = [
   { id: 'e7', label: '05:00–09:00', from: '05:00', to: '09:00' },
 ];
 
-type VacancySourceOption = { id: string; label: string };
 type VacancyCompanyOption = { name: string; count: number };
 
-const JOBTOO_SOURCE_FILTER_ID = 'jobtoo';
-const partnerSourceFilterId = (sourceId: string) => `partner:${sourceId}`;
-const sourceFilterMatches = (selected: string[], sourceId?: string) =>
-  selected.length === 0 || selected.includes(sourceId ? partnerSourceFilterId(sourceId) : JOBTOO_SOURCE_FILTER_ID);
-
-const selectedPartnerSourceIds = (selected: string[]): string[] | undefined =>
-  selected.length === 0
-    ? undefined
-    : selected.filter(id => id.startsWith('partner:')).map(id => id.slice('partner:'.length));
-
-const buildSourceOptions = (externalVacancies: ExternalVacancy[]): VacancySourceOption[] => {
-  const partners = new Map<string, string>();
-  externalVacancies.forEach(v => {
-    partners.set(partnerSourceFilterId(v.sourceId), v.sourceName?.trim() || v.sourceId);
-  });
-  return [
-    { id: JOBTOO_SOURCE_FILTER_ID, label: 'JobToo' },
-    ...Array.from(partners, ([id, label]) => ({ id, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'ru')),
-  ];
-};
-
-export type ShiftFilters = { stations: string[]; start: string[]; end: string[]; sources: string[] };
-export const EMPTY_SHIFT_FILTERS: ShiftFilters = { stations: [], start: [], end: [], sources: [] };
+export type ShiftFilters = { stations: string[]; start: string[]; end: string[] };
+export const EMPTY_SHIFT_FILTERS: ShiftFilters = { stations: [], start: [], end: [] };
 
 const toMin = (t: string) => {
   const [h, m] = t.split(':').map(Number);
@@ -555,10 +496,9 @@ function shiftMatchesTime(timeStart: string | undefined, timeEnd: string | undef
 }
 
 function ShiftFilterSheet({
-  initial, sourceOptions, count, onApply, onClose,
+  initial, count, onApply, onClose,
 }: {
   initial: ShiftFilters;
-  sourceOptions: VacancySourceOption[];
   count: (f: ShiftFilters) => number;
   onApply: (f: ShiftFilters) => void;
   onClose: () => void;
@@ -567,7 +507,7 @@ function ShiftFilterSheet({
   const [metroOpen, setMetroOpen] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const toggle = (key: 'start' | 'end' | 'sources', id: string) => setDraft(d => ({
+  const toggle = (key: 'start' | 'end', id: string) => setDraft(d => ({
     ...d,
     [key]: d[key].includes(id) ? d[key].filter(x => x !== id) : [...d[key], id],
   }));
@@ -588,25 +528,6 @@ function ShiftFilterSheet({
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: rs(12) }}>
-          <Text style={fst.label}>Источник вакансии</Text>
-          <View style={fst.chipsWrap}>
-            <TouchableOpacity
-              style={[fst.chip, draft.sources.length === 0 && fst.chipOn]}
-              onPress={() => setDraft(d => ({ ...d, sources: [] }))}
-              activeOpacity={0.8}
-            >
-              <Text style={[fst.chipTxt, draft.sources.length === 0 && fst.chipTxtOn]}>Все источники</Text>
-            </TouchableOpacity>
-            {sourceOptions.map(source => {
-              const on = draft.sources.includes(source.id);
-              return (
-                <TouchableOpacity key={source.id} style={[fst.chip, on && fst.chipOn]} onPress={() => toggle('sources', source.id)} activeOpacity={0.8}>
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{source.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
           <Text style={fst.label}>Город</Text>
           <View style={[fst.rowSel, { opacity: 0.6 }]}>
             <Text style={fst.rowSelName}>Москва</Text>
@@ -690,21 +611,9 @@ export type PermFilters = {
   stations: string[];
   salaryFrom: string; // сырой ввод из поля «От»
   schedules: string[];
-  sources: string[];
   companies: string[];
 };
-export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], sources: [], companies: [] };
-
-const countExternalPerm = (f: PermFilters) => dbCountExternalVacancies({
-  query: f.query,
-  searchIn: f.searchIn,
-  posted: f.posted,
-  stations: f.stations,
-  salaryFrom: f.salaryFrom,
-  schedules: f.schedules,
-  sourceIds: selectedPartnerSourceIds(f.sources),
-  companies: f.companies,
-});
+export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [] };
 
 const postedWithin = (iso: string | undefined, p: PermFilters['posted']) => {
   if (p === 'all' || !iso) return true;
@@ -787,41 +696,24 @@ function CompanyPicker({ visible, options, selected, onChange, onClose }: {
 }
 
 function PermFilterSheet({
-  initial, sourceOptions, companyOptions, countLocal, countExternal, onApply, onClose,
+  initial, companyOptions, count, onApply, onClose,
 }: {
   initial: PermFilters;
-  sourceOptions: VacancySourceOption[];
   companyOptions: VacancyCompanyOption[];
-  countLocal: (f: PermFilters) => number;
-  countExternal: (f: PermFilters) => Promise<number>;
+  count: (f: PermFilters) => number;
   onApply: (f: PermFilters) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<PermFilters>(initial);
   const [metroOpen, setMetroOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
-  const [remoteCount, setRemoteCount] = useState<{ key: string; total: number | null } | null>(null);
   const insets = useSafeAreaInsets();
 
   const toggleSearchIn = (id: 'title' | 'desc') => setDraft(d => ({
     ...d, searchIn: d.searchIn.includes(id) ? d.searchIn.filter(x => x !== id) : [...d.searchIn, id],
   }));
 
-  const countKey = JSON.stringify(draft);
-  useEffect(() => {
-    let alive = true;
-    const timer = setTimeout(() => {
-      countExternal(draft)
-        .then(total => { if (alive) setRemoteCount({ key: countKey, total }); })
-        .catch(() => { if (alive) setRemoteCount({ key: countKey, total: null }); });
-    }, 350);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [countKey, countExternal, draft]);
-
-  const counting = remoteCount?.key !== countKey;
-  const externalCount = remoteCount?.key === countKey ? remoteCount.total : null;
-  const countAvailable = externalCount !== null;
-  const n = countLocal(draft) + (externalCount ?? 0);
+  const n = count(draft);
 
   return (
     <View style={styles.filterOverlay}>
@@ -837,33 +729,6 @@ function PermFilterSheet({
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: rs(12) }}>
-          <Text style={fst.label}>Источник вакансии</Text>
-          <View style={fst.chipsWrap}>
-            <TouchableOpacity
-              style={[fst.chip, draft.sources.length === 0 && fst.chipOn]}
-              onPress={() => setDraft(d => ({ ...d, sources: [] }))}
-              activeOpacity={0.8}
-            >
-              <Text style={[fst.chipTxt, draft.sources.length === 0 && fst.chipTxtOn]}>Все источники</Text>
-            </TouchableOpacity>
-            {sourceOptions.map(source => {
-              const on = draft.sources.includes(source.id);
-              return (
-                <TouchableOpacity
-                  key={source.id}
-                  style={[fst.chip, on && fst.chipOn]}
-                  onPress={() => setDraft(d => ({
-                    ...d,
-                    sources: on ? d.sources.filter(id => id !== source.id) : [...d.sources, source.id],
-                  }))}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{source.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
           <Text style={fst.label}>Компания</Text>
           <TouchableOpacity style={fst.rowSel} onPress={() => setCompanyOpen(true)} activeOpacity={0.8}>
             <Text style={fst.rowSelName} numberOfLines={1}>{draft.companies[0] ?? 'Все компании'}</Text>
@@ -935,9 +800,7 @@ function PermFilterSheet({
         </ScrollView>
 
         <TouchableOpacity style={[fst.cta, { marginBottom: insets.bottom + rs(80) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
-          <Text style={fst.ctaTxt}>
-            {counting ? 'Считаем вакансии…' : (countAvailable && n > 0 ? `Показать ${n}` : 'Показать вакансии')}
-          </Text>
+          <Text style={fst.ctaTxt}>{n > 0 ? `Показать ${n}` : 'Показать вакансии'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -1046,217 +909,6 @@ const ms = StyleSheet.create({
 // ─────────────────────────────────────────────────
 // Разовая / Регулярная — панель над лентой смен
 // ─────────────────────────────────────────────────
-function ShiftSubTabs({ value, onChange }: {
-  value: 'once' | 'regular';
-  onChange: (v: 'once' | 'regular') => void;
-}) {
-  return (
-    <View style={sst.container}>
-      <TouchableOpacity
-        style={[sst.btn, value === 'once' && sst.btnActive]}
-        onPress={() => onChange('once')}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="flash" size={14} color={value === 'once' ? Colors.textPrimary : Colors.textMuted} />
-        <Text style={[sst.txt, value === 'once' && sst.txtActive]}>Разовая</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[sst.btn, value === 'regular' && sst.btnActive]}
-        onPress={() => onChange('regular')}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="repeat-outline" size={13} color={value === 'regular' ? Colors.textPrimary : Colors.textMuted} />
-        <Text style={[sst.txt, value === 'regular' && sst.txtActive]}>Регулярная</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// «Регулярная» — не разовая смена на конкретную дату, а повторяющаяся
-// подработка из внешнего источника: такие предложения приходят как обычные
-// вакансии, поэтому не превращаем их в фиктивные смены JobToo и не придумываем
-// дату/время.
-//
-// Что именно считать подработкой — в services/regularShift.ts: правило про
-// частичную занятость общее и проверяемое отдельно от экрана.
-function isRegularExternalVacancy(v: ExternalVacancy): boolean {
-  const source = `${v.sourceName ?? ''} ${v.sourceId}`.toLowerCase();
-  if (source.trim() === '') return false;
-  // Arbihunter остаётся только в разделе «Работа»: его постоянные вакансии
-  // не дублируем в регулярной подработке.
-  if (/arbihunter|арби.?хантер/.test(source)) return false;
-  return isRegularShift({ kind: v.kind, title: v.title, schedule: v.schedule });
-}
-
-function RegularLocked() {
-  const { currentUser, showToast } = useApp();
-  const [items, setItems] = useState<ExternalVacancy[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-
-  const load = useCallback(async (refresh = false) => {
-    if (refresh) setRefreshing(true); else setLoading(true);
-    setLoadFailed(false);
-    try {
-      const rows = await dbGetExternalVacancies();
-      setItems(rows.filter(isRegularExternalVacancy));
-    } catch {
-      setLoadFailed(true);
-      showToast('Не удалось обновить регулярные подработки', 'error');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [showToast]);
-
-  useEffect(() => { void load(); }, [load]);
-
-  const openSource = useCallback((v: ExternalVacancy) => {
-    if (currentUser && !currentUser.isGuest) {
-      dbRecordExternalClick(v.id, v.sourceId, currentUser.id).catch(() => {});
-    }
-    Linking.openURL(v.url).catch(() => showToast('Не удалось открыть источник', 'error'));
-  }, [currentUser, showToast]);
-
-  if (loading) {
-    return <View style={rl.wrap}><ActivityIndicator color={Colors.primary} /></View>;
-  }
-
-  if (items.length === 0) {
-    return (
-      <ScrollView
-        contentContainerStyle={[rl.wrap, { flexGrow: 1 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={Colors.primary} colors={[Colors.primary]} />}
-      >
-        <View style={rl.ring}>
-          <Ionicons name={loadFailed ? 'cloud-offline-outline' : 'repeat-outline'} size={30} color={Colors.primary} />
-        </View>
-        {loadFailed ? (
-          <>
-            <Text style={rl.title}>Не удалось загрузить регулярные подработки</Text>
-            <Text style={rl.desc}>Проверьте связь и попробуйте ещё раз.</Text>
-            <TouchableOpacity onPress={() => void load()} activeOpacity={0.8} style={{ marginTop: rs(12) }}>
-              <Text style={{ color: Colors.primary, fontWeight: '700' }}>Повторить</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <Text style={rl.title}>Регулярных подработок пока нет</Text>
-            <Text style={rl.desc}>Потяните вниз, чтобы обновить предложения партнёров.</Text>
-          </>
-        )}
-      </ScrollView>
-    );
-  }
-
-  return (
-    <FlatList
-      data={items}
-      keyExtractor={v => v.id}
-      contentContainerStyle={rl.list}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={Colors.primary} colors={[Colors.primary]} />}
-      renderItem={({ item: v }) => {
-        const salary = typeof v.salary === 'number' && v.salary > 0
-          ? `${v.salary.toLocaleString('ru-RU')} ₽${v.payPeriod === 'hour' ? '/ч' : v.payPeriod === 'shift' ? '/смена' : '/мес'}`
-          : null;
-        const sourceName = v.sourceName ?? 'Партнёр';
-        return (
-          <TouchableOpacity style={rl.card} onPress={() => openSource(v)} activeOpacity={0.9}>
-            <View style={styles.cardTop}>
-              <View style={styles.companyRow}>
-                <CompanyMark company={v.company ?? sourceName} size={52} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.companyName} numberOfLines={1}>{v.company ?? sourceName}</Text>
-                  <View style={styles.metroHintRow}>
-                    <Ionicons name="open-outline" size={12} color={Colors.textMuted} />
-                    <Text style={styles.metroHint} numberOfLines={1}>{v.metroStation ?? sourceName}</Text>
-                  </View>
-                </View>
-                <SourceBadge partnerName={sourceName} />
-              </View>
-
-              <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
-
-              <View style={styles.chipsRow}>
-                {salary ? <Chip label={salary} variant="salary" icon="wallet-outline" /> : null}
-                <Chip label="Регулярная" variant="exp" icon="repeat-outline" />
-                {v.schedule ? <Chip label={v.schedule} variant="time" icon="calendar-outline" /> : null}
-              </View>
-
-              {(v.metroStation || v.address) ? (
-                <View style={styles.addressChip}>
-                  <Ionicons name="location-outline" size={17} color={Colors.textMuted} />
-                  <Text style={styles.addressChipText} numberOfLines={2}>
-                    {[v.metroStation, v.address].filter(Boolean).join(' · ')}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-                </View>
-              ) : null}
-            </View>
-
-            {v.description ? (
-              <>
-                <View style={styles.cardDivider} />
-                <View style={styles.cardMiddle}>
-                  <Text style={pS.sectionHead}>Описание</Text>
-                  <Text style={pS.desc} numberOfLines={5}>{v.description}</Text>
-                </View>
-              </>
-            ) : null}
-          </TouchableOpacity>
-        );
-      }}
-    />
-  );
-}
-
-const sst = StyleSheet.create({
-  container: {
-    flexDirection: 'row', gap: rs(4),
-    backgroundColor: Colors.surface,
-    borderRadius: rs(100), padding: rs(4),
-    borderWidth: 1, borderColor: Colors.divider,
-    marginHorizontal: rs(16), marginTop: rs(8), marginBottom: rs(2),
-  },
-  btn: {
-    flex: 1, borderRadius: rs(100), paddingVertical: rs(9),
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6),
-  },
-  btnActive: {
-    backgroundColor: Colors.card,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 3, elevation: 2,
-  },
-  txt: { fontSize: rf(13), fontWeight: '700', color: Colors.textMuted },
-  txtActive: { color: Colors.textPrimary },
-  txtLocked: { color: Colors.textMuted },
-});
-
-const rl = StyleSheet.create({
-  wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(40), gap: rs(12) },
-  list: { padding: rs(16), paddingBottom: rs(120), gap: rs(12) },
-  ring: {
-    width: rs(74), height: rs(74), borderRadius: rs(37),
-    backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryBorder,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  title: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  desc: { fontSize: rf(13.5), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
-  card: { backgroundColor: Colors.bg, borderRadius: rs(24), borderWidth: 1, borderColor: Colors.divider, overflow: 'hidden', ...Shadow.card },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: rs(11) },
-  company: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  source: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(2) },
-  jobTitle: { fontSize: rf(18), lineHeight: rf(23), fontWeight: '800', color: Colors.textPrimary },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
-  address: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(6), backgroundColor: Colors.surface, borderRadius: rs(12), padding: rs(10) },
-  addressTxt: { flex: 1, fontSize: rf(12.5), color: Colors.textSecondary, lineHeight: rf(17) },
-  description: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(19) },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: Colors.divider, paddingTop: rs(11) },
-  footerTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
-});
-
 // ─────────────────────────────────────────────────
 // Vacancy Viewers Modal
 // ─────────────────────────────────────────────────
@@ -1858,38 +1510,6 @@ const wS = StyleSheet.create({
 // ─────────────────────────────────────────────────
 // Worker swipe feed (Подработка)
 // ─────────────────────────────────────────────────
-type PartnerShiftCard = Vacancy & { external: ExternalVacancy };
-
-function partnerShiftToCard(v: ExternalVacancy): PartnerShiftCard | null {
-  if (v.kind !== 'shift' || !v.date || !v.url) return null;
-  return {
-    id: `external:${v.id}`,
-    employerId: `external:${v.sourceId}`,
-    company: v.company ?? v.sourceName ?? 'Компания',
-    title: v.title,
-    workType: v.workType ?? 'stocker',
-    workTypeLabel: v.workType ?? 'Смена',
-    metroLineId: v.metroLineId ?? '',
-    metroStation: v.metroStation ?? v.metroStationRaw ?? '',
-    date: v.date,
-    timeStart: v.timeStart ?? '—',
-    timeEnd: v.timeEnd ?? '—',
-    salary: v.salary ?? 0,
-    normsAndPay: v.description ?? 'Условия и отклик — на сайте источника',
-    address: v.address,
-    lat: v.lat,
-    lng: v.lng,
-    workersNeeded: 0,
-    workersFound: 0,
-    isUrgent: false,
-    noExperienceNeeded: false,
-    conditions: v.description ?? '',
-    status: 'open',
-    createdAt: v.lastSeenAt ?? new Date().toISOString(),
-    external: v,
-  };
-}
-
 function WorkerFeed() {
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
@@ -1905,36 +1525,13 @@ function WorkerFeed() {
     responsivenessMap, backendOffline,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
-  const [partnerShifts, setPartnerShifts] = useState<PartnerShiftCard[]>([]);
-  const [partnerShiftsLoadFailed, setPartnerShiftsLoadFailed] = useState(false);
-
-  const loadPartnerShifts = useCallback(async (): Promise<boolean> => {
-    try {
-      const rows = await dbGetExternalVacancies();
-      setPartnerShifts(rows.map(partnerShiftToCard).filter((v): v is PartnerShiftCard => !!v));
-      setPartnerShiftsLoadFailed(false);
-      return true;
-    } catch {
-      // Не очищаем уже загруженные партнёрские смены: временный сбой фида не
-      // должен выглядеть как будто у партнёров внезапно закончились вакансии.
-      setPartnerShiftsLoadFailed(true);
-      return false;
-    }
-  }, []);
-
-  useEffect(() => { void loadPartnerShifts(); }, [loadPartnerShifts]);
 
   // Гость смотрит ленту, но откликнуться/написать не может — любое такое
   // действие ведёт на выбор роли и регистрацию.
   const isGuest = !!currentUser?.isGuest;
-  // Разовая / Регулярная. Разовая — обычные смены директоров и партнёров
-  // (как сейчас). Регулярная — постоянные смены у одного работодателя,
-  // раздел ещё готовится: показываем замок вместо ленты.
-  const [subMode, setSubMode] = useState<'once' | 'regular'>('once');
   const promptRegister = useCallback((context: {
     vacancyId?: string | null;
-    vacancyKind?: 'shift' | 'permanent' | 'external' | null;
-    sourceId?: string | null;
+    vacancyKind?: 'shift' | 'permanent' | null;
     campaignId?: string | null;
   } = {}) => {
     void dbStartGuestRegistration(context);
@@ -1946,10 +1543,7 @@ function WorkerFeed() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const [, partnerOk] = await Promise.all([refreshAll(), loadPartnerShifts()]);
-      if (!partnerOk) {
-        showToast('Свои смены обновлены, но партнёрские не удалось обновить.', 'error');
-      }
+      await refreshAll();
     } catch {
       showToast('Не удалось обновить ленту. Проверьте связь.', 'error');
     } finally {
@@ -1970,23 +1564,19 @@ function WorkerFeed() {
   // Фильтр по времени смены (начать/закончить). Метро (мультивыбор) храним
   // отдельно в filterStations.
   const [timeFilters, setTimeFilters] = useState<{ start: string[]; end: string[] }>({ start: [], end: [] });
-  const [filterSources, setFilterSources] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const shiftSourceOptions = buildSourceOptions(partnerShifts.map(v => v.external));
-  const filtersActive = filterStations.length > 0 || timeFilters.start.length > 0 || timeFilters.end.length > 0 || filterSources.length > 0;
+  const filtersActive = filterStations.length > 0 || timeFilters.start.length > 0 || timeFilters.end.length > 0;
 
   // Смены для карты: метки ставятся по адресу, поэтому кроме станции
   // передаём адрес и координаты — по ним карта и группирует точки.
   const mapItems: MapListItem[] = useMemo(() => {
     if (!currentUser) return [];
-    return ([...vacancies, ...partnerShifts] as Vacancy[])
+    return vacancies
       .filter((v: Vacancy) =>
         v.status === 'open' &&
         v.date === selectedDate &&
-        sourceFilterMatches(filterSources, 'external' in v ? (v as PartnerShiftCard).external.sourceId : undefined) &&
         (!!v.metroStation || !!v.address) &&
-        (('external' in v && !(v as PartnerShiftCard).external.workType)
-          || currentUser.workTypes?.includes(v.workType)))
+        currentUser.workTypes?.includes(v.workType))
       .map((v: Vacancy) => ({
         id: v.id,
         station: v.metroStation,
@@ -1998,7 +1588,7 @@ function WorkerFeed() {
         lat: v.lat,
         lng: v.lng,
       }));
-  }, [vacancies, partnerShifts, selectedDate, currentUser, filterSources]);
+  }, [vacancies, selectedDate, currentUser]);
 
   // Решения по карточке объявлены ниже (им нужны данные и роутер), а жест
   // собирается один раз и должен звать свежие. Поэтому через ссылку.
@@ -2040,19 +1630,17 @@ function WorkerFeed() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const filtered = [...vacancies, ...partnerShifts]
+    const filtered = vacancies
       .filter(v => {
         if (v.status !== 'open') return false;
         if (v.date !== selectedDate) return false;
-        if (!sourceFilterMatches(filterSources, 'external' in v ? (v as PartnerShiftCard).external.sourceId : undefined)) return false;
-        if (!('external' in v && !(v as PartnerShiftCard).external.workType)
-          && !currentUser.workTypes?.includes(v.workType)) return false;
+        if (!currentUser.workTypes?.includes(v.workType)) return false;
         if (pendingLikeIds.current.has(v.id)) return false;
         const liked = likes.find(l => l.vacancyId === v.id && l.workerId === currentUser.id);
         if (liked) return false;
         if (filterStations.length && !filterStations.includes(v.metroStation ?? '')) return false;
-        if (!shiftMatchesTime((v as { timeStart?: string }).timeStart, (v as { timeEnd?: string }).timeEnd,
-          { stations: filterStations, start: timeFilters.start, end: timeFilters.end, sources: filterSources })) return false;
+        if (!shiftMatchesTime(v.timeStart, v.timeEnd,
+          { stations: filterStations, start: timeFilters.start, end: timeFilters.end })) return false;
         return true;
       })
       .sort((a, b) => {
@@ -2074,49 +1662,19 @@ function WorkerFeed() {
       });
     setCards(filtered);
     if (!swipingRef.current) deck.reset();
-  }, [selectedDate, vacancies, partnerShifts, likes, myLikes, users, currentUser, filterStations, timeFilters, filterSources, deepLinkVacancyId, deck]);
+  }, [selectedDate, vacancies, likes, myLikes, users, currentUser, filterStations, timeFilters, deepLinkVacancyId, deck]);
 
   const currentCard = cards[0];
   const currentEmployer = currentCard ? users.find(u => u.id === currentCard.employerId) : null;
 
-  // Когда выложили. У партнёрской карточки поле createdAt подменено на
-  // lastSeenAt — «когда источник в последний раз показывал её живой», а это
-  // обновляется постоянно и означало бы «минуту назад» у любой вакансии.
-  // Настоящую дату публикации знает только исходная запись источника.
-  const postedAgo = currentCard
-    ? agoRu('external' in currentCard
-        ? (currentCard as PartnerShiftCard).external.createdAt
-        : currentCard.createdAt)
-    : '';
+  const postedAgo = currentCard ? agoRu(currentCard.createdAt) : '';
   const payLabel = currentCard ? payShort(currentCard.salary, currentCard.workType) : '';
-  // Что показываем на карточке до «Читать полностью»: у своих смен условия,
-  // у партнёрских — описание от источника.
-  const shiftSummary = currentCard
-    ? ('external' in currentCard
-        ? ((currentCard as PartnerShiftCard).external.description ?? '')
-        : currentCard.conditions)
-    : '';
-
-  // Подробности партнёрской вакансии показываем у себя, а не уводим сразу на
-  // чужой сайт: описание у нас уже есть, а переход — отдельный шаг.
-  const [externalDetail, setExternalDetail] = useState<ExternalVacancy | null>(null);
-
-  // Уход к партнёру со смены: клик учитывается так же, как из кнопки чата,
-  // иначе часть переходов просто не попала бы в статистику источника.
-  const openShiftSource = useCallback((ext: ExternalVacancy) => {
-    if (!currentUser) return;
-    dbRecordExternalClick(ext.id, ext.sourceId, currentUser.id).catch(() => {});
-    Linking.openURL(ext.url).catch(() => showToast('Не удалось открыть источник', 'error'));
-  }, [currentUser, showToast]);
+  const shiftSummary = currentCard ? currentCard.conditions : '';
 
   const openShiftDetail = useCallback((card: Vacancy) => {
     // Нажатие сразу после свайпа игнорируем: иначе на вебе улетевшая карточка
     // заодно открывала бы подробности — см. wasSwipe в хуке.
     if (deck.wasSwipe()) return;
-    if ('external' in card) {
-      setExternalDetail((card as PartnerShiftCard).external);
-      return;
-    }
     setDetailVacancy(card);
     setDetailEmployer(users.find(u => u.id === card.employerId) ?? null);
   }, [users, deck]);
@@ -2163,24 +1721,12 @@ function WorkerFeed() {
     if (!currentCard?.id || !currentUser?.id) return;
     const t = setTimeout(() => {
       if (currentUser.isGuest) {
-        if ('external' in currentCard) {
-          const ext = (currentCard as PartnerShiftCard).external;
-          void dbRecordGuestEvent('vacancy_impression', {
-            vacancyId: ext.id, vacancyKind: 'external', sourceId: ext.sourceId,
-          });
-        } else {
-          void dbRecordGuestEvent('vacancy_impression', {
-            vacancyId: currentCard.id, vacancyKind: 'shift',
-          });
-        }
+        void dbRecordGuestEvent('vacancy_impression', {
+          vacancyId: currentCard.id, vacancyKind: 'shift',
+        });
         return;
       }
-      if ('external' in currentCard) {
-        const ext = (currentCard as PartnerShiftCard).external;
-        dbRecordExternalImpression(ext.id, ext.sourceId).catch(() => {});
-      } else {
-        dbRecordVacancyView(currentCard.id, currentUser.id).catch(() => {});
-      }
+      dbRecordVacancyView(currentCard.id, currentUser.id).catch(() => {});
     }, 300);
     return () => clearTimeout(t);
   }, [currentCard, currentUser?.id, currentUser?.isGuest]);
@@ -2211,8 +1757,8 @@ function WorkerFeed() {
     animateCard('left', vx, () => {
       setHistory(h => ({ ...h, [date]: [card, ...(h[date] ?? []).slice(0, 9)] }));
       setCards(prev => prev.slice(1));
-      // Партнёрскую карточку и гость листают локально: своей записи в базе нет.
-      if (user.isGuest || 'external' in card) return;
+      // Гость листает локально: своей записи в базе нет.
+      if (user.isGuest) return;
       dbUpsertLike(card.id, user.id, card.employerId, { workerLiked: false, workerSkipped: true })
         .then(() => refreshLikes(user))
         .catch(() => {
@@ -2241,12 +1787,9 @@ function WorkerFeed() {
       });
     }
     if (currentUser.isGuest) {
-      const isExternal = 'external' in currentCard;
-      const ext = isExternal ? (currentCard as PartnerShiftCard).external : null;
       promptRegister({
-        vacancyId: ext?.id ?? currentCard.id,
-        vacancyKind: isExternal ? 'external' : 'shift',
-        sourceId: ext?.sourceId ?? null,
+        vacancyId: currentCard.id,
+        vacancyKind: 'shift',
         campaignId: currentCard.id === deepLinkVacancyId ? campaignId || null : null,
       });
       return;
@@ -2255,17 +1798,6 @@ function WorkerFeed() {
     const date = selectedDate;
     const user = currentUser;
     pendingLikeIds.current.add(card.id);
-
-    if ('external' in card) {
-      const ext = (card as PartnerShiftCard).external;
-      animateCard('right', vx, () => {
-        setHistory(h => ({ ...h, [date]: [card, ...(h[date] ?? []).slice(0, 9)] }));
-        setCards(prev => prev.slice(1));
-        dbRecordExternalClick(ext.id, ext.sourceId, user.id).catch(() => {});
-        Linking.openURL(ext.url).catch(() => showToast('Не удалось открыть источник', 'error'));
-      });
-      return;
-    }
 
     animateCard('right', vx, () => {
       setHistory(h => ({ ...h, [date]: [card, ...(h[date] ?? []).slice(0, 9)] }));
@@ -2291,13 +1823,11 @@ function WorkerFeed() {
     });
   }, [currentCard, currentUser, swiping, selectedDate, animateCard, refreshLikes, router, showToast, promptRegister, campaignId, deepLinkVacancyId]);
 
-  // Сохранить смену в «Избранное» (кнопка ★). Партнёрские (внешние) карточки в
-  // наше избранное не кладём — у них нет стабильного id в нашей базе; для них
-  // ★ работает как переход к источнику (см. кнопку). Гостю — предложение
+  // Сохранить смену в «Избранное» (кнопка ★). Гостю — предложение
   // зарегистрироваться, как и на остальных действиях.
-  const isCurrentSaved = !!currentCard && !('external' in currentCard) && savedIds.includes(currentCard.id);
+  const isCurrentSaved = !!currentCard && savedIds.includes(currentCard.id);
   const toggleSavedShift = useCallback(async () => {
-    if (!currentCard || 'external' in currentCard) return;
+    if (!currentCard) return;
     const user = currentUser;
     if (!user) return;
     if (user.isGuest) { promptRegister({ vacancyKind: 'shift' }); return; }
@@ -2327,20 +1857,11 @@ function WorkerFeed() {
   const doMessage = useCallback(() => {
     if (!currentCard || !currentUser || messagingRef.current) return;
     if (currentUser.isGuest) {
-      const isExternal = 'external' in currentCard;
-      const ext = isExternal ? (currentCard as PartnerShiftCard).external : null;
       promptRegister({
-        vacancyId: ext?.id ?? currentCard.id,
-        vacancyKind: isExternal ? 'external' : 'shift',
-        sourceId: ext?.sourceId ?? null,
+        vacancyId: currentCard.id,
+        vacancyKind: 'shift',
         campaignId: currentCard.id === deepLinkVacancyId ? campaignId || null : null,
       });
-      return;
-    }
-    if ('external' in currentCard) {
-      const ext = (currentCard as PartnerShiftCard).external;
-      dbRecordExternalClick(ext.id, ext.sourceId, currentUser.id).catch(() => {});
-      Linking.openURL(ext.url).catch(() => showToast('Не удалось открыть источник', 'error'));
       return;
     }
     const existingChat = chats.find(
@@ -2409,20 +1930,18 @@ function WorkerFeed() {
 
   const countShifts = (d: string, f: ShiftFilters) => {
     if (!currentUser) return 0;
-    return [...vacancies, ...partnerShifts].filter(v => {
+    return vacancies.filter(v => {
       if (v.status !== 'open') return false;
       if (v.date !== d) return false;
-      if (!sourceFilterMatches(f.sources, 'external' in v ? (v as PartnerShiftCard).external.sourceId : undefined)) return false;
-      if (!('external' in v && !(v as PartnerShiftCard).external.workType)
-        && !currentUser.workTypes?.includes(v.workType)) return false;
+      if (!currentUser.workTypes?.includes(v.workType)) return false;
       const alreadySwiped = likes.find(l => l.vacancyId === v.id && l.workerId === currentUser.id);
       if (alreadySwiped) return false;
       if (f.stations.length && !f.stations.includes(v.metroStation ?? '')) return false;
-      if (!shiftMatchesTime((v as { timeStart?: string }).timeStart, (v as { timeEnd?: string }).timeEnd, f)) return false;
+      if (!shiftMatchesTime(v.timeStart, v.timeEnd, f)) return false;
       return true;
     }).length;
   };
-  const getDateCount = (d: string) => countShifts(d, { stations: filterStations, start: timeFilters.start, end: timeFilters.end, sources: filterSources });
+  const getDateCount = (d: string) => countShifts(d, { stations: filterStations, start: timeFilters.start, end: timeFilters.end });
 
   const visibleDates = dates;
 
@@ -2440,24 +1959,6 @@ function WorkerFeed() {
           <Text style={gB.bannerCta}>Войти</Text>
         </TouchableOpacity>
       )}
-      {partnerShiftsLoadFailed ? (
-        <TouchableOpacity
-          style={pS.offlineBar}
-          onPress={() => void loadPartnerShifts()}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
-          <Text style={pS.offlineTxt}>
-            Партнёрские смены не обновились — свои и ранее загруженные остаются доступны. Нажмите, чтобы повторить.
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-      {/* Разовая / Регулярная */}
-      <ShiftSubTabs value={subMode} onChange={setSubMode} />
-      {subMode === 'regular' ? (
-        <RegularLocked />
-      ) : (
-      <>
       {/* Date strip + inline filter button */}
       <View style={styles.dateStrip}>
         <View style={styles.dateStripInner}>
@@ -2501,10 +2002,9 @@ function WorkerFeed() {
 
       {filterOpen && (
         <ShiftFilterSheet
-          initial={{ stations: filterStations, start: timeFilters.start, end: timeFilters.end, sources: filterSources }}
-          sourceOptions={shiftSourceOptions}
+          initial={{ stations: filterStations, start: timeFilters.start, end: timeFilters.end }}
           count={(f) => countShifts(selectedDate, f)}
-          onApply={(f) => { setFilterStations(f.stations); setTimeFilters({ start: f.start, end: f.end }); setFilterSources(f.sources); }}
+          onApply={(f) => { setFilterStations(f.stations); setTimeFilters({ start: f.start, end: f.end }); }}
           onClose={() => setFilterOpen(false)}
         />
       )}
@@ -2668,7 +2168,7 @@ function WorkerFeed() {
                                 <Text style={styles.urgentTagTxt}>Срочно</Text>
                               </View>
                             ) : null}
-                            <SourceBadge partnerName={'external' in currentCard ? ((currentCard as PartnerShiftCard).external.sourceName ?? 'Партнёр') : undefined} />
+                            <SourceBadge />
                           </View>
                         </View>
 
@@ -2701,8 +2201,7 @@ function WorkerFeed() {
 
                             Плашка сама молчит, когда переписок меньше двух: по
                             одной вывод делать нельзя, а выглядел бы он как
-                            приговор. У партнёрских карточек employerId вида
-                            `external:...`, в карте его нет — там тоже пусто.
+                            приговор.
 
                             Место выбрано до разделителя: cardSummary стоит
                             flexShrink, поэтому ужмётся описание, а не уедет за
@@ -2738,9 +2237,7 @@ function WorkerFeed() {
 
             {/* Плавающие кнопки как в «Работе» и на образце: ✕ / ★ / ♥ и
                 подсказка «Свайпай». Раньше это была плоская панель внутри
-                карточки (отмена/✕/чат/♥) — теперь одинаково с постоянной работой.
-                У партнёрских карточек средняя кнопка ведёт к источнику (в наше
-                избранное их не кладём — нет стабильного id). */}
+                карточки (отмена/✕/чат/♥) — теперь одинаково с постоянной работой. */}
             <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + rs(18) }]} pointerEvents="box-none">
               <View style={styles.shiftDeckRow}>
                 <TouchableOpacity
@@ -2754,7 +2251,7 @@ function WorkerFeed() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  accessibilityLabel={'external' in currentCard ? 'Открыть у источника' : 'Написать работодателю'}
+                  accessibilityLabel="Написать работодателю"
                   style={[styles.deckFloatingAction, styles.deckFloatingChat]}
                   onPress={() => doMessageRef.current?.()}
                   activeOpacity={0.75}
@@ -2786,20 +2283,11 @@ function WorkerFeed() {
         )}
       </View>
 
-
       <MetroPicker
         visible={filterPicker}
         selected={filterStations}
         onChange={setFilterStations}
         onClose={() => setFilterPicker(false)}
-      />
-
-      <ExternalVacancyDetail
-        vacancy={externalDetail}
-        onClose={() => setExternalDetail(null)}
-        onOpenSource={(v: ExternalVacancy) => { setExternalDetail(null); openShiftSource(v); }}
-        locked={!!currentUser?.isGuest}
-        onLogin={() => { setExternalDetail(null); promptRegister({ vacancyKind: 'external' }); }}
       />
 
       {/* Подробности смены */}
@@ -2846,8 +2334,6 @@ function WorkerFeed() {
         info={applyFor ? vacancyInfoLines(applyFor) : []}
         chips={getChatSuggestions('worker', applyFor)}
       />
-      </>
-      )}
     </View>
   );
 }
@@ -2865,17 +2351,9 @@ const SALARY_CHIPS = [
   { label: '100 000+', value: 100000 },
 ];
 
-// Значок в углу карточки. У наших вакансий — фирменный вордмарк JobToo (как в
-// шапке, components/ui/TabHeader.tsx), у партнёрских (залитых по API) — название
-// источника. Логотип-картинку партнёра добавим позже отдельным полем.
-function SourceBadge({ partnerName }: { partnerName?: string }) {
-  if (partnerName) {
-    return (
-      <View style={styles.sourceBadge}>
-        <Text style={styles.sourceBadgeTxt} numberOfLines={1}>{partnerName}</Text>
-      </View>
-    );
-  }
+// Значок в углу карточки — фирменный вордмарк JobToo (как в шапке,
+// components/ui/TabHeader.tsx).
+function SourceBadge() {
   return (
     <View style={styles.jtBadge}>
       <Text style={styles.jtBadgeTxt}>
@@ -2891,37 +2369,30 @@ function SourceBadge({ partnerName }: { partnerName?: string }) {
 // Раньше просмотр писался только в списочном режиме (onViewableItemsChanged у
 // FlatList), а «Открытые»/«Избранное» давно стали свайп-колодой — и листание
 // карточек не засчитывалось вовсе, число «Просмотрели» не росло. Здесь
-// повторяем логику колоды смен: гость — событие аналитики, партнёр — внешний
-// импрешн, наша вакансия — запись в jm_perm_vacancy_views (сервер сам
-// схлопывает дубли по паре vacancy_id+worker_id).
+// повторяем логику колоды смен: гость — событие аналитики, наша вакансия —
+// запись в jm_perm_vacancy_views (сервер сам схлопывает дубли по паре
+// vacancy_id+worker_id).
 //
 // Отдельным компонентом, а не useEffect в теле WorkerPermMode: там ниже есть
 // ранний return (гость без currentUser), и хук после него нарушил бы порядок
 // хуков.
 function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
-  vacancy: PermVacancy | ExternalVacancy | undefined;
+  vacancy: PermVacancy | undefined;
   userId: string;
   isGuest: boolean;
 }) {
   const vid = vacancy?.id;
-  const isExternal = !!vacancy && 'sourceId' in vacancy;
-  const sourceId = isExternal ? (vacancy as ExternalVacancy).sourceId : null;
   useEffect(() => {
     if (!vid) return;
     const t = setTimeout(() => {
       if (isGuest) {
-        void dbRecordGuestEvent('vacancy_impression', {
-          vacancyId: vid,
-          vacancyKind: isExternal ? 'external' : 'permanent',
-          sourceId,
-        });
+        void dbRecordGuestEvent('vacancy_impression', { vacancyId: vid, vacancyKind: 'permanent' });
         return;
       }
-      if (isExternal && sourceId) dbRecordExternalImpression(vid, sourceId).catch(() => {});
-      else if (!isExternal && userId) dbRecordPermVacancyView(vid, userId).catch(() => {});
+      if (userId) dbRecordPermVacancyView(vid, userId).catch(() => {});
     }, 300);
     return () => clearTimeout(t);
-  }, [vid, userId, isGuest, isExternal, sourceId]);
+  }, [vid, userId, isGuest]);
   return null;
 }
 
@@ -2942,8 +2413,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const isGuest = !!currentUser?.isGuest;
   const promptRegister = (context: {
     vacancyId?: string | null;
-    vacancyKind?: 'shift' | 'permanent' | 'external' | null;
-    sourceId?: string | null;
+    vacancyKind?: 'shift' | 'permanent' | null;
   } = {}) => {
     void dbStartGuestRegistration(context);
     exitGuest();
@@ -2958,7 +2428,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const [searchIn, setSearchIn] = useState<('title' | 'desc')[]>([]);
   const [posted, setPosted] = useState<'all' | 'week' | '3days'>('all');
   const [schedules, setSchedules] = useState<string[]>([]);
-  const [filterSources, setFilterSources] = useState<string[]>([]);
   const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
   const [permFilterOpen, setPermFilterOpen] = useState(false);
   // Какие карточки развёрнуты (описание «Читать ещё»). По id вакансии.
@@ -2972,78 +2441,10 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const [permApplyFor, setPermApplyFor] = useState<PermVacancy | null>(null);
   const [chatLoading, setChatLoading] = useState<string | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
-  const [externalVacancies, setExternalVacancies] = useState<ExternalVacancy[]>([]);
-  const [externalVacanciesLoadFailed, setExternalVacanciesLoadFailed] = useState(false);
-  const [externalSourceOptions, setExternalSourceOptions] = useState<VacancySourceOption[]>([]);
-  const [externalCompanyOptions, setExternalCompanyOptions] = useState<VacancyCompanyOption[]>([]);
-  // Redirect-источник открываем с подтверждением. Для embedded-источника
-  // отдельно получаем согласие на передачу данных и создаём отклик у нас.
-  const [externalConfirm, setExternalConfirm] = useState<ExternalVacancy | null>(null);
-  // «Читать полностью» у партнёрской вакансии: описание показываем у себя, а
-  // уход на чужой сайт остаётся отдельным шагом внутри этого окна.
-  const [permExternalDetail, setPermExternalDetail] = useState<ExternalVacancy | null>(null);
-  const [partnerConsentFor, setPartnerConsentFor] = useState<ExternalVacancy | null>(null);
-  const [superJobConnectFor, setSuperJobConnectFor] = useState<ExternalVacancy | null>(null);
-  const [superJobConnecting, setSuperJobConnecting] = useState(false);
-  const [superJobConnectError, setSuperJobConnectError] = useState<string | null>(null);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
-
-  const externalLoadId = useRef(0);
-  const loadExternalVacancies = useCallback(async (sourceIds?: string[], companies?: string[]) => {
-    const loadId = ++externalLoadId.current;
-    if (sourceIds && sourceIds.length === 0) {
-      setExternalVacancies([]);
-      setExternalVacanciesLoadFailed(false);
-      return;
-    }
-    setExternalVacanciesLoadFailed(false);
-    const pageSize = 1000;
-    const loaded: ExternalVacancy[] = [];
-    const seen = new Set<string>();
-    try {
-      for (let offset = 0; offset < 50000; offset += pageSize) {
-        const page = await dbGetExternalVacancyPage(offset, pageSize, sourceIds, companies);
-        const rows = page.vacancies;
-        if (externalLoadId.current !== loadId) return;
-        for (const vacancy of rows) {
-          if (vacancy.kind !== 'permanent') continue;
-          const key = vacancy.dedupeKey || `${vacancy.sourceId}:${vacancy.id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          loaded.push(vacancy);
-        }
-        // Показываем первую страницу сразу и дополняем список после каждой
-        // следующей, не заставляя экран ждать весь большой каталог.
-        setExternalVacancies([...loaded]);
-        // rows уже очищены от дублей и почти всегда короче сырой страницы.
-        // Конец выдачи можно определять только по числу строк от сервера.
-        if (page.rawCount < pageSize) break;
-      }
-    } catch {
-      // Уже загруженные страницы остаются видимыми. Свои вакансии продолжают
-      // работать, даже если очередная страница партнёрского фида недоступна.
-      setExternalVacanciesLoadFailed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    dbGetExternalSourceOptions()
-      .then(rows => setExternalSourceOptions(rows.map(row => ({
-        id: partnerSourceFilterId(row.id), label: row.name,
-      }))))
-      .catch(() => {});
-    dbGetExternalCompanyOptions()
-      .then(setExternalCompanyOptions)
-      .catch(() => {});
-  }, []);
-
-  const externalSelection = useMemo(() => selectedPartnerSourceIds(filterSources), [filterSources]);
-  const companySelection = useMemo(() => filterCompanies.length ? filterCompanies : undefined, [filterCompanies]);
-  useEffect(() => { loadExternalVacancies(externalSelection, companySelection); }, [loadExternalVacancies, externalSelection, companySelection]);
 
   const permCompanyOptions = useMemo(() => {
     const counts = new Map<string, number>();
-    externalCompanyOptions.forEach(item => counts.set(item.name, item.count));
     permVacancies.forEach(v => {
       const name = v.status === 'open' ? v.company.trim() : '';
       if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
@@ -3051,24 +2452,12 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     return Array.from(counts, ([name, count]) => ({ name, count }))
       .filter(item => item.count > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [externalCompanyOptions, permVacancies]);
-
-  const permSourceOptions = useMemo(() => {
-    const options = new Map<string, string>();
-    for (const item of [...externalSourceOptions, ...buildSourceOptions(externalVacancies)]) {
-      options.set(item.id, item.label);
-    }
-    options.set(JOBTOO_SOURCE_FILTER_ID, 'JobToo');
-    return Array.from(options, ([id, label]) => ({ id, label }))
-      .sort((a, b) => a.id === JOBTOO_SOURCE_FILTER_ID ? -1
-        : b.id === JOBTOO_SOURCE_FILTER_ID ? 1 : a.label.localeCompare(b.label, 'ru'));
-  }, [externalSourceOptions, externalVacancies]);
+  }, [permVacancies]);
 
   // Вакансии для карты: метка — это адрес, станция остаётся для фильтра
   const permMapItems: MapListItem[] = useMemo(
-    () => [
-      ...(permVacancies as PermVacancy[])
-      .filter((v: PermVacancy) => v.status === 'open' && sourceFilterMatches(filterSources) && (filterCompanies.length === 0 || filterCompanies.includes(v.company)) && (!!v.metroStation || !!v.address))
+    () => (permVacancies as PermVacancy[])
+      .filter((v: PermVacancy) => v.status === 'open' && (filterCompanies.length === 0 || filterCompanies.includes(v.company)) && (!!v.metroStation || !!v.address))
       .map((v: PermVacancy) => ({
         id: v.id,
         station: (v.metroStation ?? '') as string,
@@ -3080,21 +2469,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         lat: v.lat,
         lng: v.lng,
       })),
-      ...externalVacancies
-        .filter(v => sourceFilterMatches(filterSources, v.sourceId) && (filterCompanies.length === 0 || (!!v.company && filterCompanies.includes(v.company))) && (!!v.metroStation || !!v.address))
-        .map(v => ({
-          id: `external:${v.id}`,
-          station: v.metroStation ?? '',
-          title: v.title,
-          company: v.company ?? v.sourceName ?? 'Компания',
-          pay: v.salary ? `${v.salary.toLocaleString('ru-RU')} ₽/мес` : undefined,
-          meta: v.schedule,
-          address: v.address,
-          lat: v.lat,
-          lng: v.lng,
-        })),
-    ],
-    [permVacancies, externalVacancies, filterSources, filterCompanies],
+    [permVacancies, filterCompanies],
   );
 
   const viewedPermIds = useRef(new Set<string>());
@@ -3108,13 +2483,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
       if (!item?.id || viewedPermIds.current.has(item.id)) return;
       viewedPermIds.current.add(item.id);
       if (user.isGuest) {
-        void dbRecordGuestEvent('vacancy_impression', {
-          vacancyId: item.id,
-          vacancyKind: 'sourceId' in item ? 'external' : 'permanent',
-          sourceId: 'sourceId' in item ? item.sourceId : null,
-        });
-      } else if ('sourceId' in item) {
-        dbRecordExternalImpression(item.id, item.sourceId).catch(() => {});
+        void dbRecordGuestEvent('vacancy_impression', { vacancyId: item.id, vacancyKind: 'permanent' });
       } else {
         dbRecordPermVacancyView(item.id, user.id).catch(() => {});
       }
@@ -3127,7 +2496,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     try {
       await Promise.all([
         refreshPermVacancies(), refreshPermApplications(), refreshPermVacancyViews(),
-        loadExternalVacancies(externalSelection, companySelection),
       ]);
     } catch {
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
@@ -3172,8 +2540,8 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
 
   // Текущие применённые фильтры одним объектом — так их удобно и применять,
   // и считать «Показать N» для черновика в шторке.
-  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, sources: filterSources, companies: filterCompanies };
-  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterSources.length > 0 || filterCompanies.length > 0;
+  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies };
+  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0;
 
   const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
     if (!f.query) return true;
@@ -3197,28 +2565,21 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const matchesSearch = (v: PermVacancy) => permMatchesQuery(v.title, v.company, v.description ?? '', permF);
   const matchesFilters = (v: PermVacancy) => permMatchesCompany(v.company, permF) && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF);
 
-  const openVacancies    = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && sourceFilterMatches(permF.sources) && matchesSearch(v) && matchesFilters(v));
-  const externalOpenVacancies = externalVacancies.filter(v =>
-    sourceFilterMatches(permF.sources, v.sourceId)
-    && permMatchesCompany(v.company, permF)
-    && permMatchesQuery(v.title, v.company ?? v.sourceName ?? '', (v as { description?: string }).description ?? '', permF)
-    && permMatchesMeta(v.metroStation, v.salary ?? 0, (v as { createdAt?: string }).createdAt, (v as { schedule?: string }).schedule, permF));
+  const openVacancies    = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && matchesSearch(v) && matchesFilters(v));
   // Отказ больше не прячется в отдельную вкладку: отклик остаётся здесь,
   // просто с красной плашкой «✕ Отказ» — иначе вакансия исчезала без объяснений
-  const appliedVacancies = permVacancies.filter(v => myAppVacIds.has(v.id) && sourceFilterMatches(permF.sources) && matchesSearch(v) && matchesFilters(v));
-  const savedVacancies   = permVacancies.filter(v => permSavedIds.includes(v.id) && sourceFilterMatches(permF.sources) && matchesSearch(v) && matchesFilters(v));
+  const appliedVacancies = permVacancies.filter(v => myAppVacIds.has(v.id) && matchesSearch(v) && matchesFilters(v));
+  const savedVacancies   = permVacancies.filter(v => permSavedIds.includes(v.id) && matchesSearch(v) && matchesFilters(v));
 
-  // «Показать N» в шторке фильтров: открытые (не откликнутые) + внешние
-  // под выбранный черновик фильтров.
+  // «Показать N» в шторке фильтров под выбранный черновик.
   const countPermLocal = (f: PermFilters) =>
     permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id)
-      && sourceFilterMatches(f.sources)
       && permMatchesCompany(v.company, f)
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
 
-  const shownVacancies: (PermVacancy | ExternalVacancy)[] =
-    tab === 'open'     ? [...openVacancies, ...externalOpenVacancies] :
+  const shownVacancies: PermVacancy[] =
+    tab === 'open'     ? openVacancies :
     tab === 'applied'  ? appliedVacancies :
     savedVacancies;
 
@@ -3349,159 +2710,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     }
   };
 
-  // Переход к партнёрской вакансии на сайте источника. Один обработчик на все
-  // места: список, карточка колоды, плашка подтверждения свайпа.
-  const openExternalVacancy = async (v: ExternalVacancy) => {
-    // ID создаётся до сетевого запроса и сразу попадает в URL: переход остаётся
-    // прямым пользовательским жестом, а партнёр может вернуть этот непрозрачный
-    // ID в callback без каких-либо данных человека.
-    const clickId = Crypto.randomUUID().replace(/-/g, '');
-    const targetUrl = partnerAttributionUrl(v.url, clickId, v.sourceId);
-    dbRecordExternalClick(v.id, v.sourceId, currentUser.id, clickId).catch(() => {});
-    if (currentUser.isGuest) {
-      void dbRecordGuestEvent('external_click', {
-        vacancyId: v.id, vacancyKind: 'external', sourceId: v.sourceId,
-      });
-    }
-    try {
-      await Linking.openURL(targetUrl);
-    } catch {
-      showToast('Не удалось открыть вакансию', 'error');
-    }
-  };
-
-  const submitPartnerApplication = async (v: ExternalVacancy) => {
-    if (currentUser.isGuest) {
-      setPartnerConsentFor(null);
-      promptRegister({ vacancyKind: 'permanent' });
-      return;
-    }
-    await dbRecordPartnerDataConsent({
-      sourceId: v.sourceId,
-      workerId: currentUser.id,
-      externalVacancyId: v.id,
-      recipientName: v.sourceName ?? v.company ?? 'Партнёр',
-      dataCategories: ['profile', 'application', 'messages', 'statuses'],
-      purpose: 'Рассмотрение отклика и обмен статусами по выбранной вакансии',
-      consentVersion: PARTNER_CONSENT_VERSION,
-    });
-    const result = v.connectorKind === 'superjob'
-      ? await dbApplyViaSuperJob({
-          externalVacancyId: v.id,
-          consentVersion: PARTNER_CONSENT_VERSION,
-        })
-      : await dbCreatePartnerApplication({
-          sourceId: v.sourceId,
-          workerId: currentUser.id,
-          externalVacancyId: v.id,
-          consentVersion: PARTNER_CONSENT_VERSION,
-        });
-    setPartnerConsentFor(null);
-    setSwSkipped(s => new Set(s).add(v.id));
-    setSwHistory(h => h.includes(v.id) ? h : [...h, v.id]);
-    showToast(
-      result.created
-        ? (v.connectorKind === 'superjob' ? 'Отклик отправлен в SuperJob' : 'Отклик отправляется работодателю')
-        : 'Вы уже откликнулись',
-      'success',
-    );
-  };
-
-  const prepareSuperJobApplication = async (v: ExternalVacancy) => {
-    if (currentUser.isGuest) {
-      promptRegister({ vacancyKind: 'permanent' });
-      return;
-    }
-    try {
-      const status = await dbGetSuperJobOAuthStatus();
-      if (status.connected && status.has_resume) {
-        setPartnerConsentFor(v);
-        return;
-      }
-      if (status.connected && !status.has_resume) {
-        showToast('Сначала создайте или выберите основное резюме в SuperJob', 'error');
-        return;
-      }
-      setSuperJobConnectError(null);
-      setSuperJobConnectFor(v);
-    } catch (e: any) {
-      showToast(e?.message ?? 'Не удалось подключить SuperJob', 'error');
-    }
-  };
-
-  const connectSuperJobAndContinue = async () => {
-    const vacancy = superJobConnectFor;
-    if (!vacancy || superJobConnecting) return;
-    setSuperJobConnecting(true);
-    setSuperJobConnectError(null);
-    try {
-      const returnUrl = Platform.OS === 'web' ? 'https://jobtoo.ru/' : 'onspaceapp:///';
-      const { url } = await dbStartSuperJobOAuth(returnUrl);
-      const auth = await WebBrowser.openAuthSessionAsync(url, returnUrl);
-      if (auth.type !== 'success') {
-        setSuperJobConnectError('Подключение отменено. Можно попробовать ещё раз.');
-        return;
-      }
-
-      // Callback сначала сохраняет токены на сервере и только потом возвращает
-      // человека в приложение. Даём реплике БД несколько секунд догнать запись,
-      // вместо прежней одиночной проверки и требования повторить свайп.
-      let status = await dbGetSuperJobOAuthStatus();
-      for (let attempt = 0; !status.connected && attempt < 11; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        status = await dbGetSuperJobOAuthStatus();
-      }
-      if (!status.connected) {
-        setSuperJobConnectError('Не удалось подтвердить подключение. Нажмите «Попробовать снова».');
-        return;
-      }
-      if (!status.has_resume) {
-        setSuperJobConnectError('В SuperJob нужно создать или выбрать основное резюме. После этого попробуйте снова.');
-        return;
-      }
-
-      setSuperJobConnectFor(null);
-      setPartnerConsentFor(vacancy);
-    } catch (e: any) {
-      setSuperJobConnectError(e?.message ?? 'Не удалось подключить SuperJob. Попробуйте снова.');
-    } finally {
-      setSuperJobConnecting(false);
-    }
-  };
-
-  const renderPerm = ({ item: v }: { item: PermVacancy | ExternalVacancy }) => {
-    const isExternal = 'sourceId' in v;
-    if (isExternal) {
-      const company = v.company ?? v.sourceName ?? 'Компания';
-      return (
-        <TouchableOpacity style={pS.card} onPress={() => openExternalVacancy(v)} activeOpacity={0.9}>
-          <View style={pS.externalHead}>
-            <View style={{ flex: 1 }}>
-              <Text style={pS.jobTitle} numberOfLines={2}>{v.title}</Text>
-              <Text style={pS.companyName} numberOfLines={1}>{company}</Text>
-            </View>
-            <View style={pS.externalBadge}>
-              <Text style={pS.externalBadgeTxt}>{v.sourceName ?? 'Партнёр'}</Text>
-            </View>
-          </View>
-          {v.salary ? <Text style={pS.salaryMain}>{v.salary.toLocaleString('ru-RU')} ₽/мес</Text> : null}
-          {(v.metroStation || v.metroStationRaw || v.address) ? (
-            <View style={pS.locationRow}>
-              <Ionicons name="location-outline" size={14} color={Colors.textMuted} />
-              <Text style={pS.locationRowText} numberOfLines={2}>
-                {[v.metroStation ?? v.metroStationRaw, v.address].filter(Boolean).join(' · ')}
-              </Text>
-            </View>
-          ) : null}
-          {v.schedule ? <Text style={pS.desc} numberOfLines={2}>{v.schedule}</Text> : null}
-          <View style={pS.externalAction}>
-            <Text style={pS.externalActionTxt}>Открыть у источника</Text>
-            <Ionicons name="open-outline" size={15} color={Colors.primary} />
-          </View>
-        </TouchableOpacity>
-      );
-    }
-
+  const renderPerm = ({ item: v }: { item: PermVacancy }) => {
     const isApplied = myAppVacIds.has(v.id);
     const isApplying = applying === v.id;
     const isSaved = permSavedIds.includes(v.id);
@@ -3685,30 +2894,20 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const swSnapBack = swDeck.snapBack;
   const swFly = swDeck.flyOut;
 
-  const openPermDetail = (v: PermVacancy | ExternalVacancy) => {
+  const openPermDetail = (v: PermVacancy) => {
     if (swDeck.wasSwipe()) return;
-    if ('sourceId' in v) setPermExternalDetail(v as ExternalVacancy);
-    else router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: v.id } });
+    router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: v.id } });
   };
   // Вправо — принять: отклик (уходит в «Отклики» → матчи, ждёт ответа). В
-  // «Избранном» вдобавок убираем из избранного. У партнёрских вакансий способ
-  // отклика определяется режимом интеграции источника.
+  // «Избранном» вдобавок убираем из избранного.
   const swWant = (vx = 0.5) => {
     const c = swTop;
     if (!c) return;
-    if ('sourceId' in c) {
-      swSnapBack();
-      const external = c as ExternalVacancy;
-      if (external.connectorKind === 'superjob') void prepareSuperJobApplication(external);
-      else if (external.integrationMode === 'embedded') setPartnerConsentFor(external);
-      else setExternalConfirm(external);
-      return;
-    }
     swFly('right', vx, () => {
       setSwSkipped(s => new Set(s).add(c.id));
       setSwHistory(h => [...h, c.id]);
-      if (tab === 'saved' && permSavedIds.includes(c.id)) toggleSaved(c as PermVacancy);
-      applyTo(c as PermVacancy);
+      if (tab === 'saved' && permSavedIds.includes(c.id)) toggleSaved(c);
+      applyTo(c);
     });
   };
   // Влево — отказ: листаем дальше. В «Избранном» отказ убирает из избранного.
@@ -3723,32 +2922,23 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     swFly('left', vx, () => {
       setSwSkipped(s => new Set(s).add(c.id));
       setSwHistory(h => [...h, c.id]);
-      if (tab === 'saved' && !('sourceId' in c) && permSavedIds.includes(c.id)) toggleSaved(c as PermVacancy);
+      if (tab === 'saved' && permSavedIds.includes(c.id)) toggleSaved(c);
     });
   };
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
   // Карточка колоды «Работа» — тот же макет, что у смены: рамка во весь экран,
-  // чипы с иконками, снизу футер undo / ✕ / чат / ♥. Отличается только данными
-  // (зарплата, график, описание вместо времени смены).
-  const renderPermDeckCard = (v: PermVacancy | ExternalVacancy) => {
-    const isExternal = 'sourceId' in v;
-    const sourceName = isExternal ? (v as ExternalVacancy).sourceName : undefined;
-    const displayCompany = isExternal ? (v.company ?? sourceName ?? 'Компания') : normalizeCompany(v.company);
+  // чипы с иконками, снизу футер undo / ✕ / чат / ♥.
+  const renderPermDeckCard = (v: PermVacancy) => {
+    const displayCompany = normalizeCompany(v.company);
     const salary = typeof v.salary === 'number' ? v.salary : 0;
-    const schedule = isExternal ? v.schedule : (v as PermVacancy).schedule;
-    const workTypeRaw = isExternal ? undefined : (v as PermVacancy).workType;
+    const schedule = v.schedule;
+    const workTypeRaw = v.workType;
     // Профессия хранится кодом (stocker/cook/…) — показываем русское название.
     const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw]?.label ?? workTypeRaw) : undefined;
-    // Описание есть и у внешних (адаптер уже очистил его от HTML) — раньше здесь
-    // стояла пустая строка, и партнёрская карточка выглядела пустой.
-    const description = isExternal
-      ? ((v as ExternalVacancy).description ?? '')
-      : cleanDescription((v as PermVacancy).description);
-    // У партнёрских дата публикации своя; если источник её не дал — строки
-    // просто не будет, это честнее выдуманного «только что».
-    const posted = agoRu(isExternal ? (v as ExternalVacancy).createdAt : (v as PermVacancy).createdAt);
+    const description = cleanDescription(v.description);
+    const posted = agoRu(v.createdAt);
     return (
       <View style={styles.cardArea}>
         {deckCards[2] ? <View style={styles.ghost2} /> : null}
@@ -3791,40 +2981,38 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
                 >
                   <View style={styles.cardTop}>
                     <View style={styles.companyRow}>
-                      <CompanyMark company={v.company ?? sourceName} size={34} />
+                      <CompanyMark company={v.company} size={34} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.companyName} numberOfLines={1}>
                           {displayCompany}
                           {posted ? <Text style={styles.postedAgo}>{` · ${posted}`}</Text> : null}
                         </Text>
                       </View>
-                      <SourceBadge partnerName={isExternal ? (sourceName ?? 'Партнёр') : undefined} />
+                      <SourceBadge />
                     </View>
 
-                    {!isExternal ? (
-                      <View style={pS.deckUtilityActions}>
-                        <TouchableOpacity
-                          accessibilityLabel="Поделиться вакансией"
-                          style={pS.deckUtilityBtn}
-                          onPress={() => { if (swDeck.wasSwipe()) return; void shareVacancy(v as PermVacancy); }}
-                          activeOpacity={0.75}
-                        >
-                          <Ionicons name="share-outline" size={18} color={Colors.textSecondary} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Добавить в избранное'}
-                          style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}
-                          onPress={() => { if (swDeck.wasSwipe()) return; toggleSaved(v as PermVacancy); }}
-                          activeOpacity={0.75}
-                        >
-                          <Ionicons
-                            name={permSavedIds.includes(v.id) ? 'heart' : 'heart-outline'}
-                            size={18}
-                            color={permSavedIds.includes(v.id) ? Colors.red : Colors.textSecondary}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    ) : null}
+                    <View style={pS.deckUtilityActions}>
+                      <TouchableOpacity
+                        accessibilityLabel="Поделиться вакансией"
+                        style={pS.deckUtilityBtn}
+                        onPress={() => { if (swDeck.wasSwipe()) return; void shareVacancy(v); }}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="share-outline" size={18} color={Colors.textSecondary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Добавить в избранное'}
+                        style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}
+                        onPress={() => { if (swDeck.wasSwipe()) return; toggleSaved(v); }}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons
+                          name={permSavedIds.includes(v.id) ? 'heart' : 'heart-outline'}
+                          size={18}
+                          color={permSavedIds.includes(v.id) ? Colors.red : Colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    </View>
 
                     <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
 
@@ -3870,9 +3058,9 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
           </TouchableOpacity>
 
           <TouchableOpacity
-            accessibilityLabel={isExternal ? 'Открыть вакансию у источника' : 'Написать работодателю'}
+            accessibilityLabel="Написать работодателю"
             style={[styles.deckFloatingAction, styles.deckFloatingChat]}
-            onPress={() => { if (isExternal) openExternalVacancy(v as ExternalVacancy); else openPermChat(v as PermVacancy, displayCompany); }}
+            onPress={() => openPermChat(v, displayCompany)}
             activeOpacity={0.75}
           >
             <Ionicons name="chatbubble-outline" size={24} color={Colors.blue} />
@@ -3899,18 +3087,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
 
   return (
     <View style={{ flex: 1 }}>
-      {externalVacanciesLoadFailed ? (
-        <TouchableOpacity
-          style={pS.offlineBar}
-          onPress={() => void loadExternalVacancies(externalSelection)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
-          <Text style={pS.offlineTxt}>
-            Партнёрские вакансии не обновились — свои и ранее загруженные остаются доступны. Нажмите, чтобы повторить.
-          </Text>
-        </TouchableOpacity>
-      ) : null}
       {filterStations.length > 0 ? (
         <TouchableOpacity style={pS.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
           <Ionicons name="location" size={13} color={Colors.primary} />
@@ -3977,10 +3153,8 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
       {permFilterOpen && (
         <PermFilterSheet
           initial={permF}
-          sourceOptions={permSourceOptions}
           companyOptions={permCompanyOptions}
-          countLocal={countPermLocal}
-          countExternal={countExternalPerm}
+          count={countPermLocal}
           onApply={(f) => {
             setSearchText(f.query);
             setSearchIn(f.searchIn);
@@ -3988,7 +3162,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
             setFilterStations(f.stations);
             setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
             setSchedules(f.schedules);
-            setFilterSources(f.sources);
             setFilterCompanies(f.companies);
           }}
           onClose={() => setPermFilterOpen(false)}
@@ -4028,7 +3201,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
       ) : (
         <FlatList
           data={shownVacancies}
-          keyExtractor={v => ('sourceId' in v ? `external:${v.id}` : v.id)}
+          keyExtractor={v => v.id}
           extraData={{ users, permVacancyViewsMap }}
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarHeight + 16 }}
           showsVerticalScrollIndicator={false}
@@ -4055,93 +3228,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         chips={getChatSuggestions('worker', null)}
       />
 
-      <PartnerConsentSheet
-        visible={!!partnerConsentFor}
-        partnerName={partnerConsentFor?.sourceName ?? 'Партнёр'}
-        companyName={partnerConsentFor?.company}
-        onClose={() => setPartnerConsentFor(null)}
-        onAccept={() => partnerConsentFor
-          ? submitPartnerApplication(partnerConsentFor)
-          : Promise.resolve()}
-      />
-
-      {/* Подключение показываем отдельным понятным шагом. После OAuth эта же
-          вакансия автоматически продолжит отклик — повторный свайп не нужен. */}
-      {superJobConnectFor ? (
-        <View style={pS.confirmOverlay}>
-          <View style={pS.confirmCard} accessibilityViewIsModal>
-            <View style={pS.connectIcon}>
-              <Ionicons name="link-outline" size={25} color={Colors.primary} />
-            </View>
-            <Text style={pS.confirmTitle}>Подключить SuperJob</Text>
-            <Text style={pS.confirmVacancy} numberOfLines={2}>{superJobConnectFor.title}</Text>
-            <Text style={pS.confirmHint}>
-              Войдите в SuperJob один раз. После возврата JobToo автоматически продолжит этот отклик — повторно свайпать не придётся.
-            </Text>
-            <View style={pS.connectPrivacy}>
-              <Ionicons name="shield-checkmark-outline" size={17} color={Colors.green} />
-              <Text style={pS.connectPrivacyTxt}>Пароль остаётся в SuperJob и не передаётся JobToo</Text>
-            </View>
-            {superJobConnectError ? <Text style={pS.connectError}>{superJobConnectError}</Text> : null}
-            <TouchableOpacity
-              style={[pS.connectPrimary, superJobConnecting && pS.connectPrimaryDisabled]}
-              onPress={() => void connectSuperJobAndContinue()}
-              disabled={superJobConnecting}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Подключить SuperJob и продолжить отклик"
-            >
-              {superJobConnecting ? <ActivityIndicator size="small" color="#fff" /> : null}
-              <Text style={pS.connectPrimaryTxt}>
-                {superJobConnecting ? 'Подключаем…' : (superJobConnectError ? 'Попробовать снова' : 'Подключить и откликнуться')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={pS.connectLater}
-              onPress={() => { if (!superJobConnecting) setSuperJobConnectFor(null); }}
-              disabled={superJobConnecting}
-              activeOpacity={0.75}
-              accessibilityRole="button"
-            >
-              <Text style={pS.connectLaterTxt}>Не сейчас</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
-
-      {/* Плашка подтверждения перехода к партнёрской вакансии (свайп вправо). */}
-      <ExternalVacancyDetail
-        vacancy={permExternalDetail}
-        onClose={() => setPermExternalDetail(null)}
-        onOpenSource={(v: ExternalVacancy) => { setPermExternalDetail(null); void openExternalVacancy(v); }}
-        locked={isGuest}
-        onLogin={() => { setPermExternalDetail(null); promptRegister({ vacancyKind: 'external' }); }}
-      />
-
-      {externalConfirm ? (
-        <View style={pS.confirmOverlay}>
-          <View style={pS.confirmCard}>
-            <Text style={pS.confirmTitle}>Открыть сайт вакансии?</Text>
-            <Text style={pS.confirmVacancy} numberOfLines={2}>{externalConfirm.title}</Text>
-            <Text style={pS.confirmHint}>
-              Отклик на эту вакансию — на сайте источника ({externalConfirm.sourceName ?? 'партнёр'}).
-            </Text>
-            <View style={pS.confirmBtns}>
-              <TouchableOpacity style={pS.confirmCancel} onPress={() => setExternalConfirm(null)} activeOpacity={0.8}>
-                <Text style={pS.confirmCancelTxt}>Отмена</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={pS.confirmOpen}
-                onPress={() => { const v = externalConfirm; setExternalConfirm(null); if (v) openExternalVacancy(v); }}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="open-outline" size={16} color="#fff" />
-                <Text style={pS.confirmOpenTxt}>Открыть</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -4804,18 +3890,6 @@ const pS = StyleSheet.create({
     backgroundColor: Colors.bg, borderRadius: rs(18),
     padding: rs(16), gap: rs(10), ...Shadow.card,
   },
-  externalHead: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(10) },
-  externalBadge: {
-    maxWidth: rs(110), paddingHorizontal: rs(8), paddingVertical: rs(4),
-    borderRadius: rs(100), backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.divider,
-  },
-  externalBadgeTxt: { fontSize: rf(11), fontWeight: '700', color: Colors.textMuted },
-  externalAction: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(5),
-    paddingTop: rs(2),
-  },
-  externalActionTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: rs(5), borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(6), alignSelf: 'flex-start' },
   statusTxt: { fontSize: rf(12), fontWeight: '700' },
 
@@ -4993,8 +4067,6 @@ const styles = StyleSheet.create({
   jtBadgeTxt: { fontSize: rf(12.5) },
   jtBadgeB: { fontWeight: '800', color: Colors.textPrimary },
   jtBadgeO: { fontWeight: '800', color: Colors.primary },
-  sourceBadge: { backgroundColor: '#EEF1F4', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), maxWidth: rs(120), flexShrink: 0 },
-  sourceBadgeTxt: { fontSize: rf(11), fontWeight: '700', color: Colors.textSecondary },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
   jobTitle: { fontSize: rf(22), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(28) },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6) },

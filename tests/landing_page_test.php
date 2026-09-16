@@ -82,56 +82,19 @@ check('медиана чётного ряда посчитана между зн
     str_contains($mixed, 'медианная ставка — 4 000 ₽'));
 
 // ── Данные ────────────────────────────────────────────────────────────────────
+// Все вакансии — свои: сводная страница берёт их напрямую из jm_vacancies.
 $own = [];
-for ($i = 0; $i < 2; $i++) {
-    $own[] = ['id' => "own-$i", 'title' => 'Комплектовщик', 'company' => 'Склад Альфа',
-        'metro_station' => 'Алтуфьево', 'salary' => 3500, 'status' => 'open', 'work_type' => 'picker'];
-}
-$ext = [];
 for ($i = 0; $i < 6; $i++) {
-    $ext[] = ['id' => "ext-$i", 'title' => 'Комплектовщик на склад', 'company' => 'ООО Бета',
-        'metro_station' => $i < 4 ? 'Алтуфьево' : 'Медведково', 'salary' => 4000,
-        'pay_period' => 'shift', 'url' => 'https://hh.ru/vacancy/1', 'active' => true, 'work_type' => 'picker'];
+    $own[] = ['id' => "own-$i", 'title' => 'Комплектовщик на склад', 'company' => 'Склад Альфа',
+        'metro_station' => $i < 4 ? 'Алтуфьево' : 'Медведково', 'salary' => 3500 + $i * 100,
+        'status' => 'open', 'work_type' => 'picker'];
 }
 // Мало вакансий — страницы быть не должно.
-$ext[] = ['id' => 'ext-cook', 'title' => 'Повар', 'company' => 'Кафе', 'metro_station' => 'Тверская',
-    'salary' => 3000, 'pay_period' => 'shift', 'url' => 'https://hh.ru/vacancy/2',
-    'active' => true, 'work_type' => 'cook'];
-
-// Источники. Публичной странице можно показывать только вакансии включённых
-// боевых источников — ровно как ленте приложения (extVacancies в db.php).
-$sources = [
-    ['id' => 'hh', 'enabled' => true, 'environment' => 'production'],
-    ['id' => 'sandbox', 'enabled' => true, 'environment' => 'sandbox'],
-    ['id' => 'off', 'enabled' => false, 'environment' => 'production'],
-];
-foreach ($ext as &$e) { $e['source_id'] = 'hh'; $e['environment'] = 'production'; }
-unset($e);
-
-// Вакансии, которых на публичной странице быть не должно. Песочницу миграция
-// 046 заводила словами «никогда не попадают в публичную ленту», а выключенный
-// источник выключен руками и намеренно.
-$ext[] = ['id' => 'sb-1', 'title' => 'Комплектовщик из песочницы', 'company' => 'Песочница',
-    'metro_station' => 'Алтуфьево', 'salary' => 9999, 'pay_period' => 'shift',
-    'url' => 'https://example.invalid/1', 'active' => true, 'work_type' => 'picker',
-    'source_id' => 'sandbox', 'environment' => 'sandbox'];
-$ext[] = ['id' => 'off-1', 'title' => 'Комплектовщик выключенного источника', 'company' => 'Выкл',
-    'metro_station' => 'Алтуфьево', 'salary' => 8888, 'pay_period' => 'shift',
-    'url' => 'https://example.invalid/2', 'active' => true, 'work_type' => 'picker',
-    'source_id' => 'off', 'environment' => 'production'];
-
-// Рассогласованные данные: источник боевой и включённый, а у самой вакансии
-// окружение песочницы. Фильтр по источнику такую не поймает — ловит второй
-// фильтр, по окружению. Ровно так же подстраховывается лента приложения.
-$ext[] = ['id' => 'mix-1', 'title' => 'Комплектовщик с чужим окружением', 'company' => 'Смешанный',
-    'metro_station' => 'Алтуфьево', 'salary' => 7777, 'pay_period' => 'shift',
-    'url' => 'https://example.invalid/3', 'active' => true, 'work_type' => 'picker',
-    'source_id' => 'hh', 'environment' => 'sandbox'];
+$own[] = ['id' => 'own-cook', 'title' => 'Повар', 'company' => 'Кафе', 'metro_station' => 'Тверская',
+    'salary' => 3000, 'status' => 'open', 'work_type' => 'cook'];
 
 $GLOBALS['TABLES'] = [
     'jm_vacancies' => $own,
-    'jm_ext_vacancies' => $ext,
-    'jm_ext_sources' => $sources,
 ];
 
 function render_page(string $work, string $station = ''): string
@@ -144,29 +107,25 @@ function render_page(string $work, string $station = ''): string
 // ── Страница профессии по городу ──────────────────────────────────────────────
 $html = render_page('komplektovshchik');
 check('заголовок про профессию', str_contains($html, 'Работа комплектовщиком в Москве'));
-// 2 своих + 6 партнёрских = 8. Число считается, а не берётся с потолка.
-check('посчитаны все вакансии', str_contains($html, '8 вакансий'));
-check('отмечены свои', str_contains($html, '2 вакансии') && str_contains($html, 'напрямую у нас'));
-check('вилка оплаты показана', str_contains($html, '3 500') && str_contains($html, '4 000'));
+check('посчитаны все вакансии', str_contains($html, '6 вакансий'));
+check('вилка оплаты показана', str_contains($html, '3 500'));
 check('есть канонический адрес', str_contains($html, 'rel="canonical"'));
 check('ссылка на свою вакансию внутренняя', str_contains($html, 'https://jobtoo.ru/s/own-0'));
-check('партнёрская ведёт к источнику', str_contains($html, 'https://hh.ru/vacancy/1'));
-// Перелинковка: станция с 6 вакансиями есть, с 2 — нет.
-check('станция выше порога в перелинковке', str_contains($html, '/rabota/komplektovshchik/altufevo'));
+// Перелинковка: станция с 4 вакансиями есть, с 2 — нет (LP_MIN = 5).
 check('станция ниже порога не предлагается', !str_contains($html, 'medvedkovo'));
 
-// Песочница и выключенные источники: их не должно быть ни в списке, ни в счёте.
-check('вакансия песочницы не показана', !str_contains($html, 'из песочницы'));
-check('вакансия выключенного источника не показана', !str_contains($html, 'выключенного источника'));
-check('они не считаются в пороге и в счёте', !str_contains($html, '10 вакансий'));
-check('вакансия с чужим окружением не показана', !str_contains($html, 'с чужим окружением'));
-check('их зарплаты не попали в вилку',
-    !str_contains($html, '9 999') && !str_contains($html, '8 888') && !str_contains($html, '7 777'));
-
 // ── Страница профессии по станции ─────────────────────────────────────────────
+// Алтуфьево набирает порог только вместе с городской страницей быть не может —
+// используем отдельный набор, где у станции ровно LP_MIN вакансий.
+$own2 = [];
+for ($i = 0; $i < 5; $i++) {
+    $own2[] = ['id' => "s2-$i", 'title' => 'Комплектовщик на склад', 'company' => 'Склад Бета',
+        'metro_station' => 'Алтуфьево', 'salary' => 4000, 'status' => 'open', 'work_type' => 'picker'];
+}
+$GLOBALS['TABLES']['jm_vacancies'] = $own2;
 $html = render_page('komplektovshchik', 'altufevo');
 check('заголовок со станцией', str_contains($html, 'у метро Алтуфьево'));
-check('счёт только по станции', str_contains($html, '6 вакансий'));
+check('счёт только по станции', str_contains($html, '5 вакансий'));
 check('канонический адрес со станцией', str_contains($html, '/rabota/komplektovshchik/altufevo"'));
 check('есть ссылка на город', str_contains($html, '/rabota/komplektovshchik"'));
 // «Другие профессии» не должны вести в 404: у повара вакансий меньше порога,
@@ -174,6 +133,8 @@ check('есть ссылка на город', str_contains($html, '/rabota/komp
 // робота и время человека.
 check('нет ссылки на профессию без страницы', !str_contains($html, '/rabota/povar'));
 check('нет заголовка над пустым списком профессий', !str_contains($html, 'Другие профессии'));
+
+$GLOBALS['TABLES']['jm_vacancies'] = $own;
 
 // ── Порог ─────────────────────────────────────────────────────────────────────
 // Ниже порога страницы нет вовсе: тонкая страница без содержания понижает
@@ -191,24 +152,22 @@ ob_end_clean();
 check('несуществующая станция не отдаётся', $thrown);
 
 // ── Перечень для карты сайта ──────────────────────────────────────────────────
+$GLOBALS['TABLES']['jm_vacancies'] = $own2;
 $index = lp_index();
 check('город комплектовщика в перечне', in_array('/rabota/komplektovshchik', $index, true));
 check('станция выше порога в перечне', in_array('/rabota/komplektovshchik/altufevo', $index, true));
-check('станция ниже порога не в перечне', !in_array('/rabota/komplektovshchik/medvedkovo', $index, true));
 check('повар ниже порога не в перечне', !in_array('/rabota/povar', $index, true));
 foreach ($index as $u) {
     check("адрес $u годится для nginx", (bool)preg_match('~^/rabota/[a-z-]{1,40}(/[a-z0-9-]{1,80})?$~', $u));
 }
 
 // ── Экранирование ─────────────────────────────────────────────────────────────
-$GLOBALS['TABLES']['jm_ext_vacancies'][0]['title'] = 'Грузчик <script>alert(1)</script>';
+$GLOBALS['TABLES']['jm_vacancies'][0]['title'] = 'Грузчик <script>alert(1)</script>';
 $html = render_page('komplektovshchik');
 check('теги в названии экранированы', !str_contains($html, '<script>alert(1)</script>'));
+$GLOBALS['TABLES']['jm_vacancies'] = $own2;
 
 // ── Где работа: станция, а если её нет — адрес ────────────────────────────────
-// Страница про место не должна оставлять карточку без места. У партнёрских
-// вакансий станция заполнена далеко не всегда, и без запасного варианта
-// человек видел «ООО Бета · 4 000 ₽ за смену» и ни намёка, куда ехать.
 check('станция в приоритете',
     lp_place(['metro' => 'Алтуфьево', 'place' => 'ул. Складская, 4'], '') === 'м. Алтуфьево');
 check('без станции показываем адрес',
@@ -226,12 +185,10 @@ check('длинный адрес обрезан', mb_strlen($long, 'UTF-8') <= 4
 $src = (string)file_get_contents(__DIR__ . '/../php-proxy/landing_page.php');
 check('адрес своих вакансий запрашивается',
     str_contains($src, "'id,title,company,metro_station,salary,address'"));
-check('адрес партнёрских вакансий запрашивается',
-    str_contains($src, "'id,title,company,metro_station,address,salary,pay_period,url'"));
 
 // И то же самое на настоящей отрисовке, а не только в функции.
-$GLOBALS['TABLES']['jm_ext_vacancies'][5]['metro_station'] = '';
-$GLOBALS['TABLES']['jm_ext_vacancies'][5]['address'] = 'Химки, Ленинградское шоссе, 1';
+$GLOBALS['TABLES']['jm_vacancies'][0]['metro_station'] = '';
+$GLOBALS['TABLES']['jm_vacancies'][0]['address'] = 'Химки, Ленинградское шоссе, 1';
 $html = render_page('komplektovshchik');
 check('адрес виден в списке', str_contains($html, 'Химки, Ленинградское шоссе, 1'));
 

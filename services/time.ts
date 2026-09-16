@@ -45,20 +45,3 @@ export function agoRu(iso?: string | null): string {
   const years = Math.floor(days / 365);
   return `${years} ${plural(years, 'год', 'года', 'лет')} назад`;
 }
-
-/**
- * Домен ссылки без www — «hh.ru», «superjob.ru», «career.rt.ru».
- *
- * В контактах показываем именно его, а не весь адрес: полный адрес вакансии у
- * партнёров — это сто с лишним символов с идентификаторами и метками перехода,
- * и прочитать в нём источник невозможно. Человеку нужно понять, куда он
- * попадёт, а не увидеть строку целиком.
- */
-export function domainOf(url?: string | null): string {
-  if (!url) return '';
-  // Свой разбор, а не URL: на Hermes он есть, но кидает на адресах без схемы,
-  // а источники иногда присылают «www.hh.ru/vacancy/1» без «https://».
-  const m = String(url).match(/^(?:[a-z][a-z0-9+.-]*:)?\/\/([^/?#]+)|^([^/?#:]+\.[^/?#:]+)/i);
-  const host = (m?.[1] ?? m?.[2] ?? '').split('@').pop() ?? '';
-  return host.replace(/:\d+$/, '').replace(/^www\./i, '').toLowerCase();
-}
