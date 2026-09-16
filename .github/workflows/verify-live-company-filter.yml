@@ -1,0 +1,81 @@
+name: Verify live active company filter
+
+on:
+  push:
+    branches: [codex/active-company-filter]
+    paths: ['.github/workflows/verify-live-company-filter.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Query production company facet
+        env:
+          APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request
+
+          secret = os.environ.get('APP_SECRET', '')
+          if not secret:
+              raise SystemExit('EXPO_PUBLIC_APP_SECRET is not configured')
+
+          url = 'https://jobtoo.ru/api/db.php'
+          def call(fn, args=None):
+              body = json.dumps({'fn': fn, 'args': args or []}, ensure_ascii=False).encode('utf-8')
+              req = urllib.request.Request(url, data=body, method='POST', headers={
+                  'Content-Type': 'application/json',
+                  'X-App-Secret': secret,
+              })
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  payload = json.load(r)
+              if payload.get('error'):
+                  raise RuntimeError(f'{fn}: {payload["error"]}')
+              return payload.get('data')
+
+          rows = call('extCompanyOptions')
+          if not isinstance(rows, list):
+              raise SystemExit(f'extCompanyOptions returned {type(rows).__name__}, expected list')
+
+          names = []
+          for item in rows:
+              name = str(item.get('name') or '').strip()
+              count = int(item.get('vacancy_count') or 0)
+              if not name or count <= 0:
+                  raise SystemExit(f'bad company option: {item!r}')
+              names.append(name)
+          if len(names) != len(set(names)):
+              raise SystemExit('duplicate company names in facet')
+
+          print(f'LIVE_COMPANIES={len(rows)}')
+          for item in rows:
+              print(f'COMPANY\t{item["name"]}\t{int(item["vacancy_count"])}')
+
+          failures = []
+          for item in rows:
+              name = str(item['name']).strip()
+              vacancies = call('extVacancies', [0, 1, None, [name]])
+              if not isinstance(vacancies, list) or not vacancies:
+                  failures.append(f'{name}: no live vacancy returned')
+                  continue
+              v = vacancies[0]
+              checks = {
+                  'company': str(v.get('company') or '').strip() == name,
+                  'active': v.get('active') is True,
+                  'kind': v.get('kind') == 'permanent',
+                  'career': v.get('connector_kind') == 'career',
+              }
+              bad = [key for key, ok in checks.items() if not ok]
+              if bad:
+                  failures.append(f'{name}: failed {",".join(bad)}')
+
+          if failures:
+              print('FAILURES:')
+              print('\n'.join(failures))
+              raise SystemExit(1)
+          print(f'VERIFIED_EACH_COMPANY={len(rows)}')
+          PY
