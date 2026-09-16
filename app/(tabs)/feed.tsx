@@ -21,6 +21,7 @@ import {
   nameColorFromString,
 } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
+import { isRegularShift } from '@/services/regularShift';
 import { agoRu } from '@/services/time';
 import { scoreVacancyForWorker } from '@/services/matching';
 import { METRO_LINES } from '@/constants/metro';
@@ -1072,18 +1073,19 @@ function ShiftSubTabs({ value, onChange }: {
 }
 
 // «Регулярная» — не разовая смена на конкретную дату, а повторяющаяся
-// сменная/гибкая подработка из внешнего источника: такие предложения приходят
-// как обычные вакансии с графиком «Сменная работа», поэтому не превращаем их в
-// фиктивные смены JobToo и не придумываем дату/время.
+// подработка из внешнего источника: такие предложения приходят как обычные
+// вакансии, поэтому не превращаем их в фиктивные смены JobToo и не придумываем
+// дату/время.
+//
+// Что именно считать подработкой — в services/regularShift.ts: правило про
+// частичную занятость общее и проверяемое отдельно от экрана.
 function isRegularExternalVacancy(v: ExternalVacancy): boolean {
-  if (v.kind !== 'permanent') return false;
   const source = `${v.sourceName ?? ''} ${v.sourceId}`.toLowerCase();
+  if (source.trim() === '') return false;
   // Arbihunter остаётся только в разделе «Работа»: его постоянные вакансии
-  // не дублируем в регулярной подработке даже при гибком/сменном графике.
+  // не дублируем в регулярной подработке.
   if (/arbihunter|арби.?хантер/.test(source)) return false;
-  const text = `${v.title} ${v.schedule ?? ''} ${v.description ?? ''}`.toLowerCase();
-  const looksRegular = /сменн|подработ|частичн|неполн|гибк|вахт|совместитель/.test(text);
-  return looksRegular && source.length > 0;
+  return isRegularShift({ kind: v.kind, title: v.title, schedule: v.schedule });
 }
 
 function RegularLocked() {
