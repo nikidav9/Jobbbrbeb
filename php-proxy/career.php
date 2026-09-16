@@ -164,8 +164,11 @@ curl_setopt_array($ch, [
             : 'Accept: text/html,application/xhtml+xml'],
         empty($unit['post']) ? [] : ['Content-Type: application/json']
     ),
-    // Часть сайтов без Accept-Language отдаёт англоязычную версию, а нам нужны
-    // русские названия должностей.
+    // Пустая строка включает все сжатия, которые умеет curl: карьерные страницы
+    // бывают по несколько мегабайт. (Прежний комментарий здесь говорил про
+    // Accept-Language — неправда, этот заголовок мы не шлём вовсе. Если
+    // понадобится русская версия у какого-то сайта, это будет отдельная правка
+    // с проверкой, что остальные восемнадцать от неё не пострадали.)
     CURLOPT_ENCODING => '',
     CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
     CURLOPT_CONNECTTIMEOUT => 10,
