@@ -48,6 +48,7 @@ import {
   looksClickable,
   parseSiteList,
   pickLinkPattern,
+  vacancySectionLink,
   replayRequestConfig,
   URL_SHAPES,
 } from './career-discover-lib.mjs';
@@ -327,6 +328,37 @@ async function inspect(target, i) {
         } catch { /* не нажалось — следующий */ }
       }
       if (tries) console.log(`${' '.repeat(28)}нажатий: ${tries}${found() ? ', список появился' : ''}`);
+    }
+
+    // Последнее средство: уйти разделом ниже. В списке целей у двадцати одной
+    // компании стоит голый корень сайта, где вакансий нет вовсе, — и это была
+    // настоящая причина доброй четверти неудач, а не «сайт закрылся». Магнит
+    // по правильному адресу отдаёт 4448 вакансий.
+    //
+    // Переход РОВНО один: разведка ходит по чужим сайтам, и блуждание по ним
+    // превратилось бы в обход всего сайта.
+    if (!found()) {
+      const anchors = await page.evaluate(
+        () => [...document.querySelectorAll('a[href]')].slice(0, 400)
+          .map(a => ({ href: a.href, text: (a.innerText || '').trim().slice(0, 60) })),
+      ).catch(() => []);
+      const section = vacancySectionLink(anchors, page.url());
+      if (section) {
+        console.log(`${' '.repeat(28)}перехожу в раздел: ${section.slice(0, 64)}`);
+        try {
+          await page.goto(section, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+          for (let waited = 0; waited < SETTLE_MS; waited += 250) {
+            if (found()) break;
+            if (waited % 1000 === 0) {
+              await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2)).catch(() => {});
+            }
+            await page.waitForTimeout(250);
+          }
+          // Дальше разбор идёт по адресу, на котором мы ОКАЗАЛИСЬ: именно он
+          // ляжет в настройку источника, если вакансии нашлись в разметке.
+          target = { ...target, url: page.url() };
+        } catch { /* раздел не открылся — остаёмся с тем, что есть */ }
+      }
     }
 
     // Смотрим И сетевые ответы, И состояние страницы. Второе спасает сайты,

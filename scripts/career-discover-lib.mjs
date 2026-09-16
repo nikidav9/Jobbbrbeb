@@ -437,3 +437,58 @@ export function embeddedJson(html) {
   if (nuxt) return nuxt[1].trim();
   return '';
 }
+
+/**
+ * Ссылка на раздел вакансий среди якорей главной страницы.
+ *
+ * Зачем. В списке целей у двадцати одной компании стоит голый корень сайта:
+ * `https://rabota.magnit.ru`, `https://career.lenta.com`, `https://job.2gis.ru`.
+ * Вакансий там нет — они разделом ниже, и разведка честно уходила ни с чем.
+ * Владелец нашёл это за минуту, прислав рабочий адрес каталога Магнита:
+ * /moskva/vacancies, 4448 вакансий.
+ *
+ * Здесь мы делаем то же самое сами: на главной ищем ссылку, которая обещает
+ * список вакансий, и идём по ней ОДИН раз. Один — потому что разведка ходит по
+ * чужим сайтам, и блуждание по ним превратилось бы в обход всего сайта.
+ *
+ * Возвращает адрес или пустую строку.
+ */
+export function vacancySectionLink(anchors, pageUrl) {
+  let host;
+  try { host = new URL(pageUrl).hostname; } catch { return ''; }
+  let best = '';
+  let bestScore = -Infinity;
+  for (const a of anchors || []) {
+    let u;
+    try { u = new URL(a.href, pageUrl); } catch { continue; }
+    if (u.hostname !== host) continue;
+    // На ту же страницу возвращаться незачем: это якорь или «наверх».
+    if (u.href.replace(/#.*$/, '') === String(pageUrl).replace(/#.*$/, '')) continue;
+    const text = String(a.text || '').trim();
+    const segments = u.pathname.split('/').filter(Boolean);
+    // Отсекаем ссылку на ОТДЕЛЬНУЮ вакансию: слово о вакансиях есть, но после
+    // него в пути идёт ещё что-то. С главной 2ГИС разведка так уходила на
+    // /vacancies/testing/527 — одну вакансию вместо каталога, и дальше искала
+    // список там, где он один.
+    //
+    // Путь без такого слова вовсе (`/catalog`) не отбрасываем: его ещё может
+    // вытянуть надпись «Все вакансии».
+    const wordAt = segments.findIndex(seg => VACANCY_PATH_WORD.test(seg));
+    if (wordAt >= 0 && wordAt < segments.length - 1) continue;
+    const inPath = VACANCY_PATH_WORD.test(u.pathname);
+    const inText = /ваканс|вакансии|все вакансии|найти работу|подобрать работу|работа у нас/i.test(text);
+    if (!inPath && !inText) continue;
+    // Текст надёжнее пути: `/career/` есть и у страницы «о работодателе», а
+    // надпись «Все вакансии» ведёт именно в каталог. Совпало и там и там —
+    // лучший случай.
+    //
+    // Дальше выигрывает КОРОТКИЙ путь: у Магнита рядом лежат /moskva/vacancies
+    // и /detskii-sanatorii/vacancies, и второй — это вакансии одного
+    // санатория, то есть кусок вместо каталога. При равной глубине решает
+    // точная надпись «Все вакансии».
+    const exact = /^(все ваканси|ваканси)/i.test(text) ? 1 : 0;
+    const score = (inText ? 20 : 0) + (inPath ? 10 : 0) + exact * 5 - segments.length;
+    if (score > bestScore) { bestScore = score; best = u.href; }
+  }
+  return best;
+}

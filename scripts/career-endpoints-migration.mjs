@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import process from 'node:process';
 import { companyName, jsonbLiteral, sqlString } from './career-sql-lib.mjs';
-import { vacancyLinkPath } from './career-discover-lib.mjs';
+import { endpointWarning, vacancyLinkPath } from './career-discover-lib.mjs';
 
 const IN = process.argv[2] || 'career-verified.json';
 const SOURCE = process.env.MIGRATION_SOURCE || 'career';
@@ -26,6 +26,7 @@ const SOURCE = process.env.MIGRATION_SOURCE || 'career';
 // html_links отдельно смотрим сам путь: на живом прогоне иначе прошли бы
 // `/uslugi/`, `/comparisons/` и `/wp-content/uploads/2026/04/`.
 const rejected = [];
+const narrowedNotes = [];
 const rows = JSON.parse(fs.readFileSync(IN, 'utf8')).filter(r => {
   if (!r.ok) return false;
   const e = r.connector_config?.endpoints?.[0];
@@ -33,11 +34,22 @@ const rows = JSON.parse(fs.readFileSync(IN, 'utf8')).filter(r => {
     rejected.push(`${r.name} — ${e.map?.link_path}`);
     return false;
   }
+  // Параметры в адресе НЕ повод отказать. Первая версия отказывала — и
+  // выбрасывала METRO с 307 вакансиями и Перекрёсток: у них `objtype`,
+  // `linesPerPage` и `portals[0]` не сужают выдачу, а требуются самим API.
+  // Отличить обязательный параметр от фильтра по самому адресу нельзя, поэтому
+  // просто показываем человеку и берём источник.
+  const narrowed = endpointWarning(e?.url || '');
+  if (narrowed) narrowedNotes.push(`${r.name} — ${narrowed}`);
   return true;
 });
 if (rejected.length) {
   console.error(`Отброшено по пути ссылки: ${rejected.length}`);
   for (const line of rejected) console.error(`  ${line}`);
+}
+if (narrowedNotes.length) {
+  console.error(`\nВзято, но посмотрите глазами — в адресе есть параметры: ${narrowedNotes.length}`);
+  for (const line of narrowedNotes) console.error(`  ${line}`);
 }
 if (!rows.length) {
   console.error('нечего добавлять: ни одна находка не подтвердилась');
