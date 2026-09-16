@@ -96,8 +96,9 @@
 - `php-proxy/career.php` + `career_feed.php` — карьерные страницы работодателей,
   два вида источника в одном обходе:
   `connector_config.pages` — разбор разметки `JobPosting` со страницы;
-  `connector_config.endpoints` — адрес JSON API с картой полей и настройкой
-  листания (`cf_page_url`, `cf_has_next_sub`), либо `mode: html_links` —
+  `connector_config.endpoints` — адрес JSON API с картой полей, настройкой
+  листания (`cf_page_url`, `cf_has_next_sub`) и, если нужно, методом POST
+  (`method`, `body` — так читается METRO), либо `mode: html_links` —
   вакансии обычными ссылками со страницы (`cf_html_links`). Сейчас 25
   источников: 7 JSON (миграции `074`, `075`) и 18 по ссылкам (`076`). Каждый
   адрес вакансии проверен открытием — после случая, когда Сбер вёл на 404.

@@ -41,7 +41,7 @@
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-import { endpointWarning, findLists, guessMap, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
+import { endpointWarning, findLists, guessMap, looksClickable, parseSiteList, URL_SHAPES } from './career-discover-lib.mjs';
 import process from 'node:process';
 
 // Сколько компаний брать. Пусто или 0 — весь список: своих сайтов 62, и
@@ -69,6 +69,8 @@ const PROBE_TRIES = Number(process.env.DISCOVER_PROBE_TRIES || 8);
 // Сколько ждать после прокрутки до самого низа. Отдельно от SETTLE_MS: эти
 // секунды тратятся только там, где иначе ушли бы с пустыми руками.
 const TAIL_MS = Number(process.env.DISCOVER_TAIL_MS || 4000);
+const CLICK_TRIES = Number(process.env.DISCOVER_CLICK_TRIES || 4);
+const CLICK_WAIT_MS = Number(process.env.DISCOVER_CLICK_WAIT_MS || 3000);
 
 /** Пауза между сайтами: ходим по чужим серверам, а не долбим их подряд. */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -225,6 +227,37 @@ async function inspect(target, i) {
         if (found()) break;
         await page.waitForTimeout(250);
       }
+    }
+
+    // И только теперь — нажатия. Замер по списку владельца: тридцать сайтов из
+    // шестидесяти двух отдают вакансии ТОЛЬКО после нажатия «Показать
+    // вакансии», «Все вакансии» или выбора города. Открытая и прокрученная
+    // страница у них пуста, сколько ни жди, — это и была главная причина
+    // «нет данных».
+    //
+    // Жмём осторожно: только по видимым элементам, чей текст обещает список
+    // вакансий, не больше CLICK_TRIES штук, и сразу останавливаемся, как
+    // только список появился. Ничего не отправляем и не заполняем — нажатие
+    // на ссылку или кнопку каталога не меняет чужих данных.
+    if (!found()) {
+      const targets = await page.$$('button, a[role="button"], [class*="filter"] button, [class*="tab"]')
+        .catch(() => []);
+      let tries = 0;
+      for (const el of targets) {
+        if (tries >= CLICK_TRIES || found()) break;
+        let text = '';
+        try { text = ((await el.innerText()) || '').trim().toLowerCase(); } catch { continue; }
+        if (!looksClickable(text)) continue;
+        tries += 1;
+        try {
+          await el.click({ timeout: 3000 });
+          for (let waited = 0; waited < CLICK_WAIT_MS; waited += 250) {
+            if (found()) break;
+            await page.waitForTimeout(250);
+          }
+        } catch { /* не нажалось — следующий */ }
+      }
+      if (tries) console.log(`${' '.repeat(28)}нажатий: ${tries}${found() ? ', список появился' : ''}`);
     }
 
     // Смотрим И сетевые ответы, И состояние страницы. Второе спасает сайты,

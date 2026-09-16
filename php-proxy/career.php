@@ -59,7 +59,7 @@ $config = is_array($source['connector_config'] ?? null) ? $source['connector_con
 // (cf_json_items), но сюда подключён не был: настройку было некуда вписать.
 $units = [];
 foreach (is_array($config['pages'] ?? null) ? $config['pages'] : [] as $u) {
-    if (is_string($u)) $units[] = ['url' => $u, 'kind' => 'html', 'map' => [], 'paging' => []];
+    if (is_string($u)) $units[] = ['url' => $u, 'kind' => 'html', 'map' => [], 'paging' => [], 'post' => false, 'body' => null];
 }
 foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $e) {
     if (!is_array($e) || !is_string($e['url'] ?? null)) continue;
@@ -68,11 +68,17 @@ foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $
     // JobPosting держат двое, JSON отдают немногие, а список обычных ссылок
     // лежит у двух десятков.
     $mode = (string)($e['mode'] ?? 'json');
+    // Часть карьерных API отвечает только на POST: METRO на GET даёт 405.
+    // Тело запроса задаёт администратор вместе с адресом, произвольного тела
+    // из запроса сюда не попадает — как и произвольного адреса.
+    $post = strtoupper((string)($e['method'] ?? 'GET')) === 'POST';
     $units[] = [
         'url'    => $e['url'],
         'kind'   => $mode === 'html_links' ? 'html_links' : 'json',
         'map'    => is_array($e['map'] ?? null) ? $e['map'] : [],
         'paging' => is_array($e['paging'] ?? null) ? $e['paging'] : [],
+        'post'   => $post,
+        'body'   => $post ? json_encode(is_array($e['body'] ?? null) ? $e['body'] : [], JSON_UNESCAPED_UNICODE) : null,
     ];
 }
 // Список задаёт администратор в панели. Это не повод пускать сборщик куда
@@ -103,9 +109,12 @@ $tooLarge = false;
 $ch = curl_init($pageUrl);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => false,
-    CURLOPT_HTTPHEADER => [$unit['kind'] === 'json'
-        ? 'Accept: application/json'
-        : 'Accept: text/html,application/xhtml+xml'],
+    CURLOPT_HTTPHEADER => array_merge(
+        [$unit['kind'] === 'json'
+            ? 'Accept: application/json'
+            : 'Accept: text/html,application/xhtml+xml'],
+        empty($unit['post']) ? [] : ['Content-Type: application/json']
+    ),
     // Часть сайтов без Accept-Language отдаёт англоязычную версию, а нам нужны
     // русские названия должностей.
     CURLOPT_ENCODING => '',
@@ -116,6 +125,9 @@ curl_setopt_array($ch, [
     // так обходят запрет на служебные сети.
     CURLOPT_FOLLOWLOCATION => false,
     CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+    // POST только если он прямо задан в настройке источника.
+    CURLOPT_POST => !empty($unit['post']),
+    CURLOPT_POSTFIELDS => empty($unit['post']) ? null : (string)$unit['body'],
     CURLOPT_RESOLVE => $resolveEntries,
     CURLOPT_SSL_VERIFYPEER => true,
     CURLOPT_SSL_VERIFYHOST => 2,
