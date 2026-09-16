@@ -106,7 +106,7 @@ q() { docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
 # Список не теряется: он записан в runtime_quarantine, а сама компания остаётся
 # в catalog_pages и продолжает участвовать в browser-discovery.
 q -v catalog_pages="$catalog_pages" -v quarantine="$quarantine" <<'SQL'
-create temp table jt_career_sync on commit drop as
+create temp table jt_career_sync as
 with raw as (
   select coalesce(
     (select connector_config->'endpoints'
