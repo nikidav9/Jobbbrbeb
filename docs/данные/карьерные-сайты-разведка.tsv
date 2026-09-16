@@ -1,0 +1,171 @@
+Компания	Карьерная страница	Разведка	Как читаем	Адрес, откуда читаем	Проверка	Вакансий при проверке	Пример ссылки
+Лента	https://career.lenta.com	нет данных					
+METRO	https://rabota.metro-cc.ru/vacancies/store	готов	json	https://rabota.metro-cc.ru/SupportSrv/SupportSrv.svc/Support/v1/metro/vacancy?line=0&linesPerPage=10&objtype=VacancyMetro	подтверждено	10	https://rabota.metro-cc.ru/vacancy/27049
+Перекрёсток	https://rabota.perekrestok.ru/vacancies	готов	json	https://rabota5ka.ru/gw/api/vacancy/hire-request?page=1&limit=7&radius=30000&warehouseRadius=100&portals%5B0%5D=cross	подтверждено	7	https://rabota.perekrestok.ru/vacancies/69d3e9f2e38c53f14a8edca4
+Пятёрочка	https://rabota5ka.ru/vacancies	готов	json	https://rabota5ka.ru/api/vacancy/hire-request?page=1&limit=10&radius=30000&warehouseRadius=100&cityId=692434fa2de34b352c78bba8	страница рисуется скриптом и отвечает 200 даже на выдуманный адрес		
+Магнит	https://rabota.magnit.ru	нет данных					
+О'КЕЙ	https://www.okmarket.ru/career/vacancies	нет данных					
+ВкусВилл	https://vkusvill.ru/job/vacancys	готов	html_links	https://vkusvill.ru/job/vacancys	подтверждено	20	https://vkusvill.ru/job/vacancys/
+Глобус	https://rabota.globus.ru	нет данных					
+Fix Price	https://fix-price.com/work/store	нет данных					
+Чижик	https://chizhik.club/rabota	нет данных					
+Красное&Белое	https://krasnoeibeloe.ru/job	нет данных					
+ДИКСИ	https://dixy.ru/group/career/vacancy	нет данных					
+Монетка	https://career.monetka.ru	нет данных					
+SPAR	https://myspar.ru/career	нет данных					
+Ozon	https://career.ozon.ru/vacancy	нет данных					
+Мария-Ра	https://www.maria-ra.ru/karera-v-seti/vakansii	готов	html_links	https://www.maria-ra.ru/karera-v-seti/vakansii	подтверждено	23	https://www.maria-ra.ru/karera-v-seti/vakansii/
+Слата	https://www.slata.ru/vacancy	нет данных					
+Wildberries / РВБ	https://career.rwb.ru/vacancies	готов	json	https://career.rwb.ru/crm-api/api/v1/pub/vacancies?limit=7&offset=0	страница рисуется скриптом и отвечает 200 даже на выдуманный адрес		
+Ярче!	https://работаярче.рф	готов	html_links	https://работаярче.рф	подтверждено	3	https://xn--80aacr7bjeo1cwe.xn--p1ai/nsk/kassir
+Самокат · /	https://vacancy.samokat.ru	нет данных					
+Lamoda	https://job.lamoda.ru/vacancies	готов	json	https://job.lamoda.ru/api/hr/vacancies/compact?search=&minExperience=&pagination[start]=0&pagination[limit]=10	подтверждено	10	https://job.lamoda.ru/vacancies/moskva/analitik-sluzhby-bezopasnosti--3020
+Спортмастер · /	https://job.sportmaster.ru	нет данных					
+DNS	https://www.dns-shop.ru/jobs	нет данных					
+М.Видео-Эльдорадо	https://career.mvideoeldorado.ru/vacancies	нет данных					
+Лемана ПРО	https://rabota.lemanapro.ru/vacancies	нет данных					
+Детский мир	https://jobs.detmir.ru	готов	html_links	https://jobs.detmir.ru	подтверждено	7	http://jobs.detmir.ru/dm/prodavec-kassir#form
+Золотое Яблоко · /	https://job.goldapple.ru	готов	json	https://job.goldapple.ru/api/actual-vacancies	страница рисуется скриптом и отвечает 200 даже на выдуманный адрес		
+Hoff	https://job.hoff.ru	готов	json	https://job-api.hoff.ru/vacancies/?search&limit=24	список: HTTP 401		
+РИВ ГОШ	https://rivegauche.ru/work	нет данных					
+Петрович	https://petrovichjob.ru	готов	html_links	https://petrovichjob.ru	подтверждено	5	https://petrovichjob.ru/vakancies/b2b/
+Улыбка радуги	https://rabota.r-ulybka.ru	нет данных					
+kari	https://kari.com/job	нет данных					
+Подружка	https://rabotavpodrygke.ru	нет данных					
+HENDERSON	https://henderson.ru/company/vacancies	нет данных					
+CDEK	https://rabota.cdek.ru/vacancies	готов	html_links	https://rabota.cdek.ru/vacancies	подтверждено	20	https://rabota.cdek.ru/vacancies/item/13145
+Befree	https://befree.ru/job	нет данных					
+Gloria Jeans	https://lookbook.gloria-jeans.ru	нет данных					
+Деловые Линии	https://job.dellin.ru	нет данных					
+ПЭК	https://hr.pecom.ru	нет данных					
+DPD Россия	https://dpd.ru/vacancy	нет данных					
+Почта России	https://www.pochta.ru/vacancy-list	нет данных					
+Аэрофлот	https://vacancy.aeroflot.ru	нет данных					
+РЖД	https://team.rzd.ru/career/vacancies	нет данных					
+Черкизово	https://vacancies.cherkizovo.com/vacancies	нет данных					
+Шереметьево	https://job.svo.su	нет данных					
+Балтика	https://career.baltika.ru	нет данных					
+СИБУР	https://career.sibur.ru/vacancies	нет данных					
+Додо Пицца	https://rabotavdodo.ru	нет данных					
+РУСАЛ	https://www.rusal.ru/career/vacancies	готов	html_links	https://www.rusal.ru/career/vacancies	подтверждено	6	https://www.rusal.ru/career/reserve/
+Северсталь	https://career.severstal.com/vacancies	готов	html_links	https://career.severstal.com/vacancies	подтверждено	10	https://career.severstal.com/vacancies/slesar-remontnik-staleplavilnoe-proizvodstvo_1/
+ФосАгро	https://www.phosagro.ru/career-education/vacancies	нужен ручной адаптер					
+ROSTIC'S	https://rostics.ru/ru/career	нет данных					
+Норникель	https://career.nornickel.ru/vacancies	готов	html_links	https://career.nornickel.ru/vacancies	подтверждено	40	https://career.nornickel.ru/vacancy/208190-burilshchik-shpurov-pubr-rudnik-skalistyy-norilsk/
+Burger King Россия	https://burgerkingrus.ru/rabota	нет данных					
+Вкусно — и точка	https://rabotaitochka.ru	ошибка					
+Теремок	https://rabota.teremok.ru/vacancies	нет данных					
+Шоколадница	https://regions.shoko.ru/career	нет данных					
+Кофемания	https://rabota.coffeemania.ru	нет адреса вакансии					
+Сбер · /	https://rabota.sber.ru	нет данных					
+AZIMUT Hotels	https://azimuthotels.com/ru/info/career	готов	html_links	https://azimuthotels.com/ru/info/career	подтверждено	8	https://azimuthotels.com/ru/info/career
+Яндекс · /jobs	https://yandex.ru/jobs	готов	html_links	https://yandex.ru/jobs	подтверждено	6	https://yandex.ru/jobs/hiring-events/weekend-offer?from=cp_header
+Авиасейлс	https://www.aviasales.ru/about/vacancies	нет адреса вакансии					
+Т-Банк · /career/vacancies/it	https://www.tbank.ru/career/vacancies/it	нет адреса вакансии					
+VK	https://team.vk.company/vacancy	готов	json	https://team.vk.company/career/api/v2/vacancies/?limit=25&offset=25&title=&specialty=&town=&tags=&remote=	подтверждено	25	https://team.vk.company/vacancy/52075
+МегаФон · /	https://job.megafon.ru	нет адреса вакансии					
+Т-Банк · /career/vacancies	https://www.tbank.ru/career/vacancies	нет адреса вакансии					
+Яндекс · /jobs/vacancies	https://yandex.ru/jobs/vacancies	готов	html_links	https://yandex.ru/jobs/vacancies	подтверждено	10	https://yandex.ru/jobs/services/yandex
+Золотое Яблоко · /search/all	https://job.goldapple.ru/search/all	готов	json	https://job.goldapple.ru/api/search-page/vacancies	страница рисуется скриптом и отвечает 200 даже на выдуманный адрес		
+Avito	https://career.avito.com/vacancies	готов	html_links	https://career.avito.com/vacancies	подтверждено	4	https://career.avito.com/vacancies/prodazhi/20097/
+МТС	https://job.mts.ru/vacancies	нет данных					
+Росатом	https://rosatom-career.ru/vacancies	нет данных					
+2ГИС	https://job.2gis.ru	нет данных					
+Иви	https://corp.ivi.ru/vacancies	готов	html_links	https://corp.ivi.ru/vacancies	подтверждено	11	https://corp.ivi.ru/vacancy/java-razrabotchik-big-data/
+Сбер · /search	https://rabota.sber.ru/search	нет адреса вакансии					
+Альфа-Банк	https://job.alfabank.ru/vacancies	нет данных					
+GRASS	https://job.thgrass.com/vacancies	готов	html_links	https://job.thgrass.com/vacancies	подтверждено	15	https://job.thgrass.com/vacancies/4119/
+X5 Tech	https://x5.tech/vacancy	готов	json	https://prod-lkk-back.x5.ru/api/v2/x5-tech/vacancies/	подтверждено	10	https://x5.tech/vacancy/6474129c-9561-459e-a0d7-176314677bc0
+Twinby	https://twinby.ru/career	готов	embedded	https://twinby.ru/career	встроенные данные не разбираются как JSON		
+Островок	https://career.ostrovok.ru/vacancy	готов	embedded	https://career.ostrovok.ru/vacancy	подтверждено	8	https://career.ostrovok.ru/vacancy
+Точка Банк	https://hr.tochka.com/vacancies	нет данных					
+Cloud.ru	https://cloud.ru/career/vacancies	готов	html_links	https://cloud.ru/career/vacancies	подтверждено	10	https://cloud.ru/career/vacancies/4188602
+Kaspersky	https://careers.kaspersky.ru/vacancies	готов	html_links	https://careers.kaspersky.ru/vacancies	подтверждено	13	https://careers.kaspersky.ru/vacancy/25341
+Yadro	https://careers.yadro.com/vacancies	нет адреса вакансии					
+Ростелеком	https://job.rt.ru/search	нет данных					
+Контур	https://kontur.ru/career/vacancies	готов	html_links	https://kontur.ru/career/vacancies	подтверждено	75	https://kontur.ru/front/ver-1408987799/build/css/career/vacancies/list-page.css
+КРОК	https://careers.croc.ru/vacancies	нет данных					
+Самокат · /vacancies-business	https://vacancy.samokat.ru/vacancies-business	нет данных					
+IBS	https://ibs.ru/career/jobs	готов	html_links	https://ibs.ru/career/jobs	подтверждено	51	https://ibs.ru/career/jobs/filter/napravlenie-is-razrabotka/apply/#list
+M2 Tech	https://tech.m2.ru	нет данных					
+ВТБ	https://rabota-vtb.ru/career	готов	embedded	https://rabota-vtb.ru/career	подтверждено	20	https://rabota-vtb.ru/career
+Macroscop	https://pro.macroscop.com/vacancies	нет данных					
+Циан	https://krasnodar.cian.ru/vacancies	нет данных					
+Stepik	https://welcome.stepik.org/ru/careers	готов	html_links	https://welcome.stepik.org/ru/careers	подтверждено	7	https://welcome.stepik.org/ru/careers
+Evercode Lab	https://evercodelab.ru/vacancies	нет данных					
+Aston	https://career.astondevs.ru/vacancy	нет данных					
+amoCRM	https://www.amocrm.ru/jobs	готов	html_links	https://www.amocrm.ru/jobs	подтверждено	9	https://www.amocrm.ru/jobs/production#go_to_content
+Positive Technologies	https://ptsecurity.com/about/vacancy	нет данных					
+IT_One	https://www.it-one.ru/vacancies	нет данных					
+Пачка	https://pachca.com/career	готов	html_links	https://pachca.com/career	подтверждено	7	https://pachca.com/comparisons/slack
+Selecty	https://selecty.ru/it-vacancy	нет данных					
+КОРУС Консалтинг	https://career.korusconsulting.ru/vacancies	готов	html_links	https://career.korusconsulting.ru/vacancies	подтверждено	29	https://career.korusconsulting.ru/vacancies/business-development-manager-bdm-solution-sales-executive-v-fintech/
+Axenix	https://axenix.pro/career	нет данных					
+Гараж 8	https://garage-eight.com/vacancies	нет данных					
+МегаФон · /vacancy/all/any	https://job.megafon.ru/vacancy/all/any	нет данных					
+Тензор	https://tensor.ru/vacancies	нет данных					
+Deloitte	https://careers.delret.ru	нет данных					
+Билайн	https://job.beeline.ru/vacancies	нет данных					
+Spotware Systems	https://spotware.applytojob.com/apply	готов	html_links	https://spotware.applytojob.com/apply	подтверждено	10	https://spotware.applytojob.com/apply/MXlBmwVpWE/Accountant-JuniorMidLevel
+Спортмастер · /vacancies	https://job.sportmaster.ru/vacancies	нет данных					
+1С	https://1c.ru/rus/firm1c/vacan/search	готов	html_links	https://1c.ru/rus/firm1c/vacan/search	подтверждено	5	https://1c.ru/rus/firm1c/vacan/vacancy/12
+iSpring	https://www.ispring.ru/company/jobs/vacancies	готов	html_links	https://www.ispring.ru/company/jobs/vacancies	подтверждено	10	https://www.ispring.ru/company/jobs/vacancies
+Coral	https://coral.tech/it-main	нет данных					
+ГНИВЦ	https://career.gnivc.ru/vacancies	нет данных					
+Lesta Games	https://join.lesta.team	нет адреса вакансии					
+Группа Астра	https://astra.ru/about/career/vacancies	нет данных					
+kokos group	https://career.kokocgroup.ru/vacancies	готов	html_links	https://career.kokocgroup.ru/vacancies	подтверждено	6	https://career.kokocgroup.ru/vacancies/cfa88309-0b26-4881-9262-cdd313e17f7f
+Agima	https://www.agima.ru/careers	готов	html_links	https://www.agima.ru/careers	подтверждено	4	https://www.agima.ru/careers/vacancy/art-direktor/
+НСПК	https://www.nspk.ru/vacancies	нет данных					
+RedLab	https://redlab.dev/career	готов	html_links	https://redlab.dev/career	подтверждено	3	https://redlab.dev/wp-content/uploads/2026/04/rl-politics.pdf
+Navio	https://navio.auto/vacancies	готов	html_links	https://navio.auto/vacancies	подтверждено	34	https://navio.auto/vacancies/664
+Bell Integrator	https://bellintegrator.ru/information/vacancies	готов	html_links	https://bellintegrator.ru/information/vacancies	подтверждено	25	https://bellintegrator.ru/vacancy/2136
+Протей	https://protei.ru/vacancies	нет данных					
+Mish	https://mish.design/ru/vacancies	готов	html_links	https://mish.design/ru/vacancies	подтверждено	17	https://mish.design/ru/vacancies/115-graficheskij-dizajner-middle
+Индасофт	https://indusoft.ru/about/vacancies	готов	html_links	https://indusoft.ru/about/vacancies	подтверждено	5	https://indusoft.ru/solutions/dispatcher/
+Инфосистемы Джет	https://jet.su/career/vacancies	готов	html_links	https://jet.su/career/vacancies	подтверждено	8	https://jet.su/career/vacancies/inzhener-proektirovshchik-po-monitoringu/
+Техвилл	https://techvill.ru/vacancies	готов	html_links	https://techvill.ru/vacancies	подтверждено	21	https://techvill.ru/vacancies/4326862
+Performance Lab	https://www.performance-lab.ru/vacancy	готов	html_links	https://www.performance-lab.ru/vacancy	подтверждено	5	https://www.performance-lab.ru/vacancies/vedushhij-inzhener-po-nagruzochnomu-testirovaniyu-team-lead
+ДатаРу	https://dataru.ru/career/vacancy	нет данных					
+Koronatech	https://koronatech.ru/vacancy	готов	html_links	https://koronatech.ru/vacancy	подтверждено	3	https://koronatech.ru/about/fintech-expertise/
+Inline Group	https://inlinegroup.ru/about/jobs	готов	html_links	https://inlinegroup.ru/about/jobs	подтверждено	12	https://inlinegroup.ru/about/jobs/11851
+Наумен	https://www.naumen.ru/career/vacancies	нет данных					
+Just AI	https://careers.just-ai.com/vakansii	готов	html_links	https://careers.just-ai.com/vakansii	подтверждено	9	https://careers.just-ai.com/vakansii/feed
+Спортс	https://www.sports.ru/football/blogs/3271770.html	готов	html_links	https://www.sports.ru/football/blogs/3271770.html	подтверждено	3	https://www.sports.ru/tribuna/blogs/career/
+Селектел	https://selectel.ru/careers/all	нет адреса вакансии					
+TerraLink	https://terralink.ru/career/vacancies	готов	html_links	https://terralink.ru/career/vacancies	подтверждено	3	https://terralink.ru/career/vacancies/direktor-direktsii-erp-resheniy/
+BSL	https://bsl.dev/vacancies.html	готов	html_links	https://bsl.dev/vacancies.html	подтверждено	21	https://bsl.dev/vacancies/system-analyst.html
+Softline	https://softline.ru/about/vacancies	нет данных					
+Globus IT	https://globus-ltd.ru/vacancies	нет адреса вакансии					
+Reksoft	https://career.reksoft.com/vacancies	готов	html_links	https://career.reksoft.com/vacancies	подтверждено	5	https://career.reksoft.com/vacancies/ai-developer/
+iFellow	https://ifellow.ru/vacancy	нет данных					
+Галактика	https://galaktika.ru/career	нет данных					
+Солар	https://team.rt-solar.ru/vacancies	готов	html_links	https://team.rt-solar.ru/vacancies	подтверждено	5	https://team.rt-solar.ru/vacancies/871/
+Cloud Networks	https://cloudnetworks.ru/vacancies	нет данных					
+Orion soft	https://career.orionsoft.ru/vacancy	готов	html_links	https://career.orionsoft.ru/vacancy	подтверждено	3	https://career.orionsoft.ru/vacancy/stazher/mladshij-linux-inzhener-v-komandu-podderzhki
+С-Терра	https://www.s-terra.ru/company/rabota-u-nas	готов	html_links	https://www.s-terra.ru/company/rabota-u-nas	подтверждено	6	https://www.s-terra.ru/company/rabota-u-nas/Inzhenergruppyproduktovoyanalitiki/
+Notamedia	https://nota.media/career	нет данных					
+Адвантум	https://advantum.ru/jobs	нет данных					
+Centicore Group	https://centicore.ru/vacancies	готов	html_links	https://centicore.ru/vacancies	ссылка на вакансию: HTTP 403		
+Юзтех	https://usetech.ru/career	готов	html_links	https://usetech.ru/career	подтверждено	6	https://usetech.ru/vacancy/sistemnyj-analitik/
+Effective Technologies	https://career.effective-group.ru	нет данных					
+Baum	https://baum.ru/job	готов	html_links	https://baum.ru/job	подтверждено	4	https://baum.ru/job/vacancies/c-developer/
+BINOM	https://binom.systems/vakansii	готов	html_links	https://binom.systems/vakansii	подтверждено	10	https://binom.systems/uslugi/perehod-na-epd/
+Rubius	https://rubius.com/ru/company/career	готов	html_links	https://rubius.com/ru/company/career	подтверждено	4	https://rubius.com/ru/company/career/stories/liliya
+Rush Agency	https://www.rush-agency.ru/jobs	нет данных					
+Directum	https://career.directum.ru/vacancy?from=main_button_vacancy	нет данных					
+Crosstech	https://crosstech.ru/vacancies	готов	html_links	https://crosstech.ru/vacancies	подтверждено	8	https://crosstech.ru/vacancies/servisnyy-tsentr-v-oblasti-informatsionnykh-tekhnologiy-i-zashchity-informatsii/direktor-tsentra-kiberbezopasnosti-soc/
+Arenadata	https://career.arenadata.tech	нет данных					
+PrideInBrains	https://prideinbrains.com/%D0%92%D0%B0%D0%BA%D0%B0%D0%BD%D1%81%D0%B8%D0%B8	нет данных					
+Траектория технологий	https://trctech.ru/karera	готов	html_links	https://trctech.ru/karera	подтверждено	4	https://trctech.ru/uslugi/it-infrastruktura
+SimbirSoft	https://www.simbirsoft.com/vacancies	готов	html_links	https://www.simbirsoft.com/vacancies	подтверждено	7	https://www.simbirsoft.com/vacancies/tag/iskusstvennyy-intellekt/
+PIX Robotics	https://pix.ru/company/vacancy	нет данных					
+SearchInform	https://searchinform.ru/company/jobs	готов	html_links	https://searchinform.ru/company/jobs	подтверждено	7	https://searchinform.ru/kontrol-sotrudnikov/profajling/profajling-psihotipy-lichnosti/
+Лоция	https://loodsen.ru/vacancies	ошибка					
+Хоулмонт	https://job.haulmont.ru/career	готов	embedded	https://job.haulmont.ru/career	в HTML нет встроенных данных (__NEXT_DATA__/__NUXT__)		
+Аурига	https://hr.auriga.ru	готов	html_links	https://hr.auriga.ru	подтверждено	4	https://hr.auriga.ru/position/inzhener-razrabotchik-vstraivaemyh-sistem-pod-linux/
+РДВ Технолоджи	https://rdwcomp.ru/kompaniya/vakansii	нет данных					
+Linx	https://linx.ru/about/career	готов	html_links	https://linx.ru/about/career	подтверждено	3	https://linx.ru/about/career/finansovyy-direktor/
+Контакт	https://itcontact.ru/vacancies	готов	html_links	https://itcontact.ru/vacancies	подтверждено	6	https://itcontact.ru/vacancies/feed/
+ITG	https://itglobal.com/ru-ru/company/vacancies	готов	html_links	https://itglobal.com/ru-ru/company/vacancies	подтверждено	11	https://itglobal.com/ru-ru/services/virtual-infrastructure/arenda-infrastruktury-s-gpu/
+Дельта Компьютерс	https://deltacomputers.ru/vacancies	готов	html_links	https://deltacomputers.ru/vacancies	подтверждено	3	https://deltacomputers.ru/vacancies/2308/
