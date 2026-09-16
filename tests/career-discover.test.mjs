@@ -18,6 +18,12 @@ import {
   looksClickable,
   looksLikeVacancies,
   parseSiteList,
+  dig,
+  embeddedJson,
+  hrefsWith,
+  itemUrl,
+  pickLinkPattern,
+  vacancyLinkPath,
   replayRequestConfig,
   scoreList,
 } from '../scripts/career-discover-lib.mjs';
@@ -287,4 +293,221 @@ test('разведчик сохраняет request metadata и настоящи
   assert.match(discover, /replayRequestConfig\(cap\.method, cap\.postData\)/);
   assert.match(discover, /config:\s*\{\s*mode:\s*'embedded'\s*\}/);
   assert.doesNotMatch(discover, /consider\(found, '\(в HTML страницы\)'/);
+});
+
+/**
+ * Ссылки на вакансии прямо в разметке.
+ *
+ * Самый частый и самый простой случай, который разведка раньше не видела
+ * вовсе: сайт отдаёт готовый HTML со ссылками, JSON-запроса нет, и в отчёте
+ * стояло «нет данных». Найденный здесь `link_path` уходит в `mode: html_links`
+ * — тот же разбор, что на проде делает cf_html_links.
+ */
+const ANCHORS_TYPICAL = [
+  { href: 'https://job.x.ru/vacancy/101', text: 'Комплектовщик на склад' },
+  { href: 'https://job.x.ru/vacancy/102', text: 'Упаковщик товара' },
+  { href: 'https://job.x.ru/vacancy/103', text: 'Оператор call-центра' },
+];
+
+test('находит путь ссылки на вакансию среди якорей страницы', () => {
+  const got = pickLinkPattern(ANCHORS_TYPICAL, 'https://job.x.ru/vacancies');
+  assert.equal(got.link_path, '/vacancy/');
+  assert.equal(got.tails, 3);
+});
+
+test('новости не выигрывают у вакансий, даже когда их больше', () => {
+  // Без веса на «вакансионное» слово в пути побеждал бы раздел с бо́льшим
+  // числом разных хвостов — то есть разведка уверенно предложила бы читать
+  // новости. Поэтому новостей здесь намеренно БОЛЬШЕ.
+  const anchors = [
+    ...ANCHORS_TYPICAL,
+    { href: 'https://job.x.ru/news/a-very-long-news-title', text: 'Мы открыли новый склад' },
+    { href: 'https://job.x.ru/news/b-another-long-title', text: 'Итоги полугодия компании' },
+    { href: 'https://job.x.ru/news/c-third-long-title', text: 'Как мы нанимаем людей' },
+    { href: 'https://job.x.ru/news/d-fourth-long-title', text: 'Новый офис в Казани' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/vacancy/');
+});
+
+test('ссылка на сам раздел не считается вакансией', () => {
+  // «Все вакансии» ведёт на /vacancy без хвоста: хвоста нет — и группы нет.
+  // Плюс текст раздела не даёт признака «с должностью».
+  const anchors = [
+    { href: 'https://job.x.ru/vacancy', text: 'Все вакансии' },
+    { href: 'https://job.x.ru/vacancy/', text: 'Вакансии в Москве' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('без единого человеческого заголовка шаблон не принимается', () => {
+  // Ссылки с картинок: href есть, текста нет. cf_html_links на проде отбросит
+  // такие по min_title и вернёт пусто — значит и разведке принимать нечего.
+  const anchors = ANCHORS_TYPICAL.map(a => ({ href: a.href, text: '' }));
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('чужой домен в ссылках не попадает в шаблон', () => {
+  // Кнопка «откликнуться на hh» есть почти на каждой карьерной странице.
+  // Взять её путь значит завести источник, ведущий на агрегатор, — прямо
+  // против решения владельца.
+  const anchors = [
+    { href: 'https://hh.ru/vacancy/901', text: 'Откликнуться на hh.ru' },
+    { href: 'https://hh.ru/vacancy/902', text: 'Смотреть на hh.ru подробно' },
+    { href: 'https://hh.ru/vacancy/903', text: 'Ещё одна вакансия на hh.ru' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('двух разных вакансий мало: нужен порог', () => {
+  // Две ссылки даёт любая пара «о компании / контакты» внутри одного раздела.
+  const anchors = ANCHORS_TYPICAL.slice(0, 2);
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies'), null);
+});
+
+test('путь берётся целиком, а не по первому сегменту', () => {
+  // У части сайтов вакансии лежат глубже: /career/vacancies/<id>. Если
+  // отрезать по первому сегменту, в конфиг уйдёт /career/ — а под ним же
+  // лежат «о нас» и «льготы», и лента наберёт разделов вместо вакансий.
+  const anchors = [
+    { href: 'https://job.x.ru/career/vacancies/101', text: 'Комплектовщик на склад' },
+    { href: 'https://job.x.ru/career/vacancies/102', text: 'Упаковщик товара' },
+    { href: 'https://job.x.ru/career/vacancies/103', text: 'Оператор call-центра' },
+    { href: 'https://job.x.ru/career/about', text: 'О компании и наших людях' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/career/vacancies/');
+});
+
+test('относительные ссылки разбираются от адреса страницы', () => {
+  const anchors = [
+    { href: '/vacancy/101', text: 'Комплектовщик на склад' },
+    { href: '/vacancy/102', text: 'Упаковщик товара' },
+    { href: '/vacancy/103', text: 'Оператор call-центра' },
+  ];
+  assert.equal(pickLinkPattern(anchors, 'https://job.x.ru/vacancies').link_path, '/vacancy/');
+});
+
+test('строгий режим не принимает путь без слова о вакансиях', () => {
+  // На живом прогоне Koronatech предложил `/about/`: вакансий на странице нет,
+  // и победило единственное, у чего набралось три разных хвоста. Такой путь
+  // уходит прямо в production-источник, поэтому «лучший из имеющихся» здесь
+  // не годится.
+  const anchors = [
+    { href: 'https://x.ru/about/history', text: 'История компании с 1998 года' },
+    { href: 'https://x.ru/about/team', text: 'Наша команда и ценности' },
+    { href: 'https://x.ru/about/offices', text: 'Офисы и представительства' },
+  ];
+  assert.ok(pickLinkPattern(anchors, 'https://x.ru/career'), 'в обычном режиме находка есть');
+  assert.equal(pickLinkPattern(anchors, 'https://x.ru/career', 3, true), null);
+});
+
+test('строгий режим пропускает настоящий путь вакансий', () => {
+  assert.equal(
+    pickLinkPattern(ANCHORS_TYPICAL, 'https://job.x.ru/vacancies', 3, true).link_path,
+    '/vacancy/',
+  );
+});
+
+/**
+ * Сборка ссылки на вакансию — то же правило, что у cf_json_url на проде.
+ * Здесь проверка, что проверялка не соврёт: она решает, включать источник или
+ * нет, и ошибка в ней пропустит в ленту вакансию с битой ссылкой.
+ */
+test('слаг из двух сегментов не превращается в %2F', () => {
+  // Слаг Lamoda — `moskva/analitik--3020`. Сплошное кодирование ломает адрес,
+  // и вакансия открывается в никуда. На проде это уже ловили.
+  assert.equal(
+    itemUrl({ slug: 'moskva/analitik--3020' },
+      { url_template: 'https://job.lamoda.ru/vacancies/{slug}' }, 'https://job.lamoda.ru'),
+    'https://job.lamoda.ru/vacancies/moskva/analitik--3020',
+  );
+});
+
+test('опасные знаки в значении всё-таки экранируются', () => {
+  // Кодирование посегментно не должно открывать подстановку чужого адреса.
+  const got = itemUrl({ id: 'x?a=1#b' }, { url_template: 'https://x.ru/v/{id}' }, 'https://x.ru');
+  assert.equal(got, 'https://x.ru/v/x%3Fa%3D1%23b');
+});
+
+test('готовая ссылка из ответа важнее шаблона', () => {
+  assert.equal(
+    itemUrl({ link: '/vacancy/7', id: 99 },
+      { url: 'link', url_template: 'https://x.ru/job/{id}' }, 'https://x.ru'),
+    'https://x.ru/vacancy/7',
+  );
+});
+
+test('путь до списка разбирается и через массив', () => {
+  assert.deepEqual(dig({ data: { items: [1, 2] } }, 'data.items'), [1, 2]);
+  assert.equal(dig({ a: [{ b: 5 }] }, 'a[].b'), 5);
+  // Нет такого пути — null, а не исключение: коннектор дальше просто не
+  // возьмёт этот источник, а падение уронило бы весь обход.
+  assert.equal(dig({ a: 1 }, 'нет.такого'), null);
+});
+
+/**
+ * Ссылки из СЫРОГО HTML и встроенные в страницу данные.
+ *
+ * Это то, чем проверялка решает, включать источник или нет. Первая её версия
+ * собирала адрес сама — origin + кусок пути + хвост — и обрезала хвост по
+ * первому «/». Контур, IBS и Техвилл получали 404 при том, что на проде эти
+ * три источника работают и дают 62, 45 и 20 вакансий.
+ */
+test('берётся настоящий href, а не собранный адрес', () => {
+  const html = '<a href="/career/vacancies/moskva/ops--12">Оператор склада</a>';
+  assert.deepEqual(
+    hrefsWith(html, '/career/vacancies/', 'https://kontur.ru/career/vacancies'),
+    ['https://kontur.ru/career/vacancies/moskva/ops--12'],
+  );
+});
+
+test('ссылка на сам раздел в выборку не попадает', () => {
+  const html = '<a href="/vacancies/">Все вакансии</a><a href="/vacancies/?city=msk">В Москве</a>';
+  assert.deepEqual(hrefsWith(html, '/vacancies/', 'https://x.ru/vacancies'), []);
+});
+
+test('одна вакансия двумя ссылками считается один раз', () => {
+  // С картинки и с заголовка — обычное дело, счёт по вхождениям завысил бы
+  // находку вдвое.
+  const html = '<a href="/vacancy/7"><img></a><a href="/vacancy/7">Комплектовщик</a>';
+  assert.equal(hrefsWith(html, '/vacancy/', 'https://x.ru/jobs').length, 1);
+});
+
+test('встроенные данные достаются и из Next, и из Nuxt', () => {
+  assert.equal(
+    embeddedJson('<script id="__NEXT_DATA__" type="application/json">{"a":1}</script>'),
+    '{"a":1}',
+  );
+  assert.equal(embeddedJson('<script>window.__NUXT__ = {"b":2};</script>'), '{"b":2}');
+  assert.equal(embeddedJson('<html><body>ничего</body></html>'), '');
+});
+
+/**
+ * Какой путь можно пускать в production-источник.
+ *
+ * Проверяется ПОСЛЕДНИЙ сегмент. Все примеры ниже — с живого прогона по 170
+ * сайтам: без этого правила в ленту уехали бы события, услуги, метки и истории
+ * сотрудников под видом вакансий.
+ */
+test('путь вакансий принимается', () => {
+  for (const path of ['/vacancy/', '/vacancies/', '/career/vacancies/', '/job/',
+    '/vakancies/', '/karera-v-seti/', '/about/career/', '/company/rabota-u-nas/']) {
+    assert.ok(vacancyLinkPath(path), path);
+  }
+});
+
+test('раздел, который лишь стоит рядом с вакансиями, не принимается', () => {
+  // Яндекс предложил `/jobs/hiring-events/` и `/jobs/services/`: слово «job» в
+  // пути есть, а ведут они на события и услуги.
+  for (const path of ['/jobs/hiring-events/', '/jobs/services/', '/vacancies/tag/',
+    '/ru/company/career/stories/', '/vacancy/stazher/', '/about/', '/uslugi/',
+    '/comparisons/', '/wp-content/uploads/2026/04/', '/nsk/', '/ru/']) {
+    assert.equal(vacancyLinkPath(path), false, path);
+  }
+});
+
+test('слово-контейнер в конце разрешено только после слова о вакансиях', () => {
+  // У CDEK путь именно такой: /vacancies/item/<id>.
+  assert.ok(vacancyLinkPath('/vacancies/item/'));
+  assert.equal(vacancyLinkPath('/news/item/'), false);
+  assert.equal(vacancyLinkPath('/item/'), false);
 });

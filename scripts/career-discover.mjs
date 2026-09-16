@@ -47,6 +47,7 @@ import {
   guessMap,
   looksClickable,
   parseSiteList,
+  pickLinkPattern,
   replayRequestConfig,
   URL_SHAPES,
 } from './career-discover-lib.mjs';
@@ -93,7 +94,16 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  */
 async function probeUrlTemplate(context, origin, sample, map) {
   const direct = map.url && typeof sample[map.url] === 'string' ? sample[map.url] : '';
-  if (/^https:\/\//i.test(direct)) return { url_template: '', checked: direct, ok: true };
+  // Ссылка из самого ответа — всегда вернее перебора типовых путей: сайт знает
+  // свой адрес, а мы только гадаем. Относительную тоже принимаем: `/vacancy/12`
+  // прежде отбрасывалось, и разведка уходила гадать при готовом ответе.
+  // cf_json_url на проде разворачивает относительные от адреса страницы.
+  if (direct) {
+    try {
+      const absolute = new URL(direct, origin);
+      if (absolute.protocol === 'https:') return { url_template: '', checked: absolute.href, ok: true };
+    } catch { /* не адрес — идём гадать дальше */ }
+  }
 
   // Проверяем адрес БРАУЗЕРОМ, а не запросом. Прежняя проверка смотрела на код
   // ответа, и на одностраничных сайтах это не значило ничего: job.rt.ru отдаёт
@@ -144,6 +154,43 @@ async function probeUrlTemplate(context, origin, sample, map) {
   return { ok: false };
 }
 
+/**
+ * Ссылки на вакансии в разметке — и проверка, что их увидит ПРОД.
+ *
+ * Браузер выполняет скрипты, обычный curl — нет. Найти шаблон ссылки в
+ * отрисованной странице мало: если сайт рисует список скриптом, прод по этому
+ * адресу получит пустую оболочку, и источник молча принесёт ноль. Поэтому
+ * шаблон, найденный браузером, обязательно перепроверяется тем же способом,
+ * каким читает php-proxy: обычной загрузкой без скриптов.
+ */
+async function readyHtmlLinks(page, target) {
+  const anchors = await page.evaluate(
+    () => [...document.querySelectorAll('a[href]')]
+      .slice(0, 2000)
+      .map(a => ({ href: a.href, text: (a.innerText || '').trim().slice(0, 120) })),
+  ).catch(() => []);
+  // Строгий режим: находка уходит прямо в production-источник, и путь без
+  // слова о вакансиях принимать нельзя — см. pickLinkPattern.
+  const pattern = pickLinkPattern(anchors, target.url, 3, true);
+  if (!pattern) return null;
+
+  let html = '';
+  try {
+    const res = await fetch(target.url, { headers: { 'User-Agent': UA }, redirect: 'follow' });
+    if (!res.ok) return null;
+    html = await res.text();
+  } catch { return null; }
+
+  // Считаем РАЗНЫЕ хвосты в сыром HTML, а не число вхождений: одна вакансия
+  // почти всегда висит двумя ссылками — с картинки и с заголовка, — и счёт по
+  // вхождениям вдвое завысил бы находку.
+  const tails = new Set();
+  const escaped = pattern.link_path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const m of html.matchAll(new RegExp(`${escaped}([\\w%.-]+)`, 'g'))) tails.add(m[1]);
+  if (tails.size < 3) return null;
+  return { ...pattern, raw_tails: tails.size };
+}
+
 /** Список карьерных сайтов: из аргумента, из файла или свой из репозитория. */
 async function loadTargets(arg) {
   if (arg && /^https?:\/\//i.test(arg)) return [{ name: new URL(arg).hostname, url: arg }];
@@ -169,7 +216,14 @@ async function loadTargets(arg) {
 const targets = await loadTargets(process.argv[2]);
 console.log(`Разведка: ${targets.length} сайт(ов), по ${CONCURRENCY} одновременно\n`);
 
-const browser = await chromium.launch({ headless: true });
+// Путь к браузеру задаётся окружением: в контейнере Playwright он лежит там,
+// куда его положил образ, и версия пакета с версией браузера не всегда совпадают.
+// Пусто — Playwright ищет сам, как раньше.
+const BROWSER_PATH = process.env.DISCOVER_BROWSER || '';
+const browser = await chromium.launch({
+  headless: true,
+  ...(BROWSER_PATH ? { executablePath: BROWSER_PATH } : {}),
+});
 const results = [];
 
 /** Разведка одного сайта. Ошибка здесь — строка в отчёте, а не конец прогона. */
@@ -353,7 +407,27 @@ async function inspect(target, i) {
       if (!transportOk) console.log(`${' '.repeat(28)}запрос не повторить автоматически: ${best.transport.reason}`);
       if (!probe.ok) console.log(`${' '.repeat(28)}адрес не подтверждён: ${probe.reason || 'типовые пути не подошли'}`);
     } else {
-      console.log(`${label} — вакансий не видно`);
+      // JSON не нашёлся — смотрим саму разметку. Самый частый случай из всех:
+      // сайт отдаёт готовый HTML со ссылками на вакансии, никакого API нет, и
+      // прежняя разведка писала «нет данных». Конкурент такие сайты читает.
+      const links = await readyHtmlLinks(page, target);
+      if (links) {
+        entry = {
+          name: target.name, url: target.url,
+          status: 'готов', source: 'ссылки в разметке', endpoint: target.url,
+          count: links.raw_tails, evidence: links.tails,
+          list_path: links.link_path,
+          fields: ['href', 'text'],
+          connector_config: { endpoints: [{
+            url: target.url,
+            mode: 'html_links',
+            map: { link_path: links.link_path, company_const: target.name, min_title: 8 },
+          }] },
+        };
+        console.log(`${label} ✓ ${links.raw_tails} ссылок в разметке: ${links.link_path}`);
+      } else {
+        console.log(`${label} — вакансий не видно`);
+      }
     }
   } catch (e) {
     entry.status = 'ошибка';

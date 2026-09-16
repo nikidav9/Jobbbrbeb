@@ -1,0 +1,168 @@
+Компания	У нас на проде	У Cofinder	Статус Cofinder	Сообщение об ошибке	Карьерный сайт	Пример прямой ссылки	Наша разведка
+Сбер	0	1841	ok		https://rabota.sber.ru/search	https://rabota.sber.ru/search/vacancy-4570723/	нет данных
+МТС	0	1571	ok		https://job.mts.ru/vacancies	https://job.mts.ru/vacancy/706822688403882249	готов
+Росатом	0	1129	ok		https://rosatom-career.ru/vacancies	https://rosatom-career.ru/vacancies/6aaa7fd2e21cfefa03803b9d?hire_request_id=6aaa7cf3853faddccba8a7ca	нет данных
+Яндекс	0	1097	ok		https://yandex.ru/jobs/vacancies	https://yandex.ru/jobs/vacancies/menedzher-po-razvitiyu-biznesa-stazhyor-v-market-48743	
+Ozon	0	892	ok		https://career.ozon.ru/vacancy	https://career.ozon.ru/vacancy/менеджер-по-адаптации-липецк-137424097	нет данных
+Альфа-Банк	0	829	error	Message: 
+Stacktrace:
+#0 0x565373ed6d42 <unknown>
+#1 0x56537383e858 <unknown>
+#2	https://job.alfabank.ru/vacancies		ошибка
+ВТБ	0	740	ok		https://rabota-vtb.ru/career	https://rabota-vtb.ru/career/137434558	готов
+Т-Банк	0	543	ok		https://www.tbank.ru/career/vacancies/it	https://www.tbank.ru/career/back-office/vacancy/moscow/vip-vrach-kurator/7f2cca27-3838-44f3-a622-6a4a50466fbe/	
+VK	0	264	ok		https://team.vk.company/vacancy	https://team.vk.company/vacancy/52756/	готов
+Золотое Яблоко	0	239	ok		https://job.goldapple.ru/search/all	https://job.goldapple.ru/vacancy/6aaa620a5a7dc2d936bb6c19-prodakt-menedzher-brenda	нет адреса вакансии
+Ростелеком	0	224	ok		https://job.rt.ru/search	https://job.rt.ru/vacancy/14506	нет данных
+Yadro	0	206	ok		https://careers.yadro.com/vacancies	https://careers.yadro.com/vacancy/102511	нет адреса вакансии
+МегаФон	0	147	ok		https://job.megafon.ru/vacancy/all/any	https://job.megafon.ru/vacancy/moskva/it-reshenia/inzhener-lokalnoj-tehnicheskoj-podderzhki-avtomatizirovannogo-rabochego-mesta-4761	нет адреса вакансии
+Avito	0	135	ok		https://career.avito.com/vacancies/	https://career.avito.com/vacancies/prodazhi/20526/	нет данных
+Cloud.ru	0	132	error	Parser returned 0 vacancies	https://cloud.ru/career/vacancies		нет данных
+Билайн	0	106	ok		https://job.beeline.ru/vacancies	https://job.beeline.ru/vacancies/0648683c-1e09-4c9a-975c-a64bc7c5bb76	готов
+Aston	0	95	ok		https://career.astondevs.ru/vacancy	https://career.astondevs.ru/vacancy/500010387	нет данных
+2ГИС	0	86	ok		https://job.2gis.ru	https://job.2gis.ru/vacancies/hr_administration/524	нет данных
+Wildberries / РВБ	0	83	ok		https://career.rwb.ru/vacancies	https://career.rwb.ru/vacancies/39721	готов
+GRASS	0	76	ok		https://job.thgrass.com/vacancies	https://job.thgrass.com/vacancies/4119/	нет данных
+Lesta Games	0	74	ok		https://join.lesta.team	https://join.lesta.team/vacancy/art-direktor/565	нет адреса вакансии
+КРОК	0	73	ok		https://careers.croc.ru/vacancies	https://careers.croc.ru/vacancies/art-direktor/	нет данных
+Lamoda	0	71	ok		https://job.lamoda.ru/vacancies	https://job.lamoda.ru/vacancies/moskva/senior-big-data-engineer--3012	нет адреса вакансии
+IT_One	0	69	ok		https://www.it-one.ru/vacancies	https://www.it-one.ru/vacancies/1aab70cc4bfa369da6338ea9a7fea314/	нет данных
+Тензор	0	69	ok		https://tensor.ru/vacancies	https://tensor.ru/vacancies/505690968	нет данных
+Selecty	0	68	ok		https://selecty.ru/it-vacancy	https://selecty.ru/systems-analyst-vibecoding	нет данных
+Kaspersky	0	64	ok		https://careers.kaspersky.ru/vacancies	https://careers.kaspersky.ru/vacancy/25884	нет данных
+Группа Астра	0	64	ok		https://astra.ru/about/career/vacancies	https://astra.ru/about/career/vacancies/54767/	нет данных
+1С	0	44	ok		https://1c.ru/rus/firm1c/vacan/search	https://1c.ru/rus/firm1c/vacan/vacancy/227	нет данных
+Солар	0	40	ok		https://team.rt-solar.ru/vacancies	https://team.rt-solar.ru/vacancies/869/	нет данных
+Deloitte	0	37	ok		https://careers.delret.ru	https://careers.delret.ru/referal-page/vacancy/01a0a026-f2cd-77a6-b9f4-c6ab3faeead7	нет данных
+Точка Банк	0	35	error	[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certific	https://hr.tochka.com/vacancies		ошибка
+СИБУР	0	30	error	Parser returned 0 vacancies	https://career.sibur.ru/vacancies		нет данных
+ГНИВЦ	0	30	ok		https://career.gnivc.ru/vacancies	https://career.gnivc.ru/vacancies/137430973/	нет адреса вакансии
+Axenix	0	27	ok		https://axenix.pro/career	https://axenix.pro/career?vacancy=444-инженер-по-автоматизации-тестирования-python#vacancies	нет данных
+Centicore Group	0	27	ok		https://centicore.ru/vacancies	https://centicore.ru/vacancies/backend/gis-razrabotchik-cesium/	нет данных
+Селектел	0	26	ok		https://selectel.ru/careers/all	https://selectel.ru/careers/all/vacancy/1920/	нет адреса вакансии
+Авиасейлс	0	25	ok		https://www.aviasales.ru/about/vacancies	https://www.aviasales.ru/about/vacancies/4330401	нет данных
+Циан	0	24	ok		https://krasnodar.cian.ru/vacancies	https://krasnodar.cian.ru/vacancies/6162/	нет данных
+Positive Technologies	0	23	error	[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local 	https://ptsecurity.com/about/vacancy		ошибка
+Лоция	0	20	error	Parser returned 0 vacancies	https://loodsen.ru/vacancies		нет данных
+Иви	0	19	ok		https://corp.ivi.ru/vacancies	https://corp.ivi.ru/vacancy/java-razrabotchik-big-data/	нет данных
+КОРУС Консалтинг	0	19	ok		https://career.korusconsulting.ru/vacancies	https://career.korusconsulting.ru/vacancies/personalnyy-assistent-generalnogo-direktora-executive-assistant/	нет данных
+SimbirSoft	0	19	ok		https://www.simbirsoft.com/vacancies/	https://www.simbirsoft.com/vacancies/1C-analyst-bp/	нет данных
+Инфосистемы Джет	0	18	ok		https://jet.su/career/vacancies	https://jet.su/career/vacancies/inzhener-proektirovshchik-po-monitoringu/	нет данных
+Самокат	0	16	ok		https://vacancy.samokat.ru/vacancies-business	https://vacancy.samokat.ru/vacancies-business/1687681	нет данных
+ДатаРу	0	16	ok		https://dataru.ru/career/vacancy	https://dataru.ru/career/vacancy/47/menedzer-po-rabote-s-klucevymi-klientami-it-oborudovanie-promyslennyj-sektor	нет данных
+НСПК	0	13	error	[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local 	https://www.nspk.ru/vacancies		ошибка
+Протей	0	13	ok		https://protei.ru/vacancies	https://protei.ru/vacancies/s-developer-yadro-ims	нет данных
+Koronatech	0	13	ok		https://koronatech.ru/vacancy/	https://koronatech.ru/vacancy/295/	нет данных
+BSL	0	12	ok		https://bsl.dev/vacancies.html	https://bsl.dev/vacancies/financial-manager.html	нет данных
+Arenadata	0	12	error	Parser returned 0 vacancies	https://career.arenadata.tech		нет данных
+PrideInBrains	0	12	ok		https://prideinbrains.com/%D0%92%D0%B0%D0%BA%D0%B0%D0%BD%D1%81%D0%B8%D0%B8/	https://prideinbrains.com/IT-Lead/	нет данных
+iFellow	0	11	ok		https://ifellow.ru/vacancy	https://ifellow.ru/vacancy/cistemnyy-analitik-znanie-metodologii-po-raschetu-zp/	нет данных
+Spotware Systems	0	10	ok		https://spotware.applytojob.com/apply	https://spotware.applytojob.com/apply/YFQEzQVeJf/Trading-Expert-Parttime-Freelance	нет данных
+Globus IT	0	10	ok		https://globus-ltd.ru/vacancies	https://globus-ltd.ru/vacancies?id=88	нет адреса вакансии
+Галактика	0	10	ok		https://galaktika.ru/career	https://galaktika.ru/jobs/1700-2	нет данных
+SearchInform	0	9	ok		https://searchinform.ru/company/jobs	https://searchinform.ru/company/jobs/?vacancy=%D1%81%D0%BF%D0%B5%D1%86%D0%B8%D0%B0%D0%BB%D0%B8%D1%81%D1%82-%D0%BF%D0%BE-%D1%80%D0%B0%D1%81%D1%81%D1%8B%D0%BB%D0%BA%D0%B0%D0%BC	нет данных
+Гараж 8	0	8	error	Parser returned 0 vacancies	https://garage-eight.com/vacancies		нет данных
+Coral	0	8	ok		https://coral.tech/it-main	https://coral.tech/1c	нет данных
+Спортмастер	0	7	ok		https://job.sportmaster.ru/vacancies/	https://job.sportmaster.ru/vacancies/379093/	нет данных
+M2 Tech	0	7	ok		https://tech.m2.ru	https://tech.m2.ru/?vacancy=m2_data_senior-ml-инженер#careers	нет данных
+Evercode Lab	0	7	ok		https://evercodelab.ru/vacancies	https://evercodelab.ru/vacancy/139	нет данных
+Наумен	0	7	ok		https://www.naumen.ru/career/vacancies	https://www.naumen.ru/career/vacancies/mladshiy-sistemnyy-analitik-na-proekty-vnedreniya/	нет данных
+Адвантум	0	7	ok		https://advantum.ru/jobs	https://advantum.ru/tproduct/1-675869969201-senior-backend-developer-java	нет данных
+amoCRM	0	6	ok		https://www.amocrm.ru/jobs	https://www.amocrm.ru/jobs/support/technical-support/	нет данных
+Softline	0	6	ok		https://softline.ru/about/vacancies	https://softline.ru/about/vacancies/19499	нет данных
+Cloud Networks	0	6	ok		https://cloudnetworks.ru/vacancies	https://cloudnetworks.ru/vacancies/mladshij-inzhener-gruppy-tehnicheskoj-podderzhki-otdela-servisnyh-proektov/	нет данных
+Юзтех	0	6	error	Parser returned 0 vacancies	https://usetech.ru/career		нет данных
+ITG	0	6	ok		https://itglobal.com/ru-ru/company/vacancies	https://itglobal.com/ru-ru/company/vacancies/specialist-po-testirovaniu-na-proniknovenie/	нет данных
+Траектория технологий	0	5	ok		https://trctech.ru/karera	https://trctech.ru/karera/presejl-inzhener-po-informacionnoj-bezopasnosti	нет данных
+Twinby	0	4	ok		https://twinby.ru/career	https://twinby.ru/job/1185573983237013506	готов
+iSpring	0	4	ok		https://www.ispring.ru/company/jobs/vacancies	https://www.ispring.ru/company/jobs/vacancy?vacancy=specialist_support_en	нет данных
+Agima	0	4	ok		https://www.agima.ru/careers	https://www.agima.ru/careers/vacancy/seychas_my_ishchem_spetsialista_po_tenderam-_kotoryy_pomozhet_nam_sistemno_nakhodit_relevantnye_zaku/	нет данных
+Индасофт	0	4	error	Parser returned 0 vacancies	https://indusoft.ru/about/vacancies		нет данных
+Reksoft	0	4	ok		https://career.reksoft.com/vacancies	https://career.reksoft.com/vacancies/pm-acs-tp-industrial-automation/	нет данных
+Notamedia	0	4	ok		https://nota.media/career	https://integrator.nota.media/career/vacancies/java-razrabotchik_-senior_137353720/	нет данных
+Baum	0	4	ok		https://baum.ru/job	https://baum.ru/job/vacancies/c-developer/	нет данных
+Аурига	0	4	ok		https://hr.auriga.ru	https://hr.auriga.ru/position/project-manager-s-opytom-razrabotki-sistemnogo-po/	нет данных
+С-Терра	0	3	ok		https://www.s-terra.ru/company/rabota-u-nas	https://www.s-terra.ru/company/rabota-u-nas/Referentvotdelprodazh/	нет данных
+Rush Agency	0	3	ok		https://www.rush-agency.ru/jobs	https://www.rush-agency.ru/jobs/middle-seo-speczialist/	нет данных
+Crosstech	0	3	ok		https://crosstech.ru/vacancies	https://crosstech.ru/vacancies/tsentr-tekhnicheskoy-ekspertizy/dezhurnyy-analitik-soc-l1-/	нет данных
+Linx	0	3	ok		https://linx.ru/about/career	https://linx.ru/about/career/menedzher-po-prodazham/	нет данных
+Контакт	0	3	error	'NoneType' object has no attribute 'lower'	https://itcontact.ru/vacancies		нет данных
+Дельта Компьютерс	0	3	ok		https://deltacomputers.ru/vacancies	https://deltacomputers.ru/vacancies/1332/	нет данных
+RedLab	0	2	ok		https://redlab.dev/career	https://redlab.dev/career/ml-razrabotchik/	нет данных
+TerraLink	0	2	ok		https://terralink.ru/career/vacancies	https://terralink.ru/career/vacancies/direktor-po-rabote-s-klyuchevymi-klientami-akkaunt-direktor/	нет данных
+Спортс	0	2	error	Parser returned 0 vacancies	https://www.sports.ru/football/blogs/3271770.html		нет данных
+BINOM	0	2	ok		https://binom.systems/vakansii	https://binom.systems/vakansii/analitik-1s/	нет данных
+Directum	0	2	ok		https://career.directum.ru/vacancy?from=main_button_vacancy	https://career.directum.ru/strategy_implementation_consultant	нет данных
+Rubius	0	2	ok		https://rubius.com/ru/company/career	https://rubius.com/ru/vacancies/head-of-pmo	нет данных
+Хоулмонт	0	2	ok		https://job.haulmont.ru/career	https://job.haulmont.ru/vacancies/support-engineer-tezis	готов
+PIX Robotics	0	2	ok		https://pix.ru/company/vacancy	https://pix.ru/company/vacancy/administrator-baz-dannykh/	нет данных
+РДВ Технолоджи	0	2	ok		https://rdwcomp.ru/kompaniya/vakansii	https://rdwcomp.ru/kompaniya/vakansii/pam/	нет данных
+Macroscop	0	1	ok		https://pro.macroscop.com/vacancies	https://pro.macroscop.com/kkz	нет данных
+Stepik	0	1	ok		https://welcome.stepik.org/ru/careers	https://welcome.stepik.org/careers/senior-backend	нет данных
+Пачка	0	1	ok		https://pachca.com/career	https://pachca.com/career/vacancies/senior-ios-developer	нет данных
+Effective Technologies	0	1	error	Parser returned 0 vacancies	https://career.effective-group.ru		нет данных
+Контур	63	51	ok		https://kontur.ru/career/vacancies	https://kontur.ru/career/vacancies/5856	нет данных
+Navio	33	46	ok		https://navio.auto/vacancies	https://navio.auto/vacancies/667	нет данных
+IBS	45	45	ok		https://ibs.ru/career/jobs	https://ibs.ru/career/jobs/starshiy-konsultant-1s-ukh-buinu-perm/	нет данных
+Orion soft	27	27	ok		https://career.orionsoft.ru/vacancy	https://career.orionsoft.ru/vacancy/menedzher-po-prodazham	нет данных
+Bell Integrator	25	26	ok		https://bellintegrator.ru/information/vacancies	https://bellintegrator.ru/vacancy/2545	нет данных
+X5 Tech	10	24	ok		https://x5.tech/vacancy	https://x5.tech/vacancy/2910a8b0-c071-4f85-8ac2-f753c46ee58c	готов
+Техвилл	20	21	ok		https://techvill.ru/vacancies	https://techvill.ru/vacancies/4336404	нет данных
+Mish	17	17	ok		https://mish.design/ru/vacancies	https://mish.design/ru/vacancies/116-produktovyj-dizajner-hr-platforma	нет данных
+kokos group	6	13	ok		https://career.kokocgroup.ru/vacancies	https://career.kokocgroup.ru/vacancies/9cc2ffcd-03f1-4a3c-9d07-0f0f1edaf52b	нет данных
+Inline Group	12	11	ok		https://inlinegroup.ru/about/jobs	https://inlinegroup.ru/about/jobs/11851	нет данных
+Островок	7	7	ok		https://career.ostrovok.ru/vacancy	https://career.ostrovok.ru/vacancy/3462	готов
+Performance Lab	5	6	ok		https://www.performance-lab.ru/vacancy	https://www.performance-lab.ru/vacancies/inzhener-po-nagruzochnomu-testirovaniyu-2	нет данных
+Just AI	5	3	ok		https://careers.just-ai.com/vakansii	https://careers.just-ai.com/vacancy/project-manager-2	нет данных
+Пятёрочка	0	0	нет в каталоге		https://rabota5ka.ru/vacancies		готов
+Перекрёсток	0	0	нет в каталоге		https://rabota.perekrestok.ru/vacancies		готов
+Магнит	0	0	нет в каталоге		https://rabota.magnit.ru		нет адреса вакансии
+Лента	0	0	нет в каталоге		https://career.lenta.com		нет данных
+ВкусВилл	14	0	нет в каталоге		https://vkusvill.ru/job/vacancys		нет данных
+METRO	299	0	нет в каталоге		https://rabota.metro-cc.ru/vacancies/store		готов
+О'КЕЙ	0	0	нет в каталоге		https://www.okmarket.ru/career/vacancies		нет данных
+Глобус	0	0	нет в каталоге		https://rabota.globus.ru		нет данных
+Красное&Белое	0	0	нет в каталоге		https://krasnoeibeloe.ru/job		нет данных
+Fix Price	0	0	нет в каталоге		https://fix-price.com/work/store		нет данных
+Чижик	0	0	нет в каталоге		https://chizhik.club/rabota		нет данных
+ДИКСИ	0	0	нет в каталоге		https://dixy.ru/group/career/vacancy		нет данных
+Монетка	0	0	нет в каталоге		https://career.monetka.ru		нет данных
+SPAR	0	0	нет в каталоге		https://myspar.ru/career		нет данных
+Слата	0	0	нет в каталоге		https://www.slata.ru/vacancy		нет данных
+Мария-Ра	0	0	нет в каталоге		https://www.maria-ra.ru/karera-v-seti/vakansii		ошибка
+Ярче!	0	0	нет в каталоге		https://работаярче.рф		нет данных
+М.Видео-Эльдорадо	0	0	нет в каталоге		https://career.mvideoeldorado.ru/vacancies		нет данных
+DNS	0	0	нет в каталоге		https://www.dns-shop.ru/jobs		нет данных
+Hoff	0	0	нет в каталоге		https://job.hoff.ru		нет данных
+Лемана ПРО	10	0	нет в каталоге		https://rabota.lemanapro.ru/vacancies		нет данных
+Петрович	0	0	нет в каталоге		https://petrovichjob.ru		нет данных
+Детский мир	0	0	нет в каталоге		https://jobs.detmir.ru		нет данных
+РИВ ГОШ	0	0	нет в каталоге		https://rivegauche.ru/work		нет данных
+Улыбка радуги	0	0	нет в каталоге		https://rabota.r-ulybka.ru		нет данных
+Подружка	0	0	нет в каталоге		https://rabotavpodrygke.ru		нет данных
+kari	0	0	нет в каталоге		https://kari.com/job		нет данных
+Gloria Jeans	0	0	нет в каталоге		https://lookbook.gloria-jeans.ru		нет данных
+Befree	0	0	нет в каталоге		https://befree.ru/job		нет данных
+HENDERSON	0	0	нет в каталоге		https://henderson.ru/company/vacancies		нет данных
+CDEK	0	0	нет в каталоге		https://rabota.cdek.ru/vacancies		нет данных
+Деловые Линии	0	0	нет в каталоге		https://job.dellin.ru		нет данных
+ПЭК	0	0	нет в каталоге		https://hr.pecom.ru		нет данных
+DPD Россия	0	0	нет в каталоге		https://dpd.ru/vacancy		нет данных
+Почта России	0	0	нет в каталоге		https://www.pochta.ru/vacancy-list		нет данных
+РЖД	0	0	нет в каталоге		https://team.rzd.ru/career/vacancies		ошибка
+Аэрофлот	0	0	нет в каталоге		https://vacancy.aeroflot.ru		нет данных
+Шереметьево	0	0	нет в каталоге		https://job.svo.su		нет данных
+Черкизово	0	0	нет в каталоге		https://vacancies.cherkizovo.com/vacancies		нет данных
+Северсталь	0	0	нет в каталоге		https://career.severstal.com/vacancies		нет данных
+Балтика	0	0	нет в каталоге		https://career.baltika.ru		нет данных
+Норникель	40	0	нет в каталоге		https://career.nornickel.ru/vacancies		нет данных
+ФосАгро	0	0	нет в каталоге		https://www.phosagro.ru/career-education/vacancies		нет адреса вакансии
+РУСАЛ	0	0	нет в каталоге		https://www.rusal.ru/career/vacancies		нет данных
+Додо Пицца	0	0	нет в каталоге		https://rabotavdodo.ru		нет данных
+Вкусно — и точка	0	0	нет в каталоге		https://rabotaitochka.ru		нет данных
+ROSTIC'S	0	0	нет в каталоге		https://rostics.ru/ru/career		нет данных
+Burger King Россия	0	0	нет в каталоге		https://burgerkingrus.ru/rabota		нет данных
+Теремок	0	0	нет в каталоге		https://rabota.teremok.ru/vacancies		нет данных
+Кофемания	0	0	нет в каталоге		https://rabota.coffeemania.ru		нет адреса вакансии
+Шоколадница	0	0	нет в каталоге		https://regions.shoko.ru/career		нет данных
+AZIMUT Hotels	0	0	нет в каталоге		https://azimuthotels.com/ru/info/career		нет данных
