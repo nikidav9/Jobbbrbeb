@@ -42,6 +42,22 @@ if pinned and local:
 check("браузеры ищутся внутри образа",
       "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright" in runner)
 
+# ── Пакет должен находиться, иначе прогон умирает молча ─────────────────────
+# Первая версия полагалась на NODE_PATH. Для ES-модулей он не работает вовсе:
+# по имени 'playwright' Node идёт вверх по node_modules от файла, который
+# делает import. Прогон умирал на ERR_MODULE_NOT_FOUND, не написав ни строки.
+check("на NODE_PATH не полагаемся", "NODE_PATH=" not in runner)
+check("скрипт запускается рядом с node_modules",
+      "cd /deps/run && node career-discover.mjs" in runner)
+# Проверяем саму команду копирования, а не упоминание имени: в первой редакции
+# проверка проходила и тогда, когда файл выпал из cp, — имя оставалось в
+# комментарии выше.
+_cp = re.search(r"cp /repo/scripts/.*?/deps/run/", runner, re.S)
+_cp_text = _cp.group(0) if _cp else ""
+for _needed in ("career-discover.mjs", "career-discover-lib.mjs", "career-sites.tsv"):
+    check(f"копируется {_needed}", _needed in _cp_text)
+check("копируется именно в каталог запуска", _cp_text.rstrip().endswith("/deps/run/"))
+
 # ── Результат не должен теряться и не должен появляться недописанным ────────
 check("пишем во временный файл", 'tmp="$OUT.tmp"' in runner)
 check("готовый файл появляется одним движением", 'mv -f "$tmp" "$OUT"' in runner)

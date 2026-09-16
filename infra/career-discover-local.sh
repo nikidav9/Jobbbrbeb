@@ -81,7 +81,6 @@ docker run --rm \
   -v "$(dirname "$tmp"):/out" \
   -e DISCOVER_OUT="/out/$(basename "$tmp")" \
   -e DISCOVER_CONCURRENCY="${DISCOVER_CONCURRENCY:-3}" \
-  -e NODE_PATH=/deps/node_modules \
   -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
   -e HOME=/tmp \
   "$IMAGE" \
@@ -89,7 +88,18 @@ docker run --rm \
     set -e
     cd /deps
     [ -d node_modules/playwright ] || npm install --no-save --no-audit --no-fund playwright@${PW}
-    cd /repo && node scripts/career-discover.mjs
+    # Скрипт кладём РЯДОМ с node_modules, а не запускаем из /repo. Причина в
+    # том, как ES-модули ищут пакеты: по имени 'playwright' Node идёт вверх по
+    # node_modules от файла, который делает import, и NODE_PATH при этом НЕ
+    # смотрит вовсе. Первая версия полагалась на NODE_PATH — и прогон умирал
+    # на ERR_MODULE_NOT_FOUND, ничего не написав.
+    #
+    # Список сайтов тоже копируем: career-discover.mjs ищет career-sites.tsv
+    # рядом с собой (import.meta.url), а не по текущему каталогу.
+    mkdir -p /deps/run
+    cp /repo/scripts/career-discover.mjs /repo/scripts/career-discover-lib.mjs \
+       /repo/scripts/career-sites.tsv /deps/run/
+    cd /deps/run && node career-discover.mjs
   " >>"$LOG" 2>&1 || { rm -f "$tmp"; fail "разведка упала, подробности в $LOG"; }
 
 [ -s "$tmp" ] || { rm -f "$tmp"; fail "пустой результат"; }
