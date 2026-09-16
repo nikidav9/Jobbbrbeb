@@ -26,6 +26,8 @@ define('SB_STRICT', true);
 require_once __DIR__ . '/sb_lite.php';
 require_once __DIR__ . '/safe_url.php';
 require_once __DIR__ . '/sitemap_cache.php';
+// Разбор страницы вакансии: описание берём тем же кодом, что и карьерный фид.
+require_once __DIR__ . '/career_feed.php';
 
 function ing_secret(string $name): string
 {
@@ -300,6 +302,87 @@ function ing_normalize(array $it, string $sourceId): ?array
     return $row;
 }
 
+/**
+ * Описание вакансии со страницы самой вакансии.
+ *
+ * Зачем. В списке описания почти нигде нет: у страниц со ссылками его не может
+ * быть в принципе, а API отдают короткую карточку — у МТС поле description в
+ * ответе есть, но пустое у всех двадцати пяти вакансий страницы. В ленте из-за
+ * этого стояло «Источник не прислал описания», хотя на сайте текст есть.
+ * Посчитано по проду: описание было у 725 вакансий из 1583.
+ *
+ * Ходим только туда, где описания нет, и только по карьерным источникам: у
+ * партнёрского API описание должно приезжать фидом, а не вычитываться со
+ * страницы. Бюджет общий с обходом — упёрлись в него, оставляем как есть и
+ * дочитаем на следующем заходе. Ничего не теряется: строка запишется, описание
+ * добавится позже.
+ *
+ * Сторожа те же, что у остального: публичный HTTPS, без служебных сетей, без
+ * переходов по редиректу, с закреплённым DNS-адресом и повторной проверкой
+ * адреса, к которому фактически пришли.
+ */
+function ing_fill_descriptions(array &$rows, float $deadline): int
+{
+    $filled = 0;
+    foreach ($rows as &$row) {
+        if (trim((string)($row['description'] ?? '')) !== '') continue;
+        if (microtime(true) >= $deadline) break;
+        $html = ing_fetch_html((string)($row['url'] ?? ''));
+        if ($html === null) continue;
+        $text = cf_page_description($html);
+        if ($text === '') continue;
+        $row['description'] = mb_substr($text, 0, 2000);
+        $filled++;
+    }
+    unset($row);
+    return $filled;
+}
+
+/** Страница вакансии как текст. null — сходить не вышло или нельзя. */
+function ing_fetch_html(string $url): ?string
+{
+    if ($url === '' || !ing_safe_https_url($url)) return null;
+    $resolveEntries = ing_safe_https_resolve($url);
+    if ($resolveEntries === null) return null;
+
+    $body = '';
+    $tooLarge = false;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml'],
+        CURLOPT_ENCODING => '',
+        CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
+        CURLOPT_CONNECTTIMEOUT => 5,
+        // Короче, чем у обхода: страниц вакансий много, и одна медленная не
+        // должна съедать бюджет целого захода.
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_RESOLVE => $resolveEntries,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {
+            if (strlen($body) + strlen($chunk) > 4 * 1024 * 1024) { $tooLarge = true; return 0; }
+            $body .= $chunk;
+            return strlen($chunk);
+        },
+    ]);
+    $ok = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
+    curl_close($ch);
+
+    // Второй рубеж: адрес закреплён через CURLOPT_RESOLVE, но если curl всё же
+    // пришёл не к публичному адресу, ответ не разбираем.
+    if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        return null;
+    }
+    if ($tooLarge || $ok === false || $code < 200 || $code >= 300) return null;
+    return $body;
+}
+
 /** Скачать одну страницу фида с жёстким ограничением размера. */
 function ing_fetch_page(string $url, array $hdrs, string $originHost): array
 {
@@ -397,6 +480,8 @@ function ing_run_source(array $src): array
     // его вакансии из ленты до следующего круга. Источник сообщает это полем
     // partial; кто его не шлёт, ничего не теряет.
     $partial = !empty($saved['partial']);
+    // Сколько описаний дочитали за этот заход — видно в статусе источника.
+    $described = 0;
 
     while ($nextUrl !== null) {
         if (++$pages > 1000) {
@@ -430,6 +515,13 @@ function ing_run_source(array $src): array
             $r = ing_normalize($it, (string)$src['id']);
             if ($r === null) { $skipped++; continue; }
             $rows[] = $r;
+        }
+        // Описания добираем ДО записи: иначе строка легла бы пустой, а человек
+        // увидел бы «Источник не прислал описания» до следующего круга.
+        // Только карьерные источники: партнёрское API обязано прислать описание
+        // фидом, ходить за ним по страницам — не наше дело.
+        if (($src['connector_kind'] ?? '') === 'career') {
+            $described += ing_fill_descriptions($rows, $deadline);
         }
         foreach (array_chunk($rows, 200) as $chunk) {
             sb_upsert_rows('jm_ext_vacancies', $chunk, 'source_id,external_id');
@@ -514,7 +606,8 @@ function ing_run_source(array $src): array
     // работодателей не отвечает, и гашение на этом круге не делалось.
     $whole = $partial ? 'ок, не весь' : 'ок';
     return [
-        'status' => "$whole: страниц $pages, получено $received, пропущено $skipped, погашено $gone",
+        'status' => "$whole: страниц $pages, получено $received, пропущено $skipped, погашено $gone"
+            . ($described > 0 ? ", описаний $described" : ''),
         'count' => $received,
         'pages' => $pages,
         'skipped' => $skipped,
