@@ -1706,8 +1706,8 @@ export type ExternalVacancyPage = {
   rawCount: number;
 };
 
-export async function dbGetExternalVacancyPage(offset = 0, limit = 1000, sourceIds?: string[]): Promise<ExternalVacancyPage> {
-  const rows = await proxy<any[]>('extVacancies', [offset, limit, sourceIds]);
+export async function dbGetExternalVacancyPage(offset = 0, limit = 1000, sourceIds?: string[], companies?: string[]): Promise<ExternalVacancyPage> {
+  const rows = await proxy<any[]>('extVacancies', [offset, limit, sourceIds, companies]);
   if (!Array.isArray(rows)) throw new Error('Invalid external vacancies response');
   const mapped: ExternalVacancy[] = (rows ?? []).map(r => ({
     id: r.id,
@@ -1758,6 +1758,13 @@ export async function dbGetExternalSourceOptions(): Promise<Array<{ id: string; 
   return proxy('extSourceOptions');
 }
 
+export async function dbGetExternalCompanyOptions(): Promise<Array<{ name: string; count: number }>> {
+  const rows = await proxy<Array<{ name?: string; vacancy_count?: number }>>('extCompanyOptions');
+  return (rows ?? [])
+    .map(row => ({ name: (row.name ?? '').trim(), count: Number(row.vacancy_count ?? 0) }))
+    .filter(row => row.name !== '' && row.count > 0);
+}
+
 export async function dbCountExternalVacancies(filters: {
   query: string;
   searchIn: Array<'title' | 'desc'>;
@@ -1767,6 +1774,8 @@ export async function dbCountExternalVacancies(filters: {
   schedules: string[];
   /** undefined = все партнёры; [] = ни одного партнёра. */
   sourceIds?: string[];
+  /** Пусто/undefined = все компании; значения приходят только из активного справочника. */
+  companies?: string[];
 }): Promise<number> {
   return proxy('extVacancyCount', [{
     query: filters.query,
@@ -1776,6 +1785,7 @@ export async function dbCountExternalVacancies(filters: {
     salary_from: filters.salaryFrom,
     schedules: filters.schedules,
     ...(filters.sourceIds === undefined ? {} : { sources: filters.sourceIds }),
+    ...(filters.companies?.length ? { companies: filters.companies } : {}),
   }]);
 }
 
