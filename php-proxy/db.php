@@ -236,7 +236,7 @@ if ($authUid !== null) {
 $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
-    'extVacancies', 'extVacancyCount', 'extSourceOptions', 'extClick', 'addressSuggest', 'dbLogOpen', 'guestEvent',
+    'extVacancies', 'extVacancyCount', 'extSourceOptions', 'extCompanyOptions', 'extClick', 'addressSuggest', 'dbLogOpen', 'guestEvent',
     'dbResponsivenessMap',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
@@ -4542,6 +4542,23 @@ try {
                 $sourceIds = array_values(array_intersect($sourceIds, $requestedSourceIds));
                 // Пустой массив означает «ни одного внешнего источника».
             }
+            $requestedCompanies = [];
+            if (is_array($args[3] ?? null)) {
+                $requestedCompanies = array_slice(array_values(array_filter(array_map(
+                    fn($name) => mb_substr(trim((string)$name), 0, 160),
+                    $args[3]
+                ))), 0, 50);
+            }
+            if ($requestedCompanies) {
+                // Компании в фильтре берутся только из прямых карьерных источников.
+                // Иначе одноимённая вакансия агрегатора могла бы перехватить карточку.
+                $careerSourceIds = [];
+                foreach ($sources as $sid => $source) {
+                    if (($source['connector_kind'] ?? '') === 'career') $careerSourceIds[] = $sid;
+                }
+                $sourceIds = array_values(array_intersect($sourceIds, $careerSourceIds));
+                $filters['company'] = sb_in_list($requestedCompanies);
+            }
             if (!$sourceIds) { $data = []; break; }
             $filters['source_id'] = 'in.(' . implode(',', $sourceIds) . ')';
             $rows = sb_select('jm_ext_vacancies', $filters, '*', 'id.asc');
@@ -4570,6 +4587,11 @@ try {
             break;
         }
 
+        // Компании для фильтра: только те, у кого сейчас есть активная
+        // постоянная вакансия из прямого карьерного источника.
+        case 'extCompanyOptions':
+            $data = sb_rpc('jm_ext_company_options'); break;
+
         case 'extVacancyCount': {
             $v = is_array($args[0] ?? null) ? $args[0] : [];
             $clean = [
@@ -4587,6 +4609,10 @@ try {
                     fn($x) => mb_substr(trim((string)$x), 0, 100),
                     is_array($v['schedules'] ?? null) ? $v['schedules'] : []
                 ))), 0, 20),
+                'companies' => array_slice(array_values(array_filter(array_map(
+                    fn($x) => mb_substr(trim((string)$x), 0, 160),
+                    is_array($v['companies'] ?? null) ? $v['companies'] : []
+                ))), 0, 50),
             ];
             // Отсутствие sources = все партнёры; [] = только JobToo.
             if (array_key_exists('sources', $v) && is_array($v['sources'])) {

@@ -18,7 +18,7 @@ assert "dbCountExternalVacancies" in service
 assert "dbGetExternalSourceOptions" in service
 assert "createdAt: r.first_seen_at" in service
 assert "counting ? 'Считаем вакансии…'" in feed
-assert "dbGetExternalVacancyPage(offset, pageSize, sourceIds)" in feed
+assert "dbGetExternalVacancyPage(offset, pageSize, sourceIds, companies)" in feed
 assert "selectedPartnerSourceIds(filterSources)" in feed
 
 print('external vacancy server filters: ok')

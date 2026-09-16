@@ -47,6 +47,7 @@ import {
   dbGetExternalVacancies,
   dbGetExternalVacancyPage,
   dbGetExternalSourceOptions,
+  dbGetExternalCompanyOptions,
   dbCountExternalVacancies,
   dbRecordExternalImpression,
   dbRecordExternalClick,
@@ -500,6 +501,7 @@ const END_RANGES: TimeRange[] = [
 ];
 
 type VacancySourceOption = { id: string; label: string };
+type VacancyCompanyOption = { name: string; count: number };
 
 const JOBTOO_SOURCE_FILTER_ID = 'jobtoo';
 const partnerSourceFilterId = (sourceId: string) => `partner:${sourceId}`;
@@ -688,8 +690,9 @@ export type PermFilters = {
   salaryFrom: string; // сырой ввод из поля «От»
   schedules: string[];
   sources: string[];
+  companies: string[];
 };
-export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], sources: [] };
+export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], sources: [], companies: [] };
 
 const countExternalPerm = (f: PermFilters) => dbCountExternalVacancies({
   query: f.query,
@@ -699,6 +702,7 @@ const countExternalPerm = (f: PermFilters) => dbCountExternalVacancies({
   salaryFrom: f.salaryFrom,
   schedules: f.schedules,
   sourceIds: selectedPartnerSourceIds(f.sources),
+  companies: f.companies,
 });
 
 const postedWithin = (iso: string | undefined, p: PermFilters['posted']) => {
@@ -707,11 +711,86 @@ const postedWithin = (iso: string | undefined, p: PermFilters['posted']) => {
   return Date.now() - new Date(iso).getTime() <= days * 86400000;
 };
 
+
+function CompanyPicker({ visible, options, selected, onChange, onClose }: {
+  visible: boolean;
+  options: VacancyCompanyOption[];
+  selected: string[];
+  onChange: (companies: string[]) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const insets = useSafeAreaInsets();
+  useEffect(() => { if (visible) setQuery(''); }, [visible]);
+  const rows = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase('ru-RU');
+    return q ? options.filter(x => x.name.toLocaleLowerCase('ru-RU').includes(q)) : options;
+  }, [options, query]);
+  if (!visible) return null;
+  const current = selected[0] ?? '';
+  return (
+    <View style={styles.filterOverlay}>
+      <View style={[styles.filterSheet, { maxHeight: '88%' }]}>
+        <View style={styles.filterSheetHeader}>
+          <Text style={styles.filterSheetTitle}>Компания</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.filterClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={metroPickerSt.searchRow}>
+          <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
+          <TextInput
+            style={metroPickerSt.searchInput}
+            placeholder="Название компании"
+            placeholderTextColor={Colors.textMuted}
+            value={query}
+            onChangeText={setQuery}
+            autoFocus
+            clearButtonMode="while-editing"
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.lineRow, current === '' ? styles.lineRowActive : null]}
+          onPress={() => { onChange([]); onClose(); }}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.lineName, current === '' ? { color: Colors.primary, fontWeight: '700' } : null]}>Все компании</Text>
+          {current === '' ? <Text style={{ color: Colors.primary }}>✓</Text> : null}
+        </TouchableOpacity>
+        <FlatList
+          data={rows}
+          keyExtractor={item => item.name}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: insets.bottom + rs(16) }}
+          renderItem={({ item }) => {
+            const on = current === item.name;
+            return (
+              <TouchableOpacity
+                style={[styles.lineRow, on ? styles.lineRowActive : null]}
+                onPress={() => { onChange([item.name]); onClose(); }}
+                activeOpacity={0.8}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.lineName, on ? { color: Colors.primary, fontWeight: '700' } : null]} numberOfLines={1}>{item.name}</Text>
+                  <Text style={metroPickerSt.lineSubtitle}>{item.count} вакансий</Text>
+                </View>
+                {on ? <Text style={{ color: Colors.primary }}>✓</Text> : null}
+              </TouchableOpacity>
+            );
+          }}
+          ListEmptyComponent={<View style={metroPickerSt.empty}><Text style={metroPickerSt.emptyTxt}>Компания не найдена</Text></View>}
+        />
+      </View>
+    </View>
+  );
+}
+
 function PermFilterSheet({
-  initial, sourceOptions, countLocal, countExternal, onApply, onClose,
+  initial, sourceOptions, companyOptions, countLocal, countExternal, onApply, onClose,
 }: {
   initial: PermFilters;
   sourceOptions: VacancySourceOption[];
+  companyOptions: VacancyCompanyOption[];
   countLocal: (f: PermFilters) => number;
   countExternal: (f: PermFilters) => Promise<number>;
   onApply: (f: PermFilters) => void;
@@ -719,6 +798,7 @@ function PermFilterSheet({
 }) {
   const [draft, setDraft] = useState<PermFilters>(initial);
   const [metroOpen, setMetroOpen] = useState(false);
+  const [companyOpen, setCompanyOpen] = useState(false);
   const [remoteCount, setRemoteCount] = useState<{ key: string; total: number | null } | null>(null);
   const insets = useSafeAreaInsets();
 
@@ -782,6 +862,12 @@ function PermFilterSheet({
               );
             })}
           </View>
+
+          <Text style={fst.label}>Компания</Text>
+          <TouchableOpacity style={fst.rowSel} onPress={() => setCompanyOpen(true)} activeOpacity={0.8}>
+            <Text style={fst.rowSelName} numberOfLines={1}>{draft.companies[0] ?? 'Все компании'}</Text>
+            <Text style={fst.rowSelHint}>{draft.companies.length ? 'изменить ›' : 'выбрать ›'}</Text>
+          </TouchableOpacity>
 
           <View style={pfl.searchWrap}>
             <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
@@ -859,6 +945,13 @@ function PermFilterSheet({
         selected={draft.stations}
         onChange={stations => setDraft(d => ({ ...d, stations }))}
         onClose={() => setMetroOpen(false)}
+      />
+      <CompanyPicker
+        visible={companyOpen}
+        options={companyOptions}
+        selected={draft.companies}
+        onChange={companies => setDraft(d => ({ ...d, companies }))}
+        onClose={() => setCompanyOpen(false)}
       />
     </View>
   );
@@ -2864,6 +2957,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const [posted, setPosted] = useState<'all' | 'week' | '3days'>('all');
   const [schedules, setSchedules] = useState<string[]>([]);
   const [filterSources, setFilterSources] = useState<string[]>([]);
+  const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
   const [permFilterOpen, setPermFilterOpen] = useState(false);
   // Какие карточки развёрнуты (описание «Читать ещё»). По id вакансии.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -2879,6 +2973,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const [externalVacancies, setExternalVacancies] = useState<ExternalVacancy[]>([]);
   const [externalVacanciesLoadFailed, setExternalVacanciesLoadFailed] = useState(false);
   const [externalSourceOptions, setExternalSourceOptions] = useState<VacancySourceOption[]>([]);
+  const [externalCompanyOptions, setExternalCompanyOptions] = useState<VacancyCompanyOption[]>([]);
   // Redirect-источник открываем с подтверждением. Для embedded-источника
   // отдельно получаем согласие на передачу данных и создаём отклик у нас.
   const [externalConfirm, setExternalConfirm] = useState<ExternalVacancy | null>(null);
@@ -2892,7 +2987,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
   const externalLoadId = useRef(0);
-  const loadExternalVacancies = useCallback(async (sourceIds?: string[]) => {
+  const loadExternalVacancies = useCallback(async (sourceIds?: string[], companies?: string[]) => {
     const loadId = ++externalLoadId.current;
     if (sourceIds && sourceIds.length === 0) {
       setExternalVacancies([]);
@@ -2905,7 +3000,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     const seen = new Set<string>();
     try {
       for (let offset = 0; offset < 50000; offset += pageSize) {
-        const page = await dbGetExternalVacancyPage(offset, pageSize, sourceIds);
+        const page = await dbGetExternalVacancyPage(offset, pageSize, sourceIds, companies);
         const rows = page.vacancies;
         if (externalLoadId.current !== loadId) return;
         for (const vacancy of rows) {
@@ -2935,10 +3030,26 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         id: partnerSourceFilterId(row.id), label: row.name,
       }))))
       .catch(() => {});
+    dbGetExternalCompanyOptions()
+      .then(setExternalCompanyOptions)
+      .catch(() => {});
   }, []);
 
   const externalSelection = useMemo(() => selectedPartnerSourceIds(filterSources), [filterSources]);
-  useEffect(() => { loadExternalVacancies(externalSelection); }, [loadExternalVacancies, externalSelection]);
+  const companySelection = useMemo(() => filterCompanies.length ? filterCompanies : undefined, [filterCompanies]);
+  useEffect(() => { loadExternalVacancies(externalSelection, companySelection); }, [loadExternalVacancies, externalSelection, companySelection]);
+
+  const permCompanyOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    externalCompanyOptions.forEach(item => counts.set(item.name, item.count));
+    permVacancies.forEach(v => {
+      const name = v.status === 'open' ? v.company.trim() : '';
+      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return Array.from(counts, ([name, count]) => ({ name, count }))
+      .filter(item => item.count > 0)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  }, [externalCompanyOptions, permVacancies]);
 
   const permSourceOptions = useMemo(() => {
     const options = new Map<string, string>();
@@ -2955,7 +3066,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const permMapItems: MapListItem[] = useMemo(
     () => [
       ...(permVacancies as PermVacancy[])
-      .filter((v: PermVacancy) => v.status === 'open' && sourceFilterMatches(filterSources) && (!!v.metroStation || !!v.address))
+      .filter((v: PermVacancy) => v.status === 'open' && sourceFilterMatches(filterSources) && (filterCompanies.length === 0 || filterCompanies.includes(v.company)) && (!!v.metroStation || !!v.address))
       .map((v: PermVacancy) => ({
         id: v.id,
         station: (v.metroStation ?? '') as string,
@@ -2968,7 +3079,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         lng: v.lng,
       })),
       ...externalVacancies
-        .filter(v => sourceFilterMatches(filterSources, v.sourceId) && (!!v.metroStation || !!v.address))
+        .filter(v => sourceFilterMatches(filterSources, v.sourceId) && (filterCompanies.length === 0 || (!!v.company && filterCompanies.includes(v.company))) && (!!v.metroStation || !!v.address))
         .map(v => ({
           id: `external:${v.id}`,
           station: v.metroStation ?? '',
@@ -2981,7 +3092,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
           lng: v.lng,
         })),
     ],
-    [permVacancies, externalVacancies, filterSources],
+    [permVacancies, externalVacancies, filterSources, filterCompanies],
   );
 
   const viewedPermIds = useRef(new Set<string>());
@@ -3014,7 +3125,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     try {
       await Promise.all([
         refreshPermVacancies(), refreshPermApplications(), refreshPermVacancyViews(),
-        loadExternalVacancies(externalSelection),
+        loadExternalVacancies(externalSelection, companySelection),
       ]);
     } catch {
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
@@ -3059,8 +3170,8 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
 
   // Текущие применённые фильтры одним объектом — так их удобно и применять,
   // и считать «Показать N» для черновика в шторке.
-  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, sources: filterSources };
-  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterSources.length > 0;
+  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, sources: filterSources, companies: filterCompanies };
+  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterSources.length > 0 || filterCompanies.length > 0;
 
   const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
     if (!f.query) return true;
@@ -3079,12 +3190,15 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     return true;
   };
 
+  const permMatchesCompany = (company: string | undefined, f: PermFilters) =>
+    f.companies.length === 0 || (!!company && f.companies.includes(company));
   const matchesSearch = (v: PermVacancy) => permMatchesQuery(v.title, v.company, v.description ?? '', permF);
-  const matchesFilters = (v: PermVacancy) => permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF);
+  const matchesFilters = (v: PermVacancy) => permMatchesCompany(v.company, permF) && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF);
 
   const openVacancies    = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && sourceFilterMatches(permF.sources) && matchesSearch(v) && matchesFilters(v));
   const externalOpenVacancies = externalVacancies.filter(v =>
     sourceFilterMatches(permF.sources, v.sourceId)
+    && permMatchesCompany(v.company, permF)
     && permMatchesQuery(v.title, v.company ?? v.sourceName ?? '', (v as { description?: string }).description ?? '', permF)
     && permMatchesMeta(v.metroStation, v.salary ?? 0, (v as { createdAt?: string }).createdAt, (v as { schedule?: string }).schedule, permF));
   // Отказ больше не прячется в отдельную вкладку: отклик остаётся здесь,
@@ -3097,6 +3211,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const countPermLocal = (f: PermFilters) =>
     permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id)
       && sourceFilterMatches(f.sources)
+      && permMatchesCompany(v.company, f)
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
 
@@ -3861,6 +3976,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         <PermFilterSheet
           initial={permF}
           sourceOptions={permSourceOptions}
+          companyOptions={permCompanyOptions}
           countLocal={countPermLocal}
           countExternal={countExternalPerm}
           onApply={(f) => {
@@ -3871,6 +3987,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
             setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
             setSchedules(f.schedules);
             setFilterSources(f.sources);
+            setFilterCompanies(f.companies);
           }}
           onClose={() => setPermFilterOpen(false)}
         />
