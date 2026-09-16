@@ -208,6 +208,28 @@ $evil = cf_json_url(['slug' => 'x?next=https://evil.ru'],
 check('чужой адрес через slug не подставить',
     str_starts_with($evil, 'https://job.lamoda.ru/vacancy/') && !str_contains($evil, '?next='));
 
+// ─── http-ссылка на свой же хост ────────────────────────────────────────────
+// У Детского мира все двенадцать вакансий — «кладовщик», «комплектовщик
+// товара», «упаковщик», ровно наша аудитория — проставлены через http, при том
+// что по https та же страница открывается. Без подъёма схемы работодатель
+// терялся целиком.
+check('http на свой хост поднимается до https',
+    cf_json_url(['href' => 'http://jobs.detmir.ru/logistics/komplektovshchik-tovara'],
+        ['url' => 'href'], 'https://jobs.detmir.ru')
+    === 'https://jobs.detmir.ru/logistics/komplektovshchik-tovara');
+
+// А вот чужой http-адрес так и остаётся отброшенным: подставлять в ленту
+// ссылку на постороннюю незащищённую страницу мы не должны.
+check('чужой http-адрес отбрасывается',
+    cf_json_url(['href' => 'http://evil.ru/vacancy/1'],
+        ['url' => 'href'], 'https://jobs.detmir.ru') === '');
+
+// И подъём не работает, когда сама страница-источник по http: тогда совпадение
+// хоста ничего не гарантирует.
+check('с http-страницы схему не поднимаем',
+    cf_json_url(['href' => 'http://jobs.detmir.ru/dm/kladovschik'],
+        ['url' => 'href'], 'http://jobs.detmir.ru') === '');
+
 
 // ─── Поля, на которых погорели на живых источниках ──────────────────────────
 

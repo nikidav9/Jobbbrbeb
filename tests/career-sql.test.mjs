@@ -22,8 +22,12 @@ test('значения печатаются как текст, а не как г
 });
 
 test('числа и логические значения не заворачиваются в текст', () => {
-  assert.equal(jsonbLiteral(8), '8::jsonb');
-  assert.equal(jsonbLiteral(true), 'true::jsonb');
+  // И не приводятся типом: `8::jsonb` и `false::jsonb` Postgres не принимает —
+  // «cannot cast type boolean to jsonb». Поймано прогоном миграции на пустой
+  // базе, и проверка стоит здесь, чтобы не поймать это второй раз на проде.
+  assert.equal(jsonbLiteral(8), 'to_jsonb(8)');
+  assert.equal(jsonbLiteral(true), 'to_jsonb(true)');
+  assert.equal(jsonbLiteral(false), 'to_jsonb(false)');
 });
 
 test('вложенный объект печатается объектом, а не строкой', () => {
@@ -35,7 +39,7 @@ test('вложенный объект печатается объектом, а 
 });
 
 test('массив печатается массивом', () => {
-  assert.equal(jsonbLiteral([1, 'a']), "jsonb_build_array(1::jsonb, to_jsonb('a'::text))");
+  assert.equal(jsonbLiteral([1, 'a']), "jsonb_build_array(to_jsonb(1), to_jsonb('a'::text))");
 });
 
 test('пустой объект остаётся пустым объектом', () => {

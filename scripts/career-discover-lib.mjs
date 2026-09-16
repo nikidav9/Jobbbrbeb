@@ -251,7 +251,36 @@ export function replayRequestConfig(method, postData) {
  * Латиница и транслит вперемешку намеренно: у российских работодателей путь
  * бывает и `/vacancy/`, и `/rabota/`, и `/karera/`.
  */
-const VACANCY_PATH_WORD = /vacan|vakans|job|career|karier|karer|rabota|position|opening/i;
+const VACANCY_PATH_WORD = /vacan|vakan|job|career|karier|karer|rabota|position|opening|ваканс|карьер|работа/i;
+
+/**
+ * Пустые слова-контейнеры в конце пути: `/vacancies/item/`, `/vacancy/detail/`.
+ * Сами по себе о вакансиях не говорят, но и не отменяют того, что сказал
+ * предыдущий сегмент. У CDEK путь именно такой.
+ */
+const CONTAINER_SEGMENT = /^(item|items|detail|details|view|show|id|card)$/i;
+
+/**
+ * Годится ли путь как «здесь лежат отдельные вакансии».
+ *
+ * Проверяется ПОСЛЕДНИЙ сегмент, а не путь целиком. Разница не теоретическая:
+ * `/jobs/hiring-events/` и `/jobs/services/` содержат слово «job», но ведут на
+ * события и услуги — на живом прогоне Яндекс предложил оба. То же у
+ * `/vacancies/tag/` (метки), `/career/stories/` (истории сотрудников) и
+ * `/vacancy/stazher/` (только стажёры, то есть кусок вакансий вместо всех).
+ */
+export function vacancyLinkPath(linkPath) {
+  const segments = String(linkPath || '').split('/').filter(Boolean);
+  if (!segments.length) return false;
+  const last = segments[segments.length - 1];
+  if (VACANCY_PATH_WORD.test(last)) return true;
+  // Слово-контейнер в конце разрешаем, только если о вакансиях сказал
+  // предыдущий сегмент.
+  if (CONTAINER_SEGMENT.test(last) && segments.length > 1) {
+    return VACANCY_PATH_WORD.test(segments[segments.length - 2]);
+  }
+  return false;
+}
 
 /**
  * Ссылки-пустышки, которые есть на любой карьерной странице.
@@ -335,7 +364,7 @@ export function pickLinkPattern(anchors, pageUrl, minTails = 3, requireVacancyWo
   // годится: на сайте без вакансий побеждает что угодно с тремя разными
   // хвостами. Замерено на живом прогоне — Koronatech предложил `/about/`.
   // В ленту это принесло бы разделы сайта вместо должностей.
-  if (requireVacancyWord && !VACANCY_PATH_WORD.test(best.link_path)) return null;
+  if (requireVacancyWord && !vacancyLinkPath(best.link_path)) return null;
   return { link_path: best.link_path, tails: best.tails, titled: best.titled };
 }
 

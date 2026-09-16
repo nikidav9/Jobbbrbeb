@@ -20,7 +20,10 @@ export function jsonbLiteral(value) {
     const pairs = Object.entries(value).flatMap(([k, v]) => [sqlString(k), jsonbLiteral(v)]);
     return pairs.length ? `jsonb_build_object(${pairs.join(', ')})` : `'{}'::jsonb`;
   }
-  if (typeof value === 'number' || typeof value === 'boolean') return `${value}::jsonb`;
+  // Именно to_jsonb, а не приведение типом: `false::jsonb` и `8::jsonb`
+  // Postgres не принимает вовсе — «cannot cast type boolean to jsonb».
+  // Поймано прогоном миграции на пустой базе, до продакшена.
+  if (typeof value === 'number' || typeof value === 'boolean') return `to_jsonb(${value})`;
   if (value === null || value === undefined) return `'null'::jsonb`;
   return `to_jsonb(${sqlString(value)}::text)`;
 }

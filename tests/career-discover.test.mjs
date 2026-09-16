@@ -23,6 +23,7 @@ import {
   hrefsWith,
   itemUrl,
   pickLinkPattern,
+  vacancyLinkPath,
   replayRequestConfig,
   scoreList,
 } from '../scripts/career-discover-lib.mjs';
@@ -478,4 +479,35 @@ test('встроенные данные достаются и из Next, и из
   );
   assert.equal(embeddedJson('<script>window.__NUXT__ = {"b":2};</script>'), '{"b":2}');
   assert.equal(embeddedJson('<html><body>ничего</body></html>'), '');
+});
+
+/**
+ * Какой путь можно пускать в production-источник.
+ *
+ * Проверяется ПОСЛЕДНИЙ сегмент. Все примеры ниже — с живого прогона по 170
+ * сайтам: без этого правила в ленту уехали бы события, услуги, метки и истории
+ * сотрудников под видом вакансий.
+ */
+test('путь вакансий принимается', () => {
+  for (const path of ['/vacancy/', '/vacancies/', '/career/vacancies/', '/job/',
+    '/vakancies/', '/karera-v-seti/', '/about/career/', '/company/rabota-u-nas/']) {
+    assert.ok(vacancyLinkPath(path), path);
+  }
+});
+
+test('раздел, который лишь стоит рядом с вакансиями, не принимается', () => {
+  // Яндекс предложил `/jobs/hiring-events/` и `/jobs/services/`: слово «job» в
+  // пути есть, а ведут они на события и услуги.
+  for (const path of ['/jobs/hiring-events/', '/jobs/services/', '/vacancies/tag/',
+    '/ru/company/career/stories/', '/vacancy/stazher/', '/about/', '/uslugi/',
+    '/comparisons/', '/wp-content/uploads/2026/04/', '/nsk/', '/ru/']) {
+    assert.equal(vacancyLinkPath(path), false, path);
+  }
+});
+
+test('слово-контейнер в конце разрешено только после слова о вакансиях', () => {
+  // У CDEK путь именно такой: /vacancies/item/<id>.
+  assert.ok(vacancyLinkPath('/vacancies/item/'));
+  assert.equal(vacancyLinkPath('/news/item/'), false);
+  assert.equal(vacancyLinkPath('/item/'), false);
 });
