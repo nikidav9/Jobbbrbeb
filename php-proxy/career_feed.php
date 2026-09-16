@@ -469,6 +469,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
     $needle = trim((string)($map['link_path'] ?? ''));
     if ($needle === '') return [];
     $minTitle = max(3, (int)($map['min_title'] ?? 8));
+    $linkRegex = trim((string)($map['link_regex'] ?? ''));
 
     $doc = cf_dom($html);
     if ($doc === null) return [];
@@ -479,6 +480,13 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         if (count($items) >= 500) break;
         $href = trim($a->getAttribute('href'));
         if ($href === '' || !str_contains($href, $needle)) continue;
+        // Не каждый хвост после общего префикса является вакансией. Например,
+        // у Петровича и категории, и карточки живут под /vakancies/. Для
+        // таких сайтов настройка может задать безопасный regex по пути.
+        // Ошибочный regex работает fail-closed: лучше ноль вакансий, чем разделы
+        // каталога в пользовательской ленте.
+        $hrefPath = (string)(parse_url($href, PHP_URL_PATH) ?: '');
+        if ($linkRegex !== '' && @preg_match($linkRegex, $hrefPath) !== 1) continue;
 
         // Ссылка должна вести на КОНКРЕТНУЮ вакансию, а не на сам список.
         // Без этого в ленту лезли «Все вакансии», «Все города», «Кандидатам» —

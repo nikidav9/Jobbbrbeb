@@ -307,6 +307,24 @@ check('слишком короткий текст за должность не �
 check('без link_path ничего не разбираем',
     cf_html_links($linkPage([['/vacancy/1', 'Комплектовщик']]), $base, [], $now) === []);
 
+// У Петровича категории и карточки имеют общий /vakancies/. Один link_path
+// поэтому недостаточен: /vakancies/contact-center/ — раздел, а
+// /vakancies/58249/ — конкретная вакансия. link_regex оставляет только ID.
+$petrovich = cf_html_links($linkPage([
+    ['/vakancies/contact-center/', 'Работа в контакт-центре'],
+    ['/vakancies/58249/', 'Комплектовщик ночь'],
+    ['/vakancies/54328/', 'Комплектовщик товаров'],
+]), 'https://petrovichjob.ru/vakancies/', [
+    'link_path' => '/vakancies/',
+    'link_regex' => '~^/vakancies/[0-9]+/?$~',
+    'company_const' => 'Петрович',
+    'min_title' => 8,
+], $now);
+check('regex ссылки отбрасывает раздел Петровича', count($petrovich) === 2);
+check('regex ссылки оставляет карточку Петровича',
+    $petrovich[0]['url'] === 'https://petrovichjob.ru/vakancies/58249/'
+    && $petrovich[0]['company'] === 'Петрович');
+
 
 // ─── Найдено уже на проде, после выката ─────────────────────────────────────
 
