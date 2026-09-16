@@ -18,7 +18,7 @@ jobs:
           APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
         run: |
           python3 - <<'PY'
-          import json, os, sys, urllib.request
+          import json, os, urllib.request
 
           secret = os.environ.get('APP_SECRET', '')
           if not secret:
@@ -52,17 +52,16 @@ jobs:
               raise SystemExit('duplicate company names in facet')
 
           print(f'LIVE_COMPANIES={len(rows)}')
-          for item in rows:
-              print(f'COMPANY\t{item["name"]}\t{int(item["vacancy_count"])}')
-
           failures = []
           for item in rows:
               name = str(item['name']).strip()
+              count = int(item['vacancy_count'])
               vacancies = call('extVacancies', [0, 1, None, [name]])
               if not isinstance(vacancies, list) or not vacancies:
                   failures.append(f'{name}: no live vacancy returned')
                   continue
               v = vacancies[0]
+              print(f'COMPANY\t{name}\t{count}\t{v.get("url", "")}\t{v.get("source_name", "")}')
               checks = {
                   'company': str(v.get('company') or '').strip() == name,
                   'active': v.get('active') is True,
