@@ -31,6 +31,43 @@ function cf_fail(int $code, string $message): void
     exit;
 }
 
+/**
+ * Ответ приёмнику: что нашли и куда идти дальше.
+ *
+ * $failed — адрес, на котором споткнулись прямо сейчас. Он НЕ делает ответ
+ * ошибочным: ingest.php на ошибку прекращает заход целиком и запоминает адрес в
+ * контрольной точке, а стирает её только после полного успешного обхода. Так
+ * одна недоступная страница вставала намертво поперёк всех остальных компаний —
+ * ровно это и держало раздел «Работа» на прошлых вакансиях.
+ *
+ * Поле partial говорит приёмнику: обход дошёл до конца, но не весь. По нему
+ * ingest.php не гасит вакансии, которых не увидел, — иначе один 403 у
+ * работодателя стирал бы его вакансии из ленты до следующего круга.
+ */
+function cf_emit(array $items, ?array $step, string $sourceId, int $page, int $sub,
+                 array $skipped, ?array $failed): void
+{
+    $out = [
+        'items' => $items,
+        'has_more' => $step !== null,
+        'page' => $page,
+        'sub' => $sub,
+        'total' => null,
+    ];
+    // Пусть о выпавших адресах знает и приёмник, и человек в панели.
+    if ($skipped) $out['skipped'] = $skipped;
+    if ($failed) {
+        $out['failed'] = [$failed];
+        $out['partial'] = true;
+    }
+    if ($step !== null) {
+        $out['next_url'] = 'https://jobtoo.ru/api/career.php?source=' . rawurlencode($sourceId)
+            . '&page=' . $step['page'] . '&sub=' . $step['sub'];
+    }
+    echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 $sourceId = trim((string)($_GET['source'] ?? ''));
 if ($sourceId === '' || !preg_match('~^[A-Za-z0-9._-]{1,64}$~', $sourceId)) {
     cf_fail(400, 'нет источника');
@@ -100,12 +137,21 @@ if (!$units) cf_fail(422, 'у источника нет годных адрес�
 if ($page >= count($units)) cf_fail(404, 'страница за пределами списка');
 
 $unit = $units[$page];
+$total = count($units);
+// Споткнулись на этом работодателе — идём к следующему, а не рушим обход.
+// Порции текущего не дочитываем: не ответил адрес — не ответит и его вторая
+// страница.
+$skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $total, $unit): void {
+    cf_emit([], cf_next_step($page, $sub, $total, false, true), $sourceId, $page, $sub,
+        $skipped, ['url' => $unit['url'], 'reason' => $reason]);
+};
+
 // Адрес порции строим до похода, но проверяем заново: подставляются только
 // числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
 $pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub);
-if (!ing_safe_https_url($pageUrl)) cf_fail(422, 'адрес порции не проходит проверку');
+if (!ing_safe_https_url($pageUrl)) $skipUnit('адрес порции не проходит проверку');
 $resolveEntries = ing_safe_https_resolve($pageUrl);
-if ($resolveEntries === null) cf_fail(422, 'адрес страницы больше не разрешается безопасно');
+if ($resolveEntries === null) $skipUnit('адрес страницы больше не разрешается безопасно');
 
 $body = '';
 $tooLarge = false;
@@ -157,18 +203,18 @@ curl_close($ch);
 // ответ не разбираем.
 if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
         FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-    cf_fail(502, 'страница увела на непубличный адрес');
+    $skipUnit('страница увела на непубличный адрес');
 }
 
-if ($tooLarge) cf_fail(502, 'страница больше 4 МБ');
+if ($tooLarge) $skipUnit('страница больше 4 МБ');
 if ($ok === false || $code < 200 || $code >= 300) {
-    cf_fail(502, "страница недоступна ($code $error)");
+    $skipUnit("страница недоступна ($code $error)");
 }
 
 if ($unit['kind'] === 'embedded') {
     // Данные приехали внутри страницы, отдельного запроса за ними нет.
     $data = cf_embedded_state($body);
-    if ($data === null) cf_fail(502, 'в странице нет встроенного состояния');
+    if ($data === null) $skipUnit('в странице нет встроенного состояния');
     $items = cf_json_items($data, $unit['map'], $pageUrl, time());
     $more = false;
 } elseif ($unit['kind'] === 'html_links') {
@@ -176,7 +222,7 @@ if ($unit['kind'] === 'embedded') {
     $more = cf_has_next_sub(count($items), $unit['paging'], $sub);
 } elseif ($unit['kind'] === 'json') {
     $data = json_decode($body, true);
-    if (!is_array($data)) cf_fail(502, 'источник ответил не JSON');
+    if (!is_array($data)) $skipUnit('источник ответил не JSON');
     $items = cf_json_items($data, $unit['map'], $pageUrl, time());
     // Считаем сырые записи, а не принятые: см. cf_has_next_sub.
     $rawRows = cf_dig($data, (string)($unit['map']['list'] ?? ''));
@@ -188,18 +234,5 @@ if ($unit['kind'] === 'embedded') {
 }
 
 // Сначала дочитываем порции текущего источника, потом переходим к следующему.
-$hasMore = $more || $page + 1 < count($units);
-$out = [
-    'items' => $items,
-    'has_more' => $hasMore,
-    'page' => $page,
-    'sub' => $sub,
-    'total' => null,
-];
-// Пусть о выпавших адресах знает и приёмник, и человек в панели.
-if ($skipped) $out['skipped'] = $skipped;
-if ($hasMore) {
-    $out['next_url'] = 'https://jobtoo.ru/api/career.php?source=' . rawurlencode($sourceId)
-        . '&page=' . ($more ? $page : $page + 1) . '&sub=' . ($more ? $sub + 1 : 0);
-}
-echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+cf_emit($items, cf_next_step($page, $sub, $total, $more, false), $sourceId, $page, $sub,
+    $skipped, null);

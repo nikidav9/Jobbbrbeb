@@ -374,6 +374,11 @@ function ing_run_source(array $src): array
     $skipped = (int)($saved['skipped'] ?? 0);
     $pages = (int)($saved['pages'] ?? 0);
     $complete = false;
+    // Обход дошёл до конца, но не весь: часть адресов не ответила. Такой круг
+    // не даёт права гасить вакансии — иначе один 403 у работодателя стирал бы
+    // его вакансии из ленты до следующего круга. Источник сообщает это полем
+    // partial; кто его не шлёт, ничего не теряет.
+    $partial = !empty($saved['partial']);
 
     while ($nextUrl !== null) {
         if (++$pages > 1000) {
@@ -394,6 +399,7 @@ function ing_run_source(array $src): array
         }
 
         $dec = $page['data'];
+        if (!empty($dec['partial'])) $partial = true;
         $items = is_array($dec['items'] ?? null) ? $dec['items']
             : (array_is_list($dec) ? $dec : null);
         if (!is_array($items)) {
@@ -442,6 +448,7 @@ function ing_run_source(array $src): array
             $checkpoint = json_encode([
                 'base' => $baseUrl, 'started' => $startedAt, 'next' => $nextUrl,
                 'received' => $received, 'skipped' => $skipped, 'pages' => $pages,
+                'partial' => $partial,
             ]);
             if (file_put_contents($stateFile . '.tmp', $checkpoint) === false
                 || !rename($stateFile . '.tmp', $stateFile)) {
@@ -454,10 +461,12 @@ function ing_run_source(array $src): array
         }
     }
 
-    // Гасим пропавшие вакансии только после полного успешного обхода. Если
-    // партнёрская API упала на середине, старые карточки остаются доступными.
+    // Гасим пропавшие вакансии только после полного и ПОЛНОЦЕННОГО обхода.
+    // Если партнёрская API упала на середине, старые карточки остаются
+    // доступными; то же и когда обход дошёл до конца, но часть адресов не
+    // ответила (partial).
     $gone = 0;
-    if ($complete) {
+    if ($complete && !$partial) {
         $stale = sb_select_all('jm_ext_vacancies', [
             'source_id' => 'eq.' . $src['id'],
             'active' => 'is.true',
@@ -471,8 +480,11 @@ function ing_run_source(array $src): array
     }
 
     if (is_file($stateFile)) unlink($stateFile);
+    // «не весь» в статусе видно в панели: источник работает, но часть
+    // работодателей не отвечает, и гашение на этом круге не делалось.
+    $whole = $partial ? 'ок, не весь' : 'ок';
     return [
-        'status' => "ок: страниц $pages, получено $received, пропущено $skipped, погашено $gone",
+        'status' => "$whole: страниц $pages, получено $received, пропущено $skipped, погашено $gone",
         'count' => $received,
         'pages' => $pages,
         'skipped' => $skipped,
