@@ -20,7 +20,7 @@
  */
 import fs from 'node:fs';
 import process from 'node:process';
-import { dig, itemUrl } from './career-discover-lib.mjs';
+import { dig, embeddedJson, hrefsWith, itemUrl } from './career-discover-lib.mjs';
 
 const UA = 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)';
 const IN = process.argv[2] || 'career-discovery.json';
@@ -103,16 +103,34 @@ async function verifyHtmlLinks(entry) {
   const endpoint = entry.connector_config.endpoints[0];
   const res = await get(endpoint.url);
   if (res.status !== 200) return { ok: false, reason: `страница: HTTP ${res.status}${res.error ? ` (${res.error})` : ''}` };
-  const path = endpoint.map.link_path;
-  const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const tails = new Set();
-  for (const m of res.text.matchAll(new RegExp(`${escaped}([\\w%.-]+)`, 'g'))) tails.add(m[1]);
-  if (tails.size < 3) return { ok: false, reason: `в сыром HTML только ${tails.size} ссылок` };
-  const origin = new URL(endpoint.url).origin;
-  const sample = `${origin}${path}${[...tails][0]}`;
+  const hrefs = hrefsWith(res.text, endpoint.map.link_path, endpoint.url);
+  if (hrefs.length < 3) return { ok: false, reason: `в сыром HTML только ${hrefs.length} ссылок` };
+  // Берём НАСТОЯЩИЙ href из разметки, а не собираем адрес сами. Первая версия
+  // складывала origin + link_path + хвост, и хвост обрезался по первому «/»:
+  // Контур, IBS и Техвилл получали 404 — при том что на проде эти три
+  // источника работают и дают 62, 45 и 20 вакансий.
+  const sample = hrefs[0];
   const page = await get(sample);
-  if (page.status !== 200) return { ok: false, reason: `ссылка на вакансию: HTTP ${page.status}`, items: tails.size, url: sample };
-  return { ok: true, items: tails.size, url: sample };
+  if (page.status !== 200) return { ok: false, reason: `ссылка на вакансию: HTTP ${page.status}`, items: hrefs.length, url: sample };
+  return { ok: true, items: hrefs.length, url: sample };
+}
+
+/**
+ * Данные, положенные прямо в HTML: Next.js и Nuxt. Прод читает их режимом
+ * `embedded` — то есть повторной загрузкой той же страницы, а не отдельным
+ * адресом, поэтому и проверять надо страницу.
+ */
+async function verifyEmbedded(entry) {
+  const endpoint = entry.connector_config.endpoints[0];
+  const res = await get(endpoint.url);
+  if (res.status !== 200) return { ok: false, reason: `страница: HTTP ${res.status}${res.error ? ` (${res.error})` : ''}` };
+  const raw = embeddedJson(res.text);
+  if (!raw) return { ok: false, reason: 'в HTML нет встроенных данных (__NEXT_DATA__/__NUXT__)' };
+  let body;
+  try { body = JSON.parse(raw); } catch { return { ok: false, reason: 'встроенные данные не разбираются как JSON' }; }
+  const list = dig(body, endpoint.map?.list || '');
+  if (!Array.isArray(list) || list.length === 0) return { ok: false, reason: 'встроенный список пуст' };
+  return { ok: true, items: list.length, url: endpoint.url };
 }
 
 const rows = JSON.parse(fs.readFileSync(IN, 'utf8'));
@@ -120,7 +138,9 @@ const ready = rows.filter(r => r.status === 'готов' && r.connector_config?.
 const out = [];
 for (const entry of ready) {
   const mode = entry.connector_config.endpoints[0].mode;
-  const result = mode === 'html_links' ? await verifyHtmlLinks(entry) : await verifyJson(entry);
+  const result = mode === 'html_links' ? await verifyHtmlLinks(entry)
+    : mode === 'embedded' ? await verifyEmbedded(entry)
+      : await verifyJson(entry);
   out.push({ name: entry.name, url: entry.url, mode: mode || 'json', ...result, connector_config: entry.connector_config });
   console.log(`${result.ok ? '✓' : '✗'} ${entry.name.slice(0, 24).padEnd(24)} ${result.ok ? `${result.items} шт.` : result.reason}`);
 }

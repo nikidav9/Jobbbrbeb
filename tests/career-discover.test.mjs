@@ -19,6 +19,8 @@ import {
   looksLikeVacancies,
   parseSiteList,
   dig,
+  embeddedJson,
+  hrefsWith,
   itemUrl,
   pickLinkPattern,
   replayRequestConfig,
@@ -439,4 +441,41 @@ test('путь до списка разбирается и через масси
   // Нет такого пути — null, а не исключение: коннектор дальше просто не
   // возьмёт этот источник, а падение уронило бы весь обход.
   assert.equal(dig({ a: 1 }, 'нет.такого'), null);
+});
+
+/**
+ * Ссылки из СЫРОГО HTML и встроенные в страницу данные.
+ *
+ * Это то, чем проверялка решает, включать источник или нет. Первая её версия
+ * собирала адрес сама — origin + кусок пути + хвост — и обрезала хвост по
+ * первому «/». Контур, IBS и Техвилл получали 404 при том, что на проде эти
+ * три источника работают и дают 62, 45 и 20 вакансий.
+ */
+test('берётся настоящий href, а не собранный адрес', () => {
+  const html = '<a href="/career/vacancies/moskva/ops--12">Оператор склада</a>';
+  assert.deepEqual(
+    hrefsWith(html, '/career/vacancies/', 'https://kontur.ru/career/vacancies'),
+    ['https://kontur.ru/career/vacancies/moskva/ops--12'],
+  );
+});
+
+test('ссылка на сам раздел в выборку не попадает', () => {
+  const html = '<a href="/vacancies/">Все вакансии</a><a href="/vacancies/?city=msk">В Москве</a>';
+  assert.deepEqual(hrefsWith(html, '/vacancies/', 'https://x.ru/vacancies'), []);
+});
+
+test('одна вакансия двумя ссылками считается один раз', () => {
+  // С картинки и с заголовка — обычное дело, счёт по вхождениям завысил бы
+  // находку вдвое.
+  const html = '<a href="/vacancy/7"><img></a><a href="/vacancy/7">Комплектовщик</a>';
+  assert.equal(hrefsWith(html, '/vacancy/', 'https://x.ru/jobs').length, 1);
+});
+
+test('встроенные данные достаются и из Next, и из Nuxt', () => {
+  assert.equal(
+    embeddedJson('<script id="__NEXT_DATA__" type="application/json">{"a":1}</script>'),
+    '{"a":1}',
+  );
+  assert.equal(embeddedJson('<script>window.__NUXT__ = {"b":2};</script>'), '{"b":2}');
+  assert.equal(embeddedJson('<html><body>ничего</body></html>'), '');
 });

@@ -374,3 +374,37 @@ export function itemUrl(item, map, origin) {
     .map(encodeURIComponent)
     .join('/'));
 }
+
+/**
+ * Настоящие ссылки из сырого HTML, содержащие нужный кусок пути.
+ *
+ * Собирать адрес самому нельзя: хвост бывает из нескольких сегментов, и
+ * обрезка по первому «/» давала 404 у Контура, IBS и Техвилла — источников,
+ * которые на проде работают. Берём то, что реально написано в href.
+ */
+export function hrefsWith(html, linkPath, pageUrl) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(html).matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+    const href = m[1];
+    if (!href.includes(linkPath)) continue;
+    let absolute;
+    try { absolute = new URL(href, pageUrl).href; } catch { continue; }
+    // Ссылка на сам раздел — не вакансия: после нужного куска должно что-то быть.
+    const tail = absolute.split(linkPath)[1] || '';
+    if (tail.replace(/[/?#].*$/, '') === '') continue;
+    if (seen.has(absolute)) continue;
+    seen.add(absolute);
+    out.push(absolute);
+  }
+  return out;
+}
+
+/** Встроенные в HTML данные: __NEXT_DATA__ или window.__NUXT__. */
+export function embeddedJson(html) {
+  const next = String(html).match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (next) return next[1].trim();
+  const nuxt = String(html).match(/window\.__NUXT__\s*=\s*([\s\S]*?);?\s*<\/script>/i);
+  if (nuxt) return nuxt[1].trim();
+  return '';
+}
