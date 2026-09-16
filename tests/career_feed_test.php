@@ -307,6 +307,35 @@ check('слишком короткий текст за должность не �
 check('без link_path ничего не разбираем',
     cf_html_links($linkPage([['/vacancy/1', 'Комплектовщик']]), $base, [], $now) === []);
 
+
+// ─── Найдено уже на проде, после выката ─────────────────────────────────────
+
+// У Яндекса все 68 «вакансий» оказались ссылками /jobs/vacancies?profession=…
+// — это фильтры каталога, а заголовком шло «Разработка», «Аналитика».
+check('ссылка-фильтр на раздел отброшена',
+    cf_html_links('<a href="/jobs/vacancies?profession=backend">Разработка в Яндексе</a>',
+        'https://yandex.ru/jobs/vacancies', ['link_path' => '/jobs/'], $now) === []);
+check('а обычная вакансия рядом принимается',
+    count(cf_html_links('<a href="/jobs/12345">Комплектовщик склада</a>',
+        'https://yandex.ru/jobs/vacancies', ['link_path' => '/jobs/'], $now)) === 1);
+
+// В карточке Ростелекома стояло «Технический блок» — это направление, а не
+// работодатель: поле из ответа перебивало постоянное название.
+$rt = cf_json_items(
+    ['vacancies' => [['id' => 1, 'name' => 'Бригадир монтажников',
+                      'directions' => [['id' => 4, 'name' => 'Технический блок']]]]],
+    ['list' => 'vacancies', 'title' => 'name', 'id' => 'id', 'company' => 'directions',
+     'company_const' => 'Ростелеком', 'url_template' => 'https://job.rt.ru/vacancy/{id}'],
+    'https://job.rt.ru/', $now);
+check('постоянное название компании сильнее поля из ответа',
+    count($rt) === 1 && $rt[0]['company'] === 'Ростелеком');
+
+// Источники по ссылкам берут название оттуда же, иначе в карточке пусто.
+$hl = cf_html_links('<a href="/vacancy/9">Оператор склада</a>', 'https://x.ru/vacancy',
+    ['link_path' => '/vacancy/', 'company_const' => 'Техвилл'], $now);
+check('источник по ссылкам тоже знает название компании',
+    count($hl) === 1 && $hl[0]['company'] === 'Техвилл');
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
