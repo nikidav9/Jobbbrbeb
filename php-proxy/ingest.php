@@ -16,6 +16,10 @@
 
 @ini_set('display_errors', '0');
 @set_time_limit(300);
+
+// Предел, после которого вакансию гасим даже на неполном круге: см. место
+// гашения ниже. Семь заходов подряд её не отдали — значит её нет.
+const STALE_MAX_DAYS = 7;
 header('Content-Type: application/json; charset=utf-8');
 
 define('SB_STRICT', true);
@@ -374,6 +378,11 @@ function ing_run_source(array $src): array
     $skipped = (int)($saved['skipped'] ?? 0);
     $pages = (int)($saved['pages'] ?? 0);
     $complete = false;
+    // Обход дошёл до конца, но не весь: часть адресов не ответила. Такой круг
+    // не даёт права гасить вакансии — иначе один 403 у работодателя стирал бы
+    // его вакансии из ленты до следующего круга. Источник сообщает это полем
+    // partial; кто его не шлёт, ничего не теряет.
+    $partial = !empty($saved['partial']);
 
     while ($nextUrl !== null) {
         if (++$pages > 1000) {
@@ -394,6 +403,7 @@ function ing_run_source(array $src): array
         }
 
         $dec = $page['data'];
+        if (!empty($dec['partial'])) $partial = true;
         $items = is_array($dec['items'] ?? null) ? $dec['items']
             : (array_is_list($dec) ? $dec : null);
         if (!is_array($items)) {
@@ -442,6 +452,7 @@ function ing_run_source(array $src): array
             $checkpoint = json_encode([
                 'base' => $baseUrl, 'started' => $startedAt, 'next' => $nextUrl,
                 'received' => $received, 'skipped' => $skipped, 'pages' => $pages,
+                'partial' => $partial,
             ]);
             if (file_put_contents($stateFile . '.tmp', $checkpoint) === false
                 || !rename($stateFile . '.tmp', $stateFile)) {
@@ -454,14 +465,28 @@ function ing_run_source(array $src): array
         }
     }
 
-    // Гасим пропавшие вакансии только после полного успешного обхода. Если
-    // партнёрская API упала на середине, старые карточки остаются доступными.
+    // Гасим пропавшие вакансии только после полного и ПОЛНОЦЕННОГО обхода.
+    // Если партнёрская API упала на середине, старые карточки остаются
+    // доступными; то же и когда обход дошёл до конца, но часть адресов не
+    // ответила (partial).
+    //
+    // У этой пощады есть обратная сторона, и её надо закрыть. Пока хоть один
+    // работодатель отвечает 403, круг всегда неполный — а значит НИЧЕГО не
+    // гасится, и заполненная вакансия висит в ленте вечно. Человек открывает
+    // её и получает 404: ровно то, за что владелец справедливо ругал Сбера.
+    //
+    // Поэтому предел по возрасту. Вакансию, которой не видно неделю, гасим и на
+    // неполном круге: неделя — это семь заходов подряд, за которые её не отдал
+    // ни сайт, ни кэш. Свежие при этом не страдают: у них отметка сегодняшняя.
     $gone = 0;
     if ($complete) {
+        // На полном круге граница — начало этого круга: не увидели сейчас,
+        // значит вакансии больше нет. На неполном — неделя назад.
+        $cut = $partial ? gmdate('Y-m-d\TH:i:s\Z', time() - STALE_MAX_DAYS * 86400) : $startedAt;
         $stale = sb_select_all('jm_ext_vacancies', [
             'source_id' => 'eq.' . $src['id'],
             'active' => 'is.true',
-            'last_seen_at' => 'lt.' . $startedAt,
+            'last_seen_at' => 'lt.' . $cut,
         ], 'id');
         foreach (array_chunk(array_column($stale, 'id'), 100) as $chunk) {
             sb_update('jm_ext_vacancies', ['id' => 'in.(' . implode(',', $chunk) . ')'], ['active' => false]);
@@ -471,8 +496,11 @@ function ing_run_source(array $src): array
     }
 
     if (is_file($stateFile)) unlink($stateFile);
+    // «не весь» в статусе видно в панели: источник работает, но часть
+    // работодателей не отвечает, и гашение на этом круге не делалось.
+    $whole = $partial ? 'ок, не весь' : 'ок';
     return [
-        'status' => "ок: страниц $pages, получено $received, пропущено $skipped, погашено $gone",
+        'status' => "$whole: страниц $pages, получено $received, пропущено $skipped, погашено $gone",
         'count' => $received,
         'pages' => $pages,
         'skipped' => $skipped,
