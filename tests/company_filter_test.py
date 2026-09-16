@@ -1,3 +1,4 @@
+# Regression guard: company facet must only expose employers with active vacancies.
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
