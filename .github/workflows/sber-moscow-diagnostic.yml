@@ -1,0 +1,49 @@
+name: Sber Moscow diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'php-proxy/sber_diag.php'
+      - '.github/workflows/sber-moscow-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Probe Sber from Moscow backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wait for Moscow git-pull and run protected diagnostic
+        env:
+          JT_DEPLOY_TOKEN: ${{ secrets.JT_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$JT_DEPLOY_TOKEN" ]; then
+            echo "JT_DEPLOY_TOKEN не задан"
+            exit 1
+          fi
+          ok=0
+          for attempt in $(seq 1 18); do
+            code=$(curl -sS -o sber-diag.json -w '%{http_code}' \
+              --connect-timeout 8 --max-time 90 \
+              -H "X-Deploy-Token: $JT_DEPLOY_TOKEN" \
+              https://147.45.184.99.sslip.io/api/sber_diag.php || true)
+            echo "attempt=$attempt http=${code:-000}"
+            if [ "$code" = "200" ] && python3 - <<'PY'
+          import json
+          with open('sber-diag.json', encoding='utf-8') as f:
+              x=json.load(f)
+          raise SystemExit(0 if x.get('ok') and x.get('probes') else 1)
+          PY
+            then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          cat sber-diag.json || true
+          echo
+          [ "$ok" = 1 ]
