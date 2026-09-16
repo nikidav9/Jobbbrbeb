@@ -141,6 +141,7 @@ jobs:
           python3 tests/external_filter_count_test.py
           python3 tests/feed_contract_test.py
           python3 tests/career_infra_test.py
+          python3 tests/career_full_catalog_test.py
           python3 tests/referral_chain_test.py
           python3 tests/referral_data_policy_test.py
           python3 tests/user_id_contract_test.py

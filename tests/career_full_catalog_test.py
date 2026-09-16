@@ -18,7 +18,11 @@ def check(name: str, ok: bool) -> None:
 # runtime-источником: именно это давало одну JobPosting-вакансию.
 check('master-list хранится отдельно для discovery', "'catalog_pages', :'catalog_pages'::jsonb" in sync)
 check('runtime получает проверенные endpoints', "connector_config->'endpoints'" in sync)
-check('пустые endpoints роняют выкладку', 'нет проверенных карьерных endpoints' in sync)
+# Проверка сторожа, а не его формулировки. Раньше здесь стояла строка «нет
+# проверенных карьерных endpoints», а сам скрипт давно говорит иначе — и
+# проверка молча краснела, никого не останавливая: в CI этот файл не подключён.
+check('пустые endpoints роняют выкладку',
+      'raise exception' in sync and 'не осталось карьерных endpoints' in sync)
 check('sync не кладёт raw master-list обратно в pages', "'pages', :'catalog_pages'::jsonb" not in sync)
 
 # Уже работающие вакансии не должны исчезнуть на время первого нового обхода.

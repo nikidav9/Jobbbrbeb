@@ -24,6 +24,7 @@ import {
   itemUrl,
   pickLinkPattern,
   vacancyLinkPath,
+  vacancySectionLink,
   replayRequestConfig,
   scoreList,
 } from '../scripts/career-discover-lib.mjs';
@@ -510,4 +511,72 @@ test('слово-контейнер в конце разрешено тольк�
   assert.ok(vacancyLinkPath('/vacancies/item/'));
   assert.equal(vacancyLinkPath('/news/item/'), false);
   assert.equal(vacancyLinkPath('/item/'), false);
+});
+
+/**
+ * Переход с главной в раздел вакансий.
+ *
+ * У двадцати одной компании в списке целей стоит голый корень сайта, где
+ * вакансий нет вовсе. Это и была настоящая причина доброй четверти неудач, а
+ * не «сайт закрылся»: Магнит по правильному адресу отдаёт 4448 вакансий.
+ */
+test('ссылка «Все вакансии» находится среди прочих', () => {
+  const anchors = [
+    { href: 'https://rabota.magnit.ru/о-компании', text: 'О компании' },
+    { href: 'https://rabota.magnit.ru/moskva/vacancies', text: 'Все вакансии' },
+    { href: 'https://rabota.magnit.ru/news', text: 'Новости' },
+  ];
+  assert.equal(
+    vacancySectionLink(anchors, 'https://rabota.magnit.ru'),
+    'https://rabota.magnit.ru/moskva/vacancies',
+  );
+});
+
+test('надпись весит больше пути', () => {
+  // `/career/` есть и у страницы «о работодателе». Надпись «Все вакансии»
+  // ведёт именно в каталог, поэтому при споре побеждает она.
+  const anchors = [
+    { href: 'https://x.ru/career/about', text: 'Почему мы' },
+    { href: 'https://x.ru/catalog', text: 'Все вакансии' },
+  ];
+  assert.equal(vacancySectionLink(anchors, 'https://x.ru'), 'https://x.ru/catalog');
+});
+
+test('чужой домен и возврат на ту же страницу не берутся', () => {
+  const anchors = [
+    { href: 'https://hh.ru/employer/1234', text: 'Наши вакансии на hh' },
+    { href: 'https://x.ru/#vacancies', text: 'Вакансии' },
+  ];
+  assert.equal(vacancySectionLink(anchors, 'https://x.ru/'), '');
+});
+
+test('нет ничего похожего — пустая строка, а не догадка', () => {
+  const anchors = [
+    { href: 'https://x.ru/about', text: 'О компании' },
+    { href: 'https://x.ru/contacts', text: 'Контакты' },
+  ];
+  assert.equal(vacancySectionLink(anchors, 'https://x.ru'), '');
+});
+
+test('переход ведёт в каталог, а не в одну вакансию', () => {
+  // С главной 2ГИС разведка уходила на /vacancies/testing/527 — конкретную
+  // вакансию вместо каталога, и дальше искала список там, где он один.
+  const anchors = [
+    { href: 'https://job.2gis.ru/vacancies/testing/527', text: 'QA-инженер в команду карт' },
+    { href: 'https://job.2gis.ru/vacancies', text: 'Вакансии' },
+  ];
+  assert.equal(vacancySectionLink(anchors, 'https://job.2gis.ru'), 'https://job.2gis.ru/vacancies');
+});
+
+test('короткий путь выигрывает у узкого раздела', () => {
+  // У Магнита рядом лежат /moskva/vacancies и /detskii-sanatorii/vacancies.
+  // Второй — вакансии одного санатория, то есть кусок вместо каталога.
+  const anchors = [
+    { href: 'https://rabota.magnit.ru/detskii-sanatorii/vacancies', text: 'Вакансии' },
+    { href: 'https://rabota.magnit.ru/vacancies', text: 'Вакансии' },
+  ];
+  assert.equal(
+    vacancySectionLink(anchors, 'https://rabota.magnit.ru'),
+    'https://rabota.magnit.ru/vacancies',
+  );
 });
