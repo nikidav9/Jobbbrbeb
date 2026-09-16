@@ -336,6 +336,17 @@ $hl = cf_html_links('<a href="/vacancy/9">Оператор склада</a>', 'h
 check('источник по ссылкам тоже знает название компании',
     count($hl) === 1 && $hl[0]['company'] === 'Техвилл');
 
+
+// Найдено сплошной проверкой на проде: в ленту шли счётчики и разделы.
+foreach (['2 вакансии', '17 вакансий', 'Рекомендовать друга', 'Разработчикам'] as $junk) {
+    check("не вакансия отброшена: $junk",
+        cf_html_links('<a href="/vacancy/1">' . $junk . '</a>', 'https://x.ru/v',
+            ['link_path' => '/vacancy/'], $now) === []);
+}
+check('должность с числом в начале не пострадала',
+    count(cf_html_links('<a href="/vacancy/1">3D-художник в команду</a>', 'https://x.ru/v',
+        ['link_path' => '/vacancy/'], $now)) === 1);
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

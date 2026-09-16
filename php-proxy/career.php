@@ -78,7 +78,15 @@ foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $
 // Список задаёт администратор в панели. Это не повод пускать сборщик куда
 // угодно: адрес всё равно проходит ту же проверку, что и адрес источника —
 // только публичный HTTPS, без localhost, служебных сетей и метаданных облака.
-$units = array_values(array_filter($units, fn($u) => ing_safe_https_url($u['url'])));
+// Отброшенные адреса запоминаем поимённо. Раньше они исчезали молча: в
+// настройке было 24 источника, а обход видел 23, и понять, какой выпал и
+// почему, было нечем — заметил это только сплошной проверкой на проде.
+$skipped = [];
+$units = array_values(array_filter($units, function ($u) use (&$skipped) {
+    if (ing_safe_https_url($u['url'])) return true;
+    $skipped[] = $u['url'];
+    return false;
+}));
 if (!$units) cf_fail(422, 'у источника нет годных адресов карьерных страниц');
 if ($page >= count($units)) cf_fail(404, 'страница за пределами списка');
 
@@ -167,6 +175,8 @@ $out = [
     'sub' => $sub,
     'total' => null,
 ];
+// Пусть о выпавших адресах знает и приёмник, и человек в панели.
+if ($skipped) $out['skipped'] = $skipped;
 if ($hasMore) {
     $out['next_url'] = 'https://jobtoo.ru/api/career.php?source=' . rawurlencode($sourceId)
         . '&page=' . ($more ? $page : $page + 1) . '&sub=' . ($more ? $sub + 1 : 0);
