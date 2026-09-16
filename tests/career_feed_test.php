@@ -347,6 +347,33 @@ check('должность с числом в начале не пострада�
     count(cf_html_links('<a href="/vacancy/1">3D-художник в команду</a>', 'https://x.ru/v',
         ['link_path' => '/vacancy/'], $now)) === 1);
 
+
+// ─── Состояние, встроенное в разметку ───────────────────────────────────────
+// Так отдают вакансии VK (25), ВТБ (20), Островок, Кофемания, Хоулмонт: никакого
+// отдельного запроса за ними нет, всё приезжает первой же страницей.
+
+$next = '<html><body><script id="__NEXT_DATA__" type="application/json">'
+    . '{"props":{"pageProps":{"vacancies":[{"id":7,"title":"Комплектовщик"}]}}}'
+    . '</script></body></html>';
+check('состояние Next.js прочитано',
+    cf_embedded_state($next)['props']['pageProps']['vacancies'][0]['title'] === 'Комплектовщик');
+
+$nuxt = '<html><body><script>window.__NUXT__ = {"data":[{"title":"Повар"}]};</script></body></html>';
+check('состояние Nuxt прочитано', cf_embedded_state($nuxt)['data'][0]['title'] === 'Повар');
+
+check('без состояния возвращается null', cf_embedded_state('<html><body>Вакансий нет</body></html>') === null);
+check('битый JSON не роняет разбор',
+    cf_embedded_state('<script id="__NEXT_DATA__">{сломано</script>') === null);
+
+// Разбор состояния и разбор ответа API — одна и та же дорога: cf_json_items.
+$vk = cf_json_items(cf_embedded_state($next),
+    ['list' => 'props.pageProps.vacancies', 'title' => 'title', 'id' => 'id',
+     'company_const' => 'VK', 'url_template' => 'https://team.vk.company/vacancy/{id}'],
+    'https://team.vk.company/vacancy', $now);
+check('вакансия из встроенного состояния разобрана',
+    count($vk) === 1 && $vk[0]['title'] === 'Комплектовщик'
+    && $vk[0]['url'] === 'https://team.vk.company/vacancy/7' && $vk[0]['company'] === 'VK');
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

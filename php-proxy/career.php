@@ -72,9 +72,12 @@ foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $
     // Тело запроса задаёт администратор вместе с адресом, произвольного тела
     // из запроса сюда не попадает — как и произвольного адреса.
     $post = strtoupper((string)($e['method'] ?? 'GET')) === 'POST';
+    $kind = 'json';
+    if ($mode === 'html_links') $kind = 'html_links';
+    if ($mode === 'embedded')   $kind = 'embedded';
     $units[] = [
         'url'    => $e['url'],
-        'kind'   => $mode === 'html_links' ? 'html_links' : 'json',
+        'kind'   => $kind,
         'map'    => is_array($e['map'] ?? null) ? $e['map'] : [],
         'paging' => is_array($e['paging'] ?? null) ? $e['paging'] : [],
         'post'   => $post,
@@ -162,7 +165,13 @@ if ($ok === false || $code < 200 || $code >= 300) {
     cf_fail(502, "страница недоступна ($code $error)");
 }
 
-if ($unit['kind'] === 'html_links') {
+if ($unit['kind'] === 'embedded') {
+    // Данные приехали внутри страницы, отдельного запроса за ними нет.
+    $data = cf_embedded_state($body);
+    if ($data === null) cf_fail(502, 'в странице нет встроенного состояния');
+    $items = cf_json_items($data, $unit['map'], $pageUrl, time());
+    $more = false;
+} elseif ($unit['kind'] === 'html_links') {
     $items = cf_html_links($body, $pageUrl, $unit['map'], time());
     $more = cf_has_next_sub(count($items), $unit['paging'], $sub);
 } elseif ($unit['kind'] === 'json') {

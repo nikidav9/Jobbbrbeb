@@ -549,3 +549,31 @@ function cf_link_title(DOMElement $a): string
     $walk($a);
     return $clean(implode(' ', $parts));
 }
+
+/**
+ * Состояние страницы, встроенное в разметку.
+ *
+ * Next.js кладёт данные в <script id="__NEXT_DATA__">, Nuxt — в
+ * window.__NUXT__. Для нас это тот же JSON, только приехавший внутри HTML:
+ * дальше его разбирает cf_json_items, как и обычный ответ API.
+ *
+ * Так читаются VK (25 вакансий), ВТБ (20), Островок, Кофемания, Хоулмонт,
+ * Twinby — у них никакого отдельного запроса за вакансиями нет вовсе, всё
+ * приезжает первой же страницей.
+ */
+function cf_embedded_state(string $html): ?array
+{
+    if (preg_match('~<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>~s', $html, $m)) {
+        $data = json_decode(trim($m[1]), true);
+        if (is_array($data)) return $data;
+    }
+    foreach (['__NUXT__', '__INITIAL_STATE__', '__APOLLO_STATE__'] as $key) {
+        // Значение читаем до конца строки-скрипта: дальше в теле бывает всё
+        // что угодно, и жадный разбор утащил бы половину страницы.
+        if (preg_match('~window\.' . $key . '\s*=\s*(\{.*?\})\s*;?\s*</script>~s', $html, $m)) {
+            $data = json_decode($m[1], true);
+            if (is_array($data)) return $data;
+        }
+    }
+    return null;
+}
