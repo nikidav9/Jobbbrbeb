@@ -1032,13 +1032,14 @@ const fh = StyleSheet.create({
   logoJ: { fontWeight: '900', color: Colors.primary },
   logoT: { fontWeight: '900', color: Colors.textPrimary },
   search: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    flex: 1, minWidth: 0, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#FFFFFF', borderRadius: rs(24),
     paddingHorizontal: rs(14), height: rs(46),
   },
   // Высота задана контейнеру: на Android TextInput со своим padding
   // раздувает строку и шапка перестаёт совпадать с макетом.
-  input: { flex: 1, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  input: { flex: 1, minWidth: 0, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
   undo: {
     width: rs(46), height: rs(46), borderRadius: rs(23), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
@@ -2049,8 +2050,8 @@ const pS = StyleSheet.create({
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
   // desc
-  descTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary, marginBottom: rs(6) },
-  desc: { fontSize: rf(14), color: Colors.textMuted, lineHeight: rf(21) },
+  descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(6) },
+  desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(20) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -2153,9 +2154,9 @@ const styles = StyleSheet.create({
   // Тело занимает карточку целиком, чтобы нажатие ловилось всюду, а не только
   // по ссылке «Читать полностью».
   cardBody: { flex: 1 },
-  postedAgo: { fontSize: rf(13.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
+  postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
   readFullRow: { alignSelf: 'flex-start', paddingVertical: rs(6) },
-  readFullTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.primary },
+  readFullTxt: { fontSize: rf(13.5), fontWeight: '600', color: Colors.primary },
   card: { flex: 1, backgroundColor: Colors.bg, borderRadius: Radius.xl, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
@@ -2167,13 +2168,13 @@ const styles = StyleSheet.create({
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarImg: { width: rs(44), height: rs(44), borderRadius: rs(22), flexShrink: 0 },
   avatarText: { fontSize: rf(17), fontWeight: '700', color: '#fff' },
-  companyName: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  companyName: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
   metroHint: { fontSize: rf(12), color: Colors.textMuted },
   urgentTag: { flexDirection: 'row', alignItems: 'center', gap: rs(3), backgroundColor: '#FEF3C7', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), flexShrink: 0 },
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
   cardBadges: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  jobTitle: { fontSize: rf(31), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(36), marginTop: rs(2) },
+  jobTitle: { fontSize: rf(26), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(31), marginTop: rs(2) },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
