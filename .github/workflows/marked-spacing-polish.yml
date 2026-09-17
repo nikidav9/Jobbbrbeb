@@ -1,0 +1,34 @@
+name: Temporary marked spacing polish
+
+on:
+  push:
+    branches: ["ui/marked-spacing-polish"]
+    paths: [".github/workflows/marked-spacing-polish.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/marked-spacing-polish
+          fetch-depth: 0
+
+      - name: Apply marked spacing polish
+        run: python3 .github/scripts/marked_spacing_polish.py
+
+      - name: Check diff
+        run: |
+          git diff --check
+          git diff -- app/'(tabs)'/feed.tsx app/'(tabs)'/_layout.tsx
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/'(tabs)'/feed.tsx app/'(tabs)'/_layout.tsx
+          git commit -m "Polish marked vacancy screen spacing"
+          git push origin HEAD:ui/marked-spacing-polish
