@@ -235,7 +235,6 @@ export default function RootLayout() {
             <Stack.Screen name="register-employer" />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
             <Stack.Screen name="legal" />
-            <Stack.Screen name="create-vacancy" />
             <Stack.Screen name="candidates" />
             <Stack.Screen name="chat-room" />
             <Stack.Screen name="match" options={{ presentation: 'modal' }} />

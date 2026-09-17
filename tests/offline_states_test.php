@@ -61,7 +61,7 @@ check('общий признак собран из вакансий',
 foreach ([
     // экран => [что это, поле контекста, признак, которым закрыта разметка]
     'app/(tabs)/feed.tsx'    => ['лента',      'backendOffline', 'backendOffline'],
-    'app/(tabs)/matches.tsx' => ['отклики',    'offline.likes',  'offlineHere'],
+    'app/(tabs)/matches.tsx' => ['отклики',    'offline.permApplications', 'offlineHere'],
     'app/(tabs)/chats.tsx'   => ['переписки',  'offline.chats',  'offlineHere'],
 ] as $file => [$what, $expr, $guard]) {
     $src = (string)file_get_contents(__DIR__ . '/../' . $file);
@@ -88,7 +88,7 @@ foreach ([
     $guardBuiltFromList = $guard === $expr
         ? true
         : ($what === 'отклики'
-            ? str_contains($src, 'offline.likes && myLikes.length === 0')
+            ? str_contains($src, 'offline.permApplications && myApps.length === 0')
             : (bool)preg_match('~const ' . preg_quote($guard, '~') . ' = ' . preg_quote($expr, '~') . '\b~', $src));
     check("{$what}: признак собран из нужного списка", $guardBuiltFromList);
 }
@@ -101,11 +101,11 @@ $chats = (string)file_get_contents(__DIR__ . '/../app/(tabs)/chats.tsx');
 check('переписки: обрыв меряется до поиска',
     str_contains($chats, 'const offlineHere = offline.chats && myChats.length === 0;'));
 check('переписки: у пустого поиска свой текст', str_contains($chats, 'Ничего не найдено'));
-// В откликах — тот же вопрос про вкладки: пустая вкладка «Отказы» при
-// принесённом списке это правда, и плашка поверх неё была бы неправдой.
+// В откликах — тот же вопрос про фильтры: пустой фильтр «Отказы» при
+// принесённом списке это правда, и плашка поверх него была бы неправдой.
 $m = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
-check('отклики: обрыв меряется по всему списку, не по вкладке',
-    str_contains($m, 'offline.likes && myLikes.length === 0'));
+check('отклики: обрыв меряется по всему списку, не по фильтру',
+    str_contains($m, 'offline.permApplications && myApps.length === 0'));
 
 // ── Регистрация и поддержка: сетевой сбой не выдаётся за успех/пустоту ───────
 foreach (['app/register-worker.tsx' => 'работник', 'app/register-employer.tsx' => 'работодатель'] as $file => $role) {
@@ -198,7 +198,6 @@ check('push: ошибка токена объяснена и не закрыва
 
 // ── Рассылка вакансии: вторичный сбой не выдаётся за доставку ────────────────
 $notifSvc = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
-$createShift = (string)file_get_contents(__DIR__ . '/../app/create-vacancy.tsx');
 $createPerm = (string)file_get_contents(__DIR__ . '/../app/create-perm-vacancy.tsx');
 check('рассылка вакансии: helper возвращает результат',
     str_contains($notifSvc, 'export async function notifyWorkersNewVacancy') &&
@@ -206,8 +205,6 @@ check('рассылка вакансии: helper возвращает резул
     str_contains($notifSvc, 'if (res.ok) return true;'));
 check('рассылка вакансии: исчерпанные повторы дают false',
     str_contains($notifSvc, 'return false;'));
-check('смена: неудачная рассылка видна, но публикация не откатывается',
-    str_contains($createShift, "if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить."));
 check('постоянная: неудачная рассылка видна, но публикация не откатывается',
     str_contains($createPerm, "if (!ok) showToast('Вакансия опубликована, но рассылку не удалось отправить."));
 
@@ -238,19 +235,13 @@ check('избранное постоянной вакансии: ошибка в
 
 // ── Лента: ошибки загрузки/избранного не выдаются за пустоту/успех ───────────
 $feedTruth = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
-check('список откликов работодателя: ошибка не выглядит пустым списком',
-    str_contains($feedTruth, 'dataLoadFailed') && str_contains($feedTruth, 'Не удалось загрузить список'));
-check('избранное смены: добавление подтверждается сервером до UI',
-    (bool)preg_match('~await dbAddSaved\(user\.id, id\);[\s\S]{0,140}optimisticAddSaved~', $feedTruth));
-check('избранное смены: удаление подтверждается сервером до UI',
-    (bool)preg_match('~await dbRemoveSaved\(user\.id, id\);[\s\S]{0,140}optimisticRemoveSaved~', $feedTruth));
 check('избранное работы: добавление подтверждается сервером до UI',
     (bool)preg_match('~await dbAddPermSaved\(currentUser\.id, v\.id\);[\s\S]{0,160}optimisticAddPermSaved~', $feedTruth));
 check('избранное работы: удаление подтверждается сервером до UI',
     (bool)preg_match('~await dbRemovePermSaved\(currentUser\.id, v\.id\);[\s\S]{0,160}optimisticRemovePermSaved~', $feedTruth));
 check('избранное ленты: сетевые ошибки видны',
-    str_contains($feedTruth, 'Не удалось добавить в избранное') &&
-    str_contains($feedTruth, 'Не удалось сохранить в избранное'));
+    str_contains($feedTruth, 'Не удалось сохранить в избранное') &&
+    str_contains($feedTruth, 'Не удалось удалить из избранного'));
 
 // ── Профиль: успех показывается только после серверной записи ─────────────────
 $profileCtx = (string)file_get_contents(__DIR__ . '/../contexts/AppContext.tsx');
@@ -292,29 +283,16 @@ check('согласие: после ошибки есть повтор и вых
     str_contains($consentGate, '<Text style={styles.acceptText}>Повторить</Text>') &&
     str_contains($consentGate, 'onPress={() => app?.logout()}'));
 
-// ── Свайп «пропустить»: сетевой сбой не превращается в локальный успех ───────
-$feedSkip = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
-$skipStart = strpos($feedSkip, 'const doSkip = useCallback');
-$skipEnd = strpos($feedSkip, 'const doWant = useCallback', $skipStart === false ? 0 : $skipStart);
-$skipBody = ($skipStart !== false && $skipEnd !== false)
-    ? substr($feedSkip, $skipStart, $skipEnd - $skipStart)
-    : '';
-check('пропуск смены: ошибка серверной записи возвращает карточку',
-    $skipBody !== '' &&
-    str_contains($skipBody, 'setCards(prev => [card, ...prev.filter(v => v.id !== card.id)])'));
-check('пропуск смены: ошибка убирает ложную запись из истории',
-    str_contains($skipBody, '[date]: (h[date] ?? []).filter(v => v.id !== card.id)'));
-check('пропуск смены: ошибка видна пользователю',
-    str_contains($skipBody, 'Не удалось пропустить вакансию. Проверьте связь и попробуйте ещё раз.'));
-
 // ── Прежние тексты никуда не делись ──────────────────────────────────────────
 // Ветка обрыва добавлена, а не подменила собой полезную подсказку.
+//
+// 17.09 подработка удалена: подсказки «На этот день смен нет» и «На выбранных
+// станциях смен нет» ушли вместе с лентой смен. Проверяем то, что осталось.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
-check('подсказка про фильтр осталась', str_contains($feed, 'На выбранных станциях смен нет'));
-check('подсказка про другой день осталась', str_contains($feed, 'На этот день смен нет'));
-check('обычная пустота осталась', str_contains($feed, 'Новых вакансий пока нет'));
+check('подсказка про фильтр осталась', str_contains($feed, 'Попробуйте изменить фильтры'));
+check('обычная пустота осталась', str_contains($feed, 'Нет открытых вакансий'));
 check('прежние заголовки откликов остались',
-    str_contains($m, 'Нет активных заявок') && str_contains($m, 'Нет отказов'));
+    str_contains($m, 'Пока нет откликов') && str_contains($m, 'Переписок пока нет'));
 check('прежний заголовок переписок остался', str_contains($chats, 'Нет сообщений'));
 
 // ── У обрыва есть выход ──────────────────────────────────────────────────────

@@ -325,7 +325,7 @@ export default function ProfileScreen() {
   const [editAge, setEditAge] = useState('');
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
-  if (currentUser.isGuest) return <GuestGate title="Профиль — после регистрации" subtitle="Заведите аккаунт, чтобы заполнить анкету и откликаться на смены." />;
+  if (currentUser.isGuest) return <GuestGate title="Профиль — после регистрации" subtitle="Заведите аккаунт, чтобы заполнить анкету и откликаться на вакансии." />;
 
   const initials = getInitials(`${currentUser.firstName} ${currentUser.lastName}`);
   const avatarColor = nameColorFromString(currentUser.id);

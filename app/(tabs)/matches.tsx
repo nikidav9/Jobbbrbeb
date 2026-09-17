@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList,
+  View, Text, StyleSheet, FlatList, ScrollView, TextInput,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,22 +10,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { Like, User, Vacancy, PermApplication, PermVacancy, Chat, ReportableOutcome } from '@/constants/types';
+import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacancy, Chat, ReportableOutcome } from '@/constants/types';
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus,
 } from '@/services/db';
 import { TabHeader } from '@/components/ui/TabHeader';
+import { NotifBell } from '@/components/ui/NotifBell';
 import GuestGate from '@/components/GuestGate';
 import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
 import { useMissingUsers } from '@/hooks/useMissingUsers';
-import { workerLikes, workerActive, workerRejected, workerCompleted,
-  employerLikes, employerPending, employerMatched, employerCompleted,
+import { employerLikes, employerPending, employerMatched, employerCompleted,
   employerPermApps } from '@/services/matchCounts';
-import { Chip } from '@/components/ui/Chip';
-import { VacancyDetailModal } from '@/components/feature/VacancyDetailModal';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
 
@@ -285,263 +283,411 @@ function ConfirmBanner({ onOutcome, loading }: {
 // ─────────────────────────────────────────────────
 // WORKER VIEW
 // ─────────────────────────────────────────────────
+// ─── Отклики соискателя ───────────────────────────────────────────────────────
+// Экран собран вокруг откликов на постоянные вакансии (jm_perm_applications).
+// Прежняя версия жила на jm_likes — откликах на смены; смен в сервисе больше
+// нет, и без переноса экран остался бы пустым при живых заявках.
+//
+// Переписка тут же вторым сегментом: отклик и ответ по нему — одна история,
+// и держать их в разных вкладках значило заставлять сверять два списка.
+
+/** Как статус отклика выглядит для человека. */
+function permAppStatus(status: PermApplicationStatus): {
+  label: string; fg: string; bg: string; icon: React.ComponentProps<typeof Ionicons>['name'];
+} {
+  switch (status) {
+    case 'approved':
+      return { label: 'Интервью', fg: '#1D4ED8', bg: '#DBEAFE', icon: 'calendar-outline' };
+    case 'rejected':
+      return { label: 'Отказ', fg: Colors.red, bg: '#FEE2E2', icon: 'close-circle-outline' };
+    case 'hired':
+      return { label: 'Оффер', fg: '#047857', bg: '#D1FAE5', icon: 'checkmark-circle-outline' };
+    default:
+      return { label: 'Рассматривают', fg: '#047857', bg: '#D1FAE5', icon: 'time-outline' };
+  }
+}
+
+type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
+
 function WorkerMatches() {
   const router = useRouter();
-  const { currentUser, likes, vacancies, users, chats, refreshAll, showToast, offline } = useApp();
+  const {
+    currentUser, permApplications, permVacancies, users, chats,
+    refreshAll, offline,
+  } = useApp();
   const [refreshing, setRefreshing] = useState(false);
-  const [detailVacancy, setDetailVacancy] = useState<Vacancy | null>(null);
-  const [tab, setTab] = useState<'active' | 'rejected' | 'completed'>('active');
+  const [segment, setSegment] = useState<'apps' | 'chats'>('apps');
+  const [filter, setFilter] = useState<AppFilter>('all');
+  const [search, setSearch] = useState('');
   const tabBarHeight = useBottomTabBarHeight();
 
   const currentUserId = currentUser?.id ?? '';
 
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      await refreshAll();
-    } finally {
-      setRefreshing(false);
-    }
+    try { await refreshAll(); } finally { setRefreshing(false); }
   };
 
-  const myLikes = workerLikes(likes, currentUserId);
+  const myApps = useMemo(
+    () => permApplications
+      .filter((a: PermApplication) => a.workerId === currentUserId)
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
+    [permApplications, currentUserId],
+  );
 
-  const getVacancy = (id: string) => vacancies.find(v => v.id === id);
-  // Та же история, что и у работодателя: общий список пользователей приходит
-  // не сразу, и без этого в карточке вместо работодателя пусто.
   const neededEmployerIds = useMemo<string[]>(
-    () => Array.from(new Set(likes.map((l: Like) => l.employerId).filter(Boolean))) as string[],
-    [likes],
+    () => Array.from(new Set(myApps.map(a => a.employerId).filter(Boolean))) as string[],
+    [myApps],
   );
   const getEmployer = useMissingUsers(users, neededEmployerIds);
 
+  const myChats = useMemo(
+    () => chats
+      .filter((c: Chat) => c.workerId === currentUserId)
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
+    [chats, currentUserId],
+  );
+  const unreadChats = myChats.filter(c => (c.unreadWorker ?? 0) > 0);
+
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
-  const activeItems = workerActive(myLikes);
-  const rejectedItems = workerRejected(myLikes);
-  const completedItems = workerCompleted(myLikes);
+  const getVacancy = (id: string): PermVacancy | undefined =>
+    permVacancies.find((v: PermVacancy) => v.id === id);
 
-  const offlineHere = offline.likes && myLikes.length === 0;
+  // Поиск и фильтр по статусу — над одним и тем же списком, поэтому считаются
+  // подряд, а не двумя независимыми выборками.
+  const q = search.trim().toLowerCase();
+  const shownApps = myApps.filter(a => {
+    if (filter !== 'all' && a.status !== filter) return false;
+    if (!q) return true;
+    const v = getVacancy(a.vacancyId);
+    const company = v?.company ?? getEmployer(a.employerId)?.company ?? '';
+    return `${v?.title ?? ''} ${company}`.toLowerCase().includes(q);
+  });
 
-  const shownItems =
-    tab === 'active'    ? activeItems.map(like => ({ kind: 'like' as const, like })) :
-    tab === 'rejected'  ? rejectedItems.map(like => ({ kind: 'like' as const, like })) :
-    completedItems.map(like => ({ kind: 'like' as const, like }));
+  // Обрыв связи и пустой список — разные вещи: «нет откликов» человек,
+  // только что откликнувшийся, читает как «мой отклик пропал».
+  const offlineHere = offline.permApplications && myApps.length === 0;
 
-  const renderItem = ({ item }: { item: { kind: 'like'; like: Like } }) => {
-    const like = item.like;
-    const vac = getVacancy(like.vacancyId);
-    if (!vac) return null;
-    const employer = getEmployer(like.employerId);
-    const isMatch = like.isMatch;
-    const isCompleted = like.shiftCompleted;
-    const isCancelled = like.cancelled;
-    const isFinished = isCompleted || isCancelled;
-    const canRate = isCompleted && !like.workerRated;
+  const FILTERS: { key: AppFilter; label: string }[] = [
+    { key: 'all', label: 'Все' },
+    { key: 'pending', label: 'Рассматривают' },
+    { key: 'approved', label: 'Интервью' },
+    { key: 'hired', label: 'Оффер' },
+    { key: 'rejected', label: 'Отказы' },
+  ];
+
+  const renderApp = (a: PermApplication) => {
+    const v = getVacancy(a.vacancyId);
+    const employer = getEmployer(a.employerId);
+    const company = v?.company ?? employer?.company ?? 'Работодатель';
+    const st = permAppStatus(a.status);
+    const chat = myChats.find(c => c.vacancyId === a.vacancyId);
 
     return (
-      <View style={[s.card, isMatch && !isFinished && s.matchedCard, isFinished && s.completedCard]}>
-        <MatchStatus like={like} isWorker={true} />
-
-        {/* Что карточку можно раскрыть, по одному заголовку не догадаться —
-            справа стоит явная кнопка, нажимается по-прежнему весь блок */}
-        <TouchableOpacity activeOpacity={0.8} onPress={() => setDetailVacancy(vac)} style={s.titleRow}>
+      <TouchableOpacity
+        key={a.id}
+        style={wm.card}
+        activeOpacity={0.85}
+        onPress={() => router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })}
+      >
+        <View style={wm.cardHead}>
+          <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
+            <Text style={wm.logoTxt}>{getInitials(company)}</Text>
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.jobTitle}>{vac.title}</Text>
-            <View style={s.metroRow}>
-              <Text style={s.subText}>{vac.company}</Text>
-              <Text style={s.subText}> · </Text>
-              <Ionicons name="subway-outline" size={13} color={Colors.textMuted} />
-              <Text style={s.subText}> {vac.metroStation}</Text>
-            </View>
-          </View>
-          <View style={s.detailsBtn}>
-            <Text style={s.detailsBtnTxt}>Подробнее</Text>
-            <Ionicons name="chevron-forward" size={13} color={Colors.primary} />
-          </View>
-        </TouchableOpacity>
-
-        <View style={s.chipsRow}>
-          <Chip label={formatDate(vac.date)} variant="date" icon="calendar-outline" />
-          <Chip label={`${vac.timeStart}–${vac.timeEnd}`} variant="time" icon="time-outline" />
-        </View>
-
-        {/* Адрес — то, ради чего иначе приходится открывать карточку смены */}
-        {vac.address ? (
-          <View style={s.addressRow}>
-            <Ionicons name="location-outline" size={14} color="#92400E" style={{ marginTop: 1 }} />
-            <Text style={s.addressTxt}>{vac.address}</Text>
-          </View>
-        ) : null}
-
-        {employer ? (
-          <TouchableOpacity
-            style={s.profileRow}
-            onPress={() => router.push({ pathname: '/user-profile', params: { userId: employer.id } })}
-            activeOpacity={0.8}
-          >
-            {employer.avatarUrl ? (
-              <Image source={{ uri: employer.avatarUrl }} style={s.profileAvatar} contentFit="cover" />
-            ) : (
-              <View style={[s.profileAvatar, s.profileAvatarFallback, { backgroundColor: nameColorFromString(employer.id) }]}>
-                <Text style={s.profileAvatarInitials}>{getInitials(`${employer.firstName} ${employer.lastName}`)}</Text>
-              </View>
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={s.profileName}>{employer.company ?? `${employer.firstName} ${employer.lastName}`}</Text>
-              {(employer.avgRating ?? 0) > 0 ? (
-                <View style={s.ratingRow}>
-                  <Ionicons name="star" size={12} color="#FBBF24" />
-                  <Text style={s.profileSub}> {(employer.avgRating ?? 0).toFixed(1)} ({employer.ratingCount} отз.)</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={s.profileArrow}>Профиль ›</Text>
-          </TouchableOpacity>
-        ) : null}
-
-        {isMatch ? (
-          <View style={s.actionRow}>
-            <TouchableOpacity
-              style={s.chatBtn}
-              onPress={() => {
-                const c = chats.find(c => c.employerId === like.employerId && c.workerId === currentUser.id);
-                if (c) router.push({ pathname: '/chat-room', params: { chatId: c.id } });
-                else router.push({ pathname: '/(tabs)/chats' });
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="chatbubble-outline" size={15} color="#fff" />
-              <Text style={s.chatBtnTxt}>Чат</Text>
-            </TouchableOpacity>
-            {canRate && employer && vac ? (
-              <TouchableOpacity
-                style={s.rateBtn}
-                onPress={() => router.push({
-                  pathname: '/rate',
-                  params: {
-                    likeId: like.id,
-                    toUserId: employer.id,
-                    toName: employer.company ?? `${employer.firstName} ${employer.lastName}`,
-                    vacancyId: vac.id,
-                    role: 'worker',
-                  },
-                })}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="star-outline" size={15} color="#fff" />
-                <Text style={s.rateBtnTxt}>Оставить отзыв</Text>
-              </TouchableOpacity>
-            ) : isCompleted && like.workerRated ? (
-              <View style={s.waitBtn}>
-                <Ionicons name="checkmark" size={14} color={Colors.textMuted} />
-                <Text style={s.waitBtnTxt}>Отзыв оставлен</Text>
-              </View>
-            ) : isCancelled ? (
-              <View style={s.waitBtn}>
-                <Ionicons name="close-circle-outline" size={14} color={Colors.red} />
-                <Text style={[s.waitBtnTxt, { color: Colors.red }]}>Смена отменена</Text>
-              </View>
-            ) : !isFinished ? (
-              <View style={s.waitBtn}>
-                <Ionicons name="time-outline" size={14} color={Colors.textMuted} />
-                <Text style={s.waitBtnTxt}>Ждём подтверждения</Text>
+            <Text style={wm.company} numberOfLines={1}>{company}</Text>
+            <Text style={wm.role} numberOfLines={1}>{v?.title ?? 'Вакансия'}</Text>
+            {v?.metroStation ? (
+              <View style={wm.metroRow}>
+                <Ionicons name="location-outline" size={13} color={Colors.textMuted} />
+                <Text style={wm.metro} numberOfLines={1}>Москва, м. {v.metroStation}</Text>
               </View>
             ) : null}
           </View>
-        ) : null}
-      </View>
+          <View style={wm.headRight}>
+            <View style={[wm.statusPill, { backgroundColor: st.bg }]}>
+              <Ionicons name={st.icon} size={13} color={st.fg} />
+              <Text style={[wm.statusTxt, { color: st.fg }]}>{st.label}</Text>
+            </View>
+            <Text style={wm.date}>{formatDate(a.createdAt)}</Text>
+          </View>
+        </View>
+
+        {/* Что произошло с откликом последним — строка события под карточкой.
+            Без неё статус говорит «что сейчас», но не «что изменилось». */}
+        <View style={wm.eventRow}>
+          <Ionicons
+            name={chat ? 'chatbubble-ellipses-outline' : 'eye-outline'}
+            size={15}
+            color={Colors.textMuted}
+          />
+          <Text style={wm.eventTxt} numberOfLines={1}>
+            {chat
+              ? 'Работодатель открыл переписку'
+              : a.status === 'pending' ? 'Отклик отправлен, ждёт рассмотрения' : 'Работодатель просмотрел ваш отклик'}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+        </View>
+      </TouchableOpacity>
     );
   };
 
-  const TABS = [
-    { key: 'active',    label: 'Активные',  count: activeItems.length },
-    { key: 'rejected',  label: 'Отказ',     count: rejectedItems.length },
-    { key: 'completed', label: 'Завершено', count: completedItems.length },
-  ] as const;
-
-  const emptyIcon: Record<typeof tab, React.ComponentProps<typeof Ionicons>['name']> = {
-    active: 'clipboard-outline',
-    rejected: 'happy-outline',
-    completed: 'flag-outline',
+  const renderChat = (c: Chat) => {
+    const unread = c.unreadWorker ?? 0;
+    const last = c.messages?.[c.messages.length - 1];
+    return (
+      <TouchableOpacity
+        key={c.id}
+        style={wm.chatRow}
+        activeOpacity={0.85}
+        onPress={() => router.push({ pathname: '/chat-room', params: { chatId: c.id } })}
+      >
+        <View style={[wm.logo, { backgroundColor: nameColorFromString(c.companyName || 'JobToo') }]}>
+          <Text style={wm.logoTxt}>{getInitials(c.companyName || 'JT')}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={wm.company} numberOfLines={1}>{c.companyName || c.vacTitle}</Text>
+          <Text style={wm.preview} numberOfLines={2}>
+            {last?.text ?? 'Переписка открыта — напишите первым'}
+          </Text>
+        </View>
+        <View style={wm.chatMeta}>
+          <Text style={wm.date}>{last ? formatDate(last.timestamp) : ''}</Text>
+          {unread > 0 ? (
+            <View style={wm.unread}><Text style={wm.unreadTxt}>{unread > 9 ? '9+' : unread}</Text></View>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
-      <TabHeader title="Мои отклики" />
-
-      <View style={s.tabStrip}>
-        {TABS.map(t => (
-          <TouchableOpacity key={t.key} style={s.tabItem} onPress={() => setTab(t.key)} activeOpacity={0.8}>
-            <Text
-              style={[s.tabLabel, tab === t.key && s.tabLabelActive]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.8}
-            >
-              {t.label}{t.count > 0 ? ` (${t.count})` : ''}
-            </Text>
-            {tab === t.key ? <View style={s.tabUnderline} /> : null}
-          </TouchableOpacity>
-        ))}
+      <View style={wm.header}>
+        <Text style={wm.title}>Отклики</Text>
+        <NotifBell />
       </View>
 
-      {shownItems.length === 0 ? (
-        <View style={s.empty}>
-          {/* Обрыв связи и пустой список — разные вещи, и путать их тут
-              дороже, чем в ленте. «Нет активных заявок» человек, только что
-              откликнувшийся, читает как «мой отклик пропал»: он не узнает, что
-              список просто не принесли, и решит, что сервис его потерял. */}
-          <Ionicons
-            name={offlineHere ? 'cloud-offline-outline' : emptyIcon[tab]}
-            size={56}
-            color={Colors.textMuted}
-          />
-          <Text style={s.emptyTitle}>
-            {offlineHere
-              ? 'Нет связи с сервером'
-              : tab === 'active' ? 'Нет активных заявок' : tab === 'rejected' ? 'Нет отказов' : 'Нет завершённых смен'}
-          </Text>
-          <Text style={s.emptySub}>
-            {offlineHere
-              ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
-              : tab === 'active'
-              ? 'Откликайтесь на вакансии — они появятся здесь'
-              : tab === 'rejected'
-              ? 'Это хорошо! Продолжайте откликаться'
-              : 'Завершённые смены появятся здесь'}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={shownItems}
-          keyExtractor={item => `like:${item.like.id}`}
-          contentContainerStyle={[s.list, { paddingBottom: tabBarHeight + 16 }]}
+      <View style={wm.searchWrap}>
+        <Ionicons name="search" size={20} color={Colors.textMuted} />
+        <TextInput
+          style={wm.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Должность, компания или ключевые слова"
+          placeholderTextColor={Colors.textMuted}
+          returnKeyType="search"
+          accessibilityLabel="Поиск по откликам"
+        />
+      </View>
+
+      <View style={wm.segments}>
+        {([
+          { key: 'apps' as const, label: 'Заявки', icon: 'document-text-outline' as const, count: myApps.length },
+          { key: 'chats' as const, label: 'Сообщения', icon: 'chatbubble-outline' as const, count: unreadChats.length },
+        ]).map(seg => {
+          const on = segment === seg.key;
+          return (
+            <TouchableOpacity
+              key={seg.key}
+              style={[wm.segment, on && wm.segmentOn]}
+              onPress={() => setSegment(seg.key)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+            >
+              <Ionicons name={seg.icon} size={17} color={on ? Colors.primary : Colors.textMuted} />
+              <Text style={[wm.segmentTxt, on && wm.segmentTxtOn]}>{seg.label}</Text>
+              {seg.count > 0 ? (
+                <View style={[wm.segCount, on && wm.segCountOn]}>
+                  <Text style={[wm.segCountTxt, on && wm.segCountTxtOn]}>{seg.count}</Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {segment === 'apps' ? (
+        <ScrollView
+          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primary}
-              colors={[Colors.primary]}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
           }
-          renderItem={renderItem}
-        />
-      )}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={wm.filterRow}
+            style={wm.filterScroll}
+          >
+            {FILTERS.map(f => {
+              const on = filter === f.key;
+              return (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[wm.filterChip, on && wm.filterChipOn]}
+                  onPress={() => setFilter(f.key)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Text style={[wm.filterTxt, on && wm.filterTxtOn]}>{f.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-      <VacancyDetailModal
-        vacancy={detailVacancy}
-        visible={!!detailVacancy}
-        onClose={() => setDetailVacancy(null)}
-      />
+          <View style={wm.sectionHead}>
+            <Text style={wm.sectionTitle}>Мои отклики</Text>
+            <Text style={wm.sectionCount}>
+              {shownApps.length} {shownApps.length === 1 ? 'отклик' : shownApps.length < 5 ? 'отклика' : 'откликов'}
+            </Text>
+          </View>
+
+          {shownApps.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons
+                name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'}
+                size={56}
+                color={Colors.textMuted}
+              />
+              <Text style={s.emptyTitle}>
+                {offlineHere ? 'Нет связи с сервером' : 'Пока нет откликов'}
+              </Text>
+              <Text style={s.emptySub}>
+                {offlineHere
+                  ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
+                  : 'Откликайтесь на вакансии — они появятся здесь'}
+              </Text>
+            </View>
+          ) : shownApps.map(renderApp)}
+
+          {unreadChats.length > 0 ? (
+            <>
+              <View style={wm.sectionHead}>
+                <Text style={wm.sectionTitle}>Новые сообщения</Text>
+                <TouchableOpacity onPress={() => setSegment('chats')} activeOpacity={0.7}>
+                  <Text style={wm.sectionLink}>Все сообщения ›</Text>
+                </TouchableOpacity>
+              </View>
+              {unreadChats.slice(0, 3).map(renderChat)}
+            </>
+          ) : null}
+        </ScrollView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+          }
+        >
+          {myChats.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name="chatbubbles-outline" size={56} color={Colors.textMuted} />
+              <Text style={s.emptyTitle}>Переписок пока нет</Text>
+              <Text style={s.emptySub}>Работодатель напишет, когда рассмотрит отклик</Text>
+            </View>
+          ) : myChats.map(renderChat)}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
-// ─────────────────────────────────────────────────
-// EMPLOYER VIEW
-// ─────────────────────────────────────────────────
+const wm = StyleSheet.create({
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(10),
+  },
+  title: { fontSize: rf(30), fontWeight: '800', color: Colors.textPrimary },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    marginHorizontal: rs(16), paddingHorizontal: rs(14), height: rs(46),
+    backgroundColor: '#F2F3F5', borderRadius: rs(24),
+  },
+  searchInput: { flex: 1, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  segments: {
+    flexDirection: 'row', gap: rs(8),
+    marginHorizontal: rs(16), marginTop: rs(12),
+    backgroundColor: '#F2F3F5', borderRadius: rs(16), padding: rs(4),
+  },
+  segment: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: rs(6), paddingVertical: rs(11), borderRadius: rs(13),
+  },
+  segmentOn: { backgroundColor: Colors.primaryLight },
+  segmentTxt: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textMuted },
+  segmentTxtOn: { color: Colors.primary },
+  segCount: {
+    minWidth: rs(20), height: rs(20), borderRadius: rs(10), paddingHorizontal: rs(5),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.textMuted,
+  },
+  segCountOn: { backgroundColor: Colors.primary },
+  segCountTxt: { fontSize: rf(11), fontWeight: '800', color: '#fff' },
+  segCountTxtOn: { color: '#fff' },
+  list: { paddingHorizontal: rs(16), paddingTop: rs(14), gap: rs(12) },
+  filterScroll: { marginHorizontal: -rs(16) },
+  filterRow: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(16) },
+  filterChip: {
+    paddingHorizontal: rs(16), paddingVertical: rs(9), borderRadius: rs(100),
+    borderWidth: 1, borderColor: Colors.divider, backgroundColor: Colors.bg,
+  },
+  filterChipOn: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  filterTxt: { fontSize: rf(13.5), fontWeight: '600', color: Colors.textSecondary },
+  filterTxtOn: { color: Colors.primary },
+  sectionHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: rs(4),
+  },
+  sectionTitle: { fontSize: rf(19), fontWeight: '800', color: Colors.textPrimary },
+  sectionCount: { fontSize: rf(13.5), color: Colors.textMuted, fontWeight: '600' },
+  sectionLink: { fontSize: rf(13.5), color: Colors.primary, fontWeight: '700' },
+  card: {
+    backgroundColor: Colors.bg, borderRadius: rs(18),
+    borderWidth: 1, borderColor: Colors.divider, ...Shadow.card,
+    overflow: 'hidden',
+  },
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(12), padding: rs(14) },
+  logo: {
+    width: rs(46), height: rs(46), borderRadius: rs(23),
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  logoTxt: { fontSize: rf(16), fontWeight: '800', color: '#fff' },
+  company: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
+  role: { fontSize: rf(14), color: Colors.textSecondary, marginTop: rs(1) },
+  metroRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(4) },
+  metro: { fontSize: rf(13), color: Colors.textMuted, flexShrink: 1 },
+  headRight: { alignItems: 'flex-end', gap: rs(6), flexShrink: 0 },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(5),
+    paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100),
+  },
+  statusTxt: { fontSize: rf(12.5), fontWeight: '700' },
+  date: { fontSize: rf(12.5), color: Colors.textMuted },
+  eventRow: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    paddingHorizontal: rs(14), paddingVertical: rs(12),
+    borderTopWidth: 1, borderTopColor: Colors.divider,
+  },
+  eventTxt: { flex: 1, fontSize: rf(13.5), color: Colors.textSecondary },
+  chatRow: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12),
+    backgroundColor: Colors.bg, borderRadius: rs(18), padding: rs(14),
+    borderWidth: 1, borderColor: Colors.divider,
+  },
+  preview: { fontSize: rf(13.5), color: Colors.textSecondary, marginTop: rs(2), lineHeight: rf(19) },
+  chatMeta: { alignItems: 'flex-end', gap: rs(6), flexShrink: 0 },
+  unread: {
+    minWidth: rs(22), height: rs(22), borderRadius: rs(11), paddingHorizontal: rs(6),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary,
+  },
+  unreadTxt: { fontSize: rf(11.5), fontWeight: '800', color: '#fff' },
+});
+
 type EmployerMatchItem = { kind: 'like'; like: Like } | { kind: 'permApp'; app: PermApplication };
 
 function EmployerMatches() {
@@ -1278,7 +1424,7 @@ function EmployerMatches() {
 export default function MatchesScreen() {
   const { currentUser } = useApp();
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
-  if (currentUser.isGuest) return <GuestGate title="Совпадения — после регистрации" subtitle="Зарегистрируйтесь, чтобы откликаться на смены и видеть, кто ответил вам." />;
+  if (currentUser.isGuest) return <GuestGate title="Отклики — после регистрации" subtitle="Зарегистрируйтесь, чтобы откликаться на вакансии и видеть, кто ответил вам." />;
   return currentUser.role === 'worker' ? <WorkerMatches /> : <EmployerMatches />;
 }
 

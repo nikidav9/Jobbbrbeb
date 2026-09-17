@@ -61,7 +61,7 @@ export default function InviteScreen() {
   const share = async () => {
     if (!link) return;
     const message = [
-      'Подработка и работа в Москве — смены рядом с домом.',
+      'Работа в Москве — вакансии рядом с домом.',
       'Регистрируйся по моей ссылке:',
       link,
     ].join('\n');

@@ -1,7 +1,7 @@
 {
   "name": "JobToo",
   "short_name": "JobToo",
-  "description": "Подработки на складе в Москве",
+  "description": "Работа в Москве — свайпайте и откликайтесь",
   "id": "/",
   "start_url": "/",
   "display": "standalone",
