@@ -283,7 +283,7 @@ export default function RegisterWorker() {
           {step === 5 && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>📍 Ближайшее метро</Text>
-              <Text style={styles.subtitle}>Покажем смены рядом с тобой</Text>
+              <Text style={styles.subtitle}>Покажем работу рядом с тобой</Text>
               {metroStation ? (
                 <View style={styles.metroSelected}>
                   <View style={[styles.metroLineDot, { backgroundColor: line?.color ?? Colors.blue }]} />

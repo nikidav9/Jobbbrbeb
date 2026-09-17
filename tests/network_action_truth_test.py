@@ -12,14 +12,12 @@ perm = (root / 'components/feature/PermApplicationsSheet.tsx').read_text(encodin
 profile = (root / 'app/(tabs)/profile.tsx').read_text(encoding='utf-8')
 plan = (root / 'docs/план-разработки.md').read_text(encoding='utf-8')
 
-shift_delete_start = feed.find('  const deleteVacancy = async')
+# 17.09: раздел подработки удалён, закрытия и удаления смены в ленте больше
+# нет. Остались только постоянные вакансии.
 perm_delete_start = feed.find('  const deletePermVacancy = async')
-shift_delete = feed[shift_delete_start:perm_delete_start] if shift_delete_start >= 0 and perm_delete_start > shift_delete_start else ''
 perm_delete = feed[perm_delete_start:perm_delete_start + 2600] if perm_delete_start >= 0 else ''
-shift_close_start = feed.find('  const closeVacancy = async')
 perm_close_start = feed.find('  const closePermVacancy = async')
-shift_close = feed[shift_close_start:perm_close_start] if shift_close_start >= 0 and perm_close_start > shift_close_start else ''
-perm_close = feed[perm_close_start:shift_delete_start] if perm_close_start >= 0 and shift_delete_start > perm_close_start else ''
+perm_close = feed[perm_close_start:perm_delete_start] if perm_close_start >= 0 and perm_delete_start > perm_close_start else ''
 rate_submit_start = rate.find('  const submit = async')
 rate_submit_end = rate.find('  const skip =', rate_submit_start)
 rate_submit = rate[rate_submit_start:rate_submit_end] if rate_submit_start >= 0 and rate_submit_end > rate_submit_start else ''
@@ -46,23 +44,18 @@ rating_success = "showToast('Оценка сохранена! Спасибо �
 checks = {
     'чаты отпускают refresh в finally': "showToast('Не удалось обновить переписки. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in chats,
     'отклики отпускают refresh в finally': "showToast('Не удалось обновить отклики. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in matches,
-    'лента отпускает refresh в finally': "showToast('Не удалось обновить ленту. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in feed,
+    'лента отпускает refresh в finally': "showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in feed,
     'шторка откликов отпускает refresh в finally': "showToast('Не удалось обновить отклики. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in perm,
     'чат ждёт сервер перед скрытием': "await onDelete();\n              setDeleted(true);" in chats,
     'pending удаления не скрывает строку': 'if (deleting) return null;' not in chats and 'if (deleted) return null;' in chats,
     'ошибка удаления возвращает строку': "setDeleting(false);\n              Animated.spring(pan, { toValue: 0" in chats,
     'успех удаления идёт после серверной записи': chats.find("await dbDeleteChat(chatId);") < chats.find("showToast('Переписка удалена', 'success');"),
-    'сменная вакансия видна до подтверждения удаления': 'if (deletedIds.has(v.id)) return false;' in feed and 'if (deletingIds.has(v.id)) return false;' not in feed,
     'постоянная вакансия видна до подтверждения удаления': 'if (deletedPermIds.has(v.id)) return false;' in feed and 'if (deletingPermIds.has(v.id)) return false;' not in feed,
-    'сменная вакансия ждёт сервер': "await dbDeleteVacancy(id);" in shift_delete and shift_delete.find("await dbDeleteVacancy(id);") < shift_delete.find("setDeletedIds(prev"),
     'постоянная вакансия ждёт сервер': "await dbDeletePermVacancy(id);" in perm_delete and perm_delete.find("await dbDeletePermVacancy(id);") < perm_delete.find("setDeletedPermIds(prev"),
-    'ошибка удаления сменной вакансии видна': "showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');" in shift_delete,
     'ошибка удаления постоянной вакансии видна': "showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');" in perm_delete,
-    'закрытие сменной вакансии ждёт сервер перед успехом': "await dbUpdateVacancy(id, { status: 'closed' });" in shift_close and shift_close.find("await dbUpdateVacancy(id, { status: 'closed' });") < shift_close.find("showToast('Вакансия закрыта', 'success');"),
     'закрытие постоянной вакансии ждёт сервер перед успехом': "await dbClosePermVacancy(id);" in perm_close and perm_close.find('await dbClosePermVacancy(id);') < perm_close.find("showToast('Вакансия закрыта', 'success');"),
-    'ошибка закрытия сменной вакансии видна и откатывает UI': "showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');" in shift_close and 'next.delete(id);' in shift_close,
     'ошибка закрытия постоянной вакансии видна и откатывает UI': "showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');" in perm_close and 'next.delete(id);' in perm_close,
-    'закрытие вакансий больше не fire-and-forget': ".then(() => refreshVacancies()" not in shift_close and ".then(() => refreshPermVacancies()" not in perm_close,
+    'закрытие вакансий больше не fire-and-forget': ".then(() => refreshPermVacancies()" not in perm_close,
     'оценка ждёт подтверждение серверной записи': rating_write in rate_submit,
     'refresh оценки изолирован после успешной записи': rating_refresh in rate_submit and rate_submit.find(rating_write) < rate_submit.find(rating_refresh),
     'сбой refresh оценки не отменяет успешный результат': rating_refresh in rate_submit and rate_submit.find(rating_refresh) < rate_submit.find(rating_success),

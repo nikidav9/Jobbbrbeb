@@ -22,7 +22,6 @@ import { rs, rf } from '@/constants/scale';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-const TAB_ROUTES = ['feed', 'career', 'matches', 'chats', 'profile'] as const;
 
 // ─── Floating tab bar ───────────────────────────────────────────────────────
 
@@ -167,23 +166,24 @@ export default function TabLayout() {
       })
     : 0;
 
-  // Работник: смены и постоянная работа разведены на две вкладки
-  // (Подработка / Карьера). Директор пока живёт по-старому: одна вкладка
-  // «Вакансии» с внутренним переключателем смен и постоянных.
-  const tabs: TabDef[] = isWorker
-    ? [
-        { route: 'feed', iconFilled: 'time', iconOutline: 'time-outline', label: 'Подработка' },
-        { route: 'career', iconFilled: 'briefcase', iconOutline: 'briefcase-outline', label: 'Работа' },
-        { route: 'matches', iconFilled: 'people', iconOutline: 'people-outline', label: 'Мэтчи', badge: matchBadge },
-        { route: 'chats', iconFilled: 'chatbubble', iconOutline: 'chatbubble-outline', label: 'Общение', badge: unreadCount },
-        { route: 'profile', iconFilled: 'person', iconOutline: 'person-outline', label: 'Профиль' },
-      ]
-    : [
-        { route: 'feed', iconFilled: 'briefcase', iconOutline: 'briefcase-outline', label: 'Вакансии' },
-        { route: 'matches', iconFilled: 'people', iconOutline: 'people-outline', label: 'Мэтчи', badge: matchBadge },
-        { route: 'chats', iconFilled: 'chatbubble', iconOutline: 'chatbubble-outline', label: 'Чаты', badge: unreadCount },
-        { route: 'profile', iconFilled: 'person', iconOutline: 'person-outline', label: 'Профиль' },
-      ];
+  // Три вкладки, одинаковые для обеих ролей. Смен в сервисе больше нет, а
+  // переписка переехала внутрь «Откликов» вторым сегментом: отклик и ответ
+  // по нему — одна история, и разводить их по разным вкладкам значило
+  // заставлять человека сверять два списка руками.
+  //
+  // Значок на «Откликах» складывает оба сегмента: непрочитанное сообщение и
+  // ждущий ответа отклик одинаково требуют, чтобы человек сюда зашёл.
+  const tabs: TabDef[] = [
+    { route: 'feed', iconFilled: 'briefcase', iconOutline: 'briefcase-outline', label: 'Вакансии' },
+    {
+      route: 'matches',
+      iconFilled: 'document-text',
+      iconOutline: 'document-text-outline',
+      label: 'Отклики',
+      badge: matchBadge + unreadCount,
+    },
+    { route: 'profile', iconFilled: 'person', iconOutline: 'person-outline', label: 'Профиль' },
+  ];
 
   // ─── Tab bar height (keeps useBottomTabBarHeight working in screens) ──────
   const tabBarHeight = Platform.select({
@@ -217,10 +217,10 @@ export default function TabLayout() {
         )}
       >
         <Tabs.Screen name="feed" options={{ tabBarIcon: () => null }} />
-        <Tabs.Screen name="career" options={{ tabBarIcon: () => null }} />
         <Tabs.Screen name="index" options={{ href: null }} />
         <Tabs.Screen name="matches" options={{ tabBarIcon: () => null }} />
-        <Tabs.Screen name="chats" options={{ tabBarIcon: () => null }} />
+        {/* Переписка — экран, а не вкладка: вход из «Откликов». */}
+        <Tabs.Screen name="chats" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ tabBarIcon: () => null }} />
       </Tabs>
       <NotificationPermissionSheet />

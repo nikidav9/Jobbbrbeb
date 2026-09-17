@@ -162,7 +162,6 @@ export function OnboardingOverlay() {
     return t && t.w > 0 && t.h > 0 ? pad(t, p) : undefined;
   };
 
-  const rSwitcher = measured('switcher');
   const rFab = measured('fab');
   const rTelegram = measured('telegram');
   const rMatchesTab = measured('matchesTab', 4);
@@ -178,25 +177,21 @@ export function OnboardingOverlay() {
   const steps: Step[] = isWorker
     ? [
         { icon: 'hand-left', title: `Привет, ${user.firstName}! 👋`, hint: 'center',
-          body: 'Это JobToo — смены и постоянная работа рядом с домом. Покажем за 20 секунд, куда нажимать.' },
-        { icon: 'swap-horizontal', title: 'Смены или Работа', spot: rSwitcher, hint: 'below',
-          body: 'Переключайся: «Смены» — подработка на день, «Работа» — постоянное место.' },
+          body: 'Это JobToo — постоянная работа рядом с домом. Покажем за 20 секунд, куда нажимать.' },
         { icon: 'heart', title: 'Откликайся свайпом', spot: rCard, hint: 'below', demo: !hasRealCard,
-          body: 'Свайп карточки вправо или ❤️ — откликнуться на смену. Влево — пропустить.' },
+          body: 'Свайп карточки вправо или ❤️ — откликнуться на вакансию. Влево — пропустить.' },
         { icon: 'people', title: 'Твои отклики', spot: rMatchesTab, hint: 'above',
-          body: 'Вкладка «Мэтчи»: здесь ответы директоров и статусы твоих откликов.' },
+          body: 'Вкладка «Отклики»: здесь ответы работодателей и статусы твоих заявок.' },
         { icon: 'notifications', title: 'Не пропусти смену', spot: rTelegram, hint: 'below',
-          body: 'Привяжи Telegram и включи уведомления — о новых сменах рядом узнаешь первым.' },
+          body: 'Привяжи Telegram и включи уведомления — о новых вакансиях рядом узнаешь первым.' },
       ]
     : [
         { icon: 'hand-left', title: `Привет, ${user.firstName}! 👋`, hint: 'center',
-          body: 'Это JobToo — публикуйте смены и вакансии, кладовщики рядом откликнутся. Покажем, куда нажимать.' },
-        { icon: 'swap-horizontal', title: 'Смены или Работа', spot: rSwitcher, hint: 'below',
-          body: '«Смены» — подработка на день, «Работа» — постоянный сотрудник. Переключайтесь здесь.' },
+          body: 'Это JobToo — публикуйте вакансии, кандидаты рядом откликнутся. Покажем, куда нажимать.' },
         { icon: 'add-circle', title: 'Создать вакансию', spot: rFab, hint: 'above',
-          body: 'Кнопка «+» — опубликовать смену или постоянную вакансию за минуту.' },
+          body: 'Кнопка «+» — опубликовать вакансию за минуту.' },
         { icon: 'people', title: 'Отклики кандидатов', spot: rMatchesTab, hint: 'above',
-          body: 'Вкладка «Мэтчи»: сюда падают отклики. Одобряйте или отклоняйте в один тап.' },
+          body: 'Вкладка «Отклики»: сюда падают заявки. Одобряйте или отклоняйте в один тап.' },
         { icon: 'notifications', title: 'Отвечайте быстрее', spot: rTelegram, hint: 'below',
           body: 'Привяжите Telegram — отклики придут с кнопками, отвечайте не заходя в приложение.' },
       ];

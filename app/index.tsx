@@ -152,7 +152,7 @@ export default function RootScreen() {
             <Text style={styles.logoDark}>Job</Text>
             <Text style={styles.logoOrange}>Too</Text>
           </Text>
-          <Text style={styles.tagline}>Смены и вакансии разных сервисов — в одной ленте</Text>
+          <Text style={styles.tagline}>Постоянная работа — в одной ленте</Text>
         </Animated.View>
 
         {/* ── Заголовок ── */}
@@ -161,7 +161,7 @@ export default function RootScreen() {
           <Text style={styles.headlineSub}>{'Мы адаптируем приложение\nпод ваши задачи'}</Text>
         </Animated.View>
 
-        {/* ══ Карточка 1: Ищу подработку ══ */}
+        {/* ══ Карточка 1: Ищу работу ══ */}
         <TouchableOpacity
           style={styles.card}
           activeOpacity={0.85}
@@ -179,8 +179,8 @@ export default function RootScreen() {
             />
           </View>
           <View style={styles.cardTextWrap}>
-            <Text style={styles.cardTitle}>Ищу подработку</Text>
-            <Text style={styles.cardSub}>{'Смены на складах —\nвыходите когда удобно'}</Text>
+            <Text style={styles.cardTitle}>Ищу работу</Text>
+            <Text style={styles.cardSub}>{'Постоянная работа —\nсвайпайте и откликайтесь'}</Text>
           </View>
           <View style={styles.arrowBtn}>
             <Ionicons name="chevron-forward" size={r(18)} color={Colors.primary} />
@@ -231,7 +231,7 @@ export default function RootScreen() {
 
         {/* ── Преимущества ── */}
         <Animated.View style={[styles.featuresRow, { opacity: introFade }]}>
-          <Text style={styles.featureTxt}>Разные источники</Text>
+          <Text style={styles.featureTxt}>Отклик в один свайп</Text>
           <Text style={styles.featureDot}>·</Text>
           <Text style={styles.featureTxt}>Без комиссии</Text>
           <Text style={styles.featureDot}>·</Text>

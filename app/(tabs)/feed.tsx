@@ -2,70 +2,54 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
+  TextInput, ActivityIndicator, Share, Platform, Pressable,
 } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
-import { Like, User, Vacancy, PermVacancy } from '@/constants/types';
-import {
-  formatDate,
-  getInitials,
-  getTodayDates,
-  nameColorFromString,
-} from '@/services/storage';
+import { User, PermVacancy } from '@/constants/types';
+import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
-import { scoreVacancyForWorker } from '@/services/matching';
 import { METRO_LINES } from '@/constants/metro';
 import {
-  dbUpsertLike,
-  dbCheckAndCreateMatch,
   dbUpdateVacancy,
   dbCreateChat,
-  dbInsertMessage,
   dbApplyPermVacancy,
   dbClosePermVacancy,
-  dbDeleteVacancy,
   dbDeletePermVacancy,
   dbGetUserById,
-  dbGetLikesByVacancy,
-  dbRecordVacancyView,
   dbRecordPermVacancyView,
   dbGetVacancyViewers,
   dbGetPermVacancyViewers,
   dbAddPermSaved,
   dbRemovePermSaved,
-  dbAddSaved,
-  dbRemoveSaved,
   dbRecordGuestEvent,
   dbStartGuestRegistration,
 } from '@/services/db';
-import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { Chip } from '@/components/ui/Chip';
-import { VacancyDetailModal } from '@/components/feature/VacancyDetailModal';
+import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { MetroMap, MapListItem } from '@/components/feature/MetroMap';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { PermApplicationsSheet } from '@/components/feature/PermApplicationsSheet';
-import { setOnboardingTarget, setOnboardingFlag, registerOnboardingMeasurer } from '@/lib/onboardingTargets';
+import { setOnboardingTarget, registerOnboardingMeasurer } from '@/lib/onboardingTargets';
 import { registerWebPush, isWebPushRegistered, getWebPushDebug } from '@/lib/webPush';
 
 import { rs, rf } from '@/constants/scale';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { payShort } from '@/services/pay';
-import { vacancyInfoLines, permVacancyInfoLines } from '@/services/vacancyCard';
+import { permVacancyInfoLines } from '@/services/vacancyCard';
 
 // Гостю даём несколько бесплатных «отклонить», дальше — стена регистрации.
 // Счётчик модульный: общий для колод «Подработка» и «Работа», чтобы гость не
@@ -442,147 +426,14 @@ const mp = StyleSheet.create({
   resetTxt: { color: Colors.primary, fontSize: rf(14), fontWeight: '700' },
 });
 
-// ─────────────────────────────────────────────────
-// Фильтр смен: город / удобно начать / закончить / метро
-// ─────────────────────────────────────────────────
-type TimeRange = { id: string; label: string; from: string; to: string };
-
-const START_RANGES: TimeRange[] = [
-  { id: 's1', label: '07:00–09:00', from: '07:00', to: '09:00' },
-  { id: 's2', label: '09:00–12:00', from: '09:00', to: '12:00' },
-  { id: 's3', label: '12:00–16:00', from: '12:00', to: '16:00' },
-  { id: 's4', label: '16:00–21:00', from: '16:00', to: '21:00' },
-  { id: 's5', label: '21:00–23:00', from: '21:00', to: '23:00' },
-  { id: 's6', label: '23:00–07:00', from: '23:00', to: '07:00' },
-];
-const END_RANGES: TimeRange[] = [
-  { id: 'e1', label: '09:00–14:00', from: '09:00', to: '14:00' },
-  { id: 'e2', label: '14:00–17:00', from: '14:00', to: '17:00' },
-  { id: 'e3', label: '17:00–20:00', from: '17:00', to: '20:00' },
-  { id: 'e4', label: '20:00–22:00', from: '20:00', to: '22:00' },
-  { id: 'e5', label: '22:00–00:00', from: '22:00', to: '24:00' },
-  { id: 'e6', label: '00:00–05:00', from: '00:00', to: '05:00' },
-  { id: 'e7', label: '05:00–09:00', from: '05:00', to: '09:00' },
-];
 
 type VacancyCompanyOption = { name: string; count: number };
 
-export type ShiftFilters = { stations: string[]; start: string[]; end: string[] };
-export const EMPTY_SHIFT_FILTERS: ShiftFilters = { stations: [], start: [], end: [] };
 
-const toMin = (t: string) => {
-  const [h, m] = t.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-};
-// Время в диапазоне; если диапазон переходит через полночь (from > to) —
-// подходит и «поздний вечер», и «раннее утро».
-const inRange = (time: string, r: TimeRange) => {
-  const t = toMin(time), f = toMin(r.from), to = toMin(r.to);
-  return f <= to ? t >= f && t <= to : t >= f || t <= to;
-};
 // Смена проходит фильтр по времени, если её начало попадает в один из
 // выбранных «начать»-диапазонов, а конец — в один из «закончить». Пустой
 // набор диапазонов ничего не ограничивает.
-function shiftMatchesTime(timeStart: string | undefined, timeEnd: string | undefined, f: ShiftFilters): boolean {
-  const startRanges = START_RANGES.filter(r => f.start.includes(r.id));
-  const endRanges = END_RANGES.filter(r => f.end.includes(r.id));
-  if (startRanges.length) {
-    if (!timeStart || !startRanges.some(r => inRange(timeStart, r))) return false;
-  }
-  if (endRanges.length) {
-    if (!timeEnd || !endRanges.some(r => inRange(timeEnd, r))) return false;
-  }
-  return true;
-}
 
-function ShiftFilterSheet({
-  initial, count, onApply, onClose,
-}: {
-  initial: ShiftFilters;
-  count: (f: ShiftFilters) => number;
-  onApply: (f: ShiftFilters) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<ShiftFilters>(initial);
-  const [metroOpen, setMetroOpen] = useState(false);
-  const insets = useSafeAreaInsets();
-
-  const toggle = (key: 'start' | 'end', id: string) => setDraft(d => ({
-    ...d,
-    [key]: d[key].includes(id) ? d[key].filter(x => x !== id) : [...d[key], id],
-  }));
-
-  const n = count(draft);
-
-  return (
-    <View style={styles.filterOverlay}>
-      <View style={[styles.filterSheet, { maxHeight: '90%' }]}>
-        <View style={styles.filterSheetHeader}>
-          <Text style={styles.filterSheetTitle}>Фильтры</Text>
-          <TouchableOpacity onPress={() => setDraft(EMPTY_SHIFT_FILTERS)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={fst.reset}>Сбросить</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: rs(12) }}>
-          <Text style={fst.label}>Город</Text>
-          <View style={[fst.rowSel, { opacity: 0.6 }]}>
-            <Text style={fst.rowSelName}>Москва</Text>
-            <Text style={fst.rowSelHint}>единственный город</Text>
-          </View>
-
-          <Text style={fst.label}>Удобно начать</Text>
-          <View style={fst.chipsWrap}>
-            {START_RANGES.map(r => {
-              const on = draft.start.includes(r.id);
-              return (
-                <TouchableOpacity key={r.id} style={[fst.chip, on && fst.chipOn]} onPress={() => toggle('start', r.id)} activeOpacity={0.8}>
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{r.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Удобно закончить</Text>
-          <View style={fst.chipsWrap}>
-            {END_RANGES.map(r => {
-              const on = draft.end.includes(r.id);
-              return (
-                <TouchableOpacity key={r.id} style={[fst.chip, on && fst.chipOn]} onPress={() => toggle('end', r.id)} activeOpacity={0.8}>
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{r.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Метро</Text>
-          <TouchableOpacity style={fst.rowSel} onPress={() => setMetroOpen(true)} activeOpacity={0.8}>
-            <Text style={fst.rowSelName} numberOfLines={1}>
-              {draft.stations.length === 0 ? 'Все станции'
-                : draft.stations.length <= 2 ? draft.stations.map(s => `м. ${s}`).join(', ')
-                : `Выбрано станций: ${draft.stations.length}`}
-            </Text>
-            <Text style={fst.rowSelHint}>{draft.stations.length ? 'изменить ›' : 'выбрать ›'}</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        <TouchableOpacity style={[fst.cta, { marginBottom: insets.bottom + rs(80) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
-          <Text style={fst.ctaTxt}>{n > 0 ? `Показать ${n}` : 'Показать смены'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <MetroPicker
-        visible={metroOpen}
-        selected={draft.stations}
-        onChange={stations => setDraft(d => ({ ...d, stations }))}
-        onClose={() => setMetroOpen(false)}
-      />
-    </View>
-  );
-}
 
 const fst = StyleSheet.create({
   reset: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted, marginLeft: 'auto', marginRight: rs(14) },
@@ -844,67 +695,6 @@ const pfl = StyleSheet.create({
   rubTxt: { fontSize: rf(16), fontWeight: '700', color: Colors.textSecondary },
 });
 
-// ─────────────────────────────────────────────────
-// Mode switcher
-// ─────────────────────────────────────────────────
-type AppMode = 'shift' | 'perm';
-
-// Отдельного «Поиска» больше нет: внешняя постоянная работа показывается
-// вместе со своей во вкладке «Работа», а смены остаются в свайп-ленте.
-const MODE_LABELS: Record<AppMode, { label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }> = {
-  shift:  { label: 'Смены',  icon: 'flash' },
-  perm:   { label: 'Работа', icon: 'briefcase' },
-};
-
-function ModeSwitcher({ mode, onChange, modes = ['shift', 'perm'] }: {
-  mode: AppMode;
-  onChange: (m: AppMode) => void;
-  modes?: AppMode[];
-}) {
-  const ref = useRef<View>(null);
-  const measure = useCallback(() => {
-    ref.current?.measureInWindow((x, y, w, h) => {
-      if (w > 0 && h > 0) setOnboardingTarget('switcher', { x, y, w, h });
-    });
-  }, []);
-  useEffect(() => registerOnboardingMeasurer('switcher', measure), [measure]);
-  return (
-    <View ref={ref} onLayout={measure} style={ms.container}>
-      {modes.map(m => {
-        const { label, icon } = MODE_LABELS[m];
-        const active = mode === m;
-        return (
-          <TouchableOpacity
-            key={m}
-            style={[ms.btn, active && ms.btnActive]}
-            onPress={() => onChange(m)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name={icon} size={14} color={active ? '#fff' : Colors.textMuted} style={ms.btnIcon} />
-            <Text style={[ms.btnTxt, active && ms.btnTxtActive]}>{label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-const ms = StyleSheet.create({
-  container: {
-    flexDirection: 'row', gap: rs(3),
-    backgroundColor: Colors.surface,
-    borderRadius: rs(100), padding: rs(3),
-    borderWidth: 1, borderColor: Colors.divider,
-  },
-  // Значок вынесен из потока: пока он стоял слева от текста, центрировалась
-  // вся пара целиком, и надпись уезжала вправо на половину его ширины с
-  // отступом — на 9 пикселей. Теперь по центру стоит именно текст.
-  btn: { flex: 1, borderRadius: rs(100), paddingVertical: rs(8), alignItems: 'center', justifyContent: 'center' },
-  btnIcon: { position: 'absolute', left: rs(12) },
-  btnActive: { backgroundColor: Colors.primary },
-  btnTxt: { fontSize: rf(12), fontWeight: '600', color: Colors.textMuted },
-  btnTxtActive: { color: '#FFFFFF', fontWeight: '700' },
-});
 
 // ─────────────────────────────────────────────────
 // Разовая / Регулярная — панель над лентой смен
@@ -1035,380 +825,6 @@ function VacancyViewersModal({ vacancyId, kind = 'shift', onClose }: { vacancyId
   );
 }
 
-// ─────────────────────────────────────────────────
-// Worker List Modal (for employer vacancy stats)
-// ─────────────────────────────────────────────────
-function WorkerListModal({
-  vacancyId,
-  type,
-  onClose,
-}: {
-  vacancyId: string;
-  type: 'applicants' | 'hired' | 'rejected';
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const { currentUser, users, vacancies, chats, showToast, refreshLikes, refreshChats, optimisticUpdateLike } = useApp();
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [dataLoading, setDataLoading] = useState(true);
-  const [dataLoadFailed, setDataLoadFailed] = useState(false);
-  const [dataRetry, setDataRetry] = useState(0);
-  const listSwipe = useSwipeToDismiss(onClose);
-  const [localLikes, setLocalLikes] = useState<Like[]>([]);
-  const [localWorkers, setLocalWorkers] = useState<User[]>([]);
-
-  const vacancy = vacancies.find(v => v.id === vacancyId);
-
-  // Fetch likes for this vacancy + all referenced workers in parallel
-  useEffect(() => {
-    const init = async () => {
-      setDataLoading(true);
-      setDataLoadFailed(false);
-      try {
-        const vacLikes = await dbGetLikesByVacancy(vacancyId);
-        setLocalLikes(vacLikes);
-
-        const workerIds = [...new Set(vacLikes.map(l => l.workerId))];
-        if (workerIds.length > 0) {
-          // Как и у просмотревших: сначала из памяти, запросы только за теми,
-          // кого там нет.
-          const known = new Map<string, User>(users.map((u: User) => [u.id, u]));
-          const missing = workerIds.filter((id: string) => !known.has(id));
-          const fetched = missing.length
-            ? (await Promise.all(missing.map(id => dbGetUserById(id)))).filter(Boolean) as User[]
-            : [];
-          fetched.forEach((u: User) => known.set(u.id, u));
-          setLocalWorkers(workerIds.map((id: string) => known.get(id)).filter(Boolean) as User[]);
-        }
-      } catch (e) {
-        console.warn('[WorkerListModal] init error', e);
-        setDataLoadFailed(true);
-      } finally {
-        setDataLoading(false);
-      }
-    };
-    init();
-  }, [vacancyId, dataRetry]);
-
-  const titleMap: Record<typeof type, { title: string; icon: IconName; color: string; bg: string; empty: IconName; emptyTxt: string }> = {
-    applicants: { title: 'Отклики',     icon: 'people-outline',           color: Colors.primary, bg: Colors.primaryLight, empty: 'people-outline',      emptyTxt: 'Нет новых откликов' },
-    hired:      { title: 'Набрано',     icon: 'checkmark-circle-outline', color: Colors.green,   bg: Colors.greenLight,   empty: 'person-add-outline',  emptyTxt: 'Никого не набрано' },
-    rejected:   { title: 'Отклонённые', icon: 'close-circle-outline',     color: Colors.red,     bg: Colors.redLight,     empty: 'close-circle-outline', emptyTxt: 'Нет отклонённых' },
-  };
-  const head = titleMap[type];
-
-  // Use fresh localLikes (from DB) for display — not stale context likes
-  let filteredLikes: Like[] = [];
-  if (type === 'applicants') {
-    filteredLikes = localLikes.filter(l => l.workerLiked && !l.isMatch && l.employerLiked !== false);
-  } else if (type === 'hired') {
-    filteredLikes = localLikes.filter(l => l.isMatch);
-  } else {
-    filteredLikes = localLikes.filter(
-      l => l.employerLiked === false || (l.workerLiked === false && l.workerSkipped === true)
-    );
-  }
-
-  // Look up from locally fetched workers first, then context users as fallback
-  const getWorker = (id: string) =>
-    localWorkers.find(u => u.id === id) ?? users.find(u => u.id === id);
-
-  // Чат один на пару людей, поэтому ищем по собеседнику, а не по вакансии
-  const getChatId = (workerId: string) =>
-    chats.find(c => c.employerId === currentUser?.id && c.workerId === workerId)?.id ?? null;
-
-  // Open or create a chat with a worker (no match decision required)
-  const openOrCreateChat = async (like: Like) => {
-    if (!currentUser) return;
-    const vacTitle = vacancy?.title ?? 'Смена';
-    const companyName = vacancy?.company ?? currentUser.company ?? '';
-    setActionLoading(like.workerId);
-    try {
-      const existingChatId = getChatId(like.workerId);
-      if (existingChatId) {
-        onClose();
-        router.push({ pathname: '/chat-room', params: { chatId: existingChatId } });
-        return;
-      }
-      const worker = getWorker(like.workerId);
-      const greeting = worker
-        ? `Здравствуйте, ${worker.firstName}! Я рассматриваю вашу кандидатуру на «${vacTitle}».`
-        : `Здравствуйте! Я рассматриваю вашу кандидатуру на вакансию.`;
-      const chatId = await dbCreateChat(
-        like.workerId,
-        currentUser.id,
-        vacancyId,
-        vacTitle,
-        companyName,
-        greeting,
-        1,
-        0,
-      );
-      refreshChats().catch(() => {});
-      onClose();
-      router.push({ pathname: '/chat-room', params: { chatId } });
-    } catch {
-      showToast('Ошибка при открытии чата', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const onAccept = async (like: Like) => {
-    if (!currentUser) return;
-    setActionLoading(like.workerId);
-    try {
-      await dbUpsertLike(vacancyId, like.workerId, currentUser.id, { employerLiked: true });
-      const result = await dbCheckAndCreateMatch(vacancyId, like.workerId);
-      if (result.matched) {
-        optimisticUpdateLike({ ...like, isMatch: true, employerLiked: true });
-      }
-      refreshLikes().catch(() => {});
-      // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
-      // собирает тот, кто записал событие, и только другой стороне.
-      // Заодно ушла неправда: здесь уведомление слалось ВСЕГДА, даже когда
-      // мэтча не случилось, — работнику сообщали о мэтче, которого нет.
-      showToast('Мэтч! Чат открыт', 'success');
-      onClose();
-      if (result.chatId) {
-        router.push({ pathname: '/chat-room', params: { chatId: result.chatId } });
-      } else {
-        router.push({ pathname: '/(tabs)/chats' });
-      }
-    } catch {
-      showToast('Ошибка', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const openChat = async (like: Like) => {
-    if (!currentUser) return;
-    const chatId = getChatId(like.workerId);
-    if (chatId) {
-      onClose();
-      router.push({ pathname: '/chat-room', params: { chatId } });
-      return;
-    }
-    setActionLoading(like.workerId);
-    try {
-      const vacTitle = vacancy?.title ?? 'Смена';
-      const companyName = vacancy?.company ?? currentUser.company ?? '';
-      const newChatId = await dbCreateChat(
-        like.workerId,
-        currentUser.id,
-        vacancyId,
-        vacTitle,
-        companyName,
-        undefined,
-        0,
-        0,
-      );
-      refreshChats().catch(() => {});
-      onClose();
-      router.push({ pathname: '/chat-room', params: { chatId: newChatId } });
-    } catch {
-      showToast('Ошибка при открытии чата', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const onDiscussRejected = async (like: Like) => {
-    if (!currentUser) return;
-    setActionLoading(like.workerId);
-    try {
-      const worker = getWorker(like.workerId);
-      const vacTitle = vacancy?.title ?? 'Смена';
-      const companyName = vacancy?.company ?? currentUser.company ?? '';
-
-      const existingChatId = getChatId(like.workerId);
-      if (existingChatId) {
-        onClose();
-        router.push({ pathname: '/chat-room', params: { chatId: existingChatId } });
-        return;
-      }
-
-      const chatId = await dbCreateChat(
-        like.workerId,
-        currentUser.id,
-        vacancyId,
-        vacTitle,
-        companyName,
-        '',
-        0,
-        0,
-      );
-
-      const rejectedByWorker = like.workerLiked === false && like.workerSkipped === true;
-      const text = rejectedByWorker
-        ? (worker
-          ? `Здравствуйте, ${worker.firstName}! Вы отказались от вакансии «${vacTitle}». Хотелось бы узнать причину — может, сможем найти решение?`
-          : `Здравствуйте! Вы отказались от вакансии «${vacTitle}». Хотелось бы узнать причину — может, сможем найти решение?`)
-        : (worker
-          ? `Здравствуйте, ${worker.firstName}! Хотелось бы обсудить вашу заявку на вакансию «${vacTitle}».`
-          : `Здравствуйте! Хотелось бы обсудить вашу заявку на вакансию «${vacTitle}».`);
-      await dbInsertMessage(chatId, currentUser.id, text);
-      refreshChats().catch(() => {});
-
-      showToast('Сообщение отправлено. Открываем чат...', 'success');
-      onClose();
-      router.push({ pathname: '/chat-room', params: { chatId } });
-    } catch (error) {
-      console.error('[WorkerListModal] onDiscussRejected', error);
-      showToast('Ошибка при отправке сообщения', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={wS.overlay}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <Animated.View style={[wS.sheet, listSwipe.animStyle]}>
-          <View {...listSwipe.panHandlers}>
-            <SheetHandle />
-            <View style={wS.sheetHeader}>
-              <SheetTitleIcon name={head.icon} color={head.color} bg={head.bg} />
-              <Text style={wS.sheetTitle}>{head.title}</Text>
-            </View>
-          </View>
-          {vacancy ? (
-            <View style={wS.vacSubtitleRow}>
-              <MetaBit name="briefcase-outline" text={vacancy.title} />
-              <MetaBit name="calendar-outline" text={formatDate(vacancy.date)} />
-            </View>
-          ) : null}
-
-          {dataLoading ? (
-            <View style={wS.empty}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={[wS.emptyTxt, { marginTop: 12 }]}>Загрузка данных...</Text>
-            </View>
-          ) : dataLoadFailed ? (
-            <View style={wS.empty}>
-              <EmptyIcon name="cloud-offline-outline" />
-              <Text style={wS.emptyTxt}>Не удалось загрузить список</Text>
-              <TouchableOpacity onPress={() => setDataRetry(x => x + 1)} activeOpacity={0.8} style={{ marginTop: rs(12) }}>
-                <Text style={{ color: Colors.primary, fontWeight: '700' }}>Повторить</Text>
-              </TouchableOpacity>
-            </View>
-          ) : filteredLikes.length === 0 ? (
-            <View style={wS.empty}>
-              <EmptyIcon name={head.empty} />
-              <Text style={wS.emptyTxt}>{head.emptyTxt}</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filteredLikes}
-              keyExtractor={l => l.id}
-              contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 40 }}
-              renderItem={({ item: like }) => {
-                const worker = getWorker(like.workerId);
-                const workerColor = nameColorFromString(like.workerId);
-                const workerDisplayName = worker
-                  ? `${worker.firstName} ${worker.lastName}`.trim() || 'Работник'
-                  : 'Работник';
-                const initials = worker ? getInitials(workerDisplayName) : '?';
-                const isLoading = actionLoading === like.workerId;
-                const rejectedByWorker = like.workerLiked === false && like.workerSkipped === true;
-                return (
-                  <View style={wS.card}>
-                    <TouchableOpacity
-                      style={wS.cardTop}
-                      onPress={() => {
-                        if (!worker) return;
-                        router.push({ pathname: '/user-profile', params: { userId: worker.id } });
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      {worker?.avatarUrl ? (
-                        <Image source={{ uri: worker.avatarUrl }} style={wS.avatar} contentFit="cover" transition={150} />
-                      ) : (
-                        <View style={[wS.avatar, { backgroundColor: workerColor, alignItems: 'center', justifyContent: 'center' }]}>
-                          <Text style={wS.avatarTxt}>{initials}</Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={wS.name}>{workerDisplayName}</Text>
-                        {worker ? (
-                          <View style={wS.metaRow}>
-                            {like.isMatch
-                              ? <MetaBit name="call-outline" text={worker.phone} />
-                              : <MetaBit name="subway-outline" text={worker.metroStation ?? '—'} />}
-                            {(worker.avgRating ?? 0) > 0
-                              ? <MetaBit name="star" text={(worker.avgRating ?? 0).toFixed(1)} color={Colors.amber} />
-                              : null}
-                          </View>
-                        ) : (
-                          <Text style={wS.meta}>Загрузка...</Text>
-                        )}
-                        {type === 'rejected' ? (
-                          <View style={wS.reasonRow}>
-                            <Ionicons name="arrow-undo-outline" size={rf(11)} color={Colors.red} />
-                            <Text style={wS.rejectionReason}>
-                              {rejectedByWorker ? 'Сам отказался' : 'Вы отклонили'}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      {worker ? (
-                        <View style={wS.profileLink}>
-                          <Text style={wS.profileArrow}>Профиль</Text>
-                          <Ionicons name="chevron-forward" size={rf(13)} color={Colors.primary} />
-                        </View>
-                      ) : null}
-                    </TouchableOpacity>
-
-                    <View style={wS.btnRow}>
-                      {type === 'hired' ? (
-                        <TouchableOpacity
-                          style={[wS.chatBtn, isLoading && { opacity: 0.5 }]}
-                          disabled={isLoading}
-                          onPress={() => openChat(like)}
-                        >
-                          <Text style={wS.chatBtnTxt}>Написать</Text>
-                        </TouchableOpacity>
-                      ) : type === 'rejected' ? (
-                        <TouchableOpacity
-                          style={[wS.chatBtn, { flex: 1 }, isLoading && { opacity: 0.5 }]}
-                          disabled={isLoading}
-                          onPress={() => onDiscussRejected(like)}
-                        >
-                          <Text style={wS.chatBtnTxt}>Написать</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <>
-                          <TouchableOpacity
-                            style={[wS.chatBtn, isLoading && { opacity: 0.5 }]}
-                            disabled={isLoading}
-                            onPress={() => openOrCreateChat(like)}
-                          >
-                            <Text style={wS.chatBtnTxt}>Написать</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[wS.acceptBtn, isLoading && { opacity: 0.5 }]}
-                            disabled={isLoading}
-                            onPress={() => onAccept(like)}
-                          >
-                            <Ionicons name="checkmark" size={rf(14)} color="#fff" />
-                            <Text style={wS.acceptBtnTxt}>Подходит</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  </View>
-                );
-              }}
-            />
-          )}
-        </Animated.View>
-      </View>
-    </Modal>
-  );
-}
-
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 // Шторки откликов раньше подписывались смайликами: 👥 в заголовке, 👀 и 🙅
@@ -1440,15 +856,6 @@ function MetaBit({ name, text, color }: { name: IconName; text: string; color?: 
     </View>
   );
 }
-
-const eS = StyleSheet.create({
-  btn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7),
-    marginTop: rs(16), backgroundColor: Colors.primary,
-    paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
-  },
-  btnTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
-});
 
 const gB = StyleSheet.create({
   banner: {
@@ -1508,861 +915,9 @@ const wS = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────
-// Worker swipe feed (Подработка)
-// ─────────────────────────────────────────────────
-function WorkerFeed() {
-  const router = useRouter();
-  const tabBarHeight = useBottomTabBarHeight();
-  const deepLinkParams = useLocalSearchParams<{ vacancyId?: string; campaignId?: string }>();
-  const deepLinkVacancyId = typeof deepLinkParams.vacancyId === 'string' ? deepLinkParams.vacancyId : '';
-  const campaignId = typeof deepLinkParams.campaignId === 'string' ? deepLinkParams.campaignId : '';
-  const deepLinkOpened = useRef(false);
-  const {
-    currentUser, users, vacancies, likes, chats,
-    refreshAll, refreshLikes, refreshChats,
-    showToast, vacanciesLoading, exitGuest,
-    savedIds, optimisticAddSaved, optimisticRemoveSaved,
-    responsivenessMap, backendOffline,
-  } = useApp();
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Гость смотрит ленту, но откликнуться/написать не может — любое такое
-  // действие ведёт на выбор роли и регистрацию.
-  const isGuest = !!currentUser?.isGuest;
-  const promptRegister = useCallback((context: {
-    vacancyId?: string | null;
-    vacancyKind?: 'shift' | 'permanent' | null;
-    campaignId?: string | null;
-  } = {}) => {
-    void dbStartGuestRegistration(context);
-    exitGuest();
-    router.replace('/');
-  }, [exitGuest, router]);
-
-  const onRefresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    try {
-      await refreshAll();
-    } catch {
-      showToast('Не удалось обновить ленту. Проверьте связь.', 'error');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const [dates, setDates] = useState(() => getTodayDates());
-  const [selectedDate, setSelectedDate] = useState(() => getTodayDates()[0]);
-  const [cards, setCards] = useState<Vacancy[]>([]);
-  const [history, setHistory] = useState<Record<string, Vacancy[]>>({});
-  const [swiping, setSwiping] = useState(false);
-  const [detailVacancy, setDetailVacancy] = useState<Vacancy | null>(null);
-  const [detailEmployer, setDetailEmployer] = useState<User | null>(null);
-  const [filterStations, setFilterStations] = useState<string[]>([]);
-  const [filterPicker, setFilterPicker] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
-  // Фильтр по времени смены (начать/закончить). Метро (мультивыбор) храним
-  // отдельно в filterStations.
-  const [timeFilters, setTimeFilters] = useState<{ start: string[]; end: string[] }>({ start: [], end: [] });
-  const [filterOpen, setFilterOpen] = useState(false);
-  const filtersActive = filterStations.length > 0 || timeFilters.start.length > 0 || timeFilters.end.length > 0;
-
-  // Смены для карты: метки ставятся по адресу, поэтому кроме станции
-  // передаём адрес и координаты — по ним карта и группирует точки.
-  const mapItems: MapListItem[] = useMemo(() => {
-    if (!currentUser) return [];
-    return vacancies
-      .filter((v: Vacancy) =>
-        v.status === 'open' &&
-        v.date === selectedDate &&
-        (!!v.metroStation || !!v.address) &&
-        currentUser.workTypes?.includes(v.workType))
-      .map((v: Vacancy) => ({
-        id: v.id,
-        station: v.metroStation,
-        title: v.title,
-        company: v.company,
-        pay: payShort(v.salary, v.workType),
-        meta: `${v.timeStart}–${v.timeEnd}`,
-        address: v.address,
-        lat: v.lat,
-        lng: v.lng,
-      }));
-  }, [vacancies, selectedDate, currentUser]);
-
-  // Решения по карточке объявлены ниже (им нужны данные и роутер), а жест
-  // собирается один раз и должен звать свежие. Поэтому через ссылку.
-  const swipeCbRef = useRef<((dir: 'want' | 'skip', vx: number) => void) | null>(null);
-  const deck = useSwipeDeck({
-    want: vx => swipeCbRef.current?.('want', vx),
-    skip: vx => swipeCbRef.current?.('skip', vx),
-  });
-
-  const cardAreaRef = useRef<View>(null);
-  const pendingLikeIds = useRef<Set<string>>(new Set());
-  const savedMutationIds = useRef<Set<string>>(new Set());
-  const swipingRef = useRef(false);
-  const messagingRef = useRef(false);
-  // Карточка, по которой человек сейчас пишет отклик (null — окно закрыто)
-  const [applyFor, setApplyFor] = useState<Vacancy | null>(null);
-
-  useEffect(() => {
-    const sync = () => {
-      const fresh = getTodayDates();
-      setDates(fresh);
-      setSelectedDate(prev => {
-        if (!fresh.includes(prev)) {
-          return fresh[0];
-        }
-        return prev;
-      });
-    };
-    sync();
-    const interval = setInterval(sync, 60_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Свои отклики — по ним видно, у кого человек уже работал.
-  const myLikes = useMemo(
-    () => (likes as Like[]).filter((l: Like) => l.workerId === currentUser?.id),
-    [likes, currentUser?.id],
-  );
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const filtered = vacancies
-      .filter(v => {
-        if (v.status !== 'open') return false;
-        if (v.date !== selectedDate) return false;
-        if (!currentUser.workTypes?.includes(v.workType)) return false;
-        if (pendingLikeIds.current.has(v.id)) return false;
-        const liked = likes.find(l => l.vacancyId === v.id && l.workerId === currentUser.id);
-        if (liked) return false;
-        if (filterStations.length && !filterStations.includes(v.metroStation ?? '')) return false;
-        if (!shiftMatchesTime(v.timeStart, v.timeEnd,
-          { stations: filterStations, start: timeFilters.start, end: timeFilters.end })) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        // Диплинк из Telegram всегда поднимает нужную смену первой.
-        if (deepLinkVacancyId) {
-          if (a.id === deepLinkVacancyId) return -1;
-          if (b.id === deepLinkVacancyId) return 1;
-        }
-        // Подбор, а не только метро: подтверждённый навык, срочность,
-        // знакомый работодатель и его рейтинг тоже двигают карточку вверх.
-        // Работодателя ищем среди уже загруженных — недостающий просто не
-        // добавит слагаемого, лишний запрос ради сортировки не нужен.
-        const ctx = (v: Vacancy) => ({
-          employer: users.find((u: User) => u.id === v.employerId) ?? null,
-          myLikes: myLikes,
-        });
-        return scoreVacancyForWorker(b, currentUser, ctx(b))
-             - scoreVacancyForWorker(a, currentUser, ctx(a));
-      });
-    setCards(filtered);
-    if (!swipingRef.current) deck.reset();
-  }, [selectedDate, vacancies, likes, myLikes, users, currentUser, filterStations, timeFilters, deepLinkVacancyId, deck]);
-
-  const currentCard = cards[0];
-  const currentEmployer = currentCard ? users.find(u => u.id === currentCard.employerId) : null;
-
-  const postedAgo = currentCard ? agoRu(currentCard.createdAt) : '';
-  const payLabel = currentCard ? payShort(currentCard.salary, currentCard.workType) : '';
-  const shiftSummary = currentCard ? currentCard.conditions : '';
-
-  const openShiftDetail = useCallback((card: Vacancy) => {
-    // Нажатие сразу после свайпа игнорируем: иначе на вебе улетевшая карточка
-    // заодно открывала бы подробности — см. wasSwipe в хуке.
-    if (deck.wasSwipe()) return;
-    setDetailVacancy(card);
-    setDetailEmployer(users.find(u => u.id === card.employerId) ?? null);
-  }, [users, deck]);
-
-  const shareShiftVacancy = useCallback(async (v: Vacancy) => {
-    // В идентификаторе нет user_id: ссылка измеряет эффективность самой
-    // рекомендации, но не раскрывает, кто и кому её переслал.
-    const shareCampaignId = Crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-    const url = `https://t.me/JobToo_bot/app?startapp=share_shift_${v.id}_${shareCampaignId}`;
-    const message = [
-      `${v.title} — ${v.company}`,
-      v.metroStation ? `м. ${v.metroStation}` : '',
-      v.salary ? `${v.salary.toLocaleString('ru-RU')} ₽ за смену` : '',
-      url,
-    ].filter(Boolean).join('\n');
-    try {
-      const result = await Share.share(
-        Platform.OS === 'ios' ? { message: message.replace(`\n${url}`, ''), url } : { message },
-      );
-      if (result.action !== Share.dismissedAction) {
-        void dbRecordGuestEvent('campaign_shared', {
-          vacancyId: v.id,
-          vacancyKind: 'shift',
-          campaignId: shareCampaignId,
-          channel: 'user_share',
-        });
-      }
-    } catch {
-      // Отмена системного окна «Поделиться» не должна показывать ошибку.
-    }
-  }, []);
-
-  // После загрузки ленты сразу показываем карточку из Telegram-публикации.
-  // Флаг защищает от повторного открытия при каждом realtime-обновлении.
-  useEffect(() => {
-    if (deepLinkOpened.current || !deepLinkVacancyId || currentCard?.id !== deepLinkVacancyId) return;
-    deepLinkOpened.current = true;
-    setDetailVacancy(currentCard);
-    setDetailEmployer(currentEmployer ?? null);
-  }, [deepLinkVacancyId, currentCard, currentEmployer]);
-  // Онбордингу: есть ли реальная карточка (иначе он покажет демо-карточку)
-  useEffect(() => { setOnboardingFlag('hasShiftCard', !!currentCard); }, [currentCard]);
-  useEffect(() => {
-    if (!currentCard?.id || !currentUser?.id) return;
-    const t = setTimeout(() => {
-      if (currentUser.isGuest) {
-        void dbRecordGuestEvent('vacancy_impression', {
-          vacancyId: currentCard.id, vacancyKind: 'shift',
-        });
-        return;
-      }
-      dbRecordVacancyView(currentCard.id, currentUser.id).catch(() => {});
-    }, 300);
-    return () => clearTimeout(t);
-  }, [currentCard, currentUser?.id, currentUser?.isGuest]);
-
-  const animateCard = useCallback((dir: 'left' | 'right', velocity: number, cb: () => void) => {
-    swipingRef.current = true;
-    setSwiping(true);
-    deck.flyOut(dir, velocity, () => {
-      swipingRef.current = false;
-      setSwiping(false);
-      cb();
-    });
-  }, [deck]);
-
-  const doSkip = useCallback((vx = 0.5) => {
-    if (!currentCard || !currentUser || swiping) return;
-    const card = currentCard;
-    const date = selectedDate;
-    const user = currentUser;
-    // Гость: три «отклонить» бесплатно, дальше — регистрация. Свайп «хочу» у
-    // гостя и так ведёт на регистрацию, так что после лимита оба направления
-    // конвертируют в регистрацию — максимум конверсии из гостевого режима.
-    if (user.isGuest) {
-      if (guestSkipCount >= GUEST_SKIP_LIMIT) { promptRegister({ vacancyKind: 'shift' }); return; }
-      guestSkipCount += 1;
-    }
-    pendingLikeIds.current.add(card.id);
-    animateCard('left', vx, () => {
-      setHistory(h => ({ ...h, [date]: [card, ...(h[date] ?? []).slice(0, 9)] }));
-      setCards(prev => prev.slice(1));
-      // Гость листает локально: своей записи в базе нет.
-      if (user.isGuest) return;
-      dbUpsertLike(card.id, user.id, card.employerId, { workerLiked: false, workerSkipped: true })
-        .then(() => refreshLikes(user))
-        .catch(() => {
-          // Свайп уже анимирован, но сервер не принял решение. Возвращаем
-          // карточку на вершину и убираем её из локальной истории: иначе UI
-          // утверждал бы, что вакансия пропущена, а после обновления она
-          // появилась бы снова без объяснения.
-          pendingLikeIds.current.delete(card.id);
-          setHistory(h => ({
-            ...h,
-            [date]: (h[date] ?? []).filter(v => v.id !== card.id),
-          }));
-          setCards(prev => [card, ...prev.filter(v => v.id !== card.id)]);
-          showToast('Не удалось пропустить вакансию. Проверьте связь и попробуйте ещё раз.', 'error');
-        });
-    });
-  }, [currentCard, currentUser, swiping, selectedDate, animateCard, refreshLikes, promptRegister, showToast]);
-
-  const doWant = useCallback((vx = 0.5) => {
-    if (!currentCard || !currentUser || swiping) return;
-    if (campaignId && currentCard.id === deepLinkVacancyId) {
-      void dbRecordGuestEvent('campaign_apply', {
-        vacancyId: currentCard.id,
-        vacancyKind: 'shift',
-        campaignId,
-      });
-    }
-    if (currentUser.isGuest) {
-      promptRegister({
-        vacancyId: currentCard.id,
-        vacancyKind: 'shift',
-        campaignId: currentCard.id === deepLinkVacancyId ? campaignId || null : null,
-      });
-      return;
-    }
-    const card = currentCard;
-    const date = selectedDate;
-    const user = currentUser;
-    pendingLikeIds.current.add(card.id);
-
-    animateCard('right', vx, () => {
-      setHistory(h => ({ ...h, [date]: [card, ...(h[date] ?? []).slice(0, 9)] }));
-      setCards(prev => prev.slice(1));
-      (async () => {
-        try {
-          await dbUpsertLike(card.id, user.id, card.employerId, { workerLiked: true, workerSkipped: false });
-          const result = await dbCheckAndCreateMatch(card.id, user.id);
-          refreshLikes(user).catch(() => {});
-          if (result.matched) {
-            router.push({ pathname: '/match', params: { vacancyId: card.id, chatId: result.chatId } });
-          } else {
-            // Уведомление директору шлёт сервер при записи отклика — см. dbUpsertLike.
-            showToast('Отклик отправлен. Ждём решения работодателя', 'success');
-          }
-        } catch {
-          // Restore card to front of deck on failure
-          pendingLikeIds.current.delete(card.id);
-          setCards(prev => [card, ...prev.filter(v => v.id !== card.id)]);
-          showToast('Ошибка при отправке отклика — попробуй ещё раз', 'error');
-        }
-      })();
-    });
-  }, [currentCard, currentUser, swiping, selectedDate, animateCard, refreshLikes, router, showToast, promptRegister, campaignId, deepLinkVacancyId]);
-
-  // Сохранить смену в «Избранное» (кнопка ★). Гостю — предложение
-  // зарегистрироваться, как и на остальных действиях.
-  const isCurrentSaved = !!currentCard && savedIds.includes(currentCard.id);
-  const toggleSavedShift = useCallback(async () => {
-    if (!currentCard) return;
-    const user = currentUser;
-    if (!user) return;
-    if (user.isGuest) { promptRegister({ vacancyKind: 'shift' }); return; }
-    const id = currentCard.id;
-    if (savedMutationIds.current.has(id)) return;
-    savedMutationIds.current.add(id);
-    try {
-      if (savedIds.includes(id)) {
-        await dbRemoveSaved(user.id, id);
-        optimisticRemoveSaved(id);
-        showToast('Удалено из избранного', 'success');
-      } else {
-        await dbAddSaved(user.id, id);
-        optimisticAddSaved(id);
-        showToast('Добавлено в избранное', 'success');
-      }
-    } catch {
-      showToast(savedIds.includes(id) ? 'Не удалось удалить из избранного' : 'Не удалось добавить в избранное', 'error');
-    } finally {
-      savedMutationIds.current.delete(id);
-    }
-  }, [currentCard, currentUser, savedIds, optimisticAddSaved, optimisticRemoveSaved, promptRegister, showToast]);
-
-  // Отклик на смену. Если переписка с этим работодателем уже есть — просто
-  // открываем её. Если нет, сначала спрашиваем у человека пару слов о себе:
-  // раньше вместо них уходил шаблон от имени системы, и отвечать было нечему.
-  const doMessage = useCallback(() => {
-    if (!currentCard || !currentUser || messagingRef.current) return;
-    if (currentUser.isGuest) {
-      promptRegister({
-        vacancyId: currentCard.id,
-        vacancyKind: 'shift',
-        campaignId: currentCard.id === deepLinkVacancyId ? campaignId || null : null,
-      });
-      return;
-    }
-    const existingChat = chats.find(
-      c => c.employerId === currentCard.employerId && c.workerId === currentUser.id
-    );
-    if (existingChat) {
-      router.push({ pathname: '/chat-room', params: { chatId: existingChat.id } });
-      return;
-    }
-    setApplyFor(currentCard);
-  }, [currentCard, currentUser, chats, router, promptRegister]);
-
-  const sendApply = useCallback(async (message: string) => {
-    const card = applyFor;
-    if (!card || !currentUser || messagingRef.current) return;
-    if (campaignId && card.id === deepLinkVacancyId) {
-      void dbRecordGuestEvent('campaign_apply', {
-        vacancyId: card.id,
-        vacancyKind: 'shift',
-        campaignId,
-      });
-    }
-    if (currentUser.isGuest) {
-      promptRegister({
-        vacancyId: card.id,
-        vacancyKind: 'shift',
-        campaignId: card.id === deepLinkVacancyId ? campaignId || null : null,
-      });
-      return;
-    }
-    messagingRef.current = true;
-    try {
-      await dbUpsertLike(card.id, currentUser.id, card.employerId, {
-        workerLiked: true,
-        workerSkipped: false,
-      });
-      const chatId = await dbCreateChat(
-        currentUser.id,
-        card.employerId,
-        card.id,
-        card.title,
-        card.company,
-        message,
-        0,
-        1,
-        true,   // сообщение от работника, а не от системы
-      );
-      refreshChats().catch(() => {});
-      // О первом сообщении извещает СЕРВЕР при заведении чата: в уведомлении
-      // по-прежнему сами слова человека, но собирает их тот, кто их записал.
-      setApplyFor(null);
-      router.push({ pathname: '/chat-room', params: { chatId } });
-    } catch (e) {
-      showToast('Не удалось отправить отклик', 'error');
-    } finally {
-      messagingRef.current = false;
-    }
-  }, [applyFor, currentUser, refreshChats, router, showToast, promptRegister]);
-
-  const doMessageRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    swipeCbRef.current = (dir, vx) => { if (dir === 'want') doWant(vx); else doSkip(vx); };
-    doMessageRef.current = doMessage;
-  });
-
-  const countShifts = (d: string, f: ShiftFilters) => {
-    if (!currentUser) return 0;
-    return vacancies.filter(v => {
-      if (v.status !== 'open') return false;
-      if (v.date !== d) return false;
-      if (!currentUser.workTypes?.includes(v.workType)) return false;
-      const alreadySwiped = likes.find(l => l.vacancyId === v.id && l.workerId === currentUser.id);
-      if (alreadySwiped) return false;
-      if (f.stations.length && !f.stations.includes(v.metroStation ?? '')) return false;
-      if (!shiftMatchesTime(v.timeStart, v.timeEnd, f)) return false;
-      return true;
-    }).length;
-  };
-  const getDateCount = (d: string) => countShifts(d, { stations: filterStations, start: timeFilters.start, end: timeFilters.end });
-
-  const visibleDates = dates;
-
-  const getRuDay = (iso: string) => {
-    const d = new Date(iso + 'T00:00:00');
-    return ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][d.getDay()];
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      {isGuest && (
-        <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister()}>
-          <Ionicons name="lock-closed" size={rs(15)} color="#fff" />
-          <Text style={gB.bannerTxt}>Вы смотрите как гость. Зарегистрируйтесь, чтобы откликаться</Text>
-          <Text style={gB.bannerCta}>Войти</Text>
-        </TouchableOpacity>
-      )}
-      {/* Date strip + inline filter button */}
-      <View style={styles.dateStrip}>
-        <View style={styles.dateStripInner}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.dateRow}
-            style={{ flex: 1 }}
-          >
-            {visibleDates.map(d => {
-              const active = d === selectedDate;
-              const cnt = getDateCount(d);
-              return (
-                <TouchableOpacity key={d} style={[styles.dateChip, active && styles.dateChipActive]} onPress={() => setSelectedDate(d)} activeOpacity={0.8}>
-                  <Text style={[styles.dcDay, active && styles.dcDayActive]}>{getRuDay(d)}</Text>
-                  <Text style={[styles.dcNum, active && styles.dcNumActive]}>{new Date(d + 'T00:00:00').getDate()}</Text>
-                  <Text style={[styles.dcCnt, active && styles.dcCntActive]}>{cnt}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-          <TouchableOpacity
-            style={[pS.inlineFilter, filtersActive ? pS.inlineFilterActive : null]}
-            onPress={() => setFilterOpen(true)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="options-outline" size={20} color={filtersActive ? Colors.primary : Colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {filterStations.length > 0 ? (
-        <TouchableOpacity style={styles.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
-          <Ionicons name="location" size={13} color={Colors.primary} />
-          <Text style={styles.activeStationTxt}>
-            {filterStations.length === 1 ? `м. ${filterStations[0]}` : `Станций: ${filterStations.length}`}
-          </Text>
-          <Ionicons name="close" size={14} color={Colors.textMuted} />
-        </TouchableOpacity>
-      ) : null}
-
-      {filterOpen && (
-        <ShiftFilterSheet
-          initial={{ stations: filterStations, start: timeFilters.start, end: timeFilters.end }}
-          count={(f) => countShifts(selectedDate, f)}
-          onApply={(f) => { setFilterStations(f.stations); setTimeFilters({ start: f.start, end: f.end }); }}
-          onClose={() => setFilterOpen(false)}
-        />
-      )}
-
-      <MetroMap
-        visible={mapOpen}
-        title="Смены на карте"
-        items={mapItems}
-        onSelect={(st) => { setFilterStations(st ? [st] : []); setMapOpen(false); }}
-        onClose={() => setMapOpen(false)}
-      />
-
-      {/* Card area */}
-      <View
-        ref={cardAreaRef}
-        style={styles.cardArea}
-        onLayout={() => {
-          cardAreaRef.current?.measureInWindow((x, y, w, h) => {
-            if (w > 0) setOnboardingTarget('card', { x, y, w, h: Math.min(h, 360) });
-          });
-        }}
-      >
-        {!currentCard ? (
-          <ScrollView
-            contentContainerStyle={[styles.emptyState, { flexGrow: 1 }]}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
-          >
-            <View style={styles.emptyCharContainer} pointerEvents="none">
-              <Image
-                source={require('../../assets/images/char-seeker-empty.png')}
-                style={styles.emptyCharImg}
-                contentFit="cover"
-                contentPosition={{ top: '22%' }}
-              />
-            </View>
-            {(() => {
-              // Пустой экран не должен быть тупиком: если стоит фильтр — даём его
-              // снять; иначе подсказываем ближайший день, где смены реально есть.
-              const nextDay = visibleDates.find(d => d !== selectedDate && getDateCount(d) > 0);
-              // Первым делом — не соврать. Если до сервера не достучались,
-              // лента пуста не потому, что работы нет, а потому что её не
-              // принесли. Разница для человека решающая: «смен нет» он читает
-              // как «здесь искать нечего» и уходит, причём молча — в отчёте
-              // это выглядит как обычный отток.
-              //
-              // Отличить одно от другого умеет refreshVacancies: он не трогает
-              // список при обрыве (остаются данные из кэша) и поднимает
-              // backendOffline. Экраны работодателя этим уже пользуются, а
-              // главная лента работника — нет.
-              if (backendOffline) {
-                return (
-                  <>
-                    <Text style={styles.emptyTitle}>Нет связи с сервером</Text>
-                    <Text style={styles.emptySubtitle}>
-                      Смены не загрузились — дело в связи, а не в пустой ленте.
-                      Проверьте интернет и попробуйте ещё раз.
-                    </Text>
-                    <TouchableOpacity style={eS.btn} activeOpacity={0.85} onPress={onRefresh}>
-                      <Ionicons name="refresh-outline" size={rf(17)} color="#fff" />
-                      <Text style={eS.btnTxt}>Попробовать снова</Text>
-                    </TouchableOpacity>
-                  </>
-                );
-              }
-              if (filterStations.length) {
-                return (
-                  <>
-                    <Text style={styles.emptyTitle}>На выбранных станциях смен нет</Text>
-                    <Text style={styles.emptySubtitle}>Уберите фильтр по метро — покажем все смены поблизости</Text>
-                    <TouchableOpacity style={eS.btn} activeOpacity={0.85} onPress={() => setFilterStations([])}>
-                      <Ionicons name="close-circle-outline" size={rf(17)} color="#fff" />
-                      <Text style={eS.btnTxt}>Показать все смены</Text>
-                    </TouchableOpacity>
-                  </>
-                );
-              }
-              if (nextDay) {
-                const cnt = getDateCount(nextDay);
-                const mod10 = cnt % 10, mod100 = cnt % 100;
-                const word = mod10 === 1 && mod100 !== 11 ? 'смена'
-                  : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) ? 'смены'
-                  : 'смен';
-                return (
-                  <>
-                    <Text style={styles.emptyTitle}>На этот день смен нет</Text>
-                    <Text style={styles.emptySubtitle}>Зато есть на другой день — посмотрите их</Text>
-                    <TouchableOpacity style={eS.btn} activeOpacity={0.85} onPress={() => setSelectedDate(nextDay)}>
-                      <Ionicons name="calendar-outline" size={rf(16)} color="#fff" />
-                      <Text style={eS.btnTxt}>{getRuDay(nextDay)}, {new Date(nextDay + 'T00:00:00').getDate()} — {cnt} {word}</Text>
-                    </TouchableOpacity>
-                  </>
-                );
-              }
-              return (
-                <>
-                  <Text style={styles.emptyTitle}>Новых вакансий пока нет</Text>
-                  <Text style={styles.emptySubtitle}>Потяните вниз, чтобы обновить, или дождитесь новых объявлений</Text>
-                </>
-              );
-            })()}
-          </ScrollView>
-        ) : (
-          <>
-            {cards[2] ? <View style={styles.ghost2} /> : null}
-            {cards[1] ? <View style={styles.ghost1} /> : null}
-
-            {/* Потягивание вниз обновляет ленту. Список ровно по высоте карточки,
-                прокручивать в нём нечего — он здесь только ради RefreshControl:
-                внутри самой карточки прокрутки нет, и потянуть её нельзя.
-
-                Со свайпом это не спорит: жест карточки срабатывает на восьми
-                пикселях вбок, а на двадцати вниз проигрывает и отдаёт касание
-                списку (см. failOffsetY в useSwipeDeck).
-
-                «Призраки» колоды остались снаружи: они позиционированы абсолютно
-                от области карточек, и внутри списка их отступы сложились бы с её
-                внутренними полями. */}
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ flexGrow: 1 }}
-              showsVerticalScrollIndicator={false}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
-            >
-              <GestureDetector gesture={deck.gesture}>
-                <Reanimated.View style={[styles.cardAnimated, deck.cardStyle]}>
-                  <View style={styles.card}>
-                    <Reanimated.View style={[styles.wantOverlay, deck.wantStyle]}>
-                      <Text style={styles.wantText}>ХОЧУ ♥</Text>
-                    </Reanimated.View>
-                    <Reanimated.View style={[styles.skipOverlay, deck.skipStyle]}>
-                      <Text style={styles.skipText}>НЕТ ✕</Text>
-                    </Reanimated.View>
-
-                    {/* Прокрутки внутри карточки нет. Карточка показывает то, по
-                        чему принимают решение, а весь текст открывается по
-                        «Читать полностью». Пока здесь жил ScrollView, два жеста
-                        делили одну площадь и карточка уезжала от попытки
-                        полистать; теперь спорить не с чем. */}
-                    <Pressable
-                      style={styles.cardBody}
-                      accessibilityRole="button"
-                      accessibilityLabel="Открыть вакансию полностью"
-                      onPress={() => openShiftDetail(currentCard)}
-                    >
-                      <View style={styles.cardTop}>
-                        <View style={styles.companyRow}>
-                          <CompanyMark company={currentCard.company} size={34} />
-                          <View style={{ flex: 1 }}>
-                            {/* Компания и когда выложили — одной строкой, как на
-                                образце: это подпись к карточке, а не заголовок. */}
-                            <Text style={styles.companyName} numberOfLines={1}>
-                              {normalizeCompany(currentCard.company)}
-                              {postedAgo ? <Text style={styles.postedAgo}>{` · ${postedAgo}`}</Text> : null}
-                            </Text>
-                          </View>
-                          <View style={styles.cardBadges}>
-                            {currentCard.isUrgent ? (
-                              <View style={styles.urgentTag}>
-                                <Ionicons name="flash" size={11} color="#92400E" />
-                                <Text style={styles.urgentTagTxt}>Срочно</Text>
-                              </View>
-                            ) : null}
-                            <SourceBadge />
-                          </View>
-                        </View>
-
-                        <Text style={styles.jobTitle} numberOfLines={2}>{currentCard.title}</Text>
-
-                        {/* Чипы одного спокойного цвета и одного размера, кроме
-                            денег: цветом выделяется только то, ради чего карточку
-                            и открывают. Адрес — такой же чип, а не толстая
-                            плашка, которой он был раньше. */}
-                        <View style={styles.chipsRow}>
-                          {payLabel ? <Chip label={payLabel} variant="salary" icon="wallet-outline" /> : null}
-                          <Chip label={`${currentCard.timeStart}–${currentCard.timeEnd}`} variant="neutral" icon="time-outline" />
-                          <Chip label={formatDate(currentCard.date)} variant="neutral" icon="calendar-outline" />
-                          {currentCard.metroStation ? <Chip label={currentCard.metroStation} variant="neutral" icon="subway-outline" /> : null}
-                          {currentCard.noExperienceNeeded ? <Chip label="Без опыта" variant="neutral" icon="school-outline" /> : null}
-                          {currentCard.address ? <Chip label={currentCard.address} variant="neutral" icon="location-outline" /> : null}
-                        </View>
-
-                        {/* Как этот работодатель отвечает — здесь, а не только в
-                            подробностях. Решение принимается свайпом: это одно
-                            движение и ноль раздумий, и до «Читать полностью»
-                            доходят единицы. Предупреждать о молчуне после того,
-                            как отклик ушёл, поздно — отклик без ответа человек
-                            читает как «сервис не работает».
-
-                            Карта отзывчивости грузится одним запросом на всех
-                            ровно ради этого места (contexts/AppContext.tsx):
-                            ходить за ней на каждую карточку нельзя, лента
-                            превратится в слайд-шоу.
-
-                            Плашка сама молчит, когда переписок меньше двух: по
-                            одной вывод делать нельзя, а выглядел бы он как
-                            приговор.
-
-                            Место выбрано до разделителя: cardSummary стоит
-                            flexShrink, поэтому ужмётся описание, а не уедет за
-                            край ссылка «Читать полностью». */}
-                        <ReplyBadge stats={responsivenessMap[currentCard.employerId]} />
-                      </View>
-
-                      <View style={styles.cardDivider} />
-
-                      <View style={styles.cardMiddle}>
-                        {/* Ссылка идёт сразу за текстом, как на образце. Если
-                            места мало, ужимается текст, а не ссылка: без
-                            прокрутки уехавшую за край ссылку уже ничем не
-                            достать. */}
-                        <View style={styles.cardSummary}>
-                          {shiftSummary ? (
-                            <Text style={pS.desc} numberOfLines={4}>{shiftSummary}</Text>
-                          ) : null}
-                        </View>
-                        <TouchableOpacity
-                          style={styles.readFullRow}
-                          onPress={() => openShiftDetail(currentCard)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.readFullTxt}>Читать полностью</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </Pressable>
-                  </View>
-                </Reanimated.View>
-              </GestureDetector>
-            </ScrollView>
-
-            {/* Плавающие кнопки как в «Работе» и на образце: ✕ / ★ / ♥ и
-                подсказка «Свайпай». Раньше это была плоская панель внутри
-                карточки (отмена/✕/чат/♥) — теперь одинаково с постоянной работой. */}
-            <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + rs(18) }]} pointerEvents="box-none">
-              <View style={styles.shiftDeckRow}>
-                <TouchableOpacity
-                  accessibilityLabel="Отклонить смену"
-                  style={[styles.deckFloatingAction, styles.deckFloatingSkip]}
-                  onPress={() => doSkip(0.5)}
-                  disabled={swiping}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="close" size={34} color={Colors.red} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  accessibilityLabel="Написать работодателю"
-                  style={[styles.deckFloatingAction, styles.deckFloatingChat]}
-                  onPress={() => doMessageRef.current?.()}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons
-                    name="chatbubble-outline"
-                    size={23}
-                    color={Colors.blue}
-                  />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  accessibilityLabel="Откликнуться на смену"
-                  style={[styles.deckFloatingAction, styles.deckFloatingWant]}
-                  onPress={() => doWant(0.5)}
-                  disabled={swiping}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="heart" size={31} color="#fff" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.swipeHintRow}>
-                <Ionicons name="arrow-undo-outline" size={20} color="#9AA3B2" />
-                <Text style={styles.swipeHint}>Свайпай</Text>
-                <Ionicons name="arrow-redo-outline" size={20} color="#9AA3B2" />
-              </View>
-            </View>
-          </>
-        )}
-      </View>
-
-      <MetroPicker
-        visible={filterPicker}
-        selected={filterStations}
-        onChange={setFilterStations}
-        onClose={() => setFilterPicker(false)}
-      />
-
-      {/* Подробности смены */}
-      <VacancyDetailModal
-        vacancy={detailVacancy}
-        visible={!!detailVacancy}
-        employer={detailEmployer}
-        onClose={() => { setDetailVacancy(null); setDetailEmployer(null); }}
-        onShare={detailVacancy ? () => { void shareShiftVacancy(detailVacancy); } : undefined}
-        locked={!!currentUser?.isGuest}
-        onLogin={() => { setDetailVacancy(null); promptRegister({ vacancyKind: 'shift' }); }}
-        onChat={() => { setDetailVacancy(null); doMessageRef.current?.(); }}
-        actions={
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity
-              style={styles.detailSkipBtn}
-              onPress={() => { setDetailVacancy(null); doSkip(0.5); }}
-              activeOpacity={0.8}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="close" size={16} color={Colors.red} />
-                <Text style={styles.detailSkipTxt}>Не подходит</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.detailWantBtn}
-              onPress={() => { setDetailVacancy(null); doWant(0.5); }}
-              activeOpacity={0.8}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="heart" size={16} color="#fff" />
-                <Text style={styles.detailWantTxt}>Хочу!</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        }
-      />
-
-      <ApplySheet
-        visible={!!applyFor}
-        onClose={() => setApplyFor(null)}
-        onSend={sendApply}
-        title="Отклик на смену"
-        info={applyFor ? vacancyInfoLines(applyFor) : []}
-        chips={getChatSuggestions('worker', applyFor)}
-      />
-    </View>
-  );
-}
-
-// ─────────────────────────────────────────────────
 // Worker Permanent mode
 // ─────────────────────────────────────────────────
 type PermTab = 'open' | 'applied' | 'saved';
-
-const SALARY_CHIPS = [
-  { label: 'Любая', value: 0 },
-  { label: '30 000+', value: 30000 },
-  { label: '50 000+', value: 50000 },
-  { label: '80 000+', value: 80000 },
-  { label: '100 000+', value: 100000 },
-];
-
-// Значок в углу карточки — фирменный вордмарк JobToo (как в шапке,
-// components/ui/TabHeader.tsx).
-function SourceBadge() {
-  return (
-    <View style={styles.jtBadge}>
-      <Text style={styles.jtBadgeTxt}>
-        <Text style={styles.jtBadgeB}>Job</Text>
-        <Text style={styles.jtBadgeO}>Too</Text>
-      </Text>
-    </View>
-  );
-}
 
 // Засчитывает просмотр верхней карточки колоды «Работа».
 //
@@ -2396,6 +951,77 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
   return null;
 }
 
+// Шапка ленты: марка, поиск и счётчик открытых вакансий.
+//
+// Поиск здесь, а не в шторке фильтров, потому что это самое частое действие:
+// человек приходит с названием должности в голове. Шторка осталась для
+// всего остального — станции, зарплаты, графика.
+function FeedSearchHeader({ value, onChange, count }: {
+  value: string;
+  onChange: (t: string) => void;
+  count: number;
+}) {
+  return (
+    <View style={fh.row}>
+      <Text style={fh.logo}>
+        <Text style={fh.logoJ}>J</Text>
+        <Text style={fh.logoT}>T</Text>
+      </Text>
+
+      <View style={fh.search}>
+        <Ionicons name="search" size={20} color={Colors.textMuted} />
+        <TextInput
+          style={fh.input}
+          value={value}
+          onChangeText={onChange}
+          placeholder="Должность, компания или ключевое слово"
+          placeholderTextColor={Colors.textMuted}
+          returnKeyType="search"
+          accessibilityLabel="Поиск вакансий"
+        />
+        {value ? (
+          <TouchableOpacity onPress={() => onChange('')} accessibilityLabel="Очистить поиск" hitSlop={8}>
+            <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {/* Сколько вакансий сейчас в выдаче. Число живое: меняется вместе с
+          поиском и фильтрами, поэтому человек видит, что фильтр подействовал,
+          не пролистывая колоду. */}
+      <View style={fh.count} accessibilityLabel={`Вакансий в подборке: ${count}`}>
+        <Ionicons name="flash" size={16} color={Colors.primary} />
+        <Text style={fh.countTxt}>{count}</Text>
+      </View>
+    </View>
+  );
+}
+
+const fh = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(10),
+    paddingHorizontal: rs(14), paddingTop: rs(8), paddingBottom: rs(10),
+    backgroundColor: Colors.bg,
+  },
+  logo: { fontSize: rf(26), letterSpacing: -0.5 },
+  logoJ: { fontWeight: '900', color: Colors.primary },
+  logoT: { fontWeight: '900', color: Colors.textPrimary },
+  search: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    backgroundColor: '#F2F3F5', borderRadius: rs(24),
+    paddingHorizontal: rs(14), height: rs(46),
+  },
+  // Высота задана контейнеру: на Android TextInput со своим padding
+  // раздувает строку и шапка перестаёт совпадать с макетом.
+  input: { flex: 1, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  count: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(5),
+    backgroundColor: Colors.primaryLight, borderRadius: rs(24),
+    paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
+  },
+  countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
+});
+
 function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void) | null) => void } = {}) {
   const router = useRouter();
   const {
@@ -2404,7 +1030,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
     chats, refreshChats,
     showToast, permVacancyViewsMap, refreshPermVacancyViews,
     permSavedIds, optimisticAddPermSaved, optimisticRemovePermSaved, exitGuest,
-    backendOffline,
+    backendOffline, responsivenessMap,
   } = useApp();
   const tabBarHeight = useBottomTabBarHeight();
 
@@ -2891,7 +1517,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
   const deckActive = tab === 'open' || tab === 'saved';
   const deckCards = deckActive ? shownVacancies.filter(v => !swSkipped.has(v.id)) : [];
   const swTop = deckCards[0];
-  const swSnapBack = swDeck.snapBack;
   const swFly = swDeck.flyOut;
 
   const openPermDetail = (v: PermVacancy) => {
@@ -2970,9 +1595,8 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
                   <Text style={styles.skipText}>НЕТ ✕</Text>
                 </Reanimated.View>
 
-                {/* Как и в сменах: прокрутки внутри нет, весь текст — по
-                    «Читать полностью». У своих вакансий это наш экран, у
-                    партнёрских — окно с описанием источника и переходом к нему. */}
+                {/* Прокрутки внутри карточки нет намеренно: два жеста на одной
+                    площади дерутся. Весь текст — по «Читать полностью». */}
                 <Pressable
                   style={styles.cardBody}
                   accessibilityRole="button"
@@ -2981,36 +1605,30 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
                 >
                   <View style={styles.cardTop}>
                     <View style={styles.companyRow}>
-                      <CompanyMark company={v.company} size={34} />
+                      <CompanyMark company={v.company} size={48} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.companyName} numberOfLines={1}>
-                          {displayCompany}
-                          {posted ? <Text style={styles.postedAgo}>{` · ${posted}`}</Text> : null}
-                        </Text>
+                        <Text style={styles.companyName} numberOfLines={1}>{displayCompany}</Text>
+                        {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
                       </View>
-                      <SourceBadge />
-                    </View>
-
-                    <View style={pS.deckUtilityActions}>
+                      <TouchableOpacity
+                        accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
+                        style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}
+                        onPress={() => { if (swDeck.wasSwipe()) return; toggleSaved(v); }}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons
+                          name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
+                          size={20}
+                          color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
+                        />
+                      </TouchableOpacity>
                       <TouchableOpacity
                         accessibilityLabel="Поделиться вакансией"
                         style={pS.deckUtilityBtn}
                         onPress={() => { if (swDeck.wasSwipe()) return; void shareVacancy(v); }}
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="share-outline" size={18} color={Colors.textSecondary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Добавить в избранное'}
-                        style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}
-                        onPress={() => { if (swDeck.wasSwipe()) return; toggleSaved(v); }}
-                        activeOpacity={0.75}
-                      >
-                        <Ionicons
-                          name={permSavedIds.includes(v.id) ? 'heart' : 'heart-outline'}
-                          size={18}
-                          color={permSavedIds.includes(v.id) ? Colors.red : Colors.textSecondary}
-                        />
+                        <Ionicons name="share-outline" size={20} color={Colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
 
@@ -3026,11 +1644,17 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
                     </View>
                   </View>
 
+                  {/* Как отвечает этот работодатель — до отклика, а не после.
+                      Раньше плашка стояла на карточке смены; смен больше нет,
+                      а решение как принималось свайпом, так и принимается. */}
+                  <ReplyBadge stats={responsivenessMap[v.employerId]} />
+
                   <View style={styles.cardDivider} />
 
                   <View style={styles.cardMiddle}>
                     <View style={styles.cardSummary}>
-                      {description ? <Text style={pS.desc} numberOfLines={4}>{description}</Text> : null}
+                      {description ? <Text style={pS.descTitle}>Требования:</Text> : null}
+                      {description ? <Text style={pS.desc} numberOfLines={3}>{description}</Text> : null}
                     </View>
                     <TouchableOpacity
                       style={styles.readFullRow}
@@ -3058,12 +1682,12 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
           </TouchableOpacity>
 
           <TouchableOpacity
-            accessibilityLabel="Написать работодателю"
+            accessibilityLabel="Настроить фильтры"
             style={[styles.deckFloatingAction, styles.deckFloatingChat]}
-            onPress={() => openPermChat(v, displayCompany)}
+            onPress={() => setPermFilterOpen(true)}
             activeOpacity={0.75}
           >
-            <Ionicons name="chatbubble-outline" size={24} color={Colors.blue} />
+            <Ionicons name="settings-sharp" size={24} color={Colors.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -3075,11 +1699,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
             <Ionicons name="heart" size={31} color="#fff" />
           </TouchableOpacity>
           </View>
-          <View style={styles.swipeHintRow}>
-            <Ionicons name="arrow-undo-outline" size={20} color="#9AA3B2" />
-            <Text style={styles.swipeHint}>Свайпай</Text>
-            <Ionicons name="arrow-redo-outline" size={20} color="#9AA3B2" />
-          </View>
         </View>
       </View>
     );
@@ -3087,6 +1706,23 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
 
   return (
     <View style={{ flex: 1 }}>
+      {/* Плашка гостя жила в ленте смен; та лента удалена, а сама плашка
+          осталась нужной: без неё гость узнаёт о стене регистрации только
+          в момент отклика. */}
+      {isGuest && (
+        <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister({ vacancyKind: 'permanent' })}>
+          <Ionicons name="lock-closed" size={rs(15)} color="#fff" />
+          <Text style={gB.bannerTxt}>Вы смотрите как гость. Зарегистрируйтесь, чтобы откликаться</Text>
+          <Text style={gB.bannerCta}>Войти</Text>
+        </TouchableOpacity>
+      )}
+
+      <FeedSearchHeader
+        value={searchText}
+        onChange={setSearchText}
+        count={shownVacancies.length}
+      />
+
       {filterStations.length > 0 ? (
         <TouchableOpacity style={pS.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
           <Ionicons name="location" size={13} color={Colors.primary} />
@@ -3181,6 +1817,12 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
             <Ionicons name={backendOffline ? 'cloud-offline-outline' : emptyMessages[tab].icon} size={48} color={Colors.textMuted} />
             <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : emptyMessages[tab].title}</Text>
             <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : emptyMessages[tab].sub}</Text>
+            {backendOffline ? (
+              <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
+                <Ionicons name="refresh" size={16} color="#fff" />
+                <Text style={pS.retryTxt}>Попробовать снова</Text>
+              </TouchableOpacity>
+            ) : null}
           </ScrollView>
         ) : (
           <>
@@ -3197,6 +1839,12 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
           <Ionicons name={backendOffline ? 'cloud-offline-outline' : emptyMessages[tab].icon} size={48} color={Colors.textMuted} />
           <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : emptyMessages[tab].title}</Text>
           <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : emptyMessages[tab].sub}</Text>
+          {backendOffline ? (
+            <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={pS.retryTxt}>Попробовать снова</Text>
+            </TouchableOpacity>
+          ) : null}
         </ScrollView>
       ) : (
         <FlatList
@@ -3242,7 +1890,7 @@ function getTodayISO() {
 
 function EmployerHome() {
   const router = useRouter();
-  const { currentUser, vacancies, likes, permVacancies, permApplications, refreshVacancies, refreshPermVacancies, refreshPermApplications, refreshLikes, refreshAll, showToast, vacancyStatsMap, permVacancyViewsMap } = useApp();
+  const { currentUser, vacancies, permVacancies, permApplications, refreshVacancies, refreshPermVacancies, refreshLikes, refreshAll, showToast, permVacancyViewsMap } = useApp();
   const tabBarHeight = useBottomTabBarHeight();
   const fabRef = useRef<View>(null);
   // Способ перемерить кнопку «+» по требованию: одного onLayout мало —
@@ -3253,27 +1901,16 @@ function EmployerHome() {
     });
   }, []);
   useEffect(() => registerOnboardingMeasurer('fab', measureFab), [measureFab]);
-  const [mode, setMode] = useState<AppMode>('shift');
   const [tab, setTab] = useState<'active' | 'closed'>('active');
-  // Смена раздела — это переход в другое место, а не продолжение прежнего.
-  // Раньше «Закрытые» тянулись из смен в постоянные вакансии, и человек
-  // попадал сразу в архив вместо списка активных.
-  const changeMode = (m: AppMode) => { setMode(m); setTab('active'); };
-  const [confirmClose, setConfirmClose] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [workerListModal, setWorkerListModal] = useState<{ vacId: string; type: 'applicants' | 'hired' | 'rejected' } | null>(null);
   const [viewersModal, setViewersModal] = useState<{ id: string; kind: 'shift' | 'perm' } | null>(null);
   const didAutoClose = useRef(false);
-  const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   const [closingPermIds, setClosingPermIds] = useState<Set<string>>(new Set());
-  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   // Отклики на постоянную вакансию — шторкой поверх списка, а не отдельным
   // экраном: директор смотрит их между делом и возвращается к вакансиям.
   const [appsVacancyId, setAppsVacancyId] = useState<string | null>(null);
   const [deletingPermIds, setDeletingPermIds] = useState<Set<string>>(new Set());
   const [deletedPermIds, setDeletedPermIds] = useState<Set<string>>(new Set());
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmDeletePerm, setConfirmDeletePerm] = useState<string | null>(null);
 
   const onRefresh = async () => {
@@ -3303,13 +1940,6 @@ function EmployerHome() {
       .catch(e => console.warn('[EmployerHome] auto-close past vacancies error', e));
   }, [vacancies]);
 
-  const shown = myVacancies.filter(v => {
-    if (deletedIds.has(v.id)) return false;
-    const isClosing = closingIds.has(v.id);
-    if (tab === 'active') return !isClosing && v.status === 'open' && v.date >= todayISO;
-    return isClosing || v.status === 'closed' || (v.status === 'open' && v.date < todayISO);
-  });
-
   const shownPerm = myPermVacancies.filter(v => {
     if (deletedPermIds.has(v.id)) return false;
     const isClosing = closingPermIds.has(v.id);
@@ -3317,40 +1947,8 @@ function EmployerHome() {
     return isClosing || v.status === 'closed';
   });
 
-  const applicantCount = (vacId: string) =>
-    likes.filter(l => l.vacancyId === vacId && l.workerLiked && !l.isMatch && l.employerLiked !== false).length;
-  const rejectedCount = (vacId: string) =>
-    likes.filter(
-      l => l.vacancyId === vacId && (
-        l.employerLiked === false ||
-        (l.workerLiked === false && l.workerSkipped === true)
-      )
-    ).length;
-
   const permApplicantCount = (vacId: string) =>
     permApplications.filter(a => a.vacancyId === vacId).length;
-
-  const closeVacancy = async (id: string) => {
-    if (closingIds.has(id)) return;
-    setConfirmClose(null);
-    setClosingIds(prev => new Set([...prev, id]));
-    try {
-      await dbUpdateVacancy(id, { status: 'closed' });
-      // Успех показываем только после подтверждения сервера. closingIds
-      // оставляем до refresh: если сам refresh сорвётся, уже закрытая на
-      // сервере вакансия не должна на мгновение вернуться в «Активные».
-      showToast('Вакансия закрыта', 'success');
-      refreshVacancies().catch(() => {});
-    } catch (e) {
-      setClosingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');
-      console.warn('[closeVacancy]', e);
-    }
-  };
 
   const closePermVacancy = async (id: string) => {
     if (closingPermIds.has(id)) return;
@@ -3367,33 +1965,6 @@ function EmployerHome() {
       });
       showToast('Не удалось закрыть вакансию. Проверьте связь.', 'error');
       console.warn('[closePermVacancy]', e);
-    }
-  };
-
-  const deleteVacancy = async (id: string) => {
-    if (deletingIds.has(id)) return;
-    setConfirmDelete(null);
-    setDeletingIds(prev => new Set([...prev, id]));
-    try {
-      await dbDeleteVacancy(id);
-      // Строку прячем только после подтверждения сервера. До этого пользователь
-      // видит прежнее состояние, а не ложный успешный результат.
-      setDeletedIds(prev => new Set([...prev, id]));
-      try {
-        await refreshVacancies();
-        showToast('Вакансия удалена', 'success');
-      } catch {
-        showToast('Вакансия удалена, но список не обновился. Потяните вниз.', 'info');
-      }
-    } catch (e) {
-      showToast('Не удалось удалить вакансию. Проверьте связь.', 'error');
-      console.warn('[deleteVacancy]', e);
-    } finally {
-      setDeletingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
     }
   };
 
@@ -3426,10 +1997,6 @@ function EmployerHome() {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <TabHeader tgAnchor />
 
-      <View style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
-        <ModeSwitcher mode={mode} onChange={changeMode} />
-      </View>
-
       <View style={styles.tabs}>
         {(['active', 'closed'] as const).map(t => (
           <TouchableOpacity key={t} style={styles.tabItem2} onPress={() => setTab(t)} activeOpacity={0.8}>
@@ -3446,89 +2013,7 @@ function EmployerHome() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
         }
       >
-        {mode === 'shift' ? (
-          shown.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="document-text-outline" size={52} color={Colors.textMuted} />
-              {tab === 'active' ? (
-                <>
-                  <Text style={styles.emptyTitle}>Нет активных вакансий</Text>
-                  <Text style={styles.emptySubtitle}>Создайте первую вакансию</Text>
-                  <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/create-vacancy')}>
-                    <Text style={styles.createBtnText}>+ Создать смену</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.emptyTitle}>Нет закрытых вакансий</Text>
-                  <Text style={styles.emptySubtitle}>Здесь появятся завершённые смены</Text>
-                </>
-              )}
-            </View>
-          ) : (
-            shown.map(v => (
-              <View key={v.id} style={styles.vacCard}>
-                <View style={styles.vacTop}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                    {v.isUrgent ? <View style={styles.urgentBadge}><Ionicons name="flash" size={12} color="#D97706" /></View> : null}
-                    <Text style={styles.vacTitle} numberOfLines={1}>{v.title}</Text>
-                  </View>
-                  <View style={styles.vacTopRight}>
-                    <TouchableOpacity
-                      style={[styles.editBtn, { borderColor: '#BBF7D0', backgroundColor: '#F0FDF4' }]}
-                      onPress={() => router.push({ pathname: '/create-vacancy', params: { copyId: v.id } })}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="repeat" size={16} color={Colors.green} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.editBtn}
-                      onPress={() => router.push({ pathname: '/create-vacancy', params: { editId: v.id } })}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="create-outline" size={16} color={Colors.textSecondary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.editBtn, { borderColor: '#FECACA', backgroundColor: '#FEF2F2' }]}
-                      onPress={() => tab === 'closed' ? setConfirmDelete(v.id) : setConfirmClose(v.id)}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={Colors.red} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <Text style={styles.vacMeta}>м. {v.metroStation} · {formatDate(v.date)} · {v.timeStart}–{v.timeEnd}</Text>
-                {v.address ? <Text style={styles.vacAddress}>{v.address}</Text> : null}
-
-                <View style={styles.statsRow}>
-                  {[
-                    { num: applicantCount(v.id), label: 'Отклики', color: Colors.blue, onTap: () => setWorkerListModal({ vacId: v.id, type: 'applicants' }) },
-                    { num: rejectedCount(v.id), label: 'Отклонено', color: Colors.red, onTap: () => setWorkerListModal({ vacId: v.id, type: 'rejected' }) },
-                    { num: vacancyStatsMap[v.id]?.views ?? 0, label: 'Просмотрели', color: Colors.textMuted, onTap: () => setViewersModal({ id: v.id, kind: 'shift' }) },
-                  ].map((s, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={styles.statBox}
-                      onPress={s.onTap}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[styles.statNum, { color: s.color }]}>{s.num}</Text>
-                      <Text style={styles.statLabel}>{s.label}</Text>
-                      <Text style={styles.statTap}>↗</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <View style={styles.vacProgress}>
-                  <View style={[styles.progressFill, { width: `${Math.min(100, (v.workersFound / v.workersNeeded) * 100)}%` }]} />
-                </View>
-              </View>
-            ))
-          )
-        ) : (
+        {
           shownPerm.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="briefcase-outline" size={52} color={Colors.textMuted} />
@@ -3536,8 +2021,8 @@ function EmployerHome() {
                 <>
                   <Text style={styles.emptyTitle}>Нет постоянных вакансий</Text>
                   <Text style={styles.emptySubtitle}>Создайте первую вакансию на постоянную работу</Text>
-                  <TouchableOpacity style={[styles.createBtn, { borderColor: '#7C3AED' }]} onPress={() => router.push('/create-perm-vacancy')}>
-                    <Text style={[styles.createBtnText, { color: '#7C3AED' }]}>+ Создать вакансию</Text>
+                  <TouchableOpacity style={[styles.createBtn, { borderColor: Colors.primary }]} onPress={() => router.push('/create-perm-vacancy')}>
+                    <Text style={styles.createBtnText}>+ Создать вакансию</Text>
                   </TouchableOpacity>
                 </>
               ) : (
@@ -3608,16 +2093,8 @@ function EmployerHome() {
               </View>
             ))
           )
-        )}
+        }
       </ScrollView>
-
-      {workerListModal ? (
-        <WorkerListModal
-          vacancyId={workerListModal.vacId}
-          type={workerListModal.type}
-          onClose={() => setWorkerListModal(null)}
-        />
-      ) : null}
 
       {viewersModal ? (
         <VacancyViewersModal
@@ -3625,32 +2102,6 @@ function EmployerHome() {
           kind={viewersModal.kind}
           onClose={() => setViewersModal(null)}
         />
-      ) : null}
-
-      {confirmClose ? (
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>Закрыть вакансию?</Text>
-            <Text style={styles.confirmBody}>Вакансия будет перемещена в архив</Text>
-            <View style={styles.confirmBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setConfirmClose(null)}><Text style={styles.cancelBtnText}>Отмена</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.confirmBtn} onPress={() => closeVacancy(confirmClose)}><Text style={styles.confirmBtnText}>Закрыть</Text></TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      ) : null}
-
-      {confirmDelete ? (
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>Удалить вакансию?</Text>
-            <Text style={styles.confirmBody}>Вакансия будет полностью удалена из истории</Text>
-            <View style={styles.confirmBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setConfirmDelete(null)}><Text style={styles.cancelBtnText}>Отмена</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#EF4444' }]} onPress={() => deleteVacancy(confirmDelete)}><Text style={styles.confirmBtnText}>Удалить</Text></TouchableOpacity>
-            </View>
-          </View>
-        </View>
       ) : null}
 
       {confirmDeletePerm ? (
@@ -3676,9 +2127,9 @@ function EmployerHome() {
         onLayout={measureFab}
         style={[
           styles.fab,
-          { bottom: tabBarHeight + 14, backgroundColor: mode === 'shift' ? Colors.primary : '#7C3AED' },
+          { bottom: tabBarHeight + 14, backgroundColor: Colors.primary },
         ]}
-        onPress={() => router.push(mode === 'shift' ? '/create-vacancy' : '/create-perm-vacancy')}
+        onPress={() => router.push('/create-perm-vacancy')}
         activeOpacity={0.85}
       >
         <Ionicons name="add" size={30} color="#fff" />
@@ -3688,51 +2139,20 @@ function EmployerHome() {
 }
 
 // ─────────────────────────────────────────────────
-// Worker Home (wrapper with mode switcher)
+// Worker Home — единственная лента вакансий
 // ─────────────────────────────────────────────────
-// Вкладка «Подработка» — только смены (свайп-лента). Переключатель
-// Смены/Работа убран: постоянная работа теперь отдельная вкладка «Карьера».
-// title='Подработка' убирает логотип JobToo и подписывает раздел.
-function WorkerHome() {
-  const { currentUser } = useApp();
-
-  if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
-
-  return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <TabHeader title="Подработка" tgAnchor />
-      <WorkerFeed />
-    </SafeAreaView>
-  );
-}
-
-// Вкладка «Карьера» — постоянная работа (та же свайп-колода, что была под
-// переключателем «Работа»).
+// Смен в сервисе больше нет: осталась постоянная работа, и у работника
+// ровно одна колода. Прежняя вкладка «Подработка» вместе с WorkerFeed
+// удалена целиком, а не спрятана под флагом — выключенный раздел, который
+// продолжает жить в коде, рано или поздно включается сам.
 function WorkerCareer() {
   const { currentUser } = useApp();
-  const [undoAction, setUndoAction] = useState<(() => void) | null>(null);
-  const handleUndoChange = useCallback((action: (() => void) | null) => {
-    setUndoAction(() => action);
-  }, []);
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <TabHeader
-        title="Работа"
-        primaryAction={undoAction ? (
-          <TouchableOpacity
-            accessibilityLabel="Вернуть предыдущую вакансию"
-            onPress={undoAction}
-            activeOpacity={0.7}
-            style={{ width: rs(30), height: rs(30), alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Ionicons name="arrow-undo-outline" size={22} color={Colors.textSecondary} />
-          </TouchableOpacity>
-        ) : undefined}
-      />
-      <WorkerPermMode onUndoChange={handleUndoChange} />
+      <WorkerPermMode />
     </SafeAreaView>
   );
 }
@@ -3741,18 +2161,6 @@ function WorkerCareer() {
 // Root exports (routes)
 // ─────────────────────────────────────────────────
 export default function HomeScreen() {
-  const app = useApp();
-  const currentUser = app?.currentUser ?? null;
-  if (!currentUser) {
-    return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
-  }
-  return currentUser.role === 'worker' ? <WorkerHome /> : <EmployerHome />;
-}
-
-// Экран вкладки «Карьера». У работника — постоянная работа; у директора
-// этой вкладки в меню нет, поэтому запасной вариант ведёт на его домашний
-// экран (не отображается, но безопасен, если сюда как-то попасть).
-export function CareerScreen() {
   const app = useApp();
   const currentUser = app?.currentUser ?? null;
   if (!currentUser) {
@@ -3857,6 +2265,14 @@ const pS = StyleSheet.create({
     backgroundColor: '#FEF3C7', paddingHorizontal: rs(14), paddingVertical: rs(8),
   },
   offlineTxt: { flex: 1, fontSize: rf(12), color: '#92400E', lineHeight: rf(16) },
+  // Кнопка, а не только «потяните вниз»: на пустом экране жест обновления
+  // не виден, а тупик человеку хуже ошибки.
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7),
+    marginTop: rs(16), backgroundColor: Colors.primary,
+    paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
+  },
+  retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
   tabChipsScroll: {
     flex: 1, flexShrink: 1, alignSelf: 'stretch', minWidth: 0,
   },
@@ -3879,11 +2295,11 @@ const pS = StyleSheet.create({
     marginTop: rs(-2),
   },
   deckUtilityBtn: {
-    width: rs(38), height: rs(38), borderRadius: rs(12),
-    borderWidth: 1, borderColor: Colors.divider, backgroundColor: Colors.surface,
+    width: rs(44), height: rs(44), borderRadius: rs(22),
     alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#F2F3F5', flexShrink: 0,
   },
-  deckUtilityBtnSaved: { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' },
+  deckUtilityBtnSaved: { backgroundColor: Colors.primaryLight },
 
   // — card —
   card: {
@@ -3943,7 +2359,8 @@ const pS = StyleSheet.create({
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
   // desc
-  desc: { fontSize: rf(13), color: Colors.textMuted, lineHeight: rf(19) },
+  descTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary, marginBottom: rs(6) },
+  desc: { fontSize: rf(14), color: Colors.textMuted, lineHeight: rf(21) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -3967,7 +2384,7 @@ const pS = StyleSheet.create({
 
 
   // Employer-side perm card styles (used in EmployerHome)
-  permVacCard: { borderLeftWidth: 3, borderLeftColor: '#7C3AED' },
+  permVacCard: { borderLeftWidth: 3, borderLeftColor: Colors.primary },
   permCompany: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
   permMetaRow: { gap: rs(2), minWidth: 0, maxWidth: '100%' },
   permTagsRow: { flexDirection: 'row', gap: rs(10), flexWrap: 'wrap' },
@@ -3979,9 +2396,9 @@ const pS = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
     backgroundColor: '#EDE9FE', borderRadius: rs(10), padding: rs(10),
   },
-  appStatNum: { fontSize: rf(20), fontWeight: '800', color: '#7C3AED' },
-  appStatLabel: { fontSize: rf(12), color: '#7C3AED', flex: 1 },
-  appStatArrow: { fontSize: rf(12), color: '#7C3AED', fontWeight: '600' },
+  appStatNum: { fontSize: rf(20), fontWeight: '800', color: Colors.primary },
+  appStatLabel: { fontSize: rf(12), color: Colors.primary, flex: 1 },
+  appStatArrow: { fontSize: rf(12), color: Colors.primary, fontWeight: '600' },
 
   // legacy (used by WorkerFeed M-button)
   filterLineDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },
@@ -4045,7 +2462,7 @@ const styles = StyleSheet.create({
   // Тело занимает карточку целиком, чтобы нажатие ловилось всюду, а не только
   // по ссылке «Читать полностью».
   cardBody: { flex: 1 },
-  postedAgo: { fontWeight: '500', color: Colors.textMuted },
+  postedAgo: { fontSize: rf(13.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
   readFullRow: { alignSelf: 'flex-start', paddingVertical: rs(6) },
   readFullTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.primary },
   card: { flex: 1, backgroundColor: Colors.bg, borderRadius: Radius.xl, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
@@ -4053,23 +2470,20 @@ const styles = StyleSheet.create({
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  cardTop: { padding: rs(14), paddingBottom: rs(12), gap: rs(10) },
+  cardTop: { padding: rs(18), paddingBottom: rs(14), gap: rs(12) },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(12) },
+  cardHeadSpacer: { height: rs(2) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarImg: { width: rs(44), height: rs(44), borderRadius: rs(22), flexShrink: 0 },
   avatarText: { fontSize: rf(17), fontWeight: '700', color: '#fff' },
-  companyName: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
+  companyName: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
   metroHint: { fontSize: rf(12), color: Colors.textMuted },
   urgentTag: { flexDirection: 'row', alignItems: 'center', gap: rs(3), backgroundColor: '#FEF3C7', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), flexShrink: 0 },
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
   cardBadges: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
-  jtBadge: { backgroundColor: Colors.primaryLight, borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), flexShrink: 0 },
-  jtBadgeTxt: { fontSize: rf(12.5) },
-  jtBadgeB: { fontWeight: '800', color: Colors.textPrimary },
-  jtBadgeO: { fontWeight: '800', color: Colors.primary },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  jobTitle: { fontSize: rf(22), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(28) },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6) },
+  jobTitle: { fontSize: rf(31), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(36), marginTop: rs(2) },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
