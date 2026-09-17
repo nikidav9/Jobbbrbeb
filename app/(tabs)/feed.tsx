@@ -547,13 +547,14 @@ function CompanyPicker({ visible, options, selected, onChange, onClose }: {
 }
 
 function PermFilterSheet({
-  initial, companyOptions, count, onApply, onClose,
+  initial, companyOptions, count, onApply, onClose, onOpenMap,
 }: {
   initial: PermFilters;
   companyOptions: VacancyCompanyOption[];
   count: (f: PermFilters) => number;
   onApply: (f: PermFilters) => void;
   onClose: () => void;
+  onOpenMap: () => void;
 }) {
   const [draft, setDraft] = useState<PermFilters>(initial);
   const [metroOpen, setMetroOpen] = useState(false);
@@ -634,6 +635,13 @@ function PermFilterSheet({
                 : `Выбрано станций: ${draft.stations.length}`}
             </Text>
             <Text style={fst.rowSelHint}>{draft.stations.length ? 'изменить ›' : '+'}</Text>
+          </TouchableOpacity>
+          {/* Карта жила отдельной кнопкой в полосе над колодой; полосу убрали
+              ради высоты карточки, а карта — тот же выбор станции, только
+              глазами. Место ей рядом со списком станций, а не над лентой. */}
+          <TouchableOpacity style={[fst.rowSel, { marginTop: rs(8) }]} onPress={onOpenMap} activeOpacity={0.8}>
+            <Text style={fst.rowSelName}>Выбрать на карте</Text>
+            <Ionicons name="map-outline" size={16} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <Text style={fst.label}>Уровень дохода</Text>
@@ -956,10 +964,12 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
 // Поиск здесь, а не в шторке фильтров, потому что это самое частое действие:
 // человек приходит с названием должности в голове. Шторка осталась для
 // всего остального — станции, зарплаты, графика.
-function FeedSearchHeader({ value, onChange, count }: {
+function FeedSearchHeader({ value, onChange, count, onUndo }: {
   value: string;
   onChange: (t: string) => void;
   count: number;
+  /** Вернуть последнюю пролистанную вакансию. null — возвращать нечего. */
+  onUndo: (() => void) | null;
 }) {
   return (
     <View style={fh.row}>
@@ -985,6 +995,22 @@ function FeedSearchHeader({ value, onChange, count }: {
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* Возврат появляется, только когда есть что вернуть, и тогда поиск
+          сужается сам: у него flex, а кнопка своей ширины. Держать её всегда
+          и гасить серым — значит всё время отнимать место у поиска ради
+          действия, которого в первую минуту работы ленты ещё не существует. */}
+      {onUndo ? (
+        <TouchableOpacity
+          style={fh.undo}
+          onPress={onUndo}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="Вернуть последнюю вакансию"
+        >
+          <Ionicons name="arrow-undo" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      ) : null}
 
       {/* Сколько вакансий сейчас в выдаче. Число живое: меняется вместе с
           поиском и фильтрами, поэтому человек видит, что фильтр подействовал,
@@ -1014,6 +1040,12 @@ const fh = StyleSheet.create({
   // Высота задана контейнеру: на Android TextInput со своим padding
   // раздувает строку и шапка перестаёт совпадать с макетом.
   input: { flex: 1, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  undo: {
+    width: rs(46), height: rs(46), borderRadius: rs(23), flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: '#E9EAEC',
+  },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
     backgroundColor: Colors.primaryLight, borderRadius: rs(24),
@@ -1022,7 +1054,7 @@ const fh = StyleSheet.create({
   countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
 });
 
-function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void) | null) => void } = {}) {
+function WorkerPermMode() {
   const router = useRouter();
   const {
     currentUser, users, permVacancies, permApplications,
@@ -1153,11 +1185,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
       return h.slice(0, -1);
     });
   }, []);
-  useEffect(() => {
-    onUndoChange?.(swHistory.length ? swUndo : null);
-    return () => onUndoChange?.(null);
-  }, [swHistory.length, swUndo, onUndoChange]);
-
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
@@ -1682,12 +1709,12 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
           </TouchableOpacity>
 
           <TouchableOpacity
-            accessibilityLabel="Настроить фильтры"
-            style={[styles.deckFloatingAction, styles.deckFloatingChat]}
+            accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
+            style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
             onPress={() => setPermFilterOpen(true)}
             activeOpacity={0.75}
           >
-            <Ionicons name="settings-sharp" size={24} color={Colors.textSecondary} />
+            <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1721,6 +1748,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         value={searchText}
         onChange={setSearchText}
         count={shownVacancies.length}
+        onUndo={swHistory.length ? swUndo : null}
       />
 
       {filterStations.length > 0 ? (
@@ -1748,44 +1776,6 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
         </View>
       ) : null}
 
-      {/* Tab chips + map filter */}
-      <View style={pS.tabsBar}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={pS.tabChipsRow}
-          style={pS.tabChipsScroll}
-        >
-          <TouchableOpacity
-            style={[pS.tabChip, tab === 'saved' && pS.tabChipActive]}
-            onPress={() => setTab(current => current === 'saved' ? 'open' : 'saved')}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityState={{ selected: tab === 'saved' }}
-            accessibilityLabel={tab === 'saved' ? 'Показать все вакансии' : 'Показать избранные вакансии'}
-          >
-            <Ionicons name="heart" size={15} color={Colors.red} />
-            <Text style={[pS.tabChipTxt, tab === 'saved' && pS.tabChipTxtActive]}>
-              Избранное
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-        <TouchableOpacity
-          style={[pS.filtersBtn, { marginLeft: rs(10) }, permFiltersActive ? pS.filtersBtnActive : null]}
-          onPress={() => setPermFilterOpen(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="options-outline" size={16} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={pS.filtersBtn}
-          onPress={() => setMapOpen(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="map-outline" size={16} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
-
       {permFilterOpen && (
         <PermFilterSheet
           initial={permF}
@@ -1801,6 +1791,7 @@ function WorkerPermMode({ onUndoChange }: { onUndoChange?: (action: (() => void)
             setFilterCompanies(f.companies);
           }}
           onClose={() => setPermFilterOpen(false)}
+          onOpenMap={() => { setPermFilterOpen(false); setMapOpen(true); }}
         />
       )}
 
@@ -2241,12 +2232,6 @@ const pS = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: rf(13), color: Colors.textPrimary },
   searchClear: { fontSize: rf(13), color: Colors.textMuted },
-  filtersBtn: {
-    width: rs(42), height: rs(42), alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: Colors.inputBorder, borderRadius: rs(10),
-    backgroundColor: Colors.bg,
-  },
-  filtersBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary },
   activeStationChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6), alignSelf: 'flex-start',
     marginHorizontal: rs(16), marginBottom: rs(4),
@@ -2254,12 +2239,6 @@ const pS = StyleSheet.create({
   },
   activeStationTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
 
-  // — tab chips —
-  tabsBar: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    paddingRight: rs(12),
-    borderBottomWidth: 1, borderBottomColor: Colors.divider,
-  },
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
     backgroundColor: '#FEF3C7', paddingHorizontal: rs(14), paddingVertical: rs(8),
@@ -2273,23 +2252,6 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
   },
   retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
-  tabChipsScroll: {
-    flex: 1, flexShrink: 1, alignSelf: 'stretch', minWidth: 0,
-  },
-  tabChipsRow: {
-    flexDirection: 'row', gap: rs(6),
-    paddingLeft: rs(12), paddingVertical: rs(10),
-  },
-  tabChip: {
-    alignSelf: 'center', flexShrink: 0,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(4),
-    borderRadius: rs(100), paddingHorizontal: rs(12), paddingVertical: rs(8),
-    borderWidth: 1.5, borderColor: Colors.inputBorder,
-    backgroundColor: Colors.bg,
-  },
-  tabChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
-  tabChipTxt: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textSecondary, flexShrink: 1 },
-  tabChipTxtActive: { color: Colors.primary, fontWeight: '700' },
   deckUtilityActions: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(8),
     marginTop: rs(-2),
@@ -2529,6 +2491,7 @@ const styles = StyleSheet.create({
   },
   deckFloatingSkip: { backgroundColor: '#FFFFFF' },
   deckFloatingChat: { width: rs(54), height: rs(54), borderRadius: rs(27), backgroundColor: '#FFFFFF' },
+  deckFloatingChatActive: { backgroundColor: Colors.primary },
   deckFloatingWant: { width: rs(68), height: rs(68), borderRadius: rs(34), backgroundColor: Colors.primary, borderColor: Colors.primary },
   // Плавающие кнопки сменной колоды + подсказка «Свайпай» — как в «Работе» и на
   // образце. Колонка: ряд кнопок сверху, подсказка снизу, прижата к низу карточки.
