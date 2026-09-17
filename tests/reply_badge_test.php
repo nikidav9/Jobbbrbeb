@@ -60,11 +60,18 @@ check('плашка стоит до разделителя',
     $badgeAt !== false && $dividerAt !== false && $badgeAt < $dividerAt);
 check('плашка стоит до ссылки «Читать полностью»',
     $badgeAt !== false && $readFullAt !== false && $badgeAt < $readFullAt);
-check('описание умеет ужиматься', str_contains($feed, 'cardSummary: { flexShrink: 1, overflow: \'hidden\' }'));
-// Прокрутки внутри карточки быть не должно: два жеста на одной площади всегда
-// дерутся, из-за этого карточка когда-то уезжала от попытки полистать.
-check('прокрутки внутри карточки по-прежнему нет',
-    !preg_match('~<ScrollView[^>]*>\s*<View style=\{styles\.cardBody~', $feed));
+// 17.09 описание перестало ужиматься — его теперь листают. Проверяем новый
+// механизм: карточка растёт по содержимому, а список вокруг неё прокручивает.
+check('карточка растёт по содержимому, а не режется по экрану',
+    str_contains($feed, 'cardAnimated: { flexGrow: 1') && !str_contains($feed, 'cardAnimated: { flex: 1'));
+check('описание не режется по числу строк',
+    !preg_match('~<Text style=\{pS\.desc\}\s+numberOfLines~', $feed));
+check('карточку есть чем листать', str_contains($feed, 'ref={cardScrollRef}'));
+// Прокрутка и свайп делят одну площадь, и разнимает их failOffsetY: палец,
+// ушедший вниз, отменяет горизонтальный жест. Без него карточка будет
+// улетать от попытки полистать — ровно то, на чём горели в прошлый раз.
+$deck = (string)file_get_contents(__DIR__ . '/../hooks/useSwipeDeck.ts');
+check('вертикаль отменяет свайп', str_contains($deck, '.failOffsetY([-20, 20])'));
 
 // ── Плашка молчит, когда сказать нечего ──────────────────────────────────────
 $badge = (string)file_get_contents(__DIR__ . '/../components/feature/ReplyBadge.tsx');
