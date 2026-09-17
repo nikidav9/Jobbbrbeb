@@ -47,12 +47,15 @@ export function ReplyBadge({ stats }: Props) {
 
 const st = StyleSheet.create({
   box: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
     borderRadius: rs(13), borderWidth: 1,
     paddingHorizontal: rs(13), paddingVertical: rs(8),
     alignSelf: 'stretch', maxWidth: '100%',
   },
-  txt: { fontSize: rf(12), fontWeight: '600', flexShrink: 1 },
+  txt: {
+    fontSize: rf(12), lineHeight: rf(16), fontWeight: '600', flexShrink: 1,
+    textAlign: 'center', textAlignVertical: 'center', includeFontPadding: false,
+  },
   good: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
   meh: { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' },
   bad: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
