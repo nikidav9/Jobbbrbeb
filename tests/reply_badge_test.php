@@ -43,23 +43,39 @@ check('карта берётся из контекста, а не запросо
 // разделитель где-то дальше в файле. Плашку можно было переставить за
 // разделитель, и проверка оставалась зелёной: ровно та видимость, которая
 // хуже отсутствия проверки. Поймано мутацией.
+//
+// 17.09 тело карточки перестало быть Pressable: вся вакансия теперь внутри, и
+// нажатие на всю площадь уводило со страницы при попытке прокрутить. Конец
+// тела ищем по закрытию жеста, а «Читать полностью» больше нет — за ней теперь
+// раздел «Описание вакансии».
 $bodyStart = strpos($feed, 'style={styles.cardBody}');
-$bodyEnd = $bodyStart !== false ? strpos($feed, '</Pressable>', $bodyStart) : false;
+$bodyEnd = $bodyStart !== false ? strpos($feed, '</GestureDetector>', $bodyStart) : false;
 $body = ($bodyStart !== false && $bodyEnd !== false)
     ? substr($feed, $bodyStart, $bodyEnd - $bodyStart) : '';
 check('тело карточки свайпа найдено', $body !== '');
 
 $badgeAt = strpos($body, '<ReplyBadge stats={responsivenessMap');
 $dividerAt = strpos($body, '<View style={styles.cardDivider} />');
-$readFullAt = strpos($body, 'styles.readFullRow');
+$descAt = strpos($body, 'Описание вакансии');
 $chipsAt = strpos($body, '<View style={styles.chipsRow}>');
 check('плашка внутри тела карточки', $badgeAt !== false);
 check('плашка стоит после чипов',
     $badgeAt !== false && $chipsAt !== false && $chipsAt < $badgeAt);
 check('плашка стоит до разделителя',
     $badgeAt !== false && $dividerAt !== false && $badgeAt < $dividerAt);
-check('плашка стоит до ссылки «Читать полностью»',
-    $badgeAt !== false && $readFullAt !== false && $badgeAt < $readFullAt);
+check('плашка стоит до описания вакансии',
+    $badgeAt !== false && $descAt !== false && $badgeAt < $descAt);
+
+// ── Карточка никуда не ведёт ────────────────────────────────────────────────
+// Это была жалоба владельца: попытка прокрутить открывала страницу вакансии.
+// Причина — кнопка на всей площади карточки: палец, ушедший вниз, отменял
+// свайп, список начинал крутить, а нажатие на отпускании срабатывало.
+check('тело карточки не кнопка', !str_contains($body, 'accessibilityRole="button"'));
+check('из карточки нет перехода на страницу вакансии',
+    !str_contains($body, 'perm-vacancy-detail'));
+// Вся вакансия должна быть в карточке, иначе уводить всё-таки придётся.
+check('в карточке есть расположение', str_contains($body, 'Расположение'));
+check('в карточке есть описание', $descAt !== false);
 // 17.09 описание перестало ужиматься — его теперь листают. Проверяем новый
 // механизм: карточка растёт по содержимому, а список вокруг неё прокручивает.
 check('карточка растёт по содержимому, а не режется по экрану',
