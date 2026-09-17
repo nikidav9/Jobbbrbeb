@@ -33,7 +33,7 @@ export function Chip({ label, variant = 'work', icon }: ChipProps) {
   return (
     <View style={[styles.chip, { backgroundColor: s.bg }]}>
       {icon ? (
-        <Ionicons name={icon} size={13} color={s.text} style={{ marginRight: 4 }} />
+        <Ionicons name={icon} size={13} color={s.text} style={{ marginRight: rs(5) }} />
       ) : null}
       {/* Чип всегда в одну строку. Длинный адрес иначе переносится внутри
           чипа, и тот превращается в абзац с закруглениями. */}
@@ -48,8 +48,8 @@ const styles = StyleSheet.create({
   chip: {
     maxWidth: '100%',
     borderRadius: rs(100),
-    paddingHorizontal: rs(12),
-    paddingVertical: rs(5),
+    paddingHorizontal: rs(13),
+    paddingVertical: rs(8),
     flexDirection: 'row',
     alignItems: 'center',
   },

@@ -1439,7 +1439,7 @@ function WorkerPermMode() {
                 <View style={styles.cardBody}>
                   <View style={styles.cardTop}>
                     <View style={styles.companyRow}>
-                      <CompanyMark company={v.company} size={48} />
+                      <CompanyMark company={v.company} size={55} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.companyName} numberOfLines={1}>{displayCompany}</Text>
                         {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
@@ -1452,7 +1452,7 @@ function WorkerPermMode() {
                       >
                         <Ionicons
                           name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                          size={20}
+                          size={21}
                           color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
                         />
                       </TouchableOpacity>
@@ -1462,7 +1462,7 @@ function WorkerPermMode() {
                         onPress={() => { if (swDeck.wasSwipe()) return; void shareVacancy(v); }}
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="share-outline" size={20} color={Colors.textSecondary} />
+                        <Ionicons name="share-outline" size={21} color={Colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
 
@@ -1480,7 +1480,9 @@ function WorkerPermMode() {
                   {/* Как отвечает этот работодатель — до отклика, а не после.
                       Раньше плашка стояла на карточке смены; смен больше нет,
                       а решение как принималось свайпом, так и принимается. */}
-                  <ReplyBadge stats={responsivenessMap[v.employerId]} />
+                  <View style={styles.replyBadgeWrap}>
+                    <ReplyBadge stats={responsivenessMap[v.employerId]} />
+                  </View>
 
                   <View style={styles.cardDivider} />
 
@@ -2123,14 +2125,14 @@ const pS = StyleSheet.create({
   // Ширина по карточке, а не по экрану: карточка отступает на rs(10) плюс
   // рамка, и растворение должно кончаться ровно на её краю.
   scrollHintWrap: {
-    position: 'absolute', left: rs(11), right: rs(11), bottom: rs(166), height: rs(64),
+    position: 'absolute', left: rs(13), right: rs(13), bottom: rs(166), height: rs(64),
     alignItems: 'center', justifyContent: 'flex-end', paddingBottom: rs(8),
     borderBottomLeftRadius: Radius.card, borderBottomRightRadius: Radius.card, overflow: 'hidden',
   },
   scrollHint: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
     backgroundColor: Colors.bg, borderRadius: rs(100),
-    paddingHorizontal: rs(12), paddingVertical: rs(6), ...Shadow.card,
+    paddingHorizontal: rs(13), paddingVertical: rs(8), ...Shadow.card,
   },
   scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
   limitOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end', zIndex: 50 },
@@ -2156,7 +2158,7 @@ const pS = StyleSheet.create({
     marginTop: rs(-2),
   },
   deckUtilityBtn: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
+    width: rs(55), height: rs(55), borderRadius: rs(34),
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#F2F3F5', flexShrink: 0,
   },
@@ -2220,22 +2222,22 @@ const pS = StyleSheet.create({
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
   // desc
-  sectionBlock: { gap: rs(8), marginBottom: rs(14) },
-  blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  sectionBlock: { gap: rs(8), marginBottom: rs(13) },
+  blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
   locRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
-    backgroundColor: Colors.surface, borderRadius: rs(12), padding: rs(12),
+    flexDirection: 'row', alignItems: 'flex-start', gap: rs(13),
+    backgroundColor: Colors.surface, borderRadius: rs(13), padding: rs(13),
   },
-  metroDot: { width: rs(14), height: rs(14), borderRadius: rs(7), marginTop: rs(2) },
-  metroLineName: { fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(2) },
+  metroDot: { width: rs(13), height: rs(13), borderRadius: rs(7), marginTop: rs(5) },
+  metroLineName: { fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(5) },
   locValue: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '600' },
   mapBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
-    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(14), paddingVertical: rs(12),
+    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(13), paddingVertical: rs(13),
   },
   mapBtnTxt: { fontSize: rf(14.5), fontWeight: '700', color: Colors.primary },
-  desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(20) },
+  desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(21) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -2331,23 +2333,23 @@ const styles = StyleSheet.create({
   // Нижний резерв под плавающие кнопки + подсказку «Свайпай»: карточка кончается
   // выше, а в зазоре под ней стоят кнопки — как на референсе. Раньше было 96 и
   // кнопки жались к навбару, подсказка уходила под него.
-  cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(10), paddingTop: rs(10), paddingBottom: rs(164) },
-  ghost1: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
-  ghost2: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
+  cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: rs(164) },
+  ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
+  ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
   cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
   // Тело занимает карточку целиком, чтобы фон и разделители шли до краёв.
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
-  postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
+  postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(5) },
   card: { flexGrow: 1, backgroundColor: Colors.bg, borderRadius: Radius.card, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  cardTop: { padding: rs(18), paddingBottom: rs(14), gap: rs(12) },
-  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(12) },
+  cardTop: { padding: rs(21), paddingBottom: rs(13), gap: rs(13) },
+  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(13) },
   cardHeadSpacer: { height: rs(2) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarImg: { width: rs(44), height: rs(44), borderRadius: rs(22), flexShrink: 0 },
@@ -2358,16 +2360,17 @@ const styles = StyleSheet.create({
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
   cardBadges: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  jobTitle: { fontSize: rf(26), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(31), marginTop: rs(2) },
+  jobTitle: { fontSize: rf(26), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(31), marginTop: 0 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
+  replyBadgeWrap: { marginHorizontal: rs(21), marginBottom: rs(13) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
   },
   addressChipIcon: { fontSize: rf(15), marginTop: rs(1) },
   addressChipText: { flex: 1, fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary, lineHeight: rf(20) },
-  cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(14) },
-  cardMiddle: { flexGrow: 1, padding: rs(10), paddingHorizontal: rs(14), gap: rs(4) },
+  cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(21) },
+  cardMiddle: { flexGrow: 1, paddingVertical: rs(13), paddingHorizontal: rs(21), gap: rs(13) },
   slotsRow: { flexDirection: 'row' },
   slotInfo: { flex: 1, alignItems: 'center', paddingVertical: rs(2) },
   slotInfoBordered: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: Colors.divider },
@@ -2404,11 +2407,11 @@ const styles = StyleSheet.create({
   // Плавающие кнопки сменной колоды + подсказка «Свайпай» — как в «Работе» и на
   // образце. Колонка: ряд кнопок сверху, подсказка снизу, прижата к низу карточки.
   shiftDeckActions: {
-    position: 'absolute', left: rs(24), right: rs(24), bottom: rs(28), zIndex: 20, elevation: 20,
-    alignItems: 'center', gap: rs(10),
+    position: 'absolute', left: rs(21), right: rs(21), bottom: rs(28), zIndex: 20, elevation: 20,
+    alignItems: 'center', gap: rs(13),
   },
   shiftDeckRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(30),
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(34),
   },
   swipeHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(9), marginTop: rs(1) },
   swipeHint: { fontSize: rf(12), lineHeight: rf(16), color: '#9AA3B2', fontWeight: '500' },
