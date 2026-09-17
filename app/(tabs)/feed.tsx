@@ -12,6 +12,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
+import { useEnergy } from '@/hooks/useEnergy';
+import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy } from '@/constants/types';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
@@ -964,12 +966,14 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
 // Поиск здесь, а не в шторке фильтров, потому что это самое частое действие:
 // человек приходит с названием должности в голове. Шторка осталась для
 // всего остального — станции, зарплаты, графика.
-function FeedSearchHeader({ value, onChange, count, onUndo }: {
+function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
   value: string;
   onChange: (t: string) => void;
-  count: number;
+  /** Сколько свайпов осталось на сегодня. */
+  energy: number;
   /** Вернуть последнюю пролистанную вакансию. null — возвращать нечего. */
   onUndo: (() => void) | null;
+  onEnergyPress: () => void;
 }) {
   return (
     <View style={fh.row}>
@@ -1012,13 +1016,19 @@ function FeedSearchHeader({ value, onChange, count, onUndo }: {
         </TouchableOpacity>
       ) : null}
 
-      {/* Сколько вакансий сейчас в выдаче. Число живое: меняется вместе с
-          поиском и фильтрами, поэтому человек видит, что фильтр подействовал,
-          не пролистывая колоду. */}
-      <View style={fh.count} accessibilityLabel={`Вакансий в подборке: ${count}`}>
-        <Ionicons name="flash" size={16} color={Colors.primary} />
-        <Text style={fh.countTxt}>{count}</Text>
-      </View>
+      {/* Сколько свайпов осталось на сегодня. Не «сколько вакансий»: число
+          вакансий человеку ни о чём не говорит, а вот что запас кончается —
+          говорит, и заранее, а не в момент стены. */}
+      <TouchableOpacity
+        style={[fh.count, energy <= 0 && fh.countEmpty]}
+        onPress={onEnergyPress}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={`Свайпов осталось на сегодня: ${energy}`}
+      >
+        <Ionicons name="flash" size={16} color={energy > 0 ? Colors.primary : Colors.textMuted} />
+        <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1053,6 +1063,8 @@ const fh = StyleSheet.create({
     paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
   },
   countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
+  countEmpty: { backgroundColor: '#ECEDEF' },
+  countTxtEmpty: { color: Colors.textMuted },
 });
 
 function WorkerPermMode() {
@@ -1088,6 +1100,17 @@ function WorkerPermMode() {
   const [schedules, setSchedules] = useState<string[]>([]);
   const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
   const [permFilterOpen, setPermFilterOpen] = useState(false);
+  // Дневной запас свайпов и плашка «на сегодня всё».
+  const energy = useEnergy();
+  const [limitOpen, setLimitOpen] = useState(false);
+  // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
+  const [moreBelow, setMoreBelow] = useState(false);
+  const cardScrollRef = useRef<ScrollView>(null);
+  const cardViewH = useRef(0);
+  const cardContentH = useRef(0);
+  const updateMoreBelow = useCallback((offsetY: number) => {
+    setMoreBelow(cardContentH.current - cardViewH.current - offsetY > rs(24));
+  }, []);
   const [filterPicker, setFilterPicker] = useState(false);
   const [minSalary, setMinSalary] = useState(0);
   const [applying, setApplying] = useState<string | null>(null);
@@ -1130,6 +1153,7 @@ function WorkerPermMode() {
     setRefreshing(true);
     try {
       await Promise.all([refreshPermVacancies(), refreshPermApplications()]);
+      await energy.sync();
     } catch {
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
     } finally {
@@ -1157,9 +1181,12 @@ function WorkerPermMode() {
       if (!h.length) return h;
       const last = h[h.length - 1];
       setSwSkipped(s => { const n = new Set(s); n.delete(last); return n; });
+      // Свайп вернули — возвращаем и его стоимость. Иначе промах наказан
+      // дважды: и карточку верни, и энергию потерял.
+      energy.refundOne();
       return h.slice(0, -1);
     });
-  }, []);
+  }, [energy]);
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
@@ -1303,6 +1330,12 @@ function WorkerPermMode() {
   // возврата в шапке вернула последнюю.
   const deckCards = shownVacancies.filter(v => !swSkipped.has(v.id));
   const swTop = deckCards[0];
+
+  /** Новая карточка начинается сверху, а не там, где бросили предыдущую. */
+  const resetCardScroll = () => {
+    cardScrollRef.current?.scrollTo({ y: 0, animated: false });
+    setMoreBelow(false);
+  };
   const swFly = swDeck.flyOut;
 
   const openPermDetail = (v: PermVacancy) => {
@@ -1314,7 +1347,9 @@ function WorkerPermMode() {
   const swWant = (vx = 0.5) => {
     const c = swTop;
     if (!c) return;
+    if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
     swFly('right', vx, () => {
+      resetCardScroll();
       setSwSkipped(s => new Set(s).add(c.id));
       setSwHistory(h => [...h, c.id]);
       applyTo(c);
@@ -1324,12 +1359,20 @@ function WorkerPermMode() {
   const swSkip = (vx = 0.5) => {
     const c = swTop;
     if (!c) return;
-    // Гость: тот же лимит «отклонить», что и в сменах (счётчик общий).
+    // Гость упирается в стену регистрации раньше, чем в дневной запас.
+    // snapBack обязателен: без него карточка, отпущенная жестом, так и
+    // осталась бы висеть сбоку — это был старый недосмотр.
     if (isGuest) {
-      if (guestSkipCount >= GUEST_SKIP_LIMIT) { promptRegister({ vacancyKind: 'permanent' }); return; }
+      if (guestSkipCount >= GUEST_SKIP_LIMIT) {
+        promptRegister({ vacancyKind: 'permanent' });
+        swDeck.snapBack();
+        return;
+      }
       guestSkipCount += 1;
     }
+    if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
     swFly('left', vx, () => {
+      resetCardScroll();
       setSwSkipped(s => new Set(s).add(c.id));
       setSwHistory(h => [...h, c.id]);
     });
@@ -1352,21 +1395,29 @@ function WorkerPermMode() {
       <View style={styles.cardArea}>
         {deckCards[2] ? <View style={styles.ghost2} /> : null}
         {deckCards[1] ? <View style={styles.ghost1} /> : null}
-        {/* Потягивание вниз обновляет ленту. Список ровно по высоте карточки,
-            прокручивать в нём нечего — он здесь только ради RefreshControl:
-            внутри самой карточки прокрутки нет, и потянуть её нельзя.
+        {/* Один список на два дела: потягивание вниз обновляет ленту, а длинная
+            вакансия листается внутри карточки.
 
-            Со свайпом это не спорит: жест карточки срабатывает на восьми
-            пикселях вбок, а на двадцати вниз проигрывает и отдаёт касание
-            списку (см. failOffsetY в useSwipeDeck).
+            В правилах фронтенда записано «не вкладывать прокрутку в то, что
+            двигается по жесту» — правило верное, но писалось про PanResponder,
+            который не умел отдавать уже взятый жест. У gesture-handler для
+            этого есть failOffsetY: палец, ушедший на двадцать пикселей вниз,
+            не набрав восьми вбок, отменяет свайп и достаётся списку. Список
+            здесь стоял и раньше, ради RefreshControl, и со свайпом уживался —
+            новым стало только то, что теперь в нём есть что прокручивать.
 
             «Призраки» колоды остались снаружи: они позиционированы абсолютно
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
         <ScrollView
+          ref={cardScrollRef}
           style={{ flex: 1 }}
           contentContainerStyle={{ flexGrow: 1 }}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
+          onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
+          onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
           <GestureDetector gesture={swDeck.gesture}>
@@ -1436,20 +1487,9 @@ function WorkerPermMode() {
                   <View style={styles.cardDivider} />
 
                   <View style={styles.cardMiddle}>
-                    <View style={styles.cardSummary}>
+                    <View>
                       {description ? <Text style={pS.descTitle}>Требования:</Text> : null}
                       {description ? <Text style={pS.desc}>{description}</Text> : null}
-                      {/* Обрыв посреди строки читается как поломка вёрстки,
-                          поэтому низ текста уходит в цвет карточки. Градиент
-                          из expo-linear-gradient — он уже в сборке (см.
-                          app/+not-found.tsx), нового нативного модуля нет. */}
-                      {description ? (
-                        <LinearGradient
-                          colors={['rgba(255,255,255,0)', Colors.bg]}
-                          style={pS.descFade}
-                          pointerEvents="none"
-                        />
-                      ) : null}
                     </View>
                     <TouchableOpacity
                       style={styles.readFullRow}
@@ -1464,6 +1504,23 @@ function WorkerPermMode() {
             </Reanimated.View>
           </GestureDetector>
         </ScrollView>
+
+        {moreBelow ? (
+          // Подсказка стоит не поверх текста, а на его растворении: у нижнего
+          // края карточки строки уходят в её цвет, и по одному этому видно, что
+          // текст продолжается. Градиент из expo-linear-gradient — он уже в
+          // сборке (app/+not-found.tsx), нового нативного модуля нет.
+          <View style={pS.scrollHintWrap} pointerEvents="none">
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', Colors.bg]}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={pS.scrollHint}>
+              <Ionicons name="chevron-down" size={14} color={Colors.textSecondary} />
+              <Text style={pS.scrollHintTxt}>Листайте вниз</Text>
+            </View>
+          </View>
+        ) : null}
 
         <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + rs(18) }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
@@ -1515,8 +1572,9 @@ function WorkerPermMode() {
       <FeedSearchHeader
         value={searchText}
         onChange={setSearchText}
-        count={shownVacancies.length}
         onUndo={swHistory.length ? swUndo : null}
+        energy={energy.left}
+        onEnergyPress={() => setLimitOpen(true)}
       />
 
       {filterStations.length > 0 ? (
@@ -1541,6 +1599,36 @@ function WorkerPermMode() {
         <View style={pS.offlineBar}>
           <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
           <Text style={pS.offlineTxt}>Нет связи с сервером — показаны последние данные. Потяните вниз, чтобы обновить.</Text>
+        </View>
+      ) : null}
+
+      {/* Запас свайпов кончился. Плашка появляется и по нажатию на счётчик, и
+          на каждой новой попытке свайпнуть — молча не пускать хуже, чем
+          объяснить. Пока монетизации нет, выхода из неё, кроме «завтра», не
+          предлагаем: обещать покупку, которой не существует, нельзя. */}
+      {limitOpen ? (
+        <View style={pS.limitOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLimitOpen(false)} />
+          <View style={[pS.limitCard, { marginBottom: tabBarHeight + rs(16) }]}>
+            <View style={pS.limitIcon}>
+              <Ionicons name="flash" size={26} color={Colors.primary} />
+            </View>
+            <Text style={pS.limitTitle}>На сегодня всё</Text>
+            <Text style={pS.limitBody}>
+              Свайпы закончились. Завтра снова будет {DAILY_ENERGY} — запас не копится,
+              так что откладывать их на потом смысла нет.
+            </Text>
+            <TouchableOpacity
+              style={pS.limitBtn}
+              onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
+              activeOpacity={0.85}
+            >
+              <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
+              <Text style={pS.limitCloseTxt}>Закрыть</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 
@@ -1993,6 +2081,37 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
   },
   retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
+  // Ширина по карточке, а не по экрану: карточка отступает на rs(10) плюс
+  // рамка, и растворение должно кончаться ровно на её краю.
+  scrollHintWrap: {
+    position: 'absolute', left: rs(11), right: rs(11), bottom: rs(166), height: rs(64),
+    alignItems: 'center', justifyContent: 'flex-end', paddingBottom: rs(8),
+    borderBottomLeftRadius: Radius.xl, borderBottomRightRadius: Radius.xl, overflow: 'hidden',
+  },
+  scrollHint: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(5),
+    backgroundColor: Colors.bg, borderRadius: rs(100),
+    paddingHorizontal: rs(12), paddingVertical: rs(6), ...Shadow.card,
+  },
+  scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
+  limitOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end', zIndex: 50 },
+  limitCard: {
+    backgroundColor: Colors.bg, borderRadius: rs(24), marginHorizontal: rs(16),
+    padding: rs(22), alignItems: 'center', gap: rs(8), ...Shadow.strong,
+  },
+  limitIcon: {
+    width: rs(56), height: rs(56), borderRadius: rs(28),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryLight,
+  },
+  limitTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(4) },
+  limitBody: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
+  limitBtn: {
+    alignSelf: 'stretch', marginTop: rs(8), backgroundColor: Colors.primary,
+    borderRadius: rs(14), paddingVertical: rs(13), alignItems: 'center',
+  },
+  limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
+  limitClose: { paddingVertical: rs(8) },
+  limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
   deckUtilityActions: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(8),
     marginTop: rs(-2),
@@ -2064,7 +2183,6 @@ const pS = StyleSheet.create({
   // desc
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(6) },
   desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(20) },
-  descFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: rs(36) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -2163,14 +2281,16 @@ const styles = StyleSheet.create({
   cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(10), paddingTop: rs(10), paddingBottom: rs(164) },
   ghost1: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.xl, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
   ghost2: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.xl, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
-  cardAnimated: { flex: 1, zIndex: 1, elevation: 10 },
+  // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
+  // а длинная вырастает выше него и листается внутри списка.
+  cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
   // Тело занимает карточку целиком, чтобы нажатие ловилось всюду, а не только
   // по ссылке «Читать полностью».
-  cardBody: { flex: 1 },
+  cardBody: { flexGrow: 1 },
   postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
   readFullRow: { alignSelf: 'flex-start', paddingVertical: rs(6) },
   readFullTxt: { fontSize: rf(13.5), fontWeight: '600', color: Colors.primary },
-  card: { flex: 1, backgroundColor: Colors.bg, borderRadius: Radius.xl, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
+  card: { flexGrow: 1, backgroundColor: Colors.bg, borderRadius: Radius.xl, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
@@ -2196,13 +2316,7 @@ const styles = StyleSheet.create({
   addressChipIcon: { fontSize: rf(15), marginTop: rs(1) },
   addressChipText: { flex: 1, fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary, lineHeight: rf(20) },
   cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(14) },
-  cardMiddle: { flex: 1, padding: rs(10), paddingHorizontal: rs(14), gap: rs(4) },
-  // flexShrink, а не flex, и это важно. С flex блок текста занимает всё
-  // свободное место даже у короткого описания, и «Читать полностью» уезжает к
-  // нижнему краю карточки. С flexShrink короткий текст остаётся компактным, а
-  // длинный ужимается до высоты карточки и обрезается — ссылка в обоих случаях
-  // идёт сразу за текстом.
-  cardSummary: { flexShrink: 1, overflow: 'hidden' },
+  cardMiddle: { flexGrow: 1, padding: rs(10), paddingHorizontal: rs(14), gap: rs(4) },
   slotsRow: { flexDirection: 'row' },
   slotInfo: { flex: 1, alignItems: 'center', paddingVertical: rs(2) },
   slotInfoBordered: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: Colors.divider },
