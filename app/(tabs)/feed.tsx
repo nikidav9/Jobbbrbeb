@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Pressable,
+  TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
@@ -1338,10 +1338,6 @@ function WorkerPermMode() {
   };
   const swFly = swDeck.flyOut;
 
-  const openPermDetail = (v: PermVacancy) => {
-    if (swDeck.wasSwipe()) return;
-    router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: v.id } });
-  };
   // Вправо — принять: отклик (уходит в «Отклики» → матчи, ждёт ответа). В
   // «Избранном» вдобавок убираем из избранного.
   const swWant = (vx = 0.5) => {
@@ -1391,6 +1387,9 @@ function WorkerPermMode() {
     const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw]?.label ?? workTypeRaw) : undefined;
     const description = cleanDescription(v.description);
     const posted = agoRu(v.createdAt);
+    const metroLine = v.metroStation
+      ? METRO_LINES.find(l => l.stations.includes(v.metroStation!)) ?? null
+      : null;
     return (
       <View style={styles.cardArea}>
         {deckCards[2] ? <View style={styles.ghost2} /> : null}
@@ -1430,14 +1429,10 @@ function WorkerPermMode() {
                   <Text style={styles.skipText}>НЕТ ✕</Text>
                 </Reanimated.View>
 
-                {/* Прокрутки внутри карточки нет намеренно: два жеста на одной
-                    площади дерутся. Весь текст — по «Читать полностью». */}
-                <Pressable
-                  style={styles.cardBody}
-                  accessibilityRole="button"
-                  accessibilityLabel="Открыть вакансию полностью"
-                  onPress={() => openPermDetail(v)}
-                >
+                {/* Тело карточки — не кнопка. Вся вакансия здесь, открывать
+                    нечего, а нажатие на всю площадь срабатывало на отпускании
+                    после прокрутки и уводило со страницы. */}
+                <View style={styles.cardBody}>
                   <View style={styles.cardTop}>
                     <View style={styles.companyRow}>
                       <CompanyMark company={v.company} size={48} />
@@ -1475,7 +1470,6 @@ function WorkerPermMode() {
                       {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" /> : null}
                       {workType ? <Chip label={workType} variant="neutral" icon="briefcase-outline" /> : null}
                       {v.metroStation ? <Chip label={v.metroStation} variant="neutral" icon="subway-outline" /> : null}
-                      {v.address ? <Chip label={v.address} variant="neutral" icon="location-outline" /> : null}
                     </View>
                   </View>
 
@@ -1487,19 +1481,60 @@ function WorkerPermMode() {
                   <View style={styles.cardDivider} />
 
                   <View style={styles.cardMiddle}>
-                    <View>
-                      {description ? <Text style={pS.descTitle}>Требования:</Text> : null}
+                    {(v.metroStation || v.address) ? (
+                      <View style={pS.sectionBlock}>
+                        <View style={pS.blockHead}>
+                          <Ionicons name="location-outline" size={16} color={Colors.textPrimary} />
+                          <Text style={pS.descTitle}>Расположение</Text>
+                        </View>
+                        {v.metroStation ? (
+                          <View style={pS.locRow}>
+                            {metroLine ? (
+                              <View style={[pS.metroDot, { backgroundColor: metroLine.color }]} />
+                            ) : (
+                              <Ionicons name="subway-outline" size={16} color={Colors.textMuted} />
+                            )}
+                            <View style={{ flex: 1 }}>
+                              {metroLine ? <Text style={pS.metroLineName}>{metroLine.name}</Text> : null}
+                              <Text style={pS.locValue}>{v.metroStation}</Text>
+                            </View>
+                          </View>
+                        ) : null}
+                        {v.address ? (
+                          <View style={pS.locRow}>
+                            <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
+                            <Text style={[pS.locValue, { flex: 1 }]}>{v.address}</Text>
+                          </View>
+                        ) : null}
+                        {/* Маршрут до точки. Откуда ехать, Яндекс подставит сам
+                            по геопозиции — своего разрешения на неё не просим. */}
+                        {v.lat != null && v.lng != null ? (
+                          <TouchableOpacity
+                            style={pS.mapBtn}
+                            activeOpacity={0.85}
+                            onPress={() => {
+                              if (swDeck.wasSwipe()) return;
+                              Linking.openURL(`https://yandex.ru/maps/?rtext=~${v.lat},${v.lng}&rtt=mt`).catch(() => {});
+                            }}
+                          >
+                            <Ionicons name="navigate-outline" size={16} color={Colors.primary} />
+                            <Text style={pS.mapBtnTxt}>Смотреть на карте</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    ) : null}
+
+                    <View style={pS.sectionBlock}>
+                      {description ? (
+                        <View style={pS.blockHead}>
+                          <Ionicons name="document-text-outline" size={16} color={Colors.textPrimary} />
+                          <Text style={pS.descTitle}>Описание вакансии</Text>
+                        </View>
+                      ) : null}
                       {description ? <Text style={pS.desc}>{description}</Text> : null}
                     </View>
-                    <TouchableOpacity
-                      style={styles.readFullRow}
-                      onPress={() => openPermDetail(v)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.readFullTxt}>Читать полностью</Text>
-                    </TouchableOpacity>
                   </View>
-                </Pressable>
+                </View>
               </View>
             </Reanimated.View>
           </GestureDetector>
@@ -2181,7 +2216,21 @@ const pS = StyleSheet.create({
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
   // desc
-  descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(6) },
+  sectionBlock: { gap: rs(8), marginBottom: rs(14) },
+  blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
+  locRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
+    backgroundColor: Colors.surface, borderRadius: rs(12), padding: rs(12),
+  },
+  metroDot: { width: rs(14), height: rs(14), borderRadius: rs(7), marginTop: rs(2) },
+  metroLineName: { fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(2) },
+  locValue: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '600' },
+  mapBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
+    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(14), paddingVertical: rs(12),
+  },
+  mapBtnTxt: { fontSize: rf(14.5), fontWeight: '700', color: Colors.primary },
   desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(20) },
 
   // action row
@@ -2284,12 +2333,10 @@ const styles = StyleSheet.create({
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
   cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
-  // Тело занимает карточку целиком, чтобы нажатие ловилось всюду, а не только
-  // по ссылке «Читать полностью».
+  // Тело занимает карточку целиком, чтобы фон и разделители шли до краёв.
+  // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
   postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
-  readFullRow: { alignSelf: 'flex-start', paddingVertical: rs(6) },
-  readFullTxt: { fontSize: rf(13.5), fontWeight: '600', color: Colors.primary },
   card: { flexGrow: 1, backgroundColor: Colors.bg, borderRadius: Radius.xl, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
