@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Radius } from '@/constants/theme';
 import { replySpeedLabel } from '@/services/presence';
 import type { Responsiveness } from '@/services/db';
 import { rs, rf } from '@/constants/scale';
@@ -48,10 +47,10 @@ export function ReplyBadge({ stats }: Props) {
 
 const st = StyleSheet.create({
   box: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    borderRadius: Radius.md, borderWidth: 1,
-    paddingHorizontal: rs(10), paddingVertical: rs(6),
-    alignSelf: 'flex-start', maxWidth: '100%',
+    flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    borderRadius: rs(13), borderWidth: 1,
+    paddingHorizontal: rs(13), paddingVertical: rs(8),
+    alignSelf: 'stretch', maxWidth: '100%',
   },
   txt: { fontSize: rf(12), fontWeight: '600', flexShrink: 1 },
   good: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
