@@ -1026,14 +1026,14 @@ const fh = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
     paddingHorizontal: rs(14), paddingTop: rs(8), paddingBottom: rs(10),
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.bgWarm,
   },
   logo: { fontSize: rf(26), letterSpacing: -0.5 },
   logoJ: { fontWeight: '900', color: Colors.primary },
   logoT: { fontWeight: '900', color: Colors.textPrimary },
   search: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    backgroundColor: '#F2F3F5', borderRadius: rs(24),
+    backgroundColor: '#FFFFFF', borderRadius: rs(24),
     paddingHorizontal: rs(14), height: rs(46),
   },
   // Высота задана контейнеру: на Android TextInput со своим padding
@@ -1047,7 +1047,7 @@ const fh = StyleSheet.create({
   },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
-    backgroundColor: Colors.primaryLight, borderRadius: rs(24),
+    backgroundColor: Colors.primaryBorder, borderRadius: rs(24),
     paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
   },
   countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
@@ -1865,10 +1865,12 @@ function EmployerHome() {
 function WorkerCareer() {
   const { currentUser } = useApp();
 
-  if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
+  if (!currentUser) return <View style={{ flex: 1, backgroundColor: Colors.bgWarm }} />;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    // Тёплый фон только у ленты работника: экран работодателя — список
+    // собственных вакансий, там подложка ничего не даёт.
+    <SafeAreaView style={styles.safeWarm} edges={['top', 'left', 'right']}>
       <WorkerPermMode />
     </SafeAreaView>
   );
@@ -2112,6 +2114,7 @@ const styles = StyleSheet.create({
   companyFallback: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   companyFallbackText: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
   safe: { flex: 1, backgroundColor: Colors.bg },
+  safeWarm: { flex: 1, backgroundColor: Colors.bgWarm },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingVertical: rs(12),
