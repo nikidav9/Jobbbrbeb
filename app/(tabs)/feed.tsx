@@ -925,7 +925,6 @@ const wS = StyleSheet.create({
 // ─────────────────────────────────────────────────
 // Worker Permanent mode
 // ─────────────────────────────────────────────────
-type PermTab = 'open' | 'applied' | 'saved';
 
 // Засчитывает просмотр верхней карточки колоды «Работа».
 //
@@ -1057,10 +1056,10 @@ const fh = StyleSheet.create({
 function WorkerPermMode() {
   const router = useRouter();
   const {
-    currentUser, users, permVacancies, permApplications,
+    currentUser, permVacancies, permApplications,
     refreshPermVacancies, refreshPermApplications,
-    chats, refreshChats,
-    showToast, permVacancyViewsMap, refreshPermVacancyViews,
+    refreshChats,
+    showToast,
     permSavedIds, optimisticAddPermSaved, optimisticRemovePermSaved, exitGuest,
     backendOffline, responsivenessMap,
   } = useApp();
@@ -1078,7 +1077,6 @@ function WorkerPermMode() {
     router.replace('/');
   };
 
-  const [tab, setTab] = useState<PermTab>('open');
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filterStations, setFilterStations] = useState<string[]>([]);
@@ -1088,16 +1086,11 @@ function WorkerPermMode() {
   const [schedules, setSchedules] = useState<string[]>([]);
   const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
   const [permFilterOpen, setPermFilterOpen] = useState(false);
-  // Какие карточки развёрнуты (описание «Читать ещё»). По id вакансии.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggleExpanded = (id: string) =>
-    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [filterPicker, setFilterPicker] = useState(false);
   const [minSalary, setMinSalary] = useState(0);
   const [applying, setApplying] = useState<string | null>(null);
   // Вакансия, по которой человек сейчас пишет отклик (null — окно закрыто)
   const [permApplyFor, setPermApplyFor] = useState<PermVacancy | null>(null);
-  const [chatLoading, setChatLoading] = useState<string | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
@@ -1130,31 +1123,11 @@ function WorkerPermMode() {
     [permVacancies, filterCompanies],
   );
 
-  const viewedPermIds = useRef(new Set<string>());
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 });
-  const currentUserRef = useRef(currentUser);
-  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    const user = currentUserRef.current;
-    if (!user?.id) return;
-    viewableItems.forEach(({ item }: any) => {
-      if (!item?.id || viewedPermIds.current.has(item.id)) return;
-      viewedPermIds.current.add(item.id);
-      if (user.isGuest) {
-        void dbRecordGuestEvent('vacancy_impression', { vacancyId: item.id, vacancyKind: 'permanent' });
-      } else {
-        dbRecordPermVacancyView(item.id, user.id).catch(() => {});
-      }
-    });
-  });
-
   const onRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await Promise.all([
-        refreshPermVacancies(), refreshPermApplications(), refreshPermVacancyViews(),
-      ]);
+      await Promise.all([refreshPermVacancies(), refreshPermApplications()]);
     } catch {
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
     } finally {
@@ -1189,7 +1162,6 @@ function WorkerPermMode() {
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
   const myAppVacIds = new Set(myApps.map(a => a.vacancyId));
-  const getAppStatus = (vacId: string) => myApps.find(a => a.vacancyId === vacId)?.status ?? null;
 
   // Текущие применённые фильтры одним объектом — так их удобно и применять,
   // и считать «Показать N» для черновика в шторке.
@@ -1218,11 +1190,10 @@ function WorkerPermMode() {
   const matchesSearch = (v: PermVacancy) => permMatchesQuery(v.title, v.company, v.description ?? '', permF);
   const matchesFilters = (v: PermVacancy) => permMatchesCompany(v.company, permF) && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF);
 
-  const openVacancies    = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && matchesSearch(v) && matchesFilters(v));
-  // Отказ больше не прячется в отдельную вкладку: отклик остаётся здесь,
-  // просто с красной плашкой «✕ Отказ» — иначе вакансия исчезала без объяснений
-  const appliedVacancies = permVacancies.filter(v => myAppVacIds.has(v.id) && matchesSearch(v) && matchesFilters(v));
-  const savedVacancies   = permVacancies.filter(v => permSavedIds.includes(v.id) && matchesSearch(v) && matchesFilters(v));
+  // Лента показывает только открытые вакансии, на которые человек ещё не
+  // откликался. Свои отклики и избранное живут на экране «Отклики»: колода
+  // здесь одна, и выбирать между списками больше не из чего.
+  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && matchesSearch(v) && matchesFilters(v));
 
   // «Показать N» в шторке фильтров под выбранный черновик.
   const countPermLocal = (f: PermFilters) =>
@@ -1231,10 +1202,7 @@ function WorkerPermMode() {
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
 
-  const shownVacancies: PermVacancy[] =
-    tab === 'open'     ? openVacancies :
-    tab === 'applied'  ? appliedVacancies :
-    savedVacancies;
+  const shownVacancies: PermVacancy[] = openVacancies;
 
   // Отклик на постоянную вакансию раньше уходил молча — строка в таблице со
   // статусом «ожидает», и всё. Теперь сначала спрашиваем пару слов о себе, и
@@ -1274,44 +1242,8 @@ function WorkerPermMode() {
     }
   };
 
-  const openPermChat = async (v: PermVacancy, displayCompany: string) => {
-    if (!currentUser || chatLoading) return;
-    if (currentUser.isGuest) {
-      promptRegister({ vacancyId: v.id, vacancyKind: 'permanent' });
-      return;
-    }
-    // Check if chat already exists
-    const existing = chats.find(c => c.employerId === v.employerId && c.workerId === currentUser.id);
-    if (existing) {
-      router.push({ pathname: '/chat-room', params: { chatId: existing.id } });
-      return;
-    }
-    setChatLoading(v.id);
-    try {
-      const chatId = await dbCreateChat(
-        currentUser.id,
-        v.employerId,
-        v.id,
-        v.title,
-        displayCompany,
-      );
-      refreshChats().catch(() => {});
-      router.push({ pathname: '/chat-room', params: { chatId } });
-    } catch {
-      showToast('Ошибка при открытии чата', 'error');
-    } finally {
-      setChatLoading(null);
-    }
-  };
-
   // Тот же набор, что видит директор в своей шторке, — и так же иконками,
   // а не смайликами: их рисует система, и на каждом телефоне по-своему.
-  const STATUS_MAP: Record<string, { label: string; icon: IconName; color: string; bg: string }> = {
-    pending:  { label: 'На рассмотрении', icon: 'hourglass-outline', color: '#92400E',    bg: '#FFF7ED' },
-    approved: { label: 'Приглашён',       icon: 'checkmark-circle',  color: Colors.green, bg: '#D1FAE5' },
-    rejected: { label: 'Отказ',           icon: 'close-circle',      color: Colors.red,   bg: '#FEE2E2' },
-  };
-
   const toggleSaved = async (v: PermVacancy) => {
     if (!currentUser) return;
     if (currentUser.isGuest) {
@@ -1363,186 +1295,11 @@ function WorkerPermMode() {
     }
   };
 
-  const renderPerm = ({ item: v }: { item: PermVacancy }) => {
-    const isApplied = myAppVacIds.has(v.id);
-    const isApplying = applying === v.id;
-    const isSaved = permSavedIds.includes(v.id);
-    const appStatus = getAppStatus(v.id);
-    const statusInfo = appStatus ? STATUS_MAP[appStatus] : null;
-    const metroLine = v.metroStation
-      ? METRO_LINES.find(l => l.stations.includes(v.metroStation!)) ?? null
-      : null;
-
-    const displayCompany = normalizeCompany(v.company);
-
-    // Содержимое карточки. В режиме колоды (deck) оно прокручивается внутри
-    // самой карточки — если вакансия большая (длинное описание и т.д.), её
-    // листаешь по разделам, а рамка карточки остаётся на месте и её можно
-    // свайпать вправо/влево.
-    const cardBody = (
-      <>
-        {statusInfo ? (
-          <View style={[pS.statusBadge, { backgroundColor: statusInfo.bg }]}>
-            <Ionicons name={statusInfo.icon} size={rf(12)} color={statusInfo.color} />
-            <Text style={[pS.statusTxt, { color: statusInfo.color }]}>{statusInfo.label}</Text>
-          </View>
-        ) : null}
-
-        {/* Company row */}
-        <View style={pS.companyRow}>
-          <CompanyMark company={v.company} size={42} />
-          <View style={pS.companyMeta}>
-            <Text style={pS.companyName} numberOfLines={1}>{displayCompany}</Text>
-            {'verified' in v && (v as any).verified === true ? (
-              <View style={pS.verifiedRow}>
-                <View style={pS.verifiedBadge}>
-                  <Ionicons name="checkmark" size={9} color="#fff" />
-                </View>
-                <Text style={pS.verifiedTxt}>Проверено JobToo</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* Title */}
-        <Text style={pS.jobTitle} numberOfLines={2}>{v.title}</Text>
-
-        {/* Salary */}
-        <View style={pS.salaryRow}>
-          <Text style={pS.salaryMain}>{v.salary.toLocaleString('ru-RU')} ₽/мес</Text>
-          <View style={pS.naRukiBadge}>
-            <Text style={pS.naRukiTxt}>На руки</Text>
-          </View>
-        </View>
-
-        {/* Metro + address */}
-        {(v.metroStation || v.address) ? (
-          <View style={pS.locationRow}>
-            {v.metroStation ? (
-              <View style={pS.locationItem}>
-                <View style={[pS.metroCircle, { backgroundColor: metroLine?.color ?? Colors.primary }]}>
-                  <Text style={pS.metroCircleTxt}>М</Text>
-                </View>
-                <Text style={pS.locationTxt} numberOfLines={1}>{v.metroStation}</Text>
-              </View>
-            ) : null}
-            {v.address ? (
-              <View style={pS.addressLocationItem}>
-                <Ionicons name="location-outline" size={14} color={Colors.textMuted} />
-                <Text style={pS.locationRowText} numberOfLines={2}>{v.address}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* Раздел «Условия» */}
-        {v.schedule ? (
-          <View style={pS.section}>
-            <Text style={pS.sectionHead}>Условия</Text>
-            <View style={pS.sectionRow}>
-              <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
-              <Text style={pS.sectionRowTxt}>{v.schedule}</Text>
-            </View>
-          </View>
-        ) : null}
-
-        {/* Раздел «Описание» с «Читать ещё» */}
-        {v.description ? (
-          <View style={pS.section}>
-            <Text style={pS.sectionHead}>Описание</Text>
-            <Text style={pS.desc} numberOfLines={expanded.has(v.id) ? undefined : 3}>{v.description}</Text>
-            {v.description.length > 120 ? (
-              <TouchableOpacity
-                style={pS.readMore}
-                onPress={(e) => { e.stopPropagation?.(); toggleExpanded(v.id); }}
-                activeOpacity={0.7}
-              >
-                <Text style={pS.readMoreTxt}>{expanded.has(v.id) ? 'Свернуть' : 'Читать ещё'}</Text>
-                <Ionicons name={expanded.has(v.id) ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.primary} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* Views */}
-        <View style={pS.viewsRow}>
-          <Ionicons name="eye-outline" size={13} color={Colors.textMuted} />
-          <Text style={pS.viewsTxt}>{permVacancyViewsMap[v.id] ?? 0} просмотрели</Text>
-        </View>
-
-        {/* Actions (в списках «Отклики»/«Избранное»). В колоде «Открытые» —
-            отдельная карточка renderPermDeckCard со свайпом, как в сменах. */}
-          <View style={pS.actionRow}>
-            <TouchableOpacity
-              style={[pS.applyBtn, isApplied && pS.applyBtnDone, isApplying && { opacity: 0.6 }]}
-              onPress={(e) => { e.stopPropagation?.(); applyTo(v); }}
-              disabled={isApplied || isApplying}
-              activeOpacity={0.8}
-            >
-              <Text style={[pS.applyBtnTxt, isApplied && { color: Colors.green }]}>
-                {isApplied ? '✓ Отклик отправлен' : 'Откликнуться'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[pS.actionIconBtn, chatLoading === v.id && { opacity: 0.5 }]}
-              onPress={(e) => { e.stopPropagation?.(); openPermChat(v, displayCompany); }}
-              disabled={chatLoading === v.id}
-              activeOpacity={0.8}
-            >
-              {chatLoading === v.id
-                ? <ActivityIndicator size={14} color={Colors.textSecondary} />
-                : <Ionicons name="chatbubble-outline" size={17} color={Colors.textSecondary} />
-              }
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={pS.actionIconBtn}
-              onPress={(e) => { e.stopPropagation?.(); shareVacancy(v); }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="share-outline" size={17} color={Colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[pS.actionIconBtn, isSaved && pS.actionIconBtnSaved]}
-              onPress={(e) => { e.stopPropagation?.(); toggleSaved(v); }}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isSaved ? 'heart' : 'heart-outline'}
-                size={17}
-                color={isSaved ? Colors.red : Colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
-      </>
-    );
-
-    return (
-      <TouchableOpacity
-        style={pS.card}
-        onPress={() => router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: v.id } })}
-        activeOpacity={0.92}
-      >
-        {cardBody}
-      </TouchableOpacity>
-    );
-  };
-
-  const emptyMessages: Record<PermTab, { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; sub: string }> = {
-    open:     { icon: 'search-outline', title: 'Нет открытых вакансий', sub: 'Попробуйте изменить фильтры' },
-    applied:  { icon: 'paper-plane-outline', title: 'Нет откликов', sub: 'Откликайтесь на вакансии во вкладке «Открытые»' },
-    saved:    { icon: 'heart-outline', title: 'Пока пусто', sub: 'Нажмите ♥ на вакансии — она сохранится здесь' },
-  };
-
-  // ── Свайп-колода для вкладки «Открытые» ────────────────────────────────────
-  // Верхняя открытая вакансия — карточка, которую листают, как смены: вправо —
-  // откликнуться, влево — пропустить. Поиск и вкладки «Отклики»/«Избранное»
-  // остаются обычным списком. Карточку берём ту же (renderPerm), поэтому вид
-  // один в один со списком, только сверху свайп-слой.
-  // Порядок пролистанных карточек хранится в swHistory, чтобы кнопка
-  // «назад» вернула последнюю карточку.
-  // Колода-свайп для «Открытых» и «Избранного». «Отклики» остаются списком.
-  const deckActive = tab === 'open' || tab === 'saved';
-  const deckCards = deckActive ? shownVacancies.filter(v => !swSkipped.has(v.id)) : [];
+  // ── Свайп-колода ───────────────────────────────────────────────────────────
+  // Верхняя открытая вакансия — карточка: вправо откликнуться, влево
+  // пропустить. Порядок пролистанных хранится в swHistory, чтобы кнопка
+  // возврата в шапке вернула последнюю.
+  const deckCards = shownVacancies.filter(v => !swSkipped.has(v.id));
   const swTop = deckCards[0];
   const swFly = swDeck.flyOut;
 
@@ -1558,7 +1315,6 @@ function WorkerPermMode() {
     swFly('right', vx, () => {
       setSwSkipped(s => new Set(s).add(c.id));
       setSwHistory(h => [...h, c.id]);
-      if (tab === 'saved' && permSavedIds.includes(c.id)) toggleSaved(c);
       applyTo(c);
     });
   };
@@ -1574,7 +1330,6 @@ function WorkerPermMode() {
     swFly('left', vx, () => {
       setSwSkipped(s => new Set(s).add(c.id));
       setSwHistory(h => [...h, c.id]);
-      if (tab === 'saved' && permSavedIds.includes(c.id)) toggleSaved(c);
     });
   };
   swWantRef.current = swWant;
@@ -1795,41 +1550,19 @@ function WorkerPermMode() {
         />
       )}
 
-      {deckActive ? (
-        // «Открытые» и «Избранное» — свайп-колода (как в сменах и матчах).
-        !swTop ? (
-          // Пустое состояние делаем прокручиваемым, иначе «потяните вниз»
-          // некуда тянуть — жест обновления не срабатывал (особенно офлайн).
-          <ScrollView
-            contentContainerStyle={[styles.emptyState, { flexGrow: 1 }]}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
-          >
-            <Ionicons name={backendOffline ? 'cloud-offline-outline' : emptyMessages[tab].icon} size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : emptyMessages[tab].title}</Text>
-            <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : emptyMessages[tab].sub}</Text>
-            {backendOffline ? (
-              <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
-                <Ionicons name="refresh" size={16} color="#fff" />
-                <Text style={pS.retryTxt}>Попробовать снова</Text>
-              </TouchableOpacity>
-            ) : null}
-          </ScrollView>
-        ) : (
-          <>
-            <PermDeckViewRecorder vacancy={swTop} userId={currentUser.id} isGuest={isGuest} />
-            {renderPermDeckCard(swTop)}
-          </>
-        )
-      ) : shownVacancies.length === 0 ? (
+      {/* Лента — всегда колода: вкладок «Отклики»/«Избранное» здесь больше нет,
+          они уехали на свой экран, и списочный режим стал недостижим. */}
+      {!swTop ? (
+        // Пустое состояние делаем прокручиваемым, иначе «потяните вниз»
+        // некуда тянуть — жест обновления не срабатывал (особенно офлайн).
         <ScrollView
           contentContainerStyle={[styles.emptyState, { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
-          <Ionicons name={backendOffline ? 'cloud-offline-outline' : emptyMessages[tab].icon} size={48} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : emptyMessages[tab].title}</Text>
-          <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : emptyMessages[tab].sub}</Text>
+          <Ionicons name={backendOffline ? 'cloud-offline-outline' : 'search-outline'} size={48} color={Colors.textMuted} />
+          <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : 'Нет открытых вакансий'}</Text>
+          <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : 'Попробуйте изменить фильтры'}</Text>
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
               <Ionicons name="refresh" size={16} color="#fff" />
@@ -1838,17 +1571,10 @@ function WorkerPermMode() {
           ) : null}
         </ScrollView>
       ) : (
-        <FlatList
-          data={shownVacancies}
-          keyExtractor={v => v.id}
-          extraData={{ users, permVacancyViewsMap }}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarHeight + 16 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
-          renderItem={renderPerm}
-          onViewableItemsChanged={onViewableItemsChanged.current}
-          viewabilityConfig={viewabilityConfig.current}
-        />
+        <>
+          <PermDeckViewRecorder vacancy={swTop} userId={currentUser.id} isGuest={isGuest} />
+          {renderPermDeckCard(swTop)}
+        </>
       )}
 
       <MetroPicker

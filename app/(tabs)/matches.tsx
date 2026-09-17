@@ -14,10 +14,10 @@ import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacanc
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
-  dbApprovePermApplication, dbSetPermApplicationStatus,
+  dbApprovePermApplication, dbSetPermApplicationStatus, dbRemovePermSaved,
 } from '@/services/db';
+import { plural } from '@/services/time';
 import { TabHeader } from '@/components/ui/TabHeader';
-import { NotifBell } from '@/components/ui/NotifBell';
 import GuestGate from '@/components/GuestGate';
 import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
@@ -284,12 +284,17 @@ function ConfirmBanner({ onOutcome, loading }: {
 // WORKER VIEW
 // ─────────────────────────────────────────────────
 // ─── Отклики соискателя ───────────────────────────────────────────────────────
-// Экран собран вокруг откликов на постоянные вакансии (jm_perm_applications).
+// Экран работника «Отклики».
+//
 // Прежняя версия жила на jm_likes — откликах на смены; смен в сервисе больше
 // нет, и без переноса экран остался бы пустым при живых заявках.
 //
-// Переписка тут же вторым сегментом: отклик и ответ по нему — одна история,
-// и держать их в разных вкладках значило заставлять сверять два списка.
+// Раскладка взята с макета владельца, понятия — наши. Четыре блока оттуда у
+// нас физически отсутствуют: автозаполнение анкет («N apps filled today»),
+// «вопросы к заполнению» (ACTION), архив и звёздочка. Рисовать их пустыми
+// значило бы обещать то, чего нет, поэтому на их месте то, что у нас есть:
+// счёт откликов за сегодня, «ждут вашего ответа» = непрочитанные переписки,
+// и «Избранное» — единственный из разделов VIEWS, под которым есть данные.
 
 /** Как статус отклика выглядит для человека. */
 function permAppStatus(status: PermApplicationStatus): {
@@ -303,21 +308,58 @@ function permAppStatus(status: PermApplicationStatus): {
     case 'hired':
       return { label: 'Оффер', fg: '#047857', bg: '#D1FAE5', icon: 'checkmark-circle-outline' };
     default:
-      return { label: 'Рассматривают', fg: '#047857', bg: '#D1FAE5', icon: 'time-outline' };
+      return { label: 'Рассматривают', fg: '#B45309', bg: '#FEF3C7', icon: 'time-outline' };
   }
 }
 
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
 
+const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { key: 'all', label: 'Все', icon: 'file-tray-outline' },
+  { key: 'pending', label: 'Рассматривают', icon: 'time-outline' },
+  { key: 'approved', label: 'Интервью', icon: 'chatbubbles-outline' },
+  { key: 'hired', label: 'Оффер', icon: 'checkmark-circle-outline' },
+  { key: 'rejected', label: 'Отказы', icon: 'close-circle-outline' },
+];
+
+const MONTHS_GEN = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+];
+
+/** Ключ дня (YYYY-MM-DD) по местному времени, а не по UTC. */
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** «СЕГОДНЯ», «ВЧЕРА» или «12 СЕНТЯБРЯ». Заголовок дня, как на макете. */
+function dayLabel(key: string): string {
+  if (!key) return 'РАНЬШЕ';
+  const today = dayKey(new Date().toISOString());
+  if (key === today) return 'СЕГОДНЯ';
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  if (key === dayKey(y.toISOString())) return 'ВЧЕРА';
+  const [, mm, dd] = key.split('-');
+  return `${parseInt(dd, 10)} ${MONTHS_GEN[parseInt(mm, 10) - 1] ?? ''}`.toUpperCase();
+}
+
 function WorkerMatches() {
   const router = useRouter();
   const {
     currentUser, permApplications, permVacancies, users, chats,
+    permSavedIds, optimisticRemovePermSaved, showToast,
     refreshAll, offline,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
-  const [segment, setSegment] = useState<'apps' | 'chats'>('apps');
+  const [view, setView] = useState<'apps' | 'saved'>('apps');
   const [filter, setFilter] = useState<AppFilter>('all');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const tabBarHeight = useBottomTabBarHeight();
 
@@ -325,7 +367,13 @@ function WorkerMatches() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    try { await refreshAll(); } finally { setRefreshing(false); }
+    try {
+      await refreshAll();
+    } catch {
+      showToast('Не удалось обновить отклики. Проверьте связь.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const myApps = useMemo(
@@ -342,17 +390,21 @@ function WorkerMatches() {
   const getEmployer = useMissingUsers(users, neededEmployerIds);
 
   const myChats = useMemo(
-    () => chats
-      .filter((c: Chat) => c.workerId === currentUserId)
-      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
+    () => chats.filter((c: Chat) => c.workerId === currentUserId),
     [chats, currentUserId],
   );
-  const unreadChats = myChats.filter(c => (c.unreadWorker ?? 0) > 0);
+  const unreadChats = useMemo(
+    () => myChats.filter(c => (c.unreadWorker ?? 0) > 0),
+    [myChats],
+  );
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   const getVacancy = (id: string): PermVacancy | undefined =>
     permVacancies.find((v: PermVacancy) => v.id === id);
+
+  const companyOf = (a: PermApplication): string =>
+    getVacancy(a.vacancyId)?.company ?? getEmployer(a.employerId)?.company ?? 'Работодатель';
 
   // Поиск и фильтр по статусу — над одним и тем же списком, поэтому считаются
   // подряд, а не двумя независимыми выборками.
@@ -361,239 +413,359 @@ function WorkerMatches() {
     if (filter !== 'all' && a.status !== filter) return false;
     if (!q) return true;
     const v = getVacancy(a.vacancyId);
-    const company = v?.company ?? getEmployer(a.employerId)?.company ?? '';
-    return `${v?.title ?? ''} ${company}`.toLowerCase().includes(q);
+    return `${v?.title ?? ''} ${companyOf(a)}`.toLowerCase().includes(q);
   });
+
+  // Группировка по дням: заголовок с числом, как «ВЧЕРА · 15 откликов».
+  const byDay: { key: string; label: string; items: PermApplication[] }[] = [];
+  for (const a of shownApps) {
+    const key = dayKey(a.createdAt);
+    const last = byDay[byDay.length - 1];
+    if (last && last.key === key) last.items.push(a);
+    else byDay.push({ key, label: dayLabel(key), items: [a] });
+  }
+
+  const todayCount = myApps.filter(a => dayKey(a.createdAt) === dayKey(new Date().toISOString())).length;
 
   // Обрыв связи и пустой список — разные вещи: «нет откликов» человек,
   // только что откликнувшийся, читает как «мой отклик пропал».
   const offlineHere = offline.permApplications && myApps.length === 0;
 
-  const FILTERS: { key: AppFilter; label: string }[] = [
-    { key: 'all', label: 'Все' },
-    { key: 'pending', label: 'Рассматривают' },
-    { key: 'approved', label: 'Интервью' },
-    { key: 'hired', label: 'Оффер' },
-    { key: 'rejected', label: 'Отказы' },
-  ];
+  const savedVacancies = permVacancies.filter((v: PermVacancy) => permSavedIds.includes(v.id));
 
-  const renderApp = (a: PermApplication) => {
+  const unsave = async (vacancyId: string) => {
+    try {
+      // Сервер подтверждает до UI: иначе обрыв связи выглядит как удаление.
+      await dbRemovePermSaved(currentUser.id, vacancyId);
+      optimisticRemovePermSaved(vacancyId);
+    } catch {
+      showToast('Не удалось удалить из избранного', 'error');
+    }
+  };
+
+  const openApp = (a: PermApplication) =>
+    router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } });
+
+  // ── Строка отклика ─────────────────────────────────────────────────────────
+  const renderApp = (a: PermApplication, last: boolean) => {
     const v = getVacancy(a.vacancyId);
-    const employer = getEmployer(a.employerId);
-    const company = v?.company ?? employer?.company ?? 'Работодатель';
+    const company = companyOf(a);
     const st = permAppStatus(a.status);
     const chat = myChats.find(c => c.vacancyId === a.vacancyId);
+    const needsYou = (chat?.unreadWorker ?? 0) > 0;
 
     return (
       <TouchableOpacity
         key={a.id}
-        style={wm.card}
+        style={[wm.row, needsYou && wm.rowNeedsYou, !last && wm.rowDivider]}
         activeOpacity={0.85}
-        onPress={() => router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })}
+        onPress={() => (needsYou && chat ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } }) : openApp(a))}
       >
-        <View style={wm.cardHead}>
-          <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
-            <Text style={wm.logoTxt}>{getInitials(company)}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={wm.company} numberOfLines={1}>{company}</Text>
-            <Text style={wm.role} numberOfLines={1}>{v?.title ?? 'Вакансия'}</Text>
-            {v?.metroStation ? (
-              <View style={wm.metroRow}>
-                <Ionicons name="location-outline" size={13} color={Colors.textMuted} />
-                <Text style={wm.metro} numberOfLines={1}>Москва, м. {v.metroStation}</Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={wm.headRight}>
-            <View style={[wm.statusPill, { backgroundColor: st.bg }]}>
-              <Ionicons name={st.icon} size={13} color={st.fg} />
-              <Text style={[wm.statusTxt, { color: st.fg }]}>{st.label}</Text>
-            </View>
-            <Text style={wm.date}>{formatDate(a.createdAt)}</Text>
-          </View>
+        <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
+          <Text style={wm.logoTxt}>{getInitials(company)}</Text>
         </View>
 
-        {/* Что произошло с откликом последним — строка события под карточкой.
-            Без неё статус говорит «что сейчас», но не «что изменилось». */}
-        <View style={wm.eventRow}>
-          <Ionicons
-            name={chat ? 'chatbubble-ellipses-outline' : 'eye-outline'}
-            size={15}
-            color={Colors.textMuted}
-          />
-          <Text style={wm.eventTxt} numberOfLines={1}>
-            {chat
-              ? 'Работодатель открыл переписку'
-              : a.status === 'pending' ? 'Отклик отправлен, ждёт рассмотрения' : 'Работодатель просмотрел ваш отклик'}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderChat = (c: Chat) => {
-    const unread = c.unreadWorker ?? 0;
-    const last = c.messages?.[c.messages.length - 1];
-    return (
-      <TouchableOpacity
-        key={c.id}
-        style={wm.chatRow}
-        activeOpacity={0.85}
-        onPress={() => router.push({ pathname: '/chat-room', params: { chatId: c.id } })}
-      >
-        <View style={[wm.logo, { backgroundColor: nameColorFromString(c.companyName || 'JobToo') }]}>
-          <Text style={wm.logoTxt}>{getInitials(c.companyName || 'JT')}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={wm.company} numberOfLines={1}>{c.companyName || c.vacTitle}</Text>
-          <Text style={wm.preview} numberOfLines={2}>
-            {last?.text ?? 'Переписка открыта — напишите первым'}
-          </Text>
-        </View>
-        <View style={wm.chatMeta}>
-          <Text style={wm.date}>{last ? formatDate(last.timestamp) : ''}</Text>
-          {unread > 0 ? (
-            <View style={wm.unread}><Text style={wm.unreadTxt}>{unread > 9 ? '9+' : unread}</Text></View>
+        <View style={wm.rowBody}>
+          <Text style={wm.rowTitle} numberOfLines={2}>{v?.title ?? 'Вакансия'}</Text>
+          <Text style={wm.rowCompany} numberOfLines={1}>{company}</Text>
+          {needsYou ? (
+            <Text style={wm.rowHint} numberOfLines={1}>
+              {chat!.unreadWorker ?? 0}{' '}
+              {plural(chat!.unreadWorker ?? 0, 'новое сообщение', 'новых сообщения', 'новых сообщений')}
+            </Text>
           ) : null}
         </View>
+
+        {needsYou ? (
+          <View style={wm.action}>
+            <Text style={wm.actionTxt}>ОТВЕТИТЬ</Text>
+            <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
+          </View>
+        ) : (
+          <View style={[wm.statusPill, { backgroundColor: st.bg }]}>
+            <Text style={[wm.statusTxt, { color: st.fg }]}>{st.label.toUpperCase()}</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
+
+  // ── Строка избранного ──────────────────────────────────────────────────────
+  const renderSaved = (v: PermVacancy, last: boolean) => (
+    <TouchableOpacity
+      key={v.id}
+      style={[wm.row, !last && wm.rowDivider]}
+      activeOpacity={0.85}
+      onPress={() => router.push({ pathname: '/perm-vacancy-detail', params: { id: v.id } })}
+    >
+      <View style={[wm.logo, { backgroundColor: nameColorFromString(v.company) }]}>
+        <Text style={wm.logoTxt}>{getInitials(v.company)}</Text>
+      </View>
+      <View style={wm.rowBody}>
+        <Text style={wm.rowTitle} numberOfLines={2}>{v.title}</Text>
+        <Text style={wm.rowCompany} numberOfLines={1}>{v.company}</Text>
+        {typeof v.salary === 'number' && v.salary > 0 ? (
+          <Text style={wm.rowHint}>{v.salary.toLocaleString('ru-RU')} ₽/мес</Text>
+        ) : null}
+      </View>
+      <TouchableOpacity
+        style={wm.unsaveBtn}
+        onPress={() => unsave(v.id)}
+        hitSlop={8}
+        accessibilityLabel="Удалить из избранного"
+      >
+        <Ionicons name="bookmark" size={20} color={Colors.primary} />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
+      {/* Шапка: марка слева, действия справа — как на макете. Конверт ведёт
+          в переписки, закладка — в избранное, лупа раскрывает поиск. */}
       <View style={wm.header}>
-        <Text style={wm.title}>Отклики</Text>
-        <NotifBell />
-      </View>
-
-      <View style={wm.searchWrap}>
-        <Ionicons name="search" size={20} color={Colors.textMuted} />
-        <TextInput
-          style={wm.searchInput}
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Должность, компания или ключевые слова"
-          placeholderTextColor={Colors.textMuted}
-          returnKeyType="search"
-          accessibilityLabel="Поиск по откликам"
-        />
-      </View>
-
-      <View style={wm.segments}>
-        {([
-          { key: 'apps' as const, label: 'Заявки', icon: 'document-text-outline' as const, count: myApps.length },
-          { key: 'chats' as const, label: 'Сообщения', icon: 'chatbubble-outline' as const, count: unreadChats.length },
-        ]).map(seg => {
-          const on = segment === seg.key;
-          return (
-            <TouchableOpacity
-              key={seg.key}
-              style={[wm.segment, on && wm.segmentOn]}
-              onPress={() => setSegment(seg.key)}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-            >
-              <Ionicons name={seg.icon} size={17} color={on ? Colors.primary : Colors.textMuted} />
-              <Text style={[wm.segmentTxt, on && wm.segmentTxtOn]}>{seg.label}</Text>
-              {seg.count > 0 ? (
-                <View style={[wm.segCount, on && wm.segCountOn]}>
-                  <Text style={[wm.segCountTxt, on && wm.segCountTxtOn]}>{seg.count}</Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {segment === 'apps' ? (
-        <ScrollView
-          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-          }
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={wm.filterRow}
-            style={wm.filterScroll}
+        <Text style={wm.logoMark}>
+          <Text style={wm.logoMarkJ}>J</Text>
+          <Text style={wm.logoMarkT}>T</Text>
+        </Text>
+        <View style={wm.headerActions}>
+          <TouchableOpacity
+            style={[wm.headerBtn, view === 'saved' && wm.headerBtnOn]}
+            onPress={() => setView(v => (v === 'saved' ? 'apps' : 'saved'))}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: view === 'saved' }}
+            accessibilityLabel={view === 'saved' ? 'Показать отклики' : 'Показать избранное'}
           >
-            {FILTERS.map(f => {
-              const on = filter === f.key;
-              return (
-                <TouchableOpacity
-                  key={f.key}
-                  style={[wm.filterChip, on && wm.filterChipOn]}
-                  onPress={() => setFilter(f.key)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: on }}
-                >
-                  <Text style={[wm.filterTxt, on && wm.filterTxtOn]}>{f.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+            <Ionicons
+              name={view === 'saved' ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={view === 'saved' ? Colors.primary : Colors.textPrimary}
+            />
+          </TouchableOpacity>
 
-          <View style={wm.sectionHead}>
-            <Text style={wm.sectionTitle}>Мои отклики</Text>
-            <Text style={wm.sectionCount}>
-              {shownApps.length} {shownApps.length === 1 ? 'отклик' : shownApps.length < 5 ? 'отклика' : 'откликов'}
-            </Text>
-          </View>
-
-          {shownApps.length === 0 ? (
-            <View style={s.empty}>
-              <Ionicons
-                name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'}
-                size={56}
-                color={Colors.textMuted}
-              />
-              <Text style={s.emptyTitle}>
-                {offlineHere ? 'Нет связи с сервером' : 'Пока нет откликов'}
-              </Text>
-              <Text style={s.emptySub}>
-                {offlineHere
-                  ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
-                  : 'Откликайтесь на вакансии — они появятся здесь'}
-              </Text>
-            </View>
-          ) : shownApps.map(renderApp)}
-
-          {unreadChats.length > 0 ? (
-            <>
-              <View style={wm.sectionHead}>
-                <Text style={wm.sectionTitle}>Новые сообщения</Text>
-                <TouchableOpacity onPress={() => setSegment('chats')} activeOpacity={0.7}>
-                  <Text style={wm.sectionLink}>Все сообщения ›</Text>
-                </TouchableOpacity>
+          <TouchableOpacity
+            style={wm.headerBtn}
+            onPress={() => router.push('/(tabs)/chats')}
+            activeOpacity={0.8}
+            accessibilityLabel="Переписки"
+          >
+            <Ionicons name="mail-outline" size={20} color={Colors.textPrimary} />
+            {unreadChats.length > 0 ? (
+              <View style={wm.headerBadge}>
+                <Text style={wm.headerBadgeTxt}>{unreadChats.length > 9 ? '9+' : unreadChats.length}</Text>
               </View>
-              {unreadChats.slice(0, 3).map(renderChat)}
-            </>
+            ) : null}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[wm.headerBtn, searchOpen && wm.headerBtnOn]}
+            onPress={() => { setSearchOpen(o => !o); if (searchOpen) setSearch(''); }}
+            activeOpacity={0.8}
+            accessibilityLabel={searchOpen ? 'Закрыть поиск' : 'Искать по откликам'}
+          >
+            <Ionicons name="search" size={20} color={searchOpen ? Colors.primary : Colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Text style={wm.title}>
+        {view === 'saved'
+          ? `${savedVacancies.length} ${plural(savedVacancies.length, 'вакансия', 'вакансии', 'вакансий')} в избранном`
+          : `${todayCount} ${plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня`}
+      </Text>
+
+      {searchOpen ? (
+        <View style={wm.searchWrap}>
+          <Ionicons name="search" size={18} color={Colors.textMuted} />
+          <TextInput
+            style={wm.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Должность или компания"
+            placeholderTextColor={Colors.textMuted}
+            returnKeyType="search"
+            autoFocus
+            accessibilityLabel="Поиск по откликам"
+          />
+          {search ? (
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={8} accessibilityLabel="Очистить поиск">
+              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
           ) : null}
-        </ScrollView>
-      ) : (
+        </View>
+      ) : null}
+
+      {view === 'apps' ? (
         <ScrollView
-          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-          }
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={wm.chipsScroll}
+          contentContainerStyle={wm.chipsRow}
         >
-          {myChats.length === 0 ? (
-            <View style={s.empty}>
-              <Ionicons name="chatbubbles-outline" size={56} color={Colors.textMuted} />
-              <Text style={s.emptyTitle}>Переписок пока нет</Text>
-              <Text style={s.emptySub}>Работодатель напишет, когда рассмотрит отклик</Text>
-            </View>
-          ) : myChats.map(renderChat)}
+          <TouchableOpacity
+            style={[wm.chipIcon, filter !== 'all' && wm.chipIconOn]}
+            onPress={() => setFilterOpen(true)}
+            activeOpacity={0.8}
+            accessibilityLabel="Фильтры"
+          >
+            <Ionicons name="options-outline" size={18} color={filter !== 'all' ? '#FFFFFF' : Colors.textSecondary} />
+          </TouchableOpacity>
+          {APP_FILTERS.map(f => {
+            const on = filter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[wm.chip, on && wm.chipOn]}
+                onPress={() => setFilter(f.key)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+              >
+                <Ionicons name={f.icon} size={15} color={on ? Colors.textPrimary : Colors.textSecondary} />
+                <Text style={[wm.chipTxt, on && wm.chipTxtOn]}>{f.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
-      )}
+      ) : null}
+
+      <ScrollView
+        contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+        }
+      >
+        {view === 'saved' ? (
+          savedVacancies.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name="bookmark-outline" size={56} color={Colors.textMuted} />
+              <Text style={s.emptyTitle}>В избранном пусто</Text>
+              <Text style={s.emptySub}>Нажмите закладку на карточке вакансии — она сохранится здесь</Text>
+            </View>
+          ) : (
+            <View style={wm.group}>
+              {savedVacancies.map((v, i) => renderSaved(v, i === savedVacancies.length - 1))}
+            </View>
+          )
+        ) : (
+          <>
+            {/* «Ждут вашего ответа» — наша замена «Needs you». У них там анкеты,
+                которые агент не смог дозаполнить; у нас действие, которого
+                реально ждут от человека, ровно одно — ответить работодателю. */}
+            {unreadChats.length > 0 ? (
+              <>
+                <View style={wm.sectionHead}>
+                  <Text style={wm.sectionTitle}>Ждут вашего ответа</Text>
+                  <View style={wm.sectionDot} />
+                </View>
+                <TouchableOpacity
+                  style={wm.needsCard}
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/(tabs)/chats')}
+                >
+                  <View style={wm.needsIcon}>
+                    <Ionicons name="notifications" size={22} color="#B45309" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={wm.needsTitle}>
+                      {unreadChats.length}{' '}
+                      {plural(unreadChats.length, 'переписка ждёт', 'переписки ждут', 'переписок ждут')} ответа
+                    </Text>
+                    <Text style={wm.needsSub} numberOfLines={1}>
+                      {unreadChats.map(c => c.companyName || c.vacTitle).filter(Boolean).join(', ')}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </>
+            ) : null}
+
+            {shownApps.length === 0 ? (
+              <View style={s.empty}>
+                <Ionicons
+                  name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'}
+                  size={56}
+                  color={Colors.textMuted}
+                />
+                <Text style={s.emptyTitle}>
+                  {offlineHere ? 'Нет связи с сервером' : 'Пока нет откликов'}
+                </Text>
+                <Text style={s.emptySub}>
+                  {offlineHere
+                    ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
+                    : 'Откликайтесь на вакансии — они появятся здесь'}
+                </Text>
+              </View>
+            ) : byDay.map(day => (
+              <View key={day.key || 'earlier'}>
+                <Text style={wm.dayHead}>
+                  {day.label} · {day.items.length} {plural(day.items.length, 'отклик', 'отклика', 'откликов')}
+                </Text>
+                <View style={wm.group}>
+                  {day.items.map((a, i) => renderApp(a, i === day.items.length - 1))}
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+      </ScrollView>
+
+      {/* Шторка фильтров. Раздел «Показать» на макете содержит четыре строки;
+          у нас данные есть ровно под одну — избранное. Остальные три
+          (звёздочка, архив, «вы их пропустили») не хранятся вовсе. */}
+      {filterOpen ? (
+        <View style={wm.sheetOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setFilterOpen(false)} />
+          <View style={[wm.sheet, { paddingBottom: tabBarHeight + rs(24) }]}>
+            <View style={wm.sheetGrabber} />
+            <View style={wm.sheetHead}>
+              <TouchableOpacity style={wm.sheetClose} onPress={() => setFilterOpen(false)} accessibilityLabel="Закрыть">
+                <Ionicons name="close" size={20} color={Colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={wm.sheetTitle}>Фильтр</Text>
+              <TouchableOpacity style={wm.sheetOk} onPress={() => setFilterOpen(false)} accessibilityLabel="Применить">
+                <Ionicons name="checkmark" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={wm.sheetLabel}>СТАТУС</Text>
+            <View style={wm.sheetChips}>
+              {APP_FILTERS.map(f => {
+                const on = filter === f.key;
+                return (
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[wm.chip, wm.sheetChip, on && wm.chipOn]}
+                    onPress={() => setFilter(f.key)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                  >
+                    <Ionicons name={f.icon} size={15} color={on ? Colors.textPrimary : Colors.textSecondary} />
+                    <Text style={[wm.chipTxt, on && wm.chipTxtOn]}>{f.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={wm.sheetLabel}>ПОКАЗАТЬ</Text>
+            <TouchableOpacity
+              style={wm.sheetRow}
+              activeOpacity={0.8}
+              onPress={() => { setView('saved'); setFilterOpen(false); }}
+            >
+              <View style={wm.sheetRowIcon}>
+                <Ionicons name="bookmark-outline" size={18} color={Colors.textPrimary} />
+              </View>
+              <Text style={wm.sheetRowTxt}>Избранное</Text>
+              <Text style={wm.sheetRowCount}>{savedVacancies.length}</Text>
+              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -601,91 +773,140 @@ function WorkerMatches() {
 const wm = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(10),
+    paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(4),
   },
-  title: { fontSize: rf(30), fontWeight: '800', color: Colors.textPrimary },
+  logoMark: { fontSize: rf(26), letterSpacing: -0.5 },
+  logoMarkJ: { fontWeight: '900', color: Colors.primary },
+  logoMarkT: { fontWeight: '900', color: Colors.textPrimary },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
+  headerBtn: {
+    width: rs(44), height: rs(44), borderRadius: rs(22),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', ...Shadow.card,
+  },
+  headerBtnOn: { backgroundColor: Colors.primaryLight },
+  headerBadge: {
+    position: 'absolute', top: rs(1), right: rs(1),
+    minWidth: rs(18), height: rs(18), borderRadius: rs(9), paddingHorizontal: rs(4),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.primary, borderWidth: 2, borderColor: '#FFFFFF',
+  },
+  headerBadgeTxt: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '800' },
+
+  title: {
+    fontSize: rf(28), fontWeight: '800', color: Colors.textPrimary,
+    paddingHorizontal: rs(16), paddingTop: rs(10), paddingBottom: rs(12),
+  },
+
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), paddingHorizontal: rs(14), height: rs(46),
+    marginHorizontal: rs(16), marginBottom: rs(10),
     backgroundColor: '#F2F3F5', borderRadius: rs(24),
+    paddingHorizontal: rs(14), height: rs(44),
   },
   searchInput: { flex: 1, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
-  segments: {
-    flexDirection: 'row', gap: rs(8),
-    marginHorizontal: rs(16), marginTop: rs(12),
-    backgroundColor: '#F2F3F5', borderRadius: rs(16), padding: rs(4),
+
+  chipsScroll: { flexGrow: 0, flexShrink: 0 },
+  chipsRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(16), paddingBottom: rs(12) },
+  chipIcon: {
+    width: rs(44), height: rs(40), borderRadius: rs(20), flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF',
   },
-  segment: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: rs(6), paddingVertical: rs(11), borderRadius: rs(13),
+  chipIconOn: { backgroundColor: Colors.primary },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(6), flexShrink: 0,
+    height: rs(40), paddingHorizontal: rs(16), borderRadius: rs(20),
+    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: 'transparent',
   },
-  segmentOn: { backgroundColor: Colors.primaryLight },
-  segmentTxt: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textMuted },
-  segmentTxtOn: { color: Colors.primary },
-  segCount: {
-    minWidth: rs(20), height: rs(20), borderRadius: rs(10), paddingHorizontal: rs(5),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.textMuted,
+  chipOn: { borderColor: Colors.textPrimary },
+  chipTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
+  chipTxtOn: { color: Colors.textPrimary, fontWeight: '700' },
+
+  list: { paddingHorizontal: rs(16), gap: rs(4) },
+
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingBottom: rs(10) },
+  sectionTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  sectionDot: {
+    width: rs(14), height: rs(14), borderRadius: rs(7),
+    backgroundColor: '#B45309', borderWidth: 3, borderColor: '#FDE8CC',
   },
-  segCountOn: { backgroundColor: Colors.primary },
-  segCountTxt: { fontSize: rf(11), fontWeight: '800', color: '#fff' },
-  segCountTxtOn: { color: '#fff' },
-  list: { paddingHorizontal: rs(16), paddingTop: rs(14), gap: rs(12) },
-  filterScroll: { marginHorizontal: -rs(16) },
-  filterRow: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(16) },
-  filterChip: {
-    paddingHorizontal: rs(16), paddingVertical: rs(9), borderRadius: rs(100),
-    borderWidth: 1, borderColor: Colors.divider, backgroundColor: Colors.bg,
-  },
-  filterChipOn: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
-  filterTxt: { fontSize: rf(13.5), fontWeight: '600', color: Colors.textSecondary },
-  filterTxtOn: { color: Colors.primary },
-  sectionHead: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: rs(4),
-  },
-  sectionTitle: { fontSize: rf(19), fontWeight: '800', color: Colors.textPrimary },
-  sectionCount: { fontSize: rf(13.5), color: Colors.textMuted, fontWeight: '600' },
-  sectionLink: { fontSize: rf(13.5), color: Colors.primary, fontWeight: '700' },
-  card: {
-    backgroundColor: Colors.bg, borderRadius: rs(18),
-    borderWidth: 1, borderColor: Colors.divider, ...Shadow.card,
-    overflow: 'hidden',
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(12), padding: rs(14) },
-  logo: {
-    width: rs(46), height: rs(46), borderRadius: rs(23),
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  logoTxt: { fontSize: rf(16), fontWeight: '800', color: '#fff' },
-  company: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
-  role: { fontSize: rf(14), color: Colors.textSecondary, marginTop: rs(1) },
-  metroRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(4) },
-  metro: { fontSize: rf(13), color: Colors.textMuted, flexShrink: 1 },
-  headRight: { alignItems: 'flex-end', gap: rs(6), flexShrink: 0 },
-  statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(5),
-    paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100),
-  },
-  statusTxt: { fontSize: rf(12.5), fontWeight: '700' },
-  date: { fontSize: rf(12.5), color: Colors.textMuted },
-  eventRow: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    paddingHorizontal: rs(14), paddingVertical: rs(12),
-    borderTopWidth: 1, borderTopColor: Colors.divider,
-  },
-  eventTxt: { flex: 1, fontSize: rf(13.5), color: Colors.textSecondary },
-  chatRow: {
+
+  needsCard: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    backgroundColor: Colors.bg, borderRadius: rs(18), padding: rs(14),
-    borderWidth: 1, borderColor: Colors.divider,
+    backgroundColor: '#FFFFFF', borderRadius: rs(16),
+    padding: rs(14), marginBottom: rs(18), ...Shadow.card,
   },
-  preview: { fontSize: rf(13.5), color: Colors.textSecondary, marginTop: rs(2), lineHeight: rf(19) },
-  chatMeta: { alignItems: 'flex-end', gap: rs(6), flexShrink: 0 },
-  unread: {
-    minWidth: rs(22), height: rs(22), borderRadius: rs(11), paddingHorizontal: rs(6),
+  needsIcon: {
+    width: rs(44), height: rs(44), borderRadius: rs(12),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7',
+  },
+  needsTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
+  needsSub: { fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
+
+  dayHead: {
+    fontSize: rf(12), fontWeight: '700', color: Colors.textMuted,
+    letterSpacing: 0.4, paddingTop: rs(10), paddingBottom: rs(8),
+  },
+  group: { backgroundColor: '#FFFFFF', borderRadius: rs(16), overflow: 'hidden', ...Shadow.card },
+
+  row: { flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14) },
+  rowNeedsYou: { backgroundColor: '#FEF6ED' },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
+  logo: {
+    width: rs(44), height: rs(44), borderRadius: rs(12),
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoTxt: { color: '#FFFFFF', fontSize: rf(15), fontWeight: '800' },
+  rowBody: { flex: 1 },
+  rowTitle: { fontSize: rf(15.5), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(20) },
+  rowCompany: { fontSize: rf(13.5), color: Colors.textMuted, marginTop: rs(2) },
+  rowHint: { fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(3) },
+
+  statusPill: { borderRadius: rs(8), paddingHorizontal: rs(9), paddingVertical: rs(5), flexShrink: 0 },
+  statusTxt: { fontSize: rf(10.5), fontWeight: '800', letterSpacing: 0.3 },
+  action: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(5), flexShrink: 0,
+    borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(6),
+    borderWidth: 1, borderColor: Colors.primary, borderStyle: 'dashed',
+  },
+  actionTxt: { fontSize: rf(10.5), fontWeight: '800', color: Colors.primary, letterSpacing: 0.3 },
+  unsaveBtn: { padding: rs(4), flexShrink: 0 },
+
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: '#F7F8FA', borderTopLeftRadius: rs(24), borderTopRightRadius: rs(24),
+    paddingHorizontal: rs(16),
+  },
+  sheetGrabber: {
+    width: rs(44), height: rs(5), borderRadius: rs(3), backgroundColor: Colors.divider,
+    alignSelf: 'center', marginTop: rs(8),
+  },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: rs(14) },
+  sheetClose: {
+    width: rs(40), height: rs(40), borderRadius: rs(20),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF',
+  },
+  sheetTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  sheetOk: {
+    width: rs(44), height: rs(44), borderRadius: rs(22),
     alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary,
   },
-  unreadTxt: { fontSize: rf(11.5), fontWeight: '800', color: '#fff' },
+  sheetLabel: {
+    fontSize: rf(12), fontWeight: '700', color: Colors.textMuted,
+    letterSpacing: 0.4, paddingTop: rs(12), paddingBottom: rs(10),
+  },
+  sheetChips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
+  sheetChip: { borderColor: '#FFFFFF' },
+  sheetRow: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12),
+    backgroundColor: '#FFFFFF', borderRadius: rs(14), padding: rs(12),
+  },
+  sheetRowIcon: {
+    width: rs(40), height: rs(40), borderRadius: rs(10),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F3F5',
+  },
+  sheetRowTxt: { flex: 1, fontSize: rf(16), fontWeight: '600', color: Colors.textPrimary },
+  sheetRowCount: { fontSize: rf(15), fontWeight: '700', color: Colors.textMuted },
 });
 
 type EmployerMatchItem = { kind: 'like'; like: Like } | { kind: 'permApp'; app: PermApplication };
