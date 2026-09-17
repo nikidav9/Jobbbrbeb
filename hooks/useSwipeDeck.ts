@@ -103,8 +103,8 @@ export function useSwipeDeck(handlers: SwipeDeckHandlers) {
     });
   }, [x, busy]);
 
-  const gesture = useMemo(
-    () => Gesture.Pan()
+  const gesture = useMemo(() => {
+    const pan = Gesture.Pan()
       .activeOffsetX([-8, 8])
       // Палец ушёл вниз на двадцать пикселей, не набрав восьми вбок — это не
       // свайп, а потягивание для обновления: жест проигрывает, и его забирает
@@ -146,9 +146,21 @@ export function useSwipeDeck(handlers: SwipeDeckHandlers) {
         } else {
           x.value = withSpring(0, SPRING);
         }
-      }),
-    [x, busy, activated, markSwipe, callWant, callSkip],
-  );
+      });
+
+    // Только для веба, на телефоне игнорируется. gesture-handler по умолчанию
+    // ставит области жеста touch-action: none, и браузер перестаёт прокручивать
+    // её пальцем ВООБЩЕ — даже после того, как failOffsetY отменил жест. Колесо
+    // при этом работает, поэтому на снимках экрана этого не видно: там
+    // прокрутка идёт мимо жестов. 'pan-y' отдаёт вертикаль браузеру, оставляя
+    // нам горизонталь.
+    //
+    // Пишем в config напрямую: в 2.24 свойство поддерживается (оно в
+    // baseGestureHandlerProps), а вот метода-настройщика для него в цепочке
+    // нет, в отличие от остальных.
+    pan.config.touchAction = 'pan-y';
+    return pan;
+  }, [x, busy, activated, markSwipe, callWant, callSkip]);
 
   const cardStyle = useAnimatedStyle(() => {
     'worklet';
