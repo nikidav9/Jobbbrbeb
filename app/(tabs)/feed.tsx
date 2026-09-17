@@ -34,6 +34,7 @@ import {
 } from '@/services/db';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
 import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
@@ -1437,7 +1438,18 @@ function WorkerPermMode() {
                   <View style={styles.cardMiddle}>
                     <View style={styles.cardSummary}>
                       {description ? <Text style={pS.descTitle}>Требования:</Text> : null}
-                      {description ? <Text style={pS.desc} numberOfLines={3}>{description}</Text> : null}
+                      {description ? <Text style={pS.desc}>{description}</Text> : null}
+                      {/* Обрыв посреди строки читается как поломка вёрстки,
+                          поэтому низ текста уходит в цвет карточки. Градиент
+                          из expo-linear-gradient — он уже в сборке (см.
+                          app/+not-found.tsx), нового нативного модуля нет. */}
+                      {description ? (
+                        <LinearGradient
+                          colors={['rgba(255,255,255,0)', Colors.bg]}
+                          style={pS.descFade}
+                          pointerEvents="none"
+                        />
+                      ) : null}
                     </View>
                     <TouchableOpacity
                       style={styles.readFullRow}
@@ -2052,6 +2064,7 @@ const pS = StyleSheet.create({
   // desc
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(6) },
   desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(20) },
+  descFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: rs(36) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -2184,11 +2197,11 @@ const styles = StyleSheet.create({
   addressChipText: { flex: 1, fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary, lineHeight: rf(20) },
   cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(14) },
   cardMiddle: { flex: 1, padding: rs(10), paddingHorizontal: rs(14), gap: rs(4) },
-  // flexShrink, а не flex. С flex блок текста занимал всё свободное место и
-  // прижимал «Читать полностью» к нижнему краю карточки — ровно туда, где над
-  // карточкой висят кнопки ✕ / чат / ♥, и ссылка оказывалась под ними.
-  // Теперь текст занимает свою высоту, ссылка идёт сразу за ним, а ужимается
-  // текст только если места совсем мало.
+  // flexShrink, а не flex, и это важно. С flex блок текста занимает всё
+  // свободное место даже у короткого описания, и «Читать полностью» уезжает к
+  // нижнему краю карточки. С flexShrink короткий текст остаётся компактным, а
+  // длинный ужимается до высоты карточки и обрезается — ссылка в обоих случаях
+  // идёт сразу за текстом.
   cardSummary: { flexShrink: 1, overflow: 'hidden' },
   slotsRow: { flexDirection: 'row' },
   slotInfo: { flex: 1, alignItems: 'center', paddingVertical: rs(2) },
