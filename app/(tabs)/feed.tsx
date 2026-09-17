@@ -1040,7 +1040,7 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 const fh = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(14), paddingTop: rs(8), paddingBottom: rs(10),
+    paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
     backgroundColor: Colors.bgWarm,
   },
   logo: { fontSize: rf(26), letterSpacing: -0.5 },
@@ -1394,10 +1394,13 @@ function WorkerPermMode() {
     const metroLine = v.metroStation
       ? METRO_LINES.find(l => l.stations.includes(v.metroStation!)) ?? null
       : null;
+    const deckGap = rs(13);
+    const deckBottomReserve = tabBarHeight + rs(68) + deckGap * 2;
+    const deckActionBottom = tabBarHeight + deckGap;
     return (
-      <View style={styles.cardArea}>
-        {deckCards[2] ? <View style={styles.ghost2} /> : null}
-        {deckCards[1] ? <View style={styles.ghost1} /> : null}
+      <View style={[styles.cardArea, { paddingBottom: deckBottomReserve }]}>
+        {deckCards[2] ? <View style={[styles.ghost2, { bottom: deckBottomReserve }]} /> : null}
+        {deckCards[1] ? <View style={[styles.ghost1, { bottom: deckBottomReserve }]} /> : null}
         {/* Один список на два дела: потягивание вниз обновляет ленту, а длинная
             вакансия листается внутри карточки.
 
@@ -1551,7 +1554,7 @@ function WorkerPermMode() {
           // края карточки строки уходят в её цвет, и по одному этому видно, что
           // текст продолжается. Градиент из expo-linear-gradient — он уже в
           // сборке (app/+not-found.tsx), нового нативного модуля нет.
-          <View style={pS.scrollHintWrap} pointerEvents="none">
+          <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve }]} pointerEvents="none">
             <LinearGradient
               colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', Colors.bg]}
               style={StyleSheet.absoluteFill}
@@ -1563,7 +1566,7 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + rs(18) }]} pointerEvents="box-none">
+        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
           <TouchableOpacity
             accessibilityLabel="Отклонить вакансию"
@@ -2362,7 +2365,7 @@ const styles = StyleSheet.create({
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
   jobTitle: { fontSize: rf(26), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(31), marginTop: 0 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  replyBadgeWrap: { marginHorizontal: rs(21), marginBottom: rs(13) },
+  replyBadgeWrap: { marginHorizontal: rs(8), marginBottom: rs(13) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
