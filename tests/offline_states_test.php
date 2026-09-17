@@ -238,9 +238,6 @@ check('избранное постоянной вакансии: ошибка в
 
 // ── Лента: ошибки загрузки/избранного не выдаются за пустоту/успех ───────────
 $feedTruth = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
-check('регулярные подработки: ошибка не выглядит пустой выдачей',
-    str_contains($feedTruth, 'Не удалось загрузить регулярные подработки') &&
-    str_contains($feedTruth, 'loadFailed'));
 check('список откликов работодателя: ошибка не выглядит пустым списком',
     str_contains($feedTruth, 'dataLoadFailed') && str_contains($feedTruth, 'Не удалось загрузить список'));
 check('избранное смены: добавление подтверждается сервером до UI',
@@ -254,21 +251,6 @@ check('избранное работы: удаление подтверждае�
 check('избранное ленты: сетевые ошибки видны',
     str_contains($feedTruth, 'Не удалось добавить в избранное') &&
     str_contains($feedTruth, 'Не удалось сохранить в избранное'));
-
-// ── Партнёрские отклики: ошибка не выглядит пустым/полным списком ────────────
-$matchesTruth = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
-check('партнёрские отклики: ошибка хранится отдельно',
-    str_contains($matchesTruth, 'partnerApplicationsLoadFailed'));
-check('партнёрские отклики: ошибка видна и есть повтор',
-    str_contains($matchesTruth, 'Не удалось обновить отклики партнёров') &&
-    str_contains($matchesTruth, 'loadPartnerApplications(currentUserId)'));
-check('партнёрские отклики: refresh всегда снимает спиннер',
-    str_contains($matchesTruth, 'Promise.allSettled') &&
-    (bool)preg_match('~finally \{[\s\S]{0,100}setRefreshing\(false\)~', $matchesTruth));
-check('партнёрские отклики: старый молчаливый fetch удалён',
-    !str_contains($matchesTruth, 'dbGetPartnerApplications(currentUserId).then(setPartnerApplications).catch(() => {})'));
-check('партнёрские отклики: общая пустота учитывает их сбой',
-    str_contains($matchesTruth, 'partnerApplicationsLoadFailed && partnerApplications.length === 0 && myLikes.length === 0'));
 
 // ── Профиль: успех показывается только после серверной записи ─────────────────
 $profileCtx = (string)file_get_contents(__DIR__ . '/../contexts/AppContext.tsx');

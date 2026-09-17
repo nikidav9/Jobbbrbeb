@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
-import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, PartnerApplication, ReportableOutcome, ExternalVacancy, WorkType } from '@/constants/types';
+import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType } from '@/constants/types';
 import { uid, nowISO } from '@/services/storage';
 
 const DB_TIMEOUT = 12_000;
@@ -519,97 +519,6 @@ export async function dbRecordConsent(
   }
 }
 
-export type PartnerDataConsent = {
-  sourceId: string;
-  workerId: string;
-  externalVacancyId: string;
-  applicationId?: string | null;
-  recipientName: string;
-  dataCategories: Array<'profile' | 'application' | 'messages' | 'statuses'>;
-  purpose: string;
-  consentVersion: string;
-};
-
-/** Отдельное доказательное согласие для конкретного получателя и смены. */
-export async function dbRecordPartnerDataConsent(value: PartnerDataConsent): Promise<void> {
-  await proxy('partnerConsentRecord', [{
-    source_id: value.sourceId,
-    worker_id: value.workerId,
-    ext_vacancy_id: value.externalVacancyId,
-    application_id: value.applicationId ?? null,
-    recipient_name: value.recipientName,
-    data_categories: value.dataCategories,
-    purpose: value.purpose,
-    consent_version: value.consentVersion,
-    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
-  }]);
-}
-
-export async function dbCreatePartnerApplication(value: {
-  sourceId: string;
-  workerId: string;
-  externalVacancyId: string;
-  consentVersion: string;
-}): Promise<{ id: string; status: string; created: boolean }> {
-  return proxy('partnerApplicationCreate', [{
-    source_id: value.sourceId,
-    worker_id: value.workerId,
-    ext_vacancy_id: value.externalVacancyId,
-    consent_version: value.consentVersion,
-  }]);
-}
-
-export async function dbGetPartnerApplications(workerId: string): Promise<PartnerApplication[]> {
-  const rows = await proxy<any[]>('partnerApplicationsGet', [workerId]);
-  return (rows ?? []).map(r => ({
-    id: r.id,
-    sourceId: r.source_id,
-    externalVacancyId: r.ext_vacancy_id,
-    workerId: r.worker_id,
-    status: r.status,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    title: r.title ?? 'Вакансия партнёра',
-    company: r.company ?? undefined,
-    sourceName: r.source_name ?? undefined,
-    address: r.address ?? undefined,
-    salary: r.salary != null ? Number(r.salary) : undefined,
-    payPeriod: r.pay_period ?? undefined,
-  }));
-}
-
-export type SuperJobOAuthStatus = {
-  connected: boolean;
-  has_resume?: boolean;
-  connected_at?: string | null;
-  last_error?: string | null;
-};
-
-/** URL одноразовой авторизации SuperJob. Токены остаются только на сервере. */
-export async function dbStartSuperJobOAuth(returnUrl: string): Promise<{ url: string }> {
-  return proxy('superjobOauthStart', [returnUrl]);
-}
-
-export async function dbGetSuperJobOAuthStatus(): Promise<SuperJobOAuthStatus> {
-  return proxy('superjobOauthStatus');
-}
-
-export async function dbDisconnectSuperJob(): Promise<void> {
-  await proxy('superjobOauthDisconnect');
-}
-
-export async function dbApplyViaSuperJob(value: {
-  externalVacancyId: string;
-  consentVersion: string;
-  comment?: string;
-}): Promise<{ id: string; status: string; created: boolean }> {
-  return proxy('superjobApply', [{
-    ext_vacancy_id: value.externalVacancyId,
-    consent_version: value.consentVersion,
-    comment: value.comment ?? '',
-  }]);
-}
-
 /** Последнее принятое: что показать в профиле и спрашивать ли заново. */
 export async function dbGetConsent(userId: string): Promise<{
   stamp: string; docs: Record<string, string>; source: string; accepted_at: string;
@@ -871,7 +780,6 @@ export type GuestEventType =
   | 'apply_intent'
   | 'registration_started'
   | 'registration_completed'
-  | 'external_click'
   | 'campaign_published'
   | 'campaign_open'
   | 'campaign_apply'
@@ -879,8 +787,7 @@ export type GuestEventType =
 
 export interface GuestEventContext {
   vacancyId?: string | null;
-  vacancyKind?: 'shift' | 'permanent' | 'external' | null;
-  sourceId?: string | null;
+  vacancyKind?: 'shift' | 'permanent' | null;
   campaignId?: string | null;
   channel?: 'telegram_group' | 'telegram_dm' | 'user_share' | null;
 }
@@ -900,7 +807,6 @@ export async function dbRecordGuestEvent(
       eventType,
       context.vacancyId ?? null,
       context.vacancyKind ?? null,
-      context.sourceId ?? null,
       Platform.OS,
       context.campaignId ?? null,
       context.channel ?? null,
@@ -919,7 +825,6 @@ export async function dbStartGuestRegistration(context: GuestEventContext = {}):
       JSON.stringify({
         vacancyId: context.vacancyId ?? null,
         vacancyKind: context.vacancyKind ?? null,
-        sourceId: context.sourceId ?? null,
         campaignId: context.campaignId ?? null,
         channel: context.channel ?? null,
       }),
@@ -1692,121 +1597,6 @@ export async function dbSubmitSkillTest(
   userId: string, workType: WorkType, correct: number, total: number, passed: boolean,
 ): Promise<{ passed: boolean; осталось: number; error_попытки?: boolean }> {
   return proxy('dbSubmitSkillTest', [userId, workType, correct, total, passed]);
-}
-
-// ─── Чужие вакансии ───────────────────────────────────────────────────────────
-
-/**
- * Всё живое из чужих источников. Сборщик (php-proxy/ingest.php) гасит
- * `active` у пропавших, поэтому фильтровать по свежести здесь не нужно.
- */
-export type ExternalVacancyPage = {
-  vacancies: ExternalVacancy[];
-  /** Число строк до удаления дублей — только оно определяет конец страницы. */
-  rawCount: number;
-};
-
-export async function dbGetExternalVacancyPage(offset = 0, limit = 1000, sourceIds?: string[], companies?: string[]): Promise<ExternalVacancyPage> {
-  const rows = await proxy<any[]>('extVacancies', [offset, limit, sourceIds, companies]);
-  if (!Array.isArray(rows)) throw new Error('Invalid external vacancies response');
-  const mapped: ExternalVacancy[] = (rows ?? []).map(r => ({
-    id: r.id,
-    sourceId: r.source_id,
-    sourceName: r.source_name ?? undefined,
-    integrationMode: r.integration_mode ?? 'redirect',
-    connectorKind: r.connector_kind ?? 'redirect',
-    title: r.title,
-    company: r.company ?? undefined,
-    metroStation: r.metro_station_norm ?? undefined,
-    metroStationRaw: r.metro_station ?? undefined,
-    metroLineId: r.metro_line_id ?? undefined,
-    workType: r.work_type ?? undefined,
-    address: r.address ?? undefined,
-    lat: r.lat ?? undefined,
-    lng: r.lng ?? undefined,
-    kind: r.kind === 'permanent' ? 'permanent' : 'shift',
-    date: r.date ?? undefined,
-    timeStart: r.time_start ?? undefined,
-    timeEnd: r.time_end ?? undefined,
-    salary: r.salary != null ? Number(r.salary) : undefined,
-    payPeriod: r.pay_period ?? undefined,
-    schedule: r.schedule ?? undefined,
-    description: r.description ?? undefined,
-    createdAt: r.first_seen_at ?? undefined,
-    url: r.url,
-    lastSeenAt: r.last_seen_at ?? undefined,
-    dedupeKey: r.dedupe_key ?? undefined,
-  }));
-
-  // Один и тот же заказ может прийти от нескольких интеграций. Оставляем
-  // одну карточку по серверному отпечатку, чтобы лента не выглядела спамом.
-  const seen = new Set<string>();
-  const vacancies = mapped.filter(v => {
-    const key = v.dedupeKey || `${v.sourceId}:${v.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return { vacancies, rawCount: rows.length };
-}
-
-export async function dbGetExternalVacancies(offset = 0, limit = 1000): Promise<ExternalVacancy[]> {
-  return (await dbGetExternalVacancyPage(offset, limit)).vacancies;
-}
-
-export async function dbGetExternalSourceOptions(): Promise<Array<{ id: string; name: string }>> {
-  return proxy('extSourceOptions');
-}
-
-export async function dbGetExternalCompanyOptions(): Promise<Array<{ name: string; count: number }>> {
-  const rows = await proxy<Array<{ name?: string; vacancy_count?: number }>>('extCompanyOptions');
-  return (rows ?? [])
-    .map(row => ({ name: (row.name ?? '').trim(), count: Number(row.vacancy_count ?? 0) }))
-    .filter(row => row.name !== '' && row.count > 0);
-}
-
-export async function dbCountExternalVacancies(filters: {
-  query: string;
-  searchIn: Array<'title' | 'desc'>;
-  posted: 'all' | 'week' | '3days';
-  stations: string[];
-  salaryFrom: string;
-  schedules: string[];
-  /** undefined = все партнёры; [] = ни одного партнёра. */
-  sourceIds?: string[];
-  /** Пусто/undefined = все компании; значения приходят только из активного справочника. */
-  companies?: string[];
-}): Promise<number> {
-  return proxy('extVacancyCount', [{
-    query: filters.query,
-    search_in: filters.searchIn,
-    posted: filters.posted,
-    stations: filters.stations,
-    salary_from: filters.salaryFrom,
-    schedules: filters.schedules,
-    ...(filters.sourceIds === undefined ? {} : { sources: filters.sourceIds }),
-    ...(filters.companies?.length ? { companies: filters.companies } : {}),
-  }]);
-}
-
-/**
- * Человек ушёл к источнику. Молча и не мешая: ошибку глотаем и переход не
- * задерживаем — потерянная строка статистики не стоит того, чтобы у человека
- * не открылась вакансия.
- */
-export async function dbRecordExternalImpression(extId: string, sourceId: string): Promise<void> {
-  try { await proxy('extImpression', [extId, sourceId]); } catch { /* не мешаем просмотру */ }
-}
-
-export async function dbRecordExternalClick(
-  extId: string,
-  sourceId: string,
-  userId?: string,
-  clickId?: string,
-): Promise<void> {
-  try {
-    await proxy('extClick', [extId, sourceId, userId ?? null, clickId ?? null]);
-  } catch { /* не мешаем переходу */ }
 }
 
 // ─── Push tokens ──────────────────────────────────────────────────────────────

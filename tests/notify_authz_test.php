@@ -86,12 +86,11 @@ check('проверка стороны раньше удаления',
     $partyAt !== false && $delAt !== false && $partyAt < $delAt);
 
 // ── Что вообще не для пользователя ───────────────────────────────────────────
-// Разовая уборка по ВСЕМ чатам сервиса и запись расходов по партнёрам.
+// Разовая уборка по ВСЕМ чатам сервиса.
 $adminBlock = '';
 if (preg_match('~\$adminFns = \[(.*?)\n\];~s', $db, $m)) $adminBlock = $m[1];
 check('список админских операций найден', $adminBlock !== '');
 check('слияние чатов — админская', str_contains($adminBlock, "'dbMergeDuplicateChats'"));
-check('запись расходов — админская', str_contains($adminBlock, "'extPartnerCostSave'"));
 
 if ($failures) {
     echo "notify authz: ПРОВАЛЫ\n";

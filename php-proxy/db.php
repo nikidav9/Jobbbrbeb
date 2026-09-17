@@ -14,9 +14,6 @@
 @ini_set('display_errors', '0');
 @ini_set('html_errors', '0');
 ob_start();
-require_once __DIR__ . '/partner_billing.php';
-require_once __DIR__ . '/superjob_oauth_lib.php';
-require_once __DIR__ . '/ext_health.php';
 require_once __DIR__ . '/referral.php';
 require_once __DIR__ . '/funnel.php';
 require_once __DIR__ . '/shift_funnel.php';
@@ -150,9 +147,6 @@ $adminFns = [
     'cronAnnounceMissed',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
-    'extSourcesList', 'extSourceSave', 'extSourceDelete', 'extStats',
-    'partnerTariffsList', 'partnerTariffSave', 'partnerBillableEventRecord',
-    'partnerReconciliationRecord', 'partnerBillingReport', 'partnerReportSnapshotSave',
     // dbGetUsers отдаёт всех пользователей разом. Приложение её не зовёт
     // (в services/db.ts обёртка есть, вызовов нет), а любому вошедшему она
     // выгружала бы список всех людей сервиса одним запросом. Дашборд ходит в
@@ -166,7 +160,7 @@ $adminFns = [
     // Разовая уборка по ВСЕМ чатам сервиса и запись расходов по партнёрам.
     // Приложение их не зовёт (dbMergeDuplicateChats — вообще никто, расходы —
     // только дашборд), а любому вошедшему они были открыты.
-    'dbMergeDuplicateChats', 'extPartnerCostSave',
+    'dbMergeDuplicateChats',
     // Уведомления человеку приложение больше НЕ шлёт: их отправляет сервер
     // там же, где записывает событие (jt_notify_new_message, jt_notify_match,
     // jt_notify_shift_outcome, jt_perm_app_announce). Пока эти операции были
@@ -236,7 +230,7 @@ if ($authUid !== null) {
 $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
-    'extVacancies', 'extVacancyCount', 'extSourceOptions', 'extCompanyOptions', 'extClick', 'addressSuggest', 'dbLogOpen', 'guestEvent',
+    'addressSuggest', 'dbLogOpen', 'guestEvent',
     'dbResponsivenessMap',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
@@ -3664,52 +3658,33 @@ try {
             ]);
             $applications = $shiftApplications + $permApplications;
 
-            $signedInOwnImpressions = sb_count('jm_vacancy_views', ['viewed_at' => 'gte.' . $cut24])
+            $ownImpressions = sb_count('jm_vacancy_views', ['viewed_at' => 'gte.' . $cut24])
                 + sb_count('jm_perm_vacancy_views', ['viewed_at' => 'gte.' . $cut24]);
-            $partnerSets = ['impression' => [], 'click' => []];
-            foreach (sb_select_all('jm_ext_events', [
-                'event_type' => 'in.(impression,click)', 'occurred_at' => 'gte.' . $cut24,
-            ], 'ext_id,event_type,user_id') as $event) {
-                $type = (string)($event['event_type'] ?? '');
-                if (!isset($partnerSets[$type])) continue;
-                $key = (string)($event['user_id'] ?? '') . '|' . (string)($event['ext_id'] ?? '');
-                $partnerSets[$type][$key] = true;
-            }
-            $signedInPartnerImpressions = count($partnerSets['impression']);
-            $signedInPartnerClicks = count($partnerSets['click']);
 
             $guestSets = array_fill_keys([
-                'vacancy_impression', 'external_click', 'apply_intent',
+                'vacancy_impression', 'apply_intent',
                 'registration_started', 'registration_completed',
             ], []);
-            $guestOwnImpressions = [];
-            $guestPartnerImpressions = [];
             foreach (sb_select_all('jm_guest_events', [
-                'event_type' => 'in.(vacancy_impression,external_click,apply_intent,registration_started,registration_completed)',
+                'event_type' => 'in.(vacancy_impression,apply_intent,registration_started,registration_completed)',
                 'occurred_at' => 'gte.' . $cut24,
-            ], 'anon_id,event_type,vacancy_id,vacancy_kind') as $event) {
+            ], 'anon_id,event_type,vacancy_id') as $event) {
                 $type = (string)($event['event_type'] ?? '');
                 if (!isset($guestSets[$type])) continue;
                 $key = (string)($event['anon_id'] ?? '') . '|' . (string)($event['vacancy_id'] ?? '');
                 $guestSets[$type][$key] = true;
-                if ($type !== 'vacancy_impression') continue;
-                if (($event['vacancy_kind'] ?? '') === 'external') $guestPartnerImpressions[$key] = true;
-                else $guestOwnImpressions[$key] = true;
             }
             $guestImpressions = count($guestSets['vacancy_impression']);
-            $guestExternalClicks = count($guestSets['external_click']);
             $guestIntents = count($guestSets['apply_intent']);
             $guestStarted = count($guestSets['registration_started']);
             $guestCompleted = count($guestSets['registration_completed']);
-            $ownImpressions = $signedInOwnImpressions + count($guestOwnImpressions);
-            $partnerImpressions = $signedInPartnerImpressions + count($guestPartnerImpressions);
-            $partnerClicks = $signedInPartnerClicks + $guestExternalClicks;
-            $feedImpressionLine = feed_impression_line($ownImpressions, $partnerImpressions, $partnerClicks);
+            $ownImpressions += $guestImpressions;
+            $feedImpressionLine = feed_impression_line($ownImpressions);
             $guestFunnelLine = guest_funnel_line(
-                $guestImpressions, $guestExternalClicks, $guestIntents, $guestStarted, $guestCompleted
+                $guestImpressions, $guestIntents, $guestStarted, $guestCompleted
             );
             $zeroApplicationLine = zero_application_diagnosis(
-                $applications, $ownImpressions, $partnerImpressions, $partnerClicks,
+                $applications, $ownImpressions,
                 $guestImpressions, $guestIntents, $guestCompleted
             );
 
@@ -3770,40 +3745,6 @@ try {
             $secondShiftLine = second_shift_line($workedOnce, $workedTwice);
             $newShifts = sb_count('jm_vacancies', ['created_at' => 'gte.' . $cut24]);
             $newVacancies = sb_count('jm_perm_vacancies', ['created_at' => 'gte.' . $cut24]);
-            $partnerVacancies = sb_count('jm_ext_vacancies', [
-                'environment' => 'eq.production', 'first_seen_at' => 'gte.' . $cut24,
-            ]);
-
-            $extSources = sb_select_all('jm_ext_sources', [
-                'environment' => 'eq.production', 'enabled' => 'is.true',
-            ], 'id,name,period_min,last_success_at');
-            // Живые вакансии считаем по источникам, а не одним числом: пока не
-            // видно, на ком держится витрина, зависимостью нельзя управлять.
-            // Выборка одноколоночная — строк много, но это та же цена, какую
-            // платит сводка extStats.
-            $liveCounts = [];
-            foreach (sb_select_all('jm_ext_vacancies', [
-                'active' => 'is.true', 'environment' => 'eq.production',
-            ], 'source_id') as $row) {
-                $k = (string)($row['source_id'] ?? '');
-                $liveCounts[$k] = ($liveCounts[$k] ?? 0) + 1;
-            }
-            $health = ext_source_health($extSources, $liveCounts, $now);
-
-            $lastImportTs = null;
-            foreach ($extSources as $source) {
-                $ts = !empty($source['last_success_at'])
-                    ? strtotime((string)$source['last_success_at']) : false;
-                if ($ts !== false && ($lastImportTs === null || $ts > $lastImportTs)) {
-                    $lastImportTs = $ts;
-                }
-            }
-            $lastImport = 'никогда';
-            if ($lastImportTs !== null) {
-                $lastImport = (new DateTimeImmutable('@' . $lastImportTs))
-                    ->setTimezone(new DateTimeZone('Europe/Moscow'))
-                    ->format('d.m.Y H:i') . ' МСК';
-            }
 
             // Приглашения. Денег в программе нет, ждать решения нечему —
             // смотреть надо на то, доходят ли приведённые до смены. Три числа
@@ -3893,9 +3834,6 @@ try {
             $alerts = [];
             if ($applications === 0) $alerts[] = 'откликов за сутки — 0';
             if ($replyAlert !== '') $alerts[] = $replyAlert;
-            // Тревога по каждому источнику отдельно: общий максимум по всем
-            // молчал, только когда умирали все сразу.
-            foreach ($health['alerts'] as $sourceAlert) $alerts[] = $sourceAlert;
             if ($referralAlert !== '') $alerts[] = $referralAlert;
             if ($groupAlert !== '') $alerts[] = $groupAlert;
             if ($consentAlert !== '') $alerts[] = $consentAlert;
@@ -3920,9 +3858,6 @@ try {
             $lines[] = $guestFunnelLine;
             if ($zeroApplicationLine !== '') $lines[] = $zeroApplicationLine;
             $lines[] = "🏢 Свои публикации: вакансии <b>{$newVacancies}</b>, смены <b>{$newShifts}</b>";
-            $lines[] = "🤝 Новых партнёрских вакансий: <b>{$partnerVacancies}</b>";
-            $lines[] = "🔄 Последний успешный импорт: {$lastImport}";
-            $lines[] = $health['line'];
             $lines[] = $referralLine;
             if ($groupLine !== '') $lines[] = $groupLine;
             $lines[] = $consentLine;
@@ -3956,10 +3891,7 @@ try {
                     ],
                     'feed_funnel' => [
                         'own_impressions' => $ownImpressions,
-                        'partner_impressions' => $partnerImpressions,
-                        'partner_clicks' => $partnerClicks,
                         'guest_impressions' => $guestImpressions,
-                        'guest_external_clicks' => $guestExternalClicks,
                         'guest_apply_intents' => $guestIntents,
                         'guest_registration_started' => $guestStarted,
                         'guest_registration_completed' => $guestCompleted,
@@ -3967,8 +3899,6 @@ try {
                     ],
                     'new_vacancies' => $newVacancies,
                     'new_shifts' => $newShifts,
-                    'partner_vacancies' => $partnerVacancies,
-                    'last_import_at' => $lastImportTs !== null ? gmdate('c', $lastImportTs) : null,
                     'tomorrow_shifts' => $tomorrowShifts,
                     'metrika' => $metrika,
                 ],
@@ -4395,935 +4325,6 @@ try {
             break;
         }
 
-        // ── Источники чужих вакансий ───────────────────────────────────────
-        case 'extSourcesList':
-            // Никогда не отдаём auth_header/auth_value в браузер дашборда.
-            // Даже администратору достаточно знать, что секрет настроен.
-            $rows = sb_select('jm_ext_sources', ['order' => 'created_at.desc'],
-                'id,name,url,enabled,period_min,last_run_at,last_status,last_count,'
-                . 'last_success_at,consecutive_failures,last_duration_ms,last_pages,'
-                . 'last_skipped,last_deactivated,created_at,auth_header,environment,notifications_enabled,'
-                . 'connector_kind,integration_mode,connector_config,webhook_secret');
-            foreach ($rows as &$source) {
-                $source['auth_configured'] = !empty($source['auth_header']);
-                $config = is_array($source['connector_config'] ?? null) ? $source['connector_config'] : [];
-                $source['integration_configured'] = !empty($config['application_submit_url'])
-                    && !empty($source['webhook_secret']);
-                if ((string)($source['connector_kind'] ?? '') === 'career') {
-                    $source['career_pages'] = array_values(array_filter(
-                        is_array($config['pages'] ?? null) ? $config['pages'] : [],
-                        fn($url) => is_string($url)
-                    ));
-                }
-                unset($source['auth_header'], $source['connector_config'], $source['webhook_secret']);
-            }
-            unset($source);
-            $data = $rows; break;
-
-        // args: [{id?, name, url, auth_header?, auth_value?, period_min?, enabled?}]
-        case 'extSourceSave': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $name = trim((string)($v['name'] ?? ''));
-            $url  = trim((string)($v['url'] ?? ''));
-            if ($name === '' || !preg_match('~^https://~i', $url)) {
-                $data = ['error' => 'нужны имя и публичный HTTPS-адрес фида']; break;
-            }
-            $isNew = (string)($v['id'] ?? '') === '';
-            $previous = !$isNew
-                ? sb_single('jm_ext_sources', ['id' => 'eq.' . (string)$v['id']],
-                    'connector_kind,connector_config')
-                : null;
-            $row = [
-                'id' => $isNew ? uid() : (string)$v['id'],
-                'name' => $name,
-                'url' => $url,
-                'period_min' => max(5, (int)($v['period_min'] ?? 30)),
-                'enabled' => array_key_exists('enabled', $v) ? (bool)$v['enabled'] : true,
-            ];
-            // Новые источники всегда начинаются в sandbox. Продвижение в production
-            // должно быть явным; в sandbox уведомления невозможно включить даже ошибочно.
-            if ($isNew || array_key_exists('environment', $v)) {
-                $environment = (($v['environment'] ?? 'sandbox') === 'production') ? 'production' : 'sandbox';
-                $row['environment'] = $environment;
-                $row['notifications_enabled'] = $environment === 'production'
-                    && !empty($v['notifications_enabled']);
-            }
-            // При переключении enabled браузер не знает секрет и не должен
-            // стирать его. Меняем доступ только когда поля присланы явно.
-            if ($isNew || array_key_exists('auth_header', $v)) {
-                $row['auth_header'] = $v['auth_header'] ?? null;
-            }
-            if ($isNew || array_key_exists('auth_value', $v)) {
-                $row['auth_value'] = $v['auth_value'] ?? null;
-            }
-            if ($isNew || array_key_exists('connector_kind', $v)) {
-                $row['connector_kind'] = trim((string)($v['connector_kind'] ?? 'redirect')) ?: 'redirect';
-            }
-            if ($isNew || array_key_exists('integration_mode', $v)) {
-                $mode = (string)($v['integration_mode'] ?? 'redirect');
-                if (!in_array($mode, ['redirect', 'embedded_test', 'embedded'], true)) {
-                    $data = ['error' => 'неизвестный режим интеграции']; break;
-                }
-                $row['integration_mode'] = $mode;
-            }
-            if (array_key_exists('application_submit_url', $v)) {
-                $submitUrl = trim((string)($v['application_submit_url'] ?? ''));
-                if ($submitUrl !== '' && !preg_match('~^https://~i', $submitUrl)) {
-                    $data = ['error' => 'endpoint отклика должен использовать HTTPS']; break;
-                }
-                $config = is_array($previous['connector_config'] ?? null)
-                    ? $previous['connector_config'] : [];
-                $config['application_submit_url'] = $submitUrl;
-                $row['connector_config'] = $config;
-            }
-            if (array_key_exists('career_pages', $v)) {
-                $kind = (string)($row['connector_kind'] ?? $previous['connector_kind'] ?? 'redirect');
-                if ($kind !== 'career') {
-                    $data = ['error' => 'страницы можно задать только карьерному источнику']; break;
-                }
-                $rawPages = is_array($v['career_pages']) ? $v['career_pages'] : [];
-                $pages = [];
-                foreach ($rawPages as $pageUrl) {
-                    $pageUrl = trim((string)$pageUrl);
-                    if ($pageUrl === '') continue;
-                    if (strlen($pageUrl) > 2048 || !filter_var($pageUrl, FILTER_VALIDATE_URL)
-                            || strtolower((string)parse_url($pageUrl, PHP_URL_SCHEME)) !== 'https') {
-                        $data = ['error' => 'каждая карьерная страница должна быть HTTPS-адресом']; break 2;
-                    }
-                    $pages[$pageUrl] = true;
-                    if (count($pages) > 100) {
-                        $data = ['error' => 'не больше 100 карьерных страниц']; break 2;
-                    }
-                }
-                $config = is_array($row['connector_config'] ?? null)
-                    ? $row['connector_config']
-                    : (is_array($previous['connector_config'] ?? null) ? $previous['connector_config'] : []);
-                $config['pages'] = array_keys($pages);
-                $row['connector_config'] = $config;
-            }
-            if (array_key_exists('webhook_secret', $v)) {
-                $row['webhook_secret'] = trim((string)($v['webhook_secret'] ?? '')) ?: null;
-            }
-            sb_upsert('jm_ext_sources', $row, 'id');
-            sm_cache_invalidate();
-            $data = ['ok' => true, 'id' => $row['id']]; break;
-        }
-
-        case 'extSourceDelete': {
-            $id = (string)($args[0] ?? '');
-            if ($id === '') { $data = ['error' => 'нужен id']; break; }
-            sb_delete('jm_ext_vacancies', ['source_id' => 'eq.' . $id]);
-            sb_delete('jm_ext_sources', ['id' => 'eq.' . $id]);
-            sm_cache_invalidate();
-            $data = ['ok' => true]; break;
-        }
-
-        // Чужие вакансии — приложению. Возвращаем вместе с названием
-        // источника: на карточке обязана быть надпись, откуда она, иначе это
-        // не агрегатор, а перепечатка чужого под своим именем.
-        case 'extVacancies': {
-            $offset = max(0, (int)($args[0] ?? 0));
-            $limit = max(1, min(1000, (int)($args[1] ?? 1000)));
-            $sourceRows = sb_select('jm_ext_sources', [
-                'enabled' => 'is.true', 'environment' => 'eq.production',
-            ], 'id,name,connector_kind,integration_mode');
-            $sources = [];
-            foreach ($sourceRows as $s) { $sources[(string)$s['id']] = $s; }
-            $sourceIds = array_keys($sources);
-            $filters = [
-                'active' => 'is.true', 'environment' => 'eq.production',
-                'limit' => (string)$limit, 'offset' => (string)$offset,
-            ];
-            if (is_array($args[2] ?? null)) {
-                $requestedSourceIds = array_values(array_filter(array_map(
-                    fn($id) => preg_match('/^[a-z0-9_-]{1,64}$/i', (string)$id) ? (string)$id : '',
-                    $args[2]
-                )));
-                $sourceIds = array_values(array_intersect($sourceIds, $requestedSourceIds));
-                // Пустой массив означает «ни одного внешнего источника».
-            }
-            $requestedCompanies = [];
-            if (is_array($args[3] ?? null)) {
-                $requestedCompanies = array_slice(array_values(array_filter(array_map(
-                    fn($name) => mb_substr(trim((string)$name), 0, 160),
-                    $args[3]
-                ))), 0, 50);
-            }
-            if ($requestedCompanies) {
-                // Компании в фильтре берутся только из прямых карьерных источников.
-                // Иначе одноимённая вакансия агрегатора могла бы перехватить карточку.
-                $careerSourceIds = [];
-                foreach ($sources as $sid => $source) {
-                    if (($source['connector_kind'] ?? '') === 'career') $careerSourceIds[] = $sid;
-                }
-                $sourceIds = array_values(array_intersect($sourceIds, $careerSourceIds));
-                $filters['company'] = sb_in_list($requestedCompanies);
-            }
-            if (!$sourceIds) { $data = []; break; }
-            $filters['source_id'] = 'in.(' . implode(',', $sourceIds) . ')';
-            $rows = sb_select('jm_ext_vacancies', $filters, '*', 'id.asc');
-            foreach ($rows as &$r) {
-                $source = $sources[(string)$r['source_id']] ?? [];
-                $r['source_name'] = $source['name'] ?? null;
-                $r['connector_kind'] = $source['connector_kind'] ?? 'redirect';
-                $r['integration_mode'] = $source['integration_mode'] ?? 'redirect';
-                // Идентификатор у источника наружу не нужен: по нему ничего
-                // не показывают, а знать чужие внутренние номера незачем.
-                // dedupe_key, наоборот, нужен — по нему приложение прячет
-                // одну и ту же смену, приехавшую из двух источников.
-                unset($r['external_id']);
-            }
-            unset($r);
-            $data = $rows; break;
-        }
-
-        case 'extSourceOptions': {
-            $rows = sb_select('jm_ext_sources', [
-                'enabled' => 'is.true', 'environment' => 'eq.production',
-            ], 'id,name', 'name.asc');
-            $data = array_values(array_map(fn($r) => [
-                'id' => (string)$r['id'], 'name' => (string)$r['name'],
-            ], $rows));
-            break;
-        }
-
-        // Компании для фильтра: только те, у кого сейчас есть активная
-        // постоянная вакансия из прямого карьерного источника.
-        case 'extCompanyOptions':
-            $data = sb_rpc('jm_ext_company_options'); break;
-
-        case 'extVacancyCount': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $clean = [
-                'query' => mb_substr(trim((string)($v['query'] ?? '')), 0, 120),
-                'search_in' => array_values(array_intersect(
-                    is_array($v['search_in'] ?? null) ? $v['search_in'] : [], ['title', 'desc'])),
-                'posted' => in_array(($v['posted'] ?? 'all'), ['all', 'week', '3days'], true)
-                    ? $v['posted'] : 'all',
-                'stations' => array_slice(array_values(array_filter(array_map(
-                    fn($x) => mb_substr(trim((string)$x), 0, 100),
-                    is_array($v['stations'] ?? null) ? $v['stations'] : []
-                ))), 0, 50),
-                'salary_from' => (string)max(0, (int)($v['salary_from'] ?? 0)),
-                'schedules' => array_slice(array_values(array_filter(array_map(
-                    fn($x) => mb_substr(trim((string)$x), 0, 100),
-                    is_array($v['schedules'] ?? null) ? $v['schedules'] : []
-                ))), 0, 20),
-                'companies' => array_slice(array_values(array_filter(array_map(
-                    fn($x) => mb_substr(trim((string)$x), 0, 160),
-                    is_array($v['companies'] ?? null) ? $v['companies'] : []
-                ))), 0, 50),
-            ];
-            // Отсутствие sources = все партнёры; [] = только JobToo.
-            if (array_key_exists('sources', $v) && is_array($v['sources'])) {
-                $clean['sources'] = array_values(array_filter(array_map(
-                    fn($id) => preg_match('/^[a-z0-9_-]{1,64}$/i', (string)$id) ? (string)$id : '',
-                    $v['sources']
-                )));
-            }
-            $rows = sb_rpc('jm_ext_vacancy_filter_count', ['p_filters' => $clean]);
-            $data = (int)($rows[0]['total'] ?? 0);
-            break;
-        }
-
-        // События партнёрской воронки. Показы принимаются только от
-        // авторизованного пользователя; переход может быть анонимным.
-        case 'extImpression': {
-            $extId = (string)($args[0] ?? '');
-            $sourceId = (string)($args[1] ?? '');
-            $vac = ($extId !== '' && $sourceId !== '')
-                ? sb_single('jm_ext_vacancies', [
-                    'id' => 'eq.' . $extId,
-                    'source_id' => 'eq.' . $sourceId,
-                    'active' => 'is.true',
-                ], 'id')
-                : null;
-            if (!$vac) { $data = false; break; }
-            sb_insert('jm_ext_events', [
-                'id' => uid(), 'ext_id' => $extId, 'source_id' => $sourceId,
-                'event_type' => 'impression', 'user_id' => $authUid,
-                'occurred_at' => now_iso(),
-            ]);
-            $data = true; break;
-        }
-
-        // Переход на чужую вакансию. Отдельную старую таблицу сохраняем для
-        // совместимости, а универсальный журнал строит полную воронку.
-        case 'extClick': {
-            $extId = (string)($args[0] ?? '');
-            $sourceId = (string)($args[1] ?? '');
-            $vac = ($extId !== '' && $sourceId !== '')
-                ? sb_single('jm_ext_vacancies', [
-                    'id' => 'eq.' . $extId,
-                    'source_id' => 'eq.' . $sourceId,
-                    'active' => 'is.true',
-                ], 'id')
-                : null;
-            if (!$vac) { $data = false; break; }
-            // Непрозрачный click_id создаётся клиентом до открытия URL, чтобы
-            // браузер не блокировал переход ожиданием API. В нём нет user_id.
-            $clickId = trim((string)($args[3] ?? ''));
-            if (!preg_match('~^[A-Za-z0-9_-]{16,80}$~', $clickId)) $clickId = uid();
-            try {
-                sb_insert('jm_ext_clicks', [
-                    'id' => $clickId, 'ext_id' => $extId, 'source_id' => $sourceId,
-                    'user_id' => $authUid, 'clicked_at' => now_iso(),
-                ]);
-                sb_insert('jm_ext_events', [
-                    'id' => uid(), 'ext_id' => $extId, 'source_id' => $sourceId,
-                    'event_type' => 'click', 'user_id' => $authUid,
-                    'attribution_id' => $clickId, 'occurred_at' => now_iso(),
-                ]);
-            } catch (Throwable $e) {
-                // Повтор того же click_id идемпотентен: двойной tap не должен
-                // превращаться в два оплачиваемых перехода.
-                if (stripos($e->getMessage(), 'duplicate') === false
-                    && stripos($e->getMessage(), 'unique') === false) throw $e;
-            }
-            $data = ['recorded' => true, 'click_id' => $clickId]; break;
-        }
-
-        // Сводка по партнёрским вакансиям: объём, качество фида и воронка.
-        case 'extStats': {
-            $sources = sb_select_all('jm_ext_sources', [], 'id,name,environment');
-            $production = [];
-            foreach ($sources as $source) {
-                if (($source['environment'] ?? 'production') === 'production') {
-                    $production[(string)$source['id']] = (string)$source['name'];
-                }
-            }
-
-            $allVacancies = sb_select_all('jm_ext_vacancies', ['active' => 'is.true'],
-                'source_id,kind,metro_station,metro_station_norm,work_type');
-            $rows = array_values(array_filter($allVacancies,
-                fn($r) => isset($production[(string)($r['source_id'] ?? '')])));
-            $by = []; $withoutStation = 0; $withoutProfession = 0;
-            foreach ($rows as $r) {
-                $k = (string)$r['source_id'];
-                $by[$k] = ($by[$k] ?? 0) + 1;
-                if (!empty($r['metro_station']) && empty($r['metro_station_norm'])) $withoutStation++;
-                if (empty($r['work_type'])) $withoutProfession++;
-            }
-
-            $c7 = gmdate('Y-m-d\\TH:i:s', time() - 7 * 86400) . 'Z';
-            $c30 = gmdate('Y-m-d\\TH:i:s', time() - 30 * 86400) . 'Z';
-            $date30 = gmdate('Y-m-d', time() - 30 * 86400);
-            $onlyProduction = fn($r) => isset($production[(string)($r['source_id'] ?? '')]);
-            $events7 = array_values(array_filter(sb_select_all('jm_ext_events',
-                ['occurred_at' => 'gte.' . $c7], 'id,source_id,event_type,user_id,new_candidate'), $onlyProduction));
-            $events30 = array_values(array_filter(sb_select_all('jm_ext_events',
-                ['occurred_at' => 'gte.' . $c30], 'id,source_id,event_type,user_id,new_candidate'), $onlyProduction));
-            $runs7 = array_values(array_filter(sb_select_all('jm_ext_ingest_runs',
-                ['ran_at' => 'gte.' . $c7], 'source_id,success,received,status,ran_at'), $onlyProduction));
-
-            $summarize = function(array $events): array {
-                $totals = ['impression' => 0, 'click' => 0, 'conversion' => 0];
-                $perSource = [];
-                foreach ($events as $e) {
-                    $type = (string)($e['event_type'] ?? '');
-                    $source = (string)($e['source_id'] ?? '');
-                    if (!isset($totals[$type])) continue;
-                    $totals[$type]++;
-                    if (!isset($perSource[$source])) {
-                        $perSource[$source] = ['impressions' => 0, 'clicks' => 0, 'conversions' => 0];
-                    }
-                    $field = $type === 'impression' ? 'impressions' : ($type === 'click' ? 'clicks' : 'conversions');
-                    $perSource[$source][$field]++;
-                }
-                return ['totals' => $totals, 'sources' => $perSource];
-            };
-            $s7 = $summarize($events7);
-            $s30 = $summarize($events30);
-            $impressions = $s7['totals']['impression'];
-            $clicks = $s7['totals']['click'];
-            $conversions = $s7['totals']['conversion'];
-            $errors7 = count(array_filter($runs7, fn($r) => empty($r['success'])));
-
-            // Аудитория JobToo: только реальные незаблокированные работники.
-            $workers = sb_select_all('jm_users', ['role' => 'eq.worker', 'is_blocked' => 'not.is.true'],
-                'id,metro_station,created_at,last_seen_at');
-            $workerById = []; $regions = []; $activeRegions = [];
-            $active30 = 0; $registered30 = 0;
-            foreach ($workers as $worker) {
-                $uid = (string)($worker['id'] ?? '');
-                if ($uid !== '') $workerById[$uid] = $worker;
-                $region = trim((string)($worker['metro_station'] ?? ''));
-                if ($region !== '') $regions[$region] = ($regions[$region] ?? 0) + 1;
-                if (!empty($worker['last_seen_at']) && (string)$worker['last_seen_at'] >= $c30) {
-                    $active30++;
-                    if ($region !== '') $activeRegions[$region] = ($activeRegions[$region] ?? 0) + 1;
-                }
-                if (!empty($worker['created_at']) && (string)$worker['created_at'] >= $c30) $registered30++;
-            }
-            arsort($regions); arsort($activeRegions);
-
-            $unique = ['impression' => [], 'click' => [], 'conversion' => []];
-            $activityRegions = []; $newYes = 0; $newNo = 0; $newUnknown = 0;
-            $perSourceBusiness = [];
-            foreach ($events30 as $event) {
-                $type = (string)($event['event_type'] ?? '');
-                $sid = (string)($event['source_id'] ?? '');
-                $uid = trim((string)($event['user_id'] ?? ''));
-                if (!isset($perSourceBusiness[$sid])) {
-                    $perSourceBusiness[$sid] = [
-                        'source_name' => $production[$sid] ?? $sid,
-                        'unique_reached' => [], 'unique_interested' => [], 'unique_converted' => [],
-                        'new_yes' => 0, 'new_no' => 0, 'new_unknown' => 0, 'spend_rub' => 0.0,
-                    ];
-                }
-                if ($uid !== '' && isset($unique[$type])) {
-                    $unique[$type][$uid] = true;
-                    $field = $type === 'impression' ? 'unique_reached'
-                        : ($type === 'click' ? 'unique_interested' : 'unique_converted');
-                    $perSourceBusiness[$sid][$field][$uid] = true;
-                    $region = trim((string)($workerById[$uid]['metro_station'] ?? ''));
-                    if ($region !== '') $activityRegions[$region] = ($activityRegions[$region] ?? 0) + 1;
-                }
-                if ($type === 'conversion') {
-                    if (($event['new_candidate'] ?? null) === true) {
-                        $newYes++; $perSourceBusiness[$sid]['new_yes']++;
-                    } elseif (($event['new_candidate'] ?? null) === false) {
-                        $newNo++; $perSourceBusiness[$sid]['new_no']++;
-                    } else {
-                        $newUnknown++; $perSourceBusiness[$sid]['new_unknown']++;
-                    }
-                }
-            }
-            arsort($activityRegions);
-
-            $costs = array_values(array_filter(sb_select_all('jm_partner_costs',
-                ['incurred_at' => 'gte.' . $date30], 'source_id,amount_rub,incurred_at'), $onlyProduction));
-            $spend30 = 0.0;
-            foreach ($costs as $cost) {
-                $sid = (string)($cost['source_id'] ?? '');
-                $amount = (float)($cost['amount_rub'] ?? 0);
-                $spend30 += $amount;
-                if (!isset($perSourceBusiness[$sid])) {
-                    $perSourceBusiness[$sid] = [
-                        'source_name' => $production[$sid] ?? $sid,
-                        'unique_reached' => [], 'unique_interested' => [], 'unique_converted' => [],
-                        'new_yes' => 0, 'new_no' => 0, 'new_unknown' => 0, 'spend_rub' => 0.0,
-                    ];
-                }
-                $perSourceBusiness[$sid]['spend_rub'] += $amount;
-            }
-
-            foreach ($perSourceBusiness as $sid => &$metric) {
-                $metric['unique_reached'] = count($metric['unique_reached']);
-                $metric['unique_interested'] = count($metric['unique_interested']);
-                $metric['unique_converted'] = count($metric['unique_converted']);
-                $known = $metric['new_yes'] + $metric['new_no'];
-                $metric['new_candidate_share_pct'] = $known > 0
-                    ? round($metric['new_yes'] * 100 / $known, 2) : null;
-                $metric['cost_per_conversion_rub'] = $metric['unique_converted'] > 0
-                    && $metric['spend_rub'] > 0
-                    ? round($metric['spend_rub'] / $metric['unique_converted'], 2) : null;
-            }
-            unset($metric);
-
-            $uniqueReached = count($unique['impression']);
-            $uniqueInterested = count($unique['click']);
-            $uniqueConverted = count($unique['conversion']);
-            $knownNew = $newYes + $newNo;
-
-            $data = [
-                'всего' => count($rows),
-                'по_источникам' => $by,
-                'без_станции' => $withoutStation,
-                'без_профессии' => $withoutProfession,
-                'показы_7дней' => $impressions,
-                'переходов_7дней' => $clicks,
-                'конверсии_7дней' => $conversions,
-                'ctr_7дней' => $impressions > 0 ? round($clicks * 100 / $impressions, 2) : 0,
-                'конверсия_из_переходов_7дней' => $clicks > 0 ? round($conversions * 100 / $clicks, 2) : 0,
-                'ошибок_фида_7дней' => $errors7,
-                'воронка_по_источникам_7дней' => $s7['sources'],
-                'воронка_30дней' => $s30['totals'],
-                'партнёрский_отчёт_30дней' => [
-                    'аудитория_работников' => count($workers),
-                    'активных_работников' => $active30,
-                    'новых_регистраций' => $registered30,
-                    'уникальный_охват' => $uniqueReached,
-                    'уникальный_интерес' => $uniqueInterested,
-                    'уникальные_конверсии' => $uniqueConverted,
-                    'конверсия_охват_интерес_pct' => $uniqueReached > 0
-                        ? round($uniqueInterested * 100 / $uniqueReached, 2) : null,
-                    'конверсия_интерес_отклик_pct' => $uniqueInterested > 0
-                        ? round($uniqueConverted * 100 / $uniqueInterested, 2) : null,
-                    'расходы_rub' => round($spend30, 2),
-                    'стоимость_отклика_rub' => $uniqueConverted > 0 && $spend30 > 0
-                        ? round($spend30 / $uniqueConverted, 2) : null,
-                    'новых_для_партнёра' => $newYes,
-                    'известных_партнёру' => $newNo,
-                    'статус_новизны_не_передан' => $newUnknown,
-                    'доля_новых_pct' => $knownNew > 0 ? round($newYes * 100 / $knownNew, 2) : null,
-                    'регионы_аудитории' => array_slice($regions, 0, 15, true),
-                    'регионы_активной_аудитории' => array_slice($activeRegions, 0, 15, true),
-                    'регионы_партнёрской_активности' => array_slice($activityRegions, 0, 15, true),
-                    'по_источникам' => $perSourceBusiness,
-                ],
-            ];
-            break;
-        }
-
-        // Расходы пилота вводятся фактами. Нулевое или отсутствующее значение
-        // не считается бесплатным откликом и не искажает коммерческий отчёт.
-        case 'extPartnerCostSave': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $sourceId = trim((string)($v['source_id'] ?? ''));
-            $amount = (float)($v['amount_rub'] ?? 0);
-            $date = trim((string)($v['incurred_at'] ?? ''));
-            if ($sourceId === '' || $amount <= 0 || !preg_match('~^\\d{4}-\\d{2}-\\d{2}$~', $date)) {
-                $data = ['error' => 'нужны источник, положительная сумма и дата']; break;
-            }
-            $source = sb_single('jm_ext_sources', ['id' => 'eq.' . $sourceId], 'id');
-            if (!$source) { $data = ['error' => 'источник не найден']; break; }
-            sb_insert('jm_partner_costs', [
-                'id' => uid(), 'source_id' => $sourceId,
-                'amount_rub' => round($amount, 2), 'incurred_at' => $date,
-                'note' => trim((string)($v['note'] ?? '')) ?: null,
-                'created_at' => now_iso(),
-            ]);
-            $data = ['ok' => true]; break;
-        }
-
-        // ── Биллинг и сверка партнёрского пилота ─────────────────────────
-        case 'partnerTariffsList': {
-            $sourceId = trim((string)($args[0] ?? ''));
-            $filters = $sourceId !== '' ? ['source_id' => 'eq.' . $sourceId] : [];
-            $data = sb_select_all('jm_partner_tariffs', $filters,
-                'id,source_id,name,billing_model,amount_rub,fixed_monthly_rub,effective_from,effective_to,active,terms_version,created_at');
-            break;
-        }
-
-        case 'partnerTariffSave': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $sourceId = trim((string)($v['source_id'] ?? ''));
-            $model = trim((string)($v['billing_model'] ?? ''));
-            $allowed = ['first_completed_shift','completed_shift','qualified_application','fixed_monthly','hybrid'];
-            $from = trim((string)($v['effective_from'] ?? ''));
-            if ($sourceId === '' || !in_array($model, $allowed, true)
-                || !preg_match('~^\\d{4}-\\d{2}-\\d{2}$~', $from)) {
-                $data = ['error' => 'Нужны источник, модель и дата начала тарифа']; break;
-            }
-            $row = [
-                'id' => trim((string)($v['id'] ?? '')) ?: uid(),
-                'source_id' => $sourceId,
-                'name' => trim((string)($v['name'] ?? '')) ?: $model,
-                'billing_model' => $model,
-                'amount_rub' => max(0, round((float)($v['amount_rub'] ?? 0), 2)),
-                'fixed_monthly_rub' => max(0, round((float)($v['fixed_monthly_rub'] ?? 0), 2)),
-                'effective_from' => $from,
-                'effective_to' => !empty($v['effective_to']) ? (string)$v['effective_to'] : null,
-                'active' => ($v['active'] ?? true) !== false,
-                'terms_version' => trim((string)($v['terms_version'] ?? '')) ?: $from,
-                'created_at' => now_iso(),
-            ];
-            sb_upsert('jm_partner_tariffs', $row, 'id');
-            $data = $row; break;
-        }
-
-        case 'partnerBillableEventRecord': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $sourceId = trim((string)($v['source_id'] ?? ''));
-            $occurredAt = trim((string)($v['occurred_at'] ?? '')) ?: now_iso();
-            $tariffs = sb_select_all('jm_partner_tariffs',
-                ['source_id' => 'eq.' . $sourceId, 'active' => 'is.true'],
-                'id,source_id,billing_model,amount_rub,effective_from,effective_to,active');
-            $v['occurred_at'] = $occurredAt;
-            try {
-                $dedupe = pb_dedupe_key($v);
-                $existing = sb_single('jm_partner_billable_events',
-                    ['source_id' => 'eq.' . $sourceId, 'dedupe_key' => 'eq.' . $dedupe], 'id,dedupe_key,status');
-                if ($existing) { $data = ['created' => false, 'reason' => 'duplicate', 'event' => $existing]; break; }
-                $built = pb_build_billable_event($v, $tariffs);
-                if (!$built['created']) { $data = $built; break; }
-                sb_insert('jm_partner_billable_events', $built['billable_event']);
-                $data = $built;
-            } catch (Throwable $e) {
-                if (stripos($e->getMessage(), 'duplicate') !== false
-                    || stripos($e->getMessage(), 'unique') !== false) {
-                    $data = ['created' => false, 'reason' => 'duplicate'];
-                } else throw $e;
-            }
-            break;
-        }
-
-        case 'partnerReconciliationRecord': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $eventId = trim((string)($v['billable_event_id'] ?? ''));
-            $event = $eventId !== '' ? sb_single('jm_partner_billable_events',
-                ['id' => 'eq.' . $eventId], 'id,source_id,application_id,status') : null;
-            if (!$event) { $data = ['error' => 'Оплачиваемое событие не найдено']; break; }
-            $issue = pb_reconciliation_issue($event, [
-                'status' => (string)($v['partner_status'] ?? ''),
-                'reason_code' => (string)($v['reason_code'] ?? 'status_mismatch'),
-                'reason_text' => $v['reason_text'] ?? null,
-            ]);
-            if ($issue === null) { $data = ['created' => false, 'reason' => 'statuses_match']; break; }
-            $issue['id'] = uid();
-            try { sb_insert('jm_partner_reconciliation_issues', $issue); }
-            catch (Throwable $e) {
-                if (stripos($e->getMessage(), 'duplicate') === false
-                    && stripos($e->getMessage(), 'unique') === false) throw $e;
-            }
-            $data = ['created' => true, 'issue' => $issue]; break;
-        }
-
-        case 'partnerConsentRecord': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            if ($authUid === null || (string)($v['worker_id'] ?? '') !== $authUid) {
-                $data = ['error' => 'Нельзя записать согласие за другого пользователя']; break;
-            }
-            $required = ['source_id','worker_id','ext_vacancy_id','recipient_name','consent_version'];
-            foreach ($required as $key) {
-                if (trim((string)($v[$key] ?? '')) === '') {
-                    $data = ['error' => 'Не заполнено поле согласия: ' . $key]; break 2;
-                }
-            }
-            $categories = is_array($v['data_categories'] ?? null)
-                ? array_values(array_intersect($v['data_categories'], ['profile','application','messages','statuses'])) : [];
-            if (!$categories) { $data = ['error' => 'Не указан состав передаваемых данных']; break; }
-            $row = [
-                'id' => uid(), 'source_id' => (string)$v['source_id'],
-                'worker_id' => (string)$v['worker_id'], 'ext_vacancy_id' => (string)$v['ext_vacancy_id'],
-                'application_id' => $v['application_id'] ?? null,
-                'recipient_name' => (string)$v['recipient_name'], 'data_categories' => $categories,
-                'purpose' => trim((string)($v['purpose'] ?? '')) ?: 'Передача отклика, сообщений и статусов по выбранной смене',
-                'consent_version' => (string)$v['consent_version'], 'accepted_at' => now_iso(),
-                'evidence' => [
-                    'ip_hash' => isset($v['ip']) ? hash('sha256', (string)$v['ip']) : null,
-                    'user_agent' => substr((string)($v['user_agent'] ?? ''), 0, 300),
-                ],
-            ];
-            $previous = sb_single('jm_partner_data_consents', [
-                'source_id' => 'eq.' . $row['source_id'], 'worker_id' => 'eq.' . $row['worker_id'],
-                'ext_vacancy_id' => 'eq.' . $row['ext_vacancy_id'],
-                'consent_version' => 'eq.' . $row['consent_version'],
-            ], 'id');
-            if ($previous) {
-                $row['id'] = $previous['id'];
-                $row['revoked_at'] = null;
-                sb_upsert('jm_partner_data_consents', $row, 'id');
-            } else {
-                sb_insert('jm_partner_data_consents', $row);
-            }
-            $data = ['recorded' => true, 'consent_version' => $row['consent_version']]; break;
-        }
-
-        // SuperJob OAuth начинается только для вошедшего пользователя. В state
-        // нет user_id — наружу уходит случайная строка, а в базе лежит её хеш.
-        case 'superjobOauthStart': {
-            if ($authUid === null) throw new RuntimeException('Нужна авторизация JobToo');
-            $clientId = sjo_cfg('SUPERJOB_CLIENT_ID');
-            if ($clientId === '' || sjo_client_secret() === '') {
-                throw new RuntimeException('SuperJob OAuth ещё не настроен');
-            }
-            $state = jt_b64url_encode(random_bytes(32));
-            $returnUrl = trim((string)($args[0] ?? ''));
-            if (!preg_match('~^(?:https://jobtoo\.ru/|onspaceapp://)~i', $returnUrl)) {
-                $returnUrl = 'https://jobtoo.ru/';
-            }
-            sb_insert('jm_superjob_oauth_states', [
-                'state_hash' => hash('sha256', $state),
-                'worker_id' => $authUid,
-                'return_url' => $returnUrl,
-                'expires_at' => gmdate('Y-m-d\TH:i:s', time() + 600) . '.000Z',
-            ]);
-            $redirectUri = 'https://jobtoo.ru/api/superjob_oauth.php';
-            $data = ['url' => 'https://www.superjob.ru/authorize/?' . http_build_query([
-                'client_id' => $clientId,
-                'redirect_uri' => $redirectUri,
-                'state' => $state,
-            ], '', '&', PHP_QUERY_RFC3986)];
-            break;
-        }
-
-        case 'superjobOauthStatus': {
-            if ($authUid === null) { $data = ['connected' => false]; break; }
-            $connection = sb_single('jm_superjob_connections', ['worker_id' => 'eq.' . $authUid],
-                'resume_id,expires_at,connected_at,last_error');
-            $data = $connection ? [
-                'connected' => true,
-                'has_resume' => !empty($connection['resume_id']),
-                'connected_at' => $connection['connected_at'] ?? null,
-                'last_error' => $connection['last_error'] ?? null,
-            ] : ['connected' => false];
-            break;
-        }
-
-        case 'superjobOauthDisconnect': {
-            if ($authUid === null) throw new RuntimeException('Нужна авторизация JobToo');
-            sb_delete('jm_superjob_connections', ['worker_id' => 'eq.' . $authUid]);
-            $data = ['disconnected' => true];
-            break;
-        }
-
-        // Отправляем только ID резюме, выбранный самим SuperJob как основной,
-        // и ID вакансии из нашей серверной копии. Клиент не может подставить их.
-        case 'superjobApply': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $vacancyId = trim((string)($v['ext_vacancy_id'] ?? ''));
-            $consentVersion = trim((string)($v['consent_version'] ?? ''));
-            $comment = mb_substr(trim((string)($v['comment'] ?? '')), 0, 1000);
-            if ($authUid === null || $vacancyId === '' || $consentVersion === '') {
-                throw new RuntimeException('Не хватает данных для отклика');
-            }
-            $vacancy = sb_single('jm_ext_vacancies', [
-                'id' => 'eq.' . $vacancyId, 'source_id' => 'eq.superjob',
-                'active' => 'is.true', 'environment' => 'eq.production',
-            ], 'id,external_id');
-            $consent = sb_single('jm_partner_data_consents', [
-                'source_id' => 'eq.superjob', 'worker_id' => 'eq.' . $authUid,
-                'ext_vacancy_id' => 'eq.' . $vacancyId,
-                'consent_version' => 'eq.' . $consentVersion, 'revoked_at' => 'is.null',
-            ], 'id');
-            if (!$vacancy || !$consent) throw new RuntimeException('Вакансия или согласие не найдены');
-
-            $existing = sb_single('jm_partner_applications', [
-                'source_id' => 'eq.superjob', 'worker_id' => 'eq.' . $authUid,
-                'ext_vacancy_id' => 'eq.' . $vacancyId,
-            ], 'id,status');
-            if ($existing && ($existing['status'] ?? '') !== 'failed') {
-                $data = ['id' => $existing['id'], 'status' => $existing['status'], 'created' => false]; break;
-            }
-            $connection = sb_single('jm_superjob_connections', ['worker_id' => 'eq.' . $authUid]);
-            if (!$connection) throw new RuntimeException('Подключите аккаунт SuperJob');
-            if (empty($connection['resume_id'])) throw new RuntimeException('В SuperJob нет основного резюме');
-
-            try {
-                $access = sjo_decrypt((string)$connection['access_token_enc'], SB_KEY);
-                if (strtotime((string)$connection['expires_at']) <= time() + 60) {
-                    $refresh = sjo_decrypt((string)$connection['refresh_token_enc'], SB_KEY);
-                    $token = sjo_request('GET', 'https://api.superjob.ru/2.0/oauth2/refresh_token/?' . http_build_query([
-                        'refresh_token' => $refresh,
-                        'client_id' => sjo_cfg('SUPERJOB_CLIENT_ID'),
-                        'client_secret' => sjo_client_secret(),
-                    ], '', '&', PHP_QUERY_RFC3986));
-                    $access = (string)($token['access_token'] ?? '');
-                    $newRefresh = (string)($token['refresh_token'] ?? $refresh);
-                    if ($access === '') throw new RuntimeException('SuperJob did not refresh the token');
-                    $ttl = (int)($token['ttl'] ?? 0);
-                    $expires = $ttl > time() ? $ttl : time() + max(300, (int)($token['expires_in'] ?? 3600));
-                    sb_update('jm_superjob_connections', ['worker_id' => 'eq.' . $authUid], [
-                        'access_token_enc' => sjo_encrypt($access, SB_KEY),
-                        'refresh_token_enc' => sjo_encrypt($newRefresh, SB_KEY),
-                        'expires_at' => gmdate('Y-m-d\TH:i:s', $expires) . '.000Z',
-                        'updated_at' => now_iso(), 'last_error' => null,
-                    ]);
-                }
-                sjo_request('POST', 'https://api.superjob.ru/2.0/send_cv_on_vacancy/', [
-                    'id_cv' => (string)$connection['resume_id'],
-                    'id_vacancy' => (string)$vacancy['external_id'],
-                    'comment' => $comment,
-                ], $access);
-                $applicationId = $existing['id'] ?? uid();
-                sb_upsert('jm_partner_applications', [
-                    'id' => $applicationId, 'source_id' => 'superjob',
-                    'ext_vacancy_id' => $vacancyId, 'worker_id' => $authUid,
-                    'status' => 'submitted', 'consent_version' => $consentVersion,
-                    'failure_code' => null, 'failure_message' => null,
-                    'updated_at' => now_iso(), 'partner_updated_at' => now_iso(),
-                ], 'id');
-                $data = ['id' => $applicationId, 'status' => 'submitted', 'created' => !$existing];
-            } catch (Throwable $e) {
-                sb_update('jm_superjob_connections', ['worker_id' => 'eq.' . $authUid], [
-                    'last_error' => mb_substr($e->getMessage(), 0, 300), 'updated_at' => now_iso(),
-                ]);
-                throw new RuntimeException('SuperJob не принял отклик. Попробуйте ещё раз.');
-            }
-            break;
-        }
-
-        // Отклик внутри JobToo доступен только для боевой embedded-интеграции.
-        // В очередь кладём непрозрачные ID; профиль партнёру собирает уже
-        // серверный адаптер, поэтому клиент не может подменить персональные данные.
-        case 'partnerApplicationCreate': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $workerId = trim((string)($v['worker_id'] ?? ''));
-            $sourceId = trim((string)($v['source_id'] ?? ''));
-            $vacancyId = trim((string)($v['ext_vacancy_id'] ?? ''));
-            $consentVersion = trim((string)($v['consent_version'] ?? ''));
-            if ($authUid === null || $workerId === '' || $workerId !== $authUid) {
-                $data = ['error' => 'Нельзя отправить отклик за другого пользователя']; break;
-            }
-            if ($sourceId === '' || $vacancyId === '' || $consentVersion === '') {
-                $data = ['error' => 'Не хватает данных для отклика']; break;
-            }
-            $source = sb_single('jm_ext_sources', [
-                'id' => 'eq.' . $sourceId, 'enabled' => 'is.true',
-                'environment' => 'eq.production', 'integration_mode' => 'eq.embedded',
-            ], 'id');
-            $vacancy = sb_single('jm_ext_vacancies', [
-                'id' => 'eq.' . $vacancyId, 'source_id' => 'eq.' . $sourceId,
-                'active' => 'is.true', 'environment' => 'eq.production',
-            ], 'id');
-            if (!$source || !$vacancy) {
-                $data = ['error' => 'Встроенный отклик для этой вакансии недоступен']; break;
-            }
-            $existing = sb_single('jm_partner_applications', [
-                'source_id' => 'eq.' . $sourceId, 'ext_vacancy_id' => 'eq.' . $vacancyId,
-                'worker_id' => 'eq.' . $workerId,
-            ], 'id,status');
-            if ($existing) {
-                try {
-                    sb_insert('jm_partner_outbox', [
-                        'id' => uid(), 'source_id' => $sourceId,
-                        'aggregate_type' => 'application', 'aggregate_id' => $existing['id'],
-                        'event_kind' => 'application.submit',
-                        'idempotency_key' => 'application.submit:' . $existing['id'],
-                        'payload' => ['application_id' => $existing['id'], 'ext_vacancy_id' => $vacancyId],
-                        'delivery_status' => 'pending', 'attempts' => 0,
-                        'next_attempt_at' => now_iso(), 'created_at' => now_iso(),
-                    ]);
-                } catch (Throwable $e) {
-                    if (stripos($e->getMessage(), 'duplicate') === false
-                        && stripos($e->getMessage(), 'unique') === false) throw $e;
-                }
-                $data = ['id' => $existing['id'], 'status' => $existing['status'], 'created' => false]; break;
-            }
-            $consent = sb_single('jm_partner_data_consents', [
-                'source_id' => 'eq.' . $sourceId, 'worker_id' => 'eq.' . $workerId,
-                'ext_vacancy_id' => 'eq.' . $vacancyId, 'consent_version' => 'eq.' . $consentVersion,
-                'revoked_at' => 'is.null',
-            ], 'id');
-            if (!$consent) { $data = ['error' => 'Сначала подтвердите передачу данных партнёру']; break; }
-
-            $applicationId = uid();
-            $createdAt = now_iso();
-            try {
-                sb_insert('jm_partner_applications', [
-                    'id' => $applicationId, 'source_id' => $sourceId,
-                    'ext_vacancy_id' => $vacancyId, 'worker_id' => $workerId,
-                    'status' => 'local_created', 'status_version' => 1,
-                    'consent_version' => $consentVersion,
-                    'created_at' => $createdAt, 'updated_at' => $createdAt,
-                ]);
-                sb_insert('jm_partner_outbox', [
-                    'id' => uid(), 'source_id' => $sourceId,
-                    'aggregate_type' => 'application', 'aggregate_id' => $applicationId,
-                    'event_kind' => 'application.submit',
-                    'idempotency_key' => 'application.submit:' . $applicationId,
-                    'payload' => ['application_id' => $applicationId, 'ext_vacancy_id' => $vacancyId],
-                    'delivery_status' => 'pending', 'attempts' => 0,
-                    'next_attempt_at' => $createdAt, 'created_at' => $createdAt,
-                ]);
-                sb_update('jm_partner_data_consents', ['id' => 'eq.' . $consent['id']], [
-                    'application_id' => $applicationId,
-                ]);
-            } catch (Throwable $e) {
-                $existing = sb_single('jm_partner_applications', [
-                    'source_id' => 'eq.' . $sourceId, 'ext_vacancy_id' => 'eq.' . $vacancyId,
-                    'worker_id' => 'eq.' . $workerId,
-                ], 'id,status');
-                if (!$existing) throw $e;
-                $data = ['id' => $existing['id'], 'status' => $existing['status'], 'created' => false]; break;
-            }
-            $data = ['id' => $applicationId, 'status' => 'local_created', 'created' => true]; break;
-        }
-
-        case 'partnerApplicationsGet': {
-            $workerId = trim((string)($args[0] ?? ''));
-            if ($authUid === null || $workerId === '' || $workerId !== $authUid) {
-                $data = ['error' => 'Нельзя читать чужие отклики']; break;
-            }
-            $rows = sb_select('jm_partner_applications', [
-                'worker_id' => 'eq.' . $workerId,
-            ], 'id,source_id,ext_vacancy_id,worker_id,status,created_at,updated_at', 'updated_at.desc');
-            $vacancyIds = [];
-            $sourceIds = [];
-            foreach ($rows as $row) {
-                $vacancyIds[(string)$row['ext_vacancy_id']] = true;
-                $sourceIds[(string)$row['source_id']] = true;
-            }
-            $vacancies = [];
-            if ($vacancyIds) {
-                foreach (sb_select('jm_ext_vacancies', [
-                    'id' => 'in.(' . implode(',', array_keys($vacancyIds)) . ')',
-                ], 'id,title,company,address,salary,pay_period') as $vacancy) {
-                    $vacancies[(string)$vacancy['id']] = $vacancy;
-                }
-            }
-            $sources = [];
-            if ($sourceIds) {
-                foreach (sb_select('jm_ext_sources', [
-                    'id' => 'in.(' . implode(',', array_keys($sourceIds)) . ')',
-                ], 'id,name') as $source) {
-                    $sources[(string)$source['id']] = $source['name'];
-                }
-            }
-            foreach ($rows as &$row) {
-                $vacancy = $vacancies[(string)$row['ext_vacancy_id']] ?? [];
-                $row['title'] = $vacancy['title'] ?? null;
-                $row['company'] = $vacancy['company'] ?? null;
-                $row['address'] = $vacancy['address'] ?? null;
-                $row['salary'] = $vacancy['salary'] ?? null;
-                $row['pay_period'] = $vacancy['pay_period'] ?? null;
-                $row['source_name'] = $sources[(string)$row['source_id']] ?? null;
-            }
-            unset($row);
-            $data = $rows; break;
-        }
-
-        case 'partnerBillingReport': {
-            $sourceId = trim((string)($args[0] ?? ''));
-            $from = trim((string)($args[1] ?? ''));
-            $to = trim((string)($args[2] ?? ''));
-            if ($sourceId === '' || !preg_match('~^\\d{4}-\\d{2}-\\d{2}$~', $from)
-                || !preg_match('~^\\d{4}-\\d{2}-\\d{2}$~', $to)) {
-                $data = ['error' => 'Нужны источник и границы периода']; break;
-            }
-            $events = sb_select_all('jm_partner_billable_events', [
-                'source_id' => 'eq.' . $sourceId,
-                'occurred_at' => 'gte.' . $from . 'T00:00:00Z',
-                'and' => '(occurred_at.lt.' . $to . 'T23:59:59Z)',
-            ], 'id,source_id,application_id,worker_id,ext_vacancy_id,partner_event_id,event_kind,occurred_at,amount_rub,status,partner_status,rejection_reason');
-            $issues = sb_select_all('jm_partner_reconciliation_issues', [
-                'source_id' => 'eq.' . $sourceId,
-                'detected_at' => 'gte.' . $from . 'T00:00:00Z',
-            ], 'id,billable_event_id,local_status,partner_status,reason_code,reason_text,resolution_status,detected_at,resolved_at');
-            $approved = array_values(array_filter($events, fn($e) => in_array($e['status'] ?? '', ['approved','invoiced','paid'], true)));
-            $amount = array_sum(array_map(fn($e) => (float)($e['amount_rub'] ?? 0), $approved));
-            $data = [
-                'source_id' => $sourceId, 'period_start' => $from, 'period_end' => $to,
-                'events' => $events, 'discrepancies' => $issues,
-                'summary' => [
-                    'events' => count($events), 'approved' => count($approved),
-                    'rejected' => count(array_filter($events, fn($e) => ($e['status'] ?? '') === 'rejected')),
-                    'open_discrepancies' => count(array_filter($issues, fn($i) => ($i['resolution_status'] ?? '') === 'open')),
-                    'amount_rub' => round($amount, 2),
-                ],
-            ];
-            break;
-        }
-
-        case 'partnerReportSnapshotSave': {
-            $v = is_array($args[0] ?? null) ? $args[0] : [];
-            $required = ['source_id','period_start','period_end','checksum_sha256'];
-            foreach ($required as $key) {
-                if (trim((string)($v[$key] ?? '')) === '') {
-                    $data = ['error' => 'Не заполнено поле отчёта: ' . $key]; break 2;
-                }
-            }
-            $row = [
-                'id' => trim((string)($v['id'] ?? '')) ?: uid(),
-                'source_id' => (string)$v['source_id'],
-                'period_start' => (string)$v['period_start'],
-                'period_end' => (string)$v['period_end'],
-                'status' => 'generated',
-                'event_count' => max(0, (int)($v['event_count'] ?? 0)),
-                'amount_rub' => max(0, round((float)($v['amount_rub'] ?? 0), 2)),
-                'approved_count' => max(0, (int)($v['approved_count'] ?? 0)),
-                'rejected_count' => max(0, (int)($v['rejected_count'] ?? 0)),
-                'discrepancy_count' => max(0, (int)($v['discrepancy_count'] ?? 0)),
-                'checksum_sha256' => (string)$v['checksum_sha256'],
-                'generated_at' => now_iso(),
-            ];
-            sb_upsert('jm_partner_report_runs', $row, 'source_id,period_start,period_end');
-            $data = ['saved' => true, 'report' => $row]; break;
-        }
-
-
         // ── Ключи внешнего API ─────────────────────────────────────────────
         //
         // Управление отсюда, а не правкой таблицы руками: ключ, выданный в
@@ -5660,15 +4661,14 @@ try {
             $event = (string)($args[1] ?? '');
             $vacancyId = isset($args[2]) ? trim((string)$args[2]) : '';
             $kind = isset($args[3]) ? (string)$args[3] : '';
-            $sourceId = isset($args[4]) ? trim((string)$args[4]) : '';
-            $platform = isset($args[5]) ? (string)$args[5] : '';
-            $campaignId = isset($args[6]) ? trim((string)$args[6]) : '';
-            $channel = isset($args[7]) ? (string)$args[7] : '';
+            $platform = isset($args[4]) ? (string)$args[4] : '';
+            $campaignId = isset($args[5]) ? trim((string)$args[5]) : '';
+            $channel = isset($args[6]) ? (string)$args[6] : '';
 
             $events = ['guest_started', 'vacancy_impression', 'apply_intent',
-                'registration_started', 'registration_completed', 'external_click',
+                'registration_started', 'registration_completed',
                 'campaign_published', 'campaign_open', 'campaign_apply', 'campaign_shared'];
-            $kinds = ['', 'shift', 'permanent', 'external'];
+            $kinds = ['', 'shift', 'permanent'];
             $platforms = ['', 'web', 'ios', 'android', 'windows', 'macos'];
             $channels = ['', 'telegram_group', 'telegram_dm', 'user_share'];
             if ($anon === '' || strlen($anon) > 128 || !preg_match('/^[A-Za-z0-9._:-]+$/', $anon)
@@ -5676,7 +4676,7 @@ try {
                 || !in_array($kind, $kinds, true)
                 || !in_array($platform, $platforms, true)
                 || !in_array($channel, $channels, true)
-                || strlen($vacancyId) > 160 || strlen($sourceId) > 160
+                || strlen($vacancyId) > 160
                 || strlen($campaignId) > 64
                 || ($campaignId !== '' && !preg_match('/^[A-Za-z0-9-]+$/', $campaignId))) {
                 jt_respond(['error' => 'Invalid guest analytics event'], 400); exit;
@@ -5688,7 +4688,6 @@ try {
                 'event_type' => $event,
                 'vacancy_id' => $vacancyId !== '' ? $vacancyId : null,
                 'vacancy_kind' => $kind !== '' ? $kind : null,
-                'source_id' => $sourceId !== '' ? $sourceId : null,
                 'platform' => $platform !== '' ? $platform : null,
                 'campaign_id' => $campaignId !== '' ? $campaignId : null,
                 'channel' => $channel !== '' ? $channel : null,

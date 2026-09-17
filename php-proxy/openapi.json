@@ -322,67 +322,6 @@
           }
         }
       }
-    },
-    "/conversions": {
-      "post": {
-        "summary": "Подтвердить конверсию после перехода",
-        "description": "Идемпотентный callback партнёра. Передайте непрозрачный jt_click_id из URL как click_id и уникальный event_id. Персональные данные не нужны. Поле new_candidate позволяет партнёру подтвердить долю новой аудитории.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "click_id",
-                  "event_id"
-                ],
-                "properties": {
-                  "click_id": {
-                    "type": "string",
-                    "description": "Значение jt_click_id из URL перехода JobToo"
-                  },
-                  "event_id": {
-                    "type": "string",
-                    "description": "Уникальный ID события у партнёра"
-                  },
-                  "occurred_at": {
-                    "type": "string",
-                    "format": "date-time",
-                    "description": "Необязательное фактическое время конверсии"
-                  },
-                  "ext_id": {
-                    "type": "string",
-                    "deprecated": true,
-                    "description": "Старый способ без атрибуции; используйте click_id"
-                  },
-                  "new_candidate": {
-                    "type": "boolean",
-                    "description": "Необязательное подтверждение партнёра: кандидат новый для партнёра (true) или уже известен ему (false)"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Конверсия принята"
-          },
-          "400": {
-            "description": "Неверный JSON, идентификатор или время события"
-          },
-          "401": {
-            "description": "Ключ не передан или отозван"
-          },
-          "403": {
-            "description": "Нет права conversions:write"
-          },
-          "404": {
-            "description": "Переход click_id не найден"
-          }
-        }
-      }
     }
   }
 }

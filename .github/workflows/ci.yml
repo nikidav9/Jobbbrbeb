@@ -42,10 +42,6 @@ jobs:
       - name: PHP syntax
         run: find php-proxy -name '*.php' -print0 | xargs -0 -n1 php -l
 
-      - name: Partner gateway state machine
-        run: php tests/partner_core_test.php
-      - name: Isolated partner sandbox flow
-        run: php tests/partner_sandbox_e2e_test.php
 
       - name: Страница вакансии отдаёт содержимое и разметку
         run: php tests/vacancy_page_test.php
@@ -55,12 +51,6 @@ jobs:
 
       - name: Карта сайта не собирается заново на каждый запрос
         run: php tests/sitemap_cache_test.php
-
-      - name: Смерть одного источника вакансий видна в отчёте
-        run: php tests/ext_health_test.php
-
-      - name: Карьерные страницы работодателей разбираются
-        run: php tests/career_feed_test.php
 
       - name: Приглашение платит за выход на смену, а не за отклик
         run: php tests/referral_test.php
@@ -110,18 +100,6 @@ jobs:
       - name: Воронка ленты объясняет нулевые отклики
         run: php tests/feed_funnel_test.php
 
-      - name: Карьерный коннектор читает JSON сайтов
-        run: php tests/career_json_test.php
-
-      - name: В ленту берём только свои виды работ
-        run: php tests/feed_relevance_test.php
-
-      - name: Одна и та же вакансия не теряется в отпечатке
-        run: php tests/ingest_dedupe_test.php
-
-      - name: Разведка с московского сервера собрана правильно
-        run: python3 tests/career_discover_local_test.py
-
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
@@ -136,12 +114,6 @@ jobs:
           node --check public/sw.js
           bash -n infra/bootstrap.sh
           find infra -maxdepth 1 -name '*.sh' -print0 | xargs -0 -n1 bash -n
-          python3 tests/superjob_infra_test.py
-          python3 tests/headhunter_infra_test.py
-          python3 tests/external_filter_count_test.py
-          python3 tests/feed_contract_test.py
-          python3 tests/career_infra_test.py
-          python3 tests/career_full_catalog_test.py
           python3 tests/referral_chain_test.py
           python3 tests/referral_data_policy_test.py
           python3 tests/user_id_contract_test.py

@@ -67,11 +67,6 @@ check('прокрутки внутри карточки по-прежнему н
 $badge = (string)file_get_contents(__DIR__ . '/../components/feature/ReplyBadge.tsx');
 check('по одной переписке вывода не делаем',
     str_contains($badge, 'if (!stats || stats.chats < 2) return null;'));
-// У партнёрских карточек employerId вида `external:<источник>`: в карте
-// отзывчивости такого ключа нет, stats придёт undefined — и плашка промолчит
-// сама, без отдельной проверки на карточке.
-check('партнёрские карточки отличимы по employerId',
-    str_contains($feed, 'employerId: `external:${v.sourceId}`,'));
 
 // ── Старые места не потеряны ─────────────────────────────────────────────────
 // Плашка добавлена к свайпу, а не переехала: в подробностях она тоже нужна.
