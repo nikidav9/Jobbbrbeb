@@ -1039,8 +1039,8 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 
 const fh = StyleSheet.create({
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(14), paddingTop: rs(8), paddingBottom: rs(10),
+    flexDirection: 'row', alignItems: 'center', gap: rs(13),
+    paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
     backgroundColor: Colors.bgWarm,
   },
   logo: { fontSize: rf(26), letterSpacing: -0.5 },
@@ -1380,6 +1380,14 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
+  // Нижняя композиция держится на одном шаге: 13pt от карточки до ряда
+  // действий и ещё 13pt от ряда до верхней границы плавающего таббара.
+  // Резерв считаем от реальной высоты таббара, а не магическим числом — так
+  // одинаковый ритм сохраняется и на iPhone с разным safe area, и на Android.
+  const deckEdgeGap = rs(13);
+  const deckActionSize = rs(68);
+  const deckBottomReserve = tabBarHeight + deckActionSize + deckEdgeGap * 2;
+
   // Карточка колоды «Работа» — тот же макет, что у смены: рамка во весь экран,
   // чипы с иконками, снизу футер undo / ✕ / чат / ♥.
   const renderPermDeckCard = (v: PermVacancy) => {
@@ -1395,9 +1403,9 @@ function WorkerPermMode() {
       ? METRO_LINES.find(l => l.stations.includes(v.metroStation!)) ?? null
       : null;
     return (
-      <View style={styles.cardArea}>
-        {deckCards[2] ? <View style={styles.ghost2} /> : null}
-        {deckCards[1] ? <View style={styles.ghost1} /> : null}
+      <View style={[styles.cardArea, { paddingBottom: deckBottomReserve }]}>
+        {deckCards[2] ? <View style={[styles.ghost2, { bottom: deckBottomReserve }]} /> : null}
+        {deckCards[1] ? <View style={[styles.ghost1, { bottom: deckBottomReserve }]} /> : null}
         {/* Один список на два дела: потягивание вниз обновляет ленту, а длинная
             вакансия листается внутри карточки.
 
@@ -1551,7 +1559,7 @@ function WorkerPermMode() {
           // края карточки строки уходят в её цвет, и по одному этому видно, что
           // текст продолжается. Градиент из expo-linear-gradient — он уже в
           // сборке (app/+not-found.tsx), нового нативного модуля нет.
-          <View style={pS.scrollHintWrap} pointerEvents="none">
+          <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve + rs(2) }]} pointerEvents="none">
             <LinearGradient
               colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', Colors.bg]}
               style={StyleSheet.absoluteFill}
@@ -1563,7 +1571,7 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + rs(18) }]} pointerEvents="box-none">
+        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
           <TouchableOpacity
             accessibilityLabel="Отклонить вакансию"
@@ -2122,10 +2130,11 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
   },
   retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
-  // Ширина по карточке, а не по экрану: карточка отступает на rs(10) плюс
-  // рамка, и растворение должно кончаться ровно на её краю.
+  // Ширина по карточке, а не по экрану: карточка отступает на rs(13) плюс
+  // рамка, и растворение должно кончаться ровно на её краю. bottom задаётся
+  // рядом с карточкой через deckBottomReserve, чтобы совпадать на всех safe area.
   scrollHintWrap: {
-    position: 'absolute', left: rs(13), right: rs(13), bottom: rs(166), height: rs(64),
+    position: 'absolute', left: rs(13), right: rs(13), bottom: 0, height: rs(64),
     alignItems: 'center', justifyContent: 'flex-end', paddingBottom: rs(8),
     borderBottomLeftRadius: Radius.card, borderBottomRightRadius: Radius.card, overflow: 'hidden',
   },
@@ -2330,12 +2339,11 @@ const styles = StyleSheet.create({
   dcNumActive: { color: '#fff' },
   dcCnt: { fontSize: rf(9.5), fontWeight: '700', color: Colors.primary },
   dcCntActive: { color: 'rgba(255,255,255,0.8)' },
-  // Нижний резерв под плавающие кнопки + подсказку «Свайпай»: карточка кончается
-  // выше, а в зазоре под ней стоят кнопки — как на референсе. Раньше было 96 и
-  // кнопки жались к навбару, подсказка уходила под него.
-  cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: rs(164) },
-  ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
-  ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
+  // Нижний резерв задаётся динамически рядом с карточкой: высота таббара
+  // + 68pt кнопки + одинаковые поля по 13pt сверху и снизу.
+  cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0 },
+  ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
+  ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
   cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
@@ -2362,7 +2370,7 @@ const styles = StyleSheet.create({
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
   jobTitle: { fontSize: rf(26), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(31), marginTop: 0 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  replyBadgeWrap: { marginHorizontal: rs(21), marginBottom: rs(13) },
+  replyBadgeWrap: { marginHorizontal: rs(8), marginBottom: rs(13) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
@@ -2407,7 +2415,7 @@ const styles = StyleSheet.create({
   // Плавающие кнопки сменной колоды + подсказка «Свайпай» — как в «Работе» и на
   // образце. Колонка: ряд кнопок сверху, подсказка снизу, прижата к низу карточки.
   shiftDeckActions: {
-    position: 'absolute', left: rs(21), right: rs(21), bottom: rs(28), zIndex: 20, elevation: 20,
+    position: 'absolute', left: rs(21), right: rs(21), bottom: 0, zIndex: 20, elevation: 20,
     alignItems: 'center', gap: rs(13),
   },
   shiftDeckRow: {
