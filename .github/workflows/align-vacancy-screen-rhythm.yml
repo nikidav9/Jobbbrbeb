@@ -1,0 +1,34 @@
+name: Temporary vacancy screen rhythm patch
+
+on:
+  push:
+    branches: ["ui/align-vacancy-screen-rhythm"]
+    paths: [".github/workflows/align-vacancy-screen-rhythm.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/align-vacancy-screen-rhythm
+          fetch-depth: 0
+
+      - name: Apply rhythm patch
+        run: python3 .github/scripts/align_vacancy_screen_rhythm.py
+
+      - name: Verify diff
+        run: |
+          git diff --check
+          git diff -- app/'(tabs)'/feed.tsx
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/'(tabs)'/feed.tsx
+          git commit -m "Align vacancy screen vertical rhythm"
+          git push origin HEAD:ui/align-vacancy-screen-rhythm
