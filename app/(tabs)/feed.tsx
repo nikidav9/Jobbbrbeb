@@ -4,7 +4,11 @@ import {
   Animated, Dimensions, RefreshControl, Modal, FlatList,
   TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
+import {
+  GestureDetector,
+  ScrollView as GHScrollView,
+  RefreshControl as GHRefreshControl,
+} from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -1059,7 +1063,7 @@ const fh = StyleSheet.create({
   },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
-    backgroundColor: Colors.primaryBorder, borderRadius: rs(24),
+    backgroundColor: '#FFFFFF', borderRadius: rs(24),
     paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
   },
   countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
@@ -1105,7 +1109,7 @@ function WorkerPermMode() {
   const [limitOpen, setLimitOpen] = useState(false);
   // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
   const [moreBelow, setMoreBelow] = useState(false);
-  const cardScrollRef = useRef<ScrollView>(null);
+  const cardScrollRef = useRef<React.ComponentRef<typeof GHScrollView>>(null);
   const cardViewH = useRef(0);
   const cardContentH = useRef(0);
   const updateMoreBelow = useCallback((offsetY: number) => {
@@ -1408,7 +1412,7 @@ function WorkerPermMode() {
             «Призраки» колоды остались снаружи: они позиционированы абсолютно
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
-        <ScrollView
+        <GHScrollView
           ref={cardScrollRef}
           style={{ flex: 1 }}
           contentContainerStyle={{ flexGrow: 1 }}
@@ -1417,7 +1421,7 @@ function WorkerPermMode() {
           onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
           onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
           onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+          refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
           <GestureDetector gesture={swDeck.gesture}>
             <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
@@ -1538,7 +1542,7 @@ function WorkerPermMode() {
               </View>
             </Reanimated.View>
           </GestureDetector>
-        </ScrollView>
+        </GHScrollView>
 
         {moreBelow ? (
           // Подсказка стоит не поверх текста, а на его растворении: у нижнего
@@ -2121,7 +2125,7 @@ const pS = StyleSheet.create({
   scrollHintWrap: {
     position: 'absolute', left: rs(11), right: rs(11), bottom: rs(166), height: rs(64),
     alignItems: 'center', justifyContent: 'flex-end', paddingBottom: rs(8),
-    borderBottomLeftRadius: Radius.xl, borderBottomRightRadius: Radius.xl, overflow: 'hidden',
+    borderBottomLeftRadius: Radius.card, borderBottomRightRadius: Radius.card, overflow: 'hidden',
   },
   scrollHint: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
@@ -2328,8 +2332,8 @@ const styles = StyleSheet.create({
   // выше, а в зазоре под ней стоят кнопки — как на референсе. Раньше было 96 и
   // кнопки жались к навбару, подсказка уходила под него.
   cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(10), paddingTop: rs(10), paddingBottom: rs(164) },
-  ghost1: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.xl, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
-  ghost2: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.xl, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
+  ghost1: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
+  ghost2: { position: 'absolute', left: rs(10), right: rs(10), top: rs(10), bottom: rs(164), backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
   cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
@@ -2337,7 +2341,7 @@ const styles = StyleSheet.create({
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
   postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(1) },
-  card: { flexGrow: 1, backgroundColor: Colors.bg, borderRadius: Radius.xl, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
+  card: { flexGrow: 1, backgroundColor: Colors.bg, borderRadius: Radius.card, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
