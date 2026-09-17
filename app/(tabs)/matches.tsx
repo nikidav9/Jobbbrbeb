@@ -14,9 +14,10 @@ import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacanc
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
-  dbApprovePermApplication, dbSetPermApplicationStatus, dbRemovePermSaved,
+  dbApprovePermApplication, dbSetPermApplicationStatus,
 } from '@/services/db';
 import { plural } from '@/services/time';
+import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
 import GuestGate from '@/components/GuestGate';
 import { ScoreBadge } from '@/components/feature/ScoreCard';
@@ -322,41 +323,14 @@ const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<t
   { key: 'rejected', label: 'Отказы', icon: 'close-circle-outline' },
 ];
 
-const MONTHS_GEN = [
-  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-];
-
-/** Ключ дня (YYYY-MM-DD) по местному времени, а не по UTC. */
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  const day = `${d.getDate()}`.padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-/** «СЕГОДНЯ», «ВЧЕРА» или «12 СЕНТЯБРЯ». Заголовок дня, как на макете. */
-function dayLabel(key: string): string {
-  if (!key) return 'РАНЬШЕ';
-  const today = dayKey(new Date().toISOString());
-  if (key === today) return 'СЕГОДНЯ';
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  if (key === dayKey(y.toISOString())) return 'ВЧЕРА';
-  const [, mm, dd] = key.split('-');
-  return `${parseInt(dd, 10)} ${MONTHS_GEN[parseInt(mm, 10) - 1] ?? ''}`.toUpperCase();
-}
-
 function WorkerMatches() {
   const router = useRouter();
   const {
     currentUser, permApplications, permVacancies, users, chats,
-    permSavedIds, optimisticRemovePermSaved, showToast,
+    permSavedIds, showToast,
     refreshAll, offline,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
-  const [view, setView] = useState<'apps' | 'saved'>('apps');
   const [filter, setFilter] = useState<AppFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -417,31 +391,13 @@ function WorkerMatches() {
   });
 
   // Группировка по дням: заголовок с числом, как «ВЧЕРА · 15 откликов».
-  const byDay: { key: string; label: string; items: PermApplication[] }[] = [];
-  for (const a of shownApps) {
-    const key = dayKey(a.createdAt);
-    const last = byDay[byDay.length - 1];
-    if (last && last.key === key) last.items.push(a);
-    else byDay.push({ key, label: dayLabel(key), items: [a] });
-  }
+  const byDay = groupByDay(shownApps, a => a.createdAt);
 
   const todayCount = myApps.filter(a => dayKey(a.createdAt) === dayKey(new Date().toISOString())).length;
 
   // Обрыв связи и пустой список — разные вещи: «нет откликов» человек,
   // только что откликнувшийся, читает как «мой отклик пропал».
   const offlineHere = offline.permApplications && myApps.length === 0;
-
-  const savedVacancies = permVacancies.filter((v: PermVacancy) => permSavedIds.includes(v.id));
-
-  const unsave = async (vacancyId: string) => {
-    try {
-      // Сервер подтверждает до UI: иначе обрыв связи выглядит как удаление.
-      await dbRemovePermSaved(currentUser.id, vacancyId);
-      optimisticRemovePermSaved(vacancyId);
-    } catch {
-      showToast('Не удалось удалить из избранного', 'error');
-    }
-  };
 
   const openApp = (a: PermApplication) =>
     router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } });
@@ -490,35 +446,6 @@ function WorkerMatches() {
     );
   };
 
-  // ── Строка избранного ──────────────────────────────────────────────────────
-  const renderSaved = (v: PermVacancy, last: boolean) => (
-    <TouchableOpacity
-      key={v.id}
-      style={[wm.row, !last && wm.rowDivider]}
-      activeOpacity={0.85}
-      onPress={() => router.push({ pathname: '/perm-vacancy-detail', params: { id: v.id } })}
-    >
-      <View style={[wm.logo, { backgroundColor: nameColorFromString(v.company) }]}>
-        <Text style={wm.logoTxt}>{getInitials(v.company)}</Text>
-      </View>
-      <View style={wm.rowBody}>
-        <Text style={wm.rowTitle} numberOfLines={2}>{v.title}</Text>
-        <Text style={wm.rowCompany} numberOfLines={1}>{v.company}</Text>
-        {typeof v.salary === 'number' && v.salary > 0 ? (
-          <Text style={wm.rowHint}>{v.salary.toLocaleString('ru-RU')} ₽/мес</Text>
-        ) : null}
-      </View>
-      <TouchableOpacity
-        style={wm.unsaveBtn}
-        onPress={() => unsave(v.id)}
-        hitSlop={8}
-        accessibilityLabel="Удалить из избранного"
-      >
-        <Ionicons name="bookmark" size={20} color={Colors.primary} />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       {/* Шапка: марка слева, действия справа — как на макете. Конверт ведёт
@@ -530,18 +457,13 @@ function WorkerMatches() {
         </Text>
         <View style={wm.headerActions}>
           <TouchableOpacity
-            style={[wm.headerBtn, view === 'saved' && wm.headerBtnOn]}
-            onPress={() => setView(v => (v === 'saved' ? 'apps' : 'saved'))}
+            style={wm.headerBtn}
+            onPress={() => router.push('/saved')}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityState={{ selected: view === 'saved' }}
-            accessibilityLabel={view === 'saved' ? 'Показать отклики' : 'Показать избранное'}
+            accessibilityLabel="Избранное"
           >
-            <Ionicons
-              name={view === 'saved' ? 'bookmark' : 'bookmark-outline'}
-              size={20}
-              color={view === 'saved' ? Colors.primary : Colors.textPrimary}
-            />
+            <Ionicons name="bookmark-outline" size={20} color={Colors.textPrimary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -570,9 +492,7 @@ function WorkerMatches() {
       </View>
 
       <Text style={wm.title}>
-        {view === 'saved'
-          ? `${savedVacancies.length} ${plural(savedVacancies.length, 'вакансия', 'вакансии', 'вакансий')} в избранном`
-          : `${todayCount} ${plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня`}
+        {todayCount} {plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня
       </Text>
 
       {searchOpen ? (
@@ -596,13 +516,12 @@ function WorkerMatches() {
         </View>
       ) : null}
 
-      {view === 'apps' ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={wm.chipsScroll}
-          contentContainerStyle={wm.chipsRow}
-        >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={wm.chipsScroll}
+        contentContainerStyle={wm.chipsRow}
+      >
           <TouchableOpacity
             style={[wm.chipIcon, filter !== 'all' && wm.chipIconOn]}
             onPress={() => setFilterOpen(true)}
@@ -627,8 +546,7 @@ function WorkerMatches() {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
-      ) : null}
+      </ScrollView>
 
       <ScrollView
         contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
@@ -637,19 +555,6 @@ function WorkerMatches() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
         }
       >
-        {view === 'saved' ? (
-          savedVacancies.length === 0 ? (
-            <View style={s.empty}>
-              <Ionicons name="bookmark-outline" size={56} color={Colors.textMuted} />
-              <Text style={s.emptyTitle}>В избранном пусто</Text>
-              <Text style={s.emptySub}>Нажмите закладку на карточке вакансии — она сохранится здесь</Text>
-            </View>
-          ) : (
-            <View style={wm.group}>
-              {savedVacancies.map((v, i) => renderSaved(v, i === savedVacancies.length - 1))}
-            </View>
-          )
-        ) : (
           <>
             {/* «Ждут вашего ответа» — наша замена «Needs you». У них там анкеты,
                 которые агент не смог дозаполнить; у нас действие, которого
@@ -709,7 +614,6 @@ function WorkerMatches() {
               </View>
             ))}
           </>
-        )}
       </ScrollView>
 
       {/* Шторка фильтров. Раздел «Показать» на макете содержит четыре строки;
@@ -754,13 +658,13 @@ function WorkerMatches() {
             <TouchableOpacity
               style={wm.sheetRow}
               activeOpacity={0.8}
-              onPress={() => { setView('saved'); setFilterOpen(false); }}
+              onPress={() => { setFilterOpen(false); router.push('/saved'); }}
             >
               <View style={wm.sheetRowIcon}>
                 <Ionicons name="bookmark-outline" size={18} color={Colors.textPrimary} />
               </View>
               <Text style={wm.sheetRowTxt}>Избранное</Text>
-              <Text style={wm.sheetRowCount}>{savedVacancies.length}</Text>
+              <Text style={wm.sheetRowCount}>{permSavedIds.length}</Text>
               <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
             </TouchableOpacity>
           </View>

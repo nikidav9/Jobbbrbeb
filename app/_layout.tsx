@@ -244,6 +244,7 @@ export default function RootLayout() {
             <Stack.Screen name="create-perm-vacancy" />
             <Stack.Screen name="perm-vacancy-detail" />
             <Stack.Screen name="invite" />
+            <Stack.Screen name="saved" />
             {/* Шторкой: тест — короткий заход из профиля, а не место, куда
                 уходят насовсем. Закрыть крестиком и вернуться на прежний
                 экран должно быть очевидно. */}

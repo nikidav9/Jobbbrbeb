@@ -1418,6 +1418,25 @@ export async function dbGetPermSaved(userId: string): Promise<string[]> {
   return (data ?? []).map((r: any) => r.vacancy_id);
 }
 
+/**
+ * То же избранное, но с датой сохранения.
+ *
+ * Отдельной функцией, а не расширением dbGetPermSaved: тот отдаёт голый
+ * список id, на нём стоит вся отметка «сохранено» в ленте, и менять его форму
+ * значило бы переписать десяток мест ради одного экрана. Дата нужна только
+ * там, где избранное группируется по дням.
+ */
+export async function dbGetPermSavedDetailed(
+  userId: string,
+): Promise<{ vacancyId: string; savedAt: string | null }[]> {
+  if (IS_NATIVE) { return proxy('dbGetPermSavedDetailed', [userId]); }
+  const { data, error } = await withTimeout(
+    supabase.from('jm_perm_saved').select('vacancy_id,created_at').eq('user_id', userId)
+  );
+  if (error) throwOnError('dbGetPermSavedDetailed', error);
+  return (data ?? []).map((r: any) => ({ vacancyId: r.vacancy_id, savedAt: r.created_at ?? null }));
+}
+
 export async function dbAddPermSaved(userId: string, vacancyId: string): Promise<void> {
   if (IS_NATIVE) { await proxy('dbAddPermSaved', [userId, vacancyId]); return; }
   const { error } = await withTimeout(

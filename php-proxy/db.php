@@ -251,6 +251,7 @@ $selfArgFns = [
     'dbGetSaved' => 0, 'dbAddSaved' => 0, 'dbRemoveSaved' => 0,
     'dbGetPermVacanciesByEmployer' => 0, 'dbGetPermApplications' => 0,
     'dbGetPermSaved' => 0, 'dbAddPermSaved' => 0, 'dbRemovePermSaved' => 0,
+    'dbGetPermSavedDetailed' => 0,
     'dbSavePushToken' => 0, 'dbClearPushToken' => 0,
     'dbGetWebPushSubscription' => 0, 'dbSaveWebPushSubscription' => 0,
     'dbDeleteWebPushSubscription' => 0, 'dbGetNotifications' => 0,
@@ -5353,6 +5354,18 @@ try {
         case 'dbGetPermSaved': {
             $rows = sb_select('jm_perm_saved', ['user_id' => 'eq.' . $args[0]], 'vacancy_id');
             $data = array_map(fn($r) => $r['vacancy_id'], $rows); break;
+        }
+
+        // Как dbGetPermSaved, но с датой: по ней экран избранного группирует
+        // вакансии по дням. Аргумент 0 — владелец списка, и он в $selfArgFns:
+        // чужое избранное этой операцией не прочитать.
+        case 'dbGetPermSavedDetailed': {
+            $rows = sb_select('jm_perm_saved', ['user_id' => 'eq.' . $args[0]], 'vacancy_id,created_at');
+            $data = array_map(fn($r) => [
+                'vacancyId' => $r['vacancy_id'],
+                'savedAt'   => $r['created_at'] ?? null,
+            ], $rows);
+            break;
         }
 
         case 'dbAddPermSaved':
