@@ -64,11 +64,11 @@ function FloatingTabBar({
     {safeBottom > 0 && (
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: safeBottom + 12, backgroundColor: '#fff',
+        height: safeBottom + 13, backgroundColor: '#fff',
       }} />
     )}
     {/* Outer: shadow (overflow:hidden would clip Android elevation) */}
-    <View style={[fS.pillShadow, { bottom: safeBottom + 12 }]}>
+    <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
       {/* Inner: clips blur to rounded shape */}
       <View style={fS.pillClip}>
         {/* Frosted glass background */}
@@ -187,9 +187,9 @@ export default function TabLayout() {
 
   // ─── Tab bar height (keeps useBottomTabBarHeight working in screens) ──────
   const tabBarHeight = Platform.select({
-    ios: insets.bottom + 64 + 12,
-    android: bottomSafe(insets.bottom) + 64 + 12,
-    default: 76,
+    ios: insets.bottom + 64 + 13,
+    android: bottomSafe(insets.bottom) + 64 + 13,
+    default: 77,
   });
 
   return (
