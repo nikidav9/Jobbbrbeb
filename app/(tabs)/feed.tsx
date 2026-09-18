@@ -2242,7 +2242,7 @@ const pS = StyleSheet.create({
   },
   metroDot: { width: rs(13), height: rs(13), borderRadius: rs(7), marginTop: rs(5) },
   metroLineName: { fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(5) },
-  locValue: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '600' },
+  locValue: { fontSize: rf(11), color: Colors.textPrimary, fontWeight: '600' },
   mapBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
     borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(13), paddingVertical: rs(13),
