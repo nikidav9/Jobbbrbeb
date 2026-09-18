@@ -12,6 +12,7 @@ interface ChipProps {
   label: string;
   variant?: ChipVariant;
   icon?: IoniconName;
+  textSize?: number;
 }
 
 const VARIANT_STYLES: Record<ChipVariant, { bg: string; text: string; fontWeight?: string }> = {
@@ -28,7 +29,7 @@ const VARIANT_STYLES: Record<ChipVariant, { bg: string; text: string; fontWeight
   neutral: { bg: '#F3F4F6', text: Colors.textSecondary },
 };
 
-export function Chip({ label, variant = 'work', icon }: ChipProps) {
+export function Chip({ label, variant = 'work', icon, textSize }: ChipProps) {
   const s = VARIANT_STYLES[variant];
   return (
     <View style={[styles.chip, { backgroundColor: s.bg }]}>
@@ -37,7 +38,7 @@ export function Chip({ label, variant = 'work', icon }: ChipProps) {
       ) : null}
       {/* Чип всегда в одну строку. Длинный адрес иначе переносится внутри
           чипа, и тот превращается в абзац с закруглениями. */}
-      <Text numberOfLines={1} style={[styles.chipText, { color: s.text, fontWeight: (s.fontWeight as any) ?? '600' }]}>
+      <Text numberOfLines={1} style={[styles.chipText, textSize != null ? { fontSize: rf(textSize) } : null, { color: s.text, fontWeight: (s.fontWeight as any) ?? '600' }]}>
         {label}
       </Text>
     </View>
