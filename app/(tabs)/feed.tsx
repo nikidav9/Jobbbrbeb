@@ -1420,10 +1420,11 @@ function WorkerPermMode() {
             «Призраки» колоды остались снаружи: они позиционированы абсолютно
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
-        <GHScrollView
+        <View style={styles.cardViewportShell}>
+          <GHScrollView
           ref={cardScrollRef}
-          style={{ flex: 1 }}
-          contentContainerStyle={{ flexGrow: 1 }}
+          style={styles.cardViewportClip}
+          contentContainerStyle={{ flexGrow: 1 }}>
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
@@ -1477,11 +1478,11 @@ function WorkerPermMode() {
                     <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
 
                     <View style={styles.chipsRow}>
-                      {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/мес`} variant="salary" icon="wallet-outline" /> : null}
-                      <Chip label="На руки" variant="neutral" icon="checkmark-circle-outline" />
-                      {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" /> : null}
-                      {workType ? <Chip label={workType} variant="neutral" icon="briefcase-outline" /> : null}
-                      {v.metroStation ? <Chip label={v.metroStation} variant="neutral" icon="subway-outline" /> : null}
+                      {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/мес`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
+                      <Chip label="На руки" variant="neutral" icon="checkmark-circle-outline" textSize={11} />
+                      {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" textSize={11} /> : null}
+                      {workType ? <Chip label={workType} variant="neutral" icon="briefcase-outline" textSize={11} /> : null}
+                      {v.metroStation ? <Chip label={v.metroStation} variant="neutral" icon="subway-outline" textSize={11} /> : null}
                     </View>
                   </View>
 
@@ -1552,7 +1553,8 @@ function WorkerPermMode() {
               </View>
             </Reanimated.View>
           </GestureDetector>
-        </GHScrollView>
+          </GHScrollView>
+        </View>
 
         {moreBelow ? (
           // Подсказка стоит не поверх текста, а на его растворении: у нижнего
@@ -2344,6 +2346,13 @@ const styles = StyleSheet.create({
   cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0 },
   ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
   ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
+  // Скругление принадлежит viewport, а не прокручиваемому содержимому.
+  // Поэтому верх и низ карточки остаются закруглёнными на любой позиции скролла.
+  cardViewportShell: { flex: 1, borderRadius: Radius.card, ...Shadow.strong },
+  cardViewportClip: {
+    flex: 1, borderRadius: Radius.card, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.inputBorder, backgroundColor: Colors.bg,
+  },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
   cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
@@ -2351,7 +2360,7 @@ const styles = StyleSheet.create({
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
   postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(5) },
-  card: { flexGrow: 1, backgroundColor: Colors.bg, borderRadius: Radius.card, ...Shadow.strong, overflow: 'hidden', borderWidth: 1, borderColor: Colors.inputBorder },
+  card: { flexGrow: 1, backgroundColor: Colors.bg },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
@@ -2368,7 +2377,7 @@ const styles = StyleSheet.create({
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
   cardBadges: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  jobTitle: { fontSize: rf(26), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(31), marginTop: 0 },
+  jobTitle: { fontSize: rf(24), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(29), marginTop: 0 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
   replyBadgeWrap: { marginHorizontal: rs(8), marginBottom: rs(13) },
   addressChip: {
