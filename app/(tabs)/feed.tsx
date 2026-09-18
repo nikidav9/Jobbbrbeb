@@ -1422,16 +1422,16 @@ function WorkerPermMode() {
             внутренними полями. */}
         <View style={styles.cardViewportShell}>
           <GHScrollView
-          ref={cardScrollRef}
-          style={styles.cardViewportClip}
-          contentContainerStyle={{ flexGrow: 1 }}>
-          showsVerticalScrollIndicator={false}
-          scrollEventThrottle={16}
-          onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
-          onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
-          onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
-          refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
-        >
+            ref={cardScrollRef}
+            style={styles.cardViewportClip}
+            contentContainerStyle={{ flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
+            onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
+            onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
+            refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+          >
           <GestureDetector gesture={swDeck.gesture}>
             <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
               <View style={styles.card}>
