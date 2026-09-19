@@ -488,23 +488,40 @@ function CompanyPicker({ visible, options, selected, onChange, onClose }: {
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
+  const [draft, setDraft] = useState(selected[0] ?? '');
   const insets = useSafeAreaInsets();
-  useEffect(() => { if (visible) setQuery(''); }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      setDraft(selected[0] ?? '');
+    }
+  }, [visible, selected]);
+
   const rows = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('ru-RU');
     return q ? options.filter(x => x.name.toLocaleLowerCase('ru-RU').includes(q)) : options;
   }, [options, query]);
+
   if (!visible) return null;
-  const current = selected[0] ?? '';
+
+  const Check = ({ on }: { on: boolean }) => (
+    <View style={[mp.check, on && mp.checkOn]}>
+      {on ? <Ionicons name="checkmark" size={rf(14)} color="#fff" /> : null}
+    </View>
+  );
+
   return (
     <View style={styles.filterOverlay}>
-      <View style={[styles.filterSheet, { maxHeight: '88%' }]}>
+      <View style={[styles.filterSheet, { maxHeight: '90%' }]}>
         <View style={styles.filterSheetHeader}>
+          <View style={{ width: rs(22) }} />
           <Text style={styles.filterSheetTitle}>Компания</Text>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.filterClose}>✕</Text>
           </TouchableOpacity>
         </View>
+
         <View style={metroPickerSt.searchRow}>
           <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
           <TextInput
@@ -513,41 +530,55 @@ function CompanyPicker({ visible, options, selected, onChange, onClose }: {
             placeholderTextColor={Colors.textMuted}
             value={query}
             onChangeText={setQuery}
-            autoFocus
             clearButtonMode="while-editing"
           />
         </View>
-        <TouchableOpacity
-          style={[styles.lineRow, current === '' ? styles.lineRowActive : null]}
-          onPress={() => { onChange([]); onClose(); }}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.lineName, current === '' ? { color: Colors.primary, fontWeight: '700' } : null]}>Все компании</Text>
-          {current === '' ? <Text style={{ color: Colors.primary }}>✓</Text> : null}
-        </TouchableOpacity>
+
         <FlatList
           data={rows}
           keyExtractor={item => item.name}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: insets.bottom + rs(16) }}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={(
+            <TouchableOpacity
+              style={[mp.card, draft === '' && mp.cardOn]}
+              onPress={() => setDraft('')}
+              activeOpacity={0.8}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[mp.name, { fontWeight: '700' }]}>Все компании</Text>
+                <Text style={mp.sub}>{options.reduce((sum, item) => sum + item.count, 0)} вакансий</Text>
+              </View>
+              <Check on={draft === ''} />
+            </TouchableOpacity>
+          )}
           renderItem={({ item }) => {
-            const on = current === item.name;
+            const on = draft === item.name;
             return (
               <TouchableOpacity
-                style={[styles.lineRow, on ? styles.lineRowActive : null]}
-                onPress={() => { onChange([item.name]); onClose(); }}
+                style={[mp.card, on && mp.cardOn]}
+                onPress={() => setDraft(item.name)}
                 activeOpacity={0.8}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.lineName, on ? { color: Colors.primary, fontWeight: '700' } : null]} numberOfLines={1}>{item.name}</Text>
-                  <Text style={metroPickerSt.lineSubtitle}>{item.count} вакансий</Text>
+                  <Text style={mp.name} numberOfLines={1}>{item.name}</Text>
+                  <Text style={mp.sub}>{item.count} вакансий</Text>
                 </View>
-                {on ? <Text style={{ color: Colors.primary }}>✓</Text> : null}
+                <Check on={on} />
               </TouchableOpacity>
             );
           }}
           ListEmptyComponent={<View style={metroPickerSt.empty}><Text style={metroPickerSt.emptyTxt}>Компания не найдена</Text></View>}
         />
+
+        <View style={[mp.footer, { paddingBottom: insets.bottom + rs(84) }]}>
+          <TouchableOpacity style={mp.save} onPress={() => { onChange(draft ? [draft] : []); onClose(); }} activeOpacity={0.85}>
+            <Text style={mp.saveTxt}>Сохранить</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={mp.reset} onPress={() => setDraft('')} activeOpacity={0.85}>
+            <Text style={mp.resetTxt}>Сбросить</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
