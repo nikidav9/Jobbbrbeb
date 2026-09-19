@@ -2,7 +2,8 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { dbSavePushToken, dbReleasePushToken } from '@/services/db';
+import { dbSavePushToken, dbReleasePushToken, dbGetConsent } from '@/services/db';
+import { hasCrossBorderConsent } from '@/constants/legal';
 
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
@@ -103,6 +104,12 @@ export async function registerForPushNotifications(userId: string): Promise<bool
   }
 
   try {
+    const consent = await dbGetConsent(userId).catch(() => null);
+    if (!hasCrossBorderConsent(consent?.docs)) {
+      console.info('[push] Separate cross-border consent is missing: skipping token registration.');
+      return false;
+    }
+
     // Never trigger the OS permission dialog here — boot-time calls must stay
     // silent. The dialog is requested only from NotificationPermissionSheet.
     const { status } = await Notifications.getPermissionsAsync();
