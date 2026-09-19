@@ -52,10 +52,11 @@ import {
   dbBindTelegram,
   dbAutoClosePastVacancies,
   dbRecordConsent,
+  dbGetConsent,
   dbCompleteGuestRegistration,
   setSessionExpiredHandler,
 } from '@/services/db';
-import { LEGAL_STAMP, legalVersions } from '@/constants/legal';
+import { LEGAL_STAMP, legalVersions, legalVersionsWithCrossBorder, hasCrossBorderConsent } from '@/constants/legal';
 import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/services/notifications';
 import { isTelegramMiniApp, getTelegramInitData, waitForTelegramMiniApp } from '@/lib/telegram';
 import { registerWebPush } from '@/lib/webPush';
@@ -120,7 +121,7 @@ export interface AppContextValue {
   optimisticUpdateChat: (c: Chat) => void;
   optimisticAddLike: (l: Like) => void;
   optimisticUpdateLike: (l: Like) => void;
-  registerUser: (u: User) => Promise<void>;
+  registerUser: (u: User, crossBorderConsent?: boolean) => Promise<void>;
   loginUser: (phone: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   /** Войти как гость (просмотр без регистрации) в роли соискателя. */
@@ -692,15 +693,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // ─── Auth actions ──────────────────────────────────────────────────────────
 
-  const registerUser = async (u: User) => {
+  const registerUser = async (u: User, crossBorderConsent = false) => {
     // Приглашение, если человек пришёл по ссылке знакомого. Забираем ДО
     // записи и стираем СРАЗУ после: чужой код, оставшийся в хранилище, был бы
     // приписан следующему, кто зарегистрируется на этом телефоне.
     const referralCode = (await getPendingReferral()) ?? undefined;
-    // Согласие передаём ТЕМ ЖЕ запросом. Отдельный вызов ниже оставлен для
-    // совместимости со старым сервером и безвреден: запись перезаписывает ту
-    // же строку, а не плодит вторую.
-    await dbUpsertUser(u, referralCode, { stamp: LEGAL_STAMP, docs: legalVersions() });
+    // Общее согласие и отдельное трансграничное решение фиксируются раздельным
+    // действием в UI, но одной доказательной записью: в docs видно, была ли
+    // отдельно принята текущая редакция crossBorderConsent.
+    const acceptedDocs = crossBorderConsent
+      ? legalVersionsWithCrossBorder()
+      : legalVersions();
+    await dbUpsertUser(u, referralCode, { stamp: LEGAL_STAMP, docs: acceptedDocs });
     if (referralCode) void clearPendingReferral();
     // Если человек пришёл из гостевого просмотра, замыкаем анонимную
     // воронку. user_id не связываем с anon_id и в событие не передаём.
@@ -709,16 +713,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // кнопки «Продолжить» о ней не знал никто. Теперь принятое остаётся
     // в базе — здесь, а не в двух экранах регистрации по отдельности:
     // забыть одно из двух мест куда проще, чем это одно.
-    void dbRecordConsent(u.id, LEGAL_STAMP, legalVersions(), 'registration');
+    void dbRecordConsent(u.id, LEGAL_STAMP, acceptedDocs, crossBorderConsent ? 'registration+crossborder' : 'registration');
     _setCurrentUser(u);
     await saveSessionUser(u);
     // Inside the Telegram Mini App: link this Telegram account for auto-login
-    if (isTelegramMiniApp()) {
+    if (crossBorderConsent && isTelegramMiniApp()) {
       const initData = getTelegramInitData();
       if (initData) dbBindTelegram(u.id, initData).catch(() => {});
     }
-    // Задержка нужна чтобы система успела обработать разрешения на уведомления
-    setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
+    // Иностранный push-транспорт включаем только после отдельного согласия.
+    if (crossBorderConsent) {
+      setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
+    }
     setTimeout(() => {
       Promise.all([
         refreshUsers(),
@@ -740,12 +746,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!found) return null;
     _setCurrentUser(found);
     await saveSessionUser(found);
-    // Inside the Telegram Mini App: link this Telegram account for auto-login
-    if (isTelegramMiniApp()) {
+    const recordedConsent = await dbGetConsent(found.id).catch(() => null);
+    const crossBorderAllowed = hasCrossBorderConsent(recordedConsent?.docs);
+    // Telegram и иностранный push-транспорт не включаем только по факту входа:
+    // нужна отдельная текущая редакция трансграничного согласия.
+    if (crossBorderAllowed && isTelegramMiniApp()) {
       const initData = getTelegramInitData();
       if (initData) dbBindTelegram(found.id, initData).catch(() => {});
     }
-    registerForPushNotifications(found.id).catch(() => {});
+    if (crossBorderAllowed) registerForPushNotifications(found.id).catch(() => {});
     setTimeout(() => {
       Promise.all([
         refreshUsers(),
