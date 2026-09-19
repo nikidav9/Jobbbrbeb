@@ -1597,8 +1597,30 @@ function tg_send_message(int $chatId, string $text, bool|string $withAppButton =
  * $pushBody.
  */
 function expo_push(array $messages): void {
-    for ($i = 0; $i < count($messages); $i += 100) {
-        $chunk = array_slice($messages, $i, 100);
+    require_once __DIR__ . '/apns.php';
+
+    $expoMessages = [];
+    foreach ($messages as $message) {
+        $stored = (string)($message['to'] ?? '');
+        $parts = jt_push_token_parts($stored);
+        $type = is_array($message['data'] ?? null) ? (string)($message['data']['type'] ?? '') : '';
+
+        // iOS: direct APNs first. The Expo token is retained only as a
+        // migration fallback until the final client cutover.
+        if ($parts['apns'] !== '' && jt_apns_ready()) {
+            $result = jt_apns_push_generic('apns:' . $parts['apns'], $type);
+            if (!empty($result['ok'])) continue;
+        }
+
+        if ($parts['expo'] !== '') {
+            $message['to'] = $parts['expo'];
+            $expoMessages[] = $message;
+        }
+    }
+
+    // Android and transitional iOS fallback keep the existing Expo path.
+    for ($i = 0; $i < count($expoMessages); $i += 100) {
+        $chunk = array_slice($expoMessages, $i, 100);
         $ch = curl_init('https://exp.host/--/api/v2/push/send');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
