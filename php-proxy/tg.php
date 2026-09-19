@@ -96,6 +96,7 @@ function sb_resolve_key(): string {
 }
 
 define('SB_KEY', sb_resolve_key());
+require_once __DIR__ . '/push.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -349,6 +350,12 @@ function tg_work_reply(int $chatId, int $threadId, string $text): array {
 }
 
 function expo_push_one(string $token, string $title, string $body): void {
+    if (str_starts_with($token, 'apns:')) {
+        jt_apns_push_one(substr($token, 5), 'perm_status');
+        return;
+    }
+
+    // Android still uses Expo Push during the iOS APNs migration.
     $ch = curl_init('https://exp.host/--/api/v2/push/send');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
