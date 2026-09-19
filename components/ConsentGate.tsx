@@ -119,7 +119,7 @@ export default function ConsentGate() {
         await dbRecordCrossBorderConsent(user.id, LEGAL_DOCS.crossBorderConsent.version);
       } else if (initialCrossBorderAccepted) {
         // Отзыв сразу отключает сохранённые адреса иностранных каналов
-        // (push/web-push/Telegram) на сервере.
+        // (push/web-push) на сервере.
         await dbRevokeCrossBorderConsent(user.id);
       }
 
@@ -287,7 +287,7 @@ export default function ConsentGate() {
             <View style={{ flex: 1 }}>
               <Text style={styles.consentText}>
                 Добровольно соглашаюсь на трансграничную передачу ПДн для push/web-push
-                и подключаемого Telegram. Можно не соглашаться.
+                уведомлений. Можно не соглашаться.
               </Text>
               <TouchableOpacity
                 style={styles.crossLinkButton}
