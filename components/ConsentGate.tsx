@@ -8,10 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '@/hooks/useApp';
 import { Colors, Radius } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
-import { dbGetConsent, dbRecordConsent } from '@/services/db';
+import { dbGetConsent, dbRecordConsent, dbClearPushToken, dbDeleteWebPushSubscription, dbUnbindTelegram } from '@/services/db';
 import {
-  LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions, needsReconsent, formatLegalDate,
-  type LegalDocKey,
+  LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions, legalVersionsWithCrossBorder,
+  hasCrossBorderConsent, needsReconsent, formatLegalDate, type LegalDocKey,
 } from '@/constants/legal';
 
 /**
@@ -56,6 +56,8 @@ export default function ConsentGate() {
   const [error, setError] = useState('');
   const [checkFailed, setCheckFailed] = useState(false);
   const [checkRetry, setCheckRetry] = useState(0);
+  const [coreAccepted, setCoreAccepted] = useState(false);
+  const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
   // Раскрытый документ. Тексты показываем прямо здесь, а не отправляем на
   // экран /legal: окно перекрывает всё, что под ним, — человек ушёл бы читать
   // и упёрся в него же поверх документа.
@@ -79,6 +81,10 @@ export default function ConsentGate() {
       .then(c => {
         if (!alive) return;
         setNeeded(needsReconsent(c?.stamp));
+        setCoreAccepted(false);
+        // Отдельное трансграничное согласие сохраняем, только если принята
+        // именно текущая его редакция. Старое автоматически не переносим.
+        setCrossBorderAccepted(hasCrossBorderConsent(c?.docs));
         setCheckFailed(false);
         setChecked(true);
       })
@@ -92,18 +98,32 @@ export default function ConsentGate() {
   }, [user?.id, checkRetry]);
 
   async function accept() {
-    if (!user || busy) return;
+    if (!user || busy || !coreAccepted) return;
     setBusy(true);
     setError('');
     try {
-      await dbRecordConsent(user.id, LEGAL_STAMP, legalVersions(), 'reconsent');
-      // Перечитываем, а не верим своей же отправке: dbRecordConsent глушит
-      // ошибки внутри, и «принято» без проверки означало бы, что человек
-      // прошёл дальше, а в базе пусто.
+      const docs = crossBorderAccepted ? legalVersionsWithCrossBorder() : legalVersions();
+      await dbRecordConsent(
+        user.id,
+        LEGAL_STAMP,
+        docs,
+        crossBorderAccepted ? 'reconsent+crossborder' : 'reconsent',
+      );
+      // Перечитываем, а не верим своей же отправке: запись согласия —
+      // доказательство, поэтому после отправки подтверждаем её с сервера.
       const c = await dbGetConsent(user.id);
       if (needsReconsent(c?.stamp)) {
         setError('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
       } else {
+        // Если отдельное трансграничное согласие не дали, старые иностранные
+        // каналы не должны продолжать работать по прежней настройке.
+        if (!crossBorderAccepted) {
+          await Promise.allSettled([
+            dbClearPushToken(user.id),
+            dbDeleteWebPushSubscription(user.id),
+            dbUnbindTelegram(user.id),
+          ]);
+        }
         setNeeded(false);
       }
     } catch (e: any) {
@@ -158,9 +178,8 @@ export default function ConsentGate() {
 
         <Text style={styles.title}>Примите документы</Text>
         <Text style={styles.lead}>
-          Вы зарегистрировались раньше, чем в приложении появился экран с документами,
-          поэтому согласия у нас не записано. Чтобы пользоваться JobToo дальше,
-          его нужно дать.
+          Документы JobToo обновились. Общее согласие на обработку ПДн и решение
+          о трансграничной передаче теперь фиксируются отдельно.
         </Text>
 
         <ScrollView style={styles.docs} contentContainerStyle={{ paddingVertical: rs(4) }}>
@@ -203,13 +222,58 @@ export default function ConsentGate() {
           })}
         </ScrollView>
 
+        <TouchableOpacity
+          style={styles.consentRow}
+          activeOpacity={0.8}
+          onPress={() => setCoreAccepted(v => !v)}
+        >
+          <View style={[styles.checkbox, coreAccepted && styles.checkboxActive]}>
+            {coreAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+          </View>
+          <Text style={styles.consentText}>
+            Я ознакомлен(а) с документами выше и отдельно даю согласие на обработку персональных данных.
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.consentRow}
+          activeOpacity={0.8}
+          onPress={() => setCrossBorderAccepted(v => !v)}
+        >
+          <View style={[styles.checkbox, crossBorderAccepted && styles.checkboxActive]}>
+            {crossBorderAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+          </View>
+          <Text style={styles.consentText}>
+            Добровольно соглашаюсь на{' '}
+            <Text style={styles.link} onPress={() => setOpen(open === 'crossBorderConsent' ? null : 'crossBorderConsent')}>
+              трансграничную передачу ПДн
+            </Text>
+            {' '}для push/web-push и подключаемого Telegram. Можно не соглашаться.
+          </Text>
+        </TouchableOpacity>
+
+        {open === 'crossBorderConsent' ? (
+          <View style={styles.crossDocBody}>
+            <Text style={styles.docTitle}>{LEGAL_DOCS.crossBorderConsent.title}</Text>
+            <Text style={styles.docVersion}>
+              Редакция от {formatLegalDate(LEGAL_DOCS.crossBorderConsent.version)}
+            </Text>
+            {LEGAL_DOCS.crossBorderConsent.sections.map((sec, i) => (
+              <View key={i} style={i > 0 ? { marginTop: rs(12) } : undefined}>
+                {sec.heading ? <Text style={styles.secHeading}>{sec.heading}</Text> : null}
+                <Text style={styles.secBody}>{sec.body}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity
-          style={[styles.accept, busy && styles.acceptBusy]}
+          style={[styles.accept, (busy || !coreAccepted) && styles.acceptBusy]}
           activeOpacity={0.85}
           onPress={accept}
-          disabled={busy}
+          disabled={busy || !coreAccepted}
         >
           {busy
             ? <ActivityIndicator color="#FFFFFF" />
@@ -226,7 +290,7 @@ export default function ConsentGate() {
         </TouchableOpacity>
 
         <Text style={styles.note}>
-          Нажимая «Принять», вы соглашаетесь с документами в редакции от {дата}.
+          Основные документы — редакция от {дата}. Трансграничное согласие является отдельным и добровольным.
         </Text>
       </View>
     </View>
@@ -289,6 +353,23 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary, marginBottom: rs(4),
   },
   secBody: { fontSize: rf(13.5), lineHeight: rf(20), color: Colors.textSecondary },
+  consentRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
+    paddingVertical: rs(8),
+  },
+  checkbox: {
+    width: rs(22), height: rs(22), borderRadius: rs(6), borderWidth: 1.5,
+    borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, marginTop: rs(1),
+  },
+  checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  checkmark: { color: '#fff', fontWeight: '800', fontSize: rf(13) },
+  consentText: { flex: 1, fontSize: rf(13), lineHeight: rf(18), color: Colors.textSecondary },
+  link: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  crossDocBody: {
+    maxHeight: rs(220), padding: rs(12), borderRadius: rs(10),
+    backgroundColor: Colors.surface, marginBottom: rs(6),
+  },
   error: {
     marginTop: rs(10),
     fontSize: rf(13.5),
