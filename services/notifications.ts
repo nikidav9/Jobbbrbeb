@@ -2,8 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { dbSavePushToken, dbReleasePushToken, dbGetConsent } from '@/services/db';
-import { hasCrossBorderConsent } from '@/constants/legal';
+import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent } from '@/services/db';
 
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
@@ -104,8 +103,8 @@ export async function registerForPushNotifications(userId: string): Promise<bool
   }
 
   try {
-    const consent = await dbGetConsent(userId).catch(() => null);
-    if (!hasCrossBorderConsent(consent?.docs)) {
+    const consent = await dbGetCrossBorderConsent(userId).catch(() => null);
+    if (consent?.accepted !== true) {
       console.info('[push] Separate cross-border consent is missing: skipping token registration.');
       return false;
     }
