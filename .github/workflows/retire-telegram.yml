@@ -27,7 +27,8 @@ jobs:
 
             echo "Попытка $attempt: $RESP"
 
-            if printf '%s' "$RESP" | grep -q '"retired":true'; then
+            if printf '%s' "$RESP" | grep -q '"retired":true' \
+               && printf '%s' "$RESP" | grep -q '"bot_messages_deleted"'; then
               echo "$RESP" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
