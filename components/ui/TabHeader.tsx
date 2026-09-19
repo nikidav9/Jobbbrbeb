@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '@/constants/theme';
-import { TelegramConnectButton } from '@/components/TelegramConnectButton';
 import { NotifBell } from '@/components/ui/NotifBell';
 
 import { rs, rf } from '@/constants/scale';
@@ -10,10 +9,9 @@ import { rs, rf } from '@/constants/scale';
 // title отсутствует → показываем логотип JobToo. badge — доп. плашка слева
 // (например «N ждут»). right — кастомный правый блок (профиль с шестерёнкой).
 export function TabHeader({
-  title, tgAnchor = false, badge, right, primaryAction,
+  title, badge, right, primaryAction,
 }: {
   title?: string;
-  tgAnchor?: boolean;
   badge?: React.ReactNode;
   right?: React.ReactNode;
   primaryAction?: React.ReactNode;
@@ -33,7 +31,7 @@ export function TabHeader({
       </View>
       {right ?? (
         <View style={h.right}>
-          {primaryAction ?? <TelegramConnectButton size={22} pad={4} onboardingAnchor={tgAnchor} />}
+          {primaryAction ?? null}
           <NotifBell />
         </View>
       )}
