@@ -119,22 +119,44 @@ export async function registerForPushNotifications(userId: string): Promise<bool
 
     await setupAndroidChannels();
 
-    const projectId = getExpoProjectId();
-    if (!projectId) {
-      console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
-      return false;
+    let token: string;
+    if (Platform.OS === 'ios') {
+      const native = await Notifications.getDevicePushTokenAsync();
+      if (typeof native.data !== 'string' || native.data.length === 0) {
+        console.warn('[push] APNs returned an empty native device token.');
+        return false;
+      }
+      // Prefix keeps the existing single-column storage backward-compatible:
+      // iOS goes directly to APNs, Android Expo tokens keep their old format.
+      token = `apns:${native.data}`;
+    } else {
+      const projectId = getExpoProjectId();
+      if (!projectId) {
+        console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
+        return false;
+      }
+      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     }
 
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbSavePushToken(userId, token);
-    console.info('[push] Expo push token saved for user:', userId);
+    console.info('[push] Mobile push token saved for user:', userId, Platform.OS === 'ios' ? 'apns' : 'expo');
     return true;
   } catch (error) {
-    console.warn('[push] Failed to register Expo push token:', error);
+    console.warn('[push] Failed to register mobile push token:', error);
     return false;
   }
 }
 
+
+export function subscribeToNativePushTokenChanges(userId: string): Notifications.EventSubscription | null {
+  if (Platform.OS !== 'ios') return null;
+  return Notifications.addPushTokenListener((native) => {
+    if (typeof native.data !== 'string' || native.data.length === 0) return;
+    dbSavePushToken(userId, `apns:${native.data}`).catch((error) => {
+      console.warn('[push] Failed to refresh APNs token:', error);
+    });
+  });
+}
 
 /**
  * Отвязать это устройство от чужого аккаунта при запуске без входа.
@@ -151,9 +173,16 @@ export async function releasePushTokenIfSignedOut(): Promise<void> {
   try {
     const { status } = await Notifications.getPermissionsAsync();
     if (status !== 'granted') return;
-    const projectId = getExpoProjectId();
-    if (!projectId) return;
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    let token: string;
+    if (Platform.OS === 'ios') {
+      const native = await Notifications.getDevicePushTokenAsync();
+      if (typeof native.data !== 'string' || native.data.length === 0) return;
+      token = `apns:${native.data}`;
+    } else {
+      const projectId = getExpoProjectId();
+      if (!projectId) return;
+      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    }
     await dbReleasePushToken(token);
   } catch {
     // Молча: это уборка, а не то, ради чего человек открыл приложение.
