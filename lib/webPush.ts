@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
-import { getSessionToken } from '@/services/db';
+import { getSessionToken, dbGetConsent } from '@/services/db';
+import { hasCrossBorderConsent } from '@/constants/legal';
 
 // Публичная половина пары, которую сервер создал сам (infra/bootstrap.sh).
 // Прежняя жила в настройках Vercel, и её приватная часть однажды прошла
@@ -60,6 +61,12 @@ function wpTimeout<T>(p: Promise<T>, ms: number, step: string): Promise<T> {
 export async function registerWebPush(userId: string): Promise<boolean> {
   if (Platform.OS !== 'web') return false;
   if (typeof window === 'undefined') return false;
+
+  const consent = await dbGetConsent(userId).catch(() => null);
+  if (!hasCrossBorderConsent(consent?.docs)) {
+    wpDebug('Нужно отдельное согласие на трансграничную передачу для web-push');
+    return false;
+  }
 
   if (!('serviceWorker' in navigator)) {
     wpDebug('Ошибка: serviceWorker не поддерживается');
