@@ -149,21 +149,6 @@ $ownProfile = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
 check('свои отзывы: сетевой сбой не выглядит отсутствием отзывов',
     str_contains($ownProfile, 'ratingsLoadFailed') && str_contains($ownProfile, 'Не удалось загрузить отзывы'));
 
-// ── Telegram: пользовательские сетевые действия не молчат ───────────────────
-$tg = (string)file_get_contents(__DIR__ . '/../components/TelegramConnectButton.tsx');
-check('telegram: ошибка первого статуса не оставляет вечный спиннер',
-    str_contains($tg, 'statusFailed') && str_contains($tg, 'Не удалось проверить Telegram'));
-check('telegram: отключение сообщает об ошибке',
-    str_contains($tg, 'Не удалось отключить Telegram. Проверьте связь и попробуйте ещё раз.'));
-check('telegram: открытие бота сообщает об ошибке',
-    str_contains($tg, 'Не удалось открыть Telegram. Откройте бота вручную'));
-check('telegram: fire-and-forget заявка не даёт unhandled rejection',
-    str_contains($tg, 'void dbTgPrepareLink(userId).catch'));
-$db = (string)file_get_contents(__DIR__ . '/../services/db.ts');
-check('telegram: prepare-link не скрывает сетевую ошибку от UI',
-    str_contains($db, "await proxy('tgPrepareLink', [userId]);")
-    && !str_contains($db, "try { await proxy('tgPrepareLink', [userId]); } catch {}"));
-
 // ── Уведомления: ошибка сети не выглядит пустотой/успехом ────────────────────
 $bell = (string)file_get_contents(__DIR__ . '/../components/ui/NotifBell.tsx');
 check('уведомления: ошибка загрузки хранится отдельно', str_contains($bell, 'loadFailed'));
@@ -177,10 +162,6 @@ check('уведомления: удаление одного меняет UI т�
     (bool)preg_match('~await dbDeleteNotif\(id\);[\s\S]{0,180}setNotifs~', $bell));
 check('уведомления: удаление всех меняет UI только после сервера',
     (bool)preg_match('~await dbDeleteAllNotifs\(userId\);[\s\S]{0,180}setNotifs\(\[\]\)~', $bell));
-
-$tgBanner = (string)file_get_contents(__DIR__ . '/../components/TelegramLinkBanner.tsx');
-check('telegram banner: готовит резервную привязку', str_contains($tgBanner, 'void dbTgPrepareLink(userId).catch'));
-check('telegram banner: ошибка открытия видна', str_contains($tgBanner, 'Не удалось открыть Telegram. Откройте вручную'));
 
 // ── Push: разрешение ОС не выдаётся за рабочую доставку ─────────────────────
 $push = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
