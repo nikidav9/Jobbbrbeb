@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import {
   GestureDetector,
+  TouchableOpacity as GHTouchableOpacity,
   ScrollView as GHScrollView,
   RefreshControl as GHRefreshControl,
 } from 'react-native-gesture-handler';
@@ -1490,36 +1491,32 @@ function WorkerPermMode() {
                         </Text>
                         {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
                       </View>
-                      <TouchableOpacity
-                        accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
-                        style={pS.deckUtilityTap}
-                        onPress={() => {
-                          if (Platform.OS === 'web' && swDeck.wasSwipe()) return;
-                          void toggleSaved(v);
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
-                          <Ionicons
-                            name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                            size={14}
-                            color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
-                          />
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        accessibilityLabel="Поделиться вакансией"
-                        style={pS.deckUtilityTap}
-                        onPress={() => {
-                          if (Platform.OS === 'web' && swDeck.wasSwipe()) return;
-                          void shareVacancy(v);
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <View style={pS.deckUtilityBtn}>
-                          <Ionicons name="share-outline" size={14} color={Colors.textSecondary} />
-                        </View>
-                      </TouchableOpacity>
+                      <View style={pS.deckUtilityActions}>
+                        <GHTouchableOpacity
+                          accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
+                          style={pS.deckUtilityTap}
+                          onPress={() => { void toggleSaved(v); }}
+                          activeOpacity={0.75}
+                        >
+                          <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
+                            <Ionicons
+                              name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
+                              size={21}
+                              color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
+                            />
+                          </View>
+                        </GHTouchableOpacity>
+                        <GHTouchableOpacity
+                          accessibilityLabel="Поделиться вакансией"
+                          style={pS.deckUtilityTap}
+                          onPress={() => { void shareVacancy(v); }}
+                          activeOpacity={0.75}
+                        >
+                          <View style={pS.deckUtilityBtn}>
+                            <Ionicons name="share-outline" size={21} color={Colors.textSecondary} />
+                          </View>
+                        </GHTouchableOpacity>
+                      </View>
                     </View>
 
                     <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
@@ -2213,15 +2210,15 @@ const pS = StyleSheet.create({
   limitClose: { paddingVertical: rs(8) },
   limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
   deckUtilityActions: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(8),
-    marginTop: rs(-2),
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(2),
+    marginTop: rs(-2), marginRight: rs(-8), flexShrink: 0,
   },
   deckUtilityTap: {
-    width: rs(44), height: rs(44),
+    width: rs(48), height: rs(48),
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   deckUtilityBtn: {
-    width: rs(28), height: rs(28), borderRadius: rs(14),
+    width: rs(42), height: rs(42), borderRadius: rs(21),
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#F2F3F5',
   },
