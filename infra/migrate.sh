@@ -84,8 +84,11 @@ fi
 # порты, логи и топология БД. Пишем атомарно, чтобы монитор не увидел полфайла.
 latest_migration=$(q -tAc "select name from jm_migrations order by name desc limit 1" 2>/dev/null | tr -d '\r\n')
 status_tmp=$(mktemp /var/www/html/security-status.json.XXXXXX)
-printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" > "$status_tmp"
+vapid_public="${VAPID_PUBLIC_KEY:-}"
+vapid_subject="${VAPID_SUBJECT:-mailto:nikidav9@gmail.com}"
+[ -n "${VAPID_PRIVATE_KEY:-}" ] && vapid_private_configured=true || vapid_private_configured=false
+printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true,"vapid_public_key":"%s","vapid_private_configured":%s,"vapid_subject":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" "$vapid_public" "$vapid_private_configured" "$vapid_subject" > "$status_tmp"
 chmod 644 "$status_tmp"
 mv -f "$status_tmp" /var/www/html/security-status.json
 
