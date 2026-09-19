@@ -4182,9 +4182,9 @@ try {
                     . 'Не ждите — посмотрите другие вакансии и смены рядом, отклик в два тапа.';
                 sb_insert('jm_notifications', ['user_id' => $srow['worker_id'], 'title' => $wTitle, 'body' => $wBody]);
                 $wu = sb_single('jm_users', ['id' => 'eq.' . $srow['worker_id']], 'telegram_id,push_token');
-                if ($wu && !empty($wu['telegram_id'])) {
+                if ($wu && jt_has_crossborder_consent((string)$srow['worker_id']) && !empty($wu['telegram_id'])) {
                     tg_send_message((int)$wu['telegram_id'], $wTitle . "\n\n" . $wBody, true);
-                } elseif ($wu && !empty($wu['push_token'])) {
+                } elseif ($wu && jt_has_crossborder_consent((string)$srow['worker_id']) && !empty($wu['push_token'])) {
                     expo_push([[ 'to' => $wu['push_token'], 'title' => $wTitle, 'body' => $wBody,
                         'sound' => 'default', 'priority' => 'default', 'channelId' => 'matches', 'data' => ['type' => 'app_auto_rejected'] ]]);
                 }
@@ -4225,9 +4225,9 @@ try {
                 foreach ($employers as $e) {
                     if (isset($recentPosters[$e['id']])) continue; // недавно публиковал — не трогаем
                     sb_insert('jm_notifications', ['user_id' => $e['id'], 'title' => $title, 'body' => $body]);
-                    if (!empty($e['telegram_id'])) {
+                    if (jt_has_crossborder_consent((string)$e['id']) && !empty($e['telegram_id'])) {
                         tg_send_message((int)$e['telegram_id'], $title . "\n\n" . $body, true);
-                    } elseif (!empty($e['push_token'])) {
+                    } elseif (jt_has_crossborder_consent((string)$e['id']) && !empty($e['push_token'])) {
                         expo_push([[ 'to' => $e['push_token'], 'title' => $title, 'body' => $body,
                             'sound' => 'default', 'priority' => 'default', 'channelId' => 'default', 'data' => ['type' => 'post_nudge'] ]]);
                     }
