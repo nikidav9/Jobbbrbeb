@@ -353,8 +353,10 @@ function expo_push_one(string $token, string $title, string $body): void {
     $parts = jt_push_token_parts($token);
 
     if ($parts['apns'] !== '' && jt_apns_ready()) {
-        $result = jt_apns_push_generic('apns:' . $parts['apns'], 'perm_status');
-        if (!empty($result['ok'])) return;
+        // Configured iOS delivery is APNs-only; a transient APNs error must
+        // not reintroduce Expo as an undeclared fallback transport.
+        jt_apns_push_generic('apns:' . $parts['apns'], 'perm_status');
+        return;
     }
 
     if ($parts['expo'] === '') return;
