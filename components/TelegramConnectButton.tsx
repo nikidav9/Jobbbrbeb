@@ -10,8 +10,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
 import { Colors, Radius } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { dbGetUserById, dbUnbindTelegram, dbTgPrepareLink, dbGetConsent, dbRecordConsent } from '@/services/db';
-import { LEGAL_DOCS, hasCrossBorderConsent, needsReconsent } from '@/constants/legal';
+import {
+  dbGetUserById, dbUnbindTelegram, dbTgPrepareLink, dbGetConsent,
+  dbGetCrossBorderConsent, dbRecordCrossBorderConsent,
+} from '@/services/db';
+import { LEGAL_DOCS, needsReconsent } from '@/constants/legal';
 import { isTelegramMiniApp } from '@/lib/telegram';
 import { setOnboardingTarget, registerOnboardingMeasurer } from '@/lib/onboardingTargets';
 
@@ -101,8 +104,8 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
       return;
     }
     let alive = true;
-    dbGetConsent(userId)
-      .then(c => { if (alive) setCrossBorderAccepted(hasCrossBorderConsent(c?.docs)); })
+    dbGetCrossBorderConsent(userId)
+      .then(c => { if (alive) setCrossBorderAccepted(c?.accepted === true); })
       .catch(() => { if (alive) setCrossBorderAccepted(false); });
     return () => { alive = false; };
   }, [userId]);
@@ -117,14 +120,13 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
         setActionError('Сначала примите актуальные основные документы JobToo.');
         return;
       }
-      await dbRecordConsent(
+      await dbRecordCrossBorderConsent(
         userId,
-        current.stamp,
-        { ...current.docs, crossBorderConsent: LEGAL_DOCS.crossBorderConsent.version },
+        LEGAL_DOCS.crossBorderConsent.version,
         'crossborder:telegram',
       );
-      const saved = await dbGetConsent(userId);
-      if (!hasCrossBorderConsent(saved?.docs)) {
+      const saved = await dbGetCrossBorderConsent(userId);
+      if (saved?.accepted !== true) {
         setActionError('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
         return;
       }
