@@ -24,6 +24,12 @@ return [
     // Токен бота из @BotFather.
     'TG_BOT_TOKEN'    => '',
 
+    // Direct APNs credentials. The .p8 private key must never be committed.
+    'APNS_KEY_ID'      => '',
+    'APNS_TEAM_ID'     => '',
+    'APNS_BUNDLE_ID'   => 'com.nikidav23.onspaceapp',
+    'APNS_AUTH_KEY_P8' => '',
+
     // Ключ «HTTP Геокодер» Яндекса (developer.tech.yandex.ru → Геокодер).
     // Сервер в РФ. Даёт точные координаты по адресу; если его нет — работает
     // Геосаджест (ниже). Иностранных геокодеров в проекте нет.
