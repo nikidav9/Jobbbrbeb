@@ -35,8 +35,13 @@ check('серверная запись согласия есть', str_contains(
 check('регистрация её зовёт', str_contains($db, 'jt_consent_attach($uid, $args[2] ?? null);'));
 check('клиент передаёт согласие третьим доводом',
     str_contains($dbts, '[row, referralCode ?? \'\', consent]'));
-check('регистрация собирает согласие',
-    str_contains($ctx, 'dbUpsertUser(u, referralCode, { stamp: LEGAL_STAMP, docs: legalVersions() })'));
+check('регистрация собирает основное согласие',
+    str_contains($ctx, 'const coreDocs = legalVersions();')
+    && str_contains($ctx, 'stamp: LEGAL_STAMP')
+    && str_contains($ctx, 'docs: coreDocs'));
+check('трансграничное согласие передаётся отдельно',
+    str_contains($ctx, 'crossBorderVersion: LEGAL_DOCS.crossBorderConsent.version')
+    && str_contains($db, "'source'      => 'crossborder:registration'"));
 
 $attach = fn_body($db, 'jt_consent_attach');
 check('тело записи найдено', $attach !== '');
