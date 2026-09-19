@@ -22,7 +22,7 @@ test('normalizeCompany collapses observed Lavka aliases to one brand', () => {
     'ООО "Яндекс лавка"',
     'ООО " Яндекс лавка"',
   ]) {
-    assert.equal(normalizeCompany(alias), 'Яндекс Лавка', alias);
+    assert.equal(normalizeCompany(alias), 'Лавка', alias);
     assert.equal(isLavkaCompany(alias), true, alias);
   }
   assert.equal(isLavkaCompany('Купер'), false);
@@ -31,5 +31,5 @@ test('normalizeCompany collapses observed Lavka aliases to one brand', () => {
 test('companyInitials builds a compact fallback mark', () => {
   assert.equal(companyInitials('Вкусно и точка'), 'ВИ');
   assert.equal(companyInitials('Купер'), 'К');
-  assert.equal(companyInitials('ООО " Яндекс лавка"'), 'ЯЛ');
+  assert.equal(companyInitials('ООО " Яндекс лавка"'), 'Л');
 });

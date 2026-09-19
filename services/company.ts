@@ -1,5 +1,5 @@
 const DEFAULT_COMPANY = 'Компания';
-const LAVKA_COMPANY = 'Яндекс Лавка';
+const LAVKA_COMPANY = 'Лавка';
 
 /** A comparison key for company aliases that differ only by legal/punctuation spelling. */
 function companyAliasKey(raw: string): string {

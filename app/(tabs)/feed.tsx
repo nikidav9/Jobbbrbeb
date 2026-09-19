@@ -554,7 +554,7 @@ function CompanyPicker({ visible, options, selected, onChange, onClose }: {
 }
 
 function PermFilterSheet({
-  initial, companyOptions, count, onApply, onClose, onOpenMap,
+  initial, companyOptions, count, onApply, onClose, onOpenMap, bottomInset,
 }: {
   initial: PermFilters;
   companyOptions: VacancyCompanyOption[];
@@ -562,11 +562,11 @@ function PermFilterSheet({
   onApply: (f: PermFilters) => void;
   onClose: () => void;
   onOpenMap: () => void;
+  bottomInset: number;
 }) {
   const [draft, setDraft] = useState<PermFilters>(initial);
   const [metroOpen, setMetroOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
-  const insets = useSafeAreaInsets();
 
   const toggleSearchIn = (id: 'title' | 'desc') => setDraft(d => ({
     ...d, searchIn: d.searchIn.includes(id) ? d.searchIn.filter(x => x !== id) : [...d.searchIn, id],
@@ -575,7 +575,7 @@ function PermFilterSheet({
   const n = count(draft);
 
   return (
-    <View style={styles.filterOverlay}>
+    <View style={[styles.filterOverlay, { bottom: bottomInset }]}>
       <View style={[styles.filterSheet, { maxHeight: '92%' }]}>
         <View style={styles.filterSheetHeader}>
           <Text style={styles.filterSheetTitle}>Фильтры</Text>
@@ -665,7 +665,7 @@ function PermFilterSheet({
           </View>
         </ScrollView>
 
-        <TouchableOpacity style={[fst.cta, { marginBottom: insets.bottom + rs(80) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
+        <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
           <Text style={fst.ctaTxt}>{n > 0 ? `Показать ${n}` : 'Показать вакансии'}</Text>
         </TouchableOpacity>
       </View>
@@ -1694,6 +1694,7 @@ function WorkerPermMode() {
       {permFilterOpen && (
         <PermFilterSheet
           initial={permF}
+          bottomInset={tabBarHeight}
           companyOptions={permCompanyOptions}
           count={countPermLocal}
           onApply={(f) => {

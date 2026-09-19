@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
 import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType } from '@/constants/types';
 import { uid, nowISO } from '@/services/storage';
+import { normalizeCompany } from '@/services/company';
 
 const DB_TIMEOUT = 12_000;
 
@@ -217,7 +218,7 @@ function rowToUser(r: any): User {
     metroLineId: r.metro_line_id ?? undefined,
     metroStation: r.metro_station ?? undefined,
     workTypes: r.work_types ?? [],
-    company: r.company ?? undefined,
+    company: r.company ? normalizeCompany(r.company) : undefined,
     createdAt: r.created_at,
     isBlocked: r.is_blocked ?? false,
     avatarUrl: r.avatar_url ?? undefined,
@@ -261,7 +262,7 @@ function userToRow(u: User) {
     metro_line_id: u.metroLineId ?? null,
     metro_station: u.metroStation ?? null,
     work_types: u.workTypes ?? [],
-    company: u.company ?? null,
+    company: u.company ? normalizeCompany(u.company) : null,
     created_at: u.createdAt,
     is_blocked: u.isBlocked ?? false,
     avatar_url: u.avatarUrl ?? null,
@@ -614,7 +615,7 @@ function rowToVacancy(r: any): Vacancy {
   return {
     id: r.id,
     employerId: r.employer_id,
-    company: r.company,
+    company: r.company ? normalizeCompany(r.company) : '',
     title: r.title,
     workType: r.work_type,
     workTypeLabel: r.work_type_label,
@@ -642,7 +643,7 @@ function vacancyToRow(v: Vacancy) {
   return {
     id: v.id,
     employer_id: v.employerId,
-    company: v.company,
+    company: v.company ? normalizeCompany(v.company) : v.company,
     title: v.title,
     work_type: v.workType,
     work_type_label: v.workTypeLabel,
@@ -1095,7 +1096,7 @@ function rowToChat(r: any, messages: Message[] = []): Chat {
     workerId: r.worker_id,
     employerId: r.employer_id,
     vacTitle: r.vac_title ?? '',
-    companyName: r.company_name ?? '',
+    companyName: r.company_name ? normalizeCompany(r.company_name) : '',
     messages,
     unreadWorker: r.unread_worker ?? 0,
     unreadEmployer: r.unread_employer ?? 0,
@@ -1173,9 +1174,10 @@ export async function dbCreateChat(
    */
   author: boolean | 'worker' | 'employer' = false,
 ): Promise<string> {
+  const canonicalCompanyName = companyName ? normalizeCompany(companyName) : companyName;
   if (IS_NATIVE) {
     return proxy<string>('dbCreateChat', [
-      workerId, employerId, vacancyId, vacTitle, companyName,
+      workerId, employerId, vacancyId, vacTitle, canonicalCompanyName,
       systemMessage, initialUnreadWorker, initialUnreadEmployer, author,
     ]);
   }
@@ -1191,7 +1193,7 @@ export async function dbCreateChat(
     worker_id: workerId,
     employer_id: employerId,
     vac_title: vacTitle,
-    company_name: companyName,
+    company_name: canonicalCompanyName,
     unread_worker: initialUnreadWorker,
     unread_employer: initialUnreadEmployer,
     created_at: nowISO(),
@@ -1313,7 +1315,7 @@ function rowToPermVacancy(r: any): PermVacancy {
   return {
     id: r.id,
     employerId: r.employer_id,
-    company: r.company,
+    company: r.company ? normalizeCompany(r.company) : '',
     title: r.title,
     workType: r.work_type ?? undefined,
     metroLineId: r.metro_line_id ?? undefined,
@@ -1349,7 +1351,7 @@ export async function dbGetPermVacanciesByEmployer(employerId: string): Promise<
 
 export async function dbUpsertPermVacancy(v: PermVacancy): Promise<void> {
   const permRow = {
-    id: v.id, employer_id: v.employerId, company: v.company, title: v.title,
+    id: v.id, employer_id: v.employerId, company: v.company ? normalizeCompany(v.company) : v.company, title: v.title,
     work_type: v.workType ?? null, metro_line_id: v.metroLineId ?? null,
     metro_station: v.metroStation ?? null, address: v.address ?? null,
     lat: v.lat ?? null, lng: v.lng ?? null,
