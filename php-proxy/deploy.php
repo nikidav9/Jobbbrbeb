@@ -88,8 +88,6 @@ if (is_array($app)) {
         'YANDEX_GEOCODER_KEY', 'YANDEX_SUGGEST_KEY',
         'SUPERJOB_SECRET_KEY', 'SUPERJOB_CLIENT_ID', 'SUPERJOB_CLIENT_SECRET',
         'HH_CLIENT_ID', 'HH_CLIENT_SECRET',
-        'APNS_TEAM_ID', 'APNS_KEY_ID', 'APNS_BUNDLE_ID',
-        'APNS_PRIVATE_KEY_B64', 'APNS_ENVIRONMENT',
     ];
     foreach ($appKeys as $k) {
         $x = $app[$k] ?? '';
