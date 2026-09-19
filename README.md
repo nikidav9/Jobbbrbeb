@@ -58,7 +58,7 @@
 | Состояние | React Context (AppContext) |
 | База данных | Supabase (PostgreSQL) |
 | API | PHP-прокси (`jobtoo.ru/api/db.php`) — единственный путь к базе |
-| Push-уведомления | Expo Push API + Supabase Edge Functions |
+| Push-уведомления | iPhone/iPad PWA: standards-based Web Push + VAPID; Android: Expo Push → FCM |
 | Admin Dashboard | Next.js 14 + Tailwind CSS |
 | Сборка | EAS Build (Android APK / AAB, iOS IPA) |
 | OTA-обновления | expo-updates (EAS Update) |
