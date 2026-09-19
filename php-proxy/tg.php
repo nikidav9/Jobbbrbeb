@@ -73,6 +73,7 @@ define('TG_BOT_TOKEN', jt_secret('TG_BOT_TOKEN'));
 define('TG_WORK_GROUP_CHAT_ID', (int)(getenv('TG_WORK_GROUP_CHAT_ID') ?: -1004358116342));
 define('TG_CLAUDE_BOT_USERNAME', ltrim((string)(getenv('TG_CLAUDE_BOT_USERNAME') ?: 'JobTooClaudebot'), '@'));
 define('TG_CODEX_BRIDGE_PR', (int)(getenv('TG_CODEX_BRIDGE_PR') ?: 62));
+define('JT_CROSSBORDER_CONSENT_VERSION', '2026-09-19');
 
 // Ключ доступа к базе — та же схема, что и в db.php: сервисный ключ с
 // хостинга, анонимный лишь как запасной вариант. Подробности там же.
@@ -126,6 +127,41 @@ function sb(string $method, string $table, array $query = [], $body_data = null,
 function sb_one(string $table, array $filters, string $select = '*'): ?array {
     $rows = sb('GET', $table, array_merge(['select' => $select, 'limit' => '1'], $filters));
     return !empty($rows) && isset($rows[0]) ? $rows[0] : null;
+}
+
+/**
+ * Есть ли у пользователя отдельное действующее согласие на трансграничную
+ * передачу. Вебхук Telegram — отдельная точка входа и не может полагаться
+ * только на проверки db.php.
+ */
+function jt_has_crossborder_consent(string $userId): bool {
+    if ($userId === '') return false;
+    $rows = sb('GET', 'jm_consents', [
+        'select' => 'docs,source,accepted_at',
+        'user_id' => 'eq.' . $userId,
+        'order' => 'accepted_at.desc',
+        'limit' => '20',
+    ]);
+
+    foreach ($rows as $row) {
+        $source = (string)($row['source'] ?? '');
+        $docs = $row['docs'] ?? [];
+        if (is_string($docs)) $docs = json_decode($docs, true) ?: [];
+        $version = is_array($docs) ? (string)($docs['crossBorderConsent'] ?? '') : '';
+
+        if (str_starts_with($source, 'crossborder:')) {
+            return $source !== 'crossborder:revoked'
+                && $version !== ''
+                && hash_equals(JT_CROSSBORDER_CONSENT_VERSION, $version);
+        }
+
+        // Короткий переходный период: отдельная галочка уже существовала,
+        // но её версия ещё лежала внутри общей записи согласия.
+        if ($version !== '' && hash_equals(JT_CROSSBORDER_CONSENT_VERSION, $version)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function uid(): string {
@@ -329,8 +365,13 @@ function expo_push_one(string $token, string $title, string $body): void {
 
 /** Уведомляет работника по всем доступным каналам */
 function notify_worker(string $workerId, string $title, string $body): void {
-    // Колокольчик — всегда
+    // Колокольчик — всегда: он хранится в российской базе.
     sb('POST', 'jm_notifications', [], ['user_id' => $workerId, 'title' => $title, 'body' => $body]);
+
+    // Telegram и Expo — иностранные каналы. Без отдельного действующего
+    // согласия пользователь увидит событие только внутри JobToo.
+    if (!jt_has_crossborder_consent($workerId)) return;
+
     $w = sb_one('jm_users', ['id' => 'eq.' . $workerId], 'telegram_id,push_token');
     if (!$w) return;
     if (!empty($w['telegram_id'])) {
@@ -657,8 +698,14 @@ $firstName = $msg['from']['first_name'] ?? '';
 // ── Привязка аккаунта из приложения: /start link_<userId> ───────────────────
 if (preg_match('/^\/start\s+link_([a-z0-9]+)$/i', $text, $lm)) {
     $userId = $lm[1];
-    $u = sb_one('jm_users', ['id' => 'eq.' . $userId], 'id,first_name');
+    $pending = tg_pending_read();
+    $hasPending = isset($pending[$userId]);
+    $u = $hasPending && jt_has_crossborder_consent($userId)
+        ? sb_one('jm_users', ['id' => 'eq.' . $userId], 'id,first_name')
+        : null;
     if ($u) {
+        unset($pending[$userId]);
+        tg_pending_write($pending);
         // Один Telegram — один аккаунт: освобождаем этот telegram_id у других
         sb('PATCH', 'jm_users', ['telegram_id' => 'eq.' . $chatId], ['telegram_id' => null]);
         sb('PATCH', 'jm_users', ['id' => 'eq.' . $userId], ['telegram_id' => $chatId]);
@@ -673,7 +720,7 @@ if (preg_match('/^\/start\s+link_([a-z0-9]+)$/i', $text, $lm)) {
     } else {
         tg('sendMessage', [
             'chat_id' => $chatId,
-            'text' => 'Не удалось найти аккаунт для привязки. Откройте приложение и попробуйте ещё раз.',
+            'text' => 'Не удалось подтвердить запрос на привязку. Откройте JobToo, подтвердите отдельное согласие на трансграничную передачу и подключите Telegram ещё раз.',
         ]);
     }
     echo json_encode(['ok' => true]); exit;
@@ -690,6 +737,10 @@ if (preg_match('/^\/start\s*$/', $text)) {
         // не срабатывала ни у кого следующие 15 минут, и заявка так и висела.
         $userId = null; $u = null;
         foreach (array_keys($pending) as $cand) {
+            if (!jt_has_crossborder_consent((string)$cand)) {
+                unset($pending[$cand]);
+                continue;
+            }
             $row = sb_one('jm_users', ['id' => 'eq.' . $cand], 'id,first_name');
             if ($row) { $userId = (string)$cand; $u = $row; break; }
             unset($pending[$cand]);             // такого аккаунта нет — выбрасываем
