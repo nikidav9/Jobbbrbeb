@@ -1078,13 +1078,13 @@ const fh = StyleSheet.create({
     backgroundColor: Colors.bgWarm,
   },
   logoWrap: {
-    width: rs(68), height: rs(46), flexShrink: 0,
+    width: rs(34), height: rs(46), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },
-  // Точный логотип, присланный владельцем. Файл обрезан по прозрачному
-  // контуру, поэтому видимая высота знака совпадает с высотой поиска.
+  // Точный логотип, присланный владельцем. Уменьшен вдвое,
+  // при этом остаётся выровнен по центру относительно поисковой строки.
   logoImage: {
-    width: rs(68), height: rs(46),
+    width: rs(34), height: rs(23),
   },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
