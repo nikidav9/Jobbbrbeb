@@ -55,7 +55,7 @@ import {
   setSessionExpiredHandler,
 } from '@/services/db';
 import { LEGAL_DOCS, LEGAL_STAMP, legalVersions } from '@/constants/legal';
-import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/services/notifications';
+import { registerForPushNotifications, releasePushTokenIfSignedOut, subscribeToNativePushTokenChanges } from '@/services/notifications';
 import { registerWebPush } from '@/lib/webPush';
 import { setWebSplashProgress } from '@/lib/webSplash';
 
@@ -463,6 +463,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     return () => { cancelled = true; clearTimeout(safetyTimer); };
   }, []);
+
+  // APNs can rotate a device token while the app is running. Keep the
+  // server-side binding current immediately instead of waiting for next launch.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !currentUser) return;
+    const subscription = subscribeToNativePushTokenChanges(currentUser.id);
+    return () => subscription?.remove();
+  }, [currentUser?.id]);
 
   // ─── Keep connection alive (web only) ─────────────────────────────────────
 
