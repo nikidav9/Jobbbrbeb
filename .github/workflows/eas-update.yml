@@ -8,6 +8,12 @@ on:
       - '**/*.md'
       - '.gitignore'
 
+# Only the newest production bundle may publish. Without this, several rapid
+# main commits can finish out of order and an older OTA update becomes latest.
+concurrency:
+  group: production-eas-update
+  cancel-in-progress: true
+
 jobs:
   update:
     name: OTA Update
