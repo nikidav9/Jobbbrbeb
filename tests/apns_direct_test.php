@@ -58,10 +58,15 @@ check('iOS requests native APNs token', str_contains($client, 'getDevicePushToke
 check('iOS marks native token as APNs', str_contains($client, 'apns:'));
 $iosBranch = strstr($client, "if (Platform.OS === 'ios') {");
 $androidBranch = $iosBranch !== false ? strstr($iosBranch, "const projectId = getExpoProjectId();") : false;
-check('iOS branch does not request Expo token',
+check('APNs-ready iOS branch does not request Expo token',
     $iosBranch !== false
     && $androidBranch !== false
+    && str_contains(substr($iosBranch, 0, strlen($iosBranch) - strlen($androidBranch)), "transport === 'apns'")
     && !str_contains(substr($iosBranch, 0, strlen($iosBranch) - strlen($androidBranch)), 'getExpoPushTokenAsync'));
+check('iOS cutover is gated by Moscow backend readiness',
+    str_contains($client, 'dbGetIosPushTransport')
+    && str_contains($db, "'dbGetIosPushTransport'")
+    && str_contains($db, "jt_apns_ready() ? 'apns' : 'expo'"));
 
 check('server prefers direct APNs', str_contains($db, 'jt_apns_push_generic'));
 check('admin broadcast supports direct APNs', str_contains($admin, 'jt_apns_push_generic'));
