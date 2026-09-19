@@ -4,11 +4,11 @@ import PageHeader from '@/components/PageHeader'
 import KpiCard from '@/components/KpiCard'
 import Chip from '@/components/Chip'
 import { IconApp, IconBell } from '@/components/icons'
-import { broadcastBoth, broadcastWebPush, broadcastTelegram, sendTelegramToUsers, sendBothToUser, sendInAppToUser, sendDormantSurvey, getDormantSurveyResults, postToGroup } from '@/lib/admin-actions'
+import { broadcastBoth, broadcastWebPush, sendBothToUser, sendInAppToUser } from '@/lib/admin-actions'
 import { supabaseAdmin } from '@/lib/supabase'
 import { logActivity } from '@/lib/activity-log'
 
-type Target = 'all' | 'workers' | 'employers' | 'metro' | 'webpush' | 'telegram' | 'telegram_workers' | 'telegram_reactivation_workers' | 'telegram_employers'
+type Target = 'all' | 'workers' | 'employers' | 'metro' | 'webpush'
 type St = 'idle' | 'loading' | 'ok' | 'err'
 
 interface UserRow {
@@ -20,7 +20,6 @@ interface UserRow {
   metro_station: string | null
   created_at: string
   push_token: string | null
-  telegram_id: string | null
   last_seen_at: string | null
   is_blocked: boolean | null
 }
@@ -41,10 +40,6 @@ const TARGETS: { value: Target; label: string; desc: string }[] = [
   { value: 'employers', label: 'Работодатели',       desc: 'Только работодатели' },
   { value: 'metro',     label: 'По метро',           desc: 'Пользователи конкретной станции' },
   { value: 'webpush',   label: 'Веб-пуш · iPhone',    desc: 'Только подписчики PWA (Safari/iOS)' },
-  { value: 'telegram',           label: 'Telegram — все',        desc: 'Все с привязанным Telegram, доставка ~100%' },
-  { value: 'telegram_workers',   label: 'Telegram — работники',  desc: 'Только работники с Telegram' },
-  { value: 'telegram_reactivation_workers', label: 'Telegram — вернуть работников', desc: 'Не заходили 30+ дней или ни разу не открывали приложение' },
-  { value: 'telegram_employers', label: 'Telegram — директора',  desc: 'Только директора с Telegram' },
 ]
 
 interface Trigger {
@@ -61,7 +56,7 @@ const TRIGGERS: Trigger[] = [
     id: 'inactive_workers',
     label: 'Неактивные работники',
     desc: 'Работники без активности 30+ дней — напомнить о себе',
-    target: 'telegram_reactivation_workers',
+    target: 'workers',
     title: '👋 Возвращайтесь в JobToo',
     body: 'Вы давно не заходили в JobToo. Откройте приложение и проверьте доступные предложения. Если сообщения больше не нужны, напишите «Не присылать».',
   },
@@ -126,7 +121,7 @@ export default function BroadcastPage() {
     setDataLoading(true)
     const [{ data: u }, { data: n }, { data: wpSubs }] = await Promise.all([
       supabaseAdmin.from('jm_users')
-        .select('id, first_name, last_name, phone, role, metro_station, created_at, push_token, telegram_id, last_seen_at, is_blocked')
+        .select('id, first_name, last_name, phone, role, metro_station, created_at, push_token, last_seen_at, is_blocked')
         .order('created_at', { ascending: false }),
       supabaseAdmin.from('jm_notifications')
         .select('id, user_id, title, body, is_read, created_at, jm_users(first_name, last_name, phone)')
@@ -144,14 +139,6 @@ export default function BroadcastPage() {
 
   const withPush = users.filter(u => u.push_token).length
   const withoutPush = users.filter(u => !u.push_token).length
-  const inactiveCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
-  const reactivationTelegramWorkers = users.filter(u =>
-    u.role === 'worker' &&
-    !!u.telegram_id &&
-    !u.is_blocked &&
-    (!u.last_seen_at || new Date(u.last_seen_at).getTime() < inactiveCutoff)
-  )
-
   async function handleBroadcast() {
     if (!title.trim() || !body.trim()) return
     setSt('loading'); setResult('')
@@ -159,15 +146,6 @@ export default function BroadcastPage() {
       if (target === 'webpush') {
         const { sent, failed } = await broadcastWebPush(title, body)
         setSt('ok'); setResult(`Веб-пуш отправлен: ${sent}${failed > 0 ? `, ошибок: ${failed}` : ''}`)
-      } else if (target === 'telegram_reactivation_workers') {
-        const ids = reactivationTelegramWorkers.map(u => u.id)
-        if (ids.length === 0) throw new Error('Нет подходящих работников с привязанным Telegram')
-        const { sent, skipped } = await sendTelegramToUsers(ids, `*${title}*\n\n${body}`)
-        setSt('ok'); setResult(`Telegram: доставлено ${sent} из ${ids.length}${skipped.length ? `, пропущено: ${skipped.length}` : ''}`)
-      } else if (target.startsWith('telegram')) {
-        const role = target === 'telegram_workers' ? 'worker' : target === 'telegram_employers' ? 'employer' : 'all'
-        const { sent, total } = await broadcastTelegram(title, body, role)
-        setSt('ok'); setResult(`Telegram: доставлено ${sent} из ${total}`)
       } else {
         const { pushCount, inappCount } = await broadcastBoth(target as 'all' | 'workers' | 'employers' | 'metro', title, body, metro || undefined)
         logActivity('Рассылка', `Цель: ${target}, push: ${pushCount}, inapp: ${inappCount}`)
@@ -244,8 +222,6 @@ export default function BroadcastPage() {
             sub="подписаны из Safari" />
         </div>
 
-        <DormantSurveyCard />
-
         {/* Вкладки. Активная подчёркивалась чёрным — тем самым чёрно-белым,
             от которого отказались; акцент здесь и означает «вы тут». */}
         <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--line)' }}>
@@ -260,8 +236,6 @@ export default function BroadcastPage() {
             }}>{label}</button>
           ))}
         </div>
-
-        {tab === 'send' && <GroupPostCard />}
 
         {/* ── Send tab ── */}
         {tab === 'send' && (
@@ -319,11 +293,6 @@ export default function BroadcastPage() {
                     </label>
                   ))}
                 </div>
-                {target === 'telegram_reactivation_workers' && (
-                  <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8, background: 'var(--info-soft)', color: 'var(--info)', fontSize: 12.5 }}>
-                    Получателей с привязанным Telegram: <strong>{reactivationTelegramWorkers.length}</strong>
-                  </div>
-                )}
                 {target === 'metro' && (
                   <div style={{ marginTop: 10 }}>{inp('Станция метро', metro, setMetro, 'Напр.: Тульская')}</div>
                 )}
@@ -529,159 +498,6 @@ export default function BroadcastPage() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-// ── Пост в общую группу «ПОДРАБОТКИ» ─────────────────────────────────────────
-// Отдельная кнопка на случай, когда авторассылка при создании вакансии не
-// дошла (у автора оборвалась сеть): вакансия в ленте есть, а объявления в
-// группе нет. Здесь пишем тот же пост руками. Текст — с HTML-разметкой
-// Telegram (<b>, <a href>), поэтому ссылку на вакансию можно вставить прямо
-// в текст. Отправка — по кнопке и с подтверждением: пост уходит в живую
-// группу и не отзывается.
-function GroupPostCard() {
-  const [text, setText] = useState('')
-  const [st, setSt] = useState<St>('idle')
-  const [msg, setMsg] = useState('')
-
-  const send = async () => {
-    if (!text.trim()) return
-    if (!confirm('Опубликовать это сообщение в группе «ПОДРАБОТКИ»? Пост уходит всем участникам и не отзывается.')) return
-    setSt('loading'); setMsg('')
-    try {
-      await postToGroup(text)
-      setSt('ok'); setMsg('Опубликовано в группе'); setText('')
-    } catch (e) {
-      setSt('err'); setMsg(e instanceof Error ? e.message : 'Ошибка публикации')
-    }
-    setTimeout(() => setSt('idle'), 5000)
-  }
-
-  return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 16, margin: '16px 0' }}>
-      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Опубликовать в группу «ПОДРАБОТКИ»</div>
-      <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>
-        Одним постом всем участникам группы. Пригодится, если объявление о вакансии не ушло в группу автоматически.
-        Можно с разметкой Telegram: <code>&lt;b&gt;жирный&lt;/b&gt;</code>, <code>&lt;a href="ссылка"&gt;текст&lt;/a&gt;</code>.
-      </div>
-      <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder={'Например:\n<b>🚚 Кладовщик — 3500 ₽/смена</b>\nм. Тульская, сегодня 09:00–18:00\nОткликайтесь в приложении 👇'}
-        rows={5}
-        className="jt-input"
-        style={{ width: '100%', boxSizing: 'border-box', marginBottom: 10 }}
-      />
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={send} disabled={!text.trim() || st === 'loading'}
-          style={{ background: st === 'ok' ? 'var(--positive, #2e7d32)' : st === 'err' ? 'var(--negative, #c62828)' : 'var(--accent, #FF6B1A)', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: !text.trim() ? 0.45 : 1 }}>
-          {st === 'loading' ? 'Публикую…' : 'Опубликовать в группу'}
-        </button>
-        {msg ? <span style={{ fontSize: 12.5, fontWeight: 600, color: st === 'err' ? 'var(--bad, #c62828)' : 'var(--fg, #1c1e21)' }}>{msg}</span> : null}
-      </div>
-    </div>
-  )
-}
-
-// ── Опрос спящих соискателей «почему не пользуетесь» ──────────────────────────
-// Отправка строго по кнопке и с подтверждением: это сообщение уходит реальным
-// людям. Ответы (в один тап) копятся в jm_survey_responses, итоги — тут же.
-const SURVEY_LABELS: Record<string, string> = {
-  no_shifts: 'Не нашёл смен рядом',
-  no_time: 'Не было времени / забыл',
-  confusing: 'Непонятно, как пользоваться',
-  found_job: 'Уже нашёл работу',
-  other: 'Другое',
-}
-
-function DormantSurveyCard() {
-  const [sending, setSending] = useState(false)
-  const [loadingRes, setLoadingRes] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [res, setRes] = useState<{ total: number; sentTotal: number; tally: Record<string, number> } | null>(null)
-
-  const [resErr, setResErr] = useState('')
-
-  const loadResults = useCallback(async () => {
-    setLoadingRes(true)
-    setResErr('')
-    try {
-      setRes(await getDormantSurveyResults())
-    } catch (e) {
-      // Ошибку итогов держим отдельно, чтобы не затирать результат отправки.
-      setResErr(e instanceof Error ? e.message : 'Ошибка загрузки итогов')
-    } finally {
-      setLoadingRes(false)
-    }
-  }, [])
-
-  useEffect(() => { loadResults() }, [loadResults])
-
-  const send = async () => {
-    if (!confirm('Отправить опрос спящим соискателям (не заходили 14+ дней) с Telegram? Уходит порцией до 20 за раз; кому уже слали — не повторяем. Сообщение получают реальные люди.')) return
-    setSending(true)
-    setMsg('')
-    try {
-      const { sent, sentTotal, remaining } = await sendDormantSurvey()
-      setMsg(
-        remaining > 0
-          ? `Отправлено ещё ${sent} (всего ${sentTotal}). Осталось ${remaining} — нажмите ещё раз.`
-          : `Отправлено ещё ${sent}. Всего охвачено ${sentTotal}. Больше спящих без опроса нет.`
-      )
-      loadResults()
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Ошибка отправки')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 16, margin: '16px 0' }}>
-      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Опрос спящих: «почему не пользуетесь»</div>
-      <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>
-        Один тап-опрос спящим соискателям (не заходили 14+ дней) с Telegram. Ответы копятся ниже.
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="jt-btn" onClick={send} disabled={sending}
-          style={{ background: 'var(--accent, #FF6B1A)', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          {sending ? 'Отправляю…' : 'Отправить опрос спящим'}
-        </button>
-        <button onClick={loadResults} disabled={loadingRes}
-          style={{ background: 'transparent', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>
-          Обновить итоги
-        </button>
-        {msg ? <span style={{ fontSize: 12.5, color: 'var(--fg, #1c1e21)', fontWeight: 600 }}>{msg}</span> : null}
-        {resErr ? <span style={{ fontSize: 12.5, color: 'var(--bad, #c62828)' }}>Итоги: {resErr}</span> : null}
-      </div>
-
-      {res ? (
-        <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--muted)' }}>
-          Охват: <b>{res.sentTotal}</b> отправлено · <b>{res.total}</b> ответили
-          {res.sentTotal > 0 ? ` (${Math.round((res.total / res.sentTotal) * 100)}%)` : ''}
-        </div>
-      ) : null}
-
-      {res && res.total > 0 ? (
-        <div style={{ marginTop: 12 }}>
-          {Object.keys(SURVEY_LABELS).map((k) => {
-            const n = res.tally[k] ?? 0
-            const pct = res.total ? Math.round((n / res.total) * 100) : 0
-            return (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 190, fontSize: 12.5 }}>{SURVEY_LABELS[k]}</div>
-                <div style={{ flex: 1, height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent, #FF6B1A)' }} />
-                </div>
-                <div style={{ width: 56, textAlign: 'right', fontSize: 12.5, color: 'var(--muted)' }}>{n} · {pct}%</div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--muted)' }}>Ответов пока нет.</div>
-      )}
     </div>
   )
 }
