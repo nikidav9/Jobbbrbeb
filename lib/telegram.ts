@@ -1,17 +1,10 @@
 import { Platform } from 'react-native';
 
-// ─── Telegram Mini App helpers ────────────────────────────────────────────────
-// The telegram-web-app.js SDK is loaded on demand below. When JobToo runs
-// inside Telegram's WebView, window.Telegram.WebApp carries signed init data
-// about the Telegram user.
-
-type TgWebAppUser = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-};
+// ─── Mini App shell helpers ──────────────────────────────────────────────────
+// JobToo does not authenticate or link accounts through the host messenger.
+// The SDK is loaded only to prepare the embedded viewport and read a non-personal
+// start parameter for vacancy/referral deep links. User profile/initData is not
+// exposed to the application code or sent to our server.
 
 let sdkPromise: Promise<void> | null = null;
 
@@ -70,17 +63,15 @@ export function isTelegramMiniApp(): boolean {
   return getWebApp() !== null;
 }
 
-/** Raw signed init data string — server validates its HMAC with the bot token */
-export function getTelegramInitData(): string | null {
-  return getWebApp()?.initData ?? null;
-}
-
-export function getTelegramUser(): TgWebAppUser | null {
-  return getWebApp()?.initDataUnsafe?.user ?? null;
-}
-
 /** start_param from t.me/<bot>/<app>?startapp=... deep links */
 export function getTelegramStartParam(): string | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  try {
+    const url = new URL(window.location.href);
+    const direct = url.searchParams.get('tgWebAppStartParam')
+      || new URLSearchParams(url.hash.replace(/^#/, '')).get('tgWebAppStartParam');
+    if (direct) return direct;
+  } catch {}
   return getWebApp()?.initDataUnsafe?.start_param ?? null;
 }
 
