@@ -8,7 +8,7 @@ import { getCallMarks, setCallMark, type CallMark } from '@/lib/calllog'
 import FilterChips from '@/components/FilterChips'
 import Button from '@/components/Button'
 import Chip from '@/components/Chip'
-import { IconPhone, IconSend, IconCheck } from '@/components/icons'
+import { IconPhone, IconCheck } from '@/components/icons'
 
 /**
  * Обзвон директоров.
@@ -18,8 +18,8 @@ import { IconPhone, IconSend, IconCheck } from '@/components/icons'
  * по двенадцать на человека. Вернуть пятерых из них — вчетверо больше смен,
  * чем выкладывается сейчас за неделю.
  *
- * Достучаться до них внутри приложения нельзя: у половины нет ни телеграма,
- * ни пушей, а за месяц туда заходили семеро из тридцати. Остаётся телефон —
+ * Достучаться до части из них внутри приложения нельзя: push/web-push есть
+ * не у всех, а за месяц туда заходили семеро из тридцати. Остаётся телефон —
  * и эта страница превращает «надо бы обзвонить» в список строк, где видно,
  * кому звонить первым и с чем.
  */
@@ -30,7 +30,6 @@ type Employer = {
   last_name: string | null
   phone: string | null
   company: string | null
-  telegram_id: number | null
   push_token: string | null
   last_seen_at: string | null
   created_at: string
@@ -79,7 +78,7 @@ export default function OutreachPage() {
     const [{ data: u }, { data: v }, { data: p }, { data: subs }] = await Promise.all([
       supabase
         .from('jm_users')
-        .select('id,first_name,last_name,phone,company,telegram_id,push_token,last_seen_at,created_at')
+        .select('id,first_name,last_name,phone,company,push_token,last_seen_at,created_at')
         .eq('role', 'employer'),
       supabase.from('jm_vacancies').select('employer_id,created_at,id,workers_found'),
       supabase.from('jm_perm_vacancies').select('employer_id,created_at'),
@@ -115,7 +114,7 @@ export default function OutreachPage() {
         published: s.count,
         lastPublish: s.last,
         bucket: b,
-        reachable: Boolean(e.telegram_id || e.push_token || webPush.has(e.id)),
+        reachable: Boolean(e.push_token || webPush.has(e.id)),
       }
     })
   }, [emps, pubs, now, webPush])
@@ -336,20 +335,6 @@ export default function OutreachPage() {
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', flex: '0 0 auto', minWidth: 130 }}>
                     заходил {ago(r.last_seen_at, now)}
                   </div>
-
-                  {/* Телеграм по номеру: t.me/+<цифры> открывает контакт, если
-                      человек там есть. Текст подставить в ссылку нельзя —
-                      телеграм такого не умеет, — поэтому рядом кнопка,
-                      кладущая готовое сообщение в буфер. */}
-                  <a
-                    href={`https://t.me/+${digits}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="jt-btn jt-btn-secondary"
-                    style={{ textDecoration: 'none', flex: '0 0 auto' }}
-                  >
-                    <IconSend size={13} />Телеграм
-                  </a>
 
                   <Button onClick={() => copyMessage(r)} style={{ flex: '0 0 auto' }}>
                     {copied === r.id ? 'Скопировано' : 'Текст'}
