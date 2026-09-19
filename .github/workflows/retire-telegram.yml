@@ -1,0 +1,39 @@
+name: Retire Telegram channel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'php-proxy/db.php'
+      - '.github/workflows/retire-telegram.yml'
+  workflow_dispatch:
+
+jobs:
+  retire:
+    name: Notify and unlink Telegram users
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Moscow server and retire Telegram
+        env:
+          APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+          ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
+        run: |
+          if [ -z "$APP_SECRET" ] || [ -z "$ADMIN_TOKEN" ]; then
+            echo "Не настроены серверные секреты"; exit 1
+          fi
+
+          for attempt in $(seq 1 20); do
+            RESP=$(curl -sS --connect-timeout 8 --max-time 40               -X POST "https://jobtoo.ru/api/db.php"               -H "Content-Type: application/json"               -H "X-App-Secret: $APP_SECRET"               -H "X-Admin-Token: $ADMIN_TOKEN"               -d '{"fn":"adminRetireTelegram","args":[]}' || true)
+
+            echo "Попытка $attempt: $RESP"
+
+            if printf '%s' "$RESP" | grep -q '"retired":true'; then
+              echo "$RESP" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            sleep 30
+          done
+
+          echo "Новый adminRetireTelegram не появился на сервере за 10 минут"
+          exit 1
