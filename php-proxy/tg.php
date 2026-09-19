@@ -431,6 +431,17 @@ if ($cb) {
     $chatId = $cb['message']['chat']['id'] ?? null;
     $msgId = $cb['message']['message_id'] ?? null;
     $origText = $cb['message']['text'] ?? '';
+    $cbChatType = (string)($cb['message']['chat']['type'] ?? '');
+
+    // Персональные Telegram-функции выведены из эксплуатации. Старые кнопки
+    // в уже отправленных личных сообщениях больше не меняют данные JobToo.
+    if ($cbChatType === 'private') {
+        tg('answerCallbackQuery', [
+            'callback_query_id' => $cbId,
+            'text' => 'Эта функция теперь доступна только внутри JobToo.',
+        ]);
+        echo json_encode(['ok' => true]); exit;
+    }
 
     // Ответ на опрос в один тап (первый опрос — «почему не пользуетесь» для
     // спящих). Записываем выбор, благодарим и мягко зовём обратно кнопкой.
@@ -670,149 +681,19 @@ if ($chatId === TG_WORK_GROUP_CHAT_ID && in_array($chatType, ['group', 'supergro
 
 if ($chatType !== 'private') { echo json_encode(['ok' => true]); exit; }
 
-// ─── Ожидающие привязки Telegram ─────────────────────────────────────────
-// Ссылка вида t.me/bot?start=link_<id> доносит метку до бота только когда
-// чат с ботом заводится впервые. Если человек уже писал боту раньше,
-// Telegram открывает существующий чат, кнопки START нет, и уходит голый
-// «/start» — привязать не к чему. Поэтому приложение перед переходом
-// оставляет здесь заявку, а бот подхватывает её по голому «/start».
-define('TG_PENDING_FILE', sys_get_temp_dir() . '/jobtoo_tg_pending.json');
-const TG_PENDING_TTL = 900;   // 15 минут
+// ─── Личный чат: только запуск Mini App ─────────────────────────────────────
+//
+// Персональная привязка аккаунта, уведомления, опросы и поддержка через бот
+// отключены. В личном чате бот не сохраняет Telegram ID/username/текст и не
+// связывает их с учётной записью JobToo. Остаётся только нейтральная кнопка,
+// которая открывает веб-приложение внутри Telegram.
+$text = trim((string)($msg['text'] ?? ''));
 
-function tg_pending_read(): array {
-    if (!is_file(TG_PENDING_FILE)) return [];
-    $raw = @file_get_contents(TG_PENDING_FILE);
-    $all = $raw ? json_decode($raw, true) : [];
-    if (!is_array($all)) return [];
-    $now = time();
-    return array_filter($all, fn($ts) => is_int($ts) && $now - $ts < TG_PENDING_TTL);
-}
-
-function tg_pending_write(array $all): void {
-    @file_put_contents(TG_PENDING_FILE, json_encode($all), LOCK_EX);
-}
-
-$text = trim($msg['text'] ?? '');
-$firstName = $msg['from']['first_name'] ?? '';
-
-// ── Привязка аккаунта из приложения: /start link_<userId> ───────────────────
-if (preg_match('/^\/start\s+link_([a-z0-9]+)$/i', $text, $lm)) {
-    $userId = $lm[1];
-    $pending = tg_pending_read();
-    $hasPending = isset($pending[$userId]);
-    $u = $hasPending && jt_has_crossborder_consent($userId)
-        ? sb_one('jm_users', ['id' => 'eq.' . $userId], 'id,first_name')
-        : null;
-    if ($u) {
-        unset($pending[$userId]);
-        tg_pending_write($pending);
-        // Один Telegram — один аккаунт: освобождаем этот telegram_id у других
-        sb('PATCH', 'jm_users', ['telegram_id' => 'eq.' . $chatId], ['telegram_id' => null]);
-        sb('PATCH', 'jm_users', ['id' => 'eq.' . $userId], ['telegram_id' => $chatId]);
-        tg('sendMessage', [
-            'chat_id' => $chatId,
-            'text' => "✅ <b>Telegram подключён!</b>\n\nТеперь сюда будут приходить:\n⚡ новые смены и вакансии\n📥 ответы директоров на отклики\n💬 уведомления о сообщениях\n\nМожно вернуться в приложение 👌",
-            'parse_mode' => 'HTML',
-            'reply_markup' => ['inline_keyboard' => [[
-                ['text' => '🚀 Открыть JobToo', 'url' => 'https://t.me/JobToo_bot/app'],
-            ]]],
-        ]);
-    } else {
-        tg('sendMessage', [
-            'chat_id' => $chatId,
-            'text' => 'Не удалось подтвердить запрос на привязку. Откройте JobToo, подтвердите отдельное согласие на трансграничную передачу и подключите Telegram ещё раз.',
-        ]);
-    }
-    echo json_encode(['ok' => true]); exit;
-}
-
-// Голый «/start»: метка не дошла (чат с ботом уже существовал). Берём
-// самую свежую заявку, оставленную приложением, и привязываем к ней.
-if (preg_match('/^\/start\s*$/', $text)) {
-    $pending = tg_pending_read();
-    if (!empty($pending)) {
-        arsort($pending);                       // самая свежая — первая
-        // Идём по заявкам, пока не найдём живой аккаунт. Раньше смотрели
-        // только на первую: если она осталась от удалённого аккаунта, привязка
-        // не срабатывала ни у кого следующие 15 минут, и заявка так и висела.
-        $userId = null; $u = null;
-        foreach (array_keys($pending) as $cand) {
-            if (!jt_has_crossborder_consent((string)$cand)) {
-                unset($pending[$cand]);
-                continue;
-            }
-            $row = sb_one('jm_users', ['id' => 'eq.' . $cand], 'id,first_name');
-            if ($row) { $userId = (string)$cand; $u = $row; break; }
-            unset($pending[$cand]);             // такого аккаунта нет — выбрасываем
-        }
-        if ($u) {
-            unset($pending[$userId]);
-            tg_pending_write($pending);
-            sb('PATCH', 'jm_users', ['telegram_id' => 'eq.' . $chatId], ['telegram_id' => null]);
-            sb('PATCH', 'jm_users', ['id' => 'eq.' . $userId], ['telegram_id' => $chatId]);
-            tg('sendMessage', [
-                'chat_id' => $chatId,
-                'text' => "✅ <b>Telegram подключён!</b>\n\nТеперь сюда будут приходить:\n⚡ новые смены и вакансии\n📥 ответы директоров на отклики\n💬 уведомления о сообщениях\n\nМожно вернуться в приложение 👌",
-                'parse_mode' => 'HTML',
-                'reply_markup' => ['inline_keyboard' => [[
-                    ['text' => '🚀 Открыть JobToo', 'url' => 'https://t.me/JobToo_bot/app'],
-                ]]],
-            ]);
-            echo json_encode(['ok' => true]); exit;
-        }
-        tg_pending_write($pending);             // мусор из мёртвых заявок не копим
-    }
-}
-
-if (preg_match('/^\/(settings|notifications)(?:@\\w+)?$/i', $text)) {
-    $u = sb_one('jm_users', ['telegram_id' => 'eq.' . $chatId],
-        'id,metro_station,work_types,vacancy_delivery_mode');
-    if (!$u) {
-        tg('sendMessage', [
-            'chat_id' => $chatId,
-            'text' => "Сначала подключите Telegram в профиле JobToo — после этого я смогу сохранить ваши настройки.",
-            'reply_markup' => ['inline_keyboard' => [[
-                ['text' => '🚀 Открыть JobToo', 'url' => 'https://t.me/JobToo_bot/app'],
-            ]]],
-        ]);
-        echo json_encode(['ok' => true]); exit;
-    }
-    $mode = (string)($u['vacancy_delivery_mode'] ?? 'all');
-    $metro = trim((string)($u['metro_station'] ?? ''));
-    $workTypes = $u['work_types'] ?? [];
-    if (is_string($workTypes)) {
-        $decoded = json_decode($workTypes, true);
-        $workTypes = is_array($decoded) ? $decoded : [];
-    }
-    $profile = "Метро: " . ($metro !== '' ? $metro : 'не указано')
-        . "\nПрофессий в профиле: " . count(is_array($workTypes) ? $workTypes : []);
+if (str_starts_with($text, '/start') || preg_match('/^\/(help|app)(?:@\w+)?$/i', $text)) {
     tg('sendMessage', [
         'chat_id' => $chatId,
-        'text' => "🔔 <b>Какие вакансии присылать?</b>\n\n" . $profile
-            . "\n\nПо умолчанию JobToo присылает все вакансии. Выберите фильтр:",
-        'parse_mode' => 'HTML',
-        'reply_markup' => ['inline_keyboard' => [
-            [['text' => ($mode === 'all' ? '✓ ' : '') . 'Все вакансии', 'callback_data' => 'vacnotif_all']],
-            [['text' => ($mode === 'work_types' ? '✓ ' : '') . 'Только мои профессии', 'callback_data' => 'vacnotif_work_types']],
-            [['text' => ($mode === 'metro' ? '✓ ' : '') . 'Только у моего метро', 'callback_data' => 'vacnotif_metro']],
-            [['text' => ($mode === 'work_types_metro' ? '✓ ' : '') . 'Профессия + метро', 'callback_data' => 'vacnotif_work_types_metro']],
-            [['text' => ($mode === 'off' ? '✓ ' : '') . 'Не присылать вакансии', 'callback_data' => 'vacnotif_off']],
-            [['text' => '✏️ Изменить профиль', 'url' => 'https://t.me/JobToo_bot/app?startapp=profile']],
-        ]],
-    ]);
-    echo json_encode(['ok' => true]); exit;
-}
-
-if (str_starts_with($text, '/start')) {
-    tg('sendMessage', [
-        'chat_id' => $chatId,
-        'text' => "Привет" . ($firstName !== '' ? ", $firstName" : '') . "! 👋\n\n"
-            . "<b>JobToo</b> — подработки и постоянные вакансии на складах Москвы.\n\n"
-            . "⚡ Смены рядом с твоим метро\n"
-            . "💼 Постоянная работа от проверенных директоров\n"
-            . "💬 Отклик и чат с работодателем в два тапа\n\n"
-            . "Открой приложение — без установки, прямо здесь 👇",
-        'parse_mode' => 'HTML',
+        'text' => "JobToo работает прямо здесь как мини-приложение.\n\n"
+            . "Личные уведомления и управление аккаунтом доступны внутри JobToo.",
         'reply_markup' => ['inline_keyboard' => [[
             ['text' => '🚀 Открыть JobToo', 'url' => 'https://t.me/JobToo_bot/app'],
         ]]],
@@ -820,141 +701,9 @@ if (str_starts_with($text, '/start')) {
     echo json_encode(['ok' => true]); exit;
 }
 
-// ── Живые сообщения боту ─────────────────────────────────────────────────────
-//
-// Раньше на любое человеческое сообщение бот отвечал «Все смены и вакансии —
-// в приложении 👇» и выбрасывал его. Мы даже не знали, сколько людей нам
-// писали: следов не оставалось.
-//
-// Всплыло, когда понадобилось спросить работников, почему они заходят и не
-// откликаются. Спрашивать через бота было бессмысленно — ответы утекали бы
-// в никуда.
-
-$adminChat = (int)setting_get('admin_chat_id');
-
-// Кому пересылать. Один раз: первый, кто скажет боту это слово, и становится
-// адресатом. Переназначить можно через прокси (fn botAdminSet) — то есть
-// зная X-App-Secret, а не угадав команду.
-if (preg_match('/^\/admin$/i', $text)) {
-    if ($adminChat === 0) {
-        setting_set('admin_chat_id', (string)$chatId);
-        tg('sendMessage', ['chat_id' => $chatId,
-            'text' => "✅ Готово. Сюда будут приходить сообщения, которые люди пишут боту.\n\n"
-                    . "Чтобы ответить — просто ответьте (reply) на пересланное сообщение, "
-                    . "и человек получит ваш текст от бота."]);
-    } else {
-        tg('sendMessage', ['chat_id' => $chatId,
-            'text' => $chatId === $adminChat
-                ? 'Вы уже назначены получателем.'
-                : 'Получатель уже назначен.']);
-    }
-    echo json_encode(['ok' => true]); exit;
-}
-
-// Ответ администратора реплаем на пересланное — доносим человеку. Адрес
-// зашит в самом пересланном сообщении меткой #w<id>: держать переписку
-// в памяти негде, а реплай её и так помнит.
-if ($adminChat !== 0 && $chatId === $adminChat && $text !== '') {
-    $src = (string)($msg['reply_to_message']['text'] ?? '');
-    if ($src !== '' && preg_match('/#w(\d+)/', $src, $rm)) {
-        $to = (int)$rm[1];
-        $ok = tg('sendMessage', ['chat_id' => $to, 'text' => $text]);
-        // Свой ответ тоже в журнал: иначе через день не вспомнить, что уже сказано.
-        bot_log($to, 'out', $text, ['name' => 'Никита', 'topic' => 'admin']);
-        tg('sendMessage', ['chat_id' => $chatId,
-            'text' => ($ok['ok'] ?? false) ? '✅ Отправлено' : '⚠️ Не доставлено']);
-        sb('PATCH', 'jm_bot_messages', ['telegram_id' => 'eq.' . $to, 'answered' => 'is.false'],
-            ['answered' => true]);
-        echo json_encode(['ok' => true]); exit;
-    }
-}
-
-// Всё остальное: сохраняем, пробуем ответить сами, пересылаем.
-if ($text !== '' && $chatId !== $adminChat) {
-    $u = sb_one('jm_users', ['telegram_id' => 'eq.' . $chatId],
-        'id,first_name,last_name,phone,role,metro_station');
-    $who = trim(($u['first_name'] ?? $firstName) . ' ' . ($u['last_name'] ?? ''));
-
-    // Переписку читаем ДО того, как записать новое сообщение: в карточке
-    // нужно «что было раньше», а не «что было раньше вместе с этим».
-    $history = bot_history($chatId, 4);
-
-    bot_log($chatId, 'in', $text, [
-        'user_id' => $u['id'] ?? null,
-        'name' => $who,
-        'username' => $msg['from']['username'] ?? null,
-    ]);
-
-    require_once __DIR__ . '/bot_brain.php';
-    $ans = bot_answer($u ?? [], $text);
-
-    // Назвал станцию, а в профиле пусто — запоминаем. Именно этого нам не
-    // хватает, чтобы предлагать смены рядом, а не веером по всей Москве.
-    if ($ans && !empty($ans['station']) && $u && empty($u['metro_station'])) {
-        $stations = bot_stations();
-        sb('PATCH', 'jm_users', ['id' => 'eq.' . $u['id']], [
-            'metro_station' => $ans['station'],
-            'metro_line_id' => $stations[$ans['station']] ?? null,
-        ]);
-    }
-
-    // Попросил не писать — запоминаем, иначе через два дня напоминание придёт
-    // снова, и вежливый ответ окажется враньём. Ответы директоров и сообщения
-    // в чате это не отключает: отписка от напоминаний — не отписка от работы.
-    if ($ans && ($ans['topic'] ?? '') === 'stop' && $u) {
-        sb('PATCH', 'jm_users', ['id' => 'eq.' . $u['id']], ['nudge_off' => true]);
-    }
-
-    if ($ans) {
-        $payload = ['chat_id' => $chatId, 'text' => $ans['text']];
-        if (!empty($ans['button'])) {
-            $payload['reply_markup'] = ['inline_keyboard' => [[
-                ['text' => '🚀 Открыть JobToo', 'url' => BOT_APP_URL],
-            ]]];
-        }
-        tg('sendMessage', $payload);
-        bot_log($chatId, 'out', $ans['text'], ['name' => 'JobToo', 'topic' => $ans['topic'] ?? null]);
-        sb('PATCH', 'jm_bot_messages',
-            ['telegram_id' => 'eq.' . $chatId, 'answered' => 'is.false'], ['answered' => true]);
-    } else {
-        // Не поняли — так и говорим. Придумывать ответ хуже, чем передать
-        // человеку: выдуманному ответу человек поверит.
-        $ack = 'Спасибо, получил. Передал Никите — он ответит здесь же.';
-        tg('sendMessage', ['chat_id' => $chatId, 'text' => $ack]);
-        bot_log($chatId, 'out', $ack, ['name' => 'JobToo', 'topic' => 'ack']);
-    }
-
-    if ($adminChat !== 0) {
-        $mark = $ans === null                     ? '❗ <b>нужен ваш ответ</b>'
-              : ($ans['escalate'] === 'urgent'    ? '🔴 <b>срочно</b>'
-              : ($ans['escalate'] === 'need'      ? '❗ <b>нужен ваш ответ</b>'
-              : '🤖 бот ответил сам'));
-        $meta = array_filter([
-            $u['role'] ?? null,
-            $u['phone'] ?? null,
-            $ans['station'] ?? ($u['metro_station'] ?? null),
-        ]);
-        // Копию шлём всегда, даже когда бот справился: видеть разговор целиком
-        // важнее, чем беречь ленту — вмешаться можно в любой момент.
-        if ($ans === null || $ans['escalate'] !== 'none') {
-            tg('sendMessage', [
-                'chat_id' => $adminChat,
-                'text' => "📩 <b>" . htmlspecialchars($who ?: 'Без имени', ENT_QUOTES, 'UTF-8') . "</b>  " . $mark
-                    . ($meta ? "\n" . htmlspecialchars(implode(' · ', $meta), ENT_QUOTES, 'UTF-8') : '')
-                    . "\n\n" . htmlspecialchars($text, ENT_QUOTES, 'UTF-8')
-                    . bot_history_block($history)
-                    . "\n\n<i>Ответьте на это сообщение — человек получит ваш текст.</i> #w{$chatId}",
-                'parse_mode' => 'HTML',
-            ]);
-        }
-    }
-
-    echo json_encode(['ok' => true]); exit;
-}
-
 tg('sendMessage', [
     'chat_id' => $chatId,
-    'text' => 'Все смены и вакансии — в приложении 👇',
+    'text' => 'Личные сообщения через бот больше не обрабатываются. Откройте JobToo — уведомления и поддержка находятся внутри приложения.',
     'reply_markup' => ['inline_keyboard' => [[
         ['text' => '🚀 Открыть JobToo', 'url' => 'https://t.me/JobToo_bot/app'],
     ]]],
