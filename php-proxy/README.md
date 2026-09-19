@@ -76,6 +76,12 @@
 Образец: `app_secrets.example.php`. GitHub Secrets, из которых он собирается:
 `EXPO_PUBLIC_APP_SECRET`, `APP_SECRET_PREV`, `TG_BOT_TOKEN`.
 
+Для прямой доставки iOS push серверу также нужны `APNS_TEAM_ID`,
+`APNS_KEY_ID`, `APNS_PRIVATE_KEY_B64` (base64 содержимого Apple `.p8`),
+`APNS_BUNDLE_ID` (`com.nikidav23.onspaceapp`) и `APNS_ENVIRONMENT`
+(`production` для App Store/TestFlight, `sandbox` только для development build).
+Ключ `.p8` в репозиторий не кладётся.
+
 Адреса геокодирует Яндекс.Геокодер (HTTP) прямо с сервера, ключ
 `YANDEX_GEOCODER_KEY` в `app_secrets.php`. Иностранных геокодеров нет: без ключа
 координаты по адресу просто не определяются.
