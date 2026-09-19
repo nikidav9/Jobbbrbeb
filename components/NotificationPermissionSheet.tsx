@@ -13,7 +13,6 @@ import * as Notifications from 'expo-notifications';
 import { Colors, Radius } from '@/constants/theme';
 import { registerForPushNotifications } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
-import { isTelegramMiniApp } from '@/lib/telegram';
 import { useApp } from '@/hooks/useApp';
 import {
   dbGetConsent, dbGetCrossBorderConsent, dbRecordCrossBorderConsent,
@@ -97,8 +96,6 @@ export default function NotificationPermissionSheet() {
   // The sheet appears on EVERY entry until notifications are actually enabled.
   useEffect(() => {
     if (!userId) return;
-    // Inside the Telegram Mini App notifications arrive via the bot — no sheet
-    if (isTelegramMiniApp()) return;
     let cancelled = false;
     let unsubOnboarding: (() => void) | null = null;
 
