@@ -1441,6 +1441,18 @@ function tg_validate_init_data(string $initData): ?array {
  */
 function tg_send_message(int $chatId, string $text, bool|string $withAppButton = false, string $btnText = '🚀 Откликнуться в JobToo', ?array $keyboard = null, ?int $messageThreadId = null): bool {
     if (TG_BOT_TOKEN === '') return false;
+
+    // Личная доставка в Telegram разрешена только при отдельном действующем
+    // согласии владельца привязанного аккаунта. Групповые/служебные chat_id,
+    // которых нет в jm_users.telegram_id, этим правилом не блокируются.
+    try {
+        $linked = sb_single('jm_users', ['telegram_id' => 'eq.' . $chatId], 'id');
+        if ($linked && !jt_has_crossborder_consent((string)$linked['id'])) return false;
+    } catch (Throwable $e) {
+        // При невозможности проверить личный chat_id безопаснее не отправлять.
+        return false;
+    }
+
     $payload = [
         'chat_id' => $chatId,
         'text' => $text,
@@ -1578,6 +1590,7 @@ function expo_push(array $messages): void {
  * директор оставался без карточки, как и без самого уведомления.
  */
 function tg_new_application_card(string $employerId, string $workerId, string $vacancyId, string $vTitle): bool {
+            if (!jt_has_crossborder_consent($employerId)) return false;
             $emp = sb_single('jm_users', ['id' => 'eq.' . $employerId], 'telegram_id');
             if (!$emp || empty($emp['telegram_id'])) return false;
 
@@ -1588,15 +1601,19 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
             ], 'id');
             if (!$app) return false;
 
-            $w = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'first_name,last_name,age,metro_station,phone,avg_rating,rating_count');
-            $name = trim(($w['first_name'] ?? '') . ' ' . ($w['last_name'] ?? '')) ?: 'Кандидат';
             $lines = ["📥 <b>Новая заявка на «{$vTitle}»</b>", ''];
-            $lines[] = '👤 ' . $name . (!empty($w['age']) ? ", {$w['age']} лет" : '');
-            if (!empty($w['metro_station'])) $lines[] = '🚇 м. ' . $w['metro_station'];
-            if (!empty($w['avg_rating']) && (float)$w['avg_rating'] > 0) {
-                $lines[] = '⭐ Рейтинг ' . $w['avg_rating'] . (!empty($w['rating_count']) ? " ({$w['rating_count']} оценок)" : '');
+            if (jt_has_crossborder_consent($workerId)) {
+                $w = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'first_name,last_name,age,metro_station,phone,avg_rating,rating_count');
+                $name = trim(($w['first_name'] ?? '') . ' ' . ($w['last_name'] ?? '')) ?: 'Кандидат';
+                $lines[] = '👤 ' . $name . (!empty($w['age']) ? ", {$w['age']} лет" : '');
+                if (!empty($w['metro_station'])) $lines[] = '🚇 м. ' . $w['metro_station'];
+                if (!empty($w['avg_rating']) && (float)$w['avg_rating'] > 0) {
+                    $lines[] = '⭐ Рейтинг ' . $w['avg_rating'] . (!empty($w['rating_count']) ? " ({$w['rating_count']} оценок)" : '');
+                }
+                if (!empty($w['phone'])) $lines[] = '📞 +' . ltrim($w['phone'], '+');
+            } else {
+                $lines[] = '👤 Новый кандидат — данные анкеты доступны только в JobToo.';
             }
-            if (!empty($w['phone'])) $lines[] = '📞 +' . ltrim($w['phone'], '+');
             $lines[] = '';
             $lines[] = 'Решите прямо здесь — работник сразу узнает:';
 
@@ -1687,10 +1704,17 @@ function notify_user(string $userId, string $title, string $body, string $type =
 
     $u = sb_single('jm_users', ['id' => 'eq.' . $userId], 'telegram_id,push_token');
     if (!$u) return;
+
+    // Колокольчик уже записан в российской базе. Наружу не отправляем ничего,
+    // пока нет отдельного текущего согласия на трансграничную передачу.
+    if (!jt_has_crossborder_consent($userId)) return;
+
     if (!empty($u['telegram_id'])) {
+        $tgTitle = $pushTitle ?? $title;
+        $tgBody = $pushBody ?? $body;
         tg_send_message((int)$u['telegram_id'],
-            '<b>' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</b>\n\n"
-            . htmlspecialchars($body, ENT_QUOTES, 'UTF-8'), true, '🚀 Открыть JobToo');
+            '<b>' . htmlspecialchars($tgTitle, ENT_QUOTES, 'UTF-8') . "</b>\n\n"
+            . htmlspecialchars($tgBody, ENT_QUOTES, 'UTF-8'), true, '🚀 Открыть JobToo');
     }
     if (!empty($u['push_token'])) {
         expo_push([[
@@ -1752,6 +1776,7 @@ function shift_nudge_run(): array {
 
     foreach ($workers as $w) {
         if (!empty($w['is_blocked']) || !empty($w['nudge_off'])) continue;
+        if (!jt_has_crossborder_consent((string)$w['id'])) continue;
         if (empty($w['telegram_id']) && empty($w['push_token'])) continue;
         if (isset($skip[$w['id']])) continue;
 
@@ -1932,12 +1957,15 @@ function notify_workers(string $title, string $body,
         $seen[$r['user_id']] = ($seen[$r['user_id']] ?? 0) + 1;
     }
 
-    $pushMsgs = []; $tgOk = 0; $mute = 0; $capped = 0; $filtered = 0; $webIds = [];
+    $pushMsgs = []; $tgOk = 0; $mute = 0; $capped = 0; $filtered = 0; $noConsent = 0; $webIds = [];
     foreach ($all as $w) {
         $mode = (string)($w['vacancy_delivery_mode'] ?? 'all');
         if ($mode === '') $mode = 'all';
         if (!empty($w['is_blocked']) || !empty($w['nudge_off']) || $mode === 'off') {
             $mute++; continue;
+        }
+        if (!jt_has_crossborder_consent((string)$w['id'])) {
+            $noConsent++; continue;
         }
 
         // Персонализация добровольная: пока человек ничего не выбрал, он
@@ -1982,7 +2010,8 @@ function notify_workers(string $title, string $body,
     $webOk = web_push_to($webIds, $title, $body, $dataType);
 
     return ['telegram' => $tgOk, 'push' => count($pushMsgs), 'webpush' => $webOk,
-            'muted' => $mute, 'filtered' => $filtered, 'capped' => $capped, 'bell' => count($bell)];
+            'muted' => $mute, 'no_consent' => $noConsent, 'filtered' => $filtered,
+            'capped' => $capped, 'bell' => count($bell)];
 }
 
 /**
@@ -1992,6 +2021,10 @@ function notify_workers(string $title, string $body,
  * экземпляром здесь — лишний способ их потерять.
  */
 function web_push_to(array $userIds, string $title, string $body, string $dataType): int {
+    if (empty($userIds)) return 0;
+    foreach (array_keys($userIds) as $uid) {
+        if (!jt_has_crossborder_consent((string)$uid)) unset($userIds[$uid]);
+    }
     if (empty($userIds)) return 0;
     $ok = 0;
     try {
@@ -3056,6 +3089,9 @@ try {
 
         // Заявка на привязку Telegram: живёт 15 минут, бот заберёт её по «/start»
         case 'tgPrepareLink': {
+            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
+                $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
+            }
             $all = tg_pending_read();
             $all[(string)$args[0]] = time();
             tg_pending_write($all);
@@ -3738,6 +3774,9 @@ try {
 
         // args: [userId, initDataString] — link a Telegram account to a user
         case 'tgBindTelegram': {
+            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
+                $data = false; break;
+            }
             $v = tg_validate_init_data($args[1] ?? '');
             if (!$v || empty($v['user']['id'])) { $data = false; break; }
             sb_update('jm_users', ['id' => 'eq.' . $args[0]], ['telegram_id' => (int)$v['user']['id']]);
@@ -4087,9 +4126,9 @@ try {
                     . ' на вакансии. Остался день: через 2 дня после отклика заявка закрывается'
                     . ' автоматически, и кандидат уходит к другим.';
                 sb_insert('jm_notifications', ['user_id' => $eid, 'title' => $title, 'body' => $body]);
-                if ($emp && !empty($emp['telegram_id'])) {
+                if (jt_has_crossborder_consent((string)$eid) && $emp && !empty($emp['telegram_id'])) {
                     tg_send_message((int)$emp['telegram_id'], $title . "\n\n" . $body, true);
-                } elseif ($emp && !empty($emp['push_token'])) {
+                } elseif (jt_has_crossborder_consent((string)$eid) && $emp && !empty($emp['push_token'])) {
                     expo_push([[ 'to' => $emp['push_token'], 'title' => $title, 'body' => $body,
                         'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches', 'data' => ['type' => 'pending_apps'] ]]);
                 }
@@ -4588,7 +4627,7 @@ try {
             // Никите — в телеграм, сразу и с контекстом. Без этого обращение
             // лежало бы в базе, пока кто-нибудь не откроет дашборд.
             $adm = sb_single('jm_settings', ['key' => 'eq.admin_chat_id'], 'value');
-            if ($adm && !empty($adm['value'])) {
+            if ($adm && !empty($adm['value']) && jt_has_crossborder_consent($uid)) {
                 $u = sb_single('jm_users', ['id' => 'eq.' . $uid],
                     'first_name,last_name,phone,role,metro_station');
                 $who = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? '')) ?: 'Без имени';
@@ -5756,6 +5795,9 @@ try {
         // для обоих приходили бы на один телефон. Поэтому сначала снимаем его
         // со всех остальных.
         case 'dbSavePushToken':
+            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
+                $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
+            }
             sb_update('jm_users', ['push_token' => 'eq.' . $args[1], 'id' => 'neq.' . $args[0]], ['push_token' => null]);
             sb_update('jm_users', ['id' => 'eq.' . $args[0]], ['push_token' => $args[1]]); break;
 
@@ -5796,6 +5838,9 @@ try {
         }
 
         case 'dbSaveWebPushSubscription':
+            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
+                $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
+            }
             sb_upsert('jm_web_push_subscriptions', [
                 'user_id'    => $args[0],
                 'endpoint'   => $args[1],
