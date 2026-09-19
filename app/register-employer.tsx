@@ -300,7 +300,7 @@ export default function RegisterEmployer() {
                     >
                       трансграничную передачу персональных данных
                     </Text>
-                    {' '}для push/web-push уведомлений и подключаемого Telegram. Отказ не мешает регистрации.
+                    {' '}для push/web-push уведомлений. Отказ не мешает регистрации.
                   </Text>
                 </View>
               </TouchableOpacity>
