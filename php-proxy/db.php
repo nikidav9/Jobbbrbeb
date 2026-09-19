@@ -244,6 +244,7 @@ $selfArgFns = [
     'dbChangePassword' => 0, 'dbDeleteAccount' => 0,
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
     'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
+    'dbRevokeCrossBorderConsent' => 0,
     'tgBindTelegram' => 0, 'tgUnbindTelegram' => 0,
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
     'supportHistory' => 0, 'supportSend' => 0,
@@ -1384,6 +1385,10 @@ define('DASHBOARD_URL', getenv('DASHBOARD_URL') ?: 'https://admin.jobtoo.ru');
 // до утра хуже, чем сразу сказать, когда ответят.
 define('SUPPORT_FROM_HOUR', 10);
 define('SUPPORT_TO_HOUR', 21);
+
+// Текущая редакция отдельного согласия на зарубежные каналы. Сервер
+// проверяет её сам: старый клиент не должен обходить новый экран согласия.
+define('JT_CROSSBORDER_CONSENT_VERSION', '2026-09-19');
 
 /**
  * Отметка «обращение закрыто» (null — открыто).
@@ -2622,9 +2627,72 @@ function jt_consent_attach(string $uid, $payload): void
             'source'      => 'registration',
             'accepted_at' => now_iso(),
         ], 'id');
+
+        // Отдельная добровольная галочка при регистрации хранится отдельной
+        // строкой. Так можно доказать самостоятельное волеизъявление, не
+        // смешивая его с общим согласием на обработку ПДн.
+        $crossVersion = trim((string)($payload['crossBorderVersion'] ?? ''));
+        if ($crossVersion !== '' && hash_equals(JT_CROSSBORDER_CONSENT_VERSION, $crossVersion)) {
+            sb_upsert('jm_consents', [
+                'id'          => 'cb:' . $uid . ':' . substr(hash('sha256', $crossVersion), 0, 16),
+                'user_id'     => $uid,
+                'stamp'       => 'crossborder:' . $crossVersion,
+                'docs'        => ['crossBorderConsent' => $crossVersion],
+                'source'      => 'crossborder:registration',
+                'accepted_at' => now_iso(),
+            ], 'id');
+        }
     } catch (Throwable $e) {
         // См. выше: регистрацию не роняем, но и не молчим — считается в отчёте.
     }
+}
+
+/** Текущее отдельное решение по трансграничной передаче. */
+function jt_crossborder_status(string $uid): array
+{
+    if ($uid === '') {
+        return ['accepted' => false, 'version' => null, 'source' => null, 'accepted_at' => null];
+    }
+    try {
+        $rows = sb_select('jm_consents', ['user_id' => 'eq.' . $uid],
+            'docs,source,accepted_at', 'accepted_at.desc');
+        foreach ($rows as $row) {
+            $source = (string)($row['source'] ?? '');
+            $docs = $row['docs'] ?? [];
+            if (is_string($docs)) $docs = json_decode($docs, true) ?: [];
+            $version = is_array($docs) ? (string)($docs['crossBorderConsent'] ?? '') : '';
+
+            if (str_starts_with($source, 'crossborder:')) {
+                $accepted = $source !== 'crossborder:revoked'
+                    && $version !== ''
+                    && hash_equals(JT_CROSSBORDER_CONSENT_VERSION, $version);
+                return [
+                    'accepted' => $accepted,
+                    'version' => $version !== '' ? $version : null,
+                    'source' => $source,
+                    'accepted_at' => $row['accepted_at'] ?? null,
+                ];
+            }
+
+            // Совместимость с коротким переходным периодом, когда отдельная
+            // галочка уже была в UI, но её версия ещё писалась внутрь общей
+            // записи. Новые согласия так больше не сохраняются.
+            if ($version !== '' && hash_equals(JT_CROSSBORDER_CONSENT_VERSION, $version)) {
+                return [
+                    'accepted' => true,
+                    'version' => $version,
+                    'source' => 'legacy-embedded-crossborder',
+                    'accepted_at' => $row['accepted_at'] ?? null,
+                ];
+            }
+        }
+    } catch (Throwable $e) {}
+    return ['accepted' => false, 'version' => null, 'source' => null, 'accepted_at' => null];
+}
+
+function jt_has_crossborder_consent(string $uid): bool
+{
+    return !empty(jt_crossborder_status($uid)['accepted']);
 }
 
 function jt_referral_attach(string $uid, string $rawCode): void
@@ -3459,10 +3527,13 @@ try {
                 'crossborder:telegram',
             ];
             if ($uid === '' || $version === '') {
-                $data = ['error' => 'Нужны пользователь и редакция согласия']; break;
+                $data = ['ok' => false, 'error' => 'Нужны пользователь и редакция согласия']; break;
+            }
+            if (!hash_equals(JT_CROSSBORDER_CONSENT_VERSION, $version)) {
+                $data = ['ok' => false, 'error' => 'Редакция согласия устарела. Обновите приложение.']; break;
             }
             if (!sb_single('jm_users', ['id' => 'eq.' . $uid], 'id')) {
-                $data = ['error' => 'Пользователь не найден']; break;
+                $data = ['ok' => false, 'error' => 'Пользователь не найден']; break;
             }
             if (!in_array($source, $allowed, true)) $source = 'crossborder:reconsent';
 
@@ -3474,21 +3545,32 @@ try {
                 'source'      => $source,
                 'accepted_at' => now_iso(),
             ], 'id');
-            $data = ['записано' => true];
+            $data = ['ok' => true];
             break;
         }
 
         case 'dbGetCrossBorderConsent': {
-            $rows = sb_select('jm_consents', [
-                'user_id' => 'eq.' . (string)($args[0] ?? ''),
-                'source'  => 'like.crossborder:%',
-            ], 'docs,source,accepted_at', 'accepted_at.desc');
-            $row = $rows[0] ?? null;
-            $data = $row ? [
-                'version' => (string)(($row['docs']['crossBorderConsent'] ?? '')),
-                'source' => (string)($row['source'] ?? ''),
-                'accepted_at' => (string)($row['accepted_at'] ?? ''),
-            ] : null;
+            $data = jt_crossborder_status((string)($args[0] ?? ''));
+            break;
+        }
+
+        case 'dbRevokeCrossBorderConsent': {
+            $uid = (string)($args[0] ?? '');
+            if ($uid === '') {
+                $data = ['ok' => false, 'error' => 'Нужен пользователь']; break;
+            }
+            $version = JT_CROSSBORDER_CONSENT_VERSION;
+            sb_upsert('jm_consents', [
+                'id'          => 'cb:' . $uid . ':' . substr(hash('sha256', $version), 0, 16),
+                'user_id'     => $uid,
+                'stamp'       => 'crossborder:' . $version,
+                'docs'        => ['crossBorderConsent' => $version],
+                'source'      => 'crossborder:revoked',
+                'accepted_at' => now_iso(),
+            ], 'id');
+            try { sb_update('jm_users', ['id' => 'eq.' . $uid], ['push_token' => null, 'telegram_id' => null]); } catch (Throwable $e) {}
+            try { sb_delete('jm_web_push_subscriptions', ['user_id' => 'eq.' . $uid]); } catch (Throwable $e) {}
+            $data = ['ok' => true];
             break;
         }
 
