@@ -412,7 +412,12 @@ export async function dbChangePassword(
  * назначает себе сам, а кто его привёл — решает сервер. Он же находит
  * владельца кода и записывает связь, и только один раз, при создании.
  */
-export type ConsentPayload = { stamp: string; docs: Record<string, string> };
+export type ConsentPayload = {
+  stamp: string;
+  docs: Record<string, string>;
+  /** Отдельное добровольное согласие на трансграничную передачу. */
+  crossBorderVersion?: string;
+};
 
 export async function dbUpsertUser(
   u: User,
@@ -524,6 +529,34 @@ export async function dbGetConsent(userId: string): Promise<{
   stamp: string; docs: Record<string, string>; source: string; accepted_at: string;
 } | null> {
   return proxy('dbGetConsent', [userId]);
+}
+
+export type CrossBorderConsentRecord = {
+  accepted: boolean;
+  version: string | null;
+  source: string | null;
+  accepted_at: string | null;
+};
+
+/** Текущее отдельное решение по трансграничной передаче. */
+export async function dbGetCrossBorderConsent(userId: string): Promise<CrossBorderConsentRecord> {
+  return proxy('dbGetCrossBorderConsent', [userId]);
+}
+
+/**
+ * Зафиксировать отдельное добровольное согласие на трансграничную передачу.
+ * В отличие от общего dbRecordConsent этот вызов бросает ошибку: включать
+ * иностранный канал без доказательной записи нельзя.
+ */
+export async function dbRecordCrossBorderConsent(userId: string, version: string): Promise<void> {
+  const res = await proxy<{ ok?: boolean; error?: string }>('dbRecordCrossBorderConsent', [userId, version]);
+  if (!res?.ok) throw new Error(res?.error || 'Не удалось сохранить согласие');
+}
+
+/** Отзыв отдельного трансграничного согласия. */
+export async function dbRevokeCrossBorderConsent(userId: string): Promise<void> {
+  const res = await proxy<{ ok?: boolean; error?: string }>('dbRevokeCrossBorderConsent', [userId]);
+  if (!res?.ok) throw new Error(res?.error || 'Не удалось отозвать согласие');
 }
 
 /** Удаление администратором из дашборда — там пароля человека нет. */
