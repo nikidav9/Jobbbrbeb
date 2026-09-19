@@ -59,6 +59,7 @@ export default function ConsentGate() {
   const [error, setError] = useState('');
   const [checkFailed, setCheckFailed] = useState(false);
   const [checkRetry, setCheckRetry] = useState(0);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [coreAccepted, setCoreAccepted] = useState(false);
   const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
   const [initialCrossBorderAccepted, setInitialCrossBorderAccepted] = useState(false);
@@ -88,6 +89,7 @@ export default function ConsentGate() {
       .then(([c, cross]) => {
         if (!alive) return;
         setNeeded(needsReconsent(c?.stamp));
+        setTermsAccepted(false);
         setCoreAccepted(false);
         const crossAccepted = cross?.accepted === true;
         setCrossBorderAccepted(crossAccepted);
@@ -105,7 +107,7 @@ export default function ConsentGate() {
   }, [user?.id, checkRetry]);
 
   async function accept() {
-    if (!user || busy || !coreAccepted) return;
+    if (!user || busy || !termsAccepted || !coreAccepted) return;
     setBusy(true);
     setError('');
     try {
@@ -233,13 +235,26 @@ export default function ConsentGate() {
         <TouchableOpacity
           style={styles.consentRow}
           activeOpacity={0.8}
+          onPress={() => setTermsAccepted(v => !v)}
+        >
+          <View style={[styles.checkbox, termsAccepted && styles.checkboxActive]}>
+            {termsAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+          </View>
+          <Text style={styles.consentText}>
+            Я принимаю Пользовательское соглашение и подтверждаю, что ознакомлен(а) с Политикой.
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.consentRow}
+          activeOpacity={0.8}
           onPress={() => setCoreAccepted(v => !v)}
         >
           <View style={[styles.checkbox, coreAccepted && styles.checkboxActive]}>
             {coreAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
           </View>
           <Text style={styles.consentText}>
-            Я ознакомлен(а) с документами выше и отдельно даю согласие на обработку персональных данных.
+            Отдельно даю Согласие на обработку персональных данных. Это самостоятельное действие, не являющееся частью принятия Пользовательского соглашения.
           </Text>
         </TouchableOpacity>
 
@@ -278,10 +293,10 @@ export default function ConsentGate() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity
-          style={[styles.accept, (busy || !coreAccepted) && styles.acceptBusy]}
+          style={[styles.accept, (busy || !termsAccepted || !coreAccepted) && styles.acceptBusy]}
           activeOpacity={0.85}
           onPress={accept}
-          disabled={busy || !coreAccepted}
+          disabled={busy || !termsAccepted || !coreAccepted}
         >
           {busy
             ? <ActivityIndicator color="#FFFFFF" />
