@@ -43,12 +43,18 @@ jobs:
           K: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           A: ${{ secrets.EXPO_PUBLIC_API_URL }}
           S: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+          APNS_TEAM: ${{ secrets.APNS_TEAM_ID }}
+          APNS_KEY: ${{ secrets.APNS_KEY_ID }}
+          APNS_PRIVATE: ${{ secrets.APNS_PRIVATE_KEY_B64 }}
         run: |
           say() { [ -n "$2" ] && echo "$1: задан, ${#2} символов" || echo "$1: ПУСТО"; }
           say EXPO_PUBLIC_SUPABASE_URL "$U"
           say EXPO_PUBLIC_SUPABASE_ANON_KEY "$K"
           say EXPO_PUBLIC_API_URL "$A"
           say EXPO_PUBLIC_APP_SECRET "$S"
+          say APNS_TEAM_ID "$APNS_TEAM"
+          say APNS_KEY_ID "$APNS_KEY"
+          say APNS_PRIVATE_KEY_B64 "$APNS_PRIVATE"
           echo "адрес бэкенда: ${U:-нет}"
 
       - name: Build Expo web
