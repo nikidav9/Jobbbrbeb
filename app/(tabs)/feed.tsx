@@ -1448,30 +1448,38 @@ function WorkerPermMode() {
                 <View style={styles.cardBody}>
                   <View style={styles.cardTop}>
                     <View style={styles.companyRow}>
-                      <CompanyMark company={v.company} size={55} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.companyName} numberOfLines={1}>{displayCompany}</Text>
+                      <CompanyMark company={v.company} size={34} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          style={styles.companyName}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                        >
+                          {displayCompany}
+                        </Text>
                         {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
                       </View>
                       <TouchableOpacity
                         accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
                         style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}
+                        hitSlop={{ top: rs(8), bottom: rs(8), left: rs(8), right: rs(8) }}
                         onPress={() => { if (swDeck.wasSwipe()) return; toggleSaved(v); }}
                         activeOpacity={0.75}
                       >
                         <Ionicons
                           name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                          size={21}
+                          size={14}
                           color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
                         />
                       </TouchableOpacity>
                       <TouchableOpacity
                         accessibilityLabel="Поделиться вакансией"
                         style={pS.deckUtilityBtn}
+                        hitSlop={{ top: rs(8), bottom: rs(8), left: rs(8), right: rs(8) }}
                         onPress={() => { if (swDeck.wasSwipe()) return; void shareVacancy(v); }}
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="share-outline" size={21} color={Colors.textSecondary} />
+                        <Ionicons name="share-outline" size={14} color={Colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
 
@@ -2169,7 +2177,7 @@ const pS = StyleSheet.create({
     marginTop: rs(-2),
   },
   deckUtilityBtn: {
-    width: rs(55), height: rs(55), borderRadius: rs(34),
+    width: rs(28), height: rs(28), borderRadius: rs(14),
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#F2F3F5', flexShrink: 0,
   },
@@ -2366,12 +2374,12 @@ const styles = StyleSheet.create({
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   cardTop: { padding: rs(21), paddingBottom: rs(13), gap: rs(13) },
-  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(13) },
+  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   cardHeadSpacer: { height: rs(2) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarImg: { width: rs(44), height: rs(44), borderRadius: rs(22), flexShrink: 0 },
   avatarText: { fontSize: rf(17), fontWeight: '700', color: '#fff' },
-  companyName: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
+  companyName: { flexShrink: 1, fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
   metroHint: { fontSize: rf(12), color: Colors.textMuted },
   urgentTag: { flexDirection: 'row', alignItems: 'center', gap: rs(3), backgroundColor: '#FEF3C7', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), flexShrink: 0 },
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
