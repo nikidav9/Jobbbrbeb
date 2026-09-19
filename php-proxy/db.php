@@ -5910,6 +5910,13 @@ try {
         }
 
         // ── Push tokens ────────────────────────────────────────────────────────
+        // The client asks our Moscow backend which iOS transport is actually
+        // ready. This prevents an OTA update from switching users to APNs
+        // before the Apple provider key has been installed on the server.
+        case 'dbGetIosPushTransport':
+            require_once __DIR__ . '/apns.php';
+            $data = ['transport' => jt_apns_ready() ? 'apns' : 'expo']; break;
+
         // Токен принадлежит устройству, а не человеку. Если на телефоне сменили
         // аккаунт, тот же токен остался бы записан и за прежним — и уведомления
         // для обоих приходили бы на один телефон. Поэтому сначала снимаем его
