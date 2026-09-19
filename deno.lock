@@ -52,7 +52,6 @@
         "npm:@supabase/supabase-js@^2.50.0",
         "npm:@types/bcryptjs@^2.4.6",
         "npm:@types/react@~19.0.10",
-        "npm:@vercel/node@^5.7.17",
         "npm:bcryptjs@^3.0.3",
         "npm:date-fns@^2.28.0",
         "npm:dedent@0.7",

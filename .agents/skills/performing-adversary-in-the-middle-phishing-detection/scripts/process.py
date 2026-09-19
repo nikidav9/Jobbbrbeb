@@ -67,7 +67,6 @@ PHAAS_INFRA = [
     'firebaseapp.com',
     'glitch.me',
     'netlify.app',
-    'vercel.app',
 ]
 
 

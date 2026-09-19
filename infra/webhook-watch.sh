@@ -33,8 +33,8 @@ TOKEN=$(docker compose exec -T php php -r '
 SECRET=$(docker compose exec -T php php -r '
   $s = @include "/var/www/api/app_secrets.php";
   echo is_array($s) ? ($s["APP_SECRET"] ?? "") : "";' 2>/dev/null | tr -d '\r\n')
-# Прежний ключ нужен не для истории. Пересылка на Vercel проверяет заголовок
-# своим значением, а оно там осталось старым: после смены ключа она отвечает
+# Прежний ключ нужен не для истории. Старый внешний relay проверяет заголовок
+# своим значением, а оно там осталось старым: после смены ключа он отвечает
 # Телеграму 401, и бот замолкает именно тогда, когда мы на неё откатились.
 # Свой обработчик принимает оба, так что откат ходит под прежним ключом.
 SECRET_PREV=$(docker compose exec -T php php -r '
@@ -145,7 +145,7 @@ if [ -n "$ERR" ]; then
     exit 0
   fi
   api setWebhook -d "url=$PREV" -d "secret_token=$(sec_for "$PREV")" >/dev/null
-  # Пересылка на Vercel заголовок дальше не передаёт — на время отката
+  # Старый внешний relay заголовок дальше не передаёт — на время отката
   # обработчик должен принимать обновления и без него.
   touch /opt/jobtoo-proxy/tg_relay_mode 2>/dev/null || true
   echo "$(date +%H:%M) прямой путь отвалился ($ERR) — вернул на $PREV" > /var/lib/jt-webhook-check

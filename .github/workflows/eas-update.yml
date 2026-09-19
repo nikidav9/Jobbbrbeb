@@ -43,9 +43,9 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
-          # Не секрет и никогда им не был — обычный публичный адрес. В
-          # настройках он указывал на Vercel, и одна забытая строка там
-          # утянула бы приложение обратно на чужой хостинг.
+          # Не секрет и никогда им не был — обычный публичный адрес.
+          # Фиксируем российский production-хост явно, чтобы случайная
+          # переменная окружения не увела приложение на внешний адрес.
           EXPO_PUBLIC_DASHBOARD_URL: https://admin.jobtoo.ru
           EXPO_PUBLIC_YANDEX_MAPS_KEY: ${{ secrets.EXPO_PUBLIC_YANDEX_MAPS_KEY }}
         run: |
