@@ -8,10 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '@/hooks/useApp';
 import { Colors, Radius } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
-import { dbGetConsent, dbRecordConsent, dbClearPushToken, dbDeleteWebPushSubscription, dbUnbindTelegram } from '@/services/db';
 import {
-  LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions, legalVersionsWithCrossBorder,
-  hasCrossBorderConsent, needsReconsent, formatLegalDate, type LegalDocKey,
+  dbGetConsent, dbRecordConsent,
+  dbGetCrossBorderConsent, dbRecordCrossBorderConsent, dbRevokeCrossBorderConsent,
+} from '@/services/db';
+import {
+  LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions,
+  needsReconsent, formatLegalDate, type LegalDocKey,
 } from '@/constants/legal';
 
 /**
@@ -58,6 +61,7 @@ export default function ConsentGate() {
   const [checkRetry, setCheckRetry] = useState(0);
   const [coreAccepted, setCoreAccepted] = useState(false);
   const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
+  const [initialCrossBorderAccepted, setInitialCrossBorderAccepted] = useState(false);
   // Раскрытый документ. Тексты показываем прямо здесь, а не отправляем на
   // экран /legal: окно перекрывает всё, что под ним, — человек ушёл бы читать
   // и упёрся в него же поверх документа.
@@ -77,14 +81,17 @@ export default function ConsentGate() {
     let alive = true;
     setChecked(false);
     setCheckFailed(false);
-    dbGetConsent(user.id)
-      .then(c => {
+    Promise.all([
+      dbGetConsent(user.id),
+      dbGetCrossBorderConsent(user.id),
+    ])
+      .then(([c, cross]) => {
         if (!alive) return;
         setNeeded(needsReconsent(c?.stamp));
         setCoreAccepted(false);
-        // Отдельное трансграничное согласие сохраняем, только если принята
-        // именно текущая его редакция. Старое автоматически не переносим.
-        setCrossBorderAccepted(hasCrossBorderConsent(c?.docs));
+        const crossAccepted = cross?.accepted === true;
+        setCrossBorderAccepted(crossAccepted);
+        setInitialCrossBorderAccepted(crossAccepted);
         setCheckFailed(false);
         setChecked(true);
       })
@@ -102,28 +109,29 @@ export default function ConsentGate() {
     setBusy(true);
     setError('');
     try {
-      const docs = crossBorderAccepted ? legalVersionsWithCrossBorder() : legalVersions();
-      await dbRecordConsent(
-        user.id,
-        LEGAL_STAMP,
-        docs,
-        crossBorderAccepted ? 'reconsent+crossborder' : 'reconsent',
-      );
-      // Перечитываем, а не верим своей же отправке: запись согласия —
-      // доказательство, поэтому после отправки подтверждаем её с сервера.
-      const c = await dbGetConsent(user.id);
-      if (needsReconsent(c?.stamp)) {
+      // Основное согласие и решение по трансграничной передаче — два
+      // независимых волеизъявления и две независимые записи на сервере.
+      await dbRecordConsent(user.id, LEGAL_STAMP, legalVersions(), 'reconsent');
+
+      if (crossBorderAccepted) {
+        await dbRecordCrossBorderConsent(user.id, LEGAL_DOCS.crossBorderConsent.version);
+      } else if (initialCrossBorderAccepted) {
+        // Отзыв сразу отключает сохранённые адреса иностранных каналов
+        // (push/web-push/Telegram) на сервере.
+        await dbRevokeCrossBorderConsent(user.id);
+      }
+
+      // Перечитываем обе записи: кнопка не должна пропускать дальше по
+      // оптимистичному состоянию интерфейса.
+      const [core, cross] = await Promise.all([
+        dbGetConsent(user.id),
+        dbGetCrossBorderConsent(user.id),
+      ]);
+      if (needsReconsent(core?.stamp)) {
         setError('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
+      } else if (crossBorderAccepted && cross?.accepted !== true) {
+        setError('Отдельное согласие на трансграничную передачу не сохранилось. Попробуйте ещё раз.');
       } else {
-        // Если отдельное трансграничное согласие не дали, старые иностранные
-        // каналы не должны продолжать работать по прежней настройке.
-        if (!crossBorderAccepted) {
-          await Promise.allSettled([
-            dbClearPushToken(user.id),
-            dbDeleteWebPushSubscription(user.id),
-            dbUnbindTelegram(user.id),
-          ]);
-        }
         setNeeded(false);
       }
     } catch (e: any) {
