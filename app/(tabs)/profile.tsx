@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput,
+  TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput, Alert,
   ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,7 +15,7 @@ import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString } from '@/services/storage';
-import { dbGetRatingsForUser, dbChangePassword, dbDeleteAccount, dbGetConsent, dbGetCrossBorderConsent, UserRating, type CrossBorderConsentRecord } from '@/services/db';
+import { dbGetRatingsForUser, dbChangePassword, dbDeleteAccount, dbGetConsent, dbGetCrossBorderConsent, dbRevokeCrossBorderConsent, UserRating, type CrossBorderConsentRecord } from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -30,6 +30,8 @@ import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { TelegramConnectButton } from '@/components/TelegramConnectButton';
+import { NOTIFICATION_CHOICE_KEY } from '@/components/NotificationPermissionSheet';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -272,6 +274,7 @@ export default function ProfileScreen() {
     stamp: string; docs: Record<string, string>; accepted_at: string;
   } | null>(null);
   const [crossBorderConsent, setCrossBorderConsent] = useState<CrossBorderConsentRecord | null>(null);
+  const [revokingCrossBorder, setRevokingCrossBorder] = useState(false);
   const [consentLoadFailed, setConsentLoadFailed] = useState(false);
   const [consentRetry, setConsentRetry] = useState(0);
 
@@ -695,6 +698,49 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
+          {crossBorderConsent?.accepted === true ? (
+            <TouchableOpacity
+              style={sS.actionRow}
+              disabled={revokingCrossBorder}
+              onPress={() => Alert.alert(
+                'Отозвать согласие?',
+                'JobToo прекратит дальнейшую передачу через Expo/Web Push/Telegram и отвяжет сохранённые иностранные каналы. Внутренние функции приложения останутся доступны.',
+                [
+                  { text: 'Отмена', style: 'cancel' },
+                  {
+                    text: 'Отозвать',
+                    style: 'destructive',
+                    onPress: async () => {
+                      if (revokingCrossBorder || !currentUser) return;
+                      setRevokingCrossBorder(true);
+                      try {
+                        await dbRevokeCrossBorderConsent(currentUser.id);
+                        await AsyncStorage.removeItem(NOTIFICATION_CHOICE_KEY).catch(() => {});
+                        setConsentRetry(v => v + 1);
+                        showToast('Согласие на трансграничную передачу отозвано', 'success');
+                      } catch {
+                        showToast('Не удалось отозвать согласие. Попробуйте ещё раз.', 'error');
+                      } finally {
+                        setRevokingCrossBorder(false);
+                      }
+                    },
+                  },
+                ],
+              )}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close-circle-outline" size={17} color={Colors.red} />
+              <View style={{ flex: 1 }}>
+                <Text style={[sS.actionLabel, { color: Colors.red }]}>
+                  Отозвать согласие на трансграничную передачу
+                </Text>
+                <Text style={sS.docVersion}>
+                  Push/Web Push/Telegram будут отключены; JobToo продолжит работать
+                </Text>
+              </View>
+              {revokingCrossBorder ? <ActivityIndicator size="small" color={Colors.red} /> : null}
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             style={sS.actionRow}
             onPress={async () => {
