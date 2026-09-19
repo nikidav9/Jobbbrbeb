@@ -95,6 +95,25 @@ function getExpoProjectId(): string | undefined {
   );
 }
 
+/**
+ * iOS talks to APNs directly: obtain Apple's native device token and never ask
+ * Expo Push Service for an iOS token. Android stays on Expo/FCM for now.
+ */
+async function getStoredPushToken(): Promise<string | null> {
+  if (Platform.OS === 'ios') {
+    const native = await Notifications.getDevicePushTokenAsync();
+    const token = String(native.data ?? '').trim();
+    return token ? `apns:${token}` : null;
+  }
+
+  const projectId = getExpoProjectId();
+  if (!projectId) {
+    console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
+    return null;
+  }
+  return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+}
+
 export async function registerForPushNotifications(userId: string): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   if (!Device.isDevice) {
@@ -119,18 +138,13 @@ export async function registerForPushNotifications(userId: string): Promise<bool
 
     await setupAndroidChannels();
 
-    const projectId = getExpoProjectId();
-    if (!projectId) {
-      console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
-      return false;
-    }
-
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    const token = await getStoredPushToken();
+    if (!token) return false;
     await dbSavePushToken(userId, token);
-    console.info('[push] Expo push token saved for user:', userId);
+    console.info('[push] Push token saved for user:', userId, Platform.OS === 'ios' ? 'APNs' : 'Expo');
     return true;
   } catch (error) {
-    console.warn('[push] Failed to register Expo push token:', error);
+    console.warn('[push] Failed to register push token:', error);
     return false;
   }
 }
@@ -151,9 +165,8 @@ export async function releasePushTokenIfSignedOut(): Promise<void> {
   try {
     const { status } = await Notifications.getPermissionsAsync();
     if (status !== 'granted') return;
-    const projectId = getExpoProjectId();
-    if (!projectId) return;
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    const token = await getStoredPushToken();
+    if (!token) return;
     await dbReleasePushToken(token);
   } catch {
     // Молча: это уборка, а не то, ради чего человек открыл приложение.
