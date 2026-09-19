@@ -1014,7 +1014,7 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
     <View style={fh.row}>
       <View style={fh.logoWrap} accessibilityLabel="JobToo">
         <Image
-          source={require('@/assets/images/logo.png')}
+          source={require('@/assets/images/jt-logo.png')}
           style={fh.logoImage}
           resizeMode="contain"
         />
@@ -1078,15 +1078,17 @@ const fh = StyleSheet.create({
     backgroundColor: Colors.bgWarm,
   },
   logoWrap: {
-    width: rs(50), height: rs(46), flexShrink: 0,
+    width: rs(54), height: rs(46), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center', overflow: 'visible',
   },
-  // Оригинальный прозрачный бренд-ассет из проекта: соединённые буквы
-  // и фирменный градиент. Увеличиваем сам знак, а не рисуем JT шрифтом.
+  // Именно фирменный jt-logo: соединённые буквы и исходный градиент.
+  // multiply визуально убирает белое поле исходника на тёплом фоне,
+  // не подменяя знак другим ассетом.
   logoImage: {
-    width: rs(50), height: rs(46),
-    transform: [{ scale: 1.12 }],
-  },
+    width: rs(54), height: rs(46),
+    transform: [{ scale: 1.18 }],
+    mixBlendMode: 'multiply',
+  } as any,
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
