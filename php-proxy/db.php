@@ -144,7 +144,7 @@ if (!$fn) { jt_respond(['error' => 'Missing fn'], 400); exit; }
 $adminFns = [
     'dbKeyKind', 'adminResetPassword', 'dbMigrateChatMedia', 'dbDeleteUser',
     'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges', 'cronShiftNudge',
-    'cronAnnounceMissed',
+    'cronAnnounceMissed', 'adminRetireTelegram',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
     // dbGetUsers отдаёт всех пользователей разом. Приложение её не зовёт
@@ -1436,10 +1436,56 @@ function tg_validate_init_data(string $initData): ?array {
 }
 
 /**
- * Sends a message to a Telegram user via Bot API. Never throws.
- * $withAppButton: true — кнопка на главную мини-аппа; string — свой URL кнопки.
+ * Последнее служебное сообщение перед полным отключением Telegram.
+ *
+ * Эта функция существует только для adminRetireTelegram: обычные пользовательские
+ * уведомления через Telegram ниже уже отключены. Никаких кнопок, профилей и
+ * маркетингового текста — только уведомление о прекращении канала.
+ */
+function tg_send_retirement_message(int $chatId, string $text): bool {
+    if (TG_BOT_TOKEN === '') return false;
+
+    $payload = [
+        'chat_id' => $chatId,
+        'text' => $text,
+        'disable_web_page_preview' => true,
+    ];
+
+    for ($try = 1; $try <= 3; $try++) {
+        $ch = curl_init('https://api.telegram.org/bot' . TG_BOT_TOKEN . '/sendMessage');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_IPRESOLVE => $try < 3 ? CURL_IPRESOLVE_V6 : CURL_IPRESOLVE_WHATEVER,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $dec = json_decode($resp ?: 'null', true);
+        if (is_array($dec) && ($dec['ok'] ?? false) === true) return true;
+        if ($resp !== false && $code < 500 && is_array($dec)) break;
+        if ($try < 3) usleep($try * 400000);
+    }
+    return false;
+}
+
+/**
+ * Telegram как пользовательский канал JobToo выведен из эксплуатации.
+ * Функция оставлена на переходный период, чтобы старые сборки и фоновые
+ * задания не падали: они получают false и продолжают через колокольчик /
+ * push / web-push.
  */
 function tg_send_message(int $chatId, string $text, bool|string $withAppButton = false, string $btnText = '🚀 Откликнуться в JobToo', ?array $keyboard = null, ?int $messageThreadId = null): bool {
+    return false;
+
+    // Ниже оставлен старый транспорт на короткий переходный период, чтобы
+    // после подтверждённой рассылки о закрытии канала его можно было удалить
+    // отдельным чистящим коммитом без риска потерять последнее сообщение.
     if (TG_BOT_TOKEN === '') return false;
 
     // Личная доставка в Telegram разрешена только при отдельном действующем
@@ -3089,13 +3135,8 @@ try {
 
         // Заявка на привязку Telegram: живёт 15 минут, бот заберёт её по «/start»
         case 'tgPrepareLink': {
-            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
-                $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
-            }
-            $all = tg_pending_read();
-            $all[(string)$args[0]] = time();
-            tg_pending_write($all);
-            $data = true; break;
+            $data = ['error' => 'Telegram больше не используется в JobToo'];
+            break;
         }
 
         // Отметка «был в сети». Колонки может ещё не быть — тогда просто молчим:
@@ -3753,34 +3794,13 @@ try {
         // ── Telegram Mini App ──────────────────────────────────────────────────
         // args: [initDataString] → { ok, user|null, tg: {id, first_name, ...} }
         case 'tgAuth': {
-            $v = tg_validate_init_data($args[0] ?? '');
-            if (!$v || empty($v['user']['id'])) { $data = ['ok' => false]; break; }
-            $tgId = (int)$v['user']['id'];
-            $u = sb_single('jm_users', ['telegram_id' => 'eq.' . $tgId]);
-            if (is_array($u)) unset($u['password'], $u['push_token']);
-            $data = [
-                'ok' => true,
-                'user' => $u,
-                'session_token' => $u ? jt_session_issue((string)$u['id']) : null,
-                'tg' => [
-                    'id' => $tgId,
-                    'first_name' => $v['user']['first_name'] ?? '',
-                    'last_name' => $v['user']['last_name'] ?? '',
-                    'username' => $v['user']['username'] ?? '',
-                ],
-            ];
+            $data = ['ok' => false, 'error' => 'Telegram больше не используется в JobToo'];
             break;
         }
 
         // args: [userId, initDataString] — link a Telegram account to a user
         case 'tgBindTelegram': {
-            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
-                $data = false; break;
-            }
-            $v = tg_validate_init_data($args[1] ?? '');
-            if (!$v || empty($v['user']['id'])) { $data = false; break; }
-            sb_update('jm_users', ['id' => 'eq.' . $args[0]], ['telegram_id' => (int)$v['user']['id']]);
-            $data = true;
+            $data = false;
             break;
         }
 
@@ -4266,6 +4286,69 @@ try {
 
         // args: [title, body, roleFilter 'all'|'worker'|'employer']
         // Рассылка по всем с привязанным Telegram (кнопка приложения в каждом сообщении)
+        case 'adminRetireTelegram': {
+            @set_time_limit(300);
+            @ignore_user_abort(true);
+
+            $title = 'Telegram-уведомления отключаются';
+            $message = 'Из-за технических ограничений мы отключаем уведомления JobToo в Telegram. '
+                . 'Все важные уведомления останутся доступны в приложении — в разделе с колокольчиком. '
+                . 'Спасибо, что вы с нами.';
+
+            $rows = sb_select_all('jm_users', ['telegram_id' => 'not.is.null'], 'id,telegram_id');
+            $sent = 0;
+            $failed = 0;
+            $bell = 0;
+            $unlinked = 0;
+
+            foreach ($rows as $row) {
+                $uid = (string)($row['id'] ?? '');
+                $chatId = (int)($row['telegram_id'] ?? 0);
+                if ($uid === '' || $chatId <= 0) continue;
+
+                // Сначала последнее сообщение в Telegram, как договорились.
+                if (tg_send_retirement_message($chatId, $message)) $sent++;
+                else $failed++;
+
+                // Затем дублируем объяснение в российский колокольчик.
+                try {
+                    sb_insert('jm_notifications', [
+                        'user_id' => $uid,
+                        'title' => $title,
+                        'body' => $message,
+                        'type' => 'telegram_retired',
+                    ]);
+                    $bell++;
+                } catch (Throwable $e) {
+                    try {
+                        sb_insert('jm_notifications', [
+                            'user_id' => $uid,
+                            'title' => $title,
+                            'body' => $message,
+                        ]);
+                        $bell++;
+                    } catch (Throwable $e2) {}
+                }
+
+                // И только после попытки отправки отвязываем канал.
+                try {
+                    sb_update('jm_users', ['id' => 'eq.' . $uid], ['telegram_id' => null]);
+                    $unlinked++;
+                } catch (Throwable $e) {}
+            }
+
+            tg_pending_write([]);
+            $data = [
+                'retired' => true,
+                'targets' => count($rows),
+                'telegram_sent' => $sent,
+                'telegram_failed' => $failed,
+                'bell_written' => $bell,
+                'unlinked' => $unlinked,
+            ];
+            break;
+        }
+
         case 'tgBroadcast': {
             @set_time_limit(300);
             @ignore_user_abort(true);
