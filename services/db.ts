@@ -548,8 +548,20 @@ export async function dbGetCrossBorderConsent(userId: string): Promise<CrossBord
  * В отличие от общего dbRecordConsent этот вызов бросает ошибку: включать
  * иностранный канал без доказательной записи нельзя.
  */
-export async function dbRecordCrossBorderConsent(userId: string, version: string): Promise<void> {
-  const res = await proxy<{ ok?: boolean; error?: string }>('dbRecordCrossBorderConsent', [userId, version]);
+export type CrossBorderConsentSource =
+  | 'crossborder:registration'
+  | 'crossborder:reconsent'
+  | 'crossborder:push'
+  | 'crossborder:telegram';
+
+export async function dbRecordCrossBorderConsent(
+  userId: string,
+  version: string,
+  source: CrossBorderConsentSource = 'crossborder:reconsent',
+): Promise<void> {
+  const res = await proxy<{ ok?: boolean; error?: string }>(
+    'dbRecordCrossBorderConsent', [userId, version, source],
+  );
   if (!res?.ok) throw new Error(res?.error || 'Не удалось сохранить согласие');
 }
 
