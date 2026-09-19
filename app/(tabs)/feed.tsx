@@ -1864,7 +1864,7 @@ function EmployerHome() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <TabHeader tgAnchor />
+      <TabHeader />
 
       <View style={styles.tabs}>
         {(['active', 'closed'] as const).map(t => (
