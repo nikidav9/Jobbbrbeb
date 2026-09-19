@@ -1580,6 +1580,8 @@ function tg_send_message(int $chatId, string $text, bool|string $withAppButton =
     return $ok;
 }
 
+require_once __DIR__ . '/push.php';
+
 /**
  * Отправка пушей через Expo, пачками по сотне. Не бросает исключений.
  *
@@ -1597,8 +1599,24 @@ function tg_send_message(int $chatId, string $text, bool|string $withAppButton =
  * $pushBody.
  */
 function expo_push(array $messages): void {
-    for ($i = 0; $i < count($messages); $i += 100) {
-        $chunk = array_slice($messages, $i, 100);
+    $expo = [];
+
+    foreach ($messages as $message) {
+        $to = (string)($message['to'] ?? '');
+        if ($to !== '' && str_starts_with($to, 'apns:')) {
+            $native = substr($to, 5);
+            $type = is_array($message['data'] ?? null)
+                ? (string)(($message['data']['type'] ?? ''))
+                : '';
+            jt_apns_push_one($native, $type);
+            continue;
+        }
+        if ($to !== '') $expo[] = $message;
+    }
+
+    // Android keeps the existing Expo transport during the iOS migration.
+    for ($i = 0; $i < count($expo); $i += 100) {
+        $chunk = array_slice($expo, $i, 100);
         $ch = curl_init('https://exp.host/--/api/v2/push/send');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
