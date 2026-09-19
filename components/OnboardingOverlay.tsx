@@ -163,7 +163,6 @@ export function OnboardingOverlay() {
   };
 
   const rFab = measured('fab');
-  const rTelegram = measured('telegram');
   const rMatchesTab = measured('matchesTab', 4);
 
   // Есть ли реальная карточка смены. Если нет — рисуем демо-карточку сами,
@@ -182,8 +181,8 @@ export function OnboardingOverlay() {
           body: 'Свайп карточки вправо или ❤️ — откликнуться на вакансию. Влево — пропустить.' },
         { icon: 'people', title: 'Твои отклики', spot: rMatchesTab, hint: 'above',
           body: 'Вкладка «Отклики»: здесь ответы работодателей и статусы твоих заявок.' },
-        { icon: 'notifications', title: 'Не пропусти смену', spot: rTelegram, hint: 'below',
-          body: 'Привяжи Telegram и включи уведомления — о новых вакансиях рядом узнаешь первым.' },
+        { icon: 'notifications', title: 'Не пропусти ответ', hint: 'center',
+          body: 'Ответы работодателей и важные события всегда остаются в колокольчике JobToo. Push-уведомления можно включить отдельно.' },
       ]
     : [
         { icon: 'hand-left', title: `Привет, ${user.firstName}! 👋`, hint: 'center',
@@ -192,8 +191,8 @@ export function OnboardingOverlay() {
           body: 'Кнопка «+» — опубликовать вакансию за минуту.' },
         { icon: 'people', title: 'Отклики кандидатов', spot: rMatchesTab, hint: 'above',
           body: 'Вкладка «Отклики»: сюда падают заявки. Одобряйте или отклоняйте в один тап.' },
-        { icon: 'notifications', title: 'Отвечайте быстрее', spot: rTelegram, hint: 'below',
-          body: 'Привяжите Telegram — отклики придут с кнопками, отвечайте не заходя в приложение.' },
+        { icon: 'notifications', title: 'Отвечайте быстрее', hint: 'center',
+          body: 'Новые отклики и статусы всегда видны в колокольчике JobToo. Push-уведомления можно включить отдельно.' },
       ];
 
   const s = steps[step];
