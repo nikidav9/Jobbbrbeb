@@ -1589,8 +1589,8 @@ function WorkerPermMode() {
           </GestureDetector>
           </GHScrollView>
 
-          <Reanimated.View
-            style={[pS.deckUtilityOverlay, swDeck.cardStyle]}
+          <View
+            style={pS.deckUtilityOverlay}
             pointerEvents="box-none"
           >
             <TouchableOpacity
@@ -1619,7 +1619,7 @@ function WorkerPermMode() {
                 <Ionicons name="share-outline" size={21} color={Colors.textSecondary} />
               </View>
             </TouchableOpacity>
-          </Reanimated.View>
+          </View>
         </View>
 
         {moreBelow ? (
