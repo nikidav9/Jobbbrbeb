@@ -40,6 +40,7 @@ export default function RegisterEmployer() {
   const [bio, setBio] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
+  const [crossBorderAgreed, setCrossBorderAgreed] = useState(false);
   const [checking, setChecking] = useState(false);
   const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
@@ -115,7 +116,7 @@ export default function RegisterEmployer() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user);
+      await registerUser(user, crossBorderAgreed);
       showToast('Добро пожаловать! 👋', 'success');
       router.replace('/(tabs)');
     } catch (e) {
@@ -266,6 +267,28 @@ export default function RegisterEmployer() {
                       Согласием на обработку персональных данных
                     </Text>
                     .
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.checkRow}
+                onPress={() => setCrossBorderAgreed(v => !v)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkbox, crossBorderAgreed && styles.checkboxActive]}>
+                  {crossBorderAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.checkLabel}>
+                    Отдельно и добровольно соглашаюсь на{' '}
+                    <Text
+                      style={styles.link}
+                      onPress={() => router.push({ pathname: '/legal', params: { doc: 'crossBorderConsent' } })}
+                    >
+                      трансграничную передачу персональных данных
+                    </Text>
+                    {' '}для push/web-push уведомлений и подключаемого Telegram. Отказ не мешает регистрации.
                   </Text>
                 </View>
               </TouchableOpacity>
