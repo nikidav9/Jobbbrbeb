@@ -1,12 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
   TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
 import {
   GestureDetector,
-  TouchableOpacity as GHTouchableOpacity,
   ScrollView as GHScrollView,
   RefreshControl as GHRefreshControl,
 } from 'react-native-gesture-handler';
@@ -1013,10 +1012,12 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 }) {
   return (
     <View style={fh.row}>
-      <Text style={fh.logo}>
-        <Text style={fh.logoJ}>J</Text>
-        <Text style={fh.logoT}>T</Text>
-      </Text>
+      <Image
+        source={require('@/assets/images/jt-logo.png')}
+        style={fh.logoImage}
+        resizeMode="contain"
+        accessibilityLabel="JobToo"
+      />
 
       <View style={fh.search}>
         <Ionicons name="search" size={20} color={Colors.textMuted} />
@@ -1075,9 +1076,9 @@ const fh = StyleSheet.create({
     paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
     backgroundColor: Colors.bgWarm,
   },
-  logo: { fontSize: rf(26), letterSpacing: -0.5 },
-  logoJ: { fontWeight: '900', color: Colors.primary },
-  logoT: { fontWeight: '900', color: Colors.textPrimary },
+  logoImage: {
+    width: rs(46), height: rs(46), flexShrink: 0, borderRadius: rs(12),
+  },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
@@ -1316,19 +1317,26 @@ function WorkerPermMode() {
       return;
     }
     if (permSavedMutationIds.current.has(v.id)) return;
+
+    const wasSaved = permSavedIds.includes(v.id);
     permSavedMutationIds.current.add(v.id);
+    // Сначала меняем локальное состояние: нажатие должно быть видно сразу,
+    // даже если сеть отвечает через секунду. При ошибке откатываем.
+    if (wasSaved) optimisticRemovePermSaved(v.id);
+    else optimisticAddPermSaved(v.id);
+
     try {
-      if (permSavedIds.includes(v.id)) {
+      if (wasSaved) {
         await dbRemovePermSaved(currentUser.id, v.id);
-        optimisticRemovePermSaved(v.id);
         showToast('Удалено из избранного', 'success');
       } else {
         await dbAddPermSaved(currentUser.id, v.id);
-        optimisticAddPermSaved(v.id);
         showToast('Сохранено в избранное', 'success');
       }
     } catch {
-      showToast(permSavedIds.includes(v.id) ? 'Не удалось удалить из избранного' : 'Не удалось сохранить в избранное', 'error');
+      if (wasSaved) optimisticAddPermSaved(v.id);
+      else optimisticRemovePermSaved(v.id);
+      showToast(wasSaved ? 'Не удалось удалить из избранного' : 'Не удалось сохранить в избранное', 'error');
     } finally {
       permSavedMutationIds.current.delete(v.id);
     }
@@ -1491,32 +1499,7 @@ function WorkerPermMode() {
                         </Text>
                         {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
                       </View>
-                      <View style={pS.deckUtilityActions}>
-                        <GHTouchableOpacity
-                          accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
-                          style={pS.deckUtilityTap}
-                          onPress={() => { void toggleSaved(v); }}
-                          activeOpacity={0.75}
-                        >
-                          <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
-                            <Ionicons
-                              name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                              size={21}
-                              color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
-                            />
-                          </View>
-                        </GHTouchableOpacity>
-                        <GHTouchableOpacity
-                          accessibilityLabel="Поделиться вакансией"
-                          style={pS.deckUtilityTap}
-                          onPress={() => { void shareVacancy(v); }}
-                          activeOpacity={0.75}
-                        >
-                          <View style={pS.deckUtilityBtn}>
-                            <Ionicons name="share-outline" size={21} color={Colors.textSecondary} />
-                          </View>
-                        </GHTouchableOpacity>
-                      </View>
+                      <View style={pS.deckUtilitySpacer} />
                     </View>
 
                     <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
@@ -1598,6 +1581,38 @@ function WorkerPermMode() {
             </Reanimated.View>
           </GestureDetector>
           </GHScrollView>
+
+          <Reanimated.View
+            style={[pS.deckUtilityOverlay, swDeck.cardStyle]}
+            pointerEvents="box-none"
+          >
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
+              style={pS.deckUtilityTap}
+              onPress={() => { void toggleSaved(v); }}
+              activeOpacity={0.7}
+            >
+              <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
+                <Ionicons
+                  name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
+                  size={21}
+                  color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
+                />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Поделиться вакансией"
+              style={pS.deckUtilityTap}
+              onPress={() => { void shareVacancy(v); }}
+              activeOpacity={0.7}
+            >
+              <View style={pS.deckUtilityBtn}>
+                <Ionicons name="share-outline" size={21} color={Colors.textSecondary} />
+              </View>
+            </TouchableOpacity>
+          </Reanimated.View>
         </View>
 
         {moreBelow ? (
@@ -2209,9 +2224,10 @@ const pS = StyleSheet.create({
   limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
   limitClose: { paddingVertical: rs(8) },
   limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
-  deckUtilityActions: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(2),
-    marginTop: rs(-2), marginRight: rs(-8), flexShrink: 0,
+  deckUtilitySpacer: { width: rs(94), height: rs(48), flexShrink: 0 },
+  deckUtilityOverlay: {
+    position: 'absolute', top: rs(16), right: rs(10), zIndex: 30, elevation: 30,
+    flexDirection: 'row', alignItems: 'center', gap: rs(2),
   },
   deckUtilityTap: {
     width: rs(48), height: rs(48),
