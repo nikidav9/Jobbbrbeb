@@ -79,7 +79,7 @@ function TelegramMiniAppController() {
           vacancyId,
           vacancyKind: kind === 'perm' ? 'permanent' : 'shift',
           campaignId,
-          channel: shareMarker ? 'user_share' : 'group_link',
+          channel: shareMarker ? 'user_share' : 'telegram_group',
         });
         setTimeout(() => {
           if (cancelled) return;
