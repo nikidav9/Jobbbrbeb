@@ -1608,8 +1608,10 @@ function expo_push(array $messages): void {
         // iOS: direct APNs first. The Expo token is retained only as a
         // migration fallback until the final client cutover.
         if ($parts['apns'] !== '' && jt_apns_ready()) {
-            $result = jt_apns_push_generic('apns:' . $parts['apns'], $type);
-            if (!empty($result['ok'])) continue;
+            // Once APNs is configured, iOS is APNs-only. Do not silently send
+            // the same event through Expo when Apple returns an error.
+            jt_apns_push_generic('apns:' . $parts['apns'], $type);
+            continue;
         }
 
         if ($parts['expo'] !== '') {
