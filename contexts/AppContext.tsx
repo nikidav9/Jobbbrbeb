@@ -48,8 +48,6 @@ import {
   dbGetNotifications,
   dbMarkNotifRead,
   dbMarkAllNotifsRead,
-  dbTelegramAuth,
-  dbBindTelegram,
   dbAutoClosePastVacancies,
   dbRecordConsent,
   dbGetCrossBorderConsent,
@@ -58,7 +56,6 @@ import {
 } from '@/services/db';
 import { LEGAL_DOCS, LEGAL_STAMP, legalVersions } from '@/constants/legal';
 import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/services/notifications';
-import { isTelegramMiniApp, getTelegramInitData, waitForTelegramMiniApp } from '@/lib/telegram';
 import { registerWebPush } from '@/lib/webPush';
 import { setWebSplashProgress } from '@/lib/webSplash';
 
@@ -337,19 +334,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
 
-        // Telegram Mini App: auto-login via signed initData — no password needed
-        if (!sessionUser) await waitForTelegramMiniApp();
-        if (!sessionUser && isTelegramMiniApp()) {
-          const initData = getTelegramInitData();
-          if (initData) {
-            const res = await dbTelegramAuth(initData).catch(() => null);
-            if (res?.ok && res.user && !res.user.isBlocked) {
-              sessionUser = res.user;
-              await saveSessionUser(res.user).catch(() => {});
-            }
-          }
-        }
-
         if (cancelled) return;
 
         // Событие «открыл приложение» (Фаза 1b). Один раз за холодный старт,
@@ -362,8 +346,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const platform =
             Platform.OS !== 'web'
               ? Platform.OS
-              : isTelegramMiniApp()
-              ? 'tg'
               : (typeof window !== 'undefined' &&
                   (window.matchMedia?.('(display-mode: standalone)')?.matches ||
                     (window.navigator as any)?.standalone))
@@ -720,11 +702,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     void dbRecordConsent(u.id, LEGAL_STAMP, coreDocs, 'registration');
     _setCurrentUser(u);
     await saveSessionUser(u);
-    // Inside the Telegram Mini App: link this Telegram account for auto-login
-    if (crossBorderConsent && isTelegramMiniApp()) {
-      const initData = getTelegramInitData();
-      if (initData) dbBindTelegram(u.id, initData).catch(() => {});
-    }
     // Иностранный push-транспорт включаем только после отдельного согласия.
     if (crossBorderConsent) {
       setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
@@ -752,12 +729,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await saveSessionUser(found);
     const crossBorderRecord = await dbGetCrossBorderConsent(found.id).catch(() => null);
     const crossBorderAllowed = crossBorderRecord?.accepted === true;
-    // Telegram и иностранный push-транспорт не включаем только по факту входа:
+    // Иностранный push-транспорт не включаем только по факту входа:
     // нужна отдельная текущая редакция трансграничного согласия.
-    if (crossBorderAllowed && isTelegramMiniApp()) {
-      const initData = getTelegramInitData();
-      if (initData) dbBindTelegram(found.id, initData).catch(() => {});
-    }
     if (crossBorderAllowed) registerForPushNotifications(found.id).catch(() => {});
     setTimeout(() => {
       Promise.all([
