@@ -22,7 +22,8 @@ import { LEGAL_DOCS, needsReconsent } from '@/constants/legal';
 
 import { rs, rf } from '@/constants/scale';
 
-const CHOICE_KEY = 'jm_notif_prompt_choice'; // 'enabled' once notifications are on
+export const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice'; // 'enabled' once notifications are on
+const CHOICE_KEY = NOTIFICATION_CHOICE_KEY;
 const SCREEN_H = Dimensions.get('window').height;
 const SHOW_DELAY_MS = 1200;
 const ENABLE_TIMEOUT_MS = 20_000;
