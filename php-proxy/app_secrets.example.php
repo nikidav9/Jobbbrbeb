@@ -24,14 +24,6 @@ return [
     // Токен бота из @BotFather.
     'TG_BOT_TOKEN'    => '',
 
-    // Direct iOS push via Apple APNs. The .p8 file itself never belongs in
-    // Git; put base64(<AuthKey_....p8>) into APNS_PRIVATE_KEY_B64.
-    'APNS_TEAM_ID'         => '',
-    'APNS_KEY_ID'          => '',
-    'APNS_BUNDLE_ID'       => 'com.nikidav23.onspaceapp',
-    'APNS_PRIVATE_KEY_B64' => '',
-    'APNS_ENVIRONMENT'     => 'production',
-
     // Ключ «HTTP Геокодер» Яндекса (developer.tech.yandex.ru → Геокодер).
     // Сервер в РФ. Даёт точные координаты по адресу; если его нет — работает
     // Геосаджест (ниже). Иностранных геокодеров в проекте нет.

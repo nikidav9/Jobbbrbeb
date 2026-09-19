@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent, dbGetIosPushTransport } from '@/services/db';
+import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent } from '@/services/db';
 
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
@@ -95,32 +95,6 @@ function getExpoProjectId(): string | undefined {
   );
 }
 
-/**
- * iOS switches to Apple's native device token as soon as our backend confirms
- * that direct APNs credentials are installed. Android stays on Expo/FCM.
- */
-async function getStoredPushToken(): Promise<string | null> {
-  if (Platform.OS === 'ios') {
-    // Cut over only when our own backend confirms that APNs credentials are
-    // installed. Until then the currently working Expo route stays intact.
-    const transport = await dbGetIosPushTransport().catch(() => 'expo' as const);
-    if (transport === 'apns') {
-      const native = await Notifications.getDevicePushTokenAsync();
-      const token = String(native.data ?? '').trim();
-      return token ? `apns:${token}` : null;
-    }
-  }
-
-  // Android remains Expo/FCM for now. On iOS this is only the pre-cutover
-  // fallback while the server has no APNs provider credentials.
-  const projectId = getExpoProjectId();
-  if (!projectId) {
-    console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
-    return null;
-  }
-  return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-}
-
 export async function registerForPushNotifications(userId: string): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   if (!Device.isDevice) {
@@ -145,13 +119,18 @@ export async function registerForPushNotifications(userId: string): Promise<bool
 
     await setupAndroidChannels();
 
-    const token = await getStoredPushToken();
-    if (!token) return false;
+    const projectId = getExpoProjectId();
+    if (!projectId) {
+      console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
+      return false;
+    }
+
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbSavePushToken(userId, token);
-    console.info('[push] Push token saved for user:', userId, Platform.OS === 'ios' ? 'APNs' : 'Expo');
+    console.info('[push] Expo push token saved for user:', userId);
     return true;
   } catch (error) {
-    console.warn('[push] Failed to register push token:', error);
+    console.warn('[push] Failed to register Expo push token:', error);
     return false;
   }
 }
@@ -172,8 +151,9 @@ export async function releasePushTokenIfSignedOut(): Promise<void> {
   try {
     const { status } = await Notifications.getPermissionsAsync();
     if (status !== 'granted') return;
-    const token = await getStoredPushToken();
-    if (!token) return;
+    const projectId = getExpoProjectId();
+    if (!projectId) return;
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbReleasePushToken(token);
   } catch {
     // Молча: это уборка, а не то, ради чего человек открыл приложение.

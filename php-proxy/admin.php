@@ -274,22 +274,7 @@ if (preg_match('#^/functions/v1/push-notify(\?|$)#', $path)) {
 
     $pushCount = 0;
     if ($tokens && $mode !== 'inapp') {
-        require_once __DIR__ . '/apns.php';
-        $expoTokens = [];
-
-        foreach ($tokens as $stored) {
-            $parts = jt_push_token_parts($stored);
-            if ($parts['apns'] !== '' && jt_apns_ready()) {
-                // Configured iOS delivery is APNs-only. Do not send the same
-                // broadcast through Expo if APNs rejects this token/request.
-                $result = jt_apns_push_generic('apns:' . $parts['apns'], 'broadcast');
-                if (!empty($result['ok'])) $pushCount++;
-                continue;
-            }
-            if ($parts['expo'] !== '') $expoTokens[] = $parts['expo'];
-        }
-
-        foreach (array_chunk($expoTokens, 100) as $chunk) {
+        foreach (array_chunk($tokens, 100) as $chunk) {
             $msgs = array_map(fn($to) => [
                 'to' => $to, 'title' => $title, 'body' => $body,
                 'sound' => 'default', 'channelId' => 'default', 'priority' => 'high',

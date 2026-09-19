@@ -91,9 +91,6 @@ jobs:
       - name: Уведомление доходит и до браузера
         run: php tests/web_push_test.php
 
-      - name: iOS push идёт напрямую через APNs
-        run: php tests/apns_direct_test.php
-
       - name: Разрыв воронки — ответы на отклики
         run: php tests/funnel_test.php
 

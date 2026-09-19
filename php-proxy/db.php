@@ -1597,32 +1597,8 @@ function tg_send_message(int $chatId, string $text, bool|string $withAppButton =
  * $pushBody.
  */
 function expo_push(array $messages): void {
-    require_once __DIR__ . '/apns.php';
-
-    $expoMessages = [];
-    foreach ($messages as $message) {
-        $stored = (string)($message['to'] ?? '');
-        $parts = jt_push_token_parts($stored);
-        $type = is_array($message['data'] ?? null) ? (string)($message['data']['type'] ?? '') : '';
-
-        // iOS: direct APNs first. The Expo token is retained only as a
-        // migration fallback until the final client cutover.
-        if ($parts['apns'] !== '' && jt_apns_ready()) {
-            // Once APNs is configured, iOS is APNs-only. Do not silently send
-            // the same event through Expo when Apple returns an error.
-            jt_apns_push_generic('apns:' . $parts['apns'], $type);
-            continue;
-        }
-
-        if ($parts['expo'] !== '') {
-            $message['to'] = $parts['expo'];
-            $expoMessages[] = $message;
-        }
-    }
-
-    // Android and transitional iOS fallback keep the existing Expo path.
-    for ($i = 0; $i < count($expoMessages); $i += 100) {
-        $chunk = array_slice($expoMessages, $i, 100);
+    for ($i = 0; $i < count($messages); $i += 100) {
+        $chunk = array_slice($messages, $i, 100);
         $ch = curl_init('https://exp.host/--/api/v2/push/send');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
@@ -5910,13 +5886,6 @@ try {
         }
 
         // ── Push tokens ────────────────────────────────────────────────────────
-        // The client asks our Moscow backend which iOS transport is actually
-        // ready. This prevents an OTA update from switching users to APNs
-        // before the Apple provider key has been installed on the server.
-        case 'dbGetIosPushTransport':
-            require_once __DIR__ . '/apns.php';
-            $data = ['transport' => jt_apns_ready() ? 'apns' : 'expo']; break;
-
         // Токен принадлежит устройству, а не человеку. Если на телефоне сменили
         // аккаунт, тот же токен остался бы записан и за прежним — и уведомления
         // для обоих приходили бы на один телефон. Поэтому сначала снимаем его
@@ -5925,28 +5894,8 @@ try {
             if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
                 $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
             }
-            $pushUserId = (string)($args[0] ?? '');
-            $incomingPushToken = trim((string)($args[1] ?? ''));
-
-            // New iOS builds send only the native APNs token and never ask
-            // Expo for an ExpoPushToken. During the migration keep an already
-            // stored legacy Expo token as a server-side emergency fallback.
-            // No new Expo identifier is created by the iOS client.
-            if (str_starts_with($incomingPushToken, 'apns:')
-                && !str_contains($incomingPushToken, '|expo:')) {
-                require_once __DIR__ . '/apns.php';
-                $previous = sb_single('jm_users', ['id' => 'eq.' . $pushUserId], 'push_token');
-                $previousToken = trim((string)($previous['push_token'] ?? ''));
-                $previousParts = jt_push_token_parts($previousToken);
-                if ($previousParts['expo'] !== '') {
-                    $incomingPushToken .= '|expo:' . $previousParts['expo'];
-                }
-            }
-
-            sb_update('jm_users',
-                ['push_token' => 'eq.' . $incomingPushToken, 'id' => 'neq.' . $pushUserId],
-                ['push_token' => null]);
-            sb_update('jm_users', ['id' => 'eq.' . $pushUserId], ['push_token' => $incomingPushToken]); break;
+            sb_update('jm_users', ['push_token' => 'eq.' . $args[1], 'id' => 'neq.' . $args[0]], ['push_token' => null]);
+            sb_update('jm_users', ['id' => 'eq.' . $args[0]], ['push_token' => $args[1]]); break;
 
         // Выход из аккаунта. Без этого сервер продолжал слать уведомления на
         // телефон, с которого человек вышел: приложение он не удалял, а токен

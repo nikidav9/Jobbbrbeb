@@ -1665,12 +1665,6 @@ export async function dbSubmitSkillTest(
 
 // ─── Push tokens ──────────────────────────────────────────────────────────────
 
-export async function dbGetIosPushTransport(): Promise<'apns' | 'expo'> {
-  if (!IS_NATIVE) return 'expo';
-  const result = await proxy<{ transport?: string }>('dbGetIosPushTransport', []);
-  return result?.transport === 'apns' ? 'apns' : 'expo';
-}
-
 export async function dbSavePushToken(userId: string, token: string): Promise<void> {
   if (IS_NATIVE) { await proxy('dbSavePushToken', [userId, token]); return; }
   await withTimeout(supabase.from('jm_users').update({ push_token: token }).eq('id', userId));
