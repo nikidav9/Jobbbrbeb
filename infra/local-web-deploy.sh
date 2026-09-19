@@ -54,6 +54,18 @@ else
   exit 1
 fi
 
+# PHP-прокси должен ехать тем же лёгким deploy-циклом, что и web. Раньше
+# git checkout обновлялся, миграции применялись, но /opt/jobtoo-proxy оставался
+# на старом коде до редкого полного bootstrap — поэтому новые API-файлы давали
+# 404 несмотря на свежий HEAD.
+PROXY=/opt/jobtoo-proxy
+mkdir -p "$PROXY"
+if ! cp -f "$REPO"/php-proxy/*.php "$PROXY"/; then
+  log "FAIL $HEAD: php-proxy copy"
+  exit 1
+fi
+log "PHP $HEAD: proxy refreshed"
+
 # Берём публичный ключ карт из уже работающей сборки, если он ещё не записан
 # в серверные secrets. Ключ всё равно клиентский и уже присутствует в bundle;
 # так локальная сборка не отключит карты только потому, что Actions недоступен.
