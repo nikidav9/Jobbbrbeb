@@ -5,11 +5,13 @@ import {
 } from 'react-native';
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
 import { Colors, Radius } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { dbGetUserById, dbUnbindTelegram, dbTgPrepareLink } from '@/services/db';
+import { dbGetUserById, dbUnbindTelegram, dbTgPrepareLink, dbGetConsent, dbRecordConsent } from '@/services/db';
+import { LEGAL_DOCS, hasCrossBorderConsent, needsReconsent } from '@/constants/legal';
 import { isTelegramMiniApp } from '@/lib/telegram';
 import { setOnboardingTarget, registerOnboardingMeasurer } from '@/lib/onboardingTargets';
 
@@ -43,6 +45,7 @@ function TelegramLogo({ size }: { size: number }) {
 // size/pad подбираются под соседний колокольчик конкретной шапки.
 export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = false }: { size?: number; pad?: number; onboardingAnchor?: boolean }) {
   const app = useApp();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const userId = app?.currentUser?.id ?? null;
   const isEmployer = app?.currentUser?.role === 'employer';
@@ -57,6 +60,8 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
   const [failed, setFailed] = useState(false);
   const [statusFailed, setStatusFailed] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
   const btnRef = useRef<View>(null);
   // Способ перемерить по требованию: первый замер при раскладке часто
   // приходит с нулями, и цель для подсветки не регистрируется вовсе.
@@ -90,6 +95,47 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
     if (userId) refreshStatus();
   }, [userId, refreshStatus]);
 
+  useEffect(() => {
+    if (!userId) {
+      setCrossBorderAccepted(false);
+      return;
+    }
+    let alive = true;
+    dbGetConsent(userId)
+      .then(c => { if (alive) setCrossBorderAccepted(hasCrossBorderConsent(c?.docs)); })
+      .catch(() => { if (alive) setCrossBorderAccepted(false); });
+    return () => { alive = false; };
+  }, [userId]);
+
+  async function acceptCrossBorderConsent() {
+    if (!userId || consentBusy || crossBorderAccepted) return;
+    setConsentBusy(true);
+    setActionError('');
+    try {
+      const current = await dbGetConsent(userId);
+      if (!current || needsReconsent(current.stamp)) {
+        setActionError('Сначала примите актуальные основные документы JobToo.');
+        return;
+      }
+      await dbRecordConsent(
+        userId,
+        current.stamp,
+        { ...current.docs, crossBorderConsent: LEGAL_DOCS.crossBorderConsent.version },
+        'crossborder:telegram',
+      );
+      const saved = await dbGetConsent(userId);
+      if (!hasCrossBorderConsent(saved?.docs)) {
+        setActionError('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
+        return;
+      }
+      setCrossBorderAccepted(true);
+    } catch {
+      setActionError('Не удалось сохранить отдельное согласие. Попробуйте ещё раз.');
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
   // Вернулись из Телеграма с открытой модалкой — перепроверяем привязку
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -104,6 +150,10 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
   const connect = () => {
     setFailed(false);
     setActionError('');
+    if (!crossBorderAccepted) {
+      setActionError('Сначала подтвердите отдельное согласие на трансграничную передачу.');
+      return;
+    }
     // Заявку серверу шлём параллельно, а НЕ перед переходом. Она нужна на
     // случай, когда чат с ботом уже был: Telegram тогда не доносит метку из
     // ссылки и присылает голый «/start», и бот привязывает по заявке.
@@ -183,6 +233,31 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
               </TouchableOpacity>
             </View>
 
+            {linked !== null && !crossBorderAccepted ? (
+              <TouchableOpacity
+                style={st.consentRow}
+                onPress={() => void acceptCrossBorderConsent()}
+                activeOpacity={0.8}
+                disabled={consentBusy}
+              >
+                <View style={[st.checkbox, crossBorderAccepted && st.checkboxActive]}>
+                  {crossBorderAccepted ? <Text style={st.checkmark}>✓</Text> : null}
+                </View>
+                <Text style={st.consentText}>
+                  {consentBusy ? 'Сохраняем отдельное согласие…' : 'Согласен(на) на '}
+                  {!consentBusy ? (
+                    <Text
+                      style={st.consentLink}
+                      onPress={() => router.push({ pathname: '/legal', params: { doc: 'crossBorderConsent' } })}
+                    >
+                      трансграничную передачу ПДн
+                    </Text>
+                  ) : null}
+                  {!consentBusy ? ' для Telegram. Подключение добровольно.' : ''}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             {linked === null && statusFailed ? (
               <View style={st.statusErrorBox}>
                 <Text style={st.statusErrorTitle}>Не удалось проверить Telegram</Text>
@@ -224,7 +299,12 @@ export function TelegramConnectButton({ size = 24, pad = 6, onboardingAnchor = f
                     <Benefit icon="chatbubble-ellipses-outline" text="Ничего не потеряется, даже если пуши отключены" />
                   </View>
                 )}
-                <TouchableOpacity style={st.connectBtn} onPress={connect} activeOpacity={0.85}>
+                <TouchableOpacity
+                  style={[st.connectBtn, (!crossBorderAccepted || consentBusy) && { opacity: 0.55 }]}
+                  onPress={connect}
+                  activeOpacity={0.85}
+                  disabled={!crossBorderAccepted || consentBusy}
+                >
                   <Ionicons name="paper-plane" size={17} color="#fff" style={{ marginRight: 8 }} />
                   <Text style={st.connectText}>Подключить Telegram</Text>
                 </TouchableOpacity>
@@ -301,6 +381,20 @@ const st = StyleSheet.create({
   statusErrorTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary, textAlign: 'center' },
   statusErrorText: { fontSize: rf(13), color: Colors.textMuted, textAlign: 'center' },
   retryText: { fontSize: rf(14), fontWeight: '700', color: TG_BLUE, marginTop: rs(2) },
+  consentRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
+    padding: rs(12), marginBottom: rs(14), borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+  },
+  checkbox: {
+    width: rs(22), height: rs(22), borderRadius: rs(6), borderWidth: 1.5,
+    borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkboxActive: { backgroundColor: TG_BLUE, borderColor: TG_BLUE },
+  checkmark: { color: '#fff', fontSize: rf(13), fontWeight: '800' },
+  consentText: { flex: 1, fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary },
+  consentLink: { color: TG_BLUE, fontWeight: '700', textDecorationLine: 'underline' },
   connectedBox: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
     backgroundColor: Colors.greenLight, borderRadius: Radius.md,
