@@ -5916,8 +5916,28 @@ try {
             if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
                 $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
             }
-            sb_update('jm_users', ['push_token' => 'eq.' . $args[1], 'id' => 'neq.' . $args[0]], ['push_token' => null]);
-            sb_update('jm_users', ['id' => 'eq.' . $args[0]], ['push_token' => $args[1]]); break;
+            $pushUserId = (string)($args[0] ?? '');
+            $incomingPushToken = trim((string)($args[1] ?? ''));
+
+            // New iOS builds send only the native APNs token and never ask
+            // Expo for an ExpoPushToken. During the migration keep an already
+            // stored legacy Expo token as a server-side emergency fallback.
+            // No new Expo identifier is created by the iOS client.
+            if (str_starts_with($incomingPushToken, 'apns:')
+                && !str_contains($incomingPushToken, '|expo:')) {
+                require_once __DIR__ . '/apns.php';
+                $previous = sb_single('jm_users', ['id' => 'eq.' . $pushUserId], 'push_token');
+                $previousToken = trim((string)($previous['push_token'] ?? ''));
+                $previousParts = jt_push_token_parts($previousToken);
+                if ($previousParts['expo'] !== '') {
+                    $incomingPushToken .= '|expo:' . $previousParts['expo'];
+                }
+            }
+
+            sb_update('jm_users',
+                ['push_token' => 'eq.' . $incomingPushToken, 'id' => 'neq.' . $pushUserId],
+                ['push_token' => null]);
+            sb_update('jm_users', ['id' => 'eq.' . $pushUserId], ['push_token' => $incomingPushToken]); break;
 
         // Выход из аккаунта. Без этого сервер продолжал слать уведомления на
         // телефон, с которого человек вышел: приложение он не удалял, а токен
