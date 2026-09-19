@@ -4338,6 +4338,18 @@ try {
             }
 
             tg_pending_write([]);
+
+            // Цель Telegram-интеграции прекращена: старый бот-инбокс больше
+            // не нужен для работы JobToo и содержит Telegram ID/name/username/
+            // текст. Удаляем его, а не держим персональные данные «на всякий
+            // случай» после закрытия канала.
+            $botRows = [];
+            try { $botRows = sb_select_all('jm_bot_messages', [], 'id'); } catch (Throwable $e) {}
+            $botDeleted = count($botRows);
+            if ($botDeleted > 0) {
+                try { sb_delete('jm_bot_messages', ['id' => 'not.is.null']); } catch (Throwable $e) {}
+            }
+
             $data = [
                 'retired' => true,
                 'targets' => count($rows),
@@ -4345,6 +4357,7 @@ try {
                 'telegram_failed' => $failed,
                 'bell_written' => $bell,
                 'unlinked' => $unlinked,
+                'bot_messages_deleted' => $botDeleted,
             ];
             break;
         }
