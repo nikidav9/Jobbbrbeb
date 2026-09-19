@@ -151,7 +151,13 @@ export default function ConsentGate() {
 
   if (checkFailed) {
     return (
-      <View style={[styles.overlay, { paddingTop: insets.top + rs(24) }]}>
+      <View style={[
+      styles.overlay,
+      {
+        paddingTop: insets.top + rs(12),
+        paddingBottom: Math.max(insets.bottom, rs(12)),
+      },
+    ]}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             <Ionicons name="cloud-offline-outline" size={rf(26)} color={Colors.primary} />
@@ -180,141 +186,164 @@ export default function ConsentGate() {
   const дата = formatLegalDate(LEGAL_DOCS.terms.version);
 
   return (
-    <View style={[styles.overlay, { paddingTop: insets.top + rs(24) }]}>
+    <View style={[
+      styles.overlay,
+      {
+        paddingTop: insets.top + rs(12),
+        paddingBottom: Math.max(insets.bottom, rs(12)),
+      },
+    ]}>
       <View style={styles.card}>
-        <View style={styles.iconWrap}>
-          <Ionicons name="document-text-outline" size={rf(26)} color={Colors.primary} />
-        </View>
+        <ScrollView
+          style={styles.contentScroll}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.iconWrap}>
+            <Ionicons name="document-text-outline" size={rf(26)} color={Colors.primary} />
+          </View>
 
-        <Text style={styles.title}>Примите документы</Text>
-        <Text style={styles.lead}>
-          Документы JobToo обновились. Общее согласие на обработку ПДн и решение
-          о трансграничной передаче теперь фиксируются отдельно.
-        </Text>
+          <Text style={styles.title}>Примите документы</Text>
+          <Text style={styles.lead}>
+            Документы JobToo обновились. Общее согласие на обработку ПДн и решение
+            о трансграничной передаче теперь фиксируются отдельно.
+          </Text>
 
-        <ScrollView style={styles.docs} contentContainerStyle={{ paddingVertical: rs(4) }}>
-          {LEGAL_KEYS.map(key => {
-            const раскрыт = open === key;
-            return (
-              <View key={key} style={styles.docWrap}>
-                <TouchableOpacity
-                  style={styles.doc}
-                  activeOpacity={0.7}
-                  onPress={() => setOpen(раскрыт ? null : key)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.docTitle}>{LEGAL_DOCS[key].title}</Text>
-                    <Text style={styles.docVersion}>
-                      Редакция от {formatLegalDate(LEGAL_DOCS[key].version)}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={раскрыт ? 'chevron-up' : 'chevron-down'}
-                    size={rf(18)}
-                    color={Colors.textMuted}
-                  />
-                </TouchableOpacity>
+          <View style={styles.docs}>
+            {LEGAL_KEYS.map(key => {
+              const раскрыт = open === key;
+              return (
+                <View key={key} style={styles.docWrap}>
+                  <TouchableOpacity
+                    style={styles.doc}
+                    activeOpacity={0.7}
+                    onPress={() => setOpen(раскрыт ? null : key)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.docTitle}>{LEGAL_DOCS[key].title}</Text>
+                      <Text style={styles.docVersion}>
+                        Редакция от {formatLegalDate(LEGAL_DOCS[key].version)}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={раскрыт ? 'chevron-up' : 'chevron-down'}
+                      size={rf(18)}
+                      color={Colors.textMuted}
+                    />
+                  </TouchableOpacity>
 
-                {раскрыт ? (
-                  <View style={styles.docBody}>
-                    {LEGAL_DOCS[key].sections.map((sec, i) => (
-                      <View key={i} style={i > 0 ? { marginTop: rs(12) } : undefined}>
-                        {sec.heading ? (
-                          <Text style={styles.secHeading}>{sec.heading}</Text>
-                        ) : null}
-                        <Text style={styles.secBody}>{sec.body}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
+                  {раскрыт ? (
+                    <View style={styles.docBody}>
+                      {LEGAL_DOCS[key].sections.map((sec, i) => (
+                        <View key={i} style={i > 0 ? { marginTop: rs(12) } : undefined}>
+                          {sec.heading ? (
+                            <Text style={styles.secHeading}>{sec.heading}</Text>
+                          ) : null}
+                          <Text style={styles.secBody}>{sec.body}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={styles.consentRow}
+            activeOpacity={0.8}
+            onPress={() => setTermsAccepted(v => !v)}
+          >
+            <View style={[styles.checkbox, termsAccepted && styles.checkboxActive]}>
+              {termsAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+            </View>
+            <Text style={styles.consentText}>
+              Я принимаю Пользовательское соглашение и подтверждаю, что ознакомлен(а) с Политикой.
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.consentRow}
+            activeOpacity={0.8}
+            onPress={() => setCoreAccepted(v => !v)}
+          >
+            <View style={[styles.checkbox, coreAccepted && styles.checkboxActive]}>
+              {coreAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+            </View>
+            <Text style={styles.consentText}>
+              Отдельно даю Согласие на обработку персональных данных. Это самостоятельное действие, не являющееся частью принятия Пользовательского соглашения.
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.consentRow}
+            activeOpacity={0.8}
+            onPress={() => setCrossBorderAccepted(v => !v)}
+          >
+            <View style={[styles.checkbox, crossBorderAccepted && styles.checkboxActive]}>
+              {crossBorderAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.consentText}>
+                Добровольно соглашаюсь на трансграничную передачу ПДн для push/web-push
+                и подключаемого Telegram. Можно не соглашаться.
+              </Text>
+              <TouchableOpacity
+                style={styles.crossLinkButton}
+                activeOpacity={0.7}
+                onPress={() => setOpen(open === 'crossBorderConsent' ? null : 'crossBorderConsent')}
+              >
+                <Text style={styles.link}>
+                  {open === 'crossBorderConsent' ? 'Скрыть текст согласия' : 'Прочитать отдельное согласие'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+
+          {open === 'crossBorderConsent' ? (
+            <View style={styles.crossDocBody}>
+              <Text style={styles.docTitle}>{LEGAL_DOCS.crossBorderConsent.title}</Text>
+              <Text style={styles.docVersion}>
+                Редакция от {formatLegalDate(LEGAL_DOCS.crossBorderConsent.version)}
+              </Text>
+              {LEGAL_DOCS.crossBorderConsent.sections.map((sec, i) => (
+                <View key={i} style={i > 0 ? { marginTop: rs(12) } : undefined}>
+                  {sec.heading ? <Text style={styles.secHeading}>{sec.heading}</Text> : null}
+                  <Text style={styles.secBody}>{sec.body}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <Text style={styles.note}>
+            Основные документы — редакция от {дата}. Трансграничное согласие является отдельным и добровольным.
+          </Text>
         </ScrollView>
 
-        <TouchableOpacity
-          style={styles.consentRow}
-          activeOpacity={0.8}
-          onPress={() => setTermsAccepted(v => !v)}
-        >
-          <View style={[styles.checkbox, termsAccepted && styles.checkboxActive]}>
-            {termsAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-          </View>
-          <Text style={styles.consentText}>
-            Я принимаю Пользовательское соглашение и подтверждаю, что ознакомлен(а) с Политикой.
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.accept, (busy || !termsAccepted || !coreAccepted) && styles.acceptBusy]}
+            activeOpacity={0.85}
+            onPress={accept}
+            disabled={busy || !termsAccepted || !coreAccepted}
+          >
+            {busy
+              ? <ActivityIndicator color="#FFFFFF" />
+              : <Text style={styles.acceptText}>Принять</Text>}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.consentRow}
-          activeOpacity={0.8}
-          onPress={() => setCoreAccepted(v => !v)}
-        >
-          <View style={[styles.checkbox, coreAccepted && styles.checkboxActive]}>
-            {coreAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-          </View>
-          <Text style={styles.consentText}>
-            Отдельно даю Согласие на обработку персональных данных. Это самостоятельное действие, не являющееся частью принятия Пользовательского соглашения.
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.consentRow}
-          activeOpacity={0.8}
-          onPress={() => setCrossBorderAccepted(v => !v)}
-        >
-          <View style={[styles.checkbox, crossBorderAccepted && styles.checkboxActive]}>
-            {crossBorderAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-          </View>
-          <Text style={styles.consentText}>
-            Добровольно соглашаюсь на{' '}
-            <Text style={styles.link} onPress={() => setOpen(open === 'crossBorderConsent' ? null : 'crossBorderConsent')}>
-              трансграничную передачу ПДн
-            </Text>
-            {' '}для push/web-push и подключаемого Telegram. Можно не соглашаться.
-          </Text>
-        </TouchableOpacity>
-
-        {open === 'crossBorderConsent' ? (
-          <View style={styles.crossDocBody}>
-            <Text style={styles.docTitle}>{LEGAL_DOCS.crossBorderConsent.title}</Text>
-            <Text style={styles.docVersion}>
-              Редакция от {formatLegalDate(LEGAL_DOCS.crossBorderConsent.version)}
-            </Text>
-            {LEGAL_DOCS.crossBorderConsent.sections.map((sec, i) => (
-              <View key={i} style={i > 0 ? { marginTop: rs(12) } : undefined}>
-                {sec.heading ? <Text style={styles.secHeading}>{sec.heading}</Text> : null}
-                <Text style={styles.secBody}>{sec.body}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.accept, (busy || !termsAccepted || !coreAccepted) && styles.acceptBusy]}
-          activeOpacity={0.85}
-          onPress={accept}
-          disabled={busy || !termsAccepted || !coreAccepted}
-        >
-          {busy
-            ? <ActivityIndicator color="#FFFFFF" />
-            : <Text style={styles.acceptText}>Принять</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.leave}
-          activeOpacity={0.7}
-          onPress={() => app?.logout()}
-          disabled={busy}
-        >
-          <Text style={styles.leaveText}>Выйти</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.note}>
-          Основные документы — редакция от {дата}. Трансграничное согласие является отдельным и добровольным.
-        </Text>
+          <TouchableOpacity
+            style={styles.leave}
+            activeOpacity={0.7}
+            onPress={() => app?.logout()}
+            disabled={busy}
+          >
+            <Text style={styles.leaveText}>Выйти</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -334,10 +363,27 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: rs(420),
-    maxHeight: '86%',
+    maxHeight: '100%',
     backgroundColor: Colors.card,
     borderRadius: rs(Radius.xl),
-    padding: rs(22),
+    overflow: 'hidden',
+  },
+  contentScroll: {
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  contentContainer: {
+    paddingHorizontal: rs(22),
+    paddingTop: rs(22),
+    paddingBottom: rs(14),
+  },
+  footer: {
+    flexShrink: 0,
+    paddingHorizontal: rs(22),
+    paddingBottom: rs(14),
+    backgroundColor: Colors.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.divider,
   },
   iconWrap: {
     width: rs(52), height: rs(52), borderRadius: rs(26),
@@ -352,9 +398,7 @@ const styles = StyleSheet.create({
     lineHeight: rf(21),
     color: Colors.textSecondary,
   },
-  // Занимает оставшуюся высоту, но ужимается, когда документ раскрыт:
-  // иначе развёрнутый текст выдавливает кнопки за край карточки.
-  docs: { marginTop: rs(16), flexShrink: 1 },
+  docs: { marginTop: rs(16) },
   docWrap: { marginBottom: rs(8) },
   doc: {
     flexDirection: 'row',
@@ -389,9 +433,14 @@ const styles = StyleSheet.create({
   checkmark: { color: '#fff', fontWeight: '800', fontSize: rf(13) },
   consentText: { flex: 1, fontSize: rf(13), lineHeight: rf(18), color: Colors.textSecondary },
   link: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  crossLinkButton: {
+    alignSelf: 'flex-start',
+    paddingTop: rs(6),
+    paddingBottom: rs(2),
+  },
   crossDocBody: {
-    maxHeight: rs(220), padding: rs(12), borderRadius: rs(10),
-    backgroundColor: Colors.surface, marginBottom: rs(6),
+    padding: rs(12), borderRadius: rs(10),
+    backgroundColor: Colors.surface, marginTop: rs(4), marginBottom: rs(6),
   },
   error: {
     marginTop: rs(10),
@@ -399,7 +448,7 @@ const styles = StyleSheet.create({
     color: Colors.red,
   },
   accept: {
-    marginTop: rs(16),
+    marginTop: rs(12),
     height: rs(52),
     borderRadius: rs(14),
     backgroundColor: Colors.primary,
@@ -416,7 +465,8 @@ const styles = StyleSheet.create({
   },
   leaveText: { fontSize: rf(15), fontWeight: '600', color: Colors.textSecondary },
   note: {
-    marginTop: rs(4),
+    marginTop: rs(12),
+    marginBottom: rs(4),
     fontSize: rf(12),
     lineHeight: rf(17),
     color: Colors.textMuted,
