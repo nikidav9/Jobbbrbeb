@@ -40,6 +40,7 @@ export default function RegisterEmployer() {
   const [bio, setBio] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
+  const [pdAgreed, setPdAgreed] = useState(false);
   const [crossBorderAgreed, setCrossBorderAgreed] = useState(false);
   const [checking, setChecking] = useState(false);
   const [phoneError, setPhoneError] = useState('');
@@ -250,23 +251,34 @@ export default function RegisterEmployer() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.checkLabel}>
-                    Ставя галочку, я подтверждаю, что ознакомлен(а) и согласен(на) с{' '}
+                    Я принимаю{' '}
                     <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}>
-                      Пользовательским соглашением
+                      Пользовательское соглашение
                     </Text>
-                    {', '}
+                    {' '}и подтверждаю, что ознакомлен(а) с{' '}
                     <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
                       Политикой конфиденциальности
                     </Text>
-                    {', '}
+                    {' и '}
                     <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}>
                       Политикой обработки персональных данных
                     </Text>
-                    {' и '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
-                      Согласием на обработку персональных данных
-                    </Text>
                     .
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.checkRow} onPress={() => setPdAgreed(v => !v)} activeOpacity={0.8}>
+                <View style={[styles.checkbox, pdAgreed && styles.checkboxActive]}>
+                  {pdAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.checkLabel}>
+                    Отдельно даю{' '}
+                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
+                      Согласие на обработку персональных данных
+                    </Text>
+                    . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -294,7 +306,7 @@ export default function RegisterEmployer() {
               </TouchableOpacity>
 
               <View style={{ marginTop: 16 }}>
-                <PrimaryButton label="Продолжить →" onPress={next} disabled={!agreed} />
+                <PrimaryButton label="Продолжить →" onPress={next} disabled={!agreed || !pdAgreed} />
               </View>
             </View>
           )}
