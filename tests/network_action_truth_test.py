@@ -82,7 +82,7 @@ checks = {
     'refresh постоянной ленты завершается в finally': "showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in feed,
     'статус согласий не проглатывает сетевую ошибку': 'setConsentLoadFailed(true);' in profile and 'Не удалось проверить статус согласий' in profile,
     'статус согласий можно проверить повторно': 'setConsentRetry(value => value + 1)' in profile and 'consentRetry]);' in profile,
-    'успешная загрузка согласий снимает ошибку': 'setConsent(c);' in profile and 'setConsentLoadFailed(false);' in profile,
+    'успешная загрузка согласий снимает ошибку': ('setConsent(core);' in profile or 'setConsent(c);' in profile) and 'setConsentLoadFailed(false);' in profile,
     'план фиксирует завершение сетевой ревизии': '~~Системная ревизия ошибок сети, пустых состояний и малых экранов~~' in plan and '**сделано 15.09.**' in plan,
     'план фиксирует нагрузочный прогон': '~~Нагрузочный прогон крупного фида и очереди callback перед пилотом~~' in plan,
 }
