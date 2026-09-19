@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent } from '@/services/db';
+import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent, dbGetIosPushTransport } from '@/services/db';
 
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
@@ -96,16 +96,23 @@ function getExpoProjectId(): string | undefined {
 }
 
 /**
- * iOS talks to APNs directly: obtain Apple's native device token and never ask
- * Expo Push Service for an iOS token. Android stays on Expo/FCM for now.
+ * iOS switches to Apple's native device token as soon as our backend confirms
+ * that direct APNs credentials are installed. Android stays on Expo/FCM.
  */
 async function getStoredPushToken(): Promise<string | null> {
   if (Platform.OS === 'ios') {
-    const native = await Notifications.getDevicePushTokenAsync();
-    const token = String(native.data ?? '').trim();
-    return token ? `apns:${token}` : null;
+    // Cut over only when our own backend confirms that APNs credentials are
+    // installed. Until then the currently working Expo route stays intact.
+    const transport = await dbGetIosPushTransport().catch(() => 'expo' as const);
+    if (transport === 'apns') {
+      const native = await Notifications.getDevicePushTokenAsync();
+      const token = String(native.data ?? '').trim();
+      return token ? `apns:${token}` : null;
+    }
   }
 
+  // Android remains Expo/FCM for now. On iOS this is only the pre-cutover
+  // fallback while the server has no APNs provider credentials.
   const projectId = getExpoProjectId();
   if (!projectId) {
     console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
