@@ -4,11 +4,11 @@ import { supabase } from '@/lib/supabase'
 import PageHeader from '@/components/PageHeader'
 import KpiCard from '@/components/KpiCard'
 import { downloadCSV } from '@/lib/csv-export'
-import { sendTelegramToUsers, sendBothToUser } from '@/lib/admin-actions'
+import { sendBothToUser } from '@/lib/admin-actions'
 import FilterChips from '@/components/FilterChips'
 import Button from '@/components/Button'
 import Chip from '@/components/Chip'
-import { IconPhone, IconSend } from '@/components/icons'
+import { IconPhone } from '@/components/icons'
 
 /**
  * Кто зарегистрировался и не вернулся.
@@ -19,11 +19,9 @@ import { IconPhone, IconSend } from '@/components/icons'
  * получили от нас ни одной причины вернуться.
  *
  * Страница существует ради одного числа, которого нигде больше нет: скольким
- * из них мы физически можем что-то сказать. Телеграм-бот не пишет первым —
- * это правило Телеграма, и обойти его нечем. У кого нет ни привязанного
- * телеграма, ни установленного приложения, до того не доходит ничто, кроме
- * звонка. Планировать рассылку, не разделив эти три группы, значит выдумать
- * себе охват, которого нет.
+ * из них мы физически можем что-то сказать через push/web-push. Если такого
+ * канала нет, остаётся телефон. Планировать рассылку, не разделив эти группы,
+ * значит выдумать себе охват, которого нет.
  */
 
 type Row = {
@@ -35,14 +33,12 @@ type Row = {
   company: string | null
   metro_station: string | null
   created_at: string
-  telegram_id: number | null
   push_token: string | null
 }
 
-type Reach = 'telegram' | 'push' | 'phone'
+type Reach = 'push' | 'phone'
 
 const REACH_LABEL: Record<Reach, string> = {
-  telegram: 'Телеграм',
   push: 'Пуш на устройство',
   phone: 'Только телефон',
 }
@@ -54,7 +50,6 @@ const REACH_LABEL: Record<Reach, string> = {
  *  люди попадали в «только телефон» — охват на этой странице выходил меньше,
  *  чем на «Сводке», где те же три канала считались правильно. */
 function reachOf(r: Row, webPush: Set<string>): Reach {
-  if (r.telegram_id) return 'telegram'
   if (r.push_token || webPush.has(r.id)) return 'push'
   return 'phone'
 }
@@ -174,7 +169,7 @@ export default function DormantPage() {
     const [{ data }, { data: subs }] = await Promise.all([
       supabase
         .from('jm_users')
-        .select('id,role,first_name,last_name,phone,company,metro_station,created_at,telegram_id,push_token')
+        .select('id,role,first_name,last_name,phone,company,metro_station,created_at,push_token')
         .is('last_seen_at', null)
         .order('created_at', { ascending: false }),
       supabase.from('jm_web_push_subscriptions').select('user_id'),
@@ -193,7 +188,7 @@ export default function DormantPage() {
   )
 
   const groups = useMemo(() => {
-    const g: Record<Reach, Row[]> = { telegram: [], push: [], phone: [] }
+    const g: Record<Reach, Row[]> = { push: [], phone: [] }
     for (const r of filtered) g[reachOf(r, webPush)].push(r)
     return g
   }, [filtered, webPush])
@@ -214,25 +209,6 @@ export default function DormantPage() {
     employer: rows.filter(r => r.role === 'employer').length,
   }), [rows])
 
-  async function sendTelegram() {
-    const ids = groups.telegram.map(r => r.id)
-    if (!ids.length || !text.trim()) return
-    if (!confirm(`Отправить ${ids.length} чел. в телеграм? Отозвать будет нельзя.`)) return
-    setBusy(true); setResult(null)
-    try {
-      // Порциями по сотне: столько принимает маршрут, и столько же не жалко
-      // в случае промаха в тексте.
-      let sent = 0, skipped = 0
-      for (let i = 0; i < ids.length; i += 100) {
-        const r = await sendTelegramToUsers(ids.slice(i, i + 100), text)
-        sent += r.sent; skipped += r.skipped.length
-      }
-      setResult(`Телеграм: доставлено ${sent}, не дошло ${skipped}`)
-    } catch (e: any) {
-      setResult(`Ошибка: ${e.message}`)
-    } finally { setBusy(false) }
-  }
-
   async function sendPush() {
     const list = groups.push
     if (!list.length || !text.trim()) return
@@ -251,17 +227,7 @@ export default function DormantPage() {
     setBusy(false)
   }
 
-  // Текст в буфер — потому что подставить его в ссылку нельзя.
-  //
-  // t.me/+<номер> открывает переписку с этим человеком, если он есть в
-  // телеграме, но предзаполнить сообщение телеграм не даёт. Значит порядок
-  // такой: нажали «Текст», нажали «Телеграм», вставили. Два движения вместо
-  // одного, зато работает и с теми, кто бота не подключал, — а таких как раз
-  // большинство среди не заходивших.
-  //
-  // Пишется при этом с вашего личного аккаунта, а не от бота. Для десятка
-  // человек это нормально, для трёхсот — нет: телеграм считает такое
-  // рассылкой и ограничивает отправку незнакомым.
+  // Готовый текст можно скопировать для звонка или другого разрешённого канала.
   async function copyFor(r: Row) {
     // «Текст» должен работать сразу после открытия страницы. Если оператор
     // ещё не выбрал шаблон, используем нейтральный вопрос — раньше кнопка
@@ -311,8 +277,6 @@ export default function DormantPage() {
         <div className="g-4">
           <KpiCard label="Всего" value={filtered.length}
                    sub={medianAge ? `медиана ${medianAge} дн. с регистрации` : 'с момента регистрации'} />
-          <KpiCard label="Достижимы телеграмом" value={groups.telegram.length}
-                   sub={`${pctOf(groups.telegram.length, filtered.length)} · бот может написать`} />
           <KpiCard label="Достижимы пушем" value={groups.push.length}
                    sub={`${pctOf(groups.push.length, filtered.length)} · приложение или веб-пуш`} />
           <KpiCard label="Только телефон" value={groups.phone.length}
@@ -456,9 +420,6 @@ export default function DormantPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {/* Рассылка на три сотни человек не отзывается — поэтому вид
                 «опасное», а не «главное действие». */}
-            <Button variant="danger" disabled={!canSend || !groups.telegram.length} onClick={sendTelegram}>
-              Отправить в телеграм ({groups.telegram.length})
-            </Button>
             <Button variant="danger" disabled={!canSend || !groups.push.length} onClick={sendPush}>
               Отправить пушем ({groups.push.length})
             </Button>
@@ -499,7 +460,7 @@ export default function DormantPage() {
                       <td style={{ color: 'var(--ink-2)' }}>{r.metro_station ?? '—'}</td>
                       <td className="num" style={{ color: 'var(--ink-3)' }}>{new Date(r.created_at).toLocaleDateString('ru-RU')}</td>
                       <td>
-                        <Chip tone={reach === 'telegram' ? 'positive' : reach === 'push' ? 'info' : 'neutral'}>
+                        <Chip tone={reach === 'push' ? 'info' : 'neutral'}>
                           {REACH_LABEL[reach]}
                         </Chip>
                       </td>
@@ -508,10 +469,6 @@ export default function DormantPage() {
                           <a className="jt-icon-btn" style={{ width: 'auto', padding: '0 9px', textDecoration: 'none' }}
                              href={`tel:+${digits}`}>
                             <IconPhone size={12} />Позвонить
-                          </a>
-                          <a className="jt-icon-btn" style={{ width: 'auto', padding: '0 9px', textDecoration: 'none' }}
-                             href={`https://t.me/+${digits}`} target="_blank" rel="noreferrer">
-                            <IconSend size={12} />Телеграм
                           </a>
                           <button onClick={() => copyFor(r)}
                             className="jt-icon-btn" style={{ width: 'auto', padding: '0 9px' }}
