@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
   TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
@@ -1013,10 +1013,11 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
   return (
     <View style={fh.row}>
       <View style={fh.logoWrap} accessibilityLabel="JobToo">
-        <Text style={fh.logo}>
-          <Text style={fh.logoJ}>J</Text>
-          <Text style={fh.logoT}>T</Text>
-        </Text>
+        <Image
+          source={require('@/assets/images/logo.png')}
+          style={fh.logoImage}
+          resizeMode="contain"
+        />
       </View>
 
       <View style={fh.search}>
@@ -1077,14 +1078,15 @@ const fh = StyleSheet.create({
     backgroundColor: Colors.bgWarm,
   },
   logoWrap: {
-    width: rs(46), height: rs(46), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center',
+    width: rs(50), height: rs(46), flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center', overflow: 'visible',
   },
-  logo: {
-    fontSize: rf(31), lineHeight: rf(34), letterSpacing: -1,
+  // Оригинальный прозрачный бренд-ассет из проекта: соединённые буквы
+  // и фирменный градиент. Увеличиваем сам знак, а не рисуем JT шрифтом.
+  logoImage: {
+    width: rs(50), height: rs(46),
+    transform: [{ scale: 1.12 }],
   },
-  logoJ: { fontWeight: '900', color: Colors.primary },
-  logoT: { fontWeight: '900', color: Colors.textPrimary },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
