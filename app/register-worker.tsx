@@ -50,6 +50,7 @@ export default function RegisterWorker() {
   const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [crossBorderAgreed, setCrossBorderAgreed] = useState(false);
 
   // Warm up the Supabase connection so the first phone-check doesn't hang
   useEffect(() => { dbWarmup(); }, []);
@@ -130,7 +131,7 @@ export default function RegisterWorker() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user);
+      await registerUser(user, crossBorderAgreed);
       showToast('Добро пожаловать! 👋', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
@@ -269,6 +270,28 @@ export default function RegisterWorker() {
                       Согласием на обработку персональных данных
                     </Text>
                     .
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.checkRow}
+                onPress={() => setCrossBorderAgreed(v => !v)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkbox, crossBorderAgreed && styles.checkboxActive]}>
+                  {crossBorderAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.checkLabel}>
+                    Отдельно и добровольно соглашаюсь на{' '}
+                    <Text
+                      style={styles.link}
+                      onPress={() => router.push({ pathname: '/legal', params: { doc: 'crossBorderConsent' } })}
+                    >
+                      трансграничную передачу персональных данных
+                    </Text>
+                    {' '}для push/web-push уведомлений и подключаемого Telegram. Отказ не мешает регистрации.
                   </Text>
                 </View>
               </TouchableOpacity>
