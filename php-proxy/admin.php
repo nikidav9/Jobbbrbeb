@@ -280,11 +280,11 @@ if (preg_match('#^/functions/v1/push-notify(\?|$)#', $path)) {
         foreach ($tokens as $stored) {
             $parts = jt_push_token_parts($stored);
             if ($parts['apns'] !== '' && jt_apns_ready()) {
+                // Configured iOS delivery is APNs-only. Do not send the same
+                // broadcast through Expo if APNs rejects this token/request.
                 $result = jt_apns_push_generic('apns:' . $parts['apns'], 'broadcast');
-                if (!empty($result['ok'])) {
-                    $pushCount++;
-                    continue;
-                }
+                if (!empty($result['ok'])) $pushCount++;
+                continue;
             }
             if ($parts['expo'] !== '') $expoTokens[] = $parts['expo'];
         }
