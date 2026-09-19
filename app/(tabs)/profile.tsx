@@ -29,7 +29,6 @@ import { WorkType } from '@/constants/types';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
-import { TelegramConnectButton } from '@/components/TelegramConnectButton';
 import { NOTIFICATION_CHOICE_KEY } from '@/components/NotificationPermissionSheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -503,7 +502,6 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <TabHeader right={
         <View style={styles.headerActions}>
-          <TelegramConnectButton size={22} pad={4} />
           <TouchableOpacity onPress={() => setShowNotifications(true)} style={styles.headerBtn}>
             <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
             {unreadCount > 0 && (
@@ -704,7 +702,7 @@ export default function ProfileScreen() {
               disabled={revokingCrossBorder}
               onPress={() => Alert.alert(
                 'Отозвать согласие?',
-                'JobToo прекратит дальнейшую передачу через Expo/Web Push/Telegram и отвяжет сохранённые иностранные каналы. Внутренние функции приложения останутся доступны.',
+                'JobToo прекратит дальнейшую передачу через push/web-push. Внутренние функции приложения останутся доступны.',
                 [
                   { text: 'Отмена', style: 'cancel' },
                   {
@@ -735,7 +733,7 @@ export default function ProfileScreen() {
                   Отозвать согласие на трансграничную передачу
                 </Text>
                 <Text style={sS.docVersion}>
-                  Push/Web Push/Telegram будут отключены; JobToo продолжит работать
+                  Push/Web Push будут отключены; JobToo продолжит работать
                 </Text>
               </View>
               {revokingCrossBorder ? <ActivityIndicator size="small" color={Colors.red} /> : null}
