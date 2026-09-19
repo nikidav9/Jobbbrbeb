@@ -1,52 +1,62 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, type ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 
-// Ссылки на все юридические документы. Экран /legal авторизации не требует,
-// поэтому этот блок можно показывать до регистрации — на стартовом экране и
-// экране входа, чтобы документы были доступны любому, а не только после входа.
-const DOCS: { key: 'terms' | 'privacy' | 'dataPolicy' | 'consent'; label: string }[] = [
-  { key: 'terms', label: 'Пользовательское соглашение' },
-  { key: 'privacy', label: 'Политика конфиденциальности' },
-  { key: 'dataPolicy', label: 'Политика обработки персональных данных' },
-  { key: 'consent', label: 'Согласие на обработку данных' },
-];
-
+/**
+ * Единая точка входа во все юридические документы.
+ *
+ * Раньше стартовый экран показывал четыре длинные текстовые ссылки и при этом
+ * не показывал отдельное согласие на трансграничную передачу. Теперь здесь
+ * одна заметная кнопка, а полный актуальный набор документов живёт на /legal.
+ */
 export function LegalLinks({ style }: { style?: ViewStyle }) {
   const router = useRouter();
+
   return (
     <View style={[styles.wrap, style]}>
-      <Text style={styles.caption}>Документы</Text>
-      <View style={styles.links}>
-        {DOCS.map((d, i) => (
-          <React.Fragment key={d.key}>
-            {i > 0 ? <Text style={styles.dot}>·</Text> : null}
-            <TouchableOpacity
-              onPress={() => router.push({ pathname: '/legal', params: { doc: d.key } })}
-              activeOpacity={0.7}
-              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            >
-              <Text style={styles.link}>{d.label}</Text>
-            </TouchableOpacity>
-          </React.Fragment>
-        ))}
-      </View>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => router.push('/legal')}
+        activeOpacity={0.78}
+      >
+        <View style={styles.icon}>
+          <Ionicons name="documents-outline" size={rf(18)} color={Colors.primary} />
+        </View>
+        <Text style={styles.label}>Все документы</Text>
+        <Ionicons name="chevron-forward" size={rf(17)} color={Colors.textMuted} />
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', gap: rs(4) },
-  caption: {
-    fontSize: rf(10.5), color: Colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.5,
+  wrap: { width: '100%' },
+  button: {
+    minHeight: rs(48),
+    paddingHorizontal: rs(16),
+    borderRadius: rs(14),
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(10),
   },
-  links: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    justifyContent: 'center', alignItems: 'center', gap: rs(6),
+  icon: {
+    width: rs(30),
+    height: rs(30),
+    borderRadius: rs(15),
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  link: { fontSize: rf(12), color: Colors.textSecondary, textDecorationLine: 'underline' },
-  dot: { fontSize: rf(12), color: Colors.textMuted },
+  label: {
+    flex: 1,
+    fontSize: rf(14),
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
 });
