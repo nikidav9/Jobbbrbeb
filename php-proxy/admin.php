@@ -55,6 +55,7 @@ function sb_resolve_key(): string {
 }
 
 define('SB_KEY', sb_resolve_key());
+require_once __DIR__ . '/push.php';
 
 // ── Учётные данные админа ────────────────────────────────────────────────
 // Из переменных окружения либо из файла admin_credentials.php рядом
@@ -274,7 +275,18 @@ if (preg_match('#^/functions/v1/push-notify(\?|$)#', $path)) {
 
     $pushCount = 0;
     if ($tokens && $mode !== 'inapp') {
-        foreach (array_chunk($tokens, 100) as $chunk) {
+        $expoTokens = [];
+        foreach ($tokens as $token) {
+            if (str_starts_with($token, 'apns:')) {
+                $result = jt_apns_push_one(substr($token, 5), 'broadcast');
+                if (!empty($result['ok'])) $pushCount++;
+                continue;
+            }
+            $expoTokens[] = $token;
+        }
+
+        // Android tokens keep using Expo Push for now.
+        foreach (array_chunk($expoTokens, 100) as $chunk) {
             $msgs = array_map(fn($to) => [
                 'to' => $to, 'title' => $title, 'body' => $body,
                 'sound' => 'default', 'channelId' => 'default', 'priority' => 'high',
