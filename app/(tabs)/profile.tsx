@@ -15,7 +15,7 @@ import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString } from '@/services/storage';
-import { dbGetRatingsForUser, dbChangePassword, dbDeleteAccount, dbGetConsent, UserRating } from '@/services/db';
+import { dbGetRatingsForUser, dbChangePassword, dbDeleteAccount, dbGetConsent, dbGetCrossBorderConsent, UserRating, type CrossBorderConsentRecord } from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -271,6 +271,7 @@ export default function ProfileScreen() {
   const [consent, setConsent] = useState<{
     stamp: string; docs: Record<string, string>; accepted_at: string;
   } | null>(null);
+  const [crossBorderConsent, setCrossBorderConsent] = useState<CrossBorderConsentRecord | null>(null);
   const [consentLoadFailed, setConsentLoadFailed] = useState(false);
   const [consentRetry, setConsentRetry] = useState(0);
 
@@ -278,11 +279,16 @@ export default function ProfileScreen() {
     if (!currentUser) return;
     let alive = true;
     setConsent(null);
+    setCrossBorderConsent(null);
     setConsentLoadFailed(false);
-    dbGetConsent(currentUser.id)
-      .then(c => {
+    Promise.all([
+      dbGetConsent(currentUser.id),
+      dbGetCrossBorderConsent(currentUser.id),
+    ])
+      .then(([core, cross]) => {
         if (!alive) return;
-        setConsent(c);
+        setConsent(core);
+        setCrossBorderConsent(cross);
         setConsentLoadFailed(false);
       })
       .catch(() => { if (alive) setConsentLoadFailed(true); });
@@ -678,7 +684,12 @@ export default function ProfileScreen() {
                     ту ли версию он принимал, а не верить на слово. */}
                 <Text style={sS.docVersion}>
                   Редакция от {formatLegalDate(LEGAL_DOCS[item.doc].version)}
-                  {consent?.docs?.[item.doc] === LEGAL_DOCS[item.doc].version ? ' · принята' : ''}
+                  {item.doc === 'crossBorderConsent'
+                    ? (crossBorderConsent?.accepted === true &&
+                       crossBorderConsent.version === LEGAL_DOCS.crossBorderConsent.version
+                        ? ' · принята'
+                        : '')
+                    : (consent?.docs?.[item.doc] === LEGAL_DOCS[item.doc].version ? ' · принята' : '')}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
