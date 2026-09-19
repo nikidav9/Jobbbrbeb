@@ -99,6 +99,37 @@ check('отправка идёт через дашборд', str_contains($wp, "
 check('запрос подписан секретом приложения',
     str_contains($wp, "'x-app-secret: ' . \$appSecret"));
 
+// ── iOS идёт напрямую в APNs, без Expo Push ─────────────────────────────────
+$nativePush = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
+$apns = (string)file_get_contents(__DIR__ . '/../php-proxy/push.php');
+$admin = (string)file_get_contents(__DIR__ . '/../php-proxy/admin.php');
+$tg = (string)file_get_contents(__DIR__ . '/../php-proxy/tg.php');
+
+check('iOS получает native APNs token',
+    str_contains($nativePush, 'Notifications.getDevicePushTokenAsync()')
+    && str_contains($nativePush, 'token = `apns:${native.data}`'));
+check('iOS не просит Expo token в своей ветке',
+    str_contains($nativePush, "if (Platform.OS === 'ios')"));
+check('сервер распознаёт APNs-префикс',
+    str_contains($db, "str_starts_with(\$to, 'apns:')")
+    && str_contains($db, 'jt_apns_push_one($native, $type)'));
+check('админская рассылка распознаёт APNs-префикс',
+    str_contains($admin, "str_starts_with(\$token, 'apns:')")
+    && str_contains($admin, "jt_apns_push_one(substr(\$token, 5), 'broadcast')"));
+check('webhook распознаёт APNs-префикс',
+    str_contains($tg, "str_starts_with(\$token, 'apns:')")
+    && str_contains($tg, "jt_apns_push_one(substr(\$token, 5), 'perm_status')"));
+check('APNs endpoint прямой',
+    str_contains($apns, 'https://api.push.apple.com/3/device/'));
+check('APNs payload нейтральный',
+    str_contains($apns, "'title' => 'JobToo'")
+    && str_contains($apns, "'body' => 'У вас новое событие'")
+    && str_contains($apns, "if (\$type !== '') \$payload['type'] = \$type;"));
+check('APNs использует HTTP/2',
+    str_contains($apns, 'CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2_0'));
+check('приватный APNs ключ не зашит в код',
+    !str_contains($apns, 'BEGIN PRIVATE KEY'));
+
 if ($failures) {
     echo "web push: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
