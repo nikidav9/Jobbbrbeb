@@ -1461,25 +1461,33 @@ function WorkerPermMode() {
                       </View>
                       <TouchableOpacity
                         accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
-                        style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}
-                        hitSlop={{ top: rs(8), bottom: rs(8), left: rs(8), right: rs(8) }}
-                        onPress={() => { if (swDeck.wasSwipe()) return; toggleSaved(v); }}
+                        style={pS.deckUtilityTap}
+                        onPress={() => {
+                          if (Platform.OS === 'web' && swDeck.wasSwipe()) return;
+                          void toggleSaved(v);
+                        }}
                         activeOpacity={0.75}
                       >
-                        <Ionicons
-                          name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                          size={14}
-                          color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
-                        />
+                        <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
+                          <Ionicons
+                            name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
+                            size={14}
+                            color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
+                          />
+                        </View>
                       </TouchableOpacity>
                       <TouchableOpacity
                         accessibilityLabel="Поделиться вакансией"
-                        style={pS.deckUtilityBtn}
-                        hitSlop={{ top: rs(8), bottom: rs(8), left: rs(8), right: rs(8) }}
-                        onPress={() => { if (swDeck.wasSwipe()) return; void shareVacancy(v); }}
+                        style={pS.deckUtilityTap}
+                        onPress={() => {
+                          if (Platform.OS === 'web' && swDeck.wasSwipe()) return;
+                          void shareVacancy(v);
+                        }}
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="share-outline" size={14} color={Colors.textSecondary} />
+                        <View style={pS.deckUtilityBtn}>
+                          <Ionicons name="share-outline" size={14} color={Colors.textSecondary} />
+                        </View>
                       </TouchableOpacity>
                     </View>
 
@@ -2177,10 +2185,14 @@ const pS = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(8),
     marginTop: rs(-2),
   },
+  deckUtilityTap: {
+    width: rs(44), height: rs(44),
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
   deckUtilityBtn: {
     width: rs(28), height: rs(28), borderRadius: rs(14),
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#F2F3F5', flexShrink: 0,
+    backgroundColor: '#F2F3F5',
   },
   deckUtilityBtnSaved: { backgroundColor: Colors.primaryLight },
 
@@ -2353,18 +2365,18 @@ const styles = StyleSheet.create({
   // Нижний резерв задаётся динамически рядом с карточкой: высота таббара
   // + 68pt кнопки + одинаковые поля по 13pt сверху и снизу.
   cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0 },
-  ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0, ...Shadow.card },
-  ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0, ...Shadow.card },
+  ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0 },
+  ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0 },
   // Скругление принадлежит viewport, а не прокручиваемому содержимому.
   // Поэтому верх и низ карточки остаются закруглёнными на любой позиции скролла.
-  cardViewportShell: { flex: 1, borderRadius: Radius.card, ...Shadow.strong },
+  cardViewportShell: { flex: 1, borderRadius: Radius.card },
   cardViewportClip: {
     flex: 1, borderRadius: Radius.card, overflow: 'hidden',
     borderWidth: 1, borderColor: Colors.inputBorder, backgroundColor: Colors.bg,
   },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
-  cardAnimated: { flexGrow: 1, zIndex: 1, elevation: 10 },
+  cardAnimated: { flexGrow: 1, zIndex: 1 },
   // Тело занимает карточку целиком, чтобы фон и разделители шли до краёв.
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
