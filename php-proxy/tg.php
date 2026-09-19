@@ -349,13 +349,22 @@ function tg_work_reply(int $chatId, int $threadId, string $text): array {
 }
 
 function expo_push_one(string $token, string $title, string $body): void {
+    require_once __DIR__ . '/apns.php';
+    $parts = jt_push_token_parts($token);
+
+    if ($parts['apns'] !== '' && jt_apns_ready()) {
+        $result = jt_apns_push_generic('apns:' . $parts['apns'], 'perm_status');
+        if (!empty($result['ok'])) return;
+    }
+
+    if ($parts['expo'] === '') return;
     $ch = curl_init('https://exp.host/--/api/v2/push/send');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
         CURLOPT_TIMEOUT => 10,
         CURLOPT_POSTFIELDS => json_encode([
-            'to' => $token, 'title' => $title, 'body' => $body,
+            'to' => $parts['expo'], 'title' => $title, 'body' => $body,
             'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches',
             'data' => ['type' => 'perm_status'],
         ]),
