@@ -16,7 +16,6 @@ import { notifyWorkersNewVacancy } from '@/services/notifications';
 import { PermVacancy, WorkType } from '@/constants/types';
 import { METRO_LINES } from '@/constants/metro';
 import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
-import { TelegramLinkBanner } from '@/components/TelegramLinkBanner';
 import { AutoRejectNotice } from '@/components/AutoRejectNotice';
 
 import { rs, rf } from '@/constants/scale';
@@ -119,7 +118,6 @@ export default function CreatePermVacancy() {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <TelegramLinkBanner />
           <AutoRejectNotice />
 
           {/* Badge */}
