@@ -15,8 +15,10 @@ import { registerForPushNotifications } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
 import { isTelegramMiniApp } from '@/lib/telegram';
 import { useApp } from '@/hooks/useApp';
-import { dbGetConsent, dbRecordConsent } from '@/services/db';
-import { LEGAL_DOCS, hasCrossBorderConsent, needsReconsent } from '@/constants/legal';
+import {
+  dbGetConsent, dbGetCrossBorderConsent, dbRecordCrossBorderConsent,
+} from '@/services/db';
+import { LEGAL_DOCS, needsReconsent } from '@/constants/legal';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -56,8 +58,8 @@ export default function NotificationPermissionSheet() {
       return;
     }
     let alive = true;
-    dbGetConsent(userId)
-      .then(c => { if (alive) setCrossBorderAccepted(hasCrossBorderConsent(c?.docs)); })
+    dbGetCrossBorderConsent(userId)
+      .then(c => { if (alive) setCrossBorderAccepted(c?.accepted === true); })
       .catch(() => { if (alive) setCrossBorderAccepted(false); });
     return () => { alive = false; };
   }, [userId]);
@@ -72,14 +74,13 @@ export default function NotificationPermissionSheet() {
         setErrorMsg('Сначала примите актуальные основные документы JobToo.');
         return;
       }
-      await dbRecordConsent(
+      await dbRecordCrossBorderConsent(
         userId,
-        current.stamp,
-        { ...current.docs, crossBorderConsent: LEGAL_DOCS.crossBorderConsent.version },
+        LEGAL_DOCS.crossBorderConsent.version,
         'crossborder:push',
       );
-      const saved = await dbGetConsent(userId);
-      if (!hasCrossBorderConsent(saved?.docs)) {
+      const saved = await dbGetCrossBorderConsent(userId);
+      if (saved?.accepted !== true) {
         setErrorMsg('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
         return;
       }
