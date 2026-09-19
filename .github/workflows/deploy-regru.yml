@@ -124,6 +124,11 @@ jobs:
           SUPERJOB_CLIENT_SECRET: ${{ secrets.SUPERJOB_CLIENT_SECRET }}
           HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
           HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
+          APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          APNS_BUNDLE_ID: ${{ secrets.APNS_BUNDLE_ID }}
+          APNS_PRIVATE_KEY_B64: ${{ secrets.APNS_PRIVATE_KEY_B64 }}
+          APNS_ENVIRONMENT: ${{ secrets.APNS_ENVIRONMENT }}
           DASHBOARD_LOGIN: ${{ secrets.DASHBOARD_LOGIN }}
           DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
           STUDIO_LOGIN: ${{ secrets.STUDIO_LOGIN }}
@@ -153,6 +158,11 @@ jobs:
                   "SUPERJOB_CLIENT_SECRET": e("SUPERJOB_CLIENT_SECRET", ""),
                   "HH_CLIENT_ID": e("HH_CLIENT_ID", ""),
                   "HH_CLIENT_SECRET": e("HH_CLIENT_SECRET", ""),
+                  "APNS_TEAM_ID": e("APNS_TEAM_ID", ""),
+                  "APNS_KEY_ID": e("APNS_KEY_ID", ""),
+                  "APNS_BUNDLE_ID": e("APNS_BUNDLE_ID", ""),
+                  "APNS_PRIVATE_KEY_B64": e("APNS_PRIVATE_KEY_B64", ""),
+                  "APNS_ENVIRONMENT": e("APNS_ENVIRONMENT", ""),
               },
               "admin": {
                   "login": e("DASHBOARD_LOGIN", ""),
