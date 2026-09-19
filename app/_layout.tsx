@@ -17,7 +17,9 @@ import { ToastLayer } from '@/components/ui/ToastLayer';
 import { setupAndroidChannels } from '@/services/notifications';
 import { routeForNotification } from '@/services/notificationRoute';
 import { hideWebSplash, markWebBundleMounted } from '@/lib/webSplash';
-import { getSessionUser } from '@/services/storage';
+import { getSessionUser, savePendingReferral } from '@/services/storage';
+import { dbRecordGuestEvent } from '@/services/db';
+import { waitForTelegramMiniApp, initTelegramMiniApp, getTelegramStartParam } from '@/lib/telegram';
 
 // Keep the web/native splash visible until hideAsync() is called from the tabs layout or index screen.
 // This prevents the white flash while expo-router navigates and hydrates the tabs route on web.
@@ -37,6 +39,72 @@ function WebSplashController() {
       hideWebSplash();
     }
   }, [pathname]);
+
+  return null;
+}
+
+/**
+ * Embedded Mini App shell.
+ *
+ * No Telegram identity is used here: no Telegram ID, username, first/last name
+ * or signed initData is sent to JobToo. We only initialize the embedded
+ * viewport and read the non-personal start parameter used by public vacancy
+ * links and referral links.
+ */
+function TelegramMiniAppController() {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let cancelled = false;
+
+    const init = async () => {
+      const isMiniApp = await waitForTelegramMiniApp();
+      if (!isMiniApp || cancelled) return;
+
+      initTelegramMiniApp();
+      const startParam = getTelegramStartParam();
+      if (!startParam) return;
+
+      const refLink = startParam.match(/^ref_([A-Za-z0-9]{8})$/);
+      if (refLink) {
+        void savePendingReferral(refLink[1].toUpperCase());
+        return;
+      }
+
+      const campaignLink = startParam.match(/^(?:(share)_)?(shift|perm)_(.+)_([a-f0-9]{16})$/);
+      if (campaignLink) {
+        const [, shareMarker, kind, vacancyId, campaignId] = campaignLink;
+        void dbRecordGuestEvent('campaign_open', {
+          vacancyId,
+          vacancyKind: kind === 'perm' ? 'permanent' : 'shift',
+          campaignId,
+          channel: shareMarker ? 'user_share' : 'group_link',
+        });
+        setTimeout(() => {
+          if (cancelled) return;
+          if (kind === 'perm') {
+            router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId, campaignId } });
+          } else {
+            router.push({ pathname: '/feed', params: { vacancyId, campaignId } });
+          }
+        }, 250);
+        return;
+      }
+
+      if (startParam.startsWith('vacancy_')) {
+        const vacancyId = startParam.slice('vacancy_'.length);
+        if (vacancyId) {
+          setTimeout(() => {
+            if (!cancelled) router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId } });
+          }, 250);
+        }
+      }
+    };
+
+    init().catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
 
   return null;
 }
@@ -156,6 +224,7 @@ export default function RootLayout() {
         <AppProvider>
           <StatusBar style="dark" />
           <WebSplashController />
+          <TelegramMiniAppController />
           <AuthGuard />
           <NotificationHandler />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FFFFFF' } }}>
