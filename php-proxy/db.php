@@ -1475,29 +1475,16 @@ function tg_send_retirement_message(int $chatId, string $text): bool {
 }
 
 /**
- * Telegram как пользовательский канал JobToo выведен из эксплуатации.
- * Функция оставлена на переходный период, чтобы старые сборки и фоновые
- * задания не падали: они получают false и продолжают через колокольчик /
- * push / web-push.
+ * Единственный оставшийся Telegram-транспорт — публикации в две групповые
+ * ленты JobToo. Персональные chat_id здесь запрещены независимо от данных в БД.
+ *
+ * Это даёт жёсткую границу: старый клиент, забытый cron или ручной вызов не
+ * сможет снова включить личные Telegram-уведомления. Mini App открывается
+ * обычной URL-кнопкой и не требует отправки ПДн пользователю через этот метод.
  */
 function tg_send_message(int $chatId, string $text, bool|string $withAppButton = false, string $btnText = '🚀 Откликнуться в JobToo', ?array $keyboard = null, ?int $messageThreadId = null): bool {
-    return false;
-
-    // Ниже оставлен старый транспорт на короткий переходный период, чтобы
-    // после подтверждённой рассылки о закрытии канала его можно было удалить
-    // отдельным чистящим коммитом без риска потерять последнее сообщение.
+    if (!in_array($chatId, [TG_GROUP_CHAT_ID, TG_WORK_GROUP_CHAT_ID], true)) return false;
     if (TG_BOT_TOKEN === '') return false;
-
-    // Личная доставка в Telegram разрешена только при отдельном действующем
-    // согласии владельца привязанного аккаунта. Групповые/служебные chat_id,
-    // которых нет в jm_users.telegram_id, этим правилом не блокируются.
-    try {
-        $linked = sb_single('jm_users', ['telegram_id' => 'eq.' . $chatId], 'id');
-        if ($linked && !jt_has_crossborder_consent((string)$linked['id'])) return false;
-    } catch (Throwable $e) {
-        // При невозможности проверить личный chat_id безопаснее не отправлять.
-        return false;
-    }
 
     $payload = [
         'chat_id' => $chatId,
@@ -3808,7 +3795,7 @@ try {
         // Директору в Telegram: карточка кандидата + кнопки Одобрить/Отклонить
         // args: [employerId, workerId, vacancyId, vacancyTitle]
         case 'tgNotifyNewApplication':
-            $data = tg_new_application_card((string)$args[0], (string)$args[1], (string)$args[2], (string)($args[3] ?? ''));
+            $data = false;
             break;
 
         // Ежедневные авто-касания (вызывается кроном раз в день):
@@ -4363,18 +4350,7 @@ try {
         }
 
         case 'tgBroadcast': {
-            @set_time_limit(300);
-            @ignore_user_abort(true);
-            [$bTitle, $bBody, $roleF] = [(string)$args[0], (string)$args[1], (string)($args[2] ?? 'all')];
-            $filters = ['telegram_id' => 'not.is.null'];
-            if ($roleF === 'worker' || $roleF === 'employer') $filters['role'] = 'eq.' . $roleF;
-            $recipients = sb_select('jm_users', $filters, 'telegram_id');
-            $text = '<b>' . $bTitle . '</b>' . ($bBody !== '' ? "\n\n" . $bBody : '');
-            $sent = 0;
-            foreach ($recipients as $r) {
-                if (tg_send_message((int)$r['telegram_id'], $text, true)) $sent++;
-            }
-            $data = ['sent' => $sent, 'total' => count($recipients)];
+            $data = ['sent' => 0, 'total' => 0, 'disabled' => true];
             break;
         }
 
@@ -4385,30 +4361,7 @@ try {
         // тут нет намеренно: мы задаём вопрос, а не зовём в приложение, и
         // кнопка превратила бы вопрос в рекламу.
         case 'tgSendToUsers': {
-            @set_time_limit(300);
-            $ids = is_array($args[0] ?? null) ? $args[0] : [];
-            $tpl = (string)($args[1] ?? '');
-            if (empty($ids) || $tpl === '') { $data = ['error' => 'нужны список и текст']; break; }
-            $sent = []; $skipped = [];
-            foreach ($ids as $uid) {
-                $u = sb_single('jm_users', ['id' => 'eq.' . $uid], 'id,first_name,telegram_id');
-                if (!$u || empty($u['telegram_id'])) { $skipped[] = $uid; continue; }
-                $name = htmlspecialchars((string)($u['first_name'] ?? ''), ENT_QUOTES, 'UTF-8');
-                $text = str_replace('{name}', $name, $tpl);
-                if (tg_send_message((int)$u['telegram_id'], $text)) {
-                    $sent[] = $uid;
-                    // В журнал: без этого ответ человека прилетит без вопроса,
-                    // на который он отвечает, и понять его будет нельзя.
-                    try {
-                        sb_insert('jm_bot_messages', [
-                            'id' => uid(), 'user_id' => $u['id'], 'telegram_id' => (int)$u['telegram_id'],
-                            'direction' => 'out', 'name' => 'Никита', 'topic' => 'outreach',
-                            'text' => $text, 'created_at' => now_iso(),
-                        ]);
-                    } catch (Throwable $e) {}
-                } else $skipped[] = $uid;
-            }
-            $data = ['sent' => count($sent), 'skipped' => $skipped];
+            $data = ['sent' => 0, 'skipped' => is_array($args[0] ?? null) ? $args[0] : [], 'disabled' => true];
             break;
         }
 
@@ -4814,11 +4767,7 @@ try {
 
         // args: [userId, text] — message the user's linked Telegram account
         case 'tgNotifyUser': {
-            $u = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'telegram_id');
-            $btn = isset($args[2]) && $args[2] ? true : false; // показать кнопку «Открыть JobToo»
-            $data = ($u && !empty($u['telegram_id']))
-                ? tg_send_message((int)$u['telegram_id'], (string)$args[1], $btn, '🚀 Открыть JobToo')
-                : false;
+            $data = false;
             break;
         }
 
