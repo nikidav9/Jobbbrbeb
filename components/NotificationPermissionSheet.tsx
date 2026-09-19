@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isOnboardingDone, onOnboardingDone } from '@/components/OnboardingOverlay';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,8 @@ import { registerForPushNotifications } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
 import { isTelegramMiniApp } from '@/lib/telegram';
 import { useApp } from '@/hooks/useApp';
+import { dbGetConsent, dbRecordConsent } from '@/services/db';
+import { LEGAL_DOCS, hasCrossBorderConsent, needsReconsent } from '@/constants/legal';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -32,17 +35,61 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 export default function NotificationPermissionSheet() {
   const insets = useSafeAreaInsets();
   const app = useApp();
+  const router = useRouter();
   // Гостю — ничего: он не зарегистрирован, подписывать на пуши некого.
   const userId = app?.currentUser?.isGuest ? null : (app?.currentUser?.id ?? null);
 
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
 
   const slideY = useRef(new Animated.Value(SCREEN_H)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const dragY = useRef(new Animated.Value(0)).current;
   const sheetHeightRef = useRef(480);
+
+  useEffect(() => {
+    if (!userId) {
+      setCrossBorderAccepted(false);
+      return;
+    }
+    let alive = true;
+    dbGetConsent(userId)
+      .then(c => { if (alive) setCrossBorderAccepted(hasCrossBorderConsent(c?.docs)); })
+      .catch(() => { if (alive) setCrossBorderAccepted(false); });
+    return () => { alive = false; };
+  }, [userId]);
+
+  async function acceptCrossBorderConsent() {
+    if (!userId || consentBusy || crossBorderAccepted) return;
+    setConsentBusy(true);
+    setErrorMsg('');
+    try {
+      const current = await dbGetConsent(userId);
+      if (!current || needsReconsent(current.stamp)) {
+        setErrorMsg('Сначала примите актуальные основные документы JobToo.');
+        return;
+      }
+      await dbRecordConsent(
+        userId,
+        current.stamp,
+        { ...current.docs, crossBorderConsent: LEGAL_DOCS.crossBorderConsent.version },
+        'crossborder:push',
+      );
+      const saved = await dbGetConsent(userId);
+      if (!hasCrossBorderConsent(saved?.docs)) {
+        setErrorMsg('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
+        return;
+      }
+      setCrossBorderAccepted(true);
+    } catch {
+      setErrorMsg('Не удалось сохранить отдельное согласие. Попробуйте ещё раз.');
+    } finally {
+      setConsentBusy(false);
+    }
+  }
 
   // ─── Decide whether to show ────────────────────────────────────────────────
   // The sheet appears on EVERY entry until notifications are actually enabled.
@@ -160,7 +207,11 @@ export default function NotificationPermissionSheet() {
   const handleSkip = () => close();
 
   const handleEnable = async () => {
-    if (busy) return;
+    if (busy || consentBusy) return;
+    if (!crossBorderAccepted) {
+      setErrorMsg('Сначала подтвердите отдельное согласие на трансграничную передачу.');
+      return;
+    }
     setBusy(true);
     setErrorMsg('');
     try {
@@ -251,15 +302,40 @@ export default function NotificationPermissionSheet() {
           <Reason icon="checkmark-circle-outline" text="Не пропустите подтверждение смены" />
         </View>
 
+        <TouchableOpacity
+          style={st.consentRow}
+          onPress={() => {
+            if (!crossBorderAccepted) void acceptCrossBorderConsent();
+          }}
+          activeOpacity={0.8}
+          disabled={consentBusy}
+        >
+          <View style={[st.checkbox, crossBorderAccepted && st.checkboxActive]}>
+            {crossBorderAccepted ? <Text style={st.checkmark}>✓</Text> : null}
+          </View>
+          <Text style={st.consentText}>
+            {consentBusy ? 'Сохраняем отдельное согласие…' : 'Согласен(на) на '}
+            {!consentBusy ? (
+              <Text
+                style={st.consentLink}
+                onPress={() => router.push({ pathname: '/legal', params: { doc: 'crossBorderConsent' } })}
+              >
+                трансграничную передачу ПДн
+              </Text>
+            ) : null}
+            {!consentBusy ? ' для доставки уведомлений. Это добровольно.' : ''}
+          </Text>
+        </TouchableOpacity>
+
         {/* Buttons */}
         <TouchableOpacity style={st.skipBtn} onPress={handleSkip} activeOpacity={0.7}>
           <Text style={st.skipText}>Не сейчас</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[st.enableBtn, busy && { opacity: 0.7 }]}
+          style={[st.enableBtn, (busy || consentBusy || !crossBorderAccepted) && { opacity: 0.55 }]}
           onPress={handleEnable}
           activeOpacity={0.85}
-          disabled={busy}
+          disabled={busy || consentBusy || !crossBorderAccepted}
         >
           <Text style={st.enableText}>{busy ? 'Подключаем…' : errorMsg ? 'Попробовать ещё раз' : 'Включить уведомления'}</Text>
         </TouchableOpacity>
@@ -360,6 +436,20 @@ const st = StyleSheet.create({
     justifyContent: 'center',
   },
   reasonText: { flex: 1, fontSize: rf(14), lineHeight: rf(19), color: Colors.textPrimary, fontWeight: '500' },
+  consentRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
+    padding: rs(12), marginBottom: rs(8), borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+  },
+  checkbox: {
+    width: rs(22), height: rs(22), borderRadius: rs(6), borderWidth: 1.5,
+    borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  checkmark: { color: '#fff', fontSize: rf(13), fontWeight: '800' },
+  consentText: { flex: 1, fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary },
+  consentLink: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
   skipBtn: {
     alignSelf: 'center',
     paddingVertical: rs(10),
