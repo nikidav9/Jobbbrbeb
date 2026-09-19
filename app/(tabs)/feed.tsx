@@ -1014,7 +1014,7 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
     <View style={fh.row}>
       <View style={fh.logoWrap} accessibilityLabel="JobToo">
         <Image
-          source={require('@/assets/images/jt-logo.png')}
+          source={require('@/assets/images/header-jt-logo.png')}
           style={fh.logoImage}
           resizeMode="contain"
         />
@@ -1078,17 +1078,14 @@ const fh = StyleSheet.create({
     backgroundColor: Colors.bgWarm,
   },
   logoWrap: {
-    width: rs(54), height: rs(46), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center', overflow: 'visible',
+    width: rs(68), height: rs(46), flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
-  // Именно фирменный jt-logo: соединённые буквы и исходный градиент.
-  // multiply визуально убирает белое поле исходника на тёплом фоне,
-  // не подменяя знак другим ассетом.
+  // Точный логотип, присланный владельцем. Файл обрезан по прозрачному
+  // контуру, поэтому видимая высота знака совпадает с высотой поиска.
   logoImage: {
-    width: rs(54), height: rs(46),
-    transform: [{ scale: 1.18 }],
-    mixBlendMode: 'multiply',
-  } as any,
+    width: rs(68), height: rs(46),
+  },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
