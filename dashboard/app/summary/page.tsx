@@ -112,7 +112,7 @@ export default function SummaryPage() {
             sub={k.ratingsCount > 0 ? `по ${k.ratingsCount} оценкам` : 'оценок пока нет'}
             sparkColor={PALETTE.amber} />
           <KpiCard label="Охват уведомлениями" value={`${k.reachPct}%`}
-            sub={`пуш, Telegram или веб-пуш · Telegram у ${k.tgLinked}`} sparkColor={PALETTE.green} />
+            sub="push или web-push" sparkColor={PALETTE.green} />
         </div>
 
         <ChartCard title="Рост базы пользователей" sub="Накопительно · 90 дней">
