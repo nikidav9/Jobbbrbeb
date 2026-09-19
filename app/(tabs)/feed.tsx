@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
   TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
@@ -1012,12 +1012,12 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 }) {
   return (
     <View style={fh.row}>
-      <Image
-        source={require('@/assets/images/jt-logo.png')}
-        style={fh.logoImage}
-        resizeMode="contain"
-        accessibilityLabel="JobToo"
-      />
+      <View style={fh.logoWrap} accessibilityLabel="JobToo">
+        <Text style={fh.logo}>
+          <Text style={fh.logoJ}>J</Text>
+          <Text style={fh.logoT}>T</Text>
+        </Text>
+      </View>
 
       <View style={fh.search}>
         <Ionicons name="search" size={20} color={Colors.textMuted} />
@@ -1072,13 +1072,19 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 
 const fh = StyleSheet.create({
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(13),
+    flexDirection: 'row', alignItems: 'center', gap: rs(10),
     paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
     backgroundColor: Colors.bgWarm,
   },
-  logoImage: {
-    width: rs(46), height: rs(46), flexShrink: 0, borderRadius: rs(12),
+  logoWrap: {
+    width: rs(46), height: rs(46), flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
+  logo: {
+    fontSize: rf(31), lineHeight: rf(34), letterSpacing: -1,
+  },
+  logoJ: { fontWeight: '900', color: Colors.primary },
+  logoT: { fontWeight: '900', color: Colors.textPrimary },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
