@@ -243,6 +243,7 @@ $selfArgFns = [
     'tgPrepareLink' => 0, 'dbTouchLastSeen' => 0,
     'dbChangePassword' => 0, 'dbDeleteAccount' => 0,
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
+    'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
     'tgBindTelegram' => 0, 'tgUnbindTelegram' => 0,
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
     'supportHistory' => 0, 'supportSend' => 0,
@@ -3432,11 +3433,62 @@ try {
         }
 
         // Что человек принял в последний раз — для показа в профиле и для
-        // ответа на вопрос «спрашивать ли заново».
+        // ответа на вопрос «спрашивать ли заново». Отдельные трансграничные
+        // решения живут в той же защищённой таблице, но в отдельных строках
+        // и сюда не попадают.
         case 'dbGetConsent': {
-            $rows = sb_select('jm_consents', ['user_id' => 'eq.' . (string)($args[0] ?? '')],
-                              'stamp,docs,source,accepted_at', 'accepted_at.desc');
+            $rows = sb_select('jm_consents', [
+                'user_id' => 'eq.' . (string)($args[0] ?? ''),
+                'source'  => 'not.like.crossborder:%',
+            ], 'stamp,docs,source,accepted_at', 'accepted_at.desc');
             $data = $rows[0] ?? null;
+            break;
+        }
+
+        // Отдельное доказательство согласия на трансграничную передачу.
+        // Не перезаписываем им основное согласие: это самостоятельное
+        // волеизъявление с собственной редакцией, временем и источником.
+        case 'dbRecordCrossBorderConsent': {
+            $uid = (string)($args[0] ?? '');
+            $version = trim((string)($args[1] ?? ''));
+            $source = (string)($args[2] ?? 'crossborder:reconsent');
+            $allowed = [
+                'crossborder:registration',
+                'crossborder:reconsent',
+                'crossborder:push',
+                'crossborder:telegram',
+            ];
+            if ($uid === '' || $version === '') {
+                $data = ['error' => 'Нужны пользователь и редакция согласия']; break;
+            }
+            if (!sb_single('jm_users', ['id' => 'eq.' . $uid], 'id')) {
+                $data = ['error' => 'Пользователь не найден']; break;
+            }
+            if (!in_array($source, $allowed, true)) $source = 'crossborder:reconsent';
+
+            sb_upsert('jm_consents', [
+                'id'          => 'cb:' . $uid . ':' . substr(hash('sha256', $version), 0, 16),
+                'user_id'     => $uid,
+                'stamp'       => 'crossborder:' . $version,
+                'docs'        => ['crossBorderConsent' => $version],
+                'source'      => $source,
+                'accepted_at' => now_iso(),
+            ], 'id');
+            $data = ['записано' => true];
+            break;
+        }
+
+        case 'dbGetCrossBorderConsent': {
+            $rows = sb_select('jm_consents', [
+                'user_id' => 'eq.' . (string)($args[0] ?? ''),
+                'source'  => 'like.crossborder:%',
+            ], 'docs,source,accepted_at', 'accepted_at.desc');
+            $row = $rows[0] ?? null;
+            $data = $row ? [
+                'version' => (string)(($row['docs']['crossBorderConsent'] ?? '')),
+                'source' => (string)($row['source'] ?? ''),
+                'accepted_at' => (string)($row['accepted_at'] ?? ''),
+            ] : null;
             break;
         }
 
