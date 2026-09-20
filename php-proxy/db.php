@@ -3454,6 +3454,19 @@ try {
             $stored = (string)($u['password'] ?? '');
             $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
             if (!$ok) { $data = ['error' => 'Неверный пароль']; break; }
+
+            // PDF лежат не в таблице, а в Storage: каскад БД удалит метаданные,
+            // но сами объекты без этой уборки остались бы навсегда.
+            try {
+                $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
+                foreach ($resumeRows as $resumeRow) {
+                    jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
+                }
+            } catch (Throwable $e) {
+                // Совместимость с сервером до миграции 100: отсутствие таблицы
+                // не должно ломать удаление аккаунта.
+            }
+
             $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
             break;
         }
