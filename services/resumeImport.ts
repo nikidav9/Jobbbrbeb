@@ -108,5 +108,5 @@ export async function extractResumePdf(asset: DocumentPickerAsset) {
   if (!resume.desiredPosition && !resume.email && !resume.summary && structuredItems < 2) {
     throw new Error('Не удалось распознать структуру резюме. Проверьте, что PDF содержит выделяемый текст, а не только скан.');
   }
-  return { resume, identity: parseResumeIdentity(text), text };
+  return { resume, identity: parseResumeIdentity(text), text, bytes };
 }
