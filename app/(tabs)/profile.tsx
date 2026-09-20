@@ -26,7 +26,7 @@ import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
 import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
-import { ResumeProfile, WorkType } from '@/constants/types';
+import { PersonalDetails, ResumeProfile, User, WorkType } from '@/constants/types';
 import { inferWorkTypes } from '@/lib/resumeParser';
 import { extractResumePdf } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
@@ -257,6 +257,310 @@ const rmS = StyleSheet.create({
   review: { fontSize: rf(13), color: Colors.textPrimary, lineHeight: rf(18), fontStyle: 'italic', paddingLeft: rs(4) },
   noReview: { fontSize: rf(12), color: Colors.textMuted, fontStyle: 'italic', paddingLeft: rs(4) },
 });
+
+
+type PersonalFieldKey = keyof PersonalDetails;
+
+const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
+  middleName: 'Отчество',
+  preferredName: 'Предпочитаемое имя',
+  title: 'Обращение',
+  birthday: 'Дата рождения',
+  contactEmail: 'Email',
+  emergencyContact: 'Экстренный контакт',
+  links: 'Ссылки',
+  citizenship: 'Гражданство',
+  workAuthorization: 'Разрешение на работу',
+  location: 'Местоположение',
+  workAvailability: 'Доступность к работе',
+  relocation: 'Переезд',
+  driversLicense: 'Водительские права',
+  veteranStatus: 'Статус ветерана',
+  disabilityStatus: 'Инвалидность',
+  gender: 'Пол',
+  pronouns: 'Местоимения',
+  race: 'Этническая принадлежность',
+  sexualOrientation: 'Сексуальная ориентация',
+  professionalReferences: 'Профессиональные рекомендации',
+  militaryService: 'Военная служба',
+  securityClearance: 'Допуск',
+  employmentRestrictions: 'Ограничения по трудоустройству',
+};
+
+const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
+  'links',
+  'professionalReferences',
+  'militaryService',
+  'employmentRestrictions',
+]);
+
+function PersonalRow({
+  label, value, onPress, last = false,
+}: {
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  last?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[personalS.row, !last && personalS.rowBorder]}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={0.72}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={personalS.rowLabel}>{label}</Text>
+        <Text style={[personalS.rowValue, !value && personalS.rowValueEmpty]} numberOfLines={3}>
+          {value || 'Не указано'}
+        </Text>
+      </View>
+      {onPress ? <Ionicons name="create-outline" size={rf(18)} color={Colors.primary} /> : null}
+    </TouchableOpacity>
+  );
+}
+
+function PersonalAddCard({
+  icon, title, subtitle, onPress,
+}: {
+  icon: IoniconName;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={personalS.addCard} onPress={onPress} activeOpacity={0.75}>
+      <View style={personalS.addIcon}>
+        <Ionicons name={icon} size={rf(21)} color={Colors.primary} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={personalS.addTitle}>{title}</Text>
+        <Text style={personalS.addSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={personalS.plusCircle}>
+        <Ionicons name="add" size={rf(19)} color="#FFFFFF" />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function PersonalSection({
+  title, children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={personalS.section}>
+      <Text style={personalS.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+function PersonalTab({
+  user,
+  onEditCore,
+  onEditField,
+  onEditMetro,
+}: {
+  user: User;
+  onEditCore: () => void;
+  onEditField: (field: PersonalFieldKey) => void;
+  onEditMetro: () => void;
+}) {
+  const p = user.personalDetails ?? {};
+  const resume = user.resume;
+
+  const contactEmail = p.contactEmail || resume?.email;
+  const citizenship = p.citizenship || resume?.citizenship;
+  const workAuthorization = p.workAuthorization || resume?.workPermit;
+  const location = p.location || resume?.city;
+  const workAvailability = p.workAvailability
+    || [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
+  const relocationFromResume = resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
+  const relocation = p.relocation || relocationFromResume;
+  const birthday = p.birthday || (user.age ? `${user.age} лет` : undefined);
+
+  const privateValue = (key: PersonalFieldKey, fallback?: string) =>
+    (p[key] as string | undefined) || fallback;
+
+  return (
+    <View style={personalS.content}>
+      <PersonalSection title="Основная информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Имя" value={user.firstName} onPress={onEditCore} />
+          <PersonalRow label="Отчество" value={p.middleName} onPress={() => onEditField('middleName')} />
+          <PersonalRow label="Фамилия" value={user.lastName} onPress={onEditCore} />
+          <PersonalRow label="Предпочитаемое имя" value={p.preferredName} onPress={() => onEditField('preferredName')} />
+          <PersonalRow label="Обращение" value={p.title} onPress={() => onEditField('title')} />
+          <PersonalRow label="Дата рождения / возраст" value={birthday} onPress={() => onEditField('birthday')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Контактная информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Email" value={contactEmail} onPress={() => onEditField('contactEmail')} />
+          <PersonalRow label="Телефон" value={user.phone} onPress={onEditCore} />
+          <PersonalRow label="Экстренный контакт" value={p.emergencyContact} onPress={() => onEditField('emergencyContact')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Ссылки">
+        {p.links ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Ссылки" value={p.links} onPress={() => onEditField('links')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="link-outline"
+            title="Добавить ссылки"
+            subtitle="Портфолио, профиль или другой профессиональный ресурс."
+            onPress={() => onEditField('links')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Разрешение на работу">
+        <View style={personalS.card}>
+          <PersonalRow label="Гражданство" value={citizenship} onPress={() => onEditField('citizenship')} />
+          <PersonalRow label="Разрешение на работу" value={workAuthorization} onPress={() => onEditField('workAuthorization')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Местоположение">
+        <View style={personalS.card}>
+          <PersonalRow label="Город" value={location} onPress={() => onEditField('location')} />
+          <PersonalRow label="Метро" value={user.metroStation} onPress={onEditMetro} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Доступность к работе">
+        {workAvailability ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Условия" value={workAvailability} onPress={() => onEditField('workAvailability')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="calendar-outline"
+            title="Добавить доступность"
+            subtitle="Когда и в каком формате вы готовы работать."
+            onPress={() => onEditField('workAvailability')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Переезд">
+        {relocation ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Готовность к переезду" value={relocation} onPress={() => onEditField('relocation')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="airplane-outline"
+            title="Добавить готовность к переезду"
+            subtitle="Укажите, готовы ли вы переехать ради работы."
+            onPress={() => onEditField('relocation')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Водительские права">
+        {p.driversLicense ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Водительские права" value={p.driversLicense} onPress={() => onEditField('driversLicense')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="car-outline"
+            title="Добавить водительские права"
+            subtitle="Категории и наличие личного автомобиля."
+            onPress={() => onEditField('driversLicense')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Трудовая информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Статус ветерана" value={privateValue('veteranStatus')} onPress={() => onEditField('veteranStatus')} />
+          <PersonalRow label="Инвалидность" value={privateValue('disabilityStatus')} onPress={() => onEditField('disabilityStatus')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Демографическая информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Пол" value={privateValue('gender')} onPress={() => onEditField('gender')} />
+          <PersonalRow label="Местоимения" value={privateValue('pronouns')} onPress={() => onEditField('pronouns')} />
+          <PersonalRow label="Этническая принадлежность" value={privateValue('race')} onPress={() => onEditField('race')} />
+          <PersonalRow label="Сексуальная ориентация" value={privateValue('sexualOrientation')} onPress={() => onEditField('sexualOrientation')} last />
+        </View>
+        <Text style={personalS.privateHint}>
+          Эти поля приватны и не показываются работодателям.
+        </Text>
+      </PersonalSection>
+
+      <PersonalSection title="Профессиональные рекомендации">
+        {p.professionalReferences ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Рекомендации" value={p.professionalReferences} onPress={() => onEditField('professionalReferences')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="id-card-outline"
+            title="Добавить рекомендации"
+            subtitle="Руководители или коллеги, которые могут рассказать о вашей работе."
+            onPress={() => onEditField('professionalReferences')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Военная служба">
+        {p.militaryService ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Военная служба" value={p.militaryService} onPress={() => onEditField('militaryService')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="shield-outline"
+            title="Добавить военную службу"
+            subtitle="Род войск, звание и период службы."
+            onPress={() => onEditField('militaryService')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Допуск">
+        {p.securityClearance ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Допуск" value={p.securityClearance} onPress={() => onEditField('securityClearance')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="lock-closed-outline"
+            title="Добавить допуск"
+            subtitle="Укажите действующий или прошлый допуск, если это важно для работы."
+            onPress={() => onEditField('securityClearance')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Ограничения по трудоустройству">
+        {p.employmentRestrictions ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Ограничения" value={p.employmentRestrictions} onPress={() => onEditField('employmentRestrictions')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="document-text-outline"
+            title="Добавить ограничения"
+            subtitle="Обязательства или договорённости, которые могут повлиять на следующую работу."
+            onPress={() => onEditField('employmentRestrictions')}
+          />
+        )}
+      </PersonalSection>
+    </View>
+  );
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
