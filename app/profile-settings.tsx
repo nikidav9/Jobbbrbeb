@@ -18,11 +18,13 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
+import * as Updates from 'expo-updates';
 import { LEGAL_DOCS, type LegalDocKey } from '@/constants/legal';
 import {
   NOTIFICATION_DISABLED_KEY, registerForPushNotifications,
 } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug, isWebPushRegistered } from '@/lib/webPush';
+import { clearRuntimeCache } from '@/services/storage';
 
 const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
 
@@ -97,6 +99,7 @@ export default function ProfileSettingsScreen() {
   const [notificationState, setNotificationState] = useState<NotificationState>('checking');
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
+  const [refreshBusy, setRefreshBusy] = useState(false);
 
   const refreshNotificationState = async () => {
     setNotificationState('checking');
@@ -239,7 +242,72 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  const performLogout = async () => {
+  const clearCacheAndRefresh = async () => {
+    if (refreshBusy) return;
+    setRefreshBusy(true);
+
+    try {
+      // Чистим только временные данные. Сессию, push-настройки и онбординг
+      // сохраняем, поэтому после обновления пользователь остаётся в аккаунте.
+      await clearRuntimeCache();
+
+      if (Platform.OS === 'web') {
+        const web = globalThis as any;
+        if (web.caches?.keys) {
+          const names: string[] = await web.caches.keys();
+          await Promise.all(
+            names
+              .filter(name => name.startsWith('jobtoo-app-shell-'))
+              .map(name => web.caches.delete(name)),
+          );
+        }
+
+        showToast('Кеш очищен. Загружаем свежую версию…', 'success');
+
+        // Cache-buster заставляет браузер запросить актуальный app shell,
+        // а удалённый service-worker cache уже не сможет вернуть старую сборку.
+        setTimeout(() => {
+          try {
+            const url = new URL(web.location.href);
+            url.searchParams.set('_jt_refresh', Date.now().toString());
+            web.location.replace(url.toString());
+          } catch {
+            web.location.reload();
+          }
+        }, 250);
+        return;
+      }
+
+      if (!__DEV__ && Updates.isEnabled) {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          showToast('Обновление загружено. Перезапускаем JobToo…', 'success');
+        } else {
+          showToast('Кеш очищен. Обновляем данные приложения…', 'success');
+        }
+
+        // Внутренний reload: приложение не нужно закрывать вручную и вход
+        // в аккаунт не сбрасывается.
+        await Updates.reloadAsync();
+        return;
+      }
+
+      // В dev/сборках без expo-updates всё равно очищаем данные и возвращаемся
+      // в профиль; production-сборки проходят ветку reloadAsync выше.
+      showToast('Кеш очищен', 'success');
+      router.replace('/(tabs)/profile');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Не удалось очистить кеш и обновить приложение',
+        'error',
+      );
+    } finally {
+      setRefreshBusy(false);
+    }
+  };
+
+    const performLogout = async () => {
     try {
       await logout();
     } catch {
@@ -351,6 +419,15 @@ export default function ProfileSettingsScreen() {
             />
           </SettingsSection>
         ) : null}
+
+        <SettingsSection title="Приложение">
+          <SettingsRow
+            label={refreshBusy ? 'Обновляем…' : 'Очистить кеш и обновить'}
+            icon="refresh-circle-outline"
+            onPress={clearCacheAndRefresh}
+            last
+          />
+        </SettingsSection>
 
         <SettingsSection title="О приложении">
           {ABOUT_DOCS.map((doc, index) => (

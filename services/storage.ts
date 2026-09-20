@@ -197,3 +197,23 @@ export async function saveCache(key: string, data: unknown): Promise<void> {
     await AsyncStorage.setItem(key, JSON.stringify(data));
   } catch {}
 }
+
+/**
+ * Стирает только временный stale-while-revalidate кэш приложения.
+ *
+ * Сессию, токен авторизации, прогресс обучения, push-настройки и другие
+ * пользовательские предпочтения намеренно не трогаем — кнопка «Очистить кеш»
+ * не должна выбрасывать человека из аккаунта или сбрасывать его настройки.
+ */
+export async function clearRuntimeCache(): Promise<number> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const cacheKeys = keys.filter(key => key.startsWith('jm_c1_'));
+    if (cacheKeys.length > 0) {
+      await AsyncStorage.multiRemove(cacheKeys);
+    }
+    return cacheKeys.length;
+  } catch {
+    return 0;
+  }
+}
