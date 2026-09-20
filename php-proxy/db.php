@@ -696,6 +696,87 @@ function sb_delete(string $t, array $f): void {
     rt_touch($t);
 }
 
+// ─── Приватное хранилище PDF-резюме ───────────────────────────────────────
+function jt_resume_storage_upload(string $path, string $bytes): void {
+    $ch = curl_init(SB_URL . '/storage/v1/object/resume-files/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS => $bytes,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . SB_KEY,
+            'Authorization: Bearer ' . SB_KEY,
+            'Content-Type: application/pdf',
+            'x-upsert: false',
+        ],
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($code < 200 || $code >= 300) {
+        throw new RuntimeException($err ?: ('хранилище резюме ответило ' . $code . ': ' . substr((string)$resp, 0, 180)));
+    }
+}
+
+function jt_resume_storage_delete(string $path): void {
+    if ($path === '') return;
+    $ch = curl_init(SB_URL . '/storage/v1/object/resume-files/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . SB_KEY,
+            'Authorization: Bearer ' . SB_KEY,
+        ],
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+function jt_resume_signed_url(string $path): string {
+    $ch = curl_init(SB_URL . '/storage/v1/object/sign/resume-files/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode(['expiresIn' => 3600]),
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . SB_KEY,
+            'Authorization: Bearer ' . SB_KEY,
+            'Content-Type: application/json',
+        ],
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $dec = json_decode($resp ?: 'null', true);
+    if ($code < 200 || $code >= 300 || empty($dec['signedURL'])) {
+        throw new RuntimeException('Не удалось открыть PDF');
+    }
+    return SB_URL . '/storage/v1' . $dec['signedURL'];
+}
+
+function jt_resume_sync_user(string $uid, ?array $row): void {
+    if ($row === null) {
+        sb_update('jm_users', ['id' => 'eq.' . $uid], [
+            'resume_data' => null,
+            'resume_email' => null,
+            'resume_file_name' => null,
+            'resume_imported_at' => null,
+        ]);
+        return;
+    }
+    sb_update('jm_users', ['id' => 'eq.' . $uid], [
+        'resume_data' => $row['resume_data'] ?? null,
+        'resume_email' => $row['resume_email'] ?? null,
+        'resume_file_name' => $row['file_name'] ?? null,
+        'resume_imported_at' => $row['imported_at'] ?? null,
+    ]);
+}
+
 function sb_rpc(string $fn, array $params = []): mixed {
     $url = SB_URL . '/rest/v1/rpc/' . $fn;
     $hdrs = ['apikey: ' . SB_KEY, 'Authorization: Bearer ' . SB_KEY, 'Content-Type: application/json'];
