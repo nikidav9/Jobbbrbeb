@@ -4,6 +4,7 @@ import { Colors } from '@/constants/theme';
 import { NotifBell } from '@/components/ui/NotifBell';
 import {
   APP_HEADER_BOTTOM,
+  APP_HEADER_GAP,
   APP_HEADER_HORIZONTAL,
   APP_HEADER_TOP,
   BrandLogo,
@@ -55,7 +56,7 @@ const h = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
     backgroundColor: Colors.bg,
   },
-  left: { flexDirection: 'row', alignItems: 'center', gap: rs(8), flexShrink: 1 },
-  right: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  left: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP), flexShrink: 1 },
+  right: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP) },
   title: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary },
 });
