@@ -390,19 +390,6 @@ export default function UserProfileScreen() {
                   </View>
                 ) : null}
 
-                {user.resume.certifications.length > 0 ? (
-                  <View style={styles.infoCard}>
-                    <Text style={styles.sectionTitle}>Сертификаты</Text>
-                    {visibleResumeItems('certifications', user.resume.certifications, 3).map((item, index) => (
-                      <View key={`${item.name}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
-                        <Text style={styles.resumeEntryTitle}>{item.name}</Text>
-                        {item.issuer ? <Text style={styles.resumeEntryCompany}>{item.issuer}</Text> : null}
-                        {item.date ? <Text style={styles.resumeEntryPeriod}>{item.date}</Text> : null}
-                      </View>
-                    ))}
-                    <PublicResumeMore total={user.resume.certifications.length} shown={3} expanded={resumeSectionExpanded('certifications')} onPress={() => toggleResumeSection('certifications')} />
-                  </View>
-                ) : null}
               </>
             ) : null}
 
