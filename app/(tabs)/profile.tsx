@@ -1436,7 +1436,7 @@ function ResumeTab({ resume, importing, onImport }: {
             )}
             {skills.length > 0 ? (
               <ResumeMoreButton total={skills.length} shown={12} expanded={isExpanded('skills')} onPress={() => toggleList('skills')} />
-            )}
+            ) : null}
           </ResumeCard>
 
           {resume.specializations.length > 0 ? (
@@ -1456,7 +1456,7 @@ function ResumeTab({ resume, importing, onImport }: {
             )}
             {interests.length > 0 ? (
               <ResumeMoreButton total={interests.length} shown={8} expanded={isExpanded('interests')} onPress={() => toggleList('interests')} />
-            )}
+            ) : null}
           </ResumeCard>
 
           <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
