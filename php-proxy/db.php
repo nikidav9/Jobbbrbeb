@@ -3205,7 +3205,19 @@ try {
             } elseif (!is_bcrypt($u['password'])) {
                 $u['password'] = password_hash((string)$u['password'], PASSWORD_BCRYPT);
             }
-            sb_upsert('jm_users', $u, 'id');
+            if ($existing) {
+                // Для уже существующей строки нужен PATCH, а не upsert.
+                // Upsert в PostgREST сначала собирает INSERT-кандидата и
+                // проверяет NOT NULL ещё до разрешения конфликта. Поскольку
+                // role/phone намеренно нельзя менять из профиля, их нет в
+                // $editable — и такой INSERT-кандидат падал на role = null.
+                // PATCH обновляет только разрешённые поля существующей строки.
+                $update = $u;
+                unset($update['id']);
+                sb_update('jm_users', ['id' => 'eq.' . $uid], $update);
+            } else {
+                sb_upsert('jm_users', $u, 'id');
+            }
             // Приглашение пишем ОТДЕЛЬНОЙ операцией и после того, как человек
             // уже создан.
             //
