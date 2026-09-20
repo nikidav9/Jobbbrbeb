@@ -14,6 +14,7 @@ export const APP_HEADER_HORIZONTAL = 16;
 export const APP_HEADER_TOP = 10;
 export const APP_HEADER_BOTTOM = 10;
 export const APP_HEADER_CONTROL = 44;
+export const APP_HEADER_GAP = 10;
 export const BRAND_LOGO_WIDTH = 44;
 export const BRAND_LOGO_HEIGHT = 30;
 
