@@ -179,6 +179,11 @@ check('push: ошибка токена объяснена и не закрыва
 
 $profileSettings = (string)file_get_contents(__DIR__ . '/../app/profile-settings.tsx');
 $webPush = (string)file_get_contents(__DIR__ . '/../lib/webPush.ts');
+$storageSrc = (string)file_get_contents(__DIR__ . '/../services/storage.ts');
+check('кеш: helper удаляет только jm_c1 временные ключи',
+    str_contains($storageSrc, "key.startsWith('jm_c1_')") &&
+    str_contains($storageSrc, 'AsyncStorage.multiRemove(cacheKeys)') &&
+    !preg_match("~clearRuntimeCache[\\s\\S]{0,900}KEY_CURRENT~", $storageSrc));
 check('настройки уведомлений: есть рабочее включение и отключение',
     str_contains($profileSettings, 'enableNotifications') &&
     str_contains($profileSettings, 'disableNotifications') &&
@@ -194,6 +199,17 @@ check('выход из настроек открывает рабочее под
     str_contains($profileSettings, 'visible={showLogout}') &&
     str_contains($profileSettings, 'await performLogout()') &&
     str_contains($profileSettings, "router.replace('/')"));
+check('настройки: очистка кеша проверяет и применяет свежую сборку',
+    str_contains($profileSettings, 'clearCacheAndRefresh') &&
+    str_contains($profileSettings, 'Updates.checkForUpdateAsync()') &&
+    str_contains($profileSettings, 'Updates.fetchUpdateAsync()') &&
+    str_contains($profileSettings, 'Updates.reloadAsync()'));
+check('настройки: очистка кеша не сбрасывает сессию',
+    str_contains($profileSettings, 'clearRuntimeCache()') &&
+    !preg_match("~clearCacheAndRefresh[\\s\\S]{0,2200}AsyncStorage\\.clear~", $profileSettings));
+check('веб: очистка удаляет app-shell cache перед перезагрузкой',
+    str_contains($profileSettings, "startsWith('jobtoo-app-shell-')") &&
+    str_contains($profileSettings, "_jt_refresh"));
 foreach (['terms', 'privacy', 'consent', 'crossBorderConsent', 'dataPolicy'] as $docKey) {
     check("настройки: документ {$docKey} показан в разделе о приложении",
         str_contains($profileSettings, "key: '{$docKey}'"));
