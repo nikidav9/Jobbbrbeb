@@ -24,7 +24,8 @@ with required(table_name) as (
     ('jm_perm_applications'), ('jm_chats'), ('jm_messages'), ('jm_ratings'),
     ('jm_notifications'), ('jm_complaints'), ('jm_bulletins'),
     ('jm_saved'), ('jm_perm_saved'), ('jm_vacancy_views'), ('jm_perm_vacancy_views'),
-    ('jm_bulletin_views'), ('jm_web_push_subscriptions'), ('jm_worker_slots')
+    ('jm_bulletin_views'), ('jm_web_push_subscriptions'), ('jm_worker_slots'),
+    ('jm_support_messages'), ('jm_support_threads'), ('jm_support_knowledge')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r
