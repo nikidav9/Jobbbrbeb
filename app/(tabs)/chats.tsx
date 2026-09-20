@@ -17,6 +17,7 @@ import { dbDeleteChat } from '@/services/db';
 import GuestGate from '@/components/GuestGate';
 
 import { rs, rf } from '@/constants/scale';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { messagePreview } from '@/services/messagePreview';
 
 const { width: SW } = Dimensions.get('window');
@@ -245,14 +246,16 @@ export default function ChatsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.back}
-          onPress={() => router.back()}
-          activeOpacity={0.8}
-          accessibilityLabel="Назад"
-        >
-          <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <OnboardingTarget targetKey="chats.back">
+          <TouchableOpacity
+            style={styles.back}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+            accessibilityLabel="Назад"
+          >
+            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        </OnboardingTarget>
         <Text style={styles.topTitle}>Сообщения</Text>
         {/* Пустая колонка той же ширины: иначе заголовок встаёт по центру
             остатка, а не экрана. Не копия кнопки — с её фоном и тенью это
@@ -260,6 +263,7 @@ export default function ChatsScreen() {
         <View style={styles.backSpacer} pointerEvents="none" />
       </View>
 
+      <OnboardingTarget targetKey="chats.content" style={{ flex: 1 }}>
       <View style={styles.searchWrap}>
         <View style={styles.searchInner}>
           <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
@@ -368,6 +372,7 @@ export default function ChatsScreen() {
           )}
         />
       )}
+      </OnboardingTarget>
     </SafeAreaView>
   );
 }
