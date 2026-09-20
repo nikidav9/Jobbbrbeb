@@ -9,24 +9,25 @@ import { rs, rf } from '@/constants/scale';
 // title отсутствует → показываем логотип JobToo. badge — доп. плашка слева
 // (например «N ждут»). right — кастомный правый блок (профиль с шестерёнкой).
 export function TabHeader({
-  title, badge, right, primaryAction,
+  title, badge, left, right, primaryAction,
 }: {
   title?: string;
   badge?: React.ReactNode;
+  left?: React.ReactNode;
   right?: React.ReactNode;
   primaryAction?: React.ReactNode;
 }) {
   return (
     <View style={h.header}>
       <View style={h.left}>
-        {title ? (
+        {left ?? (title ? (
           <Text style={h.title} numberOfLines={1}>{title}</Text>
         ) : (
           <Text style={h.logo}>
             <Text style={h.logoB}>Job</Text>
             <Text style={h.logoO}>Too</Text>
           </Text>
-        )}
+        ))}
         {badge ?? null}
       </View>
       {right ?? (

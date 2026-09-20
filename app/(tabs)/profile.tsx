@@ -1184,7 +1184,20 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <TabHeader right={
+      <TabHeader
+        left={
+          <TouchableOpacity
+            onPress={() => router.push('/support')}
+            style={styles.helpHeaderBtn}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+            accessibilityLabel="Помощь"
+          >
+            <Ionicons name="help-circle-outline" size={18} color={Colors.textPrimary} />
+            <Text style={styles.helpHeaderText}>Помощь</Text>
+          </TouchableOpacity>
+        }
+        right={
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setShowNotifications(true)} style={styles.headerBtn}>
             <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
@@ -1202,7 +1215,8 @@ export default function ProfileScreen() {
             <Ionicons name="settings-outline" size={23} color={Colors.textPrimary} />
           </TouchableOpacity>
         </View>
-      } />
+        }
+      />
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
@@ -2576,6 +2590,22 @@ const styles = StyleSheet.create({
   // Те же отступы, что у стандартной шапки (TabHeader → h.right и NotifBell),
   // чтобы в профиле значки стояли ровно там же, а не сдвигались.
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  helpHeaderBtn: {
+    minHeight: rs(36),
+    paddingHorizontal: rs(12),
+    borderRadius: rs(18),
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: Colors.divider,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(6),
+  },
+  helpHeaderText: {
+    fontSize: rf(13),
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
   headerBtn: { position: 'relative', padding: rs(4) },
   notifBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: Colors.primary, borderRadius: rs(10), minWidth: rs(16), height: rs(16), alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(3) },
   notifBadgeText: { color: '#fff', fontSize: rf(9), fontWeight: '700' },

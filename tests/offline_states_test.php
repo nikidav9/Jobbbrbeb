@@ -189,9 +189,11 @@ check('настройки уведомлений: выбор пользоват�
     str_contains($push, "=== '1'") &&
     str_contains($webPush, 'NOTIFICATION_DISABLED_KEY') &&
     str_contains($webPush, "=== '1'"));
-check('выход из настроек возвращает на экран входа',
-    str_contains($profileSettings, "router.replace('/')") &&
-    str_contains($profileSettings, 'onPress: performLogout'));
+check('выход из настроек открывает рабочее подтверждение и возвращает на вход',
+    str_contains($profileSettings, "onPress={() => setShowLogout(true)}") &&
+    str_contains($profileSettings, 'visible={showLogout}') &&
+    str_contains($profileSettings, 'await performLogout()') &&
+    str_contains($profileSettings, "router.replace('/')"));
 foreach (['terms', 'privacy', 'consent', 'crossBorderConsent', 'dataPolicy'] as $docKey) {
     check("настройки: документ {$docKey} показан в разделе о приложении",
         str_contains($profileSettings, "key: '{$docKey}'"));
@@ -199,6 +201,9 @@ foreach (['terms', 'privacy', 'consent', 'crossBorderConsent', 'dataPolicy'] as 
 $profileForFooter = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
 check('отзывы: сервисные карточки скрыты',
     str_contains($profileForFooter, "(currentUser.role === 'employer' || profileTab === 'personal')"));
+check('профиль: кнопка помощи в шапке открывает поддержку',
+    str_contains($profileForFooter, "router.push('/support')") &&
+    str_contains($profileForFooter, 'accessibilityLabel="Помощь"'));
 
 // ── Рассылка вакансии: вторичный сбой не выдаётся за доставку ────────────────
 $notifSvc = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
