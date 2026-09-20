@@ -1334,24 +1334,6 @@ export default function ProfileScreen() {
 
         {/* Документы */}
         {currentUser.role === 'employer' ? <>
-        {currentUser.role === 'worker' ? (
-          <View style={sS.card}>
-            <TouchableOpacity style={sS.header} onPress={() => { void importResume(); }} disabled={importingResume} activeOpacity={0.7}>
-              <View style={[sS.iconSquare, { backgroundColor: Colors.primary }]}>
-                {importingResume
-                  ? <ActivityIndicator size="small" color="#FFFFFF" />
-                  : <Ionicons name="document-attach" size={18} color="#FFFFFF" />}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={sS.title}>{currentUser.resume ? 'Загруженное резюме' : 'Добавить резюме'}</Text>
-                <Text style={sS.summary} numberOfLines={1}>
-                  {currentUser.resume?.sourceFileName ?? 'PDF до 10 МБ'}
-                </Text>
-              </View>
-              <Ionicons name={currentUser.resume ? 'refresh' : 'add-circle'} size={19} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-        ) : null}
         <SectionCard
           iconName="document-text"
           iconBg="#6B7280"
