@@ -236,8 +236,16 @@ foreach (['terms', 'privacy', 'consent', 'crossBorderConsent', 'dataPolicy'] as 
         str_contains($profileSettings, "key: '{$docKey}'"));
 }
 $profileForFooter = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
-check('отзывы: сервисные карточки скрыты',
-    str_contains($profileForFooter, "(currentUser.role === 'employer' || profileTab === 'personal')"));
+check('отзывы и личные: сервисные карточки скрыты у работника',
+    str_contains($profileForFooter, "currentUser.role === 'employer' ? (") &&
+    !str_contains($profileForFooter, "(currentUser.role === 'employer' || profileTab === 'personal')"));
+check('личные: старое поле «Обращение» больше не показывается отдельной строкой',
+    !str_contains($profileForFooter, '<PersonalRow label="Обращение"'));
+check('личные: вопросы да/нет используют варианты выбора, а не «укажите значение»',
+    str_contains($profileForFooter, 'PERSONAL_FIELD_CHOICES') &&
+    str_contains($profileForFooter, "disabilityStatus: [") &&
+    str_contains($profileForFooter, "driversLicense: [") &&
+    !str_contains($profileForFooter, 'placeholder="Укажите значение"'));
 check('профиль: кнопка помощи в шапке открывает поддержку',
     str_contains($profileForFooter, "router.push('/support')") &&
     str_contains($profileForFooter, 'accessibilityLabel="Помощь"'));

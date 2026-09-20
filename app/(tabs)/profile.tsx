@@ -269,20 +269,22 @@ type PersonalFieldKey = keyof PersonalDetails;
 
 const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   middleName: 'Отчество',
-  preferredName: 'Предпочитаемое имя',
-  title: 'Обращение',
+  preferredName: 'Как к вам обращаться',
+  // Legacy-поле из старой US-анкеты. Сохраняем совместимость с данными,
+  // но отдельный пункт «Обращение» в русской анкете больше не показываем.
+  title: 'Форма обращения',
   birthday: 'Дата рождения',
   contactEmail: 'Email',
   emergencyContact: 'Экстренный контакт',
   links: 'Ссылки',
   citizenship: 'Гражданство',
-  workAuthorization: 'Разрешение на работу',
+  workAuthorization: 'Статус разрешения на работу',
   location: 'Местоположение',
-  workAvailability: 'Доступность к работе',
-  relocation: 'Переезд',
-  driversLicense: 'Водительские права',
-  veteranStatus: 'Статус ветерана',
-  disabilityStatus: 'Инвалидность',
+  workAvailability: 'Когда вы готовы работать',
+  relocation: 'Готовы к переезду?',
+  driversLicense: 'Есть водительские права?',
+  veteranStatus: 'Есть статус ветерана?',
+  disabilityStatus: 'Есть инвалидность?',
   gender: 'Пол',
   pronouns: 'Местоимения',
   race: 'Этническая принадлежность',
@@ -299,6 +301,75 @@ const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
   'militaryService',
   'employmentRestrictions',
 ]);
+
+type PersonalChoice = { label: string; value: string };
+
+const PERSONAL_FIELD_CHOICES: Partial<Record<PersonalFieldKey, PersonalChoice[]>> = {
+  workAuthorization: [
+    { label: 'Есть разрешение', value: 'Есть разрешение' },
+    { label: 'Не требуется', value: 'Не требуется' },
+    { label: 'Нет', value: 'Нет' },
+  ],
+  relocation: [
+    { label: 'Да', value: 'Да' },
+    { label: 'Нет', value: 'Нет' },
+    { label: 'Готов(а) рассмотреть', value: 'Готов(а) рассмотреть' },
+  ],
+  driversLicense: [
+    { label: 'Да', value: 'Да' },
+    { label: 'Нет', value: 'Нет' },
+  ],
+  veteranStatus: [
+    { label: 'Да', value: 'Да' },
+    { label: 'Нет', value: 'Нет' },
+    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
+  ],
+  disabilityStatus: [
+    { label: 'Да', value: 'Да' },
+    { label: 'Нет', value: 'Нет' },
+    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
+  ],
+  gender: [
+    { label: 'Мужчина', value: 'Мужчина' },
+    { label: 'Женщина', value: 'Женщина' },
+    { label: 'Другое', value: 'Другое' },
+    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
+  ],
+  pronouns: [
+    { label: 'Он / его', value: 'Он / его' },
+    { label: 'Она / её', value: 'Она / её' },
+    { label: 'Они / их', value: 'Они / их' },
+    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
+  ],
+};
+
+const PERSONAL_FIELD_PLACEHOLDERS: Partial<Record<PersonalFieldKey, string>> = {
+  middleName: 'Например, Сергеевич',
+  preferredName: 'Например, Никита',
+  birthday: 'Например, 07.06.2000',
+  contactEmail: 'name@example.com',
+  emergencyContact: 'Имя и телефон человека для связи',
+  links: 'Ссылка на портфолио, сайт или профиль',
+  citizenship: 'Например, Россия',
+  location: 'Например, Москва',
+  workAvailability: 'Например, полная занятость, будни',
+  race: 'Можно не указывать',
+  sexualOrientation: 'Можно не указывать',
+  professionalReferences: 'Имя, должность и контакт рекомендателя',
+  militaryService: 'Род войск, звание и период службы',
+  securityClearance: 'Укажите вид допуска, если он есть',
+  employmentRestrictions: 'Опишите ограничение, если оно есть',
+};
+
+function normalizePersonalChoiceValue(field: PersonalFieldKey, value?: string): string | undefined {
+  if (!value) return undefined;
+  const v = value.trim().toLowerCase();
+  if (['yes', 'true'].includes(v)) return 'Да';
+  if (['no', 'false'].includes(v)) return 'Нет';
+  if (field === 'gender' && v === 'male') return 'Мужчина';
+  if (field === 'gender' && v === 'female') return 'Женщина';
+  return value;
+}
 
 function PersonalRow({
   label, value, onPress, last = false,
@@ -398,8 +469,7 @@ function PersonalTab({
           <PersonalRow label="Имя" value={user.firstName} onPress={onEditCore} />
           <PersonalRow label="Отчество" value={p.middleName} onPress={() => onEditField('middleName')} />
           <PersonalRow label="Фамилия" value={user.lastName} onPress={onEditCore} />
-          <PersonalRow label="Предпочитаемое имя" value={p.preferredName} onPress={() => onEditField('preferredName')} />
-          <PersonalRow label="Обращение" value={p.title} onPress={() => onEditField('title')} />
+          <PersonalRow label="Как к вам обращаться" value={p.preferredName} onPress={() => onEditField('preferredName')} />
           <PersonalRow label="Дата рождения / возраст" value={birthday} onPress={() => onEditField('birthday')} last />
         </View>
       </PersonalSection>
@@ -430,7 +500,7 @@ function PersonalTab({
       <PersonalSection title="Разрешение на работу">
         <View style={personalS.card}>
           <PersonalRow label="Гражданство" value={citizenship} onPress={() => onEditField('citizenship')} />
-          <PersonalRow label="Разрешение на работу" value={workAuthorization} onPress={() => onEditField('workAuthorization')} last />
+          <PersonalRow label="Статус разрешения на работу" value={normalizePersonalChoiceValue('workAuthorization', workAuthorization)} onPress={() => onEditField('workAuthorization')} last />
         </View>
       </PersonalSection>
 
@@ -459,7 +529,7 @@ function PersonalTab({
       <PersonalSection title="Переезд">
         {relocation ? (
           <View style={personalS.card}>
-            <PersonalRow label="Готовность к переезду" value={relocation} onPress={() => onEditField('relocation')} last />
+            <PersonalRow label="Готовы к переезду?" value={normalizePersonalChoiceValue('relocation', relocation)} onPress={() => onEditField('relocation')} last />
           </View>
         ) : (
           <PersonalAddCard
@@ -474,7 +544,7 @@ function PersonalTab({
       <PersonalSection title="Водительские права">
         {p.driversLicense ? (
           <View style={personalS.card}>
-            <PersonalRow label="Водительские права" value={p.driversLicense} onPress={() => onEditField('driversLicense')} last />
+            <PersonalRow label="Есть водительские права?" value={normalizePersonalChoiceValue('driversLicense', p.driversLicense)} onPress={() => onEditField('driversLicense')} last />
           </View>
         ) : (
           <PersonalAddCard
@@ -488,15 +558,15 @@ function PersonalTab({
 
       <PersonalSection title="Трудовая информация">
         <View style={personalS.card}>
-          <PersonalRow label="Статус ветерана" value={privateValue('veteranStatus')} onPress={() => onEditField('veteranStatus')} />
-          <PersonalRow label="Инвалидность" value={privateValue('disabilityStatus')} onPress={() => onEditField('disabilityStatus')} last />
+          <PersonalRow label="Есть статус ветерана?" value={normalizePersonalChoiceValue('veteranStatus', privateValue('veteranStatus'))} onPress={() => onEditField('veteranStatus')} />
+          <PersonalRow label="Есть инвалидность?" value={normalizePersonalChoiceValue('disabilityStatus', privateValue('disabilityStatus'))} onPress={() => onEditField('disabilityStatus')} last />
         </View>
       </PersonalSection>
 
       <PersonalSection title="Демографическая информация">
         <View style={personalS.card}>
-          <PersonalRow label="Пол" value={privateValue('gender')} onPress={() => onEditField('gender')} />
-          <PersonalRow label="Местоимения" value={privateValue('pronouns')} onPress={() => onEditField('pronouns')} />
+          <PersonalRow label="Пол" value={normalizePersonalChoiceValue('gender', privateValue('gender'))} onPress={() => onEditField('gender')} />
+          <PersonalRow label="Местоимения" value={normalizePersonalChoiceValue('pronouns', privateValue('pronouns'))} onPress={() => onEditField('pronouns')} />
           <PersonalRow label="Этническая принадлежность" value={privateValue('race')} onPress={() => onEditField('race')} />
           <PersonalRow label="Сексуальная ориентация" value={privateValue('sexualOrientation')} onPress={() => onEditField('sexualOrientation')} last />
         </View>
@@ -1458,7 +1528,7 @@ export default function ProfileScreen() {
         </SectionCard>
         </> : null}
 
-        {(currentUser.role === 'employer' || profileTab === 'personal') ? (
+        {currentUser.role === 'employer' ? (
           <>
             {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
                 Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
@@ -1592,15 +1662,38 @@ export default function ProfileScreen() {
             </Text>
 
             {personalField ? (
-              <AppInput
-                label={PERSONAL_FIELD_LABELS[personalField]}
-                value={personalEditValue}
-                onChangeText={setPersonalEditValue}
-                placeholder="Укажите значение"
-                multiline={PERSONAL_MULTILINE.has(personalField)}
-                numberOfLines={PERSONAL_MULTILINE.has(personalField) ? 5 : 1}
-                keyboardType={personalField === 'contactEmail' ? 'email-address' : 'default'}
-              />
+              PERSONAL_FIELD_CHOICES[personalField] ? (
+                <View style={personalS.choiceList}>
+                  {PERSONAL_FIELD_CHOICES[personalField]!.map(option => {
+                    const selected = normalizePersonalChoiceValue(personalField, personalEditValue) === option.value;
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[personalS.choiceRow, selected && personalS.choiceRowSelected]}
+                        onPress={() => setPersonalEditValue(option.value)}
+                        activeOpacity={0.76}
+                      >
+                        <View style={[personalS.choiceRadio, selected && personalS.choiceRadioSelected]}>
+                          {selected ? <View style={personalS.choiceRadioDot} /> : null}
+                        </View>
+                        <Text style={[personalS.choiceText, selected && personalS.choiceTextSelected]}>
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : (
+                <AppInput
+                  label={PERSONAL_FIELD_LABELS[personalField]}
+                  value={personalEditValue}
+                  onChangeText={setPersonalEditValue}
+                  placeholder={PERSONAL_FIELD_PLACEHOLDERS[personalField] ?? 'Введите данные'}
+                  multiline={PERSONAL_MULTILINE.has(personalField)}
+                  numberOfLines={PERSONAL_MULTILINE.has(personalField) ? 5 : 1}
+                  keyboardType={personalField === 'contactEmail' ? 'email-address' : 'default'}
+                />
+              )
             ) : null}
 
             {editSection === 'personal' && (
@@ -2501,6 +2594,45 @@ const personalS = StyleSheet.create({
     color: Colors.textMuted,
     paddingHorizontal: rs(4),
   },
+  choiceList: { gap: rs(8) },
+  choiceRow: {
+    minHeight: rs(52),
+    borderRadius: rs(14),
+    borderWidth: 1,
+    borderColor: Colors.divider,
+    paddingHorizontal: rs(14),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(11),
+    backgroundColor: Colors.bg,
+  },
+  choiceRowSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
+  choiceRadio: {
+    width: rs(20),
+    height: rs(20),
+    borderRadius: rs(10),
+    borderWidth: 2,
+    borderColor: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  choiceRadioSelected: { borderColor: Colors.primary },
+  choiceRadioDot: {
+    width: rs(10),
+    height: rs(10),
+    borderRadius: rs(5),
+    backgroundColor: Colors.primary,
+  },
+  choiceText: {
+    flex: 1,
+    fontSize: rf(13.5),
+    color: Colors.textPrimary,
+    fontWeight: '600',
+  },
+  choiceTextSelected: { color: Colors.primary, fontWeight: '800' },
 });
 
 const resumeS = StyleSheet.create({
