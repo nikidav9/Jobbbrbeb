@@ -1194,6 +1194,13 @@ export default function ProfileScreen() {
               </View>
             )}
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/profile-settings')}
+            style={styles.headerBtn}
+            activeOpacity={0.72}
+          >
+            <Ionicons name="settings-outline" size={23} color={Colors.textPrimary} />
+          </TouchableOpacity>
         </View>
       } />
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
@@ -1269,6 +1276,21 @@ export default function ProfileScreen() {
           />
         ) : null}
 
+        {currentUser.role === 'worker' && profileTab === 'files' ? (
+          <ResumeVaultTab
+            items={resumeFiles}
+            loading={resumeFilesLoading}
+            loadFailed={resumeFilesLoadFailed}
+            legacyResume={currentUser.resume}
+            busyId={resumeFileBusyId}
+            importing={importingResume}
+            onAdd={() => { void importResume(); }}
+            onOpen={(item) => { void openResumePdf(item); }}
+            onSelect={(item) => { void selectResumeFromVault(item); }}
+            onDelete={deleteResumeFromVault}
+          />
+        ) : null}
+
         {currentUser.role === 'employer' ? (
           <>
             <SectionCard
@@ -1311,7 +1333,7 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* Документы */}
-        {(currentUser.role === 'employer' || profileTab === 'files') ? <>
+        {currentUser.role === 'employer' ? <>
         {currentUser.role === 'worker' ? (
           <View style={sS.card}>
             <TouchableOpacity style={sS.header} onPress={() => { void importResume(); }} disabled={importingResume} activeOpacity={0.7}>
@@ -1440,7 +1462,7 @@ export default function ProfileScreen() {
         </SectionCard>
         </> : null}
 
-        {(currentUser.role === 'employer' || profileTab !== 'resume') ? (
+        {(currentUser.role === 'employer' || (profileTab !== 'resume' && profileTab !== 'files')) ? (
           <>
             {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
                 Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
