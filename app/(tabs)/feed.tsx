@@ -1627,7 +1627,7 @@ function WorkerPermMode() {
           // края карточки строки уходят в её цвет, и по одному этому видно, что
           // текст продолжается. Градиент из expo-linear-gradient — он уже в
           // сборке (app/+not-found.tsx), нового нативного модуля нет.
-          <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve + rs(2) }]} pointerEvents="none">
+          <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve }]} pointerEvents="none">
             <LinearGradient
               colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', Colors.bg]}
               style={StyleSheet.absoluteFill}
