@@ -42,12 +42,22 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    await Promise.all(
-      (await caches.keys())
-        .filter((name) => name.startsWith('jobtoo-app-shell-') && name !== SHELL_CACHE)
-        .map((name) => caches.delete(name))
-    );
+    const oldCaches = (await caches.keys())
+      .filter((name) => name.startsWith('jobtoo-app-shell-') && name !== SHELL_CACHE);
+
+    await Promise.all(oldCaches.map((name) => caches.delete(name)));
     await self.clients.claim();
+
+    // Bridge for already-installed PWAs: the previous page may still be
+    // running an old JS bundle even after this worker updates successfully.
+    // On an actual SW upgrade (not first install), navigate open JobToo
+    // windows once so they request the fresh no-store app shell immediately.
+    if (oldCaches.length > 0) {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      await Promise.allSettled(
+        windows.map((client) => client.navigate(client.url).catch(() => undefined))
+      );
+    }
   })());
 });
 
