@@ -21,6 +21,8 @@ import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
 import {
   APP_HEADER_BOTTOM,
+  APP_HEADER_CONTROL,
+  APP_HEADER_GAP,
   APP_HEADER_HORIZONTAL,
   APP_HEADER_TOP,
   BrandLogo,
@@ -691,9 +693,10 @@ const wm = StyleSheet.create({
     paddingTop: rs(APP_HEADER_TOP),
     paddingBottom: rs(APP_HEADER_BOTTOM),
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP) },
   headerBtn: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
+    width: rs(APP_HEADER_CONTROL), height: rs(APP_HEADER_CONTROL),
+    borderRadius: rs(APP_HEADER_CONTROL / 2),
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#FFFFFF', ...Shadow.card,
   },
