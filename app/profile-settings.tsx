@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  KeyboardAvoidingView, Platform, Alert, Linking, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Linking, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -88,6 +88,7 @@ export default function ProfileSettingsScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
 
+  const [showLogout, setShowLogout] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -368,18 +369,7 @@ export default function ProfileSettingsScreen() {
             label="Выйти из аккаунта"
             icon="log-out-outline"
             danger
-            onPress={() => Alert.alert(
-              'Выйти из аккаунта?',
-              'Чтобы вернуться, понадобится снова войти.',
-              [
-                { text: 'Отмена', style: 'cancel' },
-                {
-                  text: 'Выйти',
-                  style: 'destructive',
-                  onPress: performLogout,
-                },
-              ],
-            )}
+            onPress={() => setShowLogout(true)}
           />
           <SettingsRow
             label="Удалить аккаунт"
@@ -394,6 +384,44 @@ export default function ProfileSettingsScreen() {
           Настройки профиля и приватные документы доступны только владельцу аккаунта.
         </Text>
       </ScrollView>
+
+      <Modal
+        visible={showLogout}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLogout(false)}
+      >
+        <View style={s.confirmOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowLogout(false)}
+          />
+          <View style={s.confirmCard}>
+            <View style={s.confirmIcon}>
+              <Ionicons name="log-out-outline" size={rf(24)} color={Colors.red} />
+            </View>
+            <Text style={s.confirmTitle}>Выйти из аккаунта?</Text>
+            <Text style={s.confirmText}>
+              Чтобы вернуться, понадобится снова войти по номеру телефона.
+            </Text>
+            <View style={s.confirmActions}>
+              <PrimaryButton
+                label="Выйти"
+                onPress={async () => {
+                  setShowLogout(false);
+                  await performLogout();
+                }}
+              />
+              <PrimaryButton
+                label="Отмена"
+                onPress={() => setShowLogout(false)}
+                secondary
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showNotificationSettings}
@@ -575,6 +603,46 @@ const s = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: rs(18),
   },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: rs(22),
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: rs(380),
+    borderRadius: rs(22),
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: rs(20),
+    paddingVertical: rs(22),
+    ...Shadow.card,
+  },
+  confirmIcon: {
+    width: rs(48),
+    height: rs(48),
+    borderRadius: rs(24),
+    backgroundColor: Colors.redLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  confirmTitle: {
+    marginTop: rs(14),
+    fontSize: rf(19),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  confirmText: {
+    marginTop: rs(7),
+    fontSize: rf(12.5),
+    lineHeight: rf(18),
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  confirmActions: { gap: rs(9), marginTop: rs(20) },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.28)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: '#FFFFFF',
