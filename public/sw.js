@@ -1,6 +1,7 @@
-// App-shell cache. v7 keeps navigation truly network-first: a reachable HTML
-// response is returned immediately and asset caching is best-effort only.
-const SHELL_CACHE = 'jobtoo-app-shell-v7';
+// App-shell cache. v8 also keeps Expo/static assets network-first while the
+// device is online. This prevents an installed iOS/Android PWA from holding an
+// old JavaScript bundle after a successful production deploy.
+const SHELL_CACHE = 'jobtoo-app-shell-v8';
 const SHELL_STATIC = ['/manifest.json', '/favicon.ico', '/jt-logo.jpg'];
 
 async function fetchWithTimeout(request, timeoutMs) {
@@ -83,18 +84,24 @@ self.addEventListener('fetch', (event) => {
       && (url.pathname.startsWith('/_expo/static/') || url.pathname.startsWith('/assets/'))) {
     event.respondWith((async () => {
       const cache = await caches.open(SHELL_CACHE);
-      const cached = await cache.match(request);
-      if (cached) return cached;
 
-      for (let attempt = 0; attempt < 3; attempt++) {
+      // Online => always ask origin first. Previously this branch returned the
+      // cached bundle immediately forever, so a PWA could keep an old screen
+      // even though main and the web deploy were already fresh.
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const fresh = await fetchWithTimeout(request, 8000);
-          if (fresh.ok) await cache.put(request, fresh.clone());
+          if (!fresh.ok) throw new Error('asset HTTP ' + fresh.status);
+          await cache.put(request, fresh.clone());
           return fresh;
         } catch {
-          if (attempt < 2) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+          if (attempt < 1) await new Promise(r => setTimeout(r, 350));
         }
       }
+
+      // Offline/temporary network failure => preserve the last working app.
+      const cached = await cache.match(request);
+      if (cached) return cached;
       return Response.error();
     })());
   }
