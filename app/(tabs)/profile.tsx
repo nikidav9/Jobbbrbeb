@@ -568,6 +568,215 @@ function PersonalTab({
   );
 }
 
+function mergeResumeIntoUser(
+  user: User,
+  resume: ResumeProfile,
+  identity?: {
+    firstName?: string;
+    lastName?: string;
+    middleName?: string;
+    age?: number;
+    birthday?: string;
+  },
+): User {
+  const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
+  const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
+  const inferredWorkTypes = inferWorkTypes(resume);
+
+  return {
+    ...user,
+    resume,
+    firstName: identity?.firstName ?? user.firstName,
+    lastName: identity?.lastName ?? user.lastName,
+    age: identity?.age ?? user.age,
+    bio: resume.summary?.trim() || user.bio,
+    workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : user.workTypes,
+    personalDetails: {
+      ...(user.personalDetails ?? {}),
+      ...(identity?.middleName ? { middleName: identity.middleName } : {}),
+      ...(identity?.birthday ? { birthday: identity.birthday } : {}),
+      ...(resume.email ? { contactEmail: resume.email } : {}),
+      ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
+      ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
+      ...(resume.city ? { location: resume.city } : {}),
+      ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
+      ...(importedRelocation ? { relocation: importedRelocation } : {}),
+    },
+  };
+}
+
+function ResumeVaultTab({
+  items,
+  loading,
+  loadFailed,
+  legacyResume,
+  busyId,
+  importing,
+  onAdd,
+  onOpen,
+  onSelect,
+  onDelete,
+}: {
+  items: ResumeVaultItem[];
+  loading: boolean;
+  loadFailed: boolean;
+  legacyResume?: ResumeProfile;
+  busyId: string | null;
+  importing: boolean;
+  onAdd: () => void;
+  onOpen: (item: ResumeVaultItem) => void;
+  onSelect: (item: ResumeVaultItem) => void;
+  onDelete: (item: ResumeVaultItem) => void;
+}) {
+  const active = items.find(item => item.selected) ?? null;
+
+  return (
+    <View style={filesS.content}>
+      <View style={filesS.intro}>
+        <View style={filesS.introIcon}>
+          <Ionicons name="folder-open-outline" size={rf(22)} color={Colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={filesS.introTitle}>Сейф резюме</Text>
+          <Text style={filesS.introText}>
+            Храните несколько PDF и выбирайте активное. Выбранное резюме сразу синхронизируется с профилем.
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={filesS.addCard}
+        onPress={onAdd}
+        disabled={importing}
+        activeOpacity={0.78}
+      >
+        <View style={filesS.addIcon}>
+          {importing
+            ? <ActivityIndicator size="small" color="#FFFFFF" />
+            : <Ionicons name="add" size={rf(24)} color="#FFFFFF" />}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={filesS.addTitle}>{importing ? 'Добавляем PDF…' : 'Добавить резюме'}</Text>
+          <Text style={filesS.addSub}>PDF до 10 МБ · файл сохранится приватно</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
+      </TouchableOpacity>
+
+      {loading ? (
+        <View style={filesS.state}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={filesS.stateText}>Загружаем ваши резюме…</Text>
+        </View>
+      ) : loadFailed ? (
+        <View style={filesS.state}>
+          <Ionicons name="cloud-offline-outline" size={rf(22)} color={Colors.textMuted} />
+          <Text style={filesS.stateText}>Не удалось загрузить сейф. Откройте вкладку ещё раз.</Text>
+        </View>
+      ) : items.length === 0 ? (
+        <View style={filesS.state}>
+          <Ionicons name="document-text-outline" size={rf(26)} color={Colors.textMuted} />
+          <Text style={filesS.stateTitle}>В сейфе пока нет PDF</Text>
+          <Text style={filesS.stateText}>
+            {legacyResume
+              ? 'Текущее резюме было загружено до появления сейфа. Добавьте PDF ещё раз — после этого его можно будет смотреть и переключать здесь.'
+              : 'Добавьте первое резюме — оно автоматически станет активным в профиле.'}
+          </Text>
+        </View>
+      ) : (
+        <>
+          {active ? (
+            <View style={filesS.activeCard}>
+              <View style={filesS.activeTop}>
+                <View style={filesS.pdfIcon}>
+                  <Text style={filesS.pdfText}>PDF</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={filesS.activeLabel}>Сейчас в профиле</Text>
+                  <Text style={filesS.fileName} numberOfLines={2}>{active.fileName}</Text>
+                  <Text style={filesS.position} numberOfLines={1}>
+                    {active.resume.desiredPosition ?? 'Должность не указана'}
+                  </Text>
+                </View>
+                <View style={filesS.selectedPill}>
+                  <Ionicons name="checkmark-circle" size={rf(15)} color="#FFFFFF" />
+                  <Text style={filesS.selectedPillText}>Выбрано</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={filesS.previewButton}
+                onPress={() => onOpen(active)}
+                disabled={busyId === active.id}
+                activeOpacity={0.78}
+              >
+                {busyId === active.id
+                  ? <ActivityIndicator size="small" color={Colors.primary} />
+                  : <Ionicons name="eye-outline" size={rf(17)} color={Colors.primary} />}
+                <Text style={filesS.previewButtonText}>Посмотреть PDF</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <View style={filesS.listHeader}>
+            <Text style={filesS.listTitle}>Все резюме</Text>
+            <Text style={filesS.listCount}>{items.length}</Text>
+          </View>
+
+          {items.map(item => {
+            const selected = item.selected;
+            const busy = busyId === item.id;
+            const date = item.importedAt ? new Date(item.importedAt).toLocaleDateString('ru-RU') : '';
+            return (
+              <View key={item.id} style={[filesS.rowCard, selected && filesS.rowCardSelected]}>
+                <TouchableOpacity
+                  style={filesS.rowMain}
+                  onPress={() => onOpen(item)}
+                  disabled={busy}
+                  activeOpacity={0.76}
+                >
+                  <View style={[filesS.smallPdf, selected && filesS.smallPdfSelected]}>
+                    <Ionicons name="document-text-outline" size={rf(22)} color={selected ? Colors.primary : Colors.textSecondary} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={filesS.rowName} numberOfLines={2}>{item.fileName}</Text>
+                    <Text style={filesS.rowMeta} numberOfLines={1}>
+                      {[item.resume.desiredPosition, date].filter(Boolean).join(' · ') || 'PDF-резюме'}
+                    </Text>
+                  </View>
+                  <Ionicons name="eye-outline" size={rf(18)} color={Colors.textMuted} />
+                </TouchableOpacity>
+
+                <View style={filesS.rowActions}>
+                  <TouchableOpacity
+                    style={[filesS.selectButton, selected && filesS.selectButtonActive]}
+                    onPress={() => onSelect(item)}
+                    disabled={selected || busy}
+                    activeOpacity={0.78}
+                  >
+                    {busy
+                      ? <ActivityIndicator size="small" color={selected ? '#FFFFFF' : Colors.primary} />
+                      : <Ionicons name={selected ? 'checkmark' : 'swap-horizontal'} size={rf(15)} color={selected ? '#FFFFFF' : Colors.primary} />}
+                    <Text style={[filesS.selectText, selected && filesS.selectTextActive]}>
+                      {selected ? 'Активное' : 'Выбрать'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={filesS.deleteButton}
+                    onPress={() => onDelete(item)}
+                    disabled={busy}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="trash-outline" size={rf(17)} color={Colors.red} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
