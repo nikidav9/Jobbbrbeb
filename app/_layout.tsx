@@ -14,6 +14,7 @@ import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
 import CookieConsent from '@/components/CookieConsent';
 import { ToastLayer } from '@/components/ui/ToastLayer';
+import { OnboardingOverlay } from '@/components/OnboardingOverlay';
 import { setupAndroidChannels } from '@/services/notifications';
 import { routeForNotification } from '@/services/notificationRoute';
 import { hideWebSplash, markWebBundleMounted } from '@/lib/webSplash';
@@ -249,6 +250,7 @@ export default function RootLayout() {
                 экран должно быть очевидно. */}
             <Stack.Screen name="skill-test" options={{ presentation: 'modal' }} />
           </Stack>
+          <OnboardingOverlay />
           {/* Поверх всего, но под всплывающими сообщениями: окно закрывает
               приложение до принятия документов, а сообщения о неудачной
               записи должны быть видны и над ним. */}

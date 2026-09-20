@@ -1,371 +1,343 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, useWindowDimensions, Modal, Animated, Easing,
+  Animated,
+  Easing,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import { usePathname, useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '@/constants/theme';
-import { useApp } from '@/hooks/useApp';
-import { getOnboardingTarget, getOnboardingFlag, subscribeOnboardingTargets, measureOnboardingTargets } from '@/lib/onboardingTargets';
-import { LavkaLogo } from '@/components/ui/LavkaLogo';
-
 import { rs, rf } from '@/constants/scale';
+import { useApp } from '@/hooks/useApp';
+import {
+  getOnboardingTarget,
+  measureOnboardingTargets,
+  subscribeOnboardingTargets,
+} from '@/lib/onboardingTargets';
+import {
+  chapterLabel,
+  normalizeOnboardingPath,
+  onboardingSteps,
+  onboardingStorageKey,
+} from '@/lib/onboardingFlow';
 
-const KEY = (uid: string) => `jm_onboarding_done_${uid}`;
+type Rect = { x: number; y: number; w: number; h: number };
+type StoredProgress = { status: 'active' | 'done'; step: number };
 
-// Подписка, чтобы «Показать обучение снова» из профиля мгновенно перезапускало оверлей
 const replayListeners = new Set<() => void>();
-
-// Кто ждёт окончания обучения. Предложение включить уведомления показывается
-// только после него — иначе два окна наезжают друг на друга при первом входе.
 const doneListeners = new Set<() => void>();
 
-/** Обучение уже пройдено этим пользователем? */
 export async function isOnboardingDone(uid: string): Promise<boolean> {
-  try { return (await AsyncStorage.getItem(KEY(uid))) === '1'; } catch { return true; }
+  try {
+    const raw = await AsyncStorage.getItem(onboardingStorageKey(uid));
+    if (!raw) return false;
+    return (JSON.parse(raw) as StoredProgress).status === 'done';
+  } catch {
+    return true;
+  }
 }
 
-/** Позвать, когда обучение завершится. Возвращает функцию отписки. */
 export function onOnboardingDone(cb: () => void): () => void {
   doneListeners.add(cb);
   return () => doneListeners.delete(cb);
 }
 
-// Внешний ключ — сбрасывает флаг и просит смонтированный оверлей показаться заново
 export async function resetOnboarding(uid: string) {
-  try { await AsyncStorage.removeItem(KEY(uid)); } catch {}
+  try { await AsyncStorage.removeItem(onboardingStorageKey(uid)); } catch {}
   replayListeners.forEach(fn => fn());
 }
 
-type Rect = { x: number; y: number; w: number; h: number };
-type Step = {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  body: string;
-  spot?: Rect;          // подсветка элемента; нет → центрированный экран-приветствие
-  hint: 'below' | 'above' | 'center';
-  demo?: boolean;       // шаг про свайп: при отсутствии реальной карточки показываем демо
-};
-
-/**
- * Плавно пульсирующее кольцо вокруг подсвеченного элемента: расходится и
- * гаснет, как круги по воде. Один и тот же указатель на всех шагах, чтобы
- * подсказка читалась одинаково.
- */
 function PulseRing({ rect, radius }: { rect: Rect; radius: number }) {
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1, duration: 1250, easing: Easing.out(Easing.quad), useNativeDriver: true,
-        }),
-        Animated.delay(220),
-      ]),
-    );
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.delay(180),
+    ]));
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, [pulse]);
 
-  const common = {
+  const frame = {
     position: 'absolute' as const,
-    left: rect.x, top: rect.y, width: rect.w, height: rect.h,
+    left: rect.x,
+    top: rect.y,
+    width: rect.w,
+    height: rect.h,
     borderRadius: radius,
     borderWidth: 2.5,
     borderColor: Colors.primary,
   };
 
   return (
-    // absoluteFill обязателен: у View без размеров Android обрезает
-    // абсолютных детей, выходящих за его границы, — кольцо бы пропало
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* постоянный контур — видно, что именно выделено */}
-      <View style={[common, { opacity: 0.95 }]} />
-      {/* расходящееся кольцо */}
+      <View style={[frame, { opacity: 0.95 }]} />
       <Animated.View
-        style={[common, {
-          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] }),
-          transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] }) }],
-        }]}
+        style={[
+          frame,
+          {
+            opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] }),
+            transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] }) }],
+          },
+        ]}
       />
     </View>
   );
 }
 
+function fallbackRect(target: string | undefined, width: number, height: number, top: number, bottom: number): Rect | undefined {
+  if (!target) return undefined;
+  if (target === 'worker.feed.card') return { x: 16, y: top + 118, w: width - 32, h: Math.max(220, height - top - bottom - 270) };
+  if (target === 'worker.feed.reject') return { x: width * 0.15, y: height - bottom - 166, w: 72, h: 72 };
+  if (target === 'worker.feed.filter') return { x: width * 0.5 - 36, y: height - bottom - 166, w: 72, h: 72 };
+  if (target === 'worker.feed.apply') return { x: width * 0.75 - 18, y: height - bottom - 166, w: 72, h: 72 };
+  if (target === 'worker.feed.save') return { x: width - 132, y: top + 126, w: 52, h: 52 };
+  if (target === 'tab.matches') return { x: width / 3, y: height - bottom - 78, w: width / 3, h: 64 };
+  if (target === 'tab.profile') return { x: width * 2 / 3, y: height - bottom - 78, w: width / 3, h: 64 };
+  if (target === 'matches.saved') return { x: width - 150, y: top + 10, w: 48, h: 48 };
+  if (target === 'matches.chats') return { x: width - 96, y: top + 10, w: 48, h: 48 };
+  if (target.endsWith('.back')) return { x: 12, y: top + 8, w: 52, h: 52 };
+  if (target === 'employer.feed.create') return { x: width - 88, y: height - bottom - 166, w: 64, h: 64 };
+  if (target === 'employer.create.publish') return { x: 20, y: height - bottom - 90, w: width - 40, h: 58 };
+  return { x: 16, y: top + 100, w: width - 32, h: Math.max(180, height - top - bottom - 220) };
+}
+
+function roundedRect({ x, y, w, h }: Rect, radius: number) {
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+  return `M${x + r} ${y} H${x + w - r} A${r} ${r} 0 0 1 ${x + w} ${y + r}`
+    + ` V${y + h - r} A${r} ${r} 0 0 1 ${x + w - r} ${y + h}`
+    + ` H${x + r} A${r} ${r} 0 0 1 ${x} ${y + h - r}`
+    + ` V${y + r} A${r} ${r} 0 0 1 ${x + r} ${y} Z`;
+}
+
+function spotRadius(rect: Rect) {
+  return Math.abs(rect.w - rect.h) < 14 ? Math.max(rect.w, rect.h) / 2 : rs(18);
+}
+
 export function OnboardingOverlay() {
   const app = useApp();
   const user = app?.currentUser ?? null;
+  const router = useRouter();
+  const pathname = normalizeOnboardingPath(usePathname());
   const insets = useSafeAreaInsets();
-  // useWindowDimensions, а не Dimensions.get: размер окна меняется — поворот
-  // экрана, разделённый экран на планшете, изменение окна браузера, — и
-  // подсветка должна переехать вместе с кнопкой, а не остаться где была.
-  const { width: W, height: H } = useWindowDimensions();
-
+  const { width, height } = useWindowDimensions();
   const [visible, setVisible] = useState(false);
-  const [step, setStep] = useState(0);
-  const [, force] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [, redraw] = useState(0);
 
-  // Элементы сообщают геометрию через measureInWindow — это координаты ОКНА.
-  // Оверлей живёт в модальном окне, которое тоже занимает всё окно целиком,
-  // поэтому пересчитывать ничего не нужно: замеры ложатся один в один.
-  //
-  // Раньше оверлей висел внутри контейнера вкладок и вычитал собственное
-  // положение. Стоило этому положению разойтись с ожидаемым — а оно зависит
-  // от устройства и от того, кто рисует отступы, — и подсветка уезжала мимо
-  // кнопки. На скриншотах кольцо стояло выше и левее «плюса».
+  const role = user?.role === 'employer' ? 'employer' : 'worker';
+  const userId = user?.id ?? null;
+  const isGuest = user?.isGuest ?? false;
+  const steps = useMemo(() => onboardingSteps(role), [role]);
+  const step = steps[Math.min(stepIndex, steps.length - 1)];
+  const stepPath = step?.path;
 
-  // Перерисовка, когда элементы сообщают свои измеренные позиции
-  useEffect(() => subscribeOnboardingTargets(() => force(n => n + 1)), []);
+  useEffect(() => subscribeOnboardingTargets(() => redraw(value => value + 1)), []);
 
-  // И просим перемерить в тот момент, когда собираемся рисовать. Первый
-  // замер при раскладке нередко приходит с нулями — тогда цели просто нет,
-  // и шаг оставался без подсветки. Второй раз с задержкой: на Android
-  // отступы применяются позже первой раскладки.
   useEffect(() => {
     if (!visible) return;
     measureOnboardingTargets();
-    const t = setTimeout(measureOnboardingTargets, 300);
-    return () => clearTimeout(t);
-  }, [visible, step]);
+    const first = setTimeout(measureOnboardingTargets, 120);
+    const second = setTimeout(measureOnboardingTargets, 420);
+    return () => { clearTimeout(first); clearTimeout(second); };
+  }, [visible, stepIndex, pathname]);
 
   useEffect(() => {
-    // Гостю онбординг не показываем: он листает ленту на просмотр, а обучение
-    // «откликайся свайпом» про действие, которого у гостя нет. Увидит после
-    // регистрации.
-    if (!user || user.isGuest) { setVisible(false); return; }
+    if (!userId || isGuest) {
+      setVisible(false);
+      return;
+    }
+
     let cancelled = false;
-    AsyncStorage.getItem(KEY(user.id)).then(v => {
-      if (!cancelled && !v) { setStep(0); setVisible(true); }
-    }).catch(() => {});
-    const replay = () => { setStep(0); setVisible(true); };
+    const load = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(onboardingStorageKey(userId));
+        const saved = raw ? JSON.parse(raw) as StoredProgress : null;
+        if (cancelled || saved?.status === 'done') return;
+        setStepIndex(Math.max(0, Math.min(saved?.step ?? 0, steps.length - 1)));
+        setVisible(true);
+      } catch {}
+    };
+    void load();
+
+    const replay = () => {
+      setStepIndex(0);
+      setVisible(true);
+    };
     replayListeners.add(replay);
-    return () => { cancelled = true; replayListeners.delete(replay); };
-  }, [user?.id]);
+    return () => {
+      cancelled = true;
+      replayListeners.delete(replay);
+    };
+  }, [userId, isGuest, steps.length]);
 
-  if (!visible || !user || user.isGuest) return null;
+  useEffect(() => {
+    if (!visible || !stepPath || pathname === stepPath) return;
+    const timer = setTimeout(() => router.replace(stepPath as never), 80);
+    return () => clearTimeout(timer);
+  }, [visible, stepPath, pathname, router]);
 
-  const isWorker = user.role === 'worker';
-  const top = insets.top;
+  if (!visible || !user || user.isGuest || !step) return null;
 
-  // Позиции элементов — только по замеру, без запасных расчётов.
-  //
-  // Запасные значения тут были хуже, чем их отсутствие: они вычислялись по
-  // размеру экрана и предполагали одну конкретную вёрстку. На чужом
-  // устройстве кольцо вставало мимо кнопки, но с уверенным видом. Не
-  // измерено — значит подсветки нет и подсказка просто стоит по центру.
-  const pad = (r: Rect, p: number): Rect => ({ x: r.x - p, y: r.y - p, w: r.w + p * 2, h: r.h + p * 2 });
-  const measured = (key: string, p = 6): Rect | undefined => {
-    const t = getOnboardingTarget(key);
-    return t && t.w > 0 && t.h > 0 ? pad(t, p) : undefined;
-  };
+  const measured = step.target ? getOnboardingTarget(step.target) : undefined;
+  const compactMeasured = measured && (step.target?.endsWith('.content') || step.target === 'employer.create.form')
+    ? { ...measured, h: Math.min(measured.h, rs(270)) }
+    : measured;
+  const padded = compactMeasured
+    ? { x: compactMeasured.x - 5, y: compactMeasured.y - 5, w: compactMeasured.w + 10, h: compactMeasured.h + 10 }
+    : fallbackRect(step.target, width, height, insets.top, insets.bottom);
+  const spot = padded && padded.y < height && padded.y + padded.h > 0 ? padded : undefined;
+  const radius = spot ? spotRadius(spot) : rs(18);
 
-  const rFab = measured('fab');
-  const rMatchesTab = measured('matchesTab', 4);
+  const chapterOrder = Array.from(new Set(steps.map(item => item.chapter)));
+  const chapterIndex = chapterOrder.indexOf(step.chapter);
+  const chapterSteps = steps.filter(item => item.chapter === step.chapter);
+  const chapterStepIndex = chapterSteps.findIndex(item => item.id === step.id);
+  const isLast = stepIndex === steps.length - 1;
 
-  // Есть ли реальная карточка смены. Если нет — рисуем демо-карточку сами,
-  // и вот ей размеры придумать можно: это наша картинка, а не чужая кнопка.
-  const hasRealCard = getOnboardingFlag('hasShiftCard') !== false;
-  const cardTarget = getOnboardingTarget('card');
-  const rCard: Rect | undefined = hasRealCard
-    ? (cardTarget ? pad(cardTarget, 4) : undefined)
-    : { x: 24, y: top + 158, w: W - 48, h: 208 };
-
-  const steps: Step[] = isWorker
-    ? [
-        { icon: 'hand-left', title: `Привет, ${user.firstName}! 👋`, hint: 'center',
-          body: 'Это JobToo — постоянная работа рядом с домом. Покажем за 20 секунд, куда нажимать.' },
-        { icon: 'heart', title: 'Откликайся свайпом', spot: rCard, hint: 'below', demo: !hasRealCard,
-          body: 'Свайп карточки вправо или ❤️ — откликнуться на вакансию. Влево — пропустить.' },
-        { icon: 'people', title: 'Твои отклики', spot: rMatchesTab, hint: 'above',
-          body: 'Вкладка «Отклики»: здесь ответы работодателей и статусы твоих заявок.' },
-        { icon: 'notifications', title: 'Не пропусти ответ', hint: 'center',
-          body: 'Ответы работодателей и важные события всегда остаются в колокольчике JobToo. Push-уведомления можно включить отдельно.' },
-      ]
-    : [
-        { icon: 'hand-left', title: `Привет, ${user.firstName}! 👋`, hint: 'center',
-          body: 'Это JobToo — публикуйте вакансии, кандидаты рядом откликнутся. Покажем, куда нажимать.' },
-        { icon: 'add-circle', title: 'Создать вакансию', spot: rFab, hint: 'above',
-          body: 'Кнопка «+» — опубликовать вакансию за минуту.' },
-        { icon: 'people', title: 'Отклики кандидатов', spot: rMatchesTab, hint: 'above',
-          body: 'Вкладка «Отклики»: сюда падают заявки. Одобряйте или отклоняйте в один тап.' },
-        { icon: 'notifications', title: 'Отвечайте быстрее', hint: 'center',
-          body: 'Новые отклики и статусы всегда видны в колокольчике JobToo. Push-уведомления можно включить отдельно.' },
-      ];
-
-  const s = steps[step];
-  const isLast = step === steps.length - 1;
-
-  const finish = () => {
-    AsyncStorage.setItem(KEY(user.id), '1').catch(() => {});
+  const complete = async () => {
+    try {
+      const progress: StoredProgress = { status: 'done', step: steps.length - 1 };
+      await AsyncStorage.setItem(onboardingStorageKey(user.id), JSON.stringify(progress));
+    } catch {}
     setVisible(false);
     doneListeners.forEach(fn => fn());
   };
-  const next = () => { if (isLast) finish(); else setStep(step + 1); };
 
-  // Карточка-подсказка: над или под подсветкой, не перекрывая подсвеченный
-  // элемент. Сторону выбираем по свободному месту, а не по тому, что записано
-  // в шаге: на маленьком экране «снизу» может не остаться места вовсе, и
-  // подсказка накрыла бы собой то, на что показывает.
-  //
-  // Для верхнего положения прижимаем НИЗ карточки к элементу: высота её
-  // зависит от длины текста и от размера шрифта на устройстве, а низ известен.
-  const cardW = W - 40;
-  const CARD_MIN = 300;
-  const below = s.spot ? H - (s.spot.y + s.spot.h) >= CARD_MIN : false;
-  const cardPos: { top?: number; bottom?: number } =
-    (!s.spot || s.hint === 'center')
-      ? { top: Math.max(insets.top + 24, H / 2 - 170) }
-      : below
-      ? { top: s.spot.y + s.spot.h + 16 }
-      : { bottom: Math.max(H - s.spot.y + 16, insets.bottom + 20) };
-
-  // Радиус подсветки: круглым кнопкам — круг, широким блокам — мягкое скругление
-  const spotRadius = (r: Rect) =>
-    Math.abs(r.w - r.h) < 14 ? Math.max(r.w, r.h) / 2 : 18;
-
-  // Путь скруглённого прямоугольника — им вырезаем «дырку» в затемнении
-  const roundedRect = (x: number, y: number, w: number, h: number, rad: number) => {
-    const r = Math.max(0, Math.min(rad, w / 2, h / 2));
-    return `M${x + r} ${y} H${x + w - r} A${r} ${r} 0 0 1 ${x + w} ${y + r}`
-      + ` V${y + h - r} A${r} ${r} 0 0 1 ${x + w - r} ${y + h}`
-      + ` H${x + r} A${r} ${r} 0 0 1 ${x} ${y + h - r}`
-      + ` V${y + r} A${r} ${r} 0 0 1 ${x + r} ${y} Z`;
+  const advance = async () => {
+    if (isLast) {
+      if (step.navigate) router.replace(step.navigate as never);
+      await complete();
+      return;
+    }
+    const nextIndex = stepIndex + 1;
+    setStepIndex(nextIndex);
+    try {
+      const progress: StoredProgress = { status: 'active', step: nextIndex };
+      await AsyncStorage.setItem(onboardingStorageKey(user.id), JSON.stringify(progress));
+    } catch {}
+    if (step.navigate) router.replace(step.navigate as never);
   };
 
-  // Затемнение с вырезом: рисуем одним SVG-путём с правилом evenodd, поэтому
-  // «дырка» получается скруглённой, а не квадратной. В демо-режиме (реальной
-  // карточки нет) выреза не делаем — иначе за демо-карточкой просвечивает фон.
-  const dim = 'rgba(17,17,17,0.72)';
-  const Spot = () => {
-    if (!s.spot || s.demo) return <View style={[StyleSheet.absoluteFill, { backgroundColor: dim }]} />;
-    const { x, y, w, h } = s.spot;
-    return (
-      <Svg width={W} height={H} style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Path
-          d={`M0 0 H${W} V${H} H0 Z ` + roundedRect(x, y, w, h, spotRadius(s.spot))}
-          fill={dim}
-          fillRule="evenodd"
-        />
-      </Svg>
-    );
-  };
+  const cardHeight = rs(230);
+  const belowSpace = spot ? height - (spot.y + spot.h) : 0;
+  const aboveSpace = spot?.y ?? 0;
+  const cardPosition = !spot
+    ? { top: Math.max(insets.top + rs(70), height / 2 - cardHeight / 2) }
+    : belowSpace > cardHeight + rs(18)
+      ? { top: spot.y + spot.h + rs(14) }
+      : aboveSpace > cardHeight + insets.top + rs(18)
+        ? { bottom: Math.max(height - spot.y + rs(14), insets.bottom + rs(18)) }
+        : { top: Math.max(insets.top + rs(64), height - insets.bottom - cardHeight - rs(18)) };
+
+  const dimPath = spot
+    ? `M0 0 H${width} V${height} H0 Z ${roundedRect(spot, radius)}`
+    : `M0 0 H${width} V${height} H0 Z`;
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent
-      navigationBarTranslucent onRequestClose={finish}>
-      <View style={StyleSheet.absoluteFill} pointerEvents="auto">
-      <Spot />
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={() => { void complete(); }}
+    >
+      <View style={StyleSheet.absoluteFill}>
+        <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Path d={dimPath} fill="rgba(17,17,17,0.76)" fillRule="evenodd" />
+        </Svg>
 
-      {/* Демо-карточка смены — когда на выбранную дату реальных смен нет */}
-      {s.demo && s.spot ? (
-        <View style={[dc.card, { left: s.spot.x, top: s.spot.y, width: s.spot.w, height: s.spot.h }]}>
-          <View style={dc.top}>
-            <LavkaLogo size={38} />
-            <View style={{ flex: 1 }}>
-              <Text style={dc.company}>Лавка</Text>
-              <View style={dc.metroRow}>
-                <Ionicons name="subway-outline" size={12} color={Colors.textMuted} />
-                <Text style={dc.metro}>м. Сокол</Text>
-              </View>
-            </View>
-            <View style={dc.urgent}><Text style={dc.urgentTxt}>Пример</Text></View>
-          </View>
-          <Text style={dc.title}>Кладовщик</Text>
-          <View style={dc.chips}>
-            <View style={dc.chip}><Text style={dc.chipTxt}>🕐 09:00–18:00</Text></View>
-            <View style={dc.chip}><Text style={dc.chipTxt}>💰 2 500 ₽</Text></View>
-          </View>
-          <View style={dc.actions}>
-            <View style={[dc.actionBtn, { backgroundColor: '#FEE2E2' }]}><Ionicons name="close" size={20} color={Colors.red} /></View>
-            <View style={[dc.actionBtn, { backgroundColor: Colors.primary }]}><Ionicons name="heart" size={20} color="#fff" /></View>
-          </View>
-        </View>
-      ) : null}
+        {spot ? <PulseRing rect={spot} radius={radius} /> : null}
 
-      {/* Пульсирующее кольцо на элементе — единый указатель «нажми сюда».
-          Рисуем после демо-карточки, иначе она бы его перекрыла. */}
-      {s.spot ? <PulseRing rect={s.spot} radius={spotRadius(s.spot)} /> : null}
+        {spot ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`Шаг обучения: ${step.title}`}
+            style={{ position: 'absolute', left: spot.x, top: spot.y, width: spot.w, height: spot.h, borderRadius: radius }}
+            activeOpacity={1}
+            onPress={() => { void advance(); }}
+          />
+        ) : null}
 
-      {/* Пропустить */}
-      <View style={[st.skipWrap, { top: top + 8 }]} pointerEvents="box-none">
         <TouchableOpacity
-          style={st.skip}
-          onPress={finish}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={[styles.skip, { top: insets.top + rs(8) }]}
+          onPress={() => { void complete(); }}
+          hitSlop={10}
         >
-          <Text style={st.skipTxt}>Пропустить</Text>
+          <Text style={styles.skipText}>Пропустить</Text>
         </TouchableOpacity>
-      </View>
 
-      {/* Карточка-подсказка */}
-      <View style={[st.card, { left: 20, width: cardW, ...cardPos }]}>
-        <View style={st.iconWrap}><Ionicons name={s.icon} size={22} color="#fff" /></View>
-        <Text style={st.title}>{s.title}</Text>
-        <Text style={st.body}>{s.body}</Text>
+        <View style={[styles.card, { left: rs(20), width: width - rs(40), ...cardPosition }]}>
+          <View style={styles.progressTop}>
+            <Text style={styles.chapter}>
+              Глава {chapterIndex + 1} из {chapterOrder.length} · {chapterLabel[step.chapter]}
+            </Text>
+            <Text style={styles.counter}>{chapterStepIndex + 1}/{chapterSteps.length}</Text>
+          </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${((stepIndex + 1) / steps.length) * 100}%` }]} />
+          </View>
 
-        <View style={st.dots}>
-          {steps.map((_, i) => (
-            <View key={i} style={[st.dot, i === step && st.dotActive]} />
-          ))}
+          <View style={styles.titleRow}>
+            <View style={styles.icon}><Ionicons name={step.icon} size={rf(20)} color="#FFFFFF" /></View>
+            <Text style={styles.title}>{step.title}</Text>
+          </View>
+          <Text style={styles.body}>{step.body}</Text>
+
+          {spot ? (
+            <View style={styles.tapHint}>
+              <Ionicons name="finger-print-outline" size={rf(16)} color={Colors.primary} />
+              <Text style={styles.tapHintText}>Нажмите выделенный элемент</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.button} onPress={() => { void advance(); }} activeOpacity={0.85}>
+              <Text style={styles.buttonText}>{step.cta ?? 'Продолжить'}</Text>
+              {!isLast ? <Ionicons name="arrow-forward" size={rf(17)} color="#FFFFFF" /> : null}
+            </TouchableOpacity>
+          )}
         </View>
-
-        <TouchableOpacity style={st.btn} onPress={next} activeOpacity={0.85}>
-          <Text style={st.btnTxt}>{isLast ? 'Понятно, начать!' : 'Далее'}</Text>
-        </TouchableOpacity>
-      </View>
       </View>
     </Modal>
   );
 }
 
-const dc = StyleSheet.create({
-  card: {
-    position: 'absolute', backgroundColor: '#fff', borderRadius: rs(18),
-    padding: rs(14), justifyContent: 'flex-start', gap: rs(10),
-    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14, shadowRadius: 16, elevation: 10,
-  },
-  top: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
-  company: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  metroRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  metro: { fontSize: rf(12), color: Colors.textMuted },
-  urgent: { backgroundColor: '#FEF3C7', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4) },
-  urgentTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
-  title: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
-  chips: { flexDirection: 'row', gap: rs(8) },
-  chip: { backgroundColor: '#F4F4F5', borderRadius: rs(10), paddingHorizontal: rs(10), paddingVertical: rs(6) },
-  chipTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary },
-  actions: { flexDirection: 'row', justifyContent: 'center', gap: rs(24), marginTop: rs(4) },
-  actionBtn: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center' },
-});
-
-const st = StyleSheet.create({
-  skipWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+const styles = StyleSheet.create({
   skip: {
-    paddingHorizontal: rs(16), paddingVertical: rs(6),
+    position: 'absolute', right: rs(16), paddingHorizontal: rs(14), paddingVertical: rs(8),
     backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: rs(100),
   },
-  skipTxt: { color: '#fff', fontSize: rf(13), fontWeight: '600' },
+  skipText: { color: '#FFFFFF', fontSize: rf(12), fontWeight: '700' },
   card: {
-    position: 'absolute', backgroundColor: '#fff', borderRadius: rs(20),
-    padding: rs(20), shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2, shadowRadius: 24, elevation: 16,
+    position: 'absolute', backgroundColor: '#FFFFFF', borderRadius: rs(22), padding: rs(18),
+    shadowColor: '#000000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.24,
+    shadowRadius: 28, elevation: 18,
   },
-  iconWrap: {
-    width: rs(44), height: rs(44), borderRadius: rs(14), backgroundColor: Colors.primary,
-    alignItems: 'center', justifyContent: 'center', marginBottom: rs(12),
-  },
-  title: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary, marginBottom: rs(6) },
-  body: { fontSize: rf(14), color: Colors.textSecondary, lineHeight: rf(20) },
-  dots: { flexDirection: 'row', gap: rs(6), marginTop: rs(16), marginBottom: rs(14) },
-  dot: { width: rs(7), height: rs(7), borderRadius: rs(4), backgroundColor: '#E4E4E7' },
-  dotActive: { backgroundColor: Colors.primary, width: rs(20) },
-  btn: {
-    backgroundColor: Colors.primary, borderRadius: rs(100),
-    paddingVertical: rs(13), alignItems: 'center',
-  },
-  btnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
+  progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: rs(8) },
+  chapter: { flex: 1, fontSize: rf(10.5), fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
+  counter: { fontSize: rf(11), fontWeight: '800', color: Colors.primary },
+  progressTrack: { height: rs(4), borderRadius: rs(2), backgroundColor: '#ECEDEF', overflow: 'hidden', marginTop: rs(8), marginBottom: rs(14) },
+  progressFill: { height: '100%', borderRadius: rs(2), backgroundColor: Colors.primary },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
+  icon: { width: rs(38), height: rs(38), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary },
+  title: { flex: 1, fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  body: { marginTop: rs(10), fontSize: rf(13.5), lineHeight: rf(19), color: Colors.textSecondary },
+  tapHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7), marginTop: rs(14), paddingVertical: rs(10), borderRadius: rs(100), backgroundColor: Colors.primaryLight },
+  tapHintText: { fontSize: rf(12.5), fontWeight: '700', color: Colors.primary },
+  button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8), marginTop: rs(16), paddingVertical: rs(13), borderRadius: rs(100), backgroundColor: Colors.primary },
+  buttonText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800' },
 });

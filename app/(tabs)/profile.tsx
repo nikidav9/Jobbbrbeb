@@ -28,6 +28,7 @@ import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeS
 import { WorkType } from '@/constants/types';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { NOTIFICATION_CHOICE_KEY } from '@/components/NotificationPermissionSheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -512,6 +513,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       } />
+      <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* User card — horizontal layout */}
@@ -820,6 +822,7 @@ export default function ProfileScreen() {
         </SectionCard>
         <View style={{ height: 8 }} />
       </ScrollView>
+      </OnboardingTarget>
 
       {/* Photo source picker */}
       {showPhotoSource ? (

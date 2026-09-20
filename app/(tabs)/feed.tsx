@@ -49,7 +49,7 @@ import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { MetroMap, MapListItem } from '@/components/feature/MetroMap';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { PermApplicationsSheet } from '@/components/feature/PermApplicationsSheet';
-import { setOnboardingTarget, registerOnboardingMeasurer } from '@/lib/onboardingTargets';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { registerWebPush, isWebPushRegistered, getWebPushDebug } from '@/lib/webPush';
 
 import { rs, rf } from '@/constants/scale';
@@ -1467,7 +1467,7 @@ function WorkerPermMode() {
             «Призраки» колоды остались снаружи: они позиционированы абсолютно
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
-        <View style={styles.cardViewportShell}>
+        <OnboardingTarget targetKey="worker.feed.card" style={styles.cardViewportShell}>
           <GHScrollView
             ref={cardScrollRef}
             style={styles.cardViewportClip}
@@ -1600,13 +1600,15 @@ function WorkerPermMode() {
               onPress={() => { void toggleSaved(v); }}
               activeOpacity={0.7}
             >
-              <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
-                <Ionicons
-                  name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                  size={21}
-                  color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
-                />
-              </View>
+              <OnboardingTarget targetKey="worker.feed.save">
+                <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
+                  <Ionicons
+                    name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
+                    size={21}
+                    color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
+                  />
+                </View>
+              </OnboardingTarget>
             </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
@@ -1620,7 +1622,7 @@ function WorkerPermMode() {
               </View>
             </TouchableOpacity>
           </View>
-        </View>
+        </OnboardingTarget>
 
         {moreBelow ? (
           // Подсказка стоит не поверх текста, а на его растворении: у нижнего
@@ -1641,32 +1643,38 @@ function WorkerPermMode() {
 
         <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
-          <TouchableOpacity
-            accessibilityLabel="Отклонить вакансию"
-            style={[styles.deckFloatingAction, styles.deckFloatingSkip]}
-            onPress={() => swSkip(0.5)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="close" size={34} color={Colors.red} />
-          </TouchableOpacity>
+          <OnboardingTarget targetKey="worker.feed.reject">
+            <TouchableOpacity
+              accessibilityLabel="Отклонить вакансию"
+              style={[styles.deckFloatingAction, styles.deckFloatingSkip]}
+              onPress={() => swSkip(0.5)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="close" size={34} color={Colors.red} />
+            </TouchableOpacity>
+          </OnboardingTarget>
 
-          <TouchableOpacity
-            accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
-            style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
-            onPress={() => setPermFilterOpen(true)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
-          </TouchableOpacity>
+          <OnboardingTarget targetKey="worker.feed.filter">
+            <TouchableOpacity
+              accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
+              style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
+              onPress={() => setPermFilterOpen(true)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
+            </TouchableOpacity>
+          </OnboardingTarget>
 
-          <TouchableOpacity
-            accessibilityLabel="Откликнуться на вакансию"
-            style={[styles.deckFloatingAction, styles.deckFloatingWant]}
-            onPress={() => swWant(0.5)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="heart" size={31} color="#fff" />
-          </TouchableOpacity>
+          <OnboardingTarget targetKey="worker.feed.apply">
+            <TouchableOpacity
+              accessibilityLabel="Откликнуться на вакансию"
+              style={[styles.deckFloatingAction, styles.deckFloatingWant]}
+              onPress={() => swWant(0.5)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="heart" size={31} color="#fff" />
+            </TouchableOpacity>
+          </OnboardingTarget>
           </View>
         </View>
       </View>
@@ -1828,15 +1836,6 @@ function EmployerHome() {
   const router = useRouter();
   const { currentUser, vacancies, permVacancies, permApplications, refreshVacancies, refreshPermVacancies, refreshLikes, refreshAll, showToast, permVacancyViewsMap } = useApp();
   const tabBarHeight = useBottomTabBarHeight();
-  const fabRef = useRef<View>(null);
-  // Способ перемерить кнопку «+» по требованию: одного onLayout мало —
-  // первый замер нередко приходит с нулями, и цель не регистрируется.
-  const measureFab = useCallback(() => {
-    fabRef.current?.measureInWindow((x, y, w, h) => {
-      if (w > 0 && h > 0) setOnboardingTarget('fab', { x, y, w, h });
-    });
-  }, []);
-  useEffect(() => registerOnboardingMeasurer('fab', measureFab), [measureFab]);
   const [tab, setTab] = useState<'active' | 'closed'>('active');
   const [refreshing, setRefreshing] = useState(false);
   const [viewersModal, setViewersModal] = useState<{ id: string; kind: 'shift' | 'perm' } | null>(null);
@@ -1942,13 +1941,14 @@ function EmployerHome() {
         ))}
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarHeight + 16 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-        }
-      >
+      <OnboardingTarget targetKey="employer.feed.content" style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarHeight + 16 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+          }
+        >
         {
           shownPerm.length === 0 ? (
             <View style={styles.emptyState}>
@@ -2030,7 +2030,8 @@ function EmployerHome() {
             ))
           )
         }
-      </ScrollView>
+        </ScrollView>
+      </OnboardingTarget>
 
       {viewersModal ? (
         <VacancyViewersModal
@@ -2058,18 +2059,15 @@ function EmployerHome() {
       ) : null}
 
       {/* Плавающая кнопка создания — видна и когда вакансии уже есть */}
-      <TouchableOpacity
-        ref={fabRef}
-        onLayout={measureFab}
-        style={[
-          styles.fab,
-          { bottom: tabBarHeight + 14, backgroundColor: Colors.primary },
-        ]}
-        onPress={() => router.push('/create-perm-vacancy')}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
+      <OnboardingTarget targetKey="employer.feed.create" style={[styles.fab, { bottom: tabBarHeight + 14 }] }>
+        <TouchableOpacity
+          style={[StyleSheet.absoluteFill, { backgroundColor: Colors.primary, borderRadius: rs(28), alignItems: 'center', justifyContent: 'center' }]}
+          onPress={() => router.push('/create-perm-vacancy')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={30} color="#fff" />
+        </TouchableOpacity>
+      </OnboardingTarget>
     </SafeAreaView>
   );
 }

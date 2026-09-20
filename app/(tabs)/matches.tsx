@@ -27,6 +27,7 @@ import { employerLikes, employerPending, employerMatched, employerCompleted,
   employerPermApps } from '@/services/matchCounts';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -456,29 +457,33 @@ function WorkerMatches() {
           <Text style={wm.logoMarkT}>T</Text>
         </Text>
         <View style={wm.headerActions}>
-          <TouchableOpacity
-            style={wm.headerBtn}
-            onPress={() => router.push('/saved')}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="Избранное"
-          >
-            <Ionicons name="bookmark-outline" size={20} color={Colors.textPrimary} />
-          </TouchableOpacity>
+          <OnboardingTarget targetKey="matches.saved">
+            <TouchableOpacity
+              style={wm.headerBtn}
+              onPress={() => router.push('/saved')}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Избранное"
+            >
+              <Ionicons name="bookmark-outline" size={20} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          </OnboardingTarget>
 
-          <TouchableOpacity
-            style={wm.headerBtn}
-            onPress={() => router.push('/(tabs)/chats')}
-            activeOpacity={0.8}
-            accessibilityLabel="Переписки"
-          >
-            <Ionicons name="mail-outline" size={20} color={Colors.textPrimary} />
-            {unreadChats.length > 0 ? (
-              <View style={wm.headerBadge}>
-                <Text style={wm.headerBadgeTxt}>{unreadChats.length > 9 ? '9+' : unreadChats.length}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+          <OnboardingTarget targetKey="matches.chats">
+            <TouchableOpacity
+              style={wm.headerBtn}
+              onPress={() => router.push('/(tabs)/chats')}
+              activeOpacity={0.8}
+              accessibilityLabel="Переписки"
+            >
+              <Ionicons name="mail-outline" size={20} color={Colors.textPrimary} />
+              {unreadChats.length > 0 ? (
+                <View style={wm.headerBadge}>
+                  <Text style={wm.headerBadgeTxt}>{unreadChats.length > 9 ? '9+' : unreadChats.length}</Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          </OnboardingTarget>
 
           <TouchableOpacity
             style={[wm.headerBtn, searchOpen && wm.headerBtnOn]}
@@ -548,13 +553,14 @@ function WorkerMatches() {
           })}
       </ScrollView>
 
-      <ScrollView
-        contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-        }
-      >
+      <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+          }
+        >
           <>
             {/* «Ждут вашего ответа» — наша замена «Needs you». У них там анкеты,
                 которые агент не смог дозаполнить; у нас действие, которого
@@ -614,7 +620,8 @@ function WorkerMatches() {
               </View>
             ))}
           </>
-      </ScrollView>
+        </ScrollView>
+      </OnboardingTarget>
 
       {/* Шторка фильтров. Раздел «Показать» на макете содержит четыре строки;
           у нас данные есть ровно под одну — избранное. Остальные три
@@ -1496,6 +1503,7 @@ function EmployerMatches() {
         ))}
       </View>
 
+      <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
       {shown.length === 0 ? (
         <View style={s.empty}>
           <Ionicons name={emptyIcon[tab]} size={56} color={Colors.textMuted} />
@@ -1529,6 +1537,7 @@ function EmployerMatches() {
           renderItem={renderItem}
         />
       )}
+      </OnboardingTarget>
 
       <ApplySheet
         visible={!!approvingApp}

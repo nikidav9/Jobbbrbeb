@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Tabs } from 'expo-router';
 import {
   Platform, View, Text, StyleSheet, TouchableOpacity,
@@ -14,8 +14,7 @@ import { useApp } from '@/hooks/useApp';
 import NotificationPermissionSheet from '@/components/NotificationPermissionSheet';
 import CompleteProfileSheet from '@/components/CompleteProfileSheet';
 import EntryTransition from '@/components/EntryTransition';
-import { OnboardingOverlay } from '@/components/OnboardingOverlay';
-import { setOnboardingTarget, registerOnboardingMeasurer } from '@/lib/onboardingTargets';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { matchBadgeCount } from '@/services/matchCounts';
 
 import { rs, rf } from '@/constants/scale';
@@ -47,16 +46,6 @@ function FloatingTabBar({
   // есть — меряем её отдельно, иначе плашка вкладок садится под
   // системные «назад/домой».
   const safeBottom = bottomSafe(insets.bottom);
-
-  // Вкладка «Мэтчи» — цель подсветки в обучении. Меряем по ссылке: первый
-  // замер на iOS часто возвращает нули, поэтому оставляем способ перемерить.
-  const matchesCellRef = useRef<View>(null);
-  const measureMatchesTab = useCallback(() => {
-    matchesCellRef.current?.measureInWindow((x, y, w, h) => {
-      if (w > 0 && h > 0) setOnboardingTarget('matchesTab', { x, y, w, h });
-    });
-  }, []);
-  useEffect(() => registerOnboardingMeasurer('matchesTab', measureMatchesTab), [measureMatchesTab]);
 
   return (
     <>
@@ -90,10 +79,9 @@ function FloatingTabBar({
                 activeOpacity={0.7}
                 onPress={() => { if (!focused) navigation.navigate(tab.route); }}
               >
-                <View
+                <OnboardingTarget
+                  targetKey={`tab.${tab.route}`}
                   style={fS.tabCell}
-                  ref={tab.route === 'matches' ? matchesCellRef : undefined}
-                  onLayout={tab.route === 'matches' ? measureMatchesTab : undefined}
                 >
                   <View>
                     <Ionicons
@@ -111,7 +99,7 @@ function FloatingTabBar({
                   <Text style={[fS.label, focused && fS.labelActive]}>
                     {tab.label}
                   </Text>
-                </View>
+                </OnboardingTarget>
               </TouchableOpacity>
             );
           })}
@@ -226,7 +214,6 @@ export default function TabLayout() {
       <NotificationPermissionSheet />
       <CompleteProfileSheet />
       <EntryTransition />
-      <OnboardingOverlay />
     </View>
   );
 }
