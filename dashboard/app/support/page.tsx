@@ -78,6 +78,7 @@ function waitingHours(iso: string): number {
 export default function SupportPage() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [closedAt, setClosedAt] = useState<Record<string, string | null>>({})
+  const [requestedAt, setRequestedAt] = useState<Record<string, string | null>>({})
   const [users, setUsers] = useState<Record<string, User>>({})
   const [loading, setLoading] = useState(true)
   // По умолчанию — открытые. Раньше стоял фильтр «только ждущие», и страница
@@ -107,8 +108,13 @@ export default function SupportPage() {
     const escalated = ((th ?? []) as Thread[])
     const ids = escalated.map(t => t.user_id)
     const cl: Record<string, string | null> = {}
-    for (const t of escalated) cl[t.user_id] = t.closed_at
+    const rq: Record<string, string | null> = {}
+    for (const t of escalated) {
+      cl[t.user_id] = t.closed_at
+      rq[t.user_id] = t.operator_requested_at
+    }
     setClosedAt(cl)
+    setRequestedAt(rq)
 
     let rows: Msg[] = []
     if (ids.length) {
@@ -226,10 +232,11 @@ export default function SupportPage() {
       const last = sorted[sorted.length - 1]
       const lastIn = [...sorted].reverse().find(m => m.direction === 'in')
       const stamp = closedAt[uid] ?? null
-      // Отметку перепроверяем по переписке: если человек написал уже после
-      // закрытия, разговор снова живой — даже если сервер отметку не успел
-      // снять. Так список не соврёт в сторону «всё разобрано».
-      const closed = !!stamp && !(lastIn && lastIn.created_at > stamp)
+      const requestStamp = requestedAt[uid] ?? null
+      // Теперь человек может продолжить разговор с помощником после закрытия.
+      // Это НЕ должно само возвращать его оператору: повторная очередь
+      // появляется только после нового явного «Позвать оператора».
+      const closed = !!stamp && !(requestStamp && requestStamp > stamp)
       const waiting = !closed && last.direction === 'in'
       return {
         uid, user: users[uid], msgs: sorted, last, waiting, closed, closedStamp: stamp,
@@ -243,7 +250,7 @@ export default function SupportPage() {
     if (filter === 'open') return out.filter(t => !t.closed)
     if (filter === 'closed') return out.filter(t => t.closed)
     return out
-  }, [msgs, users, closedAt, filter])
+  }, [msgs, users, closedAt, requestedAt, filter])
 
   // Считаем по всем разговорам, а не по отфильтрованным: иначе включённый
   // фильтр прятал бы и сам счётчик того, что он прячет.
@@ -257,14 +264,14 @@ export default function SupportPage() {
     let open = 0, closed = 0, waiting = 0
     for (const [uid, last] of Array.from(lastByUser.entries())) {
       const stamp = closedAt[uid] ?? null
-      const lastIn = lastInByUser.get(uid)
-      const isClosed = !!stamp && !(lastIn && lastIn.created_at > stamp)
+      const requestStamp = requestedAt[uid] ?? null
+      const isClosed = !!stamp && !(requestStamp && requestStamp > stamp)
       if (isClosed) { closed++; continue }
       open++
       if (last.direction === 'in') waiting++
     }
     return { open, closed, waiting, total: open + closed }
-  }, [msgs, closedAt])
+  }, [msgs, closedAt, requestedAt])
 
   const mskHour = (new Date().getUTCHours() + 3) % 24
   const openNow = mskHour >= FROM_HOUR && mskHour < TO_HOUR
