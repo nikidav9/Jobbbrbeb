@@ -13,6 +13,7 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 import { plural } from '@/services/time';
 import { dbGetPermSavedDetailed, dbRemovePermSaved } from '@/services/db';
 import { dayKey, dayShort, groupByDay } from '@/services/dayGroups';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 
 /**
  * Избранные вакансии.
@@ -120,14 +121,16 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={sv.safe} edges={['top', 'left', 'right']}>
       <View style={sv.header}>
-        <TouchableOpacity
-          style={sv.back}
-          onPress={() => router.back()}
-          activeOpacity={0.8}
-          accessibilityLabel="Назад"
-        >
-          <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <OnboardingTarget targetKey="saved.back">
+          <TouchableOpacity
+            style={sv.back}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+            accessibilityLabel="Назад"
+          >
+            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        </OnboardingTarget>
         <Text style={sv.title}>Избранное</Text>
         {/* Пустая колонка той же ширины, что кнопка: иначе заголовок встаёт
             не по центру экрана, а по центру остатка. Именно колонка, а не
@@ -136,13 +139,14 @@ export default function SavedScreen() {
         <View style={sv.backSpacer} pointerEvents="none" />
       </View>
 
-      <ScrollView
-        contentContainerStyle={sv.list}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-        }
-      >
+      <OnboardingTarget targetKey="saved.content" style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={sv.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+          }
+        >
         {loadFailed ? (
           <View style={sv.offlineBar}>
             <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
@@ -168,7 +172,8 @@ export default function SavedScreen() {
             </View>
           </View>
         ))}
-      </ScrollView>
+        </ScrollView>
+      </OnboardingTarget>
     </SafeAreaView>
   );
 }
