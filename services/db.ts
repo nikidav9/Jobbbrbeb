@@ -233,6 +233,9 @@ function rowToUser(r: any): User {
     ratingCount: r.rating_count ?? 0,
     password: r.password ?? '',
     bio: r.bio ?? undefined,
+    personalDetails: r.personal_data && typeof r.personal_data === 'object'
+      ? r.personal_data
+      : undefined,
     resume: r.resume_data ? {
       ...r.resume_data,
       specializations: Array.isArray(r.resume_data.specializations) ? r.resume_data.specializations : [],
@@ -304,6 +307,7 @@ function userToRow(u: User) {
     rating_count: u.ratingCount ?? 0,
     password: u.password ?? '',
     bio: u.bio ?? null,
+    personal_data: u.personalDetails ?? {},
     resume_data: u.resume ? publicResume : null,
     resume_email: resumeEmail ?? null,
     resume_file_name: resumeFileName ?? null,

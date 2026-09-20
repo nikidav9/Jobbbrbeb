@@ -25,8 +25,8 @@ import GuestGate from '@/components/GuestGate';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
-import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
-import { ResumeProfile, WorkType } from '@/constants/types';
+import { WorkTypeSelector } from '@/components/feature/WorkTypeSelector';
+import { PersonalDetails, ResumeProfile, User, WorkType } from '@/constants/types';
 import { inferWorkTypes } from '@/lib/resumeParser';
 import { extractResumePdf } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
@@ -258,6 +258,310 @@ const rmS = StyleSheet.create({
   noReview: { fontSize: rf(12), color: Colors.textMuted, fontStyle: 'italic', paddingLeft: rs(4) },
 });
 
+
+type PersonalFieldKey = keyof PersonalDetails;
+
+const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
+  middleName: 'Отчество',
+  preferredName: 'Предпочитаемое имя',
+  title: 'Обращение',
+  birthday: 'Дата рождения',
+  contactEmail: 'Email',
+  emergencyContact: 'Экстренный контакт',
+  links: 'Ссылки',
+  citizenship: 'Гражданство',
+  workAuthorization: 'Разрешение на работу',
+  location: 'Местоположение',
+  workAvailability: 'Доступность к работе',
+  relocation: 'Переезд',
+  driversLicense: 'Водительские права',
+  veteranStatus: 'Статус ветерана',
+  disabilityStatus: 'Инвалидность',
+  gender: 'Пол',
+  pronouns: 'Местоимения',
+  race: 'Этническая принадлежность',
+  sexualOrientation: 'Сексуальная ориентация',
+  professionalReferences: 'Профессиональные рекомендации',
+  militaryService: 'Военная служба',
+  securityClearance: 'Допуск',
+  employmentRestrictions: 'Ограничения по трудоустройству',
+};
+
+const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
+  'links',
+  'professionalReferences',
+  'militaryService',
+  'employmentRestrictions',
+]);
+
+function PersonalRow({
+  label, value, onPress, last = false,
+}: {
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  last?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[personalS.row, !last && personalS.rowBorder]}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={0.72}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={personalS.rowLabel}>{label}</Text>
+        <Text style={[personalS.rowValue, !value && personalS.rowValueEmpty]} numberOfLines={3}>
+          {value || 'Не указано'}
+        </Text>
+      </View>
+      {onPress ? <Ionicons name="create-outline" size={rf(18)} color={Colors.primary} /> : null}
+    </TouchableOpacity>
+  );
+}
+
+function PersonalAddCard({
+  icon, title, subtitle, onPress,
+}: {
+  icon: IoniconName;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={personalS.addCard} onPress={onPress} activeOpacity={0.75}>
+      <View style={personalS.addIcon}>
+        <Ionicons name={icon} size={rf(21)} color={Colors.primary} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={personalS.addTitle}>{title}</Text>
+        <Text style={personalS.addSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={personalS.plusCircle}>
+        <Ionicons name="add" size={rf(19)} color="#FFFFFF" />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function PersonalSection({
+  title, children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={personalS.section}>
+      <Text style={personalS.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+function PersonalTab({
+  user,
+  onEditCore,
+  onEditField,
+  onEditMetro,
+}: {
+  user: User;
+  onEditCore: () => void;
+  onEditField: (field: PersonalFieldKey) => void;
+  onEditMetro: () => void;
+}) {
+  const p = user.personalDetails ?? {};
+  const resume = user.resume;
+
+  const contactEmail = p.contactEmail || resume?.email;
+  const citizenship = p.citizenship || resume?.citizenship;
+  const workAuthorization = p.workAuthorization || resume?.workPermit;
+  const location = p.location || resume?.city;
+  const workAvailability = p.workAvailability
+    || [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
+  const relocationFromResume = resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
+  const relocation = p.relocation || relocationFromResume;
+  const birthday = p.birthday || (user.age ? `${user.age} лет` : undefined);
+
+  const privateValue = (key: PersonalFieldKey, fallback?: string) =>
+    (p[key] as string | undefined) || fallback;
+
+  return (
+    <View style={personalS.content}>
+      <PersonalSection title="Основная информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Имя" value={user.firstName} onPress={onEditCore} />
+          <PersonalRow label="Отчество" value={p.middleName} onPress={() => onEditField('middleName')} />
+          <PersonalRow label="Фамилия" value={user.lastName} onPress={onEditCore} />
+          <PersonalRow label="Предпочитаемое имя" value={p.preferredName} onPress={() => onEditField('preferredName')} />
+          <PersonalRow label="Обращение" value={p.title} onPress={() => onEditField('title')} />
+          <PersonalRow label="Дата рождения / возраст" value={birthday} onPress={() => onEditField('birthday')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Контактная информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Email" value={contactEmail} onPress={() => onEditField('contactEmail')} />
+          <PersonalRow label="Телефон" value={user.phone} onPress={onEditCore} />
+          <PersonalRow label="Экстренный контакт" value={p.emergencyContact} onPress={() => onEditField('emergencyContact')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Ссылки">
+        {p.links ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Ссылки" value={p.links} onPress={() => onEditField('links')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="link-outline"
+            title="Добавить ссылки"
+            subtitle="Портфолио, профиль или другой профессиональный ресурс."
+            onPress={() => onEditField('links')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Разрешение на работу">
+        <View style={personalS.card}>
+          <PersonalRow label="Гражданство" value={citizenship} onPress={() => onEditField('citizenship')} />
+          <PersonalRow label="Разрешение на работу" value={workAuthorization} onPress={() => onEditField('workAuthorization')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Местоположение">
+        <View style={personalS.card}>
+          <PersonalRow label="Город" value={location} onPress={() => onEditField('location')} />
+          <PersonalRow label="Метро" value={user.metroStation} onPress={onEditMetro} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Доступность к работе">
+        {workAvailability ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Условия" value={workAvailability} onPress={() => onEditField('workAvailability')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="calendar-outline"
+            title="Добавить доступность"
+            subtitle="Когда и в каком формате вы готовы работать."
+            onPress={() => onEditField('workAvailability')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Переезд">
+        {relocation ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Готовность к переезду" value={relocation} onPress={() => onEditField('relocation')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="airplane-outline"
+            title="Добавить готовность к переезду"
+            subtitle="Укажите, готовы ли вы переехать ради работы."
+            onPress={() => onEditField('relocation')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Водительские права">
+        {p.driversLicense ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Водительские права" value={p.driversLicense} onPress={() => onEditField('driversLicense')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="car-outline"
+            title="Добавить водительские права"
+            subtitle="Категории и наличие личного автомобиля."
+            onPress={() => onEditField('driversLicense')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Трудовая информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Статус ветерана" value={privateValue('veteranStatus')} onPress={() => onEditField('veteranStatus')} />
+          <PersonalRow label="Инвалидность" value={privateValue('disabilityStatus')} onPress={() => onEditField('disabilityStatus')} last />
+        </View>
+      </PersonalSection>
+
+      <PersonalSection title="Демографическая информация">
+        <View style={personalS.card}>
+          <PersonalRow label="Пол" value={privateValue('gender')} onPress={() => onEditField('gender')} />
+          <PersonalRow label="Местоимения" value={privateValue('pronouns')} onPress={() => onEditField('pronouns')} />
+          <PersonalRow label="Этническая принадлежность" value={privateValue('race')} onPress={() => onEditField('race')} />
+          <PersonalRow label="Сексуальная ориентация" value={privateValue('sexualOrientation')} onPress={() => onEditField('sexualOrientation')} last />
+        </View>
+        <Text style={personalS.privateHint}>
+          Эти поля приватны и не показываются работодателям.
+        </Text>
+      </PersonalSection>
+
+      <PersonalSection title="Профессиональные рекомендации">
+        {p.professionalReferences ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Рекомендации" value={p.professionalReferences} onPress={() => onEditField('professionalReferences')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="id-card-outline"
+            title="Добавить рекомендации"
+            subtitle="Руководители или коллеги, которые могут рассказать о вашей работе."
+            onPress={() => onEditField('professionalReferences')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Военная служба">
+        {p.militaryService ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Военная служба" value={p.militaryService} onPress={() => onEditField('militaryService')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="shield-outline"
+            title="Добавить военную службу"
+            subtitle="Род войск, звание и период службы."
+            onPress={() => onEditField('militaryService')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Допуск">
+        {p.securityClearance ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Допуск" value={p.securityClearance} onPress={() => onEditField('securityClearance')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="lock-closed-outline"
+            title="Добавить допуск"
+            subtitle="Укажите действующий или прошлый допуск, если это важно для работы."
+            onPress={() => onEditField('securityClearance')}
+          />
+        )}
+      </PersonalSection>
+
+      <PersonalSection title="Ограничения по трудоустройству">
+        {p.employmentRestrictions ? (
+          <View style={personalS.card}>
+            <PersonalRow label="Ограничения" value={p.employmentRestrictions} onPress={() => onEditField('employmentRestrictions')} last />
+          </View>
+        ) : (
+          <PersonalAddCard
+            icon="document-text-outline"
+            title="Добавить ограничения"
+            subtitle="Обязательства или договорённости, которые могут повлиять на следующую работу."
+            onPress={() => onEditField('employmentRestrictions')}
+          />
+        )}
+      </PersonalSection>
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
@@ -316,8 +620,13 @@ export default function ProfileScreen() {
   const [metroPicker, setMetroPicker] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [personalField, setPersonalField] = useState<PersonalFieldKey | null>(null);
+  const [personalEditValue, setPersonalEditValue] = useState('');
   // Полоска сверху обещает смахивание — значит оно должно работать
-  const editSwipe = useSwipeToDismiss(() => setEditSection(null));
+  const editSwipe = useSwipeToDismiss(() => {
+    setEditSection(null);
+    setPersonalField(null);
+  });
   const notifSwipe = useSwipeToDismiss(() => setShowNotifications(false));
   const pwdSwipe = useSwipeToDismiss(() => setShowSettings(false));
   const [showPhotoSource, setShowPhotoSource] = useState(false);
@@ -345,7 +654,21 @@ export default function ProfileScreen() {
   const initials = getInitials(`${currentUser.firstName} ${currentUser.lastName}`);
   const avatarColor = nameColorFromString(currentUser.id);
   const line = METRO_LINES.find(l => l.id === currentUser.metroLineId);
-  const workTypeLabels = (currentUser.workTypes ?? []).map(t => WORK_TYPE_META[t]?.label ?? t);
+
+  const personalFallback = (field: PersonalFieldKey): string => {
+    const resume = currentUser.resume;
+    if (field === 'contactEmail') return resume?.email ?? '';
+    if (field === 'citizenship') return resume?.citizenship ?? '';
+    if (field === 'workAuthorization') return resume?.workPermit ?? '';
+    if (field === 'location') return resume?.city ?? '';
+    if (field === 'workAvailability') {
+      return [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
+    }
+    if (field === 'relocation') {
+      return resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0] ?? '';
+    }
+    return '';
+  };
 
   const toggleSection = (key: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.create(
@@ -355,6 +678,7 @@ export default function ProfileScreen() {
   };
 
   const openEdit = (section: EditSection) => {
+    setPersonalField(null);
     setEditSection(section);
     setEditPhone(currentUser.phone);
     setEditLast(currentUser.lastName);
@@ -369,11 +693,27 @@ export default function ProfileScreen() {
     setEditAge(currentUser.age ? String(currentUser.age) : '');
   };
 
+  const openPersonalField = (field: PersonalFieldKey) => {
+    setEditSection(null);
+    setPersonalField(field);
+    setPersonalEditValue(
+      (currentUser.personalDetails?.[field] as string | undefined)
+      ?? personalFallback(field)
+      ?? '',
+    );
+  };
+
   const saveEdit = async () => {
     if (savingEdit) return;
     setSavingEdit(true);
     try {
       const updated = { ...currentUser };
+      if (personalField) {
+        updated.personalDetails = {
+          ...(currentUser.personalDetails ?? {}),
+          [personalField]: personalEditValue.trim() || undefined,
+        };
+      }
       if (editSection === 'personal') {
         updated.phone = editPhone; updated.lastName = editLast; updated.firstName = editFirst;
         // Пустое поле — «не указан», а не ноль: иначе в карточке появилось бы «0 лет».
@@ -385,6 +725,7 @@ export default function ProfileScreen() {
       if (editSection === 'bio') updated.bio = editBio;
       await updateUser(updated);
       setEditSection(null);
+      setPersonalField(null);
       showToast('Сохранено', 'success');
     } catch {
       // Форму не закрываем: введённые значения остаются на месте для повтора.
@@ -475,6 +816,8 @@ export default function ProfileScreen() {
       setImportingResume(true);
       const { resume, identity } = await extractResumePdf(picked.assets[0]);
       const inferredWorkTypes = inferWorkTypes(resume);
+      const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
+      const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
       await updateUser({
         ...currentUser,
         resume,
@@ -483,6 +826,17 @@ export default function ProfileScreen() {
         age: identity.age ?? currentUser.age,
         bio: resume.summary?.trim() || currentUser.bio,
         workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : currentUser.workTypes,
+        personalDetails: {
+          ...(currentUser.personalDetails ?? {}),
+          ...(identity.middleName ? { middleName: identity.middleName } : {}),
+          ...(identity.birthday ? { birthday: identity.birthday } : {}),
+          ...(resume.email ? { contactEmail: resume.email } : {}),
+          ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
+          ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
+          ...(resume.city ? { location: resume.city } : {}),
+          ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
+          ...(importedRelocation ? { relocation: importedRelocation } : {}),
+        },
       });
       showToast('Резюме распознано и сохранено', 'success');
       setProfileTab('resume');
@@ -614,65 +968,32 @@ export default function ProfileScreen() {
           <ScoreCard user={currentUser} own />
         </View> : null}
 
-        {(currentUser.role === 'employer' || profileTab === 'personal') ? <>
-        <SectionCard
-          iconName="person"
-          iconBg={Colors.primary}
-          title="Личные данные"
-          summary={currentUser.phone}
-          open={openSection === 'personal'}
-          onToggle={() => toggleSection('personal')}
-          onEdit={() => openEdit('personal')}
-          rows={[
-            { label: 'Телефон', value: currentUser.phone },
-            ...(currentUser.resume?.email ? [{ label: 'Email', value: currentUser.resume.email }] : []),
-            { label: 'Фамилия', value: currentUser.lastName },
-            { label: 'Имя', value: currentUser.firstName },
-            { label: 'Возраст', value: currentUser.age ? `${currentUser.age}` : 'Не указан' },
-            ...(currentUser.resume?.city ? [{ label: 'Город', value: currentUser.resume.city }] : []),
-          ]}
-        />
+        {currentUser.role === 'worker' && profileTab === 'personal' ? (
+          <PersonalTab
+            user={currentUser}
+            onEditCore={() => openEdit('personal')}
+            onEditField={openPersonalField}
+            onEditMetro={() => openEdit('metro')}
+          />
+        ) : null}
 
-        {currentUser.role === 'worker' ? (
+        {currentUser.role === 'employer' ? (
           <>
             <SectionCard
-              iconName="briefcase"
+              iconName="person"
               iconBg={Colors.primary}
-              title="Специализация"
-              summary={workTypeLabels.length ? workTypeLabels.join(', ') : 'Не указана'}
-              open={openSection === 'worktypes'}
-              onToggle={() => toggleSection('worktypes')}
-              onEdit={() => openEdit('worktypes')}
-              chips={workTypeLabels}
-              placeholder="Специализация пока не выбрана"
-            />
-            <SectionCard
-              iconName="train"
-              iconBg="#1C1C1E"
-              title="Метро"
-              summary={currentUser.metroStation ?? 'Не указано'}
-              open={openSection === 'metro'}
-              onToggle={() => toggleSection('metro')}
-              onEdit={() => openEdit('metro')}
+              title="Личные данные"
+              summary={currentUser.phone}
+              open={openSection === 'personal'}
+              onToggle={() => toggleSection('personal')}
+              onEdit={() => openEdit('personal')}
               rows={[
-                { label: 'Линия', value: line?.name ?? '—', lineColor: line?.color },
-                { label: 'Станция', value: currentUser.metroStation ?? '—' },
+                { label: 'Телефон', value: currentUser.phone },
+                { label: 'Фамилия', value: currentUser.lastName },
+                { label: 'Имя', value: currentUser.firstName },
+                { label: 'Возраст', value: currentUser.age ? `${currentUser.age}` : 'Не указан' },
               ]}
             />
-            <SectionCard
-              iconName="document-text"
-              iconBg={Colors.primary}
-              title="О себе"
-              summary={currentUser.bio ? currentUser.bio : 'Не заполнено'}
-              open={openSection === 'bio'}
-              onToggle={() => toggleSection('bio')}
-              onEdit={() => openEdit('bio')}
-              rows={currentUser.bio ? [{ label: '', value: currentUser.bio }] : []}
-              placeholder="Расскажите о себе — опыт, навыки, предпочтения"
-            />
-          </>
-        ) : (
-          <>
             <SectionCard
               iconName="business"
               iconBg={Colors.primary}
@@ -695,8 +1016,7 @@ export default function ProfileScreen() {
               placeholder="Расскажите о компании, условиях, коллективе"
             />
           </>
-        )}
-        </> : null}
+        ) : null}
 
         {/* Документы */}
         {(currentUser.role === 'employer' || profileTab === 'files') ? <>
@@ -942,12 +1262,30 @@ export default function ProfileScreen() {
       ) : null}
 
       {/* Edit modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={!!editSection} animationType="slide" transparent>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={!!editSection || !!personalField} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setEditSection(null)} />
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onPress={() => { setEditSection(null); setPersonalField(null); }}
+          />
           <Animated.View style={[styles.modalSheet, editSwipe.animStyle]}>
             <View {...editSwipe.panHandlers}><SheetHandle /></View>
-            <Text style={styles.modalTitle}>Изменить</Text>
+            <Text style={styles.modalTitle}>
+              {personalField ? PERSONAL_FIELD_LABELS[personalField] : 'Изменить'}
+            </Text>
+
+            {personalField ? (
+              <AppInput
+                label={PERSONAL_FIELD_LABELS[personalField]}
+                value={personalEditValue}
+                onChangeText={setPersonalEditValue}
+                placeholder="Укажите значение"
+                multiline={PERSONAL_MULTILINE.has(personalField)}
+                numberOfLines={PERSONAL_MULTILINE.has(personalField) ? 5 : 1}
+                keyboardType={personalField === 'contactEmail' ? 'email-address' : 'default'}
+              />
+            ) : null}
 
             {editSection === 'personal' && (
               <View style={{ gap: 12 }}>
@@ -1023,7 +1361,11 @@ export default function ProfileScreen() {
 
             <View style={{ marginTop: 20, gap: 10 }}>
               <PrimaryButton label="Сохранить" onPress={saveEdit} disabled={savingEdit} />
-              <PrimaryButton label="Отмена" onPress={() => setEditSection(null)} secondary />
+              <PrimaryButton
+                label="Отмена"
+                onPress={() => { setEditSection(null); setPersonalField(null); }}
+                secondary
+              />
             </View>
           </Animated.View>
         </KeyboardAvoidingView>
@@ -1293,9 +1635,6 @@ function ResumeTab({ resume, importing, onImport }: {
   const languages = resume?.languages ?? [];
   const skills = resume?.skills ?? [];
   const interests = resume?.interests ?? [];
-  const certifications = resume?.certifications ?? [];
-  const awards = resume?.awards ?? [];
-  const coursework = resume?.coursework ?? [];
   const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
 
   const isExpanded = (key: string) => !!expandedLists[key];
@@ -1459,55 +1798,6 @@ function ResumeTab({ resume, importing, onImport }: {
             ) : null}
           </ResumeCard>
 
-          <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
-            {certifications.length === 0 ? empty : (
-              <>
-                {visibleItems('certifications', certifications, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
-                    {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
-                    {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={certifications.length} shown={3} expanded={isExpanded('certifications')} onPress={() => toggleList('certifications')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="trophy-outline" title={`Награды (${awards.length})`}>
-            {awards.length === 0 ? empty : (
-              <>
-                {visibleItems('awards', awards, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={awards.length} shown={3} expanded={isExpanded('awards')} onPress={() => toggleList('awards')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="book-outline" title={`Курсы (${coursework.length})`}>
-            {coursework.length === 0 ? empty : (
-              <>
-                {visibleItems('coursework', coursework, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
-                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={coursework.length} shown={3} expanded={isExpanded('coursework')} onPress={() => toggleList('coursework')} />
-              </>
-            )}
-          </ResumeCard>
-
           <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
         </>
       )}
@@ -1585,6 +1875,97 @@ function SectionCard({
     </View>
   );
 }
+
+const personalS = StyleSheet.create({
+  content: { gap: rs(20) },
+  section: { gap: rs(9) },
+  sectionTitle: {
+    fontSize: rf(17),
+    lineHeight: rf(22),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    paddingHorizontal: rs(2),
+  },
+  card: {
+    backgroundColor: Colors.bg,
+    borderRadius: rs(16),
+    overflow: 'hidden',
+    ...Shadow.card,
+  },
+  row: {
+    minHeight: rs(70),
+    paddingHorizontal: rs(16),
+    paddingVertical: rs(13),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(12),
+  },
+  rowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  rowLabel: {
+    fontSize: rf(14),
+    lineHeight: rf(18),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  rowValue: {
+    fontSize: rf(13),
+    lineHeight: rf(18),
+    color: Colors.textSecondary,
+    marginTop: rs(5),
+  },
+  rowValueEmpty: { color: Colors.textMuted },
+  addCard: {
+    minHeight: rs(116),
+    paddingHorizontal: rs(16),
+    paddingVertical: rs(17),
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#D8DCE3',
+    borderRadius: rs(16),
+    backgroundColor: '#F6F7F8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(13),
+  },
+  addIcon: {
+    width: rs(44),
+    height: rs(44),
+    borderRadius: rs(22),
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addTitle: {
+    fontSize: rf(14.5),
+    lineHeight: rf(19),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  addSubtitle: {
+    fontSize: rf(12.5),
+    lineHeight: rf(17),
+    color: Colors.textSecondary,
+    marginTop: rs(4),
+  },
+  plusCircle: {
+    width: rs(25),
+    height: rs(25),
+    borderRadius: rs(13),
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  privateHint: {
+    fontSize: rf(11.5),
+    lineHeight: rf(16),
+    color: Colors.textMuted,
+    paddingHorizontal: rs(4),
+  },
+});
 
 const resumeS = StyleSheet.create({
   tabs: { flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: rs(15), paddingHorizontal: rs(4), ...Shadow.card },

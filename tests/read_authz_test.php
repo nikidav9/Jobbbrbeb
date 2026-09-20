@@ -35,6 +35,14 @@ function case_body(string $src, string $fn): string
     return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
 }
 
+// ── Приватная анкета профиля не утекает в чужой профиль ──────────────────────
+$publicCols = '';
+if (preg_match("~define\('USER_PUBLIC_COLS',(.*?)\]\)\);~s", $db, $m)) $publicCols = $m[1];
+check('личная анкета не входит в публичную проекцию',
+    $publicCols !== '' && !str_contains($publicCols, 'personal_data'));
+check('личная анкета возвращается только владельцу',
+    str_contains($db, "USER_PUBLIC_COLS . ',phone,resume_email,resume_file_name,resume_imported_at,personal_data'"));
+
 // ── Таблица откликов больше не отдаётся целиком ──────────────────────────────
 // Прежде: sb_select('jm_likes') без фильтра — кто куда откликался, кому
 // отказали и чем кончилась смена, по всему сервису, любому вошедшему.

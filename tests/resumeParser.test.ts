@@ -64,7 +64,9 @@ test('ФИО и возраст извлекаются отдельно от пу
   assert.deepEqual(parseResumeIdentity(hhResume), {
     lastName: 'Давыдов',
     firstName: 'Никита',
+    middleName: 'Сергеевич',
     age: 24,
+    birthday: '2 октября 2001',
   });
 });
 
