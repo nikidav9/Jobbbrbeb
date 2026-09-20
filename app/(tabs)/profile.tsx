@@ -1263,12 +1263,30 @@ export default function ProfileScreen() {
       ) : null}
 
       {/* Edit modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={!!editSection} animationType="slide" transparent>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={!!editSection || !!personalField} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setEditSection(null)} />
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onPress={() => { setEditSection(null); setPersonalField(null); }}
+          />
           <Animated.View style={[styles.modalSheet, editSwipe.animStyle]}>
             <View {...editSwipe.panHandlers}><SheetHandle /></View>
-            <Text style={styles.modalTitle}>Изменить</Text>
+            <Text style={styles.modalTitle}>
+              {personalField ? PERSONAL_FIELD_LABELS[personalField] : 'Изменить'}
+            </Text>
+
+            {personalField ? (
+              <AppInput
+                label={PERSONAL_FIELD_LABELS[personalField]}
+                value={personalEditValue}
+                onChangeText={setPersonalEditValue}
+                placeholder="Укажите значение"
+                multiline={PERSONAL_MULTILINE.has(personalField)}
+                numberOfLines={PERSONAL_MULTILINE.has(personalField) ? 5 : 1}
+                keyboardType={personalField === 'contactEmail' ? 'email-address' : 'default'}
+              />
+            ) : null}
 
             {editSection === 'personal' && (
               <View style={{ gap: 12 }}>
@@ -1344,7 +1362,11 @@ export default function ProfileScreen() {
 
             <View style={{ marginTop: 20, gap: 10 }}>
               <PrimaryButton label="Сохранить" onPress={saveEdit} disabled={savingEdit} />
-              <PrimaryButton label="Отмена" onPress={() => setEditSection(null)} secondary />
+              <PrimaryButton
+                label="Отмена"
+                onPress={() => { setEditSection(null); setPersonalField(null); }}
+                secondary
+              />
             </View>
           </Animated.View>
         </KeyboardAvoidingView>
