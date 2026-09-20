@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  KeyboardAvoidingView, Platform, Alert, Linking,
+  KeyboardAvoidingView, Platform, Alert, Linking, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -9,10 +9,35 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Shadow } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import { useApp } from '@/hooks/useApp';
-import { dbChangePassword, dbDeleteAccount } from '@/services/db';
+import {
+  dbChangePassword, dbDeleteAccount, dbClearPushToken,
+  dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
+} from '@/services/db';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ExpoNotifications from 'expo-notifications';
+import { LEGAL_DOCS, type LegalDocKey } from '@/constants/legal';
+import {
+  NOTIFICATION_DISABLED_KEY, registerForPushNotifications,
+} from '@/services/notifications';
+import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
+
+const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
+
+type NotificationState = 'checking' | 'enabled' | 'disabled' | 'blocked' | 'unavailable' | 'error';
+
+const ABOUT_DOCS: {
+  key: LegalDocKey;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+}[] = [
+  { key: 'terms', icon: 'document-text-outline' },
+  { key: 'privacy', icon: 'shield-checkmark-outline' },
+  { key: 'consent', icon: 'checkmark-circle-outline' },
+  { key: 'crossBorderConsent', icon: 'globe-outline' },
+  { key: 'dataPolicy', icon: 'lock-closed-outline' },
+];
 
 type RowProps = {
   label: string;
@@ -67,7 +92,158 @@ export default function ProfileSettingsScreen() {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  const savePassword = async () => {
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [notificationState, setNotificationState] = useState<NotificationState>('checking');
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState('');
+
+  const refreshNotificationState = async () => {
+    setNotificationState('checking');
+    setNotificationMessage('');
+    const disabled = await AsyncStorage.getItem(NOTIFICATION_DISABLED_KEY).catch(() => null);
+    if (disabled === '1') {
+      setNotificationState('disabled');
+      setNotificationMessage('Уведомления отключены в JobToo.');
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      const BrowserNotification = (globalThis as any).Notification;
+      if (!BrowserNotification) {
+        setNotificationState('unavailable');
+        setNotificationMessage('Этот браузер не поддерживает push-уведомления.');
+        return;
+      }
+      if (BrowserNotification.permission === 'granted') {
+        setNotificationState('enabled');
+        setNotificationMessage('Разрешение выдано. JobToo может получать push-уведомления.');
+      } else if (BrowserNotification.permission === 'denied') {
+        setNotificationState('blocked');
+        setNotificationMessage('Уведомления заблокированы в настройках браузера или iPhone.');
+      } else {
+        setNotificationState('disabled');
+        setNotificationMessage('Уведомления ещё не включены.');
+      }
+      return;
+    }
+
+    try {
+      const permission = await ExpoNotifications.getPermissionsAsync();
+      if (permission.status === 'granted') {
+        setNotificationState('enabled');
+        setNotificationMessage('Уведомления разрешены на этом устройстве.');
+      } else if (permission.status === 'denied' && permission.canAskAgain === false) {
+        setNotificationState('blocked');
+        setNotificationMessage('Уведомления запрещены системой. Откройте настройки устройства.');
+      } else {
+        setNotificationState('disabled');
+        setNotificationMessage('Уведомления ещё не включены.');
+      }
+    } catch {
+      setNotificationState('error');
+      setNotificationMessage('Не удалось проверить разрешение на уведомления.');
+    }
+  };
+
+  const openNotificationSettings = () => {
+    setShowNotificationSettings(true);
+    refreshNotificationState().catch(() => {});
+  };
+
+  const enableNotifications = async () => {
+    if (!currentUser || notificationBusy) return;
+    setNotificationBusy(true);
+    setNotificationMessage('');
+    try {
+      const crossBorder = await dbGetCrossBorderConsent(currentUser.id).catch(() => null);
+      if (crossBorder?.accepted !== true) {
+        setNotificationState('error');
+        setNotificationMessage('Сначала подтвердите отдельное согласие на трансграничную передачу данных для push-уведомлений.');
+        return;
+      }
+
+      await AsyncStorage.removeItem(NOTIFICATION_DISABLED_KEY).catch(() => {});
+      let ok = false;
+
+      if (Platform.OS === 'web') {
+        ok = await registerWebPush(currentUser.id);
+        if (!ok) {
+          const BrowserNotification = (globalThis as any).Notification;
+          if (BrowserNotification?.permission === 'denied') {
+            setNotificationState('blocked');
+            setNotificationMessage('Разрешение заблокировано. На iPhone откройте Настройки → Уведомления → JobToo.');
+            return;
+          }
+        }
+      } else {
+        let permission = await ExpoNotifications.getPermissionsAsync();
+        if (permission.status !== 'granted' && permission.canAskAgain !== false) {
+          permission = await ExpoNotifications.requestPermissionsAsync();
+        }
+        if (permission.status === 'granted') {
+          ok = await registerForPushNotifications(currentUser.id);
+        } else if (permission.canAskAgain === false) {
+          setNotificationState('blocked');
+          setNotificationMessage('Разрешение заблокировано системой. Откройте настройки устройства.');
+          return;
+        }
+      }
+
+      if (!ok) {
+        setNotificationState('error');
+        setNotificationMessage(
+          Platform.OS === 'web'
+            ? (getWebPushDebug() || 'Не удалось подключить web-push. Попробуйте ещё раз.')
+            : 'Разрешение получено, но push-токен не зарегистрировался. Проверьте интернет и повторите.',
+        );
+        return;
+      }
+
+      await AsyncStorage.setItem(NOTIFICATION_CHOICE_KEY, 'enabled').catch(() => {});
+      setNotificationState('enabled');
+      setNotificationMessage('Уведомления включены и устройство зарегистрировано.');
+      showToast('Уведомления включены', 'success');
+    } catch (error) {
+      setNotificationState('error');
+      setNotificationMessage(error instanceof Error ? error.message : 'Не удалось включить уведомления.');
+    } finally {
+      setNotificationBusy(false);
+    }
+  };
+
+  const disableNotifications = async () => {
+    if (!currentUser || notificationBusy) return;
+    setNotificationBusy(true);
+    try {
+      await AsyncStorage.setItem(NOTIFICATION_DISABLED_KEY, '1');
+      await AsyncStorage.removeItem(NOTIFICATION_CHOICE_KEY).catch(() => {});
+      if (Platform.OS === 'web') {
+        await dbDeleteWebPushSubscription(currentUser.id);
+      } else {
+        await dbClearPushToken(currentUser.id);
+      }
+      setNotificationState('disabled');
+      setNotificationMessage('Уведомления отключены в JobToo.');
+      showToast('Уведомления отключены', 'success');
+    } catch (error) {
+      setNotificationState('error');
+      setNotificationMessage(error instanceof Error ? error.message : 'Не удалось отключить уведомления.');
+    } finally {
+      setNotificationBusy(false);
+    }
+  };
+
+  const performLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      showToast('Не удалось корректно завершить сессию, но локальный вход будет сброшен.', 'error');
+    } finally {
+      router.replace('/');
+    }
+  };
+
+    const savePassword = async () => {
     if (!currentUser || savingPassword) return;
     if (newPassword.length < 6) {
       showToast('Пароль должен быть не менее 6 символов', 'error');
@@ -104,6 +280,7 @@ export default function ProfileSettingsScreen() {
       setShowDelete(false);
       setDeletePassword('');
       await logout();
+      router.replace('/');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Не удалось удалить аккаунт', 'error');
     } finally {
@@ -140,11 +317,7 @@ export default function ProfileSettingsScreen() {
           <SettingsRow
             label="Настройки уведомлений"
             icon="notifications-outline"
-            onPress={() => {
-              Linking.openSettings().catch(() => {
-                showToast('Не удалось открыть настройки устройства', 'error');
-              });
-            }}
+            onPress={openNotificationSettings}
           />
           <SettingsRow
             label="Сменить пароль"
@@ -174,22 +347,15 @@ export default function ProfileSettingsScreen() {
         ) : null}
 
         <SettingsSection title="О приложении">
-          <SettingsRow
-            label="Политика конфиденциальности"
-            icon="shield-checkmark-outline"
-            onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}
-          />
-          <SettingsRow
-            label="Пользовательское соглашение"
-            icon="document-text-outline"
-            onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}
-          />
-          <SettingsRow
-            label="Обработка персональных данных"
-            icon="lock-closed-outline"
-            onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}
-            last
-          />
+          {ABOUT_DOCS.map((doc, index) => (
+            <SettingsRow
+              key={doc.key}
+              label={LEGAL_DOCS[doc.key].title}
+              icon={doc.icon}
+              onPress={() => router.push({ pathname: '/legal', params: { doc: doc.key } })}
+              last={index === ABOUT_DOCS.length - 1}
+            />
+          ))}
         </SettingsSection>
 
         <SettingsSection title="Важное">
@@ -205,13 +371,7 @@ export default function ProfileSettingsScreen() {
                 {
                   text: 'Выйти',
                   style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      await logout();
-                    } catch {
-                      showToast('Не удалось выйти. Попробуйте ещё раз.', 'error');
-                    }
-                  },
+                  onPress: performLogout,
                 },
               ],
             )}
@@ -229,6 +389,76 @@ export default function ProfileSettingsScreen() {
           Настройки профиля и приватные документы доступны только владельцу аккаунта.
         </Text>
       </ScrollView>
+
+      <Modal
+        visible={showNotificationSettings}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowNotificationSettings(false)}
+      >
+        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowNotificationSettings(false)} />
+          <View style={s.sheet}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>Уведомления</Text>
+            <View style={s.notificationStatus}>
+              {notificationState === 'checking'
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : (
+                  <Ionicons
+                    name={
+                      notificationState === 'enabled'
+                        ? 'checkmark-circle'
+                        : notificationState === 'blocked'
+                        ? 'alert-circle'
+                        : 'notifications-off-outline'
+                    }
+                    size={rf(22)}
+                    color={
+                      notificationState === 'enabled'
+                        ? Colors.green
+                        : notificationState === 'blocked' || notificationState === 'error'
+                        ? Colors.red
+                        : Colors.textSecondary
+                    }
+                  />
+                )}
+              <Text style={s.notificationStatusText}>
+                {notificationMessage || 'Проверяем состояние уведомлений…'}
+              </Text>
+            </View>
+
+            <View style={s.sheetActions}>
+              {notificationState !== 'enabled' ? (
+                <PrimaryButton
+                  label={notificationBusy ? 'Подключаем…' : 'Включить уведомления'}
+                  onPress={enableNotifications}
+                  disabled={notificationBusy}
+                />
+              ) : (
+                <PrimaryButton
+                  label={notificationBusy ? 'Отключаем…' : 'Отключить уведомления'}
+                  onPress={disableNotifications}
+                  disabled={notificationBusy}
+                  secondary
+                />
+              )}
+              {Platform.OS !== 'web' && notificationState === 'blocked' ? (
+                <PrimaryButton
+                  label="Открыть настройки устройства"
+                  onPress={() => {
+                    Linking.openSettings().catch(() => {
+                      showToast('Не удалось открыть настройки устройства', 'error');
+                    });
+                  }}
+                  secondary
+                />
+              ) : null}
+              <PrimaryButton label="Закрыть" onPress={() => setShowNotificationSettings(false)} secondary />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal
         visible={showPassword}
@@ -366,5 +596,22 @@ const s = StyleSheet.create({
     marginTop: rs(8),
   },
   form: { gap: rs(10), marginTop: rs(18) },
+  notificationStatus: {
+    marginTop: rs(18),
+    minHeight: rs(64),
+    borderRadius: rs(14),
+    backgroundColor: '#F6F7F8',
+    paddingHorizontal: rs(14),
+    paddingVertical: rs(12),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(10),
+  },
+  notificationStatusText: {
+    flex: 1,
+    fontSize: rf(12.5),
+    lineHeight: rf(18),
+    color: Colors.textSecondary,
+  },
   sheetActions: { gap: rs(9), marginTop: rs(18) },
 });
