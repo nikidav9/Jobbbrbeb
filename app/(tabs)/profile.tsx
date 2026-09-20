@@ -10,13 +10,19 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { ScoreCard } from '@/components/feature/ScoreCard';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString } from '@/services/storage';
-import { dbGetRatingsForUser, dbChangePassword, dbDeleteAccount, dbGetConsent, dbGetCrossBorderConsent, dbRevokeCrossBorderConsent, UserRating, type CrossBorderConsentRecord } from '@/services/db';
+import {
+  dbGetRatingsForUser, dbChangePassword, dbDeleteAccount,
+  dbGetConsent, dbGetCrossBorderConsent, dbRevokeCrossBorderConsent,
+  dbGetResumeFiles, dbSaveResumeFile, dbSelectResumeFile, dbDeleteResumeFile,
+  dbSignResumeFile, UserRating, type CrossBorderConsentRecord, type ResumeVaultItem,
+} from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
