@@ -20,11 +20,9 @@ import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
 import {
-  APP_HEADER_BOTTOM,
   APP_HEADER_CONTROL,
   APP_HEADER_GAP,
-  APP_HEADER_HORIZONTAL,
-  APP_HEADER_TOP,
+  AppHeaderRow,
   BrandLogo,
 } from '@/components/ui/BrandLogo';
 import GuestGate from '@/components/GuestGate';
@@ -459,7 +457,7 @@ function WorkerMatches() {
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       {/* Шапка: марка слева, действия справа — как на макете. Конверт ведёт
           в переписки, закладка — в избранное, лупа раскрывает поиск. */}
-      <View style={wm.header}>
+      <AppHeaderRow>
         <BrandLogo />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
@@ -499,7 +497,7 @@ function WorkerMatches() {
             <Ionicons name="search" size={20} color={searchOpen ? Colors.primary : Colors.textPrimary} />
           </TouchableOpacity>
         </View>
-      </View>
+      </AppHeaderRow>
 
       <Text style={wm.title}>
         {todayCount} {plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня
@@ -687,12 +685,6 @@ function WorkerMatches() {
 }
 
 const wm = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
-    paddingTop: rs(APP_HEADER_TOP),
-    paddingBottom: rs(APP_HEADER_BOTTOM),
-  },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP) },
   headerBtn: {
     width: rs(APP_HEADER_CONTROL), height: rs(APP_HEADER_CONTROL),

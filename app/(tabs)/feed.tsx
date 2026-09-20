@@ -46,11 +46,9 @@ import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import {
-  APP_HEADER_BOTTOM,
   APP_HEADER_CONTROL,
   APP_HEADER_GAP,
-  APP_HEADER_HORIZONTAL,
-  APP_HEADER_TOP,
+  AppHeaderRow,
   BrandLogo,
 } from '@/components/ui/BrandLogo';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -1019,7 +1017,7 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
   onEnergyPress: () => void;
 }) {
   return (
-    <View style={fh.row}>
+    <AppHeaderRow backgroundColor={Colors.bgWarm}>
       <BrandLogo />
 
       <View style={fh.search}>
@@ -1069,18 +1067,11 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
         <Ionicons name="flash" size={16} color={energy > 0 ? Colors.primary : Colors.textMuted} />
         <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
       </TouchableOpacity>
-    </View>
+    </AppHeaderRow>
   );
 }
 
 const fh = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
-    paddingTop: rs(APP_HEADER_TOP),
-    paddingBottom: rs(APP_HEADER_BOTTOM),
-    backgroundColor: Colors.bgWarm,
-  },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),

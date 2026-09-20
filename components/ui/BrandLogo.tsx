@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, type ViewStyle, type StyleProp } from 'react-native';
 import { rs } from '@/constants/scale';
 
 /**
@@ -18,6 +18,39 @@ export const APP_HEADER_GAP = 10;
 export const BRAND_LOGO_WIDTH = 44;
 export const BRAND_LOGO_HEIGHT = 30;
 
+/**
+ * Общая «линейка» верхней шапки.
+ *
+ * Любой главный экран использует этот контейнер: одинаковые safe-area
+ * отступы уже даёт SafeAreaView, а здесь фиксируем левый/правый край,
+ * высоту контролов и вертикальные отступы. Поэтому логотип и кнопки больше
+ * не прыгают между «Вакансии», «Отклики» и «Профиль».
+ */
+export function AppHeaderRow({
+  children,
+  backgroundColor,
+  borderBottom = false,
+  style,
+}: {
+  children: React.ReactNode;
+  backgroundColor?: string;
+  borderBottom?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        s.headerRow,
+        backgroundColor ? { backgroundColor } : null,
+        borderBottom ? s.headerBorder : null,
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
 export function BrandLogo() {
   return (
     <View
@@ -35,6 +68,19 @@ export function BrandLogo() {
 }
 
 const s = StyleSheet.create({
+  headerRow: {
+    minHeight: rs(APP_HEADER_CONTROL + APP_HEADER_TOP + APP_HEADER_BOTTOM),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
+    paddingTop: rs(APP_HEADER_TOP),
+    paddingBottom: rs(APP_HEADER_BOTTOM),
+  },
+  headerBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
   box: {
     width: rs(BRAND_LOGO_WIDTH),
     height: rs(APP_HEADER_CONTROL),
