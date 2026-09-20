@@ -26,6 +26,9 @@ write = block.index("sb_upsert('jm_users'")
 check("сначала выясняется, существует ли пользователь", existing < guard)
 check("негодный новый id отсекается до записи", guard < write)
 check("проверка касается только новых пользователей", "if (!$existing &&" in block)
+check("роль восстанавливается до записи", "$u['role'] = $role;" in block and block.index("$u['role'] = $role;") < write)
+check("роль ограничена worker/employer", "in_array($role, ['worker', 'employer'], true)" in block)
+check("старый работодатель без role определяется по company", "? 'employer' : 'worker'" in block)
 
 if failures:
     print("user id contract: ПРОВАЛЫ")

@@ -8,7 +8,7 @@ migration = (root / "supabase" / "migrations" / "064_referral_programme.sql").re
 start = legal.index("  dataPolicy: {")
 policy = legal[start:]
 
-assert "version: '2026-09-19-3'" in policy
+assert "version: '2026-09-19-5'" in policy
 assert "consentVersion: '2026-09-19-3'" in policy
 assert "данные реферальной программы: код приглашения" in policy
 assert "связь между пригласившим и приглашённым" in policy

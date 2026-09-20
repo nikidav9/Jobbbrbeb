@@ -21,9 +21,47 @@ export interface ResumeLanguage {
   level: string;
 }
 
+export interface ResumeProject {
+  name: string;
+  role?: string;
+  period?: string;
+  description?: string;
+  url?: string;
+}
+
+export interface ResumeExam {
+  name: string;
+  score?: string;
+  date?: string;
+}
+
+export interface ResumeCertification {
+  name: string;
+  issuer?: string;
+  date?: string;
+  expiration?: string;
+  credentialId?: string;
+  credentialUrl?: string;
+}
+
+export interface ResumeAward {
+  name: string;
+  issuer?: string;
+  date?: string;
+  description?: string;
+}
+
+export interface ResumeCoursework {
+  name: string;
+  institution?: string;
+  period?: string;
+  description?: string;
+}
+
 export interface ResumeProfile {
   desiredPosition?: string;
   salary?: string;
+  summary?: string;
   specializations: string[];
   employmentType?: string;
   workFormat?: string;
@@ -34,8 +72,14 @@ export interface ResumeProfile {
   businessTrips?: string;
   experience: ResumeExperience[];
   education: ResumeEducation[];
-  skills: string[];
+  projects: ResumeProject[];
+  exams: ResumeExam[];
   languages: ResumeLanguage[];
+  skills: string[];
+  interests: string[];
+  certifications: ResumeCertification[];
+  awards: ResumeAward[];
+  coursework: ResumeCoursework[];
   sourceFileName: string;
   importedAt: string;
 }

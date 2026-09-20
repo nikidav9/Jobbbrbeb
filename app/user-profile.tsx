@@ -291,12 +291,61 @@ export default function UserProfileScreen() {
                   </View>
                 ) : null}
 
+                {user.resume.education.length > 0 ? (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionTitle}>Образование</Text>
+                    {user.resume.education.map((item, index) => (
+                      <View key={`${item.institution ?? item.level}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
+                        <Text style={styles.resumeEntryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
+                        {item.level && item.institution ? <Text style={styles.resumeEntryCompany}>{item.level}</Text> : null}
+                        {item.specialty ? <Text style={styles.resumeEntryCompany}>{item.specialty}</Text> : null}
+                        {item.period ? <Text style={styles.resumeEntryPeriod}>{item.period}</Text> : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {user.resume.projects.length > 0 ? (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionTitle}>Проекты</Text>
+                    {user.resume.projects.map((item, index) => (
+                      <View key={`${item.name}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
+                        <Text style={styles.resumeEntryTitle}>{item.name}</Text>
+                        {item.role ? <Text style={styles.resumeEntryCompany}>{item.role}</Text> : null}
+                        {item.description ? <Text style={styles.resumeEntryText} numberOfLines={5}>{item.description}</Text> : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {user.resume.languages.length > 0 ? (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionTitle}>Языки</Text>
+                    {user.resume.languages.map((item, index) => (
+                      <InfoRow key={`${item.name}-${index}`} label={item.name} value={<Text style={styles.valText}>{item.level}</Text>} />
+                    ))}
+                  </View>
+                ) : null}
+
                 {user.resume.skills.length > 0 ? (
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Навыки</Text>
                     <View style={styles.resumeChips}>
-                      {user.resume.skills.map(skill => <View key={skill} style={styles.resumeChip}><Text style={styles.resumeChipText}>{skill}</Text></View>)}
+                      {user.resume.skills.map((skill, index) => <View key={`${skill}-${index}`} style={styles.resumeChip}><Text style={styles.resumeChipText}>{skill}</Text></View>)}
                     </View>
+                  </View>
+                ) : null}
+
+                {user.resume.certifications.length > 0 ? (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionTitle}>Сертификаты</Text>
+                    {user.resume.certifications.map((item, index) => (
+                      <View key={`${item.name}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
+                        <Text style={styles.resumeEntryTitle}>{item.name}</Text>
+                        {item.issuer ? <Text style={styles.resumeEntryCompany}>{item.issuer}</Text> : null}
+                        {item.date ? <Text style={styles.resumeEntryPeriod}>{item.date}</Text> : null}
+                      </View>
+                    ))}
                   </View>
                 ) : null}
               </>

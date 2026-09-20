@@ -481,6 +481,7 @@ export default function ProfileScreen() {
         firstName: identity.firstName ?? currentUser.firstName,
         lastName: identity.lastName ?? currentUser.lastName,
         age: identity.age ?? currentUser.age,
+        bio: resume.summary?.trim() || currentUser.bio,
         workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : currentUser.workTypes,
       });
       showToast('Резюме распознано и сохранено', 'success');
@@ -1231,6 +1232,19 @@ function ResumeTab({ resume, importing, onImport }: {
   importing: boolean;
   onImport: () => void;
 }) {
+  const experience = resume?.experience ?? [];
+  const education = resume?.education ?? [];
+  const projects = resume?.projects ?? [];
+  const exams = resume?.exams ?? [];
+  const languages = resume?.languages ?? [];
+  const skills = resume?.skills ?? [];
+  const interests = resume?.interests ?? [];
+  const certifications = resume?.certifications ?? [];
+  const awards = resume?.awards ?? [];
+  const coursework = resume?.coursework ?? [];
+
+  const empty = <Text style={resumeS.sectionEmpty}>Не найдено в загруженном PDF</Text>;
+
   return (
     <View style={resumeS.content}>
       <TouchableOpacity style={resumeS.importCard} onPress={onImport} disabled={importing} activeOpacity={0.8}>
@@ -1252,7 +1266,9 @@ function ResumeTab({ resume, importing, onImport }: {
         <View style={resumeS.empty}>
           <Ionicons name="document-text-outline" size={rf(34)} color={Colors.textMuted} />
           <Text style={resumeS.emptyTitle}>Резюме пока не заполнено</Text>
-          <Text style={resumeS.emptyText}>Загрузите PDF — опыт, образование и навыки появятся в отдельных разделах.</Text>
+          <Text style={resumeS.emptyText}>
+            Загрузите PDF — опыт, образование, языки, навыки и дополнительные разделы появятся автоматически.
+          </Text>
         </View>
       ) : (
         <>
@@ -1264,59 +1280,121 @@ function ResumeTab({ resume, importing, onImport }: {
               {resume.workFormat ? <Text style={resumeS.meta}>{resume.workFormat}</Text> : null}
               {resume.city ? <Text style={resumeS.meta}>{resume.city}</Text> : null}
             </View>
+            {resume.summary ? <Text style={resumeS.summaryText}>{resume.summary}</Text> : null}
           </View>
 
-          {resume.experience.length > 0 ? (
-            <ResumeCard icon="briefcase-outline" title={`Опыт работы (${resume.experience.length})`}>
-              {resume.experience.map((item, index) => (
-                <View key={`${item.company}-${item.position}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                  <Text style={resumeS.entryTitle}>{item.position || 'Должность не указана'}</Text>
-                  <Text style={resumeS.entryCompany}>{item.company}</Text>
-                  <Text style={resumeS.entryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
-                  {item.description ? <Text style={resumeS.entryDescription} numberOfLines={6}>{item.description}</Text> : null}
+          <ResumeCard icon="briefcase-outline" title={`Опыт работы (${experience.length})`}>
+            {experience.length === 0 ? empty : experience.map((item, index) => (
+              <View key={`${item.company}-${item.position}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                <Text style={resumeS.entryTitle}>{item.position || 'Должность не указана'}</Text>
+                {item.company ? <Text style={resumeS.entryCompany}>{item.company}</Text> : null}
+                <Text style={resumeS.entryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
+                {item.description ? <Text style={resumeS.entryDescription} numberOfLines={8}>{item.description}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
+
+          <ResumeCard icon="school-outline" title={`Образование (${education.length})`}>
+            {education.length === 0 ? empty : education.map((item, index) => (
+              <View key={`${item.institution ?? item.level}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                <Text style={resumeS.entryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
+                {item.level && item.institution ? <Text style={resumeS.entryCompany}>{item.level}</Text> : null}
+                {item.specialty ? <Text style={resumeS.entryCompany}>{item.specialty}</Text> : null}
+                {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
+
+          <ResumeCard icon="hammer-outline" title={`Проекты (${projects.length})`}>
+            {projects.length === 0 ? empty : projects.map((item, index) => (
+              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                <Text style={resumeS.entryTitle}>{item.name}</Text>
+                {item.role ? <Text style={resumeS.entryCompany}>{item.role}</Text> : null}
+                {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                {item.description ? <Text style={resumeS.entryDescription}>{item.description}</Text> : null}
+                {item.url ? <Text style={resumeS.entryLink}>{item.url}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
+
+          <ResumeCard icon="document-outline" title={`Экзамены (${exams.length})`}>
+            {exams.length === 0 ? empty : exams.map((item, index) => (
+              <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={resumeS.languageName}>{item.name}</Text>
+                  {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
                 </View>
-              ))}
-            </ResumeCard>
-          ) : null}
+                {item.score ? <Text style={resumeS.languageLevel}>{item.score}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
+
+          <ResumeCard icon="language-outline" title={`Языки (${languages.length})`}>
+            {languages.length === 0 ? empty : languages.map((item, index) => (
+              <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
+                <Text style={resumeS.languageName}>{item.name}</Text>
+                <Text style={resumeS.languageLevel}>{item.level}</Text>
+              </View>
+            ))}
+          </ResumeCard>
+
+          <ResumeCard icon="sparkles-outline" title={`Навыки (${skills.length})`}>
+            {skills.length === 0 ? empty : (
+              <View style={resumeS.chips}>
+                {skills.map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+              </View>
+            )}
+          </ResumeCard>
 
           {resume.specializations.length > 0 ? (
             <ResumeCard icon="compass-outline" title="Специализации">
               <View style={resumeS.chips}>
-                {resume.specializations.map(item => <View key={item} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+                {resume.specializations.map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
               </View>
             </ResumeCard>
           ) : null}
 
-          {resume.skills.length > 0 ? (
-            <ResumeCard icon="sparkles-outline" title={`Навыки (${resume.skills.length})`}>
+          <ResumeCard icon="heart-outline" title={`Интересы (${interests.length})`}>
+            {interests.length === 0 ? empty : (
               <View style={resumeS.chips}>
-                {resume.skills.map(item => <View key={item} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+                {interests.map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
               </View>
-            </ResumeCard>
-          ) : null}
+            )}
+          </ResumeCard>
 
-          {resume.education.length > 0 ? (
-            <ResumeCard icon="school-outline" title="Образование">
-              {resume.education.map((item, index) => (
-                <View key={`${item.institution ?? item.level}-${index}`} style={resumeS.entry}>
-                  <Text style={resumeS.entryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
-                  {item.specialty ? <Text style={resumeS.entryCompany}>{item.specialty}</Text> : null}
-                  {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                </View>
-              ))}
-            </ResumeCard>
-          ) : null}
+          <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
+            {certifications.length === 0 ? empty : certifications.map((item, index) => (
+              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                <Text style={resumeS.entryTitle}>{item.name}</Text>
+                {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
+                {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
+                {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
+                {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
 
-          {resume.languages.length > 0 ? (
-            <ResumeCard icon="language-outline" title="Языки">
-              {resume.languages.map(item => (
-                <View key={item.name} style={resumeS.languageRow}>
-                  <Text style={resumeS.languageName}>{item.name}</Text>
-                  <Text style={resumeS.languageLevel}>{item.level}</Text>
-                </View>
-              ))}
-            </ResumeCard>
-          ) : null}
+          <ResumeCard icon="trophy-outline" title={`Награды (${awards.length})`}>
+            {awards.length === 0 ? empty : awards.map((item, index) => (
+              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                <Text style={resumeS.entryTitle}>{item.name}</Text>
+                {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
+                {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
+                {item.description ? <Text style={resumeS.entryDescription}>{item.description}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
+
+          <ResumeCard icon="book-outline" title={`Курсы (${coursework.length})`}>
+            {coursework.length === 0 ? empty : coursework.map((item, index) => (
+              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                <Text style={resumeS.entryTitle}>{item.name}</Text>
+                {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
+                {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                {item.description ? <Text style={resumeS.entryDescription}>{item.description}</Text> : null}
+              </View>
+            ))}
+          </ResumeCard>
 
           <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
         </>
@@ -1412,6 +1490,7 @@ const resumeS = StyleSheet.create({
   emptyText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textMuted, textAlign: 'center', marginTop: rs(5) },
   headline: { padding: rs(16), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
   headlineTitle: { fontSize: rf(20), lineHeight: rf(25), fontWeight: '800', color: Colors.textPrimary },
+  summaryText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(10) },
   salary: { fontSize: rf(15), fontWeight: '800', color: Colors.primary, marginTop: rs(7) },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7), marginTop: rs(10) },
   meta: { fontSize: rf(11.5), color: Colors.textSecondary, backgroundColor: '#F2F3F5', paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
@@ -1425,10 +1504,13 @@ const resumeS = StyleSheet.create({
   entryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
   entryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
   entryDescription: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(8) },
+  entryLink: { fontSize: rf(11.5), lineHeight: rf(16), color: Colors.primary, marginTop: rs(6) },
+  sectionEmpty: { fontSize: rf(12.5), color: Colors.textMuted, fontStyle: 'italic', paddingVertical: rs(5) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
   chip: { paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100), backgroundColor: '#F2F3F5' },
   chipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontWeight: '600' },
   languageRow: { flexDirection: 'row', justifyContent: 'space-between', gap: rs(12), paddingVertical: rs(9), borderTopWidth: 1, borderTopColor: Colors.divider },
+  firstRow: { borderTopWidth: 0 },
   languageName: { fontSize: rf(13.5), fontWeight: '700', color: Colors.textPrimary },
   languageLevel: { flex: 1, fontSize: rf(12.5), color: Colors.textMuted, textAlign: 'right' },
   importedAt: { fontSize: rf(10.5), color: Colors.textMuted, textAlign: 'center', paddingHorizontal: rs(12) },

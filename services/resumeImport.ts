@@ -94,8 +94,19 @@ export async function extractResumePdf(asset: DocumentPickerAsset) {
   }
   const text = pages.join('\n');
   const resume = parseResumeText(text, asset.name);
-  if (!resume.desiredPosition && resume.experience.length === 0 && resume.skills.length < 2) {
-    throw new Error('Не удалось распознать структуру резюме');
+  const structuredItems =
+    resume.experience.length
+    + resume.education.length
+    + resume.projects.length
+    + resume.exams.length
+    + resume.languages.length
+    + resume.skills.length
+    + resume.interests.length
+    + resume.certifications.length
+    + resume.awards.length
+    + resume.coursework.length;
+  if (!resume.desiredPosition && !resume.email && !resume.summary && structuredItems < 2) {
+    throw new Error('Не удалось распознать структуру резюме. Проверьте, что PDF содержит выделяемый текст, а не только скан.');
   }
   return { resume, identity: parseResumeIdentity(text), text };
 }

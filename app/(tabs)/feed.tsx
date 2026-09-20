@@ -1327,22 +1327,21 @@ function WorkerPermMode() {
 
     const wasSaved = permSavedIds.includes(v.id);
     permSavedMutationIds.current.add(v.id);
-    // Сначала меняем локальное состояние: нажатие должно быть видно сразу,
-    // даже если сеть отвечает через секунду. При ошибке откатываем.
-    if (wasSaved) optimisticRemovePermSaved(v.id);
-    else optimisticAddPermSaved(v.id);
 
     try {
+      // Избранное считается изменённым только после подтверждения сервера.
+      // Иначе при обрыве сети карточка на секунду исчезает/появляется и человек
+      // видит локальный успех, которого в базе на самом деле нет.
       if (wasSaved) {
         await dbRemovePermSaved(currentUser.id, v.id);
+        optimisticRemovePermSaved(v.id);
         showToast('Удалено из избранного', 'success');
       } else {
         await dbAddPermSaved(currentUser.id, v.id);
+        optimisticAddPermSaved(v.id);
         showToast('Сохранено в избранное', 'success');
       }
     } catch {
-      if (wasSaved) optimisticAddPermSaved(v.id);
-      else optimisticRemovePermSaved(v.id);
       showToast(wasSaved ? 'Не удалось удалить из избранного' : 'Не удалось сохранить в избранное', 'error');
     } finally {
       permSavedMutationIds.current.delete(v.id);
