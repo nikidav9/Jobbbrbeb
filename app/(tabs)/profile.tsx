@@ -1636,9 +1636,6 @@ function ResumeTab({ resume, importing, onImport }: {
   const languages = resume?.languages ?? [];
   const skills = resume?.skills ?? [];
   const interests = resume?.interests ?? [];
-  const certifications = resume?.certifications ?? [];
-  const awards = resume?.awards ?? [];
-  const coursework = resume?.coursework ?? [];
   const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
 
   const isExpanded = (key: string) => !!expandedLists[key];
@@ -1800,55 +1797,6 @@ function ResumeTab({ resume, importing, onImport }: {
             {interests.length > 0 ? (
               <ResumeMoreButton total={interests.length} shown={8} expanded={isExpanded('interests')} onPress={() => toggleList('interests')} />
             ) : null}
-          </ResumeCard>
-
-          <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
-            {certifications.length === 0 ? empty : (
-              <>
-                {visibleItems('certifications', certifications, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
-                    {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
-                    {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={certifications.length} shown={3} expanded={isExpanded('certifications')} onPress={() => toggleList('certifications')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="trophy-outline" title={`Награды (${awards.length})`}>
-            {awards.length === 0 ? empty : (
-              <>
-                {visibleItems('awards', awards, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={awards.length} shown={3} expanded={isExpanded('awards')} onPress={() => toggleList('awards')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="book-outline" title={`Курсы (${coursework.length})`}>
-            {coursework.length === 0 ? empty : (
-              <>
-                {visibleItems('coursework', coursework, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
-                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={coursework.length} shown={3} expanded={isExpanded('coursework')} onPress={() => toggleList('coursework')} />
-              </>
-            )}
           </ResumeCard>
 
           <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
