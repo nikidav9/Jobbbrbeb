@@ -284,7 +284,11 @@ function userToRow(u: User) {
   } = u.resume ?? ({} as NonNullable<User['resume']>);
   return {
     id: u.id,
-    role: u.role,
+    // Старый локальный кэш мог не содержать role. Сервер всё равно
+    // защищает поле, но клиент не должен отправлять null даже на старой сессии.
+    role: u.role === 'employer' || u.role === 'worker'
+      ? u.role
+      : (u.company ? 'employer' : 'worker'),
     phone: u.phone,
     last_name: u.lastName,
     first_name: u.firstName,
