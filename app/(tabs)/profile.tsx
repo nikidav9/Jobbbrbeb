@@ -27,7 +27,6 @@ import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
 import { TabHeader } from '@/components/ui/TabHeader';
-import { APP_HEADER_CONTROL, APP_HEADER_GAP } from '@/components/ui/BrandLogo';
 import GuestGate from '@/components/GuestGate';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -2722,11 +2721,11 @@ const styles = StyleSheet.create({
   logoOrange: { color: Colors.primary },
   // Те же отступы, что у стандартной шапки (TabHeader → h.right и NotifBell),
   // чтобы в профиле значки стояли ровно там же, а не сдвигались.
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP) },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
   helpHeaderBtn: {
-    height: rs(APP_HEADER_CONTROL),
-    paddingHorizontal: rs(14),
-    borderRadius: rs(APP_HEADER_CONTROL / 2),
+    minHeight: rs(36),
+    paddingHorizontal: rs(12),
+    borderRadius: rs(18),
     backgroundColor: Colors.bg,
     borderWidth: 1,
     borderColor: Colors.divider,
@@ -2739,14 +2738,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
   },
-  headerBtn: {
-    position: 'relative',
-    width: rs(APP_HEADER_CONTROL),
-    height: rs(APP_HEADER_CONTROL),
-    borderRadius: rs(APP_HEADER_CONTROL / 2),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  headerBtn: { position: 'relative', padding: rs(4) },
   notifBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: Colors.primary, borderRadius: rs(10), minWidth: rs(16), height: rs(16), alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(3) },
   notifBadgeText: { color: '#fff', fontSize: rf(9), fontWeight: '700' },
   // User card
