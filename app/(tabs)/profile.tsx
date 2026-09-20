@@ -1444,7 +1444,7 @@ export default function ProfileScreen() {
         </SectionCard>
         </> : null}
 
-        {(currentUser.role === 'employer' || (profileTab !== 'resume' && profileTab !== 'files')) ? (
+        {(currentUser.role === 'employer' || profileTab === 'personal') ? (
           <>
             {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
                 Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
