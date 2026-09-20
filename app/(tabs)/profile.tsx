@@ -10,13 +10,19 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { ScoreCard } from '@/components/feature/ScoreCard';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString } from '@/services/storage';
-import { dbGetRatingsForUser, dbChangePassword, dbDeleteAccount, dbGetConsent, dbGetCrossBorderConsent, dbRevokeCrossBorderConsent, UserRating, type CrossBorderConsentRecord } from '@/services/db';
+import {
+  dbGetRatingsForUser, dbChangePassword, dbDeleteAccount,
+  dbGetConsent, dbGetCrossBorderConsent, dbRevokeCrossBorderConsent,
+  dbGetResumeFiles, dbSaveResumeFile, dbSelectResumeFile, dbDeleteResumeFile,
+  dbSignResumeFile, UserRating, type CrossBorderConsentRecord, type ResumeVaultItem,
+} from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -562,12 +568,225 @@ function PersonalTab({
   );
 }
 
+function mergeResumeIntoUser(
+  user: User,
+  resume: ResumeProfile,
+  identity?: {
+    firstName?: string;
+    lastName?: string;
+    middleName?: string;
+    age?: number;
+    birthday?: string;
+  },
+): User {
+  const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
+  const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
+  const inferredWorkTypes = inferWorkTypes(resume);
+
+  return {
+    ...user,
+    resume,
+    firstName: identity?.firstName ?? user.firstName,
+    lastName: identity?.lastName ?? user.lastName,
+    age: identity?.age ?? user.age,
+    bio: resume.summary?.trim() || user.bio,
+    workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : user.workTypes,
+    personalDetails: {
+      ...(user.personalDetails ?? {}),
+      ...(identity?.middleName ? { middleName: identity.middleName } : {}),
+      ...(identity?.birthday ? { birthday: identity.birthday } : {}),
+      ...(resume.email ? { contactEmail: resume.email } : {}),
+      ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
+      ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
+      ...(resume.city ? { location: resume.city } : {}),
+      ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
+      ...(importedRelocation ? { relocation: importedRelocation } : {}),
+    },
+  };
+}
+
+function ResumeVaultTab({
+  items,
+  loading,
+  loadFailed,
+  legacyResume,
+  busyId,
+  importing,
+  onAdd,
+  onOpen,
+  onSelect,
+  onDelete,
+}: {
+  items: ResumeVaultItem[];
+  loading: boolean;
+  loadFailed: boolean;
+  legacyResume?: ResumeProfile;
+  busyId: string | null;
+  importing: boolean;
+  onAdd: () => void;
+  onOpen: (item: ResumeVaultItem) => void;
+  onSelect: (item: ResumeVaultItem) => void;
+  onDelete: (item: ResumeVaultItem) => void;
+}) {
+  const active = items.find(item => item.selected) ?? null;
+
+  return (
+    <View style={filesS.content}>
+      <View style={filesS.intro}>
+        <View style={filesS.introIcon}>
+          <Ionicons name="folder-open-outline" size={rf(22)} color={Colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={filesS.introTitle}>Сейф резюме</Text>
+          <Text style={filesS.introText}>
+            Храните несколько PDF и выбирайте активное. Выбранное резюме сразу синхронизируется с профилем.
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={filesS.addCard}
+        onPress={onAdd}
+        disabled={importing}
+        activeOpacity={0.78}
+      >
+        <View style={filesS.addIcon}>
+          {importing
+            ? <ActivityIndicator size="small" color="#FFFFFF" />
+            : <Ionicons name="add" size={rf(24)} color="#FFFFFF" />}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={filesS.addTitle}>{importing ? 'Добавляем PDF…' : 'Добавить резюме'}</Text>
+          <Text style={filesS.addSub}>PDF до 10 МБ · файл сохранится приватно</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
+      </TouchableOpacity>
+
+      {loading ? (
+        <View style={filesS.state}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={filesS.stateText}>Загружаем ваши резюме…</Text>
+        </View>
+      ) : loadFailed ? (
+        <View style={filesS.state}>
+          <Ionicons name="cloud-offline-outline" size={rf(22)} color={Colors.textMuted} />
+          <Text style={filesS.stateText}>Не удалось загрузить сейф. Откройте вкладку ещё раз.</Text>
+        </View>
+      ) : items.length === 0 ? (
+        <View style={filesS.state}>
+          <Ionicons name="document-text-outline" size={rf(26)} color={Colors.textMuted} />
+          <Text style={filesS.stateTitle}>В сейфе пока нет PDF</Text>
+          <Text style={filesS.stateText}>
+            {legacyResume
+              ? 'Текущее резюме было загружено до появления сейфа. Добавьте PDF ещё раз — после этого его можно будет смотреть и переключать здесь.'
+              : 'Добавьте первое резюме — оно автоматически станет активным в профиле.'}
+          </Text>
+        </View>
+      ) : (
+        <>
+          {active ? (
+            <View style={filesS.activeCard}>
+              <View style={filesS.activeTop}>
+                <View style={filesS.pdfIcon}>
+                  <Text style={filesS.pdfText}>PDF</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={filesS.activeLabel}>Сейчас в профиле</Text>
+                  <Text style={filesS.fileName} numberOfLines={2}>{active.fileName}</Text>
+                  <Text style={filesS.position} numberOfLines={1}>
+                    {active.resume.desiredPosition ?? 'Должность не указана'}
+                  </Text>
+                </View>
+                <View style={filesS.selectedPill}>
+                  <Ionicons name="checkmark-circle" size={rf(15)} color="#FFFFFF" />
+                  <Text style={filesS.selectedPillText}>Выбрано</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={filesS.previewButton}
+                onPress={() => onOpen(active)}
+                disabled={busyId === active.id}
+                activeOpacity={0.78}
+              >
+                {busyId === active.id
+                  ? <ActivityIndicator size="small" color={Colors.primary} />
+                  : <Ionicons name="eye-outline" size={rf(17)} color={Colors.primary} />}
+                <Text style={filesS.previewButtonText}>Посмотреть PDF</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <View style={filesS.listHeader}>
+            <Text style={filesS.listTitle}>Все резюме</Text>
+            <Text style={filesS.listCount}>{items.length}</Text>
+          </View>
+
+          {items.map(item => {
+            const selected = item.selected;
+            const busy = busyId === item.id;
+            const date = item.importedAt ? new Date(item.importedAt).toLocaleDateString('ru-RU') : '';
+            return (
+              <View key={item.id} style={[filesS.rowCard, selected && filesS.rowCardSelected]}>
+                <TouchableOpacity
+                  style={filesS.rowMain}
+                  onPress={() => onOpen(item)}
+                  disabled={busy}
+                  activeOpacity={0.76}
+                >
+                  <View style={[filesS.smallPdf, selected && filesS.smallPdfSelected]}>
+                    <Ionicons name="document-text-outline" size={rf(22)} color={selected ? Colors.primary : Colors.textSecondary} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={filesS.rowName} numberOfLines={2}>{item.fileName}</Text>
+                    <Text style={filesS.rowMeta} numberOfLines={1}>
+                      {[item.resume.desiredPosition, date].filter(Boolean).join(' · ') || 'PDF-резюме'}
+                    </Text>
+                  </View>
+                  <Ionicons name="eye-outline" size={rf(18)} color={Colors.textMuted} />
+                </TouchableOpacity>
+
+                <View style={filesS.rowActions}>
+                  <TouchableOpacity
+                    style={[filesS.selectButton, selected && filesS.selectButtonActive]}
+                    onPress={() => onSelect(item)}
+                    disabled={selected || busy}
+                    activeOpacity={0.78}
+                  >
+                    {busy
+                      ? <ActivityIndicator size="small" color={selected ? '#FFFFFF' : Colors.primary} />
+                      : <Ionicons name={selected ? 'checkmark' : 'swap-horizontal'} size={rf(15)} color={selected ? '#FFFFFF' : Colors.primary} />}
+                    <Text style={[filesS.selectText, selected && filesS.selectTextActive]}>
+                      {selected ? 'Активное' : 'Выбрать'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={filesS.deleteButton}
+                    onPress={() => onDelete(item)}
+                    disabled={busy}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="trash-outline" size={rf(17)} color={Colors.red} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
   const [editSection, setEditSection] = useState<EditSection>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
   const [importingResume, setImportingResume] = useState(false);
+  const [resumeFiles, setResumeFiles] = useState<ResumeVaultItem[]>([]);
+  const [resumeFilesLoading, setResumeFilesLoading] = useState(false);
+  const [resumeFilesLoadFailed, setResumeFilesLoadFailed] = useState(false);
+  const [resumeFileBusyId, setResumeFileBusyId] = useState<string | null>(null);
   // Раскрыта всегда не больше одной секции: экран остаётся коротким
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [showRatings, setShowRatings] = useState(false);
@@ -607,6 +826,18 @@ export default function ProfileScreen() {
       .catch(() => { if (alive) setConsentLoadFailed(true); });
     return () => { alive = false; };
   }, [currentUser?.id, consentRetry]);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'worker' || profileTab !== 'files') return;
+    let alive = true;
+    setResumeFilesLoading(true);
+    setResumeFilesLoadFailed(false);
+    dbGetResumeFiles()
+      .then(items => { if (alive) setResumeFiles(items); })
+      .catch(() => { if (alive) setResumeFilesLoadFailed(true); })
+      .finally(() => { if (alive) setResumeFilesLoading(false); });
+    return () => { alive = false; };
+  }, [currentUser?.id, currentUser?.role, profileTab]);
 
   const consentLine = consentLoadFailed && !consent
     ? 'Не удалось проверить статус согласий'
@@ -814,31 +1045,24 @@ export default function ProfileScreen() {
       });
       if (picked.canceled || !picked.assets[0]) return;
       setImportingResume(true);
-      const { resume, identity } = await extractResumePdf(picked.assets[0]);
-      const inferredWorkTypes = inferWorkTypes(resume);
-      const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
-      const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
-      await updateUser({
-        ...currentUser,
-        resume,
-        firstName: identity.firstName ?? currentUser.firstName,
-        lastName: identity.lastName ?? currentUser.lastName,
-        age: identity.age ?? currentUser.age,
-        bio: resume.summary?.trim() || currentUser.bio,
-        workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : currentUser.workTypes,
-        personalDetails: {
-          ...(currentUser.personalDetails ?? {}),
-          ...(identity.middleName ? { middleName: identity.middleName } : {}),
-          ...(identity.birthday ? { birthday: identity.birthday } : {}),
-          ...(resume.email ? { contactEmail: resume.email } : {}),
-          ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
-          ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
-          ...(resume.city ? { location: resume.city } : {}),
-          ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
-          ...(importedRelocation ? { relocation: importedRelocation } : {}),
-        },
-      });
-      showToast('Резюме распознано и сохранено', 'success');
+
+      const asset = picked.assets[0];
+      const { resume, identity, bytes } = await extractResumePdf(asset);
+      // Сначала сохраняем исходный PDF в приватный сейф. Сервер делает его
+      // активным и синхронизирует структурированное резюме с jm_users.
+      const saved = await dbSaveResumeFile(asset.name || resume.sourceFileName || 'resume.pdf', bytes, resume);
+
+      // Локальный контекст обновляем теми же данными, чтобы вкладки
+      // «Резюме» и «Личные» поменялись сразу, без перезапуска приложения.
+      await updateUser(mergeResumeIntoUser(currentUser, saved.resume, identity));
+
+      try {
+        setResumeFiles(await dbGetResumeFiles());
+        setResumeFilesLoadFailed(false);
+      } catch {
+        // Само резюме уже сохранено; сбой обновления списка не отменяет импорт.
+      }
+      showToast('Резюме сохранено в сейф и выбрано', 'success');
       setProfileTab('resume');
     } catch (error) {
       console.warn('[Profile] resume import failed', error);
@@ -846,6 +1070,74 @@ export default function ProfileScreen() {
     } finally {
       setImportingResume(false);
     }
+  };
+
+  const openResumePdf = async (item: ResumeVaultItem) => {
+    if (resumeFileBusyId) return;
+    setResumeFileBusyId(item.id);
+    try {
+      const url = await dbSignResumeFile(item.id);
+      await WebBrowser.openBrowserAsync(url);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Не удалось открыть PDF', 'error');
+    } finally {
+      setResumeFileBusyId(null);
+    }
+  };
+
+  const selectResumeFromVault = async (item: ResumeVaultItem) => {
+    if (item.selected || resumeFileBusyId) return;
+    setResumeFileBusyId(item.id);
+    try {
+      const selected = await dbSelectResumeFile(item.id);
+      await updateUser(mergeResumeIntoUser(currentUser, selected.resume));
+      setResumeFiles(prev => prev.map(file => ({
+        ...file,
+        selected: file.id === selected.id,
+        ...(file.id === selected.id ? { resume: selected.resume, importedAt: selected.importedAt } : {}),
+      })));
+      showToast('Резюме выбрано — профиль обновлён', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Не удалось выбрать резюме', 'error');
+    } finally {
+      setResumeFileBusyId(null);
+    }
+  };
+
+  const deleteResumeFromVault = (item: ResumeVaultItem) => {
+    if (resumeFileBusyId) return;
+    Alert.alert(
+      'Удалить резюме?',
+      item.selected
+        ? 'Это активное резюме. После удаления профиль переключится на следующее сохранённое резюме.'
+        : 'PDF будет удалён из сейфа без возможности восстановления.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            setResumeFileBusyId(item.id);
+            try {
+              const nextActive = await dbDeleteResumeFile(item.id);
+              if (item.selected) {
+                if (nextActive) {
+                  await updateUser(mergeResumeIntoUser(currentUser, nextActive.resume));
+                } else {
+                  await updateUser({ ...currentUser, resume: undefined });
+                }
+              }
+              setResumeFiles(await dbGetResumeFiles());
+              showToast('Резюме удалено', 'success');
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : 'Не удалось удалить резюме', 'error');
+            } finally {
+              setResumeFileBusyId(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleLogout = async () => {
@@ -901,6 +1193,13 @@ export default function ProfileScreen() {
                 <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
               </View>
             )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/profile-settings')}
+            style={styles.headerBtn}
+            activeOpacity={0.72}
+          >
+            <Ionicons name="settings-outline" size={23} color={Colors.textPrimary} />
           </TouchableOpacity>
         </View>
       } />
@@ -977,6 +1276,21 @@ export default function ProfileScreen() {
           />
         ) : null}
 
+        {currentUser.role === 'worker' && profileTab === 'files' ? (
+          <ResumeVaultTab
+            items={resumeFiles}
+            loading={resumeFilesLoading}
+            loadFailed={resumeFilesLoadFailed}
+            legacyResume={currentUser.resume}
+            busyId={resumeFileBusyId}
+            importing={importingResume}
+            onAdd={() => { void importResume(); }}
+            onOpen={(item) => { void openResumePdf(item); }}
+            onSelect={(item) => { void selectResumeFromVault(item); }}
+            onDelete={deleteResumeFromVault}
+          />
+        ) : null}
+
         {currentUser.role === 'employer' ? (
           <>
             <SectionCard
@@ -1019,25 +1333,7 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* Документы */}
-        {(currentUser.role === 'employer' || profileTab === 'files') ? <>
-        {currentUser.role === 'worker' ? (
-          <View style={sS.card}>
-            <TouchableOpacity style={sS.header} onPress={() => { void importResume(); }} disabled={importingResume} activeOpacity={0.7}>
-              <View style={[sS.iconSquare, { backgroundColor: Colors.primary }]}>
-                {importingResume
-                  ? <ActivityIndicator size="small" color="#FFFFFF" />
-                  : <Ionicons name="document-attach" size={18} color="#FFFFFF" />}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={sS.title}>{currentUser.resume ? 'Загруженное резюме' : 'Добавить резюме'}</Text>
-                <Text style={sS.summary} numberOfLines={1}>
-                  {currentUser.resume?.sourceFileName ?? 'PDF до 10 МБ'}
-                </Text>
-              </View>
-              <Ionicons name={currentUser.resume ? 'refresh' : 'add-circle'} size={19} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-        ) : null}
+        {currentUser.role === 'employer' ? <>
         <SectionCard
           iconName="document-text"
           iconBg="#6B7280"
@@ -1148,7 +1444,7 @@ export default function ProfileScreen() {
         </SectionCard>
         </> : null}
 
-        {(currentUser.role === 'employer' || profileTab !== 'resume') ? (
+        {(currentUser.role === 'employer' || (profileTab !== 'resume' && profileTab !== 'files')) ? (
           <>
             {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
                 Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
@@ -1933,6 +2229,174 @@ function SectionCard({
     </View>
   );
 }
+
+const filesS = StyleSheet.create({
+  content: { gap: rs(14) },
+  intro: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: rs(12),
+    padding: rs(16),
+    borderRadius: rs(18),
+    backgroundColor: Colors.bg,
+    ...Shadow.card,
+  },
+  introIcon: {
+    width: rs(44),
+    height: rs(44),
+    borderRadius: rs(14),
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  introTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  introText: {
+    fontSize: rf(12.5),
+    lineHeight: rf(18),
+    color: Colors.textSecondary,
+    marginTop: rs(4),
+  },
+  addCard: {
+    minHeight: rs(76),
+    borderRadius: rs(17),
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#FFD0BA',
+    backgroundColor: '#FFF8F4',
+    paddingHorizontal: rs(14),
+    paddingVertical: rs(13),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(12),
+  },
+  addIcon: {
+    width: rs(42),
+    height: rs(42),
+    borderRadius: rs(13),
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addTitle: { fontSize: rf(14.5), fontWeight: '800', color: Colors.textPrimary },
+  addSub: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
+  state: {
+    padding: rs(22),
+    borderRadius: rs(16),
+    backgroundColor: Colors.bg,
+    alignItems: 'center',
+    gap: rs(7),
+    ...Shadow.card,
+  },
+  stateTitle: { fontSize: rf(14.5), fontWeight: '800', color: Colors.textPrimary },
+  stateText: {
+    fontSize: rf(12.5),
+    lineHeight: rf(18),
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  activeCard: {
+    padding: rs(16),
+    borderRadius: rs(18),
+    backgroundColor: Colors.bg,
+    borderWidth: 1.5,
+    borderColor: '#B9E9C3',
+    ...Shadow.card,
+  },
+  activeTop: { flexDirection: 'row', alignItems: 'center', gap: rs(11) },
+  pdfIcon: {
+    width: rs(50),
+    height: rs(62),
+    borderRadius: rs(12),
+    backgroundColor: '#FFF1EA',
+    borderWidth: 1,
+    borderColor: '#FFD4C0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pdfText: { fontSize: rf(11.5), fontWeight: '900', color: Colors.primary, letterSpacing: 0.6 },
+  activeLabel: { fontSize: rf(10.5), fontWeight: '800', color: Colors.green, textTransform: 'uppercase' },
+  fileName: { fontSize: rf(14.5), lineHeight: rf(18.5), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(2) },
+  position: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(4) },
+  selectedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(4),
+    paddingHorizontal: rs(9),
+    paddingVertical: rs(6),
+    borderRadius: rs(100),
+    backgroundColor: Colors.green,
+  },
+  selectedPillText: { fontSize: rf(10.5), color: '#FFFFFF', fontWeight: '800' },
+  previewButton: {
+    marginTop: rs(14),
+    minHeight: rs(42),
+    borderRadius: rs(12),
+    backgroundColor: Colors.primaryLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: rs(7),
+  },
+  previewButtonText: { fontSize: rf(12.5), color: Colors.primary, fontWeight: '800' },
+  listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rs(2) },
+  listTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
+  listCount: { fontSize: rf(12), color: Colors.textMuted, fontWeight: '700' },
+  rowCard: {
+    borderRadius: rs(16),
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: '#ECEEF2',
+    overflow: 'hidden',
+    ...Shadow.card,
+  },
+  rowCardSelected: { borderColor: '#B9E9C3' },
+  rowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(11),
+    paddingHorizontal: rs(14),
+    paddingVertical: rs(13),
+  },
+  smallPdf: {
+    width: rs(42),
+    height: rs(50),
+    borderRadius: rs(11),
+    backgroundColor: '#F4F5F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallPdfSelected: { backgroundColor: '#F1FFF4' },
+  rowName: { fontSize: rf(13.5), lineHeight: rf(17.5), fontWeight: '800', color: Colors.textPrimary },
+  rowMeta: { fontSize: rf(11.2), color: Colors.textMuted, marginTop: rs(4) },
+  rowActions: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    padding: rs(10),
+    flexDirection: 'row',
+    gap: rs(8),
+  },
+  selectButton: {
+    flex: 1,
+    minHeight: rs(38),
+    borderRadius: rs(11),
+    backgroundColor: Colors.primaryLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: rs(6),
+  },
+  selectButtonActive: { backgroundColor: Colors.green },
+  selectText: { fontSize: rf(12), color: Colors.primary, fontWeight: '800' },
+  selectTextActive: { color: '#FFFFFF' },
+  deleteButton: {
+    width: rs(42),
+    minHeight: rs(38),
+    borderRadius: rs(11),
+    backgroundColor: '#FFF3F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 const personalS = StyleSheet.create({
   content: { gap: rs(20) },

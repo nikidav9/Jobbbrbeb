@@ -696,6 +696,87 @@ function sb_delete(string $t, array $f): void {
     rt_touch($t);
 }
 
+// ─── Приватное хранилище PDF-резюме ───────────────────────────────────────
+function jt_resume_storage_upload(string $path, string $bytes): void {
+    $ch = curl_init(SB_URL . '/storage/v1/object/resume-files/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS => $bytes,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . SB_KEY,
+            'Authorization: Bearer ' . SB_KEY,
+            'Content-Type: application/pdf',
+            'x-upsert: false',
+        ],
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($code < 200 || $code >= 300) {
+        throw new RuntimeException($err ?: ('хранилище резюме ответило ' . $code . ': ' . substr((string)$resp, 0, 180)));
+    }
+}
+
+function jt_resume_storage_delete(string $path): void {
+    if ($path === '') return;
+    $ch = curl_init(SB_URL . '/storage/v1/object/resume-files/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . SB_KEY,
+            'Authorization: Bearer ' . SB_KEY,
+        ],
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+function jt_resume_signed_url(string $path): string {
+    $ch = curl_init(SB_URL . '/storage/v1/object/sign/resume-files/' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode(['expiresIn' => 3600]),
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . SB_KEY,
+            'Authorization: Bearer ' . SB_KEY,
+            'Content-Type: application/json',
+        ],
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $dec = json_decode($resp ?: 'null', true);
+    if ($code < 200 || $code >= 300 || empty($dec['signedURL'])) {
+        throw new RuntimeException('Не удалось открыть PDF');
+    }
+    return SB_URL . '/storage/v1' . $dec['signedURL'];
+}
+
+function jt_resume_sync_user(string $uid, ?array $row): void {
+    if ($row === null) {
+        sb_update('jm_users', ['id' => 'eq.' . $uid], [
+            'resume_data' => null,
+            'resume_email' => null,
+            'resume_file_name' => null,
+            'resume_imported_at' => null,
+        ]);
+        return;
+    }
+    sb_update('jm_users', ['id' => 'eq.' . $uid], [
+        'resume_data' => $row['resume_data'] ?? null,
+        'resume_email' => $row['resume_email'] ?? null,
+        'resume_file_name' => $row['file_name'] ?? null,
+        'resume_imported_at' => $row['imported_at'] ?? null,
+    ]);
+}
+
 function sb_rpc(string $fn, array $params = []): mixed {
     $url = SB_URL . '/rest/v1/rpc/' . $fn;
     $hdrs = ['apikey: ' . SB_KEY, 'Authorization: Bearer ' . SB_KEY, 'Content-Type: application/json'];
@@ -3373,6 +3454,19 @@ try {
             $stored = (string)($u['password'] ?? '');
             $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
             if (!$ok) { $data = ['error' => 'Неверный пароль']; break; }
+
+            // PDF лежат не в таблице, а в Storage: каскад БД удалит метаданные,
+            // но сами объекты без этой уборки остались бы навсегда.
+            try {
+                $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
+                foreach ($resumeRows as $resumeRow) {
+                    jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
+                }
+            } catch (Throwable $e) {
+                // Совместимость с сервером до миграции 100: отсутствие таблицы
+                // не должно ломать удаление аккаунта.
+            }
+
             $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
             break;
         }
@@ -5216,6 +5310,173 @@ try {
                 break;
             }
             $data = ['url' => SB_URL . '/storage/v1/object/public/avatars/' . $name];
+            break;
+        }
+
+        // ── Приватный сейф резюме ─────────────────────────────────────────────
+        case 'dbGetResumeFiles': {
+            $data = sb_select(
+                'jm_resume_files',
+                ['user_id' => 'eq.' . (string)$authUid],
+                'id,user_id,file_name,storage_path,resume_data,resume_email,imported_at,selected,created_at,updated_at',
+                'updated_at.desc'
+            );
+            break;
+        }
+
+        case 'dbSaveResumeFile': {
+            $fileName = trim((string)($args[0] ?? ''));
+            $b64 = (string)($args[1] ?? '');
+            $resumeData = is_array($args[2] ?? null) ? $args[2] : null;
+            $resumeEmail = isset($args[3]) && $args[3] !== null ? trim((string)$args[3]) : null;
+            if ($fileName === '' || mb_strlen($fileName) > 180) {
+                $data = ['error' => 'Некорректное имя файла']; break;
+            }
+            if (!preg_match('/\.pdf$/iu', $fileName)) {
+                $data = ['error' => 'Можно сохранить только PDF']; break;
+            }
+            if ($resumeData === null) {
+                $data = ['error' => 'Нет распознанных данных резюме']; break;
+            }
+            $bytes = base64_decode($b64, true);
+            if ($bytes === false || $bytes === '') {
+                $data = ['error' => 'Пустой PDF']; break;
+            }
+            if (strlen($bytes) > 10 * 1024 * 1024) {
+                $data = ['error' => 'PDF больше 10 МБ']; break;
+            }
+            if (substr($bytes, 0, 4) !== '%PDF') {
+                $data = ['error' => 'Файл не похож на PDF']; break;
+            }
+
+            $id = uid();
+            $path = 'resume/' . (string)$authUid . '/' . $id . '.pdf';
+            $now = now_iso();
+            jt_resume_storage_upload($path, $bytes);
+
+            try {
+                // Частичный unique-index разрешает только одно selected=true.
+                sb_update('jm_resume_files', ['user_id' => 'eq.' . (string)$authUid], ['selected' => false]);
+                $rows = sb_insert('jm_resume_files', [
+                    'id' => $id,
+                    'user_id' => (string)$authUid,
+                    'file_name' => $fileName,
+                    'storage_path' => $path,
+                    'resume_data' => $resumeData,
+                    'resume_email' => $resumeEmail !== '' ? $resumeEmail : null,
+                    'imported_at' => $now,
+                    'selected' => true,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ], true);
+                $row = $rows[0] ?? sb_single('jm_resume_files', [
+                    'id' => 'eq.' . $id,
+                    'user_id' => 'eq.' . (string)$authUid,
+                ]);
+                if (!$row) throw new RuntimeException('Не удалось сохранить резюме');
+                jt_resume_sync_user((string)$authUid, $row);
+                $data = $row;
+            } catch (Throwable $e) {
+                jt_resume_storage_delete($path);
+                throw $e;
+            }
+            break;
+        }
+
+        case 'dbSelectResumeFile': {
+            $id = trim((string)($args[0] ?? ''));
+            $row = $id !== '' ? sb_single('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ]) : null;
+            if (!$row) { $data = ['error' => 'Резюме не найдено']; break; }
+
+            sb_update('jm_resume_files', ['user_id' => 'eq.' . (string)$authUid], ['selected' => false]);
+            $now = now_iso();
+            sb_update('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ], ['selected' => true, 'updated_at' => $now]);
+            $row['selected'] = true;
+            $row['updated_at'] = $now;
+            jt_resume_sync_user((string)$authUid, $row);
+            $data = $row;
+            break;
+        }
+
+        case 'dbRenameResumeFile': {
+            $id = trim((string)($args[0] ?? ''));
+            $name = trim((string)($args[1] ?? ''));
+            if ($name === '' || mb_strlen($name) > 180 || !preg_match('/\.pdf$/iu', $name)) {
+                $data = ['error' => 'Имя должно заканчиваться на .pdf']; break;
+            }
+            $row = $id !== '' ? sb_single('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ]) : null;
+            if (!$row) { $data = ['error' => 'Резюме не найдено']; break; }
+            $now = now_iso();
+            sb_update('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ], ['file_name' => $name, 'updated_at' => $now]);
+            $row['file_name'] = $name;
+            $row['updated_at'] = $now;
+            if (!empty($row['selected'])) jt_resume_sync_user((string)$authUid, $row);
+            $data = $row;
+            break;
+        }
+
+        case 'dbDeleteResumeFile': {
+            $id = trim((string)($args[0] ?? ''));
+            $row = $id !== '' ? sb_single('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ]) : null;
+            if (!$row) { $data = ['error' => 'Резюме не найдено']; break; }
+
+            jt_resume_storage_delete((string)($row['storage_path'] ?? ''));
+            sb_delete('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ]);
+
+            if (!empty($row['selected'])) {
+                $remaining = sb_select(
+                    'jm_resume_files',
+                    ['user_id' => 'eq.' . (string)$authUid],
+                    '*',
+                    'updated_at.desc'
+                );
+                $next = $remaining[0] ?? null;
+                if ($next) {
+                    sb_update('jm_resume_files', ['user_id' => 'eq.' . (string)$authUid], ['selected' => false]);
+                    sb_update('jm_resume_files', ['id' => 'eq.' . (string)$next['id']], ['selected' => true]);
+                    $next['selected'] = true;
+                    jt_resume_sync_user((string)$authUid, $next);
+                    $data = $next;
+                } else {
+                    jt_resume_sync_user((string)$authUid, null);
+                    $data = null;
+                }
+            } else {
+                $selected = sb_single('jm_resume_files', [
+                    'user_id' => 'eq.' . (string)$authUid,
+                    'selected' => 'eq.true',
+                ]);
+                $data = $selected;
+            }
+            break;
+        }
+
+        case 'dbSignResumeFile': {
+            $id = trim((string)($args[0] ?? ''));
+            $row = $id !== '' ? sb_single('jm_resume_files', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . (string)$authUid,
+            ], 'storage_path') : null;
+            if (!$row) { $data = ['error' => 'Резюме не найдено']; break; }
+            $data = ['url' => jt_resume_signed_url((string)$row['storage_path'])];
             break;
         }
 
