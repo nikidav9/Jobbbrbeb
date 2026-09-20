@@ -264,11 +264,15 @@ check('шапка: размер логотипа задаётся ровно в 
     str_contains($brandLogo, 'BRAND_LOGO_HEIGHT = 30') &&
     !str_contains($matchesHeader, 'logoMarkJ') &&
     !str_contains($matchesHeader, 'logoMarkT'));
-check('шапка: вакансии и отклики используют общие поля и высоту контролов',
-    str_contains($feedHeader, 'APP_HEADER_HORIZONTAL') &&
+check('шапка: вакансии, отклики и стандартный header используют одну линейку',
+    str_contains($brandLogo, 'export function AppHeaderRow') &&
+    str_contains($tabHeader, '<AppHeaderRow') &&
+    str_contains($feedHeader, '<AppHeaderRow') &&
+    str_contains($matchesHeader, '<AppHeaderRow'));
+check('шапка: высота контролов остаётся общей',
     str_contains($feedHeader, 'APP_HEADER_CONTROL') &&
-    str_contains($matchesHeader, 'APP_HEADER_HORIZONTAL') &&
-    str_contains($matchesHeader, 'APP_HEADER_CONTROL'));
+    str_contains($matchesHeader, 'APP_HEADER_CONTROL') &&
+    str_contains($brandLogo, 'APP_HEADER_CONTROL = 44'));
 check('шапка: профиль использует ту же высоту кнопок',
     str_contains($profileForFooter, 'APP_HEADER_CONTROL') &&
     str_contains($profileForFooter, 'APP_HEADER_GAP'));
