@@ -783,6 +783,10 @@ export default function ProfileScreen() {
   const [editSection, setEditSection] = useState<EditSection>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
   const [importingResume, setImportingResume] = useState(false);
+  const [resumeFiles, setResumeFiles] = useState<ResumeVaultItem[]>([]);
+  const [resumeFilesLoading, setResumeFilesLoading] = useState(false);
+  const [resumeFilesLoadFailed, setResumeFilesLoadFailed] = useState(false);
+  const [resumeFileBusyId, setResumeFileBusyId] = useState<string | null>(null);
   // Раскрыта всегда не больше одной секции: экран остаётся коротким
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [showRatings, setShowRatings] = useState(false);
@@ -822,6 +826,18 @@ export default function ProfileScreen() {
       .catch(() => { if (alive) setConsentLoadFailed(true); });
     return () => { alive = false; };
   }, [currentUser?.id, consentRetry]);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'worker' || profileTab !== 'files') return;
+    let alive = true;
+    setResumeFilesLoading(true);
+    setResumeFilesLoadFailed(false);
+    dbGetResumeFiles()
+      .then(items => { if (alive) setResumeFiles(items); })
+      .catch(() => { if (alive) setResumeFilesLoadFailed(true); })
+      .finally(() => { if (alive) setResumeFilesLoading(false); });
+    return () => { alive = false; };
+  }, [currentUser?.id, currentUser?.role, profileTab]);
 
   const consentLine = consentLoadFailed && !consent
     ? 'Не удалось проверить статус согласий'
