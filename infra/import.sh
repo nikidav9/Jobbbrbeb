@@ -33,7 +33,7 @@ fi
 ORDER="jm_settings jm_users jm_vacancies jm_perm_vacancies jm_bulletins
        jm_likes jm_chats jm_messages jm_saved jm_perm_saved jm_perm_applications
        jm_notifications jm_ratings jm_complaints jm_bot_messages
-       jm_support_messages jm_support_threads jm_web_push_subscriptions
+       jm_support_messages jm_support_threads jm_support_knowledge jm_web_push_subscriptions
        jm_vacancy_views jm_perm_vacancy_views jm_worker_slots"
 
 say "перенос" "начинаю"
