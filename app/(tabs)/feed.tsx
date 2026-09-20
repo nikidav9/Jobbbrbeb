@@ -2423,7 +2423,7 @@ const styles = StyleSheet.create({
   cardViewportShell: { flex: 1, borderRadius: Radius.card },
   cardViewportClip: {
     flex: 1, borderRadius: Radius.card, overflow: 'hidden',
-    borderWidth: 1, borderColor: Colors.inputBorder, backgroundColor: Colors.bg,
+    backgroundColor: Colors.bg,
   },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
