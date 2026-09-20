@@ -72,6 +72,34 @@ check('таблица сейфа закрыта RLS',
 check('у пользователя только одно активное резюме',
     str_contains($vaultMigration, 'jm_resume_files_one_selected_per_user'));
 
+// ── Поддержка: человек не может писать от имени оператора ───────────────────
+$adminBlock = '';
+if (preg_match('~\$adminFns = \[(.*?)\n\];~s', $db, $m)) $adminBlock = $m[1];
+$selfBlockSupport = '';
+if (preg_match('~\$selfArgFns = \[(.*?)\n\];~s', $db, $m)) $selfBlockSupport = $m[1];
+
+check('ответ оператора доступен только admin-функции',
+    $adminBlock !== '' && str_contains($adminBlock, "'supportReply'"));
+check('вызов оператора разрешён только для своей сессии',
+    $selfBlockSupport !== '' && str_contains($selfBlockSupport, "'supportEscalate' => 0"));
+check('вопрос помощнику разрешён только для своей сессии',
+    $selfBlockSupport !== '' && str_contains($selfBlockSupport, "'supportAssistantAsk' => 0"));
+
+$assistantAsk = case_body($db, 'supportAssistantAsk');
+check('клиент не передаёт текст ответа помощника',
+    str_contains($assistantAsk, 'support_best_article($text')
+    && str_contains($assistantAsk, "'sender' => 'assistant'"));
+$operatorReply = case_body($db, 'supportReply');
+check('сервер помечает ответ оператора сам',
+    str_contains($operatorReply, "'sender' => 'operator'"));
+
+$supportMigration = (string)file_get_contents(__DIR__ . '/../supabase/migrations/101_support_assistant.sql');
+check('база знаний поддержки закрыта RLS',
+    str_contains($supportMigration, 'alter table public.jm_support_knowledge enable row level security')
+    && str_contains($supportMigration, 'revoke all on public.jm_support_knowledge from anon, authenticated'));
+check('в очередь дашборда попадает только явный вызов оператора',
+    str_contains($supportMigration, 'operator_requested_at'));
+
 // ── Таблица откликов больше не отдаётся целиком ──────────────────────────────
 // Прежде: sb_select('jm_likes') без фильтра — кто куда откликался, кому
 // отказали и чем кончилась смена, по всему сервису, любому вошедшему.
