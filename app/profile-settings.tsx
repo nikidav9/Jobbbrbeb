@@ -22,7 +22,7 @@ import { LEGAL_DOCS, type LegalDocKey } from '@/constants/legal';
 import {
   NOTIFICATION_DISABLED_KEY, registerForPushNotifications,
 } from '@/services/notifications';
-import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
+import { registerWebPush, getWebPushDebug, isWebPushRegistered } from '@/lib/webPush';
 
 const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
 
@@ -115,8 +115,13 @@ export default function ProfileSettingsScreen() {
         return;
       }
       if (BrowserNotification.permission === 'granted') {
-        setNotificationState('enabled');
-        setNotificationMessage('Разрешение выдано. JobToo может получать push-уведомления.');
+        if (isWebPushRegistered()) {
+          setNotificationState('enabled');
+          setNotificationMessage('Уведомления включены и web-push подключён.');
+        } else {
+          setNotificationState('disabled');
+          setNotificationMessage('Разрешение уже выдано, но доставка push ещё не подключена. Нажмите «Включить уведомления».');
+        }
       } else if (BrowserNotification.permission === 'denied') {
         setNotificationState('blocked');
         setNotificationMessage('Уведомления заблокированы в настройках браузера или iPhone.');
