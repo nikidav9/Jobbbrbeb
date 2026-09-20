@@ -620,8 +620,13 @@ export default function ProfileScreen() {
   const [metroPicker, setMetroPicker] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [personalField, setPersonalField] = useState<PersonalFieldKey | null>(null);
+  const [personalEditValue, setPersonalEditValue] = useState('');
   // Полоска сверху обещает смахивание — значит оно должно работать
-  const editSwipe = useSwipeToDismiss(() => setEditSection(null));
+  const editSwipe = useSwipeToDismiss(() => {
+    setEditSection(null);
+    setPersonalField(null);
+  });
   const notifSwipe = useSwipeToDismiss(() => setShowNotifications(false));
   const pwdSwipe = useSwipeToDismiss(() => setShowSettings(false));
   const [showPhotoSource, setShowPhotoSource] = useState(false);
@@ -649,7 +654,22 @@ export default function ProfileScreen() {
   const initials = getInitials(`${currentUser.firstName} ${currentUser.lastName}`);
   const avatarColor = nameColorFromString(currentUser.id);
   const line = METRO_LINES.find(l => l.id === currentUser.metroLineId);
-  const workTypeLabels = (currentUser.workTypes ?? []).map(t => WORK_TYPE_META[t]?.label ?? t);
+
+  const personalFallback = (field: PersonalFieldKey): string => {
+    const resume = currentUser.resume;
+    if (field === 'contactEmail') return resume?.email ?? '';
+    if (field === 'citizenship') return resume?.citizenship ?? '';
+    if (field === 'workAuthorization') return resume?.workPermit ?? '';
+    if (field === 'location') return resume?.city ?? '';
+    if (field === 'workAvailability') {
+      return [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
+    }
+    if (field === 'relocation') {
+      return resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0] ?? '';
+    }
+    if (field === 'birthday' && currentUser.age) return `${currentUser.age} лет`;
+    return '';
+  };
 
   const toggleSection = (key: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.create(
@@ -659,6 +679,7 @@ export default function ProfileScreen() {
   };
 
   const openEdit = (section: EditSection) => {
+    setPersonalField(null);
     setEditSection(section);
     setEditPhone(currentUser.phone);
     setEditLast(currentUser.lastName);
@@ -673,11 +694,27 @@ export default function ProfileScreen() {
     setEditAge(currentUser.age ? String(currentUser.age) : '');
   };
 
+  const openPersonalField = (field: PersonalFieldKey) => {
+    setEditSection(null);
+    setPersonalField(field);
+    setPersonalEditValue(
+      (currentUser.personalDetails?.[field] as string | undefined)
+      ?? personalFallback(field)
+      ?? '',
+    );
+  };
+
   const saveEdit = async () => {
     if (savingEdit) return;
     setSavingEdit(true);
     try {
       const updated = { ...currentUser };
+      if (personalField) {
+        updated.personalDetails = {
+          ...(currentUser.personalDetails ?? {}),
+          [personalField]: personalEditValue.trim() || undefined,
+        };
+      }
       if (editSection === 'personal') {
         updated.phone = editPhone; updated.lastName = editLast; updated.firstName = editFirst;
         // Пустое поле — «не указан», а не ноль: иначе в карточке появилось бы «0 лет».
@@ -689,6 +726,7 @@ export default function ProfileScreen() {
       if (editSection === 'bio') updated.bio = editBio;
       await updateUser(updated);
       setEditSection(null);
+      setPersonalField(null);
       showToast('Сохранено', 'success');
     } catch {
       // Форму не закрываем: введённые значения остаются на месте для повтора.
@@ -779,6 +817,8 @@ export default function ProfileScreen() {
       setImportingResume(true);
       const { resume, identity } = await extractResumePdf(picked.assets[0]);
       const inferredWorkTypes = inferWorkTypes(resume);
+      const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
+      const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
       await updateUser({
         ...currentUser,
         resume,
@@ -787,6 +827,17 @@ export default function ProfileScreen() {
         age: identity.age ?? currentUser.age,
         bio: resume.summary?.trim() || currentUser.bio,
         workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : currentUser.workTypes,
+        personalDetails: {
+          ...(currentUser.personalDetails ?? {}),
+          ...(identity.middleName ? { middleName: identity.middleName } : {}),
+          ...(identity.birthday ? { birthday: identity.birthday } : {}),
+          ...(resume.email ? { contactEmail: resume.email } : {}),
+          ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
+          ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
+          ...(resume.city ? { location: resume.city } : {}),
+          ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
+          ...(importedRelocation ? { relocation: importedRelocation } : {}),
+        },
       });
       showToast('Резюме распознано и сохранено', 'success');
       setProfileTab('resume');
