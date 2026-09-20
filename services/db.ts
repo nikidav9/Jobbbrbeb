@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
-import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType } from '@/constants/types';
+import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile } from '@/constants/types';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 
@@ -1126,6 +1126,101 @@ export async function dbUploadFile(
     'dbUploadFile', [fileName, bytesToBase64(bytes), contentType],
   );
   if (!res?.url) throw new Error(res?.error || 'Файл не загрузился');
+  return res.url;
+}
+
+export type ResumeVaultItem = {
+  id: string;
+  fileName: string;
+  storagePath: string;
+  resume: ResumeProfile;
+  importedAt: string;
+  selected: boolean;
+};
+
+function rowToResumeVaultItem(row: any): ResumeVaultItem {
+  const data = row?.resume_data && typeof row.resume_data === 'object' ? row.resume_data : {};
+  return {
+    id: String(row?.id ?? ''),
+    fileName: String(row?.file_name ?? ''),
+    storagePath: String(row?.storage_path ?? ''),
+    importedAt: String(row?.imported_at ?? row?.created_at ?? ''),
+    selected: row?.selected === true,
+    resume: {
+      ...data,
+      specializations: Array.isArray(data.specializations) ? data.specializations : [],
+      experience: Array.isArray(data.experience) ? data.experience : [],
+      education: Array.isArray(data.education) ? data.education : [],
+      projects: Array.isArray(data.projects) ? data.projects : [],
+      exams: Array.isArray(data.exams) ? data.exams : [],
+      languages: Array.isArray(data.languages) ? data.languages : [],
+      skills: Array.isArray(data.skills) ? data.skills : [],
+      interests: Array.isArray(data.interests) ? data.interests : [],
+      certifications: Array.isArray(data.certifications) ? data.certifications : [],
+      awards: Array.isArray(data.awards) ? data.awards : [],
+      coursework: Array.isArray(data.coursework) ? data.coursework : [],
+      ...(row?.resume_email ? { email: String(row.resume_email) } : {}),
+      sourceFileName: String(row?.file_name ?? ''),
+      importedAt: String(row?.imported_at ?? row?.created_at ?? ''),
+    } as ResumeProfile,
+  };
+}
+
+/** Приватный список PDF-резюме владельца. */
+export async function dbGetResumeFiles(): Promise<ResumeVaultItem[]> {
+  const rows = await proxy<any[]>('dbGetResumeFiles');
+  return (rows ?? []).map(rowToResumeVaultItem);
+}
+
+/**
+ * Сохранить исходный PDF и распознанные данные в приватном сейфе.
+ * Новый файл сразу становится выбранным — профиль переключается на него.
+ */
+export async function dbSaveResumeFile(
+  fileName: string,
+  bytes: Uint8Array,
+  resume: ResumeProfile,
+): Promise<ResumeVaultItem> {
+  const {
+    email,
+    sourceFileName: _sourceFileName,
+    importedAt: _importedAt,
+    ...publicResume
+  } = resume;
+  const row = await proxy<any>('dbSaveResumeFile', [
+    fileName,
+    bytesToBase64(bytes),
+    publicResume,
+    email ?? null,
+  ]);
+  return rowToResumeVaultItem(row);
+}
+
+/** Выбрать резюме: сервер сразу синхронизирует его с публичным профилем. */
+export async function dbSelectResumeFile(id: string): Promise<ResumeVaultItem> {
+  const row = await proxy<any>('dbSelectResumeFile', [id]);
+  return rowToResumeVaultItem(row);
+}
+
+/** Переименовать файл в сейфе. */
+export async function dbRenameResumeFile(id: string, fileName: string): Promise<ResumeVaultItem> {
+  const row = await proxy<any>('dbRenameResumeFile', [id, fileName]);
+  return rowToResumeVaultItem(row);
+}
+
+/**
+ * Удалить PDF. Если удалялся выбранный, сервер сам выбирает следующий
+ * доступный и возвращает его; null означает, что резюме больше нет.
+ */
+export async function dbDeleteResumeFile(id: string): Promise<ResumeVaultItem | null> {
+  const row = await proxy<any | null>('dbDeleteResumeFile', [id]);
+  return row ? rowToResumeVaultItem(row) : null;
+}
+
+/** Короткоживущая приватная ссылка для просмотра PDF. */
+export async function dbSignResumeFile(id: string): Promise<string> {
+  const res = await proxy<{ url?: string; error?: string }>('dbSignResumeFile', [id]);
+  if (!res?.url) throw new Error(res?.error || 'Не удалось открыть PDF');
   return res.url;
 }
 
