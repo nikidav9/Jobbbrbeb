@@ -1227,6 +1227,60 @@ function ResumeCard({ icon, title, children }: { icon: IoniconName; title: strin
   );
 }
 
+function ResumeMoreButton({
+  total, shown, expanded, onPress,
+}: {
+  total: number;
+  shown: number;
+  expanded: boolean;
+  onPress: () => void;
+}) {
+  if (total <= shown) return null;
+  return (
+    <TouchableOpacity style={resumeS.moreButton} onPress={onPress} activeOpacity={0.75}>
+      <Text style={resumeS.moreButtonText}>
+        {expanded ? 'Скрыть' : `Показать ещё ${total - shown}`}
+      </Text>
+      <Ionicons
+        name={expanded ? 'chevron-up' : 'chevron-down'}
+        size={rf(15)}
+        color={Colors.primary}
+      />
+    </TouchableOpacity>
+  );
+}
+
+function ExpandableResumeDescription({ text, collapsedLines = 6 }: { text: string; collapsedLines?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = text.trim().length > 220;
+  return (
+    <View>
+      <Text
+        style={resumeS.entryDescription}
+        numberOfLines={canExpand && !expanded ? collapsedLines : undefined}
+      >
+        {text}
+      </Text>
+      {canExpand ? (
+        <TouchableOpacity
+          style={resumeS.descriptionToggle}
+          onPress={() => setExpanded(value => !value)}
+          activeOpacity={0.75}
+        >
+          <Text style={resumeS.descriptionToggleText}>
+            {expanded ? 'Свернуть' : 'Показать полностью'}
+          </Text>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={rf(14)}
+            color={Colors.primary}
+          />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
 function ResumeTab({ resume, importing, onImport }: {
   resume?: ResumeProfile;
   importing: boolean;
@@ -1242,6 +1296,17 @@ function ResumeTab({ resume, importing, onImport }: {
   const certifications = resume?.certifications ?? [];
   const awards = resume?.awards ?? [];
   const coursework = resume?.coursework ?? [];
+  const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
+
+  const isExpanded = (key: string) => !!expandedLists[key];
+  const toggleList = (key: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(
+      180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity,
+    ));
+    setExpandedLists(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  const visibleItems = <T,>(key: string, items: T[], limit: number): T[] =>
+    isExpanded(key) ? items : items.slice(0, limit);
 
   const empty = <Text style={resumeS.sectionEmpty}>Не найдено в загруженном PDF</Text>;
 
@@ -1284,116 +1349,163 @@ function ResumeTab({ resume, importing, onImport }: {
           </View>
 
           <ResumeCard icon="briefcase-outline" title={`Опыт работы (${experience.length})`}>
-            {experience.length === 0 ? empty : experience.map((item, index) => (
-              <View key={`${item.company}-${item.position}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                <Text style={resumeS.entryTitle}>{item.position || 'Должность не указана'}</Text>
-                {item.company ? <Text style={resumeS.entryCompany}>{item.company}</Text> : null}
-                <Text style={resumeS.entryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
-                {item.description ? <Text style={resumeS.entryDescription} numberOfLines={8}>{item.description}</Text> : null}
-              </View>
-            ))}
+            {experience.length === 0 ? empty : (
+              <>
+                {visibleItems('experience', experience, 3).map((item, index) => (
+                  <View key={`${item.company}-${item.position}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.position || 'Должность не указана'}</Text>
+                    {item.company ? <Text style={resumeS.entryCompany}>{item.company}</Text> : null}
+                    <Text style={resumeS.entryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
+                    {item.description ? <ExpandableResumeDescription text={item.description} collapsedLines={6} /> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={experience.length} shown={3} expanded={isExpanded('experience')} onPress={() => toggleList('experience')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="school-outline" title={`Образование (${education.length})`}>
-            {education.length === 0 ? empty : education.map((item, index) => (
-              <View key={`${item.institution ?? item.level}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                <Text style={resumeS.entryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
-                {item.level && item.institution ? <Text style={resumeS.entryCompany}>{item.level}</Text> : null}
-                {item.specialty ? <Text style={resumeS.entryCompany}>{item.specialty}</Text> : null}
-                {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-              </View>
-            ))}
+            {education.length === 0 ? empty : (
+              <>
+                {visibleItems('education', education, 3).map((item, index) => (
+                  <View key={`${item.institution ?? item.level}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
+                    {item.level && item.institution ? <Text style={resumeS.entryCompany}>{item.level}</Text> : null}
+                    {item.specialty ? <Text style={resumeS.entryCompany}>{item.specialty}</Text> : null}
+                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={education.length} shown={3} expanded={isExpanded('education')} onPress={() => toggleList('education')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="hammer-outline" title={`Проекты (${projects.length})`}>
-            {projects.length === 0 ? empty : projects.map((item, index) => (
-              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                <Text style={resumeS.entryTitle}>{item.name}</Text>
-                {item.role ? <Text style={resumeS.entryCompany}>{item.role}</Text> : null}
-                {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                {item.description ? <Text style={resumeS.entryDescription}>{item.description}</Text> : null}
-                {item.url ? <Text style={resumeS.entryLink}>{item.url}</Text> : null}
-              </View>
-            ))}
+            {projects.length === 0 ? empty : (
+              <>
+                {visibleItems('projects', projects, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.role ? <Text style={resumeS.entryCompany}>{item.role}</Text> : null}
+                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
+                    {item.url ? <Text style={resumeS.entryLink}>{item.url}</Text> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={projects.length} shown={3} expanded={isExpanded('projects')} onPress={() => toggleList('projects')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="document-outline" title={`Экзамены (${exams.length})`}>
-            {exams.length === 0 ? empty : exams.map((item, index) => (
-              <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={resumeS.languageName}>{item.name}</Text>
-                  {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
-                </View>
-                {item.score ? <Text style={resumeS.languageLevel}>{item.score}</Text> : null}
-              </View>
-            ))}
+            {exams.length === 0 ? empty : (
+              <>
+                {visibleItems('exams', exams, 4).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={resumeS.languageName}>{item.name}</Text>
+                      {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
+                    </View>
+                    {item.score ? <Text style={resumeS.languageLevel}>{item.score}</Text> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={exams.length} shown={4} expanded={isExpanded('exams')} onPress={() => toggleList('exams')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="language-outline" title={`Языки (${languages.length})`}>
-            {languages.length === 0 ? empty : languages.map((item, index) => (
-              <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
-                <Text style={resumeS.languageName}>{item.name}</Text>
-                <Text style={resumeS.languageLevel}>{item.level}</Text>
-              </View>
-            ))}
+            {languages.length === 0 ? empty : (
+              <>
+                {visibleItems('languages', languages, 4).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
+                    <Text style={resumeS.languageName}>{item.name}</Text>
+                    <Text style={resumeS.languageLevel}>{item.level}</Text>
+                  </View>
+                ))}
+                <ResumeMoreButton total={languages.length} shown={4} expanded={isExpanded('languages')} onPress={() => toggleList('languages')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="sparkles-outline" title={`Навыки (${skills.length})`}>
             {skills.length === 0 ? empty : (
               <View style={resumeS.chips}>
-                {skills.map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+                {visibleItems('skills', skills, 12).map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
               </View>
             )}
+            {skills.length > 0 ? (
+              <ResumeMoreButton total={skills.length} shown={12} expanded={isExpanded('skills')} onPress={() => toggleList('skills')} />
+            ) : null}
           </ResumeCard>
 
           {resume.specializations.length > 0 ? (
             <ResumeCard icon="compass-outline" title="Специализации">
               <View style={resumeS.chips}>
-                {resume.specializations.map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+                {visibleItems('specializations', resume.specializations, 8).map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
               </View>
+              <ResumeMoreButton total={resume.specializations.length} shown={8} expanded={isExpanded('specializations')} onPress={() => toggleList('specializations')} />
             </ResumeCard>
           ) : null}
 
           <ResumeCard icon="heart-outline" title={`Интересы (${interests.length})`}>
             {interests.length === 0 ? empty : (
               <View style={resumeS.chips}>
-                {interests.map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+                {visibleItems('interests', interests, 8).map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
               </View>
             )}
+            {interests.length > 0 ? (
+              <ResumeMoreButton total={interests.length} shown={8} expanded={isExpanded('interests')} onPress={() => toggleList('interests')} />
+            ) : null}
           </ResumeCard>
 
           <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
-            {certifications.length === 0 ? empty : certifications.map((item, index) => (
-              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                <Text style={resumeS.entryTitle}>{item.name}</Text>
-                {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
-                {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
-                {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
-              </View>
-            ))}
+            {certifications.length === 0 ? empty : (
+              <>
+                {visibleItems('certifications', certifications, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
+                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
+                    {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
+                    {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={certifications.length} shown={3} expanded={isExpanded('certifications')} onPress={() => toggleList('certifications')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="trophy-outline" title={`Награды (${awards.length})`}>
-            {awards.length === 0 ? empty : awards.map((item, index) => (
-              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                <Text style={resumeS.entryTitle}>{item.name}</Text>
-                {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
-                {item.description ? <Text style={resumeS.entryDescription}>{item.description}</Text> : null}
-              </View>
-            ))}
+            {awards.length === 0 ? empty : (
+              <>
+                {visibleItems('awards', awards, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
+                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
+                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={awards.length} shown={3} expanded={isExpanded('awards')} onPress={() => toggleList('awards')} />
+              </>
+            )}
           </ResumeCard>
 
           <ResumeCard icon="book-outline" title={`Курсы (${coursework.length})`}>
-            {coursework.length === 0 ? empty : coursework.map((item, index) => (
-              <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                <Text style={resumeS.entryTitle}>{item.name}</Text>
-                {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
-                {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                {item.description ? <Text style={resumeS.entryDescription}>{item.description}</Text> : null}
-              </View>
-            ))}
+            {coursework.length === 0 ? empty : (
+              <>
+                {visibleItems('coursework', coursework, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
+                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={coursework.length} shown={3} expanded={isExpanded('coursework')} onPress={() => toggleList('coursework')} />
+              </>
+            )}
           </ResumeCard>
 
           <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
@@ -1504,6 +1616,10 @@ const resumeS = StyleSheet.create({
   entryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
   entryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
   entryDescription: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(8) },
+  descriptionToggle: { flexDirection: 'row', alignItems: 'center', gap: rs(4), alignSelf: 'flex-start', marginTop: rs(7), paddingVertical: rs(3) },
+  descriptionToggleText: { fontSize: rf(11.5), color: Colors.primary, fontWeight: '700' },
+  moreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5), marginTop: rs(12), paddingVertical: rs(9), borderRadius: rs(11), backgroundColor: Colors.primaryLight },
+  moreButtonText: { fontSize: rf(12.5), color: Colors.primary, fontWeight: '800' },
   entryLink: { fontSize: rf(11.5), lineHeight: rf(16), color: Colors.primary, marginTop: rs(6) },
   sectionEmpty: { fontSize: rf(12.5), color: Colors.textMuted, fontStyle: 'italic', paddingVertical: rs(5) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },

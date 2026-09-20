@@ -60,6 +60,48 @@ function RatingCard({ r }: { r: UserRating }) {
   );
 }
 
+function PublicResumeDescription({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = text.trim().length > 220;
+  return (
+    <View>
+      <Text style={styles.resumeEntryText} numberOfLines={canExpand && !expanded ? 5 : undefined}>
+        {text}
+      </Text>
+      {canExpand ? (
+        <TouchableOpacity
+          style={styles.resumeDescriptionToggle}
+          onPress={() => setExpanded(value => !value)}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.resumeDescriptionToggleText}>
+            {expanded ? 'Свернуть' : 'Показать полностью'}
+          </Text>
+          <Text style={styles.resumeDescriptionChevron}>{expanded ? '⌃' : '⌄'}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function PublicResumeMore({
+  total, shown, expanded, onPress,
+}: {
+  total: number;
+  shown: number;
+  expanded: boolean;
+  onPress: () => void;
+}) {
+  if (total <= shown) return null;
+  return (
+    <TouchableOpacity style={styles.resumeMoreButton} onPress={onPress} activeOpacity={0.75}>
+      <Text style={styles.resumeMoreButtonText}>
+        {expanded ? 'Скрыть' : `Показать ещё ${total - shown}`}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 type Tab = 'info' | 'reviews';
 
 export default function UserProfileScreen() {
@@ -78,6 +120,13 @@ export default function UserProfileScreen() {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [statsLoadFailed, setStatsLoadFailed] = useState(false);
   const [statsRetry, setStatsRetry] = useState(0);
+  const [resumeExpandedSections, setResumeExpandedSections] = useState<Record<string, boolean>>({});
+
+  const resumeSectionExpanded = (key: string) => !!resumeExpandedSections[key];
+  const toggleResumeSection = (key: string) =>
+    setResumeExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  const visibleResumeItems = <T,>(key: string, items: T[], limit: number): T[] =>
+    resumeSectionExpanded(key) ? items : items.slice(0, limit);
 
   const contextUser = users.find(u => u.id === userId);
   const user = contextUser ?? fetchedUser;
@@ -280,21 +329,22 @@ export default function UserProfileScreen() {
                 {user.resume.experience.length > 0 ? (
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Опыт работы</Text>
-                    {user.resume.experience.map((item, index) => (
+                    {visibleResumeItems('experience', user.resume.experience, 3).map((item, index) => (
                       <View key={`${item.company}-${item.position}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
                         <Text style={styles.resumeEntryTitle}>{item.position}</Text>
                         <Text style={styles.resumeEntryCompany}>{item.company}</Text>
                         <Text style={styles.resumeEntryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
-                        {item.description ? <Text style={styles.resumeEntryText} numberOfLines={5}>{item.description}</Text> : null}
+                        {item.description ? <PublicResumeDescription text={item.description} /> : null}
                       </View>
                     ))}
+                    <PublicResumeMore total={user.resume.experience.length} shown={3} expanded={resumeSectionExpanded('experience')} onPress={() => toggleResumeSection('experience')} />
                   </View>
                 ) : null}
 
                 {user.resume.education.length > 0 ? (
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Образование</Text>
-                    {user.resume.education.map((item, index) => (
+                    {visibleResumeItems('education', user.resume.education, 3).map((item, index) => (
                       <View key={`${item.institution ?? item.level}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
                         <Text style={styles.resumeEntryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
                         {item.level && item.institution ? <Text style={styles.resumeEntryCompany}>{item.level}</Text> : null}
@@ -302,28 +352,31 @@ export default function UserProfileScreen() {
                         {item.period ? <Text style={styles.resumeEntryPeriod}>{item.period}</Text> : null}
                       </View>
                     ))}
+                    <PublicResumeMore total={user.resume.education.length} shown={3} expanded={resumeSectionExpanded('education')} onPress={() => toggleResumeSection('education')} />
                   </View>
                 ) : null}
 
                 {user.resume.projects.length > 0 ? (
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Проекты</Text>
-                    {user.resume.projects.map((item, index) => (
+                    {visibleResumeItems('projects', user.resume.projects, 3).map((item, index) => (
                       <View key={`${item.name}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
                         <Text style={styles.resumeEntryTitle}>{item.name}</Text>
                         {item.role ? <Text style={styles.resumeEntryCompany}>{item.role}</Text> : null}
-                        {item.description ? <Text style={styles.resumeEntryText} numberOfLines={5}>{item.description}</Text> : null}
+                        {item.description ? <PublicResumeDescription text={item.description} /> : null}
                       </View>
                     ))}
+                    <PublicResumeMore total={user.resume.projects.length} shown={3} expanded={resumeSectionExpanded('projects')} onPress={() => toggleResumeSection('projects')} />
                   </View>
                 ) : null}
 
                 {user.resume.languages.length > 0 ? (
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Языки</Text>
-                    {user.resume.languages.map((item, index) => (
+                    {visibleResumeItems('languages', user.resume.languages, 4).map((item, index) => (
                       <InfoRow key={`${item.name}-${index}`} label={item.name} value={<Text style={styles.valText}>{item.level}</Text>} />
                     ))}
+                    <PublicResumeMore total={user.resume.languages.length} shown={4} expanded={resumeSectionExpanded('languages')} onPress={() => toggleResumeSection('languages')} />
                   </View>
                 ) : null}
 
@@ -331,21 +384,23 @@ export default function UserProfileScreen() {
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Навыки</Text>
                     <View style={styles.resumeChips}>
-                      {user.resume.skills.map((skill, index) => <View key={`${skill}-${index}`} style={styles.resumeChip}><Text style={styles.resumeChipText}>{skill}</Text></View>)}
+                      {visibleResumeItems('skills', user.resume.skills, 12).map((skill, index) => <View key={`${skill}-${index}`} style={styles.resumeChip}><Text style={styles.resumeChipText}>{skill}</Text></View>)}
                     </View>
+                    <PublicResumeMore total={user.resume.skills.length} shown={12} expanded={resumeSectionExpanded('skills')} onPress={() => toggleResumeSection('skills')} />
                   </View>
                 ) : null}
 
                 {user.resume.certifications.length > 0 ? (
                   <View style={styles.infoCard}>
                     <Text style={styles.sectionTitle}>Сертификаты</Text>
-                    {user.resume.certifications.map((item, index) => (
+                    {visibleResumeItems('certifications', user.resume.certifications, 3).map((item, index) => (
                       <View key={`${item.name}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
                         <Text style={styles.resumeEntryTitle}>{item.name}</Text>
                         {item.issuer ? <Text style={styles.resumeEntryCompany}>{item.issuer}</Text> : null}
                         {item.date ? <Text style={styles.resumeEntryPeriod}>{item.date}</Text> : null}
                       </View>
                     ))}
+                    <PublicResumeMore total={user.resume.certifications.length} shown={3} expanded={resumeSectionExpanded('certifications')} onPress={() => toggleResumeSection('certifications')} />
                   </View>
                 ) : null}
               </>
@@ -555,6 +610,11 @@ const styles = StyleSheet.create({
   resumeEntryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
   resumeEntryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
   resumeEntryText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(7) },
+  resumeDescriptionToggle: { flexDirection: 'row', alignItems: 'center', gap: rs(4), alignSelf: 'flex-start', marginTop: rs(7), paddingVertical: rs(3) },
+  resumeDescriptionToggleText: { fontSize: rf(11.5), color: Colors.primary, fontWeight: '700' },
+  resumeDescriptionChevron: { fontSize: rf(14), color: Colors.primary, fontWeight: '800' },
+  resumeMoreButton: { alignItems: 'center', justifyContent: 'center', marginTop: rs(12), paddingVertical: rs(9), borderRadius: rs(11), backgroundColor: Colors.primaryLight },
+  resumeMoreButtonText: { fontSize: rf(12.5), color: Colors.primary, fontWeight: '800' },
   resumeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
   resumeChip: { backgroundColor: Colors.surface, paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
   resumeChipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontWeight: '600' },
