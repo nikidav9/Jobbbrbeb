@@ -14,7 +14,7 @@ import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Crypto from 'expo-crypto';
 import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { normalizeCompany } from '@/services/storage';
 import { LavkaLogo } from '@/components/ui/LavkaLogo';
@@ -64,11 +64,6 @@ export default function PermVacancyDetailScreen() {
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
-
-  const openInApp = () => {
-    if (Platform.OS !== 'web' || !vacancyId) return;
-    window.location.href = `onspaceapp://perm-vacancy-detail?vacancyId=${vacancyId}`;
-  };
 
   const isGuest = !currentUser && !loading;
   const showAuthModal = isGuest && !authModalDismissed;
@@ -178,23 +173,16 @@ export default function PermVacancyDetailScreen() {
     </Modal>
   );
 
-  const openAppBannerJSX = Platform.OS === 'web' && vacancyId ? (
-    <TouchableOpacity onPress={openInApp} style={styles.openAppBanner} activeOpacity={0.85}>
-      <Text style={styles.openAppBannerTxt}>Открыть в приложении</Text>
-    </TouchableOpacity>
-  ) : null;
-
   const guestLookupPending = !currentUser && !loading && !!vacancyId && !vacancy && !guestVacancyChecked;
 
   if (loading || guestLookupPending) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={styles.backTxt}>← Назад</Text>
+          <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} accessibilityLabel="Назад" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
           </TouchableOpacity>
         </View>
-        {openAppBannerJSX}
         <View style={styles.emptyCenter}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -207,12 +195,11 @@ export default function PermVacancyDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={styles.backTxt}>← Назад</Text>
+          <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} accessibilityLabel="Назад" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
         </View>
-        {openAppBannerJSX}
         <View style={styles.emptyCenter}>
           {guestVacancyLoadFailed ? (
             <>
@@ -340,31 +327,35 @@ export default function PermVacancyDetailScreen() {
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
+        <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} accessibilityLabel="Назад" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }} />
-        <TouchableOpacity
-          accessibilityLabel="Поделиться вакансией"
-          onPress={() => { void shareVacancy(); }}
-          style={styles.headerIconBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="share-outline" size={23} color={Colors.textMuted} />
-        </TouchableOpacity>
-        {currentUser?.role === 'worker' ? (
+        <View style={[styles.headerActions, currentUser?.role !== 'worker' && styles.headerActionsSingle]}>
           <TouchableOpacity
-            onPress={toggleSave}
-            style={[styles.headerIconBtn, savingFavorite && { opacity: 0.5 }]}
-            disabled={savingFavorite}
+            accessibilityLabel="Поделиться вакансией"
+            onPress={() => { void shareVacancy(); }}
+            style={styles.headerActionBtn}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name={isSaved ? 'heart' : 'heart-outline'} size={24} color={isSaved ? Colors.red : Colors.textMuted} />
+            <Ionicons name="share-outline" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
-        ) : null}
+          {currentUser?.role === 'worker' ? (
+            <>
+              <View style={styles.headerActionDivider} />
+              <TouchableOpacity
+                onPress={toggleSave}
+                style={[styles.headerActionBtn, savingFavorite && { opacity: 0.5 }]}
+                disabled={savingFavorite}
+                accessibilityLabel={isSaved ? 'Удалить из избранного' : 'Добавить в избранное'}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={24} color={isSaved ? Colors.primary : Colors.textPrimary} />
+              </TouchableOpacity>
+            </>
+          ) : null}
+        </View>
       </View>
-
-      {openAppBannerJSX}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -379,15 +370,19 @@ export default function PermVacancyDetailScreen() {
         ) : null}
 
         <View style={styles.hero}>
-          <View style={styles.companyRow}>
-            <CompanyMark company={employerDisplayName} size={42} />
-            <View style={styles.companyCopy}>
-              <Text style={styles.companyName}>{employerDisplayName}</Text>
-              <Text style={styles.postedAgo}>{agoRu(vacancy.createdAt)}</Text>
-            </View>
+          <View style={styles.companyLogo}>
+            <CompanyMark company={employerDisplayName} size={52} />
           </View>
 
           <Text style={styles.vacancyTitle}>{vacancy.title}</Text>
+
+          <View style={styles.companyRow}>
+            <Ionicons name="business-outline" size={16} color={Colors.textMuted} />
+            <Text style={styles.companyName} numberOfLines={2}>
+              {employerDisplayName}
+              <Text style={styles.postedAgo}>{` · ${agoRu(vacancy.createdAt)}`}</Text>
+            </Text>
+          </View>
 
           {summaryFacts.length ? (
             <View style={styles.factsGrid}>
@@ -401,12 +396,9 @@ export default function PermVacancyDetailScreen() {
           ) : null}
         </View>
 
-        <View style={styles.divider} />
-
         {/* Location */}
         {(vacancy.metroStation || vacancy.address) ? (
-          <>
-            <View style={styles.section}>
+            <View style={[styles.section, styles.detailCard]}>
               <Text style={styles.sectionTitle}>Расположение</Text>
             {vacancy.metroStation ? (
               <View style={styles.infoRow}>
@@ -447,53 +439,50 @@ export default function PermVacancyDetailScreen() {
               </TouchableOpacity>
             ) : null}
             </View>
-            <View style={styles.divider} />
-          </>
         ) : null}
 
         {/* Description */}
         {vacancy.description ? (
-          <>
-            <View style={styles.section}>
+            <View style={[styles.section, styles.detailCard]}>
               <Text style={styles.sectionTitle}>Описание вакансии</Text>
-              <Text style={styles.descText} numberOfLines={descriptionExpanded ? undefined : 8}>
+              <Text style={styles.descText} numberOfLines={descriptionExpanded ? undefined : 7}>
                 {vacancy.description}
               </Text>
-              {vacancy.description.length > 420 ? (
+              {vacancy.description.length > 260 ? (
                 <TouchableOpacity
                   style={styles.readMoreBtn}
                   onPress={() => setDescriptionExpanded(value => !value)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.readMoreText}>{descriptionExpanded ? 'Свернуть' : 'Читать далее'}</Text>
-                  <Ionicons name={descriptionExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textPrimary} />
+                  <Text style={styles.readMoreText}>{descriptionExpanded ? 'Свернуть' : 'Читать дальше'}</Text>
+                  <Ionicons name={descriptionExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.textPrimary} />
                 </TouchableOpacity>
               ) : null}
             </View>
-            <View style={styles.divider} />
-          </>
         ) : null}
 
         {/* Контакты. У своей вакансии внешней ссылки нет, а телефон
             работодателя — его персональные данные, показывать их работнику
             без отдельного согласия нельзя. Поэтому контакт здесь — чат, и
             открывается он после того, как отклик одобрят. */}
-        <VacancyContacts
-          contact={{
-            kind: 'chat',
-            company: employerDisplayName,
-            actionLabel: isApproved ? 'Написать в чате' : 'Чат откроется после одобрения отклика',
-            onOpen: () => {
-              if (isApproved) router.push('/chats');
-              else if (!isApplied) setApplyOpen(true);
-            },
-          }}
-          locked={isGuest}
-          onLogin={() => router.push({ pathname: '/login', params: { returnTo: `perm-vacancy-detail?vacancyId=${vacancyId}` } })}
-        />
+        <View style={styles.detailCard}>
+          <VacancyContacts
+            contact={{
+              kind: 'chat',
+              company: employerDisplayName,
+              actionLabel: isApproved ? 'Написать в чате' : 'Чат откроется после одобрения отклика',
+              onOpen: () => {
+                if (isApproved) router.push('/chats');
+                else if (!isApplied) setApplyOpen(true);
+              },
+            }}
+            locked={isGuest}
+            onLogin={() => router.push({ pathname: '/login', params: { returnTo: `perm-vacancy-detail?vacancyId=${vacancyId}` } })}
+          />
+        </View>
 
         {/* Employer info */}
-        <View style={styles.section}>
+        <View style={[styles.section, styles.detailCard]}>
           <Text style={styles.sectionTitle}>Работодатель</Text>
           <View style={styles.employerCard}>
             {/* Фото директора, если он его добавил: логотип компании одинаков у
@@ -654,35 +643,34 @@ export default function PermVacancyDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: Colors.outerBg },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    minHeight: rs(56), paddingHorizontal: rs(14), paddingVertical: rs(8), gap: rs(8),
+    paddingHorizontal: rs(18), paddingTop: rs(8), paddingBottom: rs(14),
   },
-  backTxt: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500' },
   headerIconBtn: {
-    width: rs(40), height: rs(40), borderRadius: rs(20),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface,
+    width: rs(48), height: rs(48), borderRadius: rs(24),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', ...Shadow.card,
   },
-
-  openAppBanner: {
-    backgroundColor: Colors.primary,
-    paddingVertical: rs(12),
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerActions: {
+    height: rs(48), minWidth: rs(98), borderRadius: rs(24),
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', ...Shadow.card,
   },
-  openAppBannerTxt: { color: '#fff', fontSize: rf(15), fontWeight: '600' },
+  headerActionsSingle: { minWidth: rs(48), width: rs(48) },
+  headerActionBtn: { width: rs(48), height: rs(48), alignItems: 'center', justifyContent: 'center' },
+  headerActionDivider: { width: 1, height: rs(22), backgroundColor: Colors.divider },
 
-  body: { paddingHorizontal: rs(22), paddingTop: rs(8), gap: rs(22) },
+  body: { paddingHorizontal: rs(20), paddingTop: rs(30), gap: rs(18) },
 
   statusBadge: { borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), alignSelf: 'flex-start' },
   statusTxt: { fontSize: rf(13), fontWeight: '700' },
 
-  hero: { gap: rs(16) },
-  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
-  companyCopy: { flex: 1, gap: rs(2) },
-  companyName: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  postedAgo: { fontSize: rf(12), color: Colors.textMuted },
+  hero: { gap: rs(14) },
+  companyLogo: { alignSelf: 'flex-start', marginBottom: rs(12) },
+  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
+  companyName: { flex: 1, fontSize: rf(14.5), fontWeight: '600', color: Colors.textSecondary },
+  postedAgo: { fontWeight: '500', color: Colors.textMuted },
   vacancyTitle: {
     fontSize: rf(27), lineHeight: rf(33), fontWeight: '800',
     color: Colors.textPrimary, letterSpacing: -0.5,
@@ -690,16 +678,15 @@ const styles = StyleSheet.create({
   factsGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: rs(12), columnGap: rs(18) },
   fact: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: '42%' },
   factText: { flexShrink: 1, fontSize: rf(13), lineHeight: rf(18), fontWeight: '600', color: Colors.textSecondary },
-  divider: { height: 1, backgroundColor: Colors.divider },
-
+  detailCard: { backgroundColor: Colors.card, borderRadius: Radius.xl, padding: rs(16), ...Shadow.card },
   section: { gap: rs(12) },
-  sectionTitle: { fontSize: rf(19), lineHeight: rf(24), fontWeight: '800', color: Colors.textPrimary },
+  sectionTitle: { fontSize: rf(16), lineHeight: rf(22), fontWeight: '800', color: Colors.textPrimary },
 
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(10), paddingVertical: rs(2) },
   mapBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7),
-    alignSelf: 'flex-start', borderWidth: 1, borderColor: Colors.primary,
-    borderRadius: rs(100), paddingHorizontal: rs(16), paddingVertical: rs(9),
+    borderWidth: 1, borderColor: Colors.primary,
+    borderRadius: rs(12), paddingHorizontal: rs(16), paddingVertical: rs(11),
   },
   mapBtnTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
   locationValue: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '500', lineHeight: rf(20) },
@@ -709,8 +696,11 @@ const styles = StyleSheet.create({
   descText: {
     fontSize: rf(15), color: Colors.textSecondary, lineHeight: rf(23),
   },
-  readMoreBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: rs(4) },
-  readMoreText: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
+  readMoreBtn: {
+    minHeight: rs(44), borderRadius: rs(100), borderWidth: 1, borderColor: Colors.inputBorder,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6),
+  },
+  readMoreText: { fontSize: rf(14), fontWeight: '600', color: Colors.textPrimary },
 
   employerCard: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
@@ -753,7 +743,7 @@ const styles = StyleSheet.create({
 
   bottomBar: {
     gap: rs(11), paddingHorizontal: rs(16), paddingTop: rs(12), paddingBottom: rs(8),
-    borderTopWidth: 1, borderTopColor: Colors.divider, backgroundColor: Colors.bg,
+    backgroundColor: Colors.outerBg,
     shadowColor: '#000', shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.05, shadowRadius: 10, elevation: 8,
   },
@@ -771,7 +761,8 @@ const styles = StyleSheet.create({
   applyBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
   detailNav: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
-    paddingTop: rs(2), paddingBottom: rs(2),
+    paddingHorizontal: rs(6), paddingVertical: rs(5),
+    backgroundColor: Colors.card, borderRadius: rs(100), ...Shadow.card,
   },
   detailNavItem: { flex: 1, alignItems: 'center', gap: rs(2), paddingVertical: rs(3) },
   detailNavText: { fontSize: rf(10), fontWeight: '600', color: Colors.textMuted },
@@ -781,7 +772,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: rs(10),
     paddingHorizontal: rs(16), paddingVertical: rs(12),
     borderTopWidth: 1, borderTopColor: Colors.divider,
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.outerBg,
   },
   guestBtnPrimary: {
     flex: 1, backgroundColor: Colors.primary,
