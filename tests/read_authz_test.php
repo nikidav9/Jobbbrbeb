@@ -43,6 +43,35 @@ check('личная анкета не входит в публичную про�
 check('личная анкета возвращается только владельцу',
     str_contains($db, "USER_PUBLIC_COLS . ',phone,resume_email,resume_file_name,resume_imported_at,personal_data'"));
 
+// ── PDF-резюме: только владелец и только закрытый бакет ─────────────────────
+$resumeList = case_body($db, 'dbGetResumeFiles');
+$resumeOpen = case_body($db, 'dbSignResumeFile');
+$resumeSave = case_body($db, 'dbSaveResumeFile');
+$resumeSelect = case_body($db, 'dbSelectResumeFile');
+$resumeDelete = case_body($db, 'dbDeleteResumeFile');
+check('список резюме ограничен владельцем',
+    str_contains($resumeList, "'user_id' => 'eq.' . (string)\$authUid"));
+check('просмотр PDF проверяет владельца строки',
+    str_contains($resumeOpen, "'user_id' => 'eq.' . (string)\$authUid"));
+check('выбор резюме проверяет владельца строки',
+    str_contains($resumeSelect, "'user_id' => 'eq.' . (string)\$authUid"));
+check('удаление резюме проверяет владельца строки',
+    str_contains($resumeDelete, "'user_id' => 'eq.' . (string)\$authUid"));
+check('новое резюме записывается владельцу из сессии',
+    str_contains($resumeSave, "'user_id' => (string)\$authUid"));
+check('исходный PDF кладётся в закрытый resume-files',
+    str_contains($db, "/storage/v1/object/resume-files/"));
+check('PDF открывается только короткой подписанной ссылкой',
+    str_contains($db, "/storage/v1/object/sign/resume-files/"));
+
+$vaultMigration = (string)file_get_contents(__DIR__ . '/../supabase/migrations/100_resume_vault.sql');
+check('бакет резюме приватный',
+    str_contains($vaultMigration, "values ('resume-files', 'resume-files', false)"));
+check('таблица сейфа закрыта RLS',
+    str_contains($vaultMigration, 'alter table public.jm_resume_files enable row level security'));
+check('у пользователя только одно активное резюме',
+    str_contains($vaultMigration, 'jm_resume_files_one_selected_per_user'));
+
 // ── Таблица откликов больше не отдаётся целиком ──────────────────────────────
 // Прежде: sb_select('jm_likes') без фильтра — кто куда откликался, кому
 // отказали и чем кончилась смена, по всему сервису, любому вошедшему.
