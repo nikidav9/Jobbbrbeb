@@ -48,6 +48,7 @@ import { TabHeader } from '@/components/ui/TabHeader';
 import {
   APP_HEADER_BOTTOM,
   APP_HEADER_CONTROL,
+  APP_HEADER_GAP,
   APP_HEADER_HORIZONTAL,
   APP_HEADER_TOP,
   BrandLogo,
@@ -932,7 +933,7 @@ const wS = StyleSheet.create({
   sheetTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
   titleIcon: { width: rs(30), height: rs(30), borderRadius: rs(15), alignItems: 'center', justifyContent: 'center' },
   vacSubtitleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10), flexWrap: 'wrap',
+    flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP), flexWrap: 'wrap',
     paddingHorizontal: rs(20), paddingBottom: rs(12),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
