@@ -7,6 +7,7 @@ on:
       - 'docs/**'
       - '**/*.md'
       - '.gitignore'
+  workflow_dispatch:
 
 # Only the newest production bundle may publish. Without this, several rapid
 # main commits can finish out of order and an older OTA update becomes latest.
