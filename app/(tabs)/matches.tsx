@@ -19,6 +19,14 @@ import {
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
+import {
+  APP_HEADER_BOTTOM,
+  APP_HEADER_CONTROL,
+  APP_HEADER_GAP,
+  APP_HEADER_HORIZONTAL,
+  APP_HEADER_TOP,
+  BrandLogo,
+} from '@/components/ui/BrandLogo';
 import GuestGate from '@/components/GuestGate';
 import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
@@ -452,10 +460,7 @@ function WorkerMatches() {
       {/* Шапка: марка слева, действия справа — как на макете. Конверт ведёт
           в переписки, закладка — в избранное, лупа раскрывает поиск. */}
       <View style={wm.header}>
-        <Text style={wm.logoMark}>
-          <Text style={wm.logoMarkJ}>J</Text>
-          <Text style={wm.logoMarkT}>T</Text>
-        </Text>
+        <BrandLogo />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
             <TouchableOpacity
@@ -684,14 +689,14 @@ function WorkerMatches() {
 const wm = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(4),
+    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
+    paddingTop: rs(APP_HEADER_TOP),
+    paddingBottom: rs(APP_HEADER_BOTTOM),
   },
-  logoMark: { fontSize: rf(26), letterSpacing: -0.5 },
-  logoMarkJ: { fontWeight: '900', color: Colors.primary },
-  logoMarkT: { fontWeight: '900', color: Colors.textPrimary },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP) },
   headerBtn: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
+    width: rs(APP_HEADER_CONTROL), height: rs(APP_HEADER_CONTROL),
+    borderRadius: rs(APP_HEADER_CONTROL / 2),
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#FFFFFF', ...Shadow.card,
   },

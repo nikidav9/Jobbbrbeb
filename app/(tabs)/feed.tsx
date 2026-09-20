@@ -45,6 +45,14 @@ import { Chip } from '@/components/ui/Chip';
 import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
+import {
+  APP_HEADER_BOTTOM,
+  APP_HEADER_CONTROL,
+  APP_HEADER_GAP,
+  APP_HEADER_HORIZONTAL,
+  APP_HEADER_TOP,
+  BrandLogo,
+} from '@/components/ui/BrandLogo';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { MetroMap, MapListItem } from '@/components/feature/MetroMap';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
@@ -925,7 +933,7 @@ const wS = StyleSheet.create({
   sheetTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
   titleIcon: { width: rs(30), height: rs(30), borderRadius: rs(15), alignItems: 'center', justifyContent: 'center' },
   vacSubtitleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10), flexWrap: 'wrap',
+    flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP), flexWrap: 'wrap',
     paddingHorizontal: rs(20), paddingBottom: rs(12),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
@@ -1012,13 +1020,7 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 }) {
   return (
     <View style={fh.row}>
-      <View style={fh.logoWrap} accessibilityLabel="JobToo">
-        <Image
-          source={require('@/assets/images/header-jt-logo.png')}
-          style={fh.logoImage}
-          resizeMode="contain"
-        />
-      </View>
+      <BrandLogo />
 
       <View style={fh.search}>
         <Ionicons name="search" size={20} color={Colors.textMuted} />
@@ -1074,37 +1076,31 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 const fh = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
+    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
+    paddingTop: rs(APP_HEADER_TOP),
+    paddingBottom: rs(APP_HEADER_BOTTOM),
     backgroundColor: Colors.bgWarm,
-  },
-  logoWrap: {
-    width: rs(34), height: rs(46), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  // Точный логотип, присланный владельцем. Уменьшен вдвое,
-  // при этом остаётся выровнен по центру относительно поисковой строки.
-  logoImage: {
-    width: rs(34), height: rs(23),
   },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    backgroundColor: '#FFFFFF', borderRadius: rs(24),
-    paddingHorizontal: rs(14), height: rs(46),
+    backgroundColor: '#FFFFFF', borderRadius: rs(APP_HEADER_CONTROL / 2),
+    paddingHorizontal: rs(14), height: rs(APP_HEADER_CONTROL),
   },
   // Высота задана контейнеру: на Android TextInput со своим padding
   // раздувает строку и шапка перестаёт совпадать с макетом.
   input: { flex: 1, minWidth: 0, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
   undo: {
-    width: rs(46), height: rs(46), borderRadius: rs(23), flexShrink: 0,
+    width: rs(APP_HEADER_CONTROL), height: rs(APP_HEADER_CONTROL),
+    borderRadius: rs(APP_HEADER_CONTROL / 2), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1, borderColor: '#E9EAEC',
   },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
-    backgroundColor: '#FFFFFF', borderRadius: rs(24),
-    paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
+    backgroundColor: '#FFFFFF', borderRadius: rs(APP_HEADER_CONTROL / 2),
+    paddingHorizontal: rs(13), height: rs(APP_HEADER_CONTROL), flexShrink: 0,
   },
   countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
   countEmpty: { backgroundColor: '#ECEDEF' },
