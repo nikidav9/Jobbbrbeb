@@ -23,7 +23,8 @@ import { IconCheck, IconUser, IconSend } from '@/components/icons'
  * идёт дальше; на «спасибо, разобрался» отвечать нечего, но обращение должно
  * уйти из списка, иначе оно висит и мешает видеть тех, кто правда ждёт.
  * Поэтому у каждого разговора есть закрытие — с прощальным словом, а не
- * молча. Написал снова — обращение открылось само.
+ * молча. После закрытия помощник продолжает работать; в очередь разговор
+ * вернётся только по новому явному «Позвать оператора».
  */
 
 const FROM_HOUR = 10
@@ -256,10 +257,8 @@ export default function SupportPage() {
   // фильтр прятал бы и сам счётчик того, что он прячет.
   const counts = useMemo(() => {
     const lastByUser = new Map<string, Msg>()
-    const lastInByUser = new Map<string, Msg>()
     for (const m of msgs) {                      // msgs идут свежими первыми
       if (!lastByUser.has(m.user_id)) lastByUser.set(m.user_id, m)
-      if (m.direction === 'in' && !lastInByUser.has(m.user_id)) lastInByUser.set(m.user_id, m)
     }
     let open = 0, closed = 0, waiting = 0
     for (const [uid, last] of Array.from(lastByUser.entries())) {
@@ -293,7 +292,7 @@ export default function SupportPage() {
           <KpiCard label="Ждут ответа" value={counts.waiting}
             sub="последнее слово за человеком" />
           <KpiCard label="Закрыто" value={counts.closed}
-            sub="напишет снова — откроется само" />
+            sub="повторный вызов оператора откроет снова" />
           <KpiCard label="Сейчас" value={openNow ? 'Рабочее время' : 'Нерабочее'}
             sub={`приём с ${FROM_HOUR}:00 до ${TO_HOUR}:00 по Москве`} />
         </div>
