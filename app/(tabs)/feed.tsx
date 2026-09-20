@@ -45,6 +45,12 @@ import { Chip } from '@/components/ui/Chip';
 import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
+import {
+  APP_HEADER_BOTTOM,
+  APP_HEADER_HORIZONTAL,
+  APP_HEADER_TOP,
+  BrandLogo,
+} from '@/components/ui/BrandLogo';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { MetroMap, MapListItem } from '@/components/feature/MetroMap';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
@@ -1012,13 +1018,7 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 }) {
   return (
     <View style={fh.row}>
-      <View style={fh.logoWrap} accessibilityLabel="JobToo">
-        <Image
-          source={require('@/assets/images/header-jt-logo.png')}
-          style={fh.logoImage}
-          resizeMode="contain"
-        />
-      </View>
+      <BrandLogo />
 
       <View style={fh.search}>
         <Ionicons name="search" size={20} color={Colors.textMuted} />
@@ -1074,17 +1074,10 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
 const fh = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
+    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
+    paddingTop: rs(APP_HEADER_TOP),
+    paddingBottom: rs(APP_HEADER_BOTTOM),
     backgroundColor: Colors.bgWarm,
-  },
-  logoWrap: {
-    width: rs(34), height: rs(46), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  // Точный логотип, присланный владельцем. Уменьшен вдвое,
-  // при этом остаётся выровнен по центру относительно поисковой строки.
-  logoImage: {
-    width: rs(34), height: rs(23),
   },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
