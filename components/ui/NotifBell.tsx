@@ -9,6 +9,7 @@ import { useApp } from '@/hooks/useApp';
 import { routeForNotification, routeByTitle } from '@/services/notificationRoute';
 import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
+import { APP_HEADER_CONTROL } from '@/components/ui/BrandLogo';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -281,7 +282,14 @@ export function NotifBell() {
 }
 
 const s = StyleSheet.create({
-  btn: { position: 'relative', padding: rs(4) },
+  btn: {
+    position: 'relative',
+    width: rs(APP_HEADER_CONTROL),
+    height: rs(APP_HEADER_CONTROL),
+    borderRadius: rs(APP_HEADER_CONTROL / 2),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   badge: {
     position: 'absolute', top: 0, right: 0,
     backgroundColor: Colors.primary, borderRadius: rs(10),
