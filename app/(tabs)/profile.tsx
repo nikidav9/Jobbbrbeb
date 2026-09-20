@@ -1148,71 +1148,77 @@ export default function ProfileScreen() {
         </SectionCard>
         </> : null}
 
-        {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
-            Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
-            не увидел ничего, потому что раскрывать надо было угадать. За
-            помощью идут в плохую минуту, и искать её в этот момент незачем. */}
-        <View style={sS.card}>
-          <TouchableOpacity style={sS.header} onPress={() => router.push('/support')} activeOpacity={0.7}>
-            <View style={[sS.iconSquare, { backgroundColor: Colors.primary }]}>
-              <Ionicons name="help-circle" size={18} color="#fff" />
+        {(currentUser.role === 'employer' || profileTab !== 'resume') ? (
+          <>
+            {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
+                Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
+                не увидел ничего, потому что раскрывать надо было угадать. За
+                помощью идут в плохую минуту, и искать её в этот момент незачем. */}
+            <View style={sS.card}>
+              <TouchableOpacity style={sS.header} onPress={() => router.push('/support')} activeOpacity={0.7}>
+                <View style={[sS.iconSquare, { backgroundColor: Colors.primary }]}>
+                  <Ionicons name="help-circle" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={sS.title}>Помощь и поддержка</Text>
+                  <Text style={sS.summary} numberOfLines={1}>Ответы на вопросы · написать нам</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={sS.title}>Помощь и поддержка</Text>
-              <Text style={sS.summary} numberOfLines={1}>Ответы на вопросы · написать нам</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-          </TouchableOpacity>
-        </View>
 
-        {/* Пригласить друга — отдельной строкой, не внутри «Аккаунта».
-            Склад это среда с плотными связями: люди зовут знакомых и без нас.
-            Спрятать такую строку под раскрывающуюся карточку значит выключить
-            то, что и так происходит само. */}
-        <View style={sS.card}>
-          <TouchableOpacity style={sS.header} onPress={() => router.push('/invite')} activeOpacity={0.7}>
-            <View style={[sS.iconSquare, { backgroundColor: Colors.green }]}>
-              <Ionicons name="gift" size={18} color="#fff" />
+            {/* Пригласить друга — отдельной строкой, не внутри «Аккаунта».
+                Склад это среда с плотными связями: люди зовут знакомых и без нас.
+                Спрятать такую строку под раскрывающуюся карточку значит выключить
+                то, что и так происходит само. */}
+            <View style={sS.card}>
+              <TouchableOpacity style={sS.header} onPress={() => router.push('/invite')} activeOpacity={0.7}>
+                <View style={[sS.iconSquare, { backgroundColor: Colors.green }]}>
+                  <Ionicons name="gift" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={sS.title}>Пригласить друга</Text>
+                  <Text style={sS.summary} numberOfLines={1}>Вышел на смену — вам вознаграждение</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={sS.title}>Пригласить друга</Text>
-              <Text style={sS.summary} numberOfLines={1}>Вышел на смену — вам вознаграждение</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-          </TouchableOpacity>
-        </View>
 
-        {/* Аккаунт — все действия с учётной записью в одном месте */}
-        <SectionCard
-          iconName="shield-checkmark"
-          iconBg="#1C1C1E"
-          title="Аккаунт"
-          summary="Пароль, выход, удаление"
-          open={openSection === 'account'}
-          onToggle={() => toggleSection('account')}
-        >
-          <TouchableOpacity style={sS.actionRow} onPress={() => setShowSettings(true)} activeOpacity={0.7}>
-            <Ionicons name="key-outline" size={17} color={Colors.textSecondary} />
-            <Text style={[sS.actionLabel, { flex: 1 }]}>Сменить пароль</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity style={sS.actionRow} onPress={() => setShowConfirmLogout(true)} activeOpacity={0.7}>
-            <Ionicons name="log-out-outline" size={17} color={Colors.textSecondary} />
-            <Text style={[sS.actionLabel, { flex: 1 }]}>Выйти из аккаунта</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={sS.actionRow}
-            onPress={() => setShowConfirmDelete(true)}
-            disabled={deletingAccount}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="trash-outline" size={17} color={Colors.red} />
-            <Text style={[sS.actionLabel, { flex: 1, color: Colors.red }]}>
-              {deletingAccount ? 'Удаление...' : 'Удалить аккаунт'}
-            </Text>
-          </TouchableOpacity>
-        </SectionCard>
+            {/* Аккаунт — все действия с учётной записью в одном месте */}
+            <SectionCard
+              iconName="shield-checkmark"
+              iconBg="#1C1C1E"
+              title="Аккаунт"
+              summary="Пароль, выход, удаление"
+              open={openSection === 'account'}
+              onToggle={() => toggleSection('account')}
+            >
+              <TouchableOpacity style={sS.actionRow} onPress={() => setShowSettings(true)} activeOpacity={0.7}>
+                <Ionicons name="key-outline" size={17} color={Colors.textSecondary} />
+                <Text style={[sS.actionLabel, { flex: 1 }]}>Сменить пароль</Text>
+                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity style={sS.actionRow} onPress={() => setShowConfirmLogout(true)} activeOpacity={0.7}>
+                <Ionicons name="log-out-outline" size={17} color={Colors.textSecondary} />
+                <Text style={[sS.actionLabel, { flex: 1 }]}>Выйти из аккаунта</Text>
+                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={sS.actionRow}
+                onPress={() => setShowConfirmDelete(true)}
+                disabled={deletingAccount}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={17} color={Colors.red} />
+                <Text style={[sS.actionLabel, { flex: 1, color: Colors.red }]}>
+                  {deletingAccount ? 'Удаление...' : 'Удалить аккаунт'}
+                </Text>
+              </TouchableOpacity>
+            </SectionCard>
+
+          </>
+        ) : null}
+
         <View style={{ height: 8 }} />
       </ScrollView>
       </OnboardingTarget>
@@ -1635,6 +1641,9 @@ function ResumeTab({ resume, importing, onImport }: {
   const languages = resume?.languages ?? [];
   const skills = resume?.skills ?? [];
   const interests = resume?.interests ?? [];
+  const certifications = resume?.certifications ?? [];
+  const awards = resume?.awards ?? [];
+  const coursework = resume?.coursework ?? [];
   const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
 
   const isExpanded = (key: string) => !!expandedLists[key];
@@ -1796,6 +1805,55 @@ function ResumeTab({ resume, importing, onImport }: {
             {interests.length > 0 ? (
               <ResumeMoreButton total={interests.length} shown={8} expanded={isExpanded('interests')} onPress={() => toggleList('interests')} />
             ) : null}
+          </ResumeCard>
+
+          <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
+            {certifications.length === 0 ? empty : (
+              <>
+                {visibleItems('certifications', certifications, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
+                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
+                    {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
+                    {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={certifications.length} shown={3} expanded={isExpanded('certifications')} onPress={() => toggleList('certifications')} />
+              </>
+            )}
+          </ResumeCard>
+
+          <ResumeCard icon="trophy-outline" title={`Награды (${awards.length})`}>
+            {awards.length === 0 ? empty : (
+              <>
+                {visibleItems('awards', awards, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
+                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
+                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={awards.length} shown={3} expanded={isExpanded('awards')} onPress={() => toggleList('awards')} />
+              </>
+            )}
+          </ResumeCard>
+
+          <ResumeCard icon="book-outline" title={`Курсы (${coursework.length})`}>
+            {coursework.length === 0 ? empty : (
+              <>
+                {visibleItems('coursework', coursework, 3).map((item, index) => (
+                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                    <Text style={resumeS.entryTitle}>{item.name}</Text>
+                    {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
+                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
+                  </View>
+                ))}
+                <ResumeMoreButton total={coursework.length} shown={3} expanded={isExpanded('coursework')} onPress={() => toggleList('coursework')} />
+              </>
+            )}
           </ResumeCard>
 
           <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
