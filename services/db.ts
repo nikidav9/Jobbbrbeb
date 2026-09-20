@@ -1969,24 +1969,83 @@ export async function dbUnbindTelegram(userId: string): Promise<void> {
 
 // ─── Поддержка ────────────────────────────────────────────────────────────────
 
+export type SupportSender = 'user' | 'assistant' | 'operator' | 'system';
+
 export type SupportMessage = {
   id: string;
   direction: 'in' | 'out';
+  sender: SupportSender;
   text: string;
   createdAt: string;
 };
 
-/** Переписка человека с поддержкой. Тред один на человека. */
+export type SupportKnowledgeItem = {
+  id: string;
+  question: string;
+  answer: string;
+};
+
+export type SupportState = {
+  operatorRequestedAt: string | null;
+  closedAt: string | null;
+};
+
+/** Переписка человека с помощником и оператором. Тред один на человека. */
 export async function dbSupportHistory(userId: string): Promise<SupportMessage[]> {
   const rows = await proxy<any[]>('supportHistory', [userId]);
   return (rows ?? []).map(r => ({
     id: r.id,
     direction: r.direction === 'out' ? 'out' : 'in',
+    sender: (
+      r.sender === 'assistant' || r.sender === 'operator' || r.sender === 'system'
+        ? r.sender
+        : r.direction === 'out' ? 'operator' : 'user'
+    ) as SupportSender,
     text: r.text,
     createdAt: r.created_at,
   }));
 }
 
+/** Актуальные подсказки/FAQ из серверной базы знаний для роли пользователя. */
+export async function dbSupportKnowledge(): Promise<SupportKnowledgeItem[]> {
+  const rows = await proxy<any[]>('supportKnowledge');
+  return (rows ?? []).map(r => ({
+    id: String(r.id ?? ''),
+    question: String(r.question ?? ''),
+    answer: String(r.answer ?? ''),
+  })).filter(r => r.id && r.question && r.answer);
+}
+
+/** Состояние живого обращения оператору. */
+export async function dbSupportState(userId: string): Promise<SupportState> {
+  const row = await proxy<any>('supportState', [userId]);
+  return {
+    operatorRequestedAt: row?.operator_requested_at ?? null,
+    closedAt: row?.closed_at ?? null,
+  };
+}
+
+/**
+ * Задать вопрос встроенному помощнику.
+ * Ответ формирует только сервер из закрытой базы знаний — клиент не может
+ * записать себе сообщение от имени помощника или оператора.
+ */
+export async function dbSupportAssistantAsk(
+  userId: string,
+  text: string,
+): Promise<{ ok: boolean; matched: boolean }> {
+  return proxy<{ ok: boolean; matched: boolean }>('supportAssistantAsk', [userId, text]);
+}
+
+/** Явно передать текущий диалог живому оператору. */
+export async function dbSupportEscalate(userId: string, reason = ''): Promise<{ ok: boolean }> {
+  return proxy<{ ok: boolean }>('supportEscalate', [userId, reason]);
+}
+
+/**
+ * Старый прямой канал поддержки оставляем для совместимости со старыми
+ * сборками. Новая форма использует assistantAsk + явную эскалацию.
+ */
 export async function dbSupportSend(userId: string, text: string): Promise<void> {
   await proxy('supportSend', [userId, text]);
 }

@@ -369,7 +369,7 @@ export default function ProfileSettingsScreen() {
       <View style={s.header}>
         <TouchableOpacity
           style={s.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/(tabs)/profile')}
           activeOpacity={0.72}
         >
           <Ionicons name="chevron-back" size={rf(25)} color={Colors.textPrimary} />

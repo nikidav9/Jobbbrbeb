@@ -247,7 +247,8 @@ $selfArgFns = [
     'dbRevokeCrossBorderConsent' => 0,
     'tgBindTelegram' => 0, 'tgUnbindTelegram' => 0,
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
-    'supportHistory' => 0, 'supportSend' => 0,
+    'supportHistory' => 0, 'supportState' => 0, 'supportSend' => 0,
+    'supportAssistantAsk' => 0, 'supportEscalate' => 0,
     'dbGetLikesForUser' => 0, 'dbGetChats' => 0,
     'dbGetMyReferral' => 0,
     'dbGetSaved' => 0, 'dbAddSaved' => 0, 'dbRemoveSaved' => 0,
@@ -1491,6 +1492,124 @@ function support_thread_set(string $userId, ?string $closedAt): bool {
         ], 'user_id');
         return true;
     } catch (Throwable $e) { return false; }
+}
+
+/** Явный вызов живого оператора. До этого момента диалог остаётся у помощника. */
+function support_request_operator(string $userId, string $reason = ''): bool {
+    if ($userId === '') return false;
+    try {
+        sb_upsert('jm_support_threads', [
+            'user_id' => $userId,
+            'closed_at' => null,
+            'operator_requested_at' => now_iso(),
+            'operator_request_text' => $reason !== '' ? $reason : null,
+            'updated_at' => now_iso(),
+        ], 'user_id');
+        return true;
+    } catch (Throwable $e) { return false; }
+}
+
+/** Состояние поддержки. Отсутствие строки означает обычный диалог с помощником. */
+function support_thread_state(string $userId): array {
+    if ($userId === '') return ['operator_requested_at' => null, 'closed_at' => null];
+    try {
+        $row = sb_single('jm_support_threads', ['user_id' => 'eq.' . $userId],
+            'user_id,closed_at,operator_requested_at,operator_request_text,updated_at');
+        return is_array($row) ? $row : ['operator_requested_at' => null, 'closed_at' => null];
+    } catch (Throwable $e) {
+        return ['operator_requested_at' => null, 'closed_at' => null];
+    }
+}
+
+function support_norm(string $text): string {
+    $text = function_exists('mb_strtolower') ? mb_strtolower($text, 'UTF-8') : strtolower($text);
+    $text = str_replace(['ё'], ['е'], $text);
+    $text = preg_replace('/[^\\p{L}\\p{N}]+/u', ' ', $text) ?? $text;
+    return trim(preg_replace('/\\s+/u', ' ', $text) ?? $text);
+}
+
+function support_words(string $text): array {
+    $norm = support_norm($text);
+    if ($norm === '') return [];
+    $parts = preg_split('/\\s+/u', $norm) ?: [];
+    $stop = ['как','что','где','когда','почему','мне','мой','моя','мои','это','или','для','про','при','есть','нет','ли','на','в','и','с','по','к','из','у'];
+    return array_values(array_unique(array_filter($parts, static function ($w) use ($stop) {
+        $len = function_exists('mb_strlen') ? mb_strlen($w, 'UTF-8') : strlen($w);
+        return $len >= 3 && !in_array($w, $stop, true);
+    })));
+}
+
+/**
+ * Консервативный matcher: точная ключевая фраза весит намного больше общей
+ * лексики. Если уверенности нет, помощник не выдумывает ответ, а предлагает
+ * живого оператора.
+ */
+function support_best_article(string $text, string $role): ?array {
+    $input = support_norm($text);
+    if ($input === '') return null;
+
+    try {
+        $rows = sb_select('jm_support_knowledge', [
+            'active' => 'eq.true', 'order' => 'priority.desc',
+        ], 'id,role,question,answer,keywords,priority');
+    } catch (Throwable $e) {
+        return null;
+    }
+
+    $inputWords = support_words($input);
+    $best = null;
+    $bestScore = 0;
+
+    foreach ($rows as $row) {
+        $articleRole = (string)($row['role'] ?? 'all');
+        if ($articleRole !== 'all' && $articleRole !== $role) continue;
+
+        $score = 0;
+        $keywords = is_array($row['keywords'] ?? null) ? $row['keywords'] : [];
+        foreach ($keywords as $keyword) {
+            $kw = support_norm((string)$keyword);
+            if ($kw === '') continue;
+            if (str_contains($input, $kw)) {
+                $score += 10 + count(support_words($kw)) * 2;
+            } else {
+                foreach (support_words($kw) as $word) {
+                    if (in_array($word, $inputWords, true)) $score += 2;
+                }
+            }
+        }
+
+        $questionWords = support_words((string)($row['question'] ?? ''));
+        $score += count(array_intersect($inputWords, $questionWords));
+        $score += min(3, (int)($row['priority'] ?? 0) / 100);
+
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $row;
+        }
+    }
+
+    return $bestScore >= 7 ? $best : null;
+}
+
+function support_knowledge_for_role(string $role): array {
+    try {
+        $rows = sb_select('jm_support_knowledge', [
+            'active' => 'eq.true', 'order' => 'priority.desc',
+        ], 'id,role,question,answer,priority');
+    } catch (Throwable $e) {
+        return [];
+    }
+    $out = [];
+    foreach ($rows as $row) {
+        $articleRole = (string)($row['role'] ?? 'all');
+        if ($articleRole !== 'all' && $articleRole !== $role) continue;
+        $out[] = [
+            'id' => (string)($row['id'] ?? ''),
+            'question' => (string)($row['question'] ?? ''),
+            'answer' => (string)($row['answer'] ?? ''),
+        ];
+    }
+    return $out;
 }
 
 define('TG_GROUP_CHAT_ID', (int)(getenv('TG_GROUP_CHAT_ID') ?: -1001709270025)); // группа «ПОДРАБОТКИ»
@@ -4749,21 +4868,104 @@ try {
         // хуже, чем сразу сказать, когда ответят: человек не сидит и не ждёт.
 
         case 'supportHistory':
-            $data = sb_select('jm_support_messages', ['user_id' => 'eq.' . (string)($args[0] ?? '')],
-                'id,direction,text,created_at', 'created_at.asc'); break;
+            $data = sb_select('jm_support_messages', ['user_id' => 'eq.' . (string)($args[0] ?? ''), 'order' => 'created_at.asc'],
+                'id,direction,sender,text,created_at'); break;
 
-        // Закрыть обращение: прощальное слово человеку + отметка «закрыто».
-        //
-        // Текст обязателен и приходит из дашборда: закрывать молча — значит
-        // оборвать разговор на полуслове, а человек не знает, ждать ему ещё
-        // или нет. Отметка отдельно от переписки (см. 023_support_close.sql).
+        case 'supportState': {
+            $uid = (string)($args[0] ?? '');
+            $state = support_thread_state($uid);
+            $data = [
+                'operator_requested_at' => $state['operator_requested_at'] ?? null,
+                'closed_at' => $state['closed_at'] ?? null,
+            ];
+            break;
+        }
+
+        // FAQ/быстрые подсказки берём из той же базы, что и автоматический
+        // помощник. Клиент не хранит второй расходящийся список ответов.
+        case 'supportKnowledge':
+            $data = support_knowledge_for_role((string)($acct['role'] ?? 'worker'));
+            break;
+
+        // Вопрос помощнику. Если оператор уже вызван и обращение не закрыто,
+        // новое сообщение просто попадает ему в очередь — бот не перебивает.
+        case 'supportAssistantAsk': {
+            $uid = (string)($args[0] ?? '');
+            $text = trim((string)($args[1] ?? ''));
+            if ($uid === '' || $text === '') { $data = ['ok' => false, 'matched' => false]; break; }
+            if ((function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text)) > 1500) {
+                $text = function_exists('mb_substr') ? mb_substr($text, 0, 1500, 'UTF-8') : substr($text, 0, 1500);
+            }
+
+            sb_insert('jm_support_messages', [
+                'id' => uid(), 'user_id' => $uid, 'direction' => 'in', 'sender' => 'user',
+                'text' => $text, 'created_at' => now_iso(),
+            ]);
+
+            $state = support_thread_state($uid);
+            $waitingOperator = !empty($state['operator_requested_at']) && empty($state['closed_at']);
+            if ($waitingOperator) {
+                try {
+                    sb_update('jm_support_threads', ['user_id' => 'eq.' . $uid], ['updated_at' => now_iso()]);
+                } catch (Throwable $e) {}
+                $data = ['ok' => true, 'matched' => false, 'escalated' => true];
+                break;
+            }
+
+            $article = support_best_article($text, (string)($acct['role'] ?? 'worker'));
+            $matched = is_array($article);
+            $answer = $matched
+                ? (string)($article['answer'] ?? '')
+                : 'Я не нашёл точного ответа в базе JobToo и не хочу придумывать. '
+                    . 'Можно уточнить вопрос другими словами или нажать «Позвать оператора» — '
+                    . 'тогда этот диалог появится у поддержки.';
+
+            sb_insert('jm_support_messages', [
+                'id' => uid(), 'user_id' => $uid, 'direction' => 'out', 'sender' => 'assistant',
+                'text' => $answer, 'created_at' => now_iso(),
+            ]);
+            $data = ['ok' => true, 'matched' => $matched, 'article_id' => $article['id'] ?? null];
+            break;
+        }
+
+        // Только это действие поднимает разговор в операторскую очередь.
+        case 'supportEscalate': {
+            $uid = (string)($args[0] ?? '');
+            $reason = trim((string)($args[1] ?? ''));
+            if ($uid === '') { $data = ['ok' => false]; break; }
+
+            if ($reason === '') {
+                $last = sb_select('jm_support_messages', [
+                    'user_id' => 'eq.' . $uid, 'direction' => 'eq.in',
+                    'order' => 'created_at.desc', 'limit' => '1',
+                ], 'text');
+                $reason = trim((string)($last[0]['text'] ?? ''));
+            }
+
+            $already = support_thread_state($uid);
+            $wasWaiting = !empty($already['operator_requested_at']) && empty($already['closed_at']);
+            $okRequest = support_request_operator($uid, $reason);
+
+            if (!$wasWaiting) {
+                sb_insert('jm_support_messages', [
+                    'id' => uid(), 'user_id' => $uid, 'direction' => 'out', 'sender' => 'system',
+                    'text' => 'Оператора позвал. Диалог уже появился у поддержки — ответ придёт сюда.',
+                    'created_at' => now_iso(),
+                ]);
+            }
+
+            $data = ['ok' => $okRequest];
+            break;
+        }
+
+        // Закрыть обращение: сообщение оператора + служебная отметка.
         case 'supportClose': {
             $uid = (string)($args[0] ?? '');
             $text = trim((string)($args[1] ?? ''));
             if ($uid === '') { $data = ['ok' => false, 'reason' => 'no_user']; break; }
             if ($text !== '') {
                 sb_insert('jm_support_messages', [
-                    'id' => uid(), 'user_id' => $uid, 'direction' => 'out',
+                    'id' => uid(), 'user_id' => $uid, 'direction' => 'out', 'sender' => 'operator',
                     'text' => $text, 'created_at' => now_iso(),
                 ]);
                 notify_user($uid, '🆘 Ответ поддержки', $text, 'support');
@@ -4772,7 +4974,6 @@ try {
             $data = ['ok' => true, 'marked' => $marked]; break;
         }
 
-        // Снова открыть — если закрыли по ошибке.
         case 'supportReopen': {
             $uid = (string)($args[0] ?? '');
             if ($uid === '') { $data = ['ok' => false]; break; }
@@ -4780,72 +4981,47 @@ try {
             $data = ['ok' => true, 'marked' => $marked]; break;
         }
 
+        // Совместимость со старыми приложениями: их «написать нам» сразу
+        // вызывает оператора. Новая сборка использует assistantAsk + escalate.
         case 'supportSend': {
             $uid = (string)($args[0] ?? '');
             $text = trim((string)($args[1] ?? ''));
             if ($uid === '' || $text === '') { $data = ['ok' => false]; break; }
 
-            // Написал снова — обращение снова открыто, даже если мы его
-            // закрывали. Иначе человек пишет в пустоту: у нас в списке
-            // «закрыто», а он ждёт ответа.
-            support_thread_set($uid, null);
-
             sb_insert('jm_support_messages', [
-                'id' => uid(), 'user_id' => $uid, 'direction' => 'in',
+                'id' => uid(), 'user_id' => $uid, 'direction' => 'in', 'sender' => 'user',
                 'text' => $text, 'created_at' => now_iso(),
             ]);
+            support_request_operator($uid, $text);
 
-            // Никите — в телеграм, сразу и с контекстом. Без этого обращение
-            // лежало бы в базе, пока кто-нибудь не откроет дашборд.
-            $adm = sb_single('jm_settings', ['key' => 'eq.admin_chat_id'], 'value');
-            if ($adm && !empty($adm['value']) && jt_has_crossborder_consent($uid)) {
-                $u = sb_single('jm_users', ['id' => 'eq.' . $uid],
-                    'first_name,last_name,phone,role,metro_station');
-                $who = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? '')) ?: 'Без имени';
-                $meta = array_filter([$u['role'] ?? null, $u['phone'] ?? null, $u['metro_station'] ?? null]);
-                $prev = sb_select('jm_support_messages', ['user_id' => 'eq.' . $uid],
-                    'direction,text,created_at', 'created_at.desc');
-                $first = count($prev) <= 1;
-                tg_send_message((int)$adm['value'],
-                    "🆘 <b>Поддержка</b> — " . htmlspecialchars($who, ENT_QUOTES, 'UTF-8')
-                    . ($meta ? "\n" . htmlspecialchars(implode(' · ', $meta), ENT_QUOTES, 'UTF-8') : '')
-                    . ($first ? "\n<i>Пишет впервые.</i>" : '')
-                    . "\n\n" . htmlspecialchars($text, ENT_QUOTES, 'UTF-8')
-                    . "\n\n<i>Ответить — в дашборде, раздел «Поддержка».</i>",
-                    DASHBOARD_URL . '/support', '🖥 Открыть дашборд');
-            }
-
-            // Вне часов работы — сразу говорим, когда ответим.
             $hour = (int)gmdate('G', time() + 3 * 3600);
             if ($hour < SUPPORT_FROM_HOUR || $hour >= SUPPORT_TO_HOUR) {
                 sb_insert('jm_support_messages', [
-                    'id' => uid(), 'user_id' => $uid, 'direction' => 'out',
-                    'text' => 'Спасибо, получили! Поддержка отвечает с '
-                        . SUPPORT_FROM_HOUR . ':00 до ' . SUPPORT_TO_HOUR . ':00 по Москве — '
-                        . 'ответим, как начнём. Если вопрос срочный, напишите об этом здесь же.',
+                    'id' => uid(), 'user_id' => $uid, 'direction' => 'out', 'sender' => 'system',
+                    'text' => 'Сообщение получил. Оператор отвечает с '
+                        . SUPPORT_FROM_HOUR . ':00 до ' . SUPPORT_TO_HOUR . ':00 по Москве.',
                     'created_at' => now_iso(),
                 ]);
             }
             $data = ['ok' => true]; break;
         }
 
-        // Ответ поддержки. Человеку — всеми каналами: он ждёт именно его.
+        // Ответить от имени поддержки может только adminFns + X-Admin-Token.
         case 'supportReply': {
             $uid = (string)($args[0] ?? '');
             $text = trim((string)($args[1] ?? ''));
             if ($uid === '' || $text === '') { $data = ['ok' => false]; break; }
             sb_insert('jm_support_messages', [
-                'id' => uid(), 'user_id' => $uid, 'direction' => 'out',
+                'id' => uid(), 'user_id' => $uid, 'direction' => 'out', 'sender' => 'operator',
                 'text' => $text, 'created_at' => now_iso(),
             ]);
             notify_user($uid, '🆘 Ответ поддержки', $text, 'support');
             $data = ['ok' => true]; break;
         }
 
-        // Все обращения для дашборда — свежие сверху.
         case 'supportThreads':
-            $data = sb_select('jm_support_messages', [], 'id,user_id,direction,text,created_at',
-                'created_at.desc'); break;
+            $data = sb_select('jm_support_messages', ['order' => 'created_at.desc'],
+                'id,user_id,direction,sender,text,created_at'); break;
 
         // Ответить человеку из дашборда — от имени бота.
         //

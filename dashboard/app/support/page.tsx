@@ -23,7 +23,8 @@ import { IconCheck, IconUser, IconSend } from '@/components/icons'
  * идёт дальше; на «спасибо, разобрался» отвечать нечего, но обращение должно
  * уйти из списка, иначе оно висит и мешает видеть тех, кто правда ждёт.
  * Поэтому у каждого разговора есть закрытие — с прощальным словом, а не
- * молча. Написал снова — обращение открылось само.
+ * молча. После закрытия помощник продолжает работать; в очередь разговор
+ * вернётся только по новому явному «Позвать оператора».
  */
 
 const FROM_HOUR = 10
@@ -37,11 +38,16 @@ type Msg = {
   id: string
   user_id: string
   direction: string
+  sender: 'user' | 'assistant' | 'operator' | 'system' | null
   text: string
   created_at: string
 }
 
-type Thread = { user_id: string; closed_at: string | null }
+type Thread = {
+  user_id: string
+  closed_at: string | null
+  operator_requested_at: string | null
+}
 
 type User = {
   id: string
@@ -73,6 +79,7 @@ function waitingHours(iso: string): number {
 export default function SupportPage() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [closedAt, setClosedAt] = useState<Record<string, string | null>>({})
+  const [requestedAt, setRequestedAt] = useState<Record<string, string | null>>({})
   const [users, setUsers] = useState<Record<string, User>>({})
   const [loading, setLoading] = useState(true)
   // По умолчанию — открытые. Раньше стоял фильтр «только ждущие», и страница
@@ -90,31 +97,48 @@ export default function SupportPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('jm_support_messages')
-      .select('id,user_id,direction,text,created_at')
-      .order('created_at', { ascending: false })
-      .limit(1000)
-    const rows = (data ?? []) as Msg[]
-    setMsgs(rows)
 
-    // Таблицы отметок может ещё не быть (миграция едет отдельно) — тогда
-    // просто считаем все обращения открытыми, страница остаётся рабочей.
+    // В операторскую очередь попадают только диалоги, где человек явно нажал
+    // «Позвать оператора». Обычные разговоры с помощником дашборд не засоряют.
     const { data: th } = await supabase
       .from('jm_support_threads')
-      .select('user_id,closed_at')
-    const cl: Record<string, string | null> = {}
-    for (const t of ((th ?? []) as Thread[])) cl[t.user_id] = t.closed_at
-    setClosedAt(cl)
+      .select('user_id,closed_at,operator_requested_at')
+      .not('operator_requested_at', 'is', null)
+      .order('operator_requested_at', { ascending: false })
 
-    const ids = Array.from(new Set(rows.map(r => r.user_id)))
+    const escalated = ((th ?? []) as Thread[])
+    const ids = escalated.map(t => t.user_id)
+    const cl: Record<string, string | null> = {}
+    const rq: Record<string, string | null> = {}
+    for (const t of escalated) {
+      cl[t.user_id] = t.closed_at
+      rq[t.user_id] = t.operator_requested_at
+    }
+    setClosedAt(cl)
+    setRequestedAt(rq)
+
+    let rows: Msg[] = []
+    if (ids.length) {
+      const { data } = await supabase
+        .from('jm_support_messages')
+        .select('id,user_id,direction,sender,text,created_at')
+        .in('user_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      rows = (data ?? []) as Msg[]
+    }
+    setMsgs(rows)
+
     if (ids.length) {
       const { data: us } = await supabase
         .from('jm_users').select('id,first_name,last_name,role,phone,metro_station').in('id', ids)
       const map: Record<string, User> = {}
       for (const u of (us ?? []) as User[]) map[u.id] = u
       setUsers(map)
+    } else {
+      setUsers({})
     }
+
     setUpdated(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
     setLoading(false)
   }, [])
@@ -122,7 +146,7 @@ export default function SupportPage() {
   useEffect(() => { load() }, [load])
   // Обращение может прийти в любой момент — подтягиваем сами.
   useEffect(() => {
-    const t = setInterval(load, 30_000)
+    const t = setInterval(load, 5_000)
     return () => clearInterval(t)
   }, [load])
 
@@ -209,10 +233,11 @@ export default function SupportPage() {
       const last = sorted[sorted.length - 1]
       const lastIn = [...sorted].reverse().find(m => m.direction === 'in')
       const stamp = closedAt[uid] ?? null
-      // Отметку перепроверяем по переписке: если человек написал уже после
-      // закрытия, разговор снова живой — даже если сервер отметку не успел
-      // снять. Так список не соврёт в сторону «всё разобрано».
-      const closed = !!stamp && !(lastIn && lastIn.created_at > stamp)
+      const requestStamp = requestedAt[uid] ?? null
+      // Теперь человек может продолжить разговор с помощником после закрытия.
+      // Это НЕ должно само возвращать его оператору: повторная очередь
+      // появляется только после нового явного «Позвать оператора».
+      const closed = !!stamp && !(requestStamp && requestStamp > stamp)
       const waiting = !closed && last.direction === 'in'
       return {
         uid, user: users[uid], msgs: sorted, last, waiting, closed, closedStamp: stamp,
@@ -226,28 +251,26 @@ export default function SupportPage() {
     if (filter === 'open') return out.filter(t => !t.closed)
     if (filter === 'closed') return out.filter(t => t.closed)
     return out
-  }, [msgs, users, closedAt, filter])
+  }, [msgs, users, closedAt, requestedAt, filter])
 
   // Считаем по всем разговорам, а не по отфильтрованным: иначе включённый
   // фильтр прятал бы и сам счётчик того, что он прячет.
   const counts = useMemo(() => {
     const lastByUser = new Map<string, Msg>()
-    const lastInByUser = new Map<string, Msg>()
     for (const m of msgs) {                      // msgs идут свежими первыми
       if (!lastByUser.has(m.user_id)) lastByUser.set(m.user_id, m)
-      if (m.direction === 'in' && !lastInByUser.has(m.user_id)) lastInByUser.set(m.user_id, m)
     }
     let open = 0, closed = 0, waiting = 0
     for (const [uid, last] of Array.from(lastByUser.entries())) {
       const stamp = closedAt[uid] ?? null
-      const lastIn = lastInByUser.get(uid)
-      const isClosed = !!stamp && !(lastIn && lastIn.created_at > stamp)
+      const requestStamp = requestedAt[uid] ?? null
+      const isClosed = !!stamp && !(requestStamp && requestStamp > stamp)
       if (isClosed) { closed++; continue }
       open++
       if (last.direction === 'in') waiting++
     }
     return { open, closed, waiting, total: open + closed }
-  }, [msgs, closedAt])
+  }, [msgs, closedAt, requestedAt])
 
   const mskHour = (new Date().getUTCHours() + 3) % 24
   const openNow = mskHour >= FROM_HOUR && mskHour < TO_HOUR
@@ -260,7 +283,7 @@ export default function SupportPage() {
 
   return (
     <div>
-      <PageHeader title="Поддержка" intervalSec={30} lastUpdated={updated} onRefresh={load} />
+      <PageHeader title="Поддержка" intervalSec={5} lastUpdated={updated} onRefresh={load} />
 
       <div className="page-content">
         <div className="g-4">
@@ -269,7 +292,7 @@ export default function SupportPage() {
           <KpiCard label="Ждут ответа" value={counts.waiting}
             sub="последнее слово за человеком" />
           <KpiCard label="Закрыто" value={counts.closed}
-            sub="напишет снова — откроется само" />
+            sub="повторный вызов оператора откроет снова" />
           <KpiCard label="Сейчас" value={openNow ? 'Рабочее время' : 'Нерабочее'}
             sub={`приём с ${FROM_HOUR}:00 до ${TO_HOUR}:00 по Москве`} />
         </div>
@@ -327,6 +350,11 @@ export default function SupportPage() {
                     </span>
                     <span style={{ flexShrink: 0, color: m.direction === 'out' ? 'var(--accent)' : 'var(--ink-3)' }}>
                       {m.direction === 'out' ? <IconSend size={13} /> : <IconUser size={13} />}
+                    </span>
+                    <span style={{ flexShrink: 0, width: 66, fontSize: 11.5, color: 'var(--ink-3)' }}>
+                      {m.sender === 'assistant' ? 'помощник'
+                        : m.sender === 'system' ? 'система'
+                        : m.direction === 'out' ? 'оператор' : 'человек'}
                     </span>
                     <span style={{
                       whiteSpace: 'pre-wrap', minWidth: 0,

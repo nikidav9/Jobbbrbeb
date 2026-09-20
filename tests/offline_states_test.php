@@ -117,9 +117,18 @@ foreach (['app/register-worker.tsx' => 'работник', 'app/register-employe
 }
 $support = (string)file_get_contents(__DIR__ . '/../app/support.tsx');
 check('поддержка: ошибка истории хранится отдельно', str_contains($support, 'loadFailed'));
-check('поддержка: ошибка истории не выглядит пустым чатом', str_contains($support, 'Не удалось загрузить переписку'));
+check('поддержка: ошибка истории не выглядит пустым чатом', str_contains($support, 'Не удалось загрузить чат'));
 check('поддержка: историю можно повторить',
-    (bool)preg_match('~onPress=\{\(\) => void load\(\)\}[\s\S]{0,160}Повторить~', $support));
+    (bool)preg_match('~onPress=\{\(\) => void loadConversation\(\)\}[\s\S]{0,220}Повторить~', $support));
+check('поддержка: помощь открывается сразу чатом, без старой вкладки вопросов',
+    !str_contains($support, "useState<'help' | 'chat'>")
+    && str_contains($support, 'Помощник JobToo'));
+check('поддержка: FAQ остаётся отдельной кнопкой',
+    str_contains($support, 'accessibilityLabel="Частые вопросы"')
+    && str_contains($support, 'faqVisible'));
+check('поддержка: живой оператор вызывается явно',
+    str_contains($support, 'dbSupportEscalate')
+    && str_contains($support, 'Позвать оператора'));
 
 // ── Чат, чужой профиль и отзывы: ошибка загрузки не равна пустоте ────────────
 $chatRoom = (string)file_get_contents(__DIR__ . '/../app/chat-room.tsx');
@@ -188,6 +197,8 @@ check('PWA: после обновления worker открытое прилож
     str_contains($serviceWorker, "client.navigate(client.url)"));
 
 $profileSettings = (string)file_get_contents(__DIR__ . '/../app/profile-settings.tsx');
+check('настройки: назад работает и после reload очистки кеша',
+    str_contains($profileSettings, "onPress={() => router.replace('/(tabs)/profile')}"));
 $webPush = (string)file_get_contents(__DIR__ . '/../lib/webPush.ts');
 $storageSrc = (string)file_get_contents(__DIR__ . '/../services/storage.ts');
 check('кеш: helper удаляет только jm_c1 временные ключи',
