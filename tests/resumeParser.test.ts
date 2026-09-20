@@ -74,5 +74,59 @@ test('неполное резюме не создаёт выдуманные р�
   assert.equal(resume.experience.length, 0);
   assert.equal(resume.education.length, 0);
   assert.equal(resume.skills.length, 0);
+  assert.equal(resume.projects.length, 0);
+  assert.equal(resume.exams.length, 0);
+  assert.equal(resume.interests.length, 0);
+  assert.equal(resume.certifications.length, 0);
+  assert.equal(resume.awards.length, 0);
+  assert.equal(resume.coursework.length, 0);
   assert.deepEqual(inferWorkTypes(resume), ['cook']);
+});
+
+
+test('дополнительные разделы резюме сохраняются структурированно', () => {
+  const text = `
+Иванов Иван Иванович
+Желаемая должность и зарплата
+Руководитель склада 180 000 ₽
+Образование
+Московский государственный университет
+Специальность: Логистика
+2020 — 2024
+Проекты
+• Переезд склада — Руководитель проекта — Запустил новую WMS
+Экзамены
+IELTS — 7.5 — 2025
+Языки
+Русский — Родной
+English — B2
+Навыки
+SQL; MS Excel; WMS
+Интересы
+Бег; Автоматизация
+Лицензии и сертификаты
+Охрана труда — Учебный центр — 2026
+Награды
+Лучший руководитель — Компания — 2025
+Курсы
+Управление командой — Корпоративный университет — 2024
+Обо мне
+Руковожу складскими командами и автоматизирую процессы.
+`;
+
+  const resume = parseResumeText(text, 'full.pdf');
+
+  assert.equal(resume.education[0].institution, 'Московский государственный университет');
+  assert.equal(resume.education[0].specialty, 'Логистика');
+  assert.equal(resume.projects[0].name, 'Переезд склада');
+  assert.equal(resume.projects[0].role, 'Руководитель проекта');
+  assert.equal(resume.exams[0].name, 'IELTS');
+  assert.equal(resume.exams[0].score, '7.5');
+  assert.deepEqual(resume.languages.map(item => item.name), ['Русский', 'English']);
+  assert.ok(resume.skills.includes('SQL'));
+  assert.ok(resume.interests.includes('Бег'));
+  assert.equal(resume.certifications[0].issuer, 'Учебный центр');
+  assert.equal(resume.awards[0].name, 'Лучший руководитель');
+  assert.equal(resume.coursework[0].institution, 'Корпоративный университет');
+  assert.equal(resume.summary, 'Руковожу складскими командами и автоматизирую процессы.');
 });
