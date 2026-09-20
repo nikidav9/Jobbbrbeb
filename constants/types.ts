@@ -58,6 +58,32 @@ export interface ResumeCoursework {
   description?: string;
 }
 
+export interface PersonalDetails {
+  middleName?: string;
+  preferredName?: string;
+  title?: string;
+  birthday?: string;
+  contactEmail?: string;
+  emergencyContact?: string;
+  links?: string;
+  citizenship?: string;
+  workAuthorization?: string;
+  location?: string;
+  workAvailability?: string;
+  relocation?: string;
+  driversLicense?: string;
+  veteranStatus?: string;
+  disabilityStatus?: string;
+  gender?: string;
+  pronouns?: string;
+  race?: string;
+  sexualOrientation?: string;
+  professionalReferences?: string;
+  militaryService?: string;
+  securityClearance?: string;
+  employmentRestrictions?: string;
+}
+
 export interface ResumeProfile {
   desiredPosition?: string;
   salary?: string;
@@ -103,6 +129,8 @@ export interface User {
   ratingCount?: number;
   bio?: string;
   resume?: ResumeProfile;
+  /** Приватная анкета из вкладки «Личные». Не входит в публичный профиль. */
+  personalDetails?: PersonalDetails;
   telegramId?: number;
   /** Когда пользователь последний раз был в приложении */
   lastSeenAt?: string;
