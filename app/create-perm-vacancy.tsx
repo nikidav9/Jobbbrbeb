@@ -17,6 +17,7 @@ import { PermVacancy, WorkType } from '@/constants/types';
 import { METRO_LINES } from '@/constants/metro';
 import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { AutoRejectNotice } from '@/components/AutoRejectNotice';
+import { OnboardingTarget } from '@/components/OnboardingTarget';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -117,6 +118,7 @@ export default function CreatePermVacancy() {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <OnboardingTarget targetKey="employer.create.form" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <AutoRejectNotice />
 
@@ -216,20 +218,23 @@ export default function CreatePermVacancy() {
           </View>
 
           <View style={{ marginBottom: 40, marginTop: 8 }}>
-            <TouchableOpacity
-              style={[styles.submitBtn, saving && { opacity: 0.6 }]}
-              onPress={submit}
-              disabled={saving}
-              activeOpacity={0.85}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.submitBtnTxt}>{isEdit ? 'Сохранить' : 'Опубликовать'}</Text>
-              )}
-            </TouchableOpacity>
+            <OnboardingTarget targetKey="employer.create.publish">
+              <TouchableOpacity
+                style={[styles.submitBtn, saving && { opacity: 0.6 }]}
+                onPress={submit}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.submitBtnTxt}>{isEdit ? 'Сохранить' : 'Опубликовать'}</Text>
+                )}
+              </TouchableOpacity>
+            </OnboardingTarget>
           </View>
         </ScrollView>
+        </OnboardingTarget>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
