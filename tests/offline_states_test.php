@@ -177,6 +177,29 @@ check('push: enabled сохраняется только после успешн
 check('push: ошибка токена объяснена и не закрывает лист как успех',
     str_contains($pushSheet, 'push-токен не зарегистрировался'));
 
+$profileSettings = (string)file_get_contents(__DIR__ . '/../app/profile-settings.tsx');
+$webPush = (string)file_get_contents(__DIR__ . '/../lib/webPush.ts');
+check('настройки уведомлений: есть рабочее включение и отключение',
+    str_contains($profileSettings, 'enableNotifications') &&
+    str_contains($profileSettings, 'disableNotifications') &&
+    str_contains($profileSettings, 'dbClearPushToken') &&
+    str_contains($profileSettings, 'dbDeleteWebPushSubscription'));
+check('настройки уведомлений: выбор пользователя переживает перезапуск',
+    str_contains($push, 'NOTIFICATION_DISABLED_KEY') &&
+    str_contains($push, "=== '1'") &&
+    str_contains($webPush, 'NOTIFICATION_DISABLED_KEY') &&
+    str_contains($webPush, "=== '1'"));
+check('выход из настроек возвращает на экран входа',
+    str_contains($profileSettings, "router.replace('/')") &&
+    str_contains($profileSettings, 'onPress: performLogout'));
+foreach (['terms', 'privacy', 'consent', 'crossBorderConsent', 'dataPolicy'] as $docKey) {
+    check("настройки: документ {$docKey} показан в разделе о приложении",
+        str_contains($profileSettings, "key: '{$docKey}'"));
+}
+$profileForFooter = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
+check('отзывы: сервисные карточки скрыты',
+    str_contains($profileForFooter, "(currentUser.role === 'employer' || profileTab === 'personal')"));
+
 // ── Рассылка вакансии: вторичный сбой не выдаётся за доставку ────────────────
 $notifSvc = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
 $createPerm = (string)file_get_contents(__DIR__ . '/../app/create-perm-vacancy.tsx');

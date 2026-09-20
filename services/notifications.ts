@@ -2,7 +2,10 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent } from '@/services/db';
+
+export const NOTIFICATION_DISABLED_KEY = 'jm_notifications_disabled';
 
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
@@ -97,6 +100,10 @@ function getExpoProjectId(): string | undefined {
 
 export async function registerForPushNotifications(userId: string): Promise<boolean> {
   if (Platform.OS === 'web') return false;
+  if (await AsyncStorage.getItem(NOTIFICATION_DISABLED_KEY).catch(() => null) === '1') {
+    console.info('[push] Disabled by user in profile settings.');
+    return false;
+  }
   if (!Device.isDevice) {
     console.info('[push] Skipped push token registration: simulator/emulator detected.');
     return false;

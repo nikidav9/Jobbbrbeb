@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSessionToken, dbGetCrossBorderConsent } from '@/services/db';
+import { NOTIFICATION_DISABLED_KEY } from '@/services/notifications';
 
 // Публичная половина пары, которую сервер создал сам (infra/bootstrap.sh).
 // Прежняя приватная часть однажды прошла через переписку и перестала быть
@@ -59,6 +61,10 @@ function wpTimeout<T>(p: Promise<T>, ms: number, step: string): Promise<T> {
 export async function registerWebPush(userId: string): Promise<boolean> {
   if (Platform.OS !== 'web') return false;
   if (typeof window === 'undefined') return false;
+  if (await AsyncStorage.getItem(NOTIFICATION_DISABLED_KEY).catch(() => null) === '1') {
+    wpDebug('Уведомления отключены пользователем в настройках профиля');
+    return false;
+  }
 
   const consent = await dbGetCrossBorderConsent(userId).catch(() => null);
   if (consent?.accepted !== true) {
