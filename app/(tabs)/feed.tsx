@@ -47,6 +47,7 @@ import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import {
   APP_HEADER_BOTTOM,
+  APP_HEADER_CONTROL,
   APP_HEADER_HORIZONTAL,
   APP_HEADER_TOP,
   BrandLogo,
@@ -1082,22 +1083,23 @@ const fh = StyleSheet.create({
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    backgroundColor: '#FFFFFF', borderRadius: rs(24),
-    paddingHorizontal: rs(14), height: rs(46),
+    backgroundColor: '#FFFFFF', borderRadius: rs(APP_HEADER_CONTROL / 2),
+    paddingHorizontal: rs(14), height: rs(APP_HEADER_CONTROL),
   },
   // Высота задана контейнеру: на Android TextInput со своим padding
   // раздувает строку и шапка перестаёт совпадать с макетом.
   input: { flex: 1, minWidth: 0, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
   undo: {
-    width: rs(46), height: rs(46), borderRadius: rs(23), flexShrink: 0,
+    width: rs(APP_HEADER_CONTROL), height: rs(APP_HEADER_CONTROL),
+    borderRadius: rs(APP_HEADER_CONTROL / 2), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1, borderColor: '#E9EAEC',
   },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5),
-    backgroundColor: '#FFFFFF', borderRadius: rs(24),
-    paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
+    backgroundColor: '#FFFFFF', borderRadius: rs(APP_HEADER_CONTROL / 2),
+    paddingHorizontal: rs(13), height: rs(APP_HEADER_CONTROL), flexShrink: 0,
   },
   countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
   countEmpty: { backgroundColor: '#ECEDEF' },
