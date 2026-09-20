@@ -25,7 +25,7 @@ import GuestGate from '@/components/GuestGate';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
-import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
+import { WorkTypeSelector } from '@/components/feature/WorkTypeSelector';
 import { PersonalDetails, ResumeProfile, User, WorkType } from '@/constants/types';
 import { inferWorkTypes } from '@/lib/resumeParser';
 import { extractResumePdf } from '@/services/resumeImport';
@@ -667,7 +667,6 @@ export default function ProfileScreen() {
     if (field === 'relocation') {
       return resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0] ?? '';
     }
-    if (field === 'birthday' && currentUser.age) return `${currentUser.age} лет`;
     return '';
   };
 
