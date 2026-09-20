@@ -17,6 +17,12 @@ export function getOnboardingTarget(key: string): TargetRect | undefined {
   return targets[key];
 }
 
+export function clearOnboardingTarget(key: string) {
+  if (!targets[key]) return;
+  delete targets[key];
+  subs.forEach(fn => fn());
+}
+
 export function subscribeOnboardingTargets(fn: () => void): () => void {
   subs.add(fn);
   return () => { subs.delete(fn); };
