@@ -969,65 +969,32 @@ export default function ProfileScreen() {
           <ScoreCard user={currentUser} own />
         </View> : null}
 
-        {(currentUser.role === 'employer' || profileTab === 'personal') ? <>
-        <SectionCard
-          iconName="person"
-          iconBg={Colors.primary}
-          title="Личные данные"
-          summary={currentUser.phone}
-          open={openSection === 'personal'}
-          onToggle={() => toggleSection('personal')}
-          onEdit={() => openEdit('personal')}
-          rows={[
-            { label: 'Телефон', value: currentUser.phone },
-            ...(currentUser.resume?.email ? [{ label: 'Email', value: currentUser.resume.email }] : []),
-            { label: 'Фамилия', value: currentUser.lastName },
-            { label: 'Имя', value: currentUser.firstName },
-            { label: 'Возраст', value: currentUser.age ? `${currentUser.age}` : 'Не указан' },
-            ...(currentUser.resume?.city ? [{ label: 'Город', value: currentUser.resume.city }] : []),
-          ]}
-        />
+        {currentUser.role === 'worker' && profileTab === 'personal' ? (
+          <PersonalTab
+            user={currentUser}
+            onEditCore={() => openEdit('personal')}
+            onEditField={openPersonalField}
+            onEditMetro={() => openEdit('metro')}
+          />
+        ) : null}
 
-        {currentUser.role === 'worker' ? (
+        {currentUser.role === 'employer' ? (
           <>
             <SectionCard
-              iconName="briefcase"
+              iconName="person"
               iconBg={Colors.primary}
-              title="Специализация"
-              summary={workTypeLabels.length ? workTypeLabels.join(', ') : 'Не указана'}
-              open={openSection === 'worktypes'}
-              onToggle={() => toggleSection('worktypes')}
-              onEdit={() => openEdit('worktypes')}
-              chips={workTypeLabels}
-              placeholder="Специализация пока не выбрана"
-            />
-            <SectionCard
-              iconName="train"
-              iconBg="#1C1C1E"
-              title="Метро"
-              summary={currentUser.metroStation ?? 'Не указано'}
-              open={openSection === 'metro'}
-              onToggle={() => toggleSection('metro')}
-              onEdit={() => openEdit('metro')}
+              title="Личные данные"
+              summary={currentUser.phone}
+              open={openSection === 'personal'}
+              onToggle={() => toggleSection('personal')}
+              onEdit={() => openEdit('personal')}
               rows={[
-                { label: 'Линия', value: line?.name ?? '—', lineColor: line?.color },
-                { label: 'Станция', value: currentUser.metroStation ?? '—' },
+                { label: 'Телефон', value: currentUser.phone },
+                { label: 'Фамилия', value: currentUser.lastName },
+                { label: 'Имя', value: currentUser.firstName },
+                { label: 'Возраст', value: currentUser.age ? `${currentUser.age}` : 'Не указан' },
               ]}
             />
-            <SectionCard
-              iconName="document-text"
-              iconBg={Colors.primary}
-              title="О себе"
-              summary={currentUser.bio ? currentUser.bio : 'Не заполнено'}
-              open={openSection === 'bio'}
-              onToggle={() => toggleSection('bio')}
-              onEdit={() => openEdit('bio')}
-              rows={currentUser.bio ? [{ label: '', value: currentUser.bio }] : []}
-              placeholder="Расскажите о себе — опыт, навыки, предпочтения"
-            />
-          </>
-        ) : (
-          <>
             <SectionCard
               iconName="business"
               iconBg={Colors.primary}
@@ -1050,8 +1017,7 @@ export default function ProfileScreen() {
               placeholder="Расскажите о компании, условиях, коллективе"
             />
           </>
-        )}
-        </> : null}
+        ) : null}
 
         {/* Документы */}
         {(currentUser.role === 'employer' || profileTab === 'files') ? <>
