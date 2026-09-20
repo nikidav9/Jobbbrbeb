@@ -274,20 +274,23 @@ export function OnboardingOverlay() {
           />
         ) : null}
 
-        <TouchableOpacity
-          style={[styles.skip, { top: insets.top + rs(8) }]}
-          onPress={() => { void complete(); }}
-          hitSlop={10}
-        >
-          <Text style={styles.skipText}>Пропустить</Text>
-        </TouchableOpacity>
-
         <View style={[styles.card, { left: rs(20), width: width - rs(40), ...cardPosition }]}>
           <View style={styles.progressTop}>
             <Text style={styles.chapter}>
               Глава {chapterIndex + 1} из {chapterOrder.length} · {chapterLabel[step.chapter]}
             </Text>
-            <Text style={styles.counter}>{chapterStepIndex + 1}/{chapterSteps.length}</Text>
+            <View style={styles.progressActions}>
+              <Text style={styles.counter}>{chapterStepIndex + 1}/{chapterSteps.length}</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Пропустить обучение"
+                style={styles.skipInline}
+                onPress={() => { void complete(); }}
+                hitSlop={8}
+              >
+                <Text style={styles.skipInlineText}>Пропустить</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${((stepIndex + 1) / steps.length) * 100}%` }]} />
@@ -317,11 +320,6 @@ export function OnboardingOverlay() {
 }
 
 const styles = StyleSheet.create({
-  skip: {
-    position: 'absolute', right: rs(16), paddingHorizontal: rs(14), paddingVertical: rs(8),
-    backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: rs(100),
-  },
-  skipText: { color: '#FFFFFF', fontSize: rf(12), fontWeight: '700' },
   card: {
     position: 'absolute', backgroundColor: '#FFFFFF', borderRadius: rs(22), padding: rs(18),
     shadowColor: '#000000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.24,
@@ -329,7 +327,10 @@ const styles = StyleSheet.create({
   },
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: rs(8) },
   chapter: { flex: 1, fontSize: rf(10.5), fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
+  progressActions: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   counter: { fontSize: rf(11), fontWeight: '800', color: Colors.primary },
+  skipInline: { paddingHorizontal: rs(9), paddingVertical: rs(5), borderRadius: rs(100), backgroundColor: '#F4F4F5' },
+  skipInlineText: { fontSize: rf(10.5), fontWeight: '700', color: Colors.textSecondary },
   progressTrack: { height: rs(4), borderRadius: rs(2), backgroundColor: '#ECEDEF', overflow: 'hidden', marginTop: rs(8), marginBottom: rs(14) },
   progressFill: { height: '100%', borderRadius: rs(2), backgroundColor: Colors.primary },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
