@@ -78,17 +78,9 @@ export default function SupportScreen() {
   }, [state.operatorRequestedAt, state.closedAt, loadConversation]);
 
   const goBack = () => {
-    // После внутреннего обновления OTA/PWA стек навигации может быть пустым.
-    // В таком случае возвращаем в профиль явно, а не оставляем «мёртвую» кнопку.
-    try {
-      router.back();
-      setTimeout(() => {
-        // router.back() безопасен, но в восстановленной PWA иногда не имеет
-        // предыдущего route. Повторный replace не нужен, если экран уже снят.
-      }, 0);
-    } catch {
-      router.replace('/(tabs)/profile');
-    }
+    // Помощь открывается из профиля/настроек. После OTA/PWA reload стек может
+    // восстановиться без предыдущего route, поэтому возвращаемся явно.
+    router.replace('/(tabs)/profile');
   };
 
   const send = async (preset?: string) => {
