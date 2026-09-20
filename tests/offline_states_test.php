@@ -177,6 +177,16 @@ check('push: enabled сохраняется только после успешн
 check('push: ошибка токена объяснена и не закрывает лист как успех',
     str_contains($pushSheet, 'push-токен не зарегистрировался'));
 
+$serviceWorker = (string)file_get_contents(__DIR__ . '/../public/sw.js');
+check('PWA: новый service worker сбрасывает старый app-shell кеш',
+    str_contains($serviceWorker, "jobtoo-app-shell-v8") &&
+    str_contains($serviceWorker, "name.startsWith('jobtoo-app-shell-')"));
+check('PWA: статические bundle сначала запрашиваются из сети, а не из вечного кеша',
+    strpos($serviceWorker, 'const fresh = await fetchWithTimeout(request, 8000)') <
+    strpos($serviceWorker, 'const cached = await cache.match(request)'));
+check('PWA: после обновления worker открытое приложение получает свежую страницу',
+    str_contains($serviceWorker, "client.navigate(client.url)"));
+
 $profileSettings = (string)file_get_contents(__DIR__ . '/../app/profile-settings.tsx');
 $webPush = (string)file_get_contents(__DIR__ . '/../lib/webPush.ts');
 $storageSrc = (string)file_get_contents(__DIR__ . '/../services/storage.ts');
