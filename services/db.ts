@@ -207,6 +207,13 @@ function throwOnError(label: string, error: any): never {
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
+const PUBLIC_USER_COLUMNS = [
+  'id', 'role', 'first_name', 'last_name', 'age', 'metro_line_id',
+  'metro_station', 'work_types', 'company', 'bio', 'resume_data',
+  'avatar_url', 'avg_rating', 'rating_count', 'is_blocked', 'created_at',
+  'last_seen_at', 'referral_worked',
+].join(',');
+
 function rowToUser(r: any): User {
   return {
     id: r.id,
@@ -226,6 +233,12 @@ function rowToUser(r: any): User {
     ratingCount: r.rating_count ?? 0,
     password: r.password ?? '',
     bio: r.bio ?? undefined,
+    resume: r.resume_data ? {
+      ...r.resume_data,
+      ...(r.resume_email ? { email: r.resume_email } : {}),
+      sourceFileName: r.resume_file_name ?? r.resume_data.sourceFileName ?? '',
+      importedAt: r.resume_imported_at ?? r.resume_data.importedAt ?? '',
+    } : undefined,
     telegramId: r.telegram_id ?? undefined,
     lastSeenAt: r.last_seen_at ?? undefined,
     // Рейтинг считает сервер (jt_recalc_score в php-proxy/db.php) и кладёт
@@ -252,6 +265,12 @@ function rowToUser(r: any): User {
 // на сервере (tg.php), иначе сохранение профиля затирало бы её.
 
 function userToRow(u: User) {
+  const {
+    email: resumeEmail,
+    sourceFileName: resumeFileName,
+    importedAt: resumeImportedAt,
+    ...publicResume
+  } = u.resume ?? ({} as NonNullable<User['resume']>);
   return {
     id: u.id,
     role: u.role,
@@ -270,6 +289,10 @@ function userToRow(u: User) {
     rating_count: u.ratingCount ?? 0,
     password: u.password ?? '',
     bio: u.bio ?? null,
+    resume_data: u.resume ? publicResume : null,
+    resume_email: resumeEmail ?? null,
+    resume_file_name: resumeFileName ?? null,
+    resume_imported_at: resumeImportedAt ?? null,
   };
 }
 
@@ -302,7 +325,7 @@ export async function dbGetMyReferral(userId: string): Promise<MyReferral | null
 export async function dbGetUserById(id: string): Promise<User | null> {
   if (IS_NATIVE) { const d = await proxy<any>('dbGetUserById', [id]); return d ? rowToUser(d) : null; }
   const { data } = await withTimeout(
-    supabase.from('jm_users').select('*').eq('id', id).maybeSingle()
+    supabase.from('jm_users').select(PUBLIC_USER_COLUMNS).eq('id', id).maybeSingle()
   );
   return data ? rowToUser(data) : null;
 }
@@ -357,7 +380,7 @@ export async function dbCountUsers(): Promise<number> {
 export async function dbGetUsers(): Promise<User[]> {
   if (IS_NATIVE) { const d = await proxy<any[]>('dbGetUsers'); return d.map(rowToUser); }
   const { data, error } = await withTimeout(
-    supabase.from('jm_users').select('*').order('created_at', { ascending: true })
+    supabase.from('jm_users').select(PUBLIC_USER_COLUMNS).order('created_at', { ascending: true })
   );
   if (error) throwOnError('dbGetUsers', error);
   return (data ?? []).map(rowToUser);

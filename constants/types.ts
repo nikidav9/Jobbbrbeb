@@ -1,5 +1,45 @@
 export type WorkType = 'stocker' | 'cook' | 'shift_supervisor' | 'picker';
 
+export interface ResumeExperience {
+  company: string;
+  position: string;
+  start: string;
+  end: string;
+  duration?: string;
+  description?: string;
+}
+
+export interface ResumeEducation {
+  level?: string;
+  institution?: string;
+  specialty?: string;
+  period?: string;
+}
+
+export interface ResumeLanguage {
+  name: string;
+  level: string;
+}
+
+export interface ResumeProfile {
+  desiredPosition?: string;
+  salary?: string;
+  specializations: string[];
+  employmentType?: string;
+  workFormat?: string;
+  city?: string;
+  email?: string;
+  citizenship?: string;
+  workPermit?: string;
+  businessTrips?: string;
+  experience: ResumeExperience[];
+  education: ResumeEducation[];
+  skills: string[];
+  languages: ResumeLanguage[];
+  sourceFileName: string;
+  importedAt: string;
+}
+
 export interface User {
   id: string;
   role: 'worker' | 'employer';
@@ -18,6 +58,7 @@ export interface User {
   avgRating?: number;
   ratingCount?: number;
   bio?: string;
+  resume?: ResumeProfile;
   telegramId?: number;
   /** Когда пользователь последний раз был в приложении */
   lastSeenAt?: string;

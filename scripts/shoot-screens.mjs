@@ -382,7 +382,7 @@ for (const shot of SHOTS) {
         window.localStorage.setItem('jm_currentUser', JSON.stringify(u));
         // Обучалка и предложение включить уведомления перекрывают экран —
         // помечаем пройденными, снимок должен показывать сам интерфейс
-        window.localStorage.setItem(`jm_onboarding_done_${u.id}`, '1');
+        window.localStorage.setItem(`jm_onboarding_v3_${u.id}`, JSON.stringify({ status: 'done', step: 999 }));
         window.localStorage.setItem('jm_notif_prompt_choice', 'enabled');
       } catch {}
     }, toAppUser(shot.who));

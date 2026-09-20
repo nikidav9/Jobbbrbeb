@@ -626,6 +626,7 @@ function ym_daily_report(string $token): array {
 define('USER_PUBLIC_COLS', implode(',', [
     'id', 'role', 'first_name', 'last_name', 'age',
     'metro_line_id', 'metro_station', 'work_types', 'company', 'bio',
+    'resume_data',
     'avatar_url', 'avg_rating', 'rating_count', 'is_blocked',
     'created_at', 'last_seen_at',
     // Поручительство: скольких приведённых этот человек довёл до смены.
@@ -633,6 +634,8 @@ define('USER_PUBLIC_COLS', implode(',', [
     // работает, только если её видит работодатель.
     'referral_worked',
 ]));
+
+define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,resume_email,resume_file_name,resume_imported_at');
 
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
 // Версии три — $2a$, $2b$, $2y$: приложение хеширует библиотекой bcryptjs
@@ -3169,7 +3172,8 @@ try {
             // здесь ни к чему.
             $editable = [
                 'first_name', 'last_name', 'age', 'metro_line_id', 'metro_station',
-                'work_types', 'company', 'bio', 'avatar_url',
+                'work_types', 'company', 'bio', 'avatar_url', 'resume_data',
+                'resume_email', 'resume_file_name', 'resume_imported_at',
             ];
             // При регистрации строки ещё нет: тогда же задаются и те поля,
             // которые потом менять нельзя. Роль и телефон — опознание
@@ -3247,7 +3251,7 @@ try {
         }
 
         case 'dbSession': {
-            $row = sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_PUBLIC_COLS);
+            $row = sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS);
             $data = $row ? ['user' => $row] : null;
             break;
         }

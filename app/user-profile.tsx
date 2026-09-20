@@ -266,6 +266,42 @@ export default function UserProfileScreen() {
               <ScoreCard user={user} />
             </View>
 
+            {isWorker && user.resume ? (
+              <>
+                <View style={styles.infoCard}>
+                  <Text style={styles.resumePosition}>{user.resume.desiredPosition ?? 'Желаемая должность'}</Text>
+                  {user.resume.salary ? <Text style={styles.resumeSalary}>{user.resume.salary}</Text> : null}
+                  <View style={styles.resumeMetaRow}>
+                    {user.resume.employmentType ? <Text style={styles.resumeMeta}>{user.resume.employmentType}</Text> : null}
+                    {user.resume.workFormat ? <Text style={styles.resumeMeta}>{user.resume.workFormat}</Text> : null}
+                  </View>
+                </View>
+
+                {user.resume.experience.length > 0 ? (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionTitle}>Опыт работы</Text>
+                    {user.resume.experience.map((item, index) => (
+                      <View key={`${item.company}-${item.position}-${index}`} style={[styles.resumeEntry, index > 0 && styles.resumeEntryBorder]}>
+                        <Text style={styles.resumeEntryTitle}>{item.position}</Text>
+                        <Text style={styles.resumeEntryCompany}>{item.company}</Text>
+                        <Text style={styles.resumeEntryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
+                        {item.description ? <Text style={styles.resumeEntryText} numberOfLines={5}>{item.description}</Text> : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {user.resume.skills.length > 0 ? (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionTitle}>Навыки</Text>
+                    <View style={styles.resumeChips}>
+                      {user.resume.skills.map(skill => <View key={skill} style={styles.resumeChip}><Text style={styles.resumeChipText}>{skill}</Text></View>)}
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+
             {/* Info block */}
             <View style={styles.infoCard}>
               <Text style={styles.sectionTitle}>Основная информация</Text>
@@ -460,6 +496,19 @@ const styles = StyleSheet.create({
   metroVal: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
   lineDot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
   bioText: { fontSize: rf(15), color: Colors.textPrimary, lineHeight: rf(22) },
+  resumePosition: { fontSize: rf(19), lineHeight: rf(24), fontWeight: '800', color: Colors.textPrimary },
+  resumeSalary: { fontSize: rf(15), fontWeight: '800', color: Colors.primary },
+  resumeMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
+  resumeMeta: { fontSize: rf(11.5), color: Colors.textSecondary, backgroundColor: Colors.surface, paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
+  resumeEntry: { paddingTop: rs(2) },
+  resumeEntryBorder: { borderTopWidth: 1, borderTopColor: Colors.divider, marginTop: rs(12), paddingTop: rs(12) },
+  resumeEntryTitle: { fontSize: rf(14), fontWeight: '800', color: Colors.textPrimary },
+  resumeEntryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
+  resumeEntryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
+  resumeEntryText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(7) },
+  resumeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
+  resumeChip: { backgroundColor: Colors.surface, paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
+  resumeChipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontWeight: '600' },
   emptyBio: { backgroundColor: Colors.surface },
   emptyBioText: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20), paddingVertical: rs(8) },
   // Reviews

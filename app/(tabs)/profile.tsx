@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { ScoreCard } from '@/components/feature/ScoreCard';
 import { Colors, Radius, Shadow } from '@/constants/theme';
@@ -25,7 +26,9 @@ import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
 import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
-import { WorkType } from '@/constants/types';
+import { ResumeProfile, WorkType } from '@/constants/types';
+import { inferWorkTypes } from '@/lib/resumeParser';
+import { extractResumePdf } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
@@ -39,6 +42,7 @@ const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
 
 type EditSection = 'personal' | 'metro' | 'worktypes' | 'company' | 'bio' | null;
+type ProfileTab = 'resume' | 'personal' | 'files' | 'reviews';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 // Плавное раскрытие секций. На старой архитектуре Android LayoutAnimation
@@ -258,6 +262,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
   const [editSection, setEditSection] = useState<EditSection>(null);
+  const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
+  const [importingResume, setImportingResume] = useState(false);
   // Раскрыта всегда не больше одной секции: экран остаётся коротким
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [showRatings, setShowRatings] = useState(false);
@@ -457,6 +463,36 @@ export default function ProfileScreen() {
     setShowPhotoSource(true);
   };
 
+  const importResume = async () => {
+    if (importingResume) return;
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled || !picked.assets[0]) return;
+      setImportingResume(true);
+      const { resume, identity } = await extractResumePdf(picked.assets[0]);
+      const inferredWorkTypes = inferWorkTypes(resume);
+      await updateUser({
+        ...currentUser,
+        resume,
+        firstName: identity.firstName ?? currentUser.firstName,
+        lastName: identity.lastName ?? currentUser.lastName,
+        age: identity.age ?? currentUser.age,
+        workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : currentUser.workTypes,
+      });
+      showToast('Резюме распознано и сохранено', 'success');
+      setProfileTab('resume');
+    } catch (error) {
+      console.warn('[Profile] resume import failed', error);
+      showToast(error instanceof Error ? error.message : 'Не удалось обработать резюме', 'error');
+    } finally {
+      setImportingResume(false);
+    }
+  };
+
   const handleLogout = async () => {
     setShowConfirmLogout(false);
     try {
@@ -558,13 +594,26 @@ export default function ProfileScreen() {
           {/* Без стрелки: редактирование — через «Личные данные» ниже */}
         </View>
 
+        {currentUser.role === 'worker' ? (
+          <ProfileTabs value={profileTab} onChange={setProfileTab} />
+        ) : null}
+
+        {currentUser.role === 'worker' && profileTab === 'resume' ? (
+          <ResumeTab
+            resume={currentUser.resume}
+            importing={importingResume}
+            onImport={() => { void importResume(); }}
+          />
+        ) : null}
+
         {/* Рейтинг сразу под шапкой: человеку важно видеть, что у него
             накопилось, а не искать это в конце длинной анкеты. У компании
             он тоже есть — и по нему работники решают, идти ли к ней. */}
-        <View style={{ marginBottom: rs(12) }}>
+        {(currentUser.role === 'employer' || profileTab === 'reviews') ? <View style={{ marginBottom: rs(12) }}>
           <ScoreCard user={currentUser} own />
-        </View>
+        </View> : null}
 
+        {(currentUser.role === 'employer' || profileTab === 'personal') ? <>
         <SectionCard
           iconName="person"
           iconBg={Colors.primary}
@@ -575,9 +624,11 @@ export default function ProfileScreen() {
           onEdit={() => openEdit('personal')}
           rows={[
             { label: 'Телефон', value: currentUser.phone },
+            ...(currentUser.resume?.email ? [{ label: 'Email', value: currentUser.resume.email }] : []),
             { label: 'Фамилия', value: currentUser.lastName },
             { label: 'Имя', value: currentUser.firstName },
             { label: 'Возраст', value: currentUser.age ? `${currentUser.age}` : 'Не указан' },
+            ...(currentUser.resume?.city ? [{ label: 'Город', value: currentUser.resume.city }] : []),
           ]}
         />
 
@@ -644,8 +695,28 @@ export default function ProfileScreen() {
             />
           </>
         )}
+        </> : null}
 
         {/* Документы */}
+        {(currentUser.role === 'employer' || profileTab === 'files') ? <>
+        {currentUser.role === 'worker' ? (
+          <View style={sS.card}>
+            <TouchableOpacity style={sS.header} onPress={() => { void importResume(); }} disabled={importingResume} activeOpacity={0.7}>
+              <View style={[sS.iconSquare, { backgroundColor: Colors.primary }]}>
+                {importingResume
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <Ionicons name="document-attach" size={18} color="#FFFFFF" />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={sS.title}>{currentUser.resume ? 'Загруженное резюме' : 'Добавить резюме'}</Text>
+                <Text style={sS.summary} numberOfLines={1}>
+                  {currentUser.resume?.sourceFileName ?? 'PDF до 10 МБ'}
+                </Text>
+              </View>
+              <Ionicons name={currentUser.resume ? 'refresh' : 'add-circle'} size={19} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <SectionCard
           iconName="document-text"
           iconBg="#6B7280"
@@ -754,6 +825,7 @@ export default function ProfileScreen() {
             <Ionicons name="refresh" size={16} color={Colors.textMuted} />
           </TouchableOpacity>
         </SectionCard>
+        </> : null}
 
         {/* Поддержка — не в свёрнутой карточке, а отдельной строкой.
             Сначала я положил её внутрь «Аккаунта»: человек открыл профиль и
@@ -1115,6 +1187,144 @@ export default function ProfileScreen() {
 
 // Свёрнутая секция — одна строка: иконка, название и короткая сводка.
 // Раскрывается по нажатию; одновременно открыта только одна (см. openSection).
+function ProfileTabs({ value, onChange }: { value: ProfileTab; onChange: (tab: ProfileTab) => void }) {
+  const tabs: { key: ProfileTab; label: string; icon: IoniconName }[] = [
+    { key: 'resume', label: 'Резюме', icon: 'document-text-outline' },
+    { key: 'personal', label: 'Личные', icon: 'person-outline' },
+    { key: 'files', label: 'Файлы', icon: 'folder-outline' },
+    { key: 'reviews', label: 'Отзывы', icon: 'chatbox-ellipses-outline' },
+  ];
+  return (
+    <View style={resumeS.tabs}>
+      {tabs.map(tab => {
+        const active = value === tab.key;
+        return (
+          <TouchableOpacity
+            key={tab.key}
+            style={[resumeS.tab, active && resumeS.tabActive]}
+            onPress={() => onChange(tab.key)}
+            activeOpacity={0.75}
+          >
+            <Ionicons name={tab.icon} size={rf(17)} color={active ? Colors.primary : Colors.textMuted} />
+            <Text style={[resumeS.tabText, active && resumeS.tabTextActive]}>{tab.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function ResumeCard({ icon, title, children }: { icon: IoniconName; title: string; children: React.ReactNode }) {
+  return (
+    <View style={resumeS.card}>
+      <View style={resumeS.cardHeader}>
+        <View style={resumeS.cardIcon}><Ionicons name={icon} size={rf(17)} color={Colors.primary} /></View>
+        <Text style={resumeS.cardTitle}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function ResumeTab({ resume, importing, onImport }: {
+  resume?: ResumeProfile;
+  importing: boolean;
+  onImport: () => void;
+}) {
+  return (
+    <View style={resumeS.content}>
+      <TouchableOpacity style={resumeS.importCard} onPress={onImport} disabled={importing} activeOpacity={0.8}>
+        <View style={resumeS.importIcon}>
+          {importing
+            ? <ActivityIndicator size="small" color="#FFFFFF" />
+            : <Ionicons name="cloud-upload-outline" size={rf(21)} color="#FFFFFF" />}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={resumeS.importTitle}>{resume ? 'Обновить резюме' : 'Загрузить резюме'}</Text>
+          <Text style={resumeS.importSub}>
+            {importing ? 'Распознаём разделы…' : 'PDF до 10 МБ · данные заполнятся автоматически'}
+          </Text>
+        </View>
+        <Ionicons name="add-circle" size={rf(22)} color={Colors.primary} />
+      </TouchableOpacity>
+
+      {!resume ? (
+        <View style={resumeS.empty}>
+          <Ionicons name="document-text-outline" size={rf(34)} color={Colors.textMuted} />
+          <Text style={resumeS.emptyTitle}>Резюме пока не заполнено</Text>
+          <Text style={resumeS.emptyText}>Загрузите PDF — опыт, образование и навыки появятся в отдельных разделах.</Text>
+        </View>
+      ) : (
+        <>
+          <View style={resumeS.headline}>
+            <Text style={resumeS.headlineTitle}>{resume.desiredPosition ?? 'Желаемая должность не указана'}</Text>
+            {resume.salary ? <Text style={resumeS.salary}>{resume.salary}</Text> : null}
+            <View style={resumeS.metaRow}>
+              {resume.employmentType ? <Text style={resumeS.meta}>{resume.employmentType}</Text> : null}
+              {resume.workFormat ? <Text style={resumeS.meta}>{resume.workFormat}</Text> : null}
+              {resume.city ? <Text style={resumeS.meta}>{resume.city}</Text> : null}
+            </View>
+          </View>
+
+          {resume.experience.length > 0 ? (
+            <ResumeCard icon="briefcase-outline" title={`Опыт работы (${resume.experience.length})`}>
+              {resume.experience.map((item, index) => (
+                <View key={`${item.company}-${item.position}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
+                  <Text style={resumeS.entryTitle}>{item.position || 'Должность не указана'}</Text>
+                  <Text style={resumeS.entryCompany}>{item.company}</Text>
+                  <Text style={resumeS.entryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
+                  {item.description ? <Text style={resumeS.entryDescription} numberOfLines={6}>{item.description}</Text> : null}
+                </View>
+              ))}
+            </ResumeCard>
+          ) : null}
+
+          {resume.specializations.length > 0 ? (
+            <ResumeCard icon="compass-outline" title="Специализации">
+              <View style={resumeS.chips}>
+                {resume.specializations.map(item => <View key={item} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+              </View>
+            </ResumeCard>
+          ) : null}
+
+          {resume.skills.length > 0 ? (
+            <ResumeCard icon="sparkles-outline" title={`Навыки (${resume.skills.length})`}>
+              <View style={resumeS.chips}>
+                {resume.skills.map(item => <View key={item} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
+              </View>
+            </ResumeCard>
+          ) : null}
+
+          {resume.education.length > 0 ? (
+            <ResumeCard icon="school-outline" title="Образование">
+              {resume.education.map((item, index) => (
+                <View key={`${item.institution ?? item.level}-${index}`} style={resumeS.entry}>
+                  <Text style={resumeS.entryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
+                  {item.specialty ? <Text style={resumeS.entryCompany}>{item.specialty}</Text> : null}
+                  {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
+                </View>
+              ))}
+            </ResumeCard>
+          ) : null}
+
+          {resume.languages.length > 0 ? (
+            <ResumeCard icon="language-outline" title="Языки">
+              {resume.languages.map(item => (
+                <View key={item.name} style={resumeS.languageRow}>
+                  <Text style={resumeS.languageName}>{item.name}</Text>
+                  <Text style={resumeS.languageLevel}>{item.level}</Text>
+                </View>
+              ))}
+            </ResumeCard>
+          ) : null}
+
+          <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
+        </>
+      )}
+    </View>
+  );
+}
+
 function SectionCard({
   iconName, iconBg, title, summary, open, onToggle, onEdit,
   rows, chips, placeholder, children,
@@ -1185,6 +1395,44 @@ function SectionCard({
     </View>
   );
 }
+
+const resumeS = StyleSheet.create({
+  tabs: { flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: rs(15), paddingHorizontal: rs(4), ...Shadow.card },
+  tab: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: rs(3), paddingTop: rs(10), paddingBottom: rs(8), borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: Colors.primary },
+  tabText: { fontSize: rf(10.5), color: Colors.textMuted, fontWeight: '600' },
+  tabTextActive: { color: Colors.primary, fontWeight: '800' },
+  content: { gap: rs(12) },
+  importCard: { flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14), borderRadius: rs(16), backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: '#FFD7C4' },
+  importIcon: { width: rs(42), height: rs(42), borderRadius: rs(13), backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  importTitle: { fontSize: rf(14.5), fontWeight: '800', color: Colors.textPrimary },
+  importSub: { fontSize: rf(11.5), lineHeight: rf(16), color: Colors.textMuted, marginTop: rs(2) },
+  empty: { alignItems: 'center', paddingHorizontal: rs(24), paddingVertical: rs(32), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
+  emptyTitle: { fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(10) },
+  emptyText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textMuted, textAlign: 'center', marginTop: rs(5) },
+  headline: { padding: rs(16), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
+  headlineTitle: { fontSize: rf(20), lineHeight: rf(25), fontWeight: '800', color: Colors.textPrimary },
+  salary: { fontSize: rf(15), fontWeight: '800', color: Colors.primary, marginTop: rs(7) },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7), marginTop: rs(10) },
+  meta: { fontSize: rf(11.5), color: Colors.textSecondary, backgroundColor: '#F2F3F5', paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
+  card: { padding: rs(16), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: rs(9), marginBottom: rs(10) },
+  cardIcon: { width: rs(32), height: rs(32), borderRadius: rs(10), alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryLight },
+  cardTitle: { flex: 1, fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary },
+  entry: { paddingTop: rs(3) },
+  entryBorder: { borderTopWidth: 1, borderTopColor: Colors.divider, marginTop: rs(13), paddingTop: rs(13) },
+  entryTitle: { fontSize: rf(14), fontWeight: '800', color: Colors.textPrimary },
+  entryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
+  entryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
+  entryDescription: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(8) },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
+  chip: { paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100), backgroundColor: '#F2F3F5' },
+  chipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontWeight: '600' },
+  languageRow: { flexDirection: 'row', justifyContent: 'space-between', gap: rs(12), paddingVertical: rs(9), borderTopWidth: 1, borderTopColor: Colors.divider },
+  languageName: { fontSize: rf(13.5), fontWeight: '700', color: Colors.textPrimary },
+  languageLevel: { flex: 1, fontSize: rf(12.5), color: Colors.textMuted, textAlign: 'right' },
+  importedAt: { fontSize: rf(10.5), color: Colors.textMuted, textAlign: 'center', paddingHorizontal: rs(12) },
+});
 
 const sS = StyleSheet.create({
   card: { backgroundColor: Colors.bg, borderRadius: rs(16), ...Shadow.card, overflow: 'hidden' },

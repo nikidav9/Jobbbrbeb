@@ -41,6 +41,20 @@ const worker = {
   company: null, created_at: iso(now), is_blocked: false, avatar_url: null,
   avg_rating: 4.9, rating_count: 12, password: '123456',
   bio: 'Работал на складах, есть опыт сборки и приёмки.', last_seen_at: iso(now),
+  resume_data: {
+    desiredPosition: 'Региональный менеджер', salary: '140 000 ₽ на руки',
+    specializations: ['Директор магазина, директор сети магазинов', 'Супервайзер'],
+    employmentType: 'полная занятость', workFormat: 'удалённо', city: 'Москва',
+    experience: [
+      { company: 'ООО «Яндекс Лавка»', position: 'Супервайзер', start: 'Август 2022', end: 'настоящее время', duration: '4 года 2 месяца', description: 'Организация работы склада, управление персоналом и запасами.' },
+      { company: 'ООО «Яндекс Лавка»', position: 'Директор склада', start: 'Сентябрь 2021', end: 'Июль 2022', duration: '11 месяцев' },
+    ],
+    education: [{ level: 'Среднее образование' }],
+    skills: ['MS Excel', 'Управление командой', 'Управление персоналом', 'WMS'],
+    languages: [{ name: 'Русский', level: 'Родной' }, { name: 'Английский', level: 'A2 — Элементарный' }],
+    sourceFileName: 'resume.pdf', importedAt: iso(now),
+  },
+  resume_file_name: 'resume.pdf', resume_imported_at: iso(now),
 };
 const employer = {
   id: 'small-e1', role: 'employer', phone: '79990000002',
@@ -95,6 +109,11 @@ function toAppUser(r) {
     createdAt: r.created_at, isBlocked: false, avatarUrl: undefined,
     avgRating: r.avg_rating, ratingCount: r.rating_count,
     password: r.password, bio: r.bio, lastSeenAt: r.last_seen_at,
+    resume: r.resume_data ? {
+      ...r.resume_data,
+      sourceFileName: r.resume_file_name ?? r.resume_data.sourceFileName,
+      importedAt: r.resume_imported_at ?? r.resume_data.importedAt,
+    } : undefined,
   };
 }
 
@@ -236,7 +255,7 @@ try {
       if (screen.who) {
         await page.addInitScript(user => {
           localStorage.setItem('jm_currentUser', JSON.stringify(user));
-          localStorage.setItem(`jm_onboarding_done_${user.id}`, '1');
+          localStorage.setItem(`jm_onboarding_v3_${user.id}`, JSON.stringify({ status: 'done', step: 999 }));
           localStorage.setItem('jm_notif_prompt_choice', 'enabled');
         }, toAppUser(screen.who));
       }
