@@ -19,7 +19,6 @@ import { useApp } from '@/hooks/useApp';
 import { normalizeCompany } from '@/services/storage';
 import { LavkaLogo } from '@/components/ui/LavkaLogo';
 import { CompanyMark } from '@/components/ui/CompanyMark';
-import { VacancyDetailHead, DetailChip } from '@/components/feature/VacancyDetailHead';
 import { VacancyContacts } from '@/components/feature/VacancyContacts';
 import { agoRu } from '@/services/time';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -45,7 +44,7 @@ export default function PermVacancyDetailScreen() {
   const {
     currentUser, loading, users, permVacancies, permApplications,
     permSavedIds, optimisticAddPermSaved, optimisticRemovePermSaved,
-    refreshPermApplications, refreshPermSaved,
+    refreshPermApplications,
     showToast, responsivenessMap } = useApp();
 
   const [applying, setApplying] = useState(false);
@@ -60,6 +59,7 @@ export default function PermVacancyDetailScreen() {
   const [guestVacancyLoadFailed, setGuestVacancyLoadFailed] = useState(false);
   const [guestVacancyRetry, setGuestVacancyRetry] = useState(0);
   const [savingFavorite, setSavingFavorite] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
 
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
@@ -127,15 +127,14 @@ export default function PermVacancyDetailScreen() {
   const isApproved = myApp?.status === 'approved' || myApp?.status === 'hired';
   const isSaved = vacancy ? permSavedIds.includes(vacancy.id) : false;
 
-  const headChips: DetailChip[] = useMemo(() => {
+  const summaryFacts = useMemo(() => {
     if (!vacancy) return [];
-    const list: DetailChip[] = [];
+    const list: { label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [];
     if (vacancy.salary > 0) {
-      list.push({ label: `${vacancy.salary.toLocaleString('ru-RU')} ₽/мес`, variant: 'salary', icon: 'wallet-outline' });
-      list.push({ label: 'На руки', icon: 'checkmark-circle-outline' });
+      list.push({ label: `${vacancy.salary.toLocaleString('ru-RU')} ₽/мес · на руки`, icon: 'wallet-outline' });
     }
     if (vacancy.schedule) list.push({ label: vacancy.schedule, icon: 'calendar-outline' });
-    if (vacancy.metroStation) list.push({ label: vacancy.metroStation, icon: 'subway-outline' });
+    if (vacancy.metroStation) list.push({ label: `м. ${vacancy.metroStation}`, icon: 'subway-outline' });
     return list;
   }, [vacancy]);
 
@@ -341,14 +340,14 @@ export default function PermVacancyDetailScreen() {
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.backTxt}>← Назад</Text>
+        <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }} />
         <TouchableOpacity
           accessibilityLabel="Поделиться вакансией"
           onPress={() => { void shareVacancy(); }}
-          style={styles.saveHeaderBtn}
+          style={styles.headerIconBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="share-outline" size={23} color={Colors.textMuted} />
@@ -356,7 +355,7 @@ export default function PermVacancyDetailScreen() {
         {currentUser?.role === 'worker' ? (
           <TouchableOpacity
             onPress={toggleSave}
-            style={[styles.saveHeaderBtn, savingFavorite && { opacity: 0.5 }]}
+            style={[styles.headerIconBtn, savingFavorite && { opacity: 0.5 }]}
             disabled={savingFavorite}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
@@ -379,26 +378,38 @@ export default function PermVacancyDetailScreen() {
           </View>
         ) : null}
 
-        {/* Шапка общая со сменами и партнёрскими: кто, когда, что и на каких
-            условиях. Раньше здесь были заголовок с подписью и две карточки
-            «Зарплата/График» — свой макет, не совпадавший с остальными. */}
-        <VacancyDetailHead
-          logo={<CompanyMark company={employerDisplayName} size={34} />}
-          company={employerDisplayName}
-          postedAgo={agoRu(vacancy.createdAt)}
-          title={vacancy.title}
-          chips={headChips}
-        />
+        <View style={styles.hero}>
+          <View style={styles.companyRow}>
+            <CompanyMark company={employerDisplayName} size={42} />
+            <View style={styles.companyCopy}>
+              <Text style={styles.companyName}>{employerDisplayName}</Text>
+              <Text style={styles.postedAgo}>{agoRu(vacancy.createdAt)}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.vacancyTitle}>{vacancy.title}</Text>
+
+          {summaryFacts.length ? (
+            <View style={styles.factsGrid}>
+              {summaryFacts.map(fact => (
+                <View style={styles.fact} key={`${fact.icon}-${fact.label}`}>
+                  <Ionicons name={fact.icon} size={17} color={Colors.textPrimary} />
+                  <Text style={styles.factText}>{fact.label}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.divider} />
 
         {/* Location */}
         {(vacancy.metroStation || vacancy.address) ? (
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-            <Ionicons name="location-outline" size={16} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>Расположение</Text>
-          </View>
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Расположение</Text>
             {vacancy.metroStation ? (
-              <View style={styles.locationRow}>
+              <View style={styles.infoRow}>
                 {metroLine ? (
                   <View style={[styles.metroDot, { backgroundColor: metroLine.color }]} />
                 ) : (
@@ -413,7 +424,7 @@ export default function PermVacancyDetailScreen() {
               </View>
             ) : null}
             {vacancy.address ? (
-              <View style={styles.locationRow}>
+              <View style={styles.infoRow}>
                 <Ionicons name="location-outline" size={16} color={Colors.textMuted} style={{ marginTop: 1 }} />
                 <Text style={[styles.locationValue, { flex: 1 }]}>{vacancy.address}</Text>
               </View>
@@ -435,18 +446,32 @@ export default function PermVacancyDetailScreen() {
                 <Text style={styles.mapBtnTxt}>Смотреть на карте</Text>
               </TouchableOpacity>
             ) : null}
-          </View>
+            </View>
+            <View style={styles.divider} />
+          </>
         ) : null}
 
         {/* Description */}
         {vacancy.description ? (
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="document-text-outline" size={16} color={Colors.textPrimary} />
+          <>
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>Описание вакансии</Text>
+              <Text style={styles.descText} numberOfLines={descriptionExpanded ? undefined : 8}>
+                {vacancy.description}
+              </Text>
+              {vacancy.description.length > 420 ? (
+                <TouchableOpacity
+                  style={styles.readMoreBtn}
+                  onPress={() => setDescriptionExpanded(value => !value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.readMoreText}>{descriptionExpanded ? 'Свернуть' : 'Читать далее'}</Text>
+                  <Ionicons name={descriptionExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textPrimary} />
+                </TouchableOpacity>
+              ) : null}
             </View>
-            <Text style={styles.descText}>{vacancy.description}</Text>
-          </View>
+            <View style={styles.divider} />
+          </>
         ) : null}
 
         {/* Контакты. У своей вакансии внешней ссылки нет, а телефон
@@ -469,10 +494,7 @@ export default function PermVacancyDetailScreen() {
 
         {/* Employer info */}
         <View style={styles.section}>
-          <View style={styles.sectionTitleRow}>
-            <Ionicons name="business-outline" size={16} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>Работодатель</Text>
-          </View>
+          <Text style={styles.sectionTitle}>Работодатель</Text>
           <View style={styles.employerCard}>
             {/* Фото директора, если он его добавил: логотип компании одинаков у
                 всех, а человек за вакансией у каждой свой. */}
@@ -544,46 +566,57 @@ export default function PermVacancyDetailScreen() {
           )}
         </View>
 
-        {/* Spacer for bottom buttons */}
-        <View style={{ height: 120 }} />
+        <View style={{ height: currentUser?.role === 'worker' ? 170 : 110 }} />
       </ScrollView>
 
       {/* Bottom action bar — worker only */}
       {currentUser?.role === 'worker' ? (
         <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={[styles.saveBtn, isSaved && styles.saveBtnActive]}
-            onPress={toggleSave}
-            activeOpacity={0.8}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name={isSaved ? 'heart' : 'heart-outline'} size={16} color={isSaved ? Colors.red : Colors.textSecondary} />
-              <Text style={[styles.saveBtnTxt, isSaved && { color: Colors.red }]}>
-                {isSaved ? 'Сохранено' : 'Сохранить'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.applyBtn,
-              isApplied && styles.applyBtnDone,
-              applying && { opacity: 0.6 },
-            ]}
-            onPress={applyTo}
-            disabled={isApplied || applying}
-            activeOpacity={0.8}
-          >
-            {applying ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : isApplied ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="checkmark" size={16} color={Colors.green} />
-                <Text style={[styles.applyBtnTxt, { color: Colors.green }]}>Отклик отправлен</Text>
-              </View>
-            ) : (
-              <Text style={styles.applyBtnTxt}>Откликнуться</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              accessibilityLabel={isSaved ? 'Удалить из избранного' : 'Добавить в избранное'}
+              style={[styles.saveBtn, isSaved && styles.saveBtnActive]}
+              onPress={toggleSave}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={isSaved ? 'heart' : 'heart-outline'} size={22} color={isSaved ? Colors.primary : Colors.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.applyBtn,
+                isApplied && styles.applyBtnDone,
+                applying && { opacity: 0.6 },
+              ]}
+              onPress={applyTo}
+              disabled={isApplied || applying}
+              activeOpacity={0.8}
+            >
+              {applying ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : isApplied ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="checkmark" size={16} color={Colors.green} />
+                  <Text style={[styles.applyBtnTxt, { color: Colors.green }]}>Отклик отправлен</Text>
+                </View>
+              ) : (
+                <Text style={styles.applyBtnTxt}>Откликнуться</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          <View style={styles.detailNav}>
+            <TouchableOpacity style={styles.detailNavItem} onPress={() => router.replace('/(tabs)/feed')}>
+              <Ionicons name="briefcase" size={20} color={Colors.primary} />
+              <Text style={[styles.detailNavText, styles.detailNavTextActive]}>Вакансии</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.detailNavItem} onPress={() => router.replace('/(tabs)/matches')}>
+              <Ionicons name="document-text-outline" size={20} color={Colors.textMuted} />
+              <Text style={styles.detailNavText}>Отклики</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.detailNavItem} onPress={() => router.replace('/(tabs)/profile')}>
+              <Ionicons name="person-outline" size={20} color={Colors.textMuted} />
+              <Text style={styles.detailNavText}>Профиль</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 
@@ -624,12 +657,13 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: rs(16), paddingVertical: rs(14),
-    borderBottomWidth: 1, borderBottomColor: Colors.divider,
+    minHeight: rs(56), paddingHorizontal: rs(14), paddingVertical: rs(8), gap: rs(8),
   },
   backTxt: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500' },
-  saveHeaderBtn: { padding: rs(4) },
-  saveHeaderIcon: { fontSize: rf(24) },
+  headerIconBtn: {
+    width: rs(40), height: rs(40), borderRadius: rs(20),
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface,
+  },
 
   openAppBanner: {
     backgroundColor: Colors.primary,
@@ -639,35 +673,48 @@ const styles = StyleSheet.create({
   },
   openAppBannerTxt: { color: '#fff', fontSize: rf(15), fontWeight: '600' },
 
-  body: { padding: rs(20), gap: rs(16) },
+  body: { paddingHorizontal: rs(22), paddingTop: rs(8), gap: rs(22) },
 
   statusBadge: { borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), alignSelf: 'flex-start' },
   statusTxt: { fontSize: rf(13), fontWeight: '700' },
 
-
-
-  section: { gap: rs(10) },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
-  sectionTitle: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-
-  locationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(10), backgroundColor: Colors.surface, borderRadius: rs(12), padding: rs(12) },
-  mapBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
-    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(12), paddingVertical: rs(12),
+  hero: { gap: rs(16) },
+  companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
+  companyCopy: { flex: 1, gap: rs(2) },
+  companyName: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
+  postedAgo: { fontSize: rf(12), color: Colors.textMuted },
+  vacancyTitle: {
+    fontSize: rf(27), lineHeight: rf(33), fontWeight: '800',
+    color: Colors.textPrimary, letterSpacing: -0.5,
   },
-  mapBtnTxt: { fontSize: rf(14), fontWeight: '700', color: Colors.primary },
-  locationIcon: { fontSize: rf(16), marginTop: rs(1) },
+  factsGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: rs(12), columnGap: rs(18) },
+  fact: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: '42%' },
+  factText: { flexShrink: 1, fontSize: rf(13), lineHeight: rf(18), fontWeight: '600', color: Colors.textSecondary },
+  divider: { height: 1, backgroundColor: Colors.divider },
+
+  section: { gap: rs(12) },
+  sectionTitle: { fontSize: rf(19), lineHeight: rf(24), fontWeight: '800', color: Colors.textPrimary },
+
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(10), paddingVertical: rs(2) },
+  mapBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7),
+    alignSelf: 'flex-start', borderWidth: 1, borderColor: Colors.primary,
+    borderRadius: rs(100), paddingHorizontal: rs(16), paddingVertical: rs(9),
+  },
+  mapBtnTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
   locationValue: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '500', lineHeight: rf(20) },
   metroDot: { width: rs(14), height: rs(14), borderRadius: rs(7), marginTop: rs(3) },
   metroLineName: { fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(2) },
 
   descText: {
-    fontSize: rf(14), color: Colors.textSecondary, lineHeight: rf(22),
+    fontSize: rf(15), color: Colors.textSecondary, lineHeight: rf(23),
   },
+  readMoreBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: rs(4) },
+  readMoreText: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
 
   employerCard: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    backgroundColor: Colors.surface, borderRadius: rs(14), padding: rs(14),
+    borderWidth: 1, borderColor: Colors.divider, borderRadius: rs(16), padding: rs(14),
   },
   employerAvatar: { width: rs(48), height: rs(48), borderRadius: rs(24) },
   employerAvatarTxt: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
@@ -705,21 +752,30 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
 
   bottomBar: {
-    flexDirection: 'row', gap: rs(12), padding: rs(16), paddingBottom: rs(24),
+    gap: rs(11), paddingHorizontal: rs(16), paddingTop: rs(12), paddingBottom: rs(8),
     borderTopWidth: 1, borderTopColor: Colors.divider, backgroundColor: Colors.bg,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.05, shadowRadius: 10, elevation: 8,
   },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   saveBtn: {
-    flex: 1, borderWidth: 1.5, borderColor: Colors.inputBorder,
-    borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center',
+    width: rs(52), height: rs(52), borderWidth: 1, borderColor: Colors.inputBorder,
+    borderRadius: rs(26), alignItems: 'center', justifyContent: 'center',
   },
-  saveBtnActive: { borderColor: Colors.red, backgroundColor: '#FFF5F5' },
-  saveBtnTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
+  saveBtnActive: { borderColor: Colors.primaryBorder, backgroundColor: Colors.primaryLight },
   applyBtn: {
-    flex: 2, backgroundColor: '#7C3AED',
-    borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center',
+    flex: 1, minHeight: rs(52), backgroundColor: Colors.primary,
+    borderRadius: rs(26), alignItems: 'center', justifyContent: 'center',
   },
   applyBtnDone: { backgroundColor: '#D1FAE5' },
   applyBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
+  detailNav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+    paddingTop: rs(2), paddingBottom: rs(2),
+  },
+  detailNavItem: { flex: 1, alignItems: 'center', gap: rs(2), paddingVertical: rs(3) },
+  detailNavText: { fontSize: rf(10), fontWeight: '600', color: Colors.textMuted },
+  detailNavTextActive: { color: Colors.primary },
 
   guestBar: {
     flexDirection: 'row', gap: rs(10),
