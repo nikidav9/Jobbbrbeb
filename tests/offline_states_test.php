@@ -250,6 +250,29 @@ check('профиль: кнопка помощи в шапке открывае�
     str_contains($profileForFooter, "router.push('/support')") &&
     str_contains($profileForFooter, 'accessibilityLabel="Помощь"'));
 
+$brandLogo = (string)file_get_contents(__DIR__ . '/../components/ui/BrandLogo.tsx');
+$tabHeader = (string)file_get_contents(__DIR__ . '/../components/ui/TabHeader.tsx');
+$matchesHeader = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
+$feedHeader = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
+check('шапка: один и тот же JT-логотип используется во всех основных вкладках',
+    str_contains($brandLogo, "header-jt-logo.png") &&
+    str_contains($tabHeader, '<BrandLogo />') &&
+    str_contains($matchesHeader, '<BrandLogo />') &&
+    str_contains($feedHeader, '<BrandLogo />'));
+check('шапка: размер логотипа задаётся ровно в одном компоненте',
+    str_contains($brandLogo, 'BRAND_LOGO_WIDTH = 44') &&
+    str_contains($brandLogo, 'BRAND_LOGO_HEIGHT = 30') &&
+    !str_contains($matchesHeader, 'logoMarkJ') &&
+    !str_contains($matchesHeader, 'logoMarkT'));
+check('шапка: вакансии и отклики используют общие поля и высоту контролов',
+    str_contains($feedHeader, 'APP_HEADER_HORIZONTAL') &&
+    str_contains($feedHeader, 'APP_HEADER_CONTROL') &&
+    str_contains($matchesHeader, 'APP_HEADER_HORIZONTAL') &&
+    str_contains($matchesHeader, 'APP_HEADER_CONTROL'));
+check('шапка: профиль использует ту же высоту кнопок',
+    str_contains($profileForFooter, 'APP_HEADER_CONTROL') &&
+    str_contains($profileForFooter, 'APP_HEADER_GAP'));
+
 // ── Рассылка вакансии: вторичный сбой не выдаётся за доставку ────────────────
 $notifSvc = (string)file_get_contents(__DIR__ . '/../services/notifications.ts');
 $createPerm = (string)file_get_contents(__DIR__ . '/../app/create-perm-vacancy.tsx');
