@@ -1045,31 +1045,24 @@ export default function ProfileScreen() {
       });
       if (picked.canceled || !picked.assets[0]) return;
       setImportingResume(true);
-      const { resume, identity } = await extractResumePdf(picked.assets[0]);
-      const inferredWorkTypes = inferWorkTypes(resume);
-      const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
-      const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
-      await updateUser({
-        ...currentUser,
-        resume,
-        firstName: identity.firstName ?? currentUser.firstName,
-        lastName: identity.lastName ?? currentUser.lastName,
-        age: identity.age ?? currentUser.age,
-        bio: resume.summary?.trim() || currentUser.bio,
-        workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : currentUser.workTypes,
-        personalDetails: {
-          ...(currentUser.personalDetails ?? {}),
-          ...(identity.middleName ? { middleName: identity.middleName } : {}),
-          ...(identity.birthday ? { birthday: identity.birthday } : {}),
-          ...(resume.email ? { contactEmail: resume.email } : {}),
-          ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
-          ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
-          ...(resume.city ? { location: resume.city } : {}),
-          ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
-          ...(importedRelocation ? { relocation: importedRelocation } : {}),
-        },
-      });
-      showToast('Резюме распознано и сохранено', 'success');
+
+      const asset = picked.assets[0];
+      const { resume, identity, bytes } = await extractResumePdf(asset);
+      // Сначала сохраняем исходный PDF в приватный сейф. Сервер делает его
+      // активным и синхронизирует структурированное резюме с jm_users.
+      const saved = await dbSaveResumeFile(asset.name || resume.sourceFileName || 'resume.pdf', bytes, resume);
+
+      // Локальный контекст обновляем теми же данными, чтобы вкладки
+      // «Резюме» и «Личные» поменялись сразу, без перезапуска приложения.
+      await updateUser(mergeResumeIntoUser(currentUser, saved.resume, identity));
+
+      try {
+        setResumeFiles(await dbGetResumeFiles());
+        setResumeFilesLoadFailed(false);
+      } catch {
+        // Само резюме уже сохранено; сбой обновления списка не отменяет импорт.
+      }
+      showToast('Резюме сохранено в сейф и выбрано', 'success');
       setProfileTab('resume');
     } catch (error) {
       console.warn('[Profile] resume import failed', error);
@@ -1077,6 +1070,74 @@ export default function ProfileScreen() {
     } finally {
       setImportingResume(false);
     }
+  };
+
+  const openResumePdf = async (item: ResumeVaultItem) => {
+    if (resumeFileBusyId) return;
+    setResumeFileBusyId(item.id);
+    try {
+      const url = await dbSignResumeFile(item.id);
+      await WebBrowser.openBrowserAsync(url);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Не удалось открыть PDF', 'error');
+    } finally {
+      setResumeFileBusyId(null);
+    }
+  };
+
+  const selectResumeFromVault = async (item: ResumeVaultItem) => {
+    if (item.selected || resumeFileBusyId) return;
+    setResumeFileBusyId(item.id);
+    try {
+      const selected = await dbSelectResumeFile(item.id);
+      await updateUser(mergeResumeIntoUser(currentUser, selected.resume));
+      setResumeFiles(prev => prev.map(file => ({
+        ...file,
+        selected: file.id === selected.id,
+        ...(file.id === selected.id ? { resume: selected.resume, importedAt: selected.importedAt } : {}),
+      })));
+      showToast('Резюме выбрано — профиль обновлён', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Не удалось выбрать резюме', 'error');
+    } finally {
+      setResumeFileBusyId(null);
+    }
+  };
+
+  const deleteResumeFromVault = (item: ResumeVaultItem) => {
+    if (resumeFileBusyId) return;
+    Alert.alert(
+      'Удалить резюме?',
+      item.selected
+        ? 'Это активное резюме. После удаления профиль переключится на следующее сохранённое резюме.'
+        : 'PDF будет удалён из сейфа без возможности восстановления.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            setResumeFileBusyId(item.id);
+            try {
+              const nextActive = await dbDeleteResumeFile(item.id);
+              if (item.selected) {
+                if (nextActive) {
+                  await updateUser(mergeResumeIntoUser(currentUser, nextActive.resume));
+                } else {
+                  await updateUser({ ...currentUser, resume: undefined });
+                }
+              }
+              setResumeFiles(await dbGetResumeFiles());
+              showToast('Резюме удалено', 'success');
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : 'Не удалось удалить резюме', 'error');
+            } finally {
+              setResumeFileBusyId(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleLogout = async () => {
