@@ -3,10 +3,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { NotifBell } from '@/components/ui/NotifBell';
 import {
-  APP_HEADER_BOTTOM,
   APP_HEADER_GAP,
-  APP_HEADER_HORIZONTAL,
-  APP_HEADER_TOP,
+  AppHeaderRow,
   BrandLogo,
 } from '@/components/ui/BrandLogo';
 
@@ -25,7 +23,7 @@ export function TabHeader({
   primaryAction?: React.ReactNode;
 }) {
   return (
-    <View style={h.header}>
+    <AppHeaderRow borderBottom backgroundColor={Colors.bg}>
       <View style={h.left}>
         {left ?? (title ? (
           <Text style={h.title} numberOfLines={1}>{title}</Text>
@@ -40,7 +38,7 @@ export function TabHeader({
           <NotifBell />
         </View>
       )}
-    </View>
+    </AppHeaderRow>
   );
 }
 
@@ -48,14 +46,6 @@ export function TabHeader({
 export const HEADER_ICON = 22;
 
 const h = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(APP_HEADER_HORIZONTAL),
-    paddingTop: rs(APP_HEADER_TOP),
-    paddingBottom: rs(APP_HEADER_BOTTOM),
-    borderBottomWidth: 1, borderBottomColor: Colors.divider,
-    backgroundColor: Colors.bg,
-  },
   left: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP), flexShrink: 1 },
   right: { flexDirection: 'row', alignItems: 'center', gap: rs(APP_HEADER_GAP) },
   title: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary },
