@@ -37,11 +37,16 @@ type Msg = {
   id: string
   user_id: string
   direction: string
+  sender: 'user' | 'assistant' | 'operator' | 'system' | null
   text: string
   created_at: string
 }
 
-type Thread = { user_id: string; closed_at: string | null }
+type Thread = {
+  user_id: string
+  closed_at: string | null
+  operator_requested_at: string | null
+}
 
 type User = {
   id: string
@@ -90,31 +95,43 @@ export default function SupportPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('jm_support_messages')
-      .select('id,user_id,direction,text,created_at')
-      .order('created_at', { ascending: false })
-      .limit(1000)
-    const rows = (data ?? []) as Msg[]
-    setMsgs(rows)
 
-    // Таблицы отметок может ещё не быть (миграция едет отдельно) — тогда
-    // просто считаем все обращения открытыми, страница остаётся рабочей.
+    // В операторскую очередь попадают только диалоги, где человек явно нажал
+    // «Позвать оператора». Обычные разговоры с помощником дашборд не засоряют.
     const { data: th } = await supabase
       .from('jm_support_threads')
-      .select('user_id,closed_at')
+      .select('user_id,closed_at,operator_requested_at')
+      .not('operator_requested_at', 'is', null)
+      .order('operator_requested_at', { ascending: false })
+
+    const escalated = ((th ?? []) as Thread[])
+    const ids = escalated.map(t => t.user_id)
     const cl: Record<string, string | null> = {}
-    for (const t of ((th ?? []) as Thread[])) cl[t.user_id] = t.closed_at
+    for (const t of escalated) cl[t.user_id] = t.closed_at
     setClosedAt(cl)
 
-    const ids = Array.from(new Set(rows.map(r => r.user_id)))
+    let rows: Msg[] = []
+    if (ids.length) {
+      const { data } = await supabase
+        .from('jm_support_messages')
+        .select('id,user_id,direction,sender,text,created_at')
+        .in('user_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      rows = (data ?? []) as Msg[]
+    }
+    setMsgs(rows)
+
     if (ids.length) {
       const { data: us } = await supabase
         .from('jm_users').select('id,first_name,last_name,role,phone,metro_station').in('id', ids)
       const map: Record<string, User> = {}
       for (const u of (us ?? []) as User[]) map[u.id] = u
       setUsers(map)
+    } else {
+      setUsers({})
     }
+
     setUpdated(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
     setLoading(false)
   }, [])
@@ -122,7 +139,7 @@ export default function SupportPage() {
   useEffect(() => { load() }, [load])
   // Обращение может прийти в любой момент — подтягиваем сами.
   useEffect(() => {
-    const t = setInterval(load, 30_000)
+    const t = setInterval(load, 5_000)
     return () => clearInterval(t)
   }, [load])
 
@@ -260,7 +277,7 @@ export default function SupportPage() {
 
   return (
     <div>
-      <PageHeader title="Поддержка" intervalSec={30} lastUpdated={updated} onRefresh={load} />
+      <PageHeader title="Поддержка" intervalSec={5} lastUpdated={updated} onRefresh={load} />
 
       <div className="page-content">
         <div className="g-4">
@@ -327,6 +344,11 @@ export default function SupportPage() {
                     </span>
                     <span style={{ flexShrink: 0, color: m.direction === 'out' ? 'var(--accent)' : 'var(--ink-3)' }}>
                       {m.direction === 'out' ? <IconSend size={13} /> : <IconUser size={13} />}
+                    </span>
+                    <span style={{ flexShrink: 0, width: 66, fontSize: 11.5, color: 'var(--ink-3)' }}>
+                      {m.sender === 'assistant' ? 'помощник'
+                        : m.sender === 'system' ? 'система'
+                        : m.direction === 'out' ? 'оператор' : 'человек'}
                     </span>
                     <span style={{
                       whiteSpace: 'pre-wrap', minWidth: 0,
