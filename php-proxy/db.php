@@ -635,7 +635,7 @@ define('USER_PUBLIC_COLS', implode(',', [
     'referral_worked',
 ]));
 
-define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,resume_email,resume_file_name,resume_imported_at');
+define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,resume_email,resume_file_name,resume_imported_at,personal_data');
 
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
 // Версии три — $2a$, $2b$, $2y$: приложение хеширует библиотекой bcryptjs
@@ -3185,7 +3185,7 @@ try {
             $editable = [
                 'first_name', 'last_name', 'age', 'metro_line_id', 'metro_station',
                 'work_types', 'company', 'bio', 'avatar_url', 'resume_data',
-                'resume_email', 'resume_file_name', 'resume_imported_at',
+                'resume_email', 'resume_file_name', 'resume_imported_at', 'personal_data',
             ];
             // При регистрации строки ещё нет: тогда же задаются и те поля,
             // которые потом менять нельзя. Роль и телефон — опознание
