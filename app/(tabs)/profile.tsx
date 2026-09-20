@@ -1877,6 +1877,97 @@ function SectionCard({
   );
 }
 
+const personalS = StyleSheet.create({
+  content: { gap: rs(20) },
+  section: { gap: rs(9) },
+  sectionTitle: {
+    fontSize: rf(17),
+    lineHeight: rf(22),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    paddingHorizontal: rs(2),
+  },
+  card: {
+    backgroundColor: Colors.bg,
+    borderRadius: rs(16),
+    overflow: 'hidden',
+    ...Shadow.card,
+  },
+  row: {
+    minHeight: rs(70),
+    paddingHorizontal: rs(16),
+    paddingVertical: rs(13),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(12),
+  },
+  rowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  rowLabel: {
+    fontSize: rf(14),
+    lineHeight: rf(18),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  rowValue: {
+    fontSize: rf(13),
+    lineHeight: rf(18),
+    color: Colors.textSecondary,
+    marginTop: rs(5),
+  },
+  rowValueEmpty: { color: Colors.textMuted },
+  addCard: {
+    minHeight: rs(116),
+    paddingHorizontal: rs(16),
+    paddingVertical: rs(17),
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#D8DCE3',
+    borderRadius: rs(16),
+    backgroundColor: '#F6F7F8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(13),
+  },
+  addIcon: {
+    width: rs(44),
+    height: rs(44),
+    borderRadius: rs(22),
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addTitle: {
+    fontSize: rf(14.5),
+    lineHeight: rf(19),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  addSubtitle: {
+    fontSize: rf(12.5),
+    lineHeight: rf(17),
+    color: Colors.textSecondary,
+    marginTop: rs(4),
+  },
+  plusCircle: {
+    width: rs(25),
+    height: rs(25),
+    borderRadius: rs(13),
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  privateHint: {
+    fontSize: rf(11.5),
+    lineHeight: rf(16),
+    color: Colors.textMuted,
+    paddingHorizontal: rs(4),
+  },
+});
+
 const resumeS = StyleSheet.create({
   tabs: { flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: rs(15), paddingHorizontal: rs(4), ...Shadow.card },
   tab: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: rs(3), paddingTop: rs(10), paddingBottom: rs(8), borderBottomWidth: 2, borderBottomColor: 'transparent' },
