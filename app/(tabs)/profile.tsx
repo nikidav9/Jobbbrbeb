@@ -273,9 +273,7 @@ const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   // Legacy-поле из старой US-анкеты. Сохраняем совместимость с данными,
   // но отдельный пункт «Обращение» в русской анкете больше не показываем.
   title: 'Форма обращения',
-  birthday: 'Дата рождения',
   contactEmail: 'Email',
-  emergencyContact: 'Экстренный контакт',
   links: 'Ссылки',
   citizenship: 'Гражданство',
   workAuthorization: 'Статус разрешения на работу',
@@ -283,21 +281,11 @@ const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   workAvailability: 'Когда вы готовы работать',
   relocation: 'Готовы к переезду?',
   driversLicense: 'Есть водительские права?',
-  veteranStatus: 'Есть статус ветерана?',
-  gender: 'Пол',
-  pronouns: 'Местоимения',
-  race: 'Этническая принадлежность',
-  sexualOrientation: 'Сексуальная ориентация',
-  professionalReferences: 'Профессиональные рекомендации',
-  militaryService: 'Военная служба',
-  securityClearance: 'Допуск',
   employmentRestrictions: 'Ограничения по трудоустройству',
 };
 
 const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
   'links',
-  'professionalReferences',
-  'militaryService',
   'employmentRestrictions',
 ]);
 
@@ -318,40 +306,16 @@ const PERSONAL_FIELD_CHOICES: Partial<Record<PersonalFieldKey, PersonalChoice[]>
     { label: 'Да', value: 'Да' },
     { label: 'Нет', value: 'Нет' },
   ],
-  veteranStatus: [
-    { label: 'Да', value: 'Да' },
-    { label: 'Нет', value: 'Нет' },
-    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
-  ],
-  gender: [
-    { label: 'Мужчина', value: 'Мужчина' },
-    { label: 'Женщина', value: 'Женщина' },
-    { label: 'Другое', value: 'Другое' },
-    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
-  ],
-  pronouns: [
-    { label: 'Он / его', value: 'Он / его' },
-    { label: 'Она / её', value: 'Она / её' },
-    { label: 'Они / их', value: 'Они / их' },
-    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
-  ],
 };
 
 const PERSONAL_FIELD_PLACEHOLDERS: Partial<Record<PersonalFieldKey, string>> = {
   middleName: 'Например, Сергеевич',
   preferredName: 'Например, Никита',
-  birthday: 'Например, 07.06.2000',
   contactEmail: 'name@example.com',
-  emergencyContact: 'Имя и телефон человека для связи',
   links: 'Ссылка на портфолио, сайт или профиль',
   citizenship: 'Например, Россия',
   location: 'Например, Москва',
   workAvailability: 'Например, полная занятость, будни',
-  race: 'Можно не указывать',
-  sexualOrientation: 'Можно не указывать',
-  professionalReferences: 'Имя, должность и контакт рекомендателя',
-  militaryService: 'Род войск, звание и период службы',
-  securityClearance: 'Укажите вид допуска, если он есть',
   employmentRestrictions: 'Опишите ограничение, если оно есть',
 };
 
@@ -360,8 +324,6 @@ function normalizePersonalChoiceValue(field: PersonalFieldKey, value?: string): 
   const v = value.trim().toLowerCase();
   if (['yes', 'true'].includes(v)) return 'Да';
   if (['no', 'false'].includes(v)) return 'Нет';
-  if (field === 'gender' && v === 'male') return 'Мужчина';
-  if (field === 'gender' && v === 'female') return 'Женщина';
   return value;
 }
 
@@ -451,7 +413,6 @@ function PersonalTab({
     || [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
   const relocationFromResume = resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
   const relocation = p.relocation || relocationFromResume;
-  const birthday = p.birthday || (user.age ? `${user.age} лет` : undefined);
 
   const privateValue = (key: PersonalFieldKey, fallback?: string) =>
     (p[key] as string | undefined) || fallback;
@@ -464,15 +425,14 @@ function PersonalTab({
           <PersonalRow label="Отчество" value={p.middleName} onPress={() => onEditField('middleName')} />
           <PersonalRow label="Фамилия" value={user.lastName} onPress={onEditCore} />
           <PersonalRow label="Как к вам обращаться" value={p.preferredName} onPress={() => onEditField('preferredName')} />
-          <PersonalRow label="Дата рождения / возраст" value={birthday} onPress={() => onEditField('birthday')} last />
+          <PersonalRow label="Возраст" value={user.age ? `${user.age} лет` : undefined} onPress={onEditCore} last />
         </View>
       </PersonalSection>
 
       <PersonalSection title="Контактная информация">
         <View style={personalS.card}>
           <PersonalRow label="Email" value={contactEmail} onPress={() => onEditField('contactEmail')} />
-          <PersonalRow label="Телефон" value={user.phone} onPress={onEditCore} />
-          <PersonalRow label="Экстренный контакт" value={p.emergencyContact} onPress={() => onEditField('emergencyContact')} last />
+          <PersonalRow label="Телефон" value={user.phone} onPress={onEditCore} last />
         </View>
       </PersonalSection>
 
@@ -550,63 +510,6 @@ function PersonalTab({
         )}
       </PersonalSection>
 
-      <PersonalSection title="Трудовая информация">
-        <View style={personalS.card}>
-          <PersonalRow label="Есть статус ветерана?" value={normalizePersonalChoiceValue('veteranStatus', privateValue('veteranStatus'))} onPress={() => onEditField('veteranStatus')} last />
-        </View>
-      </PersonalSection>
-
-      <PersonalSection title="Демографическая информация">
-        <View style={personalS.card}>
-          <PersonalRow label="Пол" value={normalizePersonalChoiceValue('gender', privateValue('gender'))} onPress={() => onEditField('gender')} last />
-        </View>
-      </PersonalSection>
-
-      <PersonalSection title="Профессиональные рекомендации">
-        {p.professionalReferences ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Рекомендации" value={p.professionalReferences} onPress={() => onEditField('professionalReferences')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="id-card-outline"
-            title="Добавить рекомендации"
-            subtitle="Руководители или коллеги, которые могут рассказать о вашей работе."
-            onPress={() => onEditField('professionalReferences')}
-          />
-        )}
-      </PersonalSection>
-
-      <PersonalSection title="Военная служба">
-        {p.militaryService ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Военная служба" value={p.militaryService} onPress={() => onEditField('militaryService')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="shield-outline"
-            title="Добавить военную службу"
-            subtitle="Род войск, звание и период службы."
-            onPress={() => onEditField('militaryService')}
-          />
-        )}
-      </PersonalSection>
-
-      <PersonalSection title="Допуск">
-        {p.securityClearance ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Допуск" value={p.securityClearance} onPress={() => onEditField('securityClearance')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="lock-closed-outline"
-            title="Добавить допуск"
-            subtitle="Укажите действующий или прошлый допуск, если это важно для работы."
-            onPress={() => onEditField('securityClearance')}
-          />
-        )}
-      </PersonalSection>
-
       <PersonalSection title="Ограничения по трудоустройству">
         {p.employmentRestrictions ? (
           <View style={personalS.card}>
@@ -633,7 +536,6 @@ function mergeResumeIntoUser(
     lastName?: string;
     middleName?: string;
     age?: number;
-    birthday?: string;
   },
 ): User {
   const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
@@ -651,7 +553,6 @@ function mergeResumeIntoUser(
     personalDetails: {
       ...(user.personalDetails ?? {}),
       ...(identity?.middleName ? { middleName: identity.middleName } : {}),
-      ...(identity?.birthday ? { birthday: identity.birthday } : {}),
       ...(resume.email ? { contactEmail: resume.email } : {}),
       ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
       ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
