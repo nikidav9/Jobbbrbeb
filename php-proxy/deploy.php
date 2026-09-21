@@ -84,7 +84,7 @@ if (is_array($app)) {
         if (is_array($v)) $cur = $v;
     }
     $appKeys = [
-        'APP_SECRET', 'APP_SECRET_PREV', 'TG_BOT_TOKEN',
+        'APP_SECRET', 'APP_SECRET_PREV', 'TG_BOT_TOKEN', 'SUPPORT_NOTIFY_TELEGRAM_ID',
         'YANDEX_GEOCODER_KEY', 'YANDEX_SUGGEST_KEY',
         'SUPERJOB_SECRET_KEY', 'SUPERJOB_CLIENT_ID', 'SUPERJOB_CLIENT_SECRET',
         'HH_CLIENT_ID', 'HH_CLIENT_SECRET',

@@ -117,6 +117,7 @@ jobs:
           APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
           APP_SECRET_PREV: ${{ secrets.APP_SECRET_PREV }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          SUPPORT_NOTIFY_TELEGRAM_ID: ${{ secrets.SUPPORT_NOTIFY_TELEGRAM_ID }}
           YANDEX_GEOCODER_KEY: ${{ secrets.YANDEX_GEOCODER_KEY }}
           YANDEX_SUGGEST_KEY: ${{ secrets.YANDEX_SUGGEST_KEY }}
           SUPERJOB_SECRET_KEY: ${{ secrets.SUPERJOB_SECRET_KEY }}
@@ -146,6 +147,7 @@ jobs:
                   "APP_SECRET": e("APP_SECRET", ""),
                   "APP_SECRET_PREV": e("APP_SECRET_PREV", ""),
                   "TG_BOT_TOKEN": e("TG_BOT_TOKEN", ""),
+                  "SUPPORT_NOTIFY_TELEGRAM_ID": e("SUPPORT_NOTIFY_TELEGRAM_ID", ""),
                   "YANDEX_GEOCODER_KEY": e("YANDEX_GEOCODER_KEY", ""),
                   "YANDEX_SUGGEST_KEY": e("YANDEX_SUGGEST_KEY", ""),
                   "SUPERJOB_SECRET_KEY": e("SUPERJOB_SECRET_KEY", ""),

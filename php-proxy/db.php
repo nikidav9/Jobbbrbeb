@@ -1470,6 +1470,10 @@ define('DASHBOARD_URL', getenv('DASHBOARD_URL') ?: 'https://admin.jobtoo.ru');
 // до утра хуже, чем сразу сказать, когда ответят.
 define('SUPPORT_FROM_HOUR', 10);
 define('SUPPORT_TO_HOUR', 21);
+// Единственная персональная настройка операторского уведомления.
+// Значение — приватный Telegram chat_id владельца поддержки. Если не задано,
+// бот никому лично не пишет.
+define('SUPPORT_NOTIFY_TELEGRAM_ID', (int)jt_secret('SUPPORT_NOTIFY_TELEGRAM_ID'));
 
 // Текущая редакция отдельного согласия на зарубежные каналы. Сервер
 // проверяет её сам: старый клиент не должен обходить новый экран согласия.
@@ -1497,6 +1501,12 @@ function support_thread_set(string $userId, ?string $closedAt): bool {
 /** Явный вызов живого оператора. До этого момента диалог остаётся у помощника. */
 function support_request_operator(string $userId, string $reason = ''): bool {
     if ($userId === '') return false;
+
+    // Одно уведомление на новое обращение, а не на каждое сообщение в уже
+    // открытом диалоге. После закрытия следующий вызов снова считается новым.
+    $before = support_thread_state($userId);
+    $wasWaiting = !empty($before['operator_requested_at']) && empty($before['closed_at']);
+
     try {
         sb_upsert('jm_support_threads', [
             'user_id' => $userId,
@@ -1505,6 +1515,7 @@ function support_request_operator(string $userId, string $reason = ''): bool {
             'operator_request_text' => $reason !== '' ? $reason : null,
             'updated_at' => now_iso(),
         ], 'user_id');
+        if (!$wasWaiting) support_notify_owner();
         return true;
     } catch (Throwable $e) { return false; }
 }
@@ -1519,6 +1530,21 @@ function support_thread_state(string $userId): array {
     } catch (Throwable $e) {
         return ['operator_requested_at' => null, 'closed_at' => null];
     }
+}
+
+/**
+ * Личное уведомление только владельцу поддержки.
+ *
+ * Текст обращения намеренно не отправляем в Telegram: бот сообщает лишь факт,
+ * а сам диалог остаётся в админке JobToo.
+ */
+function support_notify_owner(): void {
+    if (SUPPORT_NOTIFY_TELEGRAM_ID <= 0) return;
+    tg_send_support_owner_message(
+        SUPPORT_NOTIFY_TELEGRAM_ID,
+        "🆘 Новое обращение в поддержку JobToo\n\n"
+            . "Открыть: " . rtrim(DASHBOARD_URL, '/') . "/support"
+    );
 }
 
 function support_norm(string $text): string {
@@ -1639,11 +1665,11 @@ function tg_validate_init_data(string $initData): ?array {
 }
 
 /**
- * Последнее служебное сообщение перед полным отключением Telegram.
+ * Служебная личная доставка по заранее известному chat_id.
  *
- * Эта функция существует только для adminRetireTelegram: обычные пользовательские
- * уведомления через Telegram ниже уже отключены. Никаких кнопок, профилей и
- * маркетингового текста — только уведомление о прекращении канала.
+ * Обычные пользовательские уведомления через Telegram ниже по-прежнему
+ * отключены. Этот транспорт используют только adminRetireTelegram и одно
+ * операторское уведомление о новом обращении в поддержку.
  */
 function tg_send_retirement_message(int $chatId, string $text): bool {
     if (TG_BOT_TOKEN === '') return false;
@@ -1675,6 +1701,12 @@ function tg_send_retirement_message(int $chatId, string $text): bool {
         if ($try < 3) usleep($try * 400000);
     }
     return false;
+}
+
+/** Отдельное имя для единственного личного уведомления владельцу поддержки. */
+function tg_send_support_owner_message(int $chatId, string $text): bool {
+    if ($chatId <= 0 || $chatId !== SUPPORT_NOTIFY_TELEGRAM_ID) return false;
+    return tg_send_retirement_message($chatId, $text);
 }
 
 /**

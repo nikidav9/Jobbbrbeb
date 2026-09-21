@@ -74,7 +74,10 @@
 
 Пропуск к `db.php` (`APP_SECRET`) и токен бота (`TG_BOT_TOKEN`).
 Образец: `app_secrets.example.php`. GitHub Secrets, из которых он собирается:
-`EXPO_PUBLIC_APP_SECRET`, `APP_SECRET_PREV`, `TG_BOT_TOKEN`.
+`EXPO_PUBLIC_APP_SECRET`, `APP_SECRET_PREV`, `TG_BOT_TOKEN`,
+`SUPPORT_NOTIFY_TELEGRAM_ID`. Последний — единственная настройка личного
+уведомления поддержки: приватный chat_id владельца, которому бот сообщает о
+новом обращении; текст обращения в Telegram не уходит.
 
 Адреса геокодирует Яндекс.Геокодер (HTTP) прямо с сервера, ключ
 `YANDEX_GEOCODER_KEY` в `app_secrets.php`. Иностранных геокодеров нет: без ключа
