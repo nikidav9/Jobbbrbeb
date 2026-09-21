@@ -284,7 +284,6 @@ const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   relocation: 'Готовы к переезду?',
   driversLicense: 'Есть водительские права?',
   veteranStatus: 'Есть статус ветерана?',
-  disabilityStatus: 'Есть инвалидность?',
   gender: 'Пол',
   pronouns: 'Местоимения',
   race: 'Этническая принадлежность',
@@ -320,11 +319,6 @@ const PERSONAL_FIELD_CHOICES: Partial<Record<PersonalFieldKey, PersonalChoice[]>
     { label: 'Нет', value: 'Нет' },
   ],
   veteranStatus: [
-    { label: 'Да', value: 'Да' },
-    { label: 'Нет', value: 'Нет' },
-    { label: 'Не хочу указывать', value: 'Не хочу указывать' },
-  ],
-  disabilityStatus: [
     { label: 'Да', value: 'Да' },
     { label: 'Нет', value: 'Нет' },
     { label: 'Не хочу указывать', value: 'Не хочу указывать' },
@@ -558,8 +552,7 @@ function PersonalTab({
 
       <PersonalSection title="Трудовая информация">
         <View style={personalS.card}>
-          <PersonalRow label="Есть статус ветерана?" value={normalizePersonalChoiceValue('veteranStatus', privateValue('veteranStatus'))} onPress={() => onEditField('veteranStatus')} />
-          <PersonalRow label="Есть инвалидность?" value={normalizePersonalChoiceValue('disabilityStatus', privateValue('disabilityStatus'))} onPress={() => onEditField('disabilityStatus')} last />
+          <PersonalRow label="Есть статус ветерана?" value={normalizePersonalChoiceValue('veteranStatus', privateValue('veteranStatus'))} onPress={() => onEditField('veteranStatus')} last />
         </View>
       </PersonalSection>
 
