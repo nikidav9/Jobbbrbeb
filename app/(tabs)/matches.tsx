@@ -705,7 +705,7 @@ const wm = StyleSheet.create({
   headerBadgeTxt: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '800' },
 
   title: {
-    fontSize: rf(28), fontWeight: '800', color: Colors.textPrimary,
+    fontSize: rf(20), fontWeight: '400', color: Colors.textPrimary,
     paddingHorizontal: rs(16), paddingTop: rs(10), paddingBottom: rs(12),
   },
 
