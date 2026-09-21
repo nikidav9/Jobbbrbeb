@@ -40,7 +40,7 @@ check('регистрация собирает основное согласие
     && str_contains($ctx, 'stamp: LEGAL_STAMP')
     && str_contains($ctx, 'docs: coreDocs'));
 check('трансграничное согласие передаётся отдельно',
-    str_contains($ctx, 'crossBorderVersion: LEGAL_DOCS.crossBorderConsent.version')
+    str_contains($ctx, 'crossBorderVersion: LEGAL_DOCS.crossBorderConsent.consentVersion')
     && str_contains($db, "'source'      => 'crossborder:registration'"));
 
 $attach = fn_body($db, 'jt_consent_attach');
