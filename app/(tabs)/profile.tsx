@@ -19,9 +19,9 @@ import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbGetRatingsForUser, dbChangePassword, dbDeleteAccount,
-  dbGetConsent, dbGetCrossBorderConsent, dbRevokeCrossBorderConsent,
+  dbGetConsent,
   dbGetResumeFiles, dbSaveResumeFile, dbSelectResumeFile, dbDeleteResumeFile,
-  dbSignResumeFile, UserRating, type CrossBorderConsentRecord, type ResumeVaultItem,
+  dbSignResumeFile, UserRating, type ResumeVaultItem,
 } from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
@@ -757,8 +757,6 @@ export default function ProfileScreen() {
   const [consent, setConsent] = useState<{
     stamp: string; docs: Record<string, string>; accepted_at: string;
   } | null>(null);
-  const [crossBorderConsent, setCrossBorderConsent] = useState<CrossBorderConsentRecord | null>(null);
-  const [revokingCrossBorder, setRevokingCrossBorder] = useState(false);
   const [consentLoadFailed, setConsentLoadFailed] = useState(false);
   const [consentRetry, setConsentRetry] = useState(0);
 
@@ -766,16 +764,11 @@ export default function ProfileScreen() {
     if (!currentUser) return;
     let alive = true;
     setConsent(null);
-    setCrossBorderConsent(null);
     setConsentLoadFailed(false);
-    Promise.all([
-      dbGetConsent(currentUser.id),
-      dbGetCrossBorderConsent(currentUser.id),
-    ])
-      .then(([core, cross]) => {
+    dbGetConsent(currentUser.id)
+      .then(core => {
         if (!alive) return;
         setConsent(core);
-        setCrossBorderConsent(cross);
         setConsentLoadFailed(false);
       })
       .catch(() => { if (alive) setConsentLoadFailed(true); });
@@ -1330,7 +1323,6 @@ export default function ProfileScreen() {
             { label: 'Политика конфиденциальности', doc: 'privacy' as const },
             { label: 'Политика обработки персональных данных', doc: 'dataPolicy' as const },
             { label: 'Согласие на обработку данных', doc: 'consent' as const },
-            { label: 'Согласие на трансграничную передачу', doc: 'crossBorderConsent' as const },
           ].map((item) => (
             <TouchableOpacity
               key={item.doc}
@@ -1344,60 +1336,12 @@ export default function ProfileScreen() {
                     ту ли версию он принимал, а не верить на слово. */}
                 <Text style={sS.docVersion}>
                   Редакция от {formatLegalDate(LEGAL_DOCS[item.doc].version)}
-                  {item.doc === 'crossBorderConsent'
-                    ? (crossBorderConsent?.accepted === true &&
-                       crossBorderConsent.version === LEGAL_DOCS.crossBorderConsent.consentVersion
-                        ? ' · принята'
-                        : '')
-                    : (consent?.docs?.[item.doc] === LEGAL_DOCS[item.doc].version ? ' · принята' : '')}
+                  {consent?.docs?.[item.doc] === LEGAL_DOCS[item.doc].version ? ' · принята' : ''}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
-          {crossBorderConsent?.accepted === true ? (
-            <TouchableOpacity
-              style={sS.actionRow}
-              disabled={revokingCrossBorder}
-              onPress={() => Alert.alert(
-                'Отозвать согласие?',
-                'JobToo прекратит дальнейшую передачу через push/web-push. Внутренние функции приложения останутся доступны.',
-                [
-                  { text: 'Отмена', style: 'cancel' },
-                  {
-                    text: 'Отозвать',
-                    style: 'destructive',
-                    onPress: async () => {
-                      if (revokingCrossBorder || !currentUser) return;
-                      setRevokingCrossBorder(true);
-                      try {
-                        await dbRevokeCrossBorderConsent(currentUser.id);
-                        await AsyncStorage.removeItem(NOTIFICATION_CHOICE_KEY).catch(() => {});
-                        setConsentRetry(v => v + 1);
-                        showToast('Согласие на трансграничную передачу отозвано', 'success');
-                      } catch {
-                        showToast('Не удалось отозвать согласие. Попробуйте ещё раз.', 'error');
-                      } finally {
-                        setRevokingCrossBorder(false);
-                      }
-                    },
-                  },
-                ],
-              )}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close-circle-outline" size={17} color={Colors.red} />
-              <View style={{ flex: 1 }}>
-                <Text style={[sS.actionLabel, { color: Colors.red }]}>
-                  Отозвать согласие на трансграничную передачу
-                </Text>
-                <Text style={sS.docVersion}>
-                  Push/Web Push будут отключены; JobToo продолжит работать
-                </Text>
-              </View>
-              {revokingCrossBorder ? <ActivityIndicator size="small" color={Colors.red} /> : null}
-            </TouchableOpacity>
-          ) : null}
           <TouchableOpacity
             style={sS.actionRow}
             onPress={async () => {
