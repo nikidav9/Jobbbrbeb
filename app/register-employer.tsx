@@ -41,7 +41,6 @@ export default function RegisterEmployer() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [pdAgreed, setPdAgreed] = useState(false);
-  const [crossBorderAgreed, setCrossBorderAgreed] = useState(false);
   const [checking, setChecking] = useState(false);
   const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
@@ -117,7 +116,7 @@ export default function RegisterEmployer() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user, crossBorderAgreed);
+      await registerUser(user);
       showToast('Добро пожаловать! 👋', 'success');
       router.replace('/(tabs)');
     } catch (e) {
@@ -279,28 +278,6 @@ export default function RegisterEmployer() {
                       Согласие на обработку персональных данных
                     </Text>
                     . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.checkRow}
-                onPress={() => setCrossBorderAgreed(v => !v)}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.checkbox, crossBorderAgreed && styles.checkboxActive]}>
-                  {crossBorderAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    Отдельно и добровольно соглашаюсь на{' '}
-                    <Text
-                      style={styles.link}
-                      onPress={() => router.push({ pathname: '/legal', params: { doc: 'crossBorderConsent' } })}
-                    >
-                      трансграничную передачу персональных данных
-                    </Text>
-                    {' '}для push/web-push уведомлений. Отказ не мешает регистрации.
                   </Text>
                 </View>
               </TouchableOpacity>
