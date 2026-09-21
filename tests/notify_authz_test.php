@@ -69,7 +69,8 @@ foreach ($clientFiles as $rel) {
 // Прежде брали id записи и не смотрели, чья она.
 $release = case_body($db, 'dbReleasePushToken');
 check('токен отвязывает только его владелец',
-    str_contains($release, "'id' => 'eq.' . (string)(\$authUid ?? '')"));
+    str_contains($release, "\$uid = (string)(\$authUid ?? '')")
+    && str_contains($release, "'id' => 'eq.' . \$uid"));
 foreach (['dbMarkNotifRead', 'dbDeleteNotif'] as $op) {
     $body = case_body($db, $op);
     check("{$op}: только своё уведомление",
