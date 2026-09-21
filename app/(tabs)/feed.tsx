@@ -2081,6 +2081,22 @@ function EmployerHome() {
 function WorkerCareer() {
   const { currentUser } = useApp();
 
+  // В установленной iOS PWA цвет системной зоны (время / сеть / батарея)
+  // берётся из theme-color. На экране вакансий он должен продолжать тёплую
+  // подложку, а при уходе на другие вкладки — возвращаться к светлому фону.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (!meta) return;
+      const previous = meta.getAttribute('content');
+      meta.setAttribute('content', Colors.bgWarm);
+      return () => {
+        meta.setAttribute('content', previous || '#F5F7FA');
+      };
+    }, [])
+  );
+
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: Colors.bgWarm }} />;
 
   return (
