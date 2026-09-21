@@ -53,7 +53,7 @@ import {
   dbCompleteGuestRegistration,
   setSessionExpiredHandler,
 } from '@/services/db';
-import { LEGAL_DOCS, LEGAL_STAMP, legalVersions } from '@/constants/legal';
+import { LEGAL_STAMP, legalVersions } from '@/constants/legal';
 import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/services/notifications';
 import { registerWebPush } from '@/lib/webPush';
 import { setWebSplashProgress } from '@/lib/webSplash';
