@@ -565,14 +565,8 @@ function PersonalTab({
 
       <PersonalSection title="Демографическая информация">
         <View style={personalS.card}>
-          <PersonalRow label="Пол" value={normalizePersonalChoiceValue('gender', privateValue('gender'))} onPress={() => onEditField('gender')} />
-          <PersonalRow label="Местоимения" value={normalizePersonalChoiceValue('pronouns', privateValue('pronouns'))} onPress={() => onEditField('pronouns')} />
-          <PersonalRow label="Этническая принадлежность" value={privateValue('race')} onPress={() => onEditField('race')} />
-          <PersonalRow label="Сексуальная ориентация" value={privateValue('sexualOrientation')} onPress={() => onEditField('sexualOrientation')} last />
+          <PersonalRow label="Пол" value={normalizePersonalChoiceValue('gender', privateValue('gender'))} onPress={() => onEditField('gender')} last />
         </View>
-        <Text style={personalS.privateHint}>
-          Эти поля приватны и не показываются работодателям.
-        </Text>
       </PersonalSection>
 
       <PersonalSection title="Профессиональные рекомендации">
