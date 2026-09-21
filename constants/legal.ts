@@ -515,13 +515,13 @@ export function legalVersions(): Record<'terms' | 'privacy' | 'consent', string>
 export function legalVersionsWithCrossBorder(): Record<string, string> {
   return {
     ...legalVersions(),
-    crossBorderConsent: LEGAL_DOCS.crossBorderConsent.version,
+    crossBorderConsent: LEGAL_DOCS.crossBorderConsent.consentVersion,
   };
 }
 
 /** Принята ли именно текущая редакция отдельного трансграничного согласия. */
 export function hasCrossBorderConsent(docs: Record<string, string> | null | undefined): boolean {
-  return docs?.crossBorderConsent === LEGAL_DOCS.crossBorderConsent.version;
+  return docs?.crossBorderConsent === LEGAL_DOCS.crossBorderConsent.consentVersion;
 }
 
 /**
