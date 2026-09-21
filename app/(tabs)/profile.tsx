@@ -1346,7 +1346,7 @@ export default function ProfileScreen() {
                   Редакция от {formatLegalDate(LEGAL_DOCS[item.doc].version)}
                   {item.doc === 'crossBorderConsent'
                     ? (crossBorderConsent?.accepted === true &&
-                       crossBorderConsent.version === LEGAL_DOCS.crossBorderConsent.version
+                       crossBorderConsent.version === LEGAL_DOCS.crossBorderConsent.consentVersion
                         ? ' · принята'
                         : '')
                     : (consent?.docs?.[item.doc] === LEGAL_DOCS[item.doc].version ? ' · принята' : '')}
