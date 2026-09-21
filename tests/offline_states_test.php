@@ -243,8 +243,9 @@ check('личные: старое поле «Обращение» больше �
     !str_contains($profileForFooter, '<PersonalRow label="Обращение"'));
 check('личные: вопросы да/нет используют варианты выбора, а не «укажите значение»',
     str_contains($profileForFooter, 'PERSONAL_FIELD_CHOICES') &&
-    str_contains($profileForFooter, "disabilityStatus: [") &&
+    str_contains($profileForFooter, "veteranStatus: [") &&
     str_contains($profileForFooter, "driversLicense: [") &&
+    !str_contains($profileForFooter, 'disabilityStatus') &&
     !str_contains($profileForFooter, 'placeholder="Укажите значение"'));
 check('профиль: кнопка помощи в шапке открывает поддержку',
     str_contains($profileForFooter, "router.push('/support')") &&
