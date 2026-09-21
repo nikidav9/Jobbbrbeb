@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/push_privacy.php';
 // Прокси для админ-дашборда.
 //
 // Зачем: дашборд ходил в базу напрямую публичным ключом, а «вход по паролю»
@@ -280,6 +281,9 @@ if (preg_match('#^/functions/v1/push-notify(\?|$)#', $path)) {
                 'sound' => 'default', 'channelId' => 'default', 'priority' => 'high',
                 'data' => ['type' => 'broadcast'],
             ], $chunk);
+            $msgs = jt_push_prepare_expo_messages($msgs);
+            if (!$msgs) continue;
+
             $c = curl_init('https://exp.host/--/api/v2/push/send');
             curl_setopt_array($c, [
                 CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
@@ -288,7 +292,7 @@ if (preg_match('#^/functions/v1/push-notify(\?|$)#', $path)) {
                 CURLOPT_TIMEOUT => 20,
             ]);
             curl_exec($c); curl_close($c);
-            $pushCount += count($chunk);
+            $pushCount += count($msgs);
         }
     }
 
