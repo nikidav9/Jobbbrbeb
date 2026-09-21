@@ -424,6 +424,15 @@ fi
 if [ "$MIGRATIONS_READY" = 1 ]; then
   cp -f "$REPO"/php-proxy/*.php "$PROXY"/ 2>/dev/null || true
 fi
+
+# Отдельный серверный ключ для шифрования native push-токенов. Не ротируем
+# его вместе с кодом: иначе уже зарегистрированные устройства потеряют push.
+if [ ! -s "$PROXY/push_token_key.php" ]; then
+  PUSH_TOKEN_KEY=$(openssl rand -base64 32 | tr -d '\n')
+  printf "<?php return '%s';\n" "$PUSH_TOKEN_KEY" > "$PROXY/push_token_key.php"
+  chmod 640 "$PROXY/push_token_key.php"
+  chown root:www-data "$PROXY/push_token_key.php" 2>/dev/null || true
+fi
 # И описания рядом с кодом. Раньше копировались только .php, и оба json —
 # описание API для партнёра и образец фида — на сервер не попадали вовсе.
 # Снаружи это выглядело благополучно: адрес отвечает 200, а тело пустое.
