@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSessionToken, dbGetCrossBorderConsent } from '@/services/db';
+import { getSessionToken } from '@/services/db';
 import { NOTIFICATION_DISABLED_KEY } from '@/services/notifications';
 
 // Публичная половина пары, которую сервер создал сам (infra/bootstrap.sh).
