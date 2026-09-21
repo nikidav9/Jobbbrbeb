@@ -14,6 +14,7 @@
 @ini_set('display_errors', '0');
 @ini_set('html_errors', '0');
 ob_start();
+require_once __DIR__ . '/push_privacy.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -349,16 +350,19 @@ function tg_work_reply(int $chatId, int $threadId, string $text): array {
 }
 
 function expo_push_one(string $token, string $title, string $body): void {
+    $message = jt_push_prepare_expo_message([
+        'to' => $token, 'title' => $title, 'body' => $body,
+        'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches',
+        'data' => ['type' => 'perm_status'],
+    ]);
+    if ($message === null) return;
+
     $ch = curl_init('https://exp.host/--/api/v2/push/send');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
         CURLOPT_TIMEOUT => 10,
-        CURLOPT_POSTFIELDS => json_encode([
-            'to' => $token, 'title' => $title, 'body' => $body,
-            'sound' => 'default', 'priority' => 'high', 'channelId' => 'matches',
-            'data' => ['type' => 'perm_status'],
-        ]),
+        CURLOPT_POSTFIELDS => json_encode($message),
     ]);
     curl_exec($ch); curl_close($ch);
 }
