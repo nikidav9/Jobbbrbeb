@@ -241,11 +241,21 @@ check('отзывы и личные: сервисные карточки скр�
     !str_contains($profileForFooter, "(currentUser.role === 'employer' || profileTab === 'personal')"));
 check('личные: старое поле «Обращение» больше не показывается отдельной строкой',
     !str_contains($profileForFooter, '<PersonalRow label="Обращение"'));
-check('личные: вопросы да/нет используют варианты выбора, а не «укажите значение»',
+check('личные: рабочие вопросы используют варианты выбора, а лишние поля удалены',
     str_contains($profileForFooter, 'PERSONAL_FIELD_CHOICES') &&
-    str_contains($profileForFooter, "veteranStatus: [") &&
     str_contains($profileForFooter, "driversLicense: [") &&
+    str_contains($profileForFooter, "relocation: [") &&
     !str_contains($profileForFooter, 'disabilityStatus') &&
+    !str_contains($profileForFooter, 'veteranStatus') &&
+    !str_contains($profileForFooter, 'gender') &&
+    !str_contains($profileForFooter, 'pronouns') &&
+    !str_contains($profileForFooter, 'race') &&
+    !str_contains($profileForFooter, 'sexualOrientation') &&
+    !str_contains($profileForFooter, 'emergencyContact') &&
+    !str_contains($profileForFooter, 'professionalReferences') &&
+    !str_contains($profileForFooter, 'militaryService') &&
+    !str_contains($profileForFooter, 'securityClearance') &&
+    !str_contains($profileForFooter, 'birthday') &&
     !str_contains($profileForFooter, 'placeholder="Укажите значение"'));
 check('профиль: кнопка помощи в шапке открывает поддержку',
     str_contains($profileForFooter, "router.push('/support')") &&
