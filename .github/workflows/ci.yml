@@ -82,6 +82,9 @@ jobs:
       - name: Уведомление о сообщении собирает сервер, а не телефон
         run: php tests/message_notify_test.php
 
+      - name: Нативный push не раскрывает данные события
+        run: php tests/push_privacy_test.php
+
       - name: Новое обращение поддержки звонит только владельцу
         run: php tests/support_owner_notify_test.php
 
