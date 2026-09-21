@@ -10,7 +10,6 @@ import { Colors, Radius } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import {
   dbGetConsent, dbRecordConsent,
-  dbGetCrossBorderConsent, dbRecordCrossBorderConsent, dbRevokeCrossBorderConsent,
 } from '@/services/db';
 import {
   LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions,
@@ -61,8 +60,6 @@ export default function ConsentGate() {
   const [checkRetry, setCheckRetry] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [coreAccepted, setCoreAccepted] = useState(false);
-  const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
-  const [initialCrossBorderAccepted, setInitialCrossBorderAccepted] = useState(false);
   // Раскрытый документ. Тексты показываем прямо здесь, а не отправляем на
   // экран /legal: окно перекрывает всё, что под ним, — человек ушёл бы читать
   // и упёрся в него же поверх документа.
@@ -82,18 +79,12 @@ export default function ConsentGate() {
     let alive = true;
     setChecked(false);
     setCheckFailed(false);
-    Promise.all([
-      dbGetConsent(user.id),
-      dbGetCrossBorderConsent(user.id),
-    ])
-      .then(([c, cross]) => {
+    dbGetConsent(user.id)
+      .then(c => {
         if (!alive) return;
         setNeeded(needsReconsent(c?.stamp));
         setTermsAccepted(false);
         setCoreAccepted(false);
-        const crossAccepted = cross?.accepted === true;
-        setCrossBorderAccepted(crossAccepted);
-        setInitialCrossBorderAccepted(crossAccepted);
         setCheckFailed(false);
         setChecked(true);
       })
@@ -111,31 +102,13 @@ export default function ConsentGate() {
     setBusy(true);
     setError('');
     try {
-      // Основное согласие и решение по трансграничной передаче — два
-      // независимых волеизъявления и две независимые записи на сервере.
       await dbRecordConsent(user.id, LEGAL_STAMP, legalVersions(), 'reconsent');
 
-      if (crossBorderAccepted) {
-        // Сервер валидирует поколение согласия (consentVersion), а не каждую
-        // редакционную правку текста документа. Иначе редакция 2026-09-19-5
-        // ошибочно считалась «устаревшей» при серверной версии 2026-09-19.
-        await dbRecordCrossBorderConsent(user.id, LEGAL_DOCS.crossBorderConsent.consentVersion);
-      } else if (initialCrossBorderAccepted) {
-        // Отзыв сразу отключает сохранённые адреса иностранных каналов
-        // (push/web-push) на сервере.
-        await dbRevokeCrossBorderConsent(user.id);
-      }
-
-      // Перечитываем обе записи: кнопка не должна пропускать дальше по
+      // Перечитываем запись: кнопка не должна пропускать дальше по
       // оптимистичному состоянию интерфейса.
-      const [core, cross] = await Promise.all([
-        dbGetConsent(user.id),
-        dbGetCrossBorderConsent(user.id),
-      ]);
+      const core = await dbGetConsent(user.id);
       if (needsReconsent(core?.stamp)) {
         setError('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
-      } else if (crossBorderAccepted && cross?.accepted !== true) {
-        setError('Отдельное согласие на трансграничную передачу не сохранилось. Попробуйте ещё раз.');
       } else {
         setNeeded(false);
       }
@@ -209,8 +182,8 @@ export default function ConsentGate() {
 
           <Text style={styles.title}>Примите документы</Text>
           <Text style={styles.lead}>
-            Документы JobToo обновились. Общее согласие на обработку ПДн и решение
-            о трансграничной передаче теперь фиксируются отдельно.
+            Документы JobToo обновились. Ознакомьтесь с ними и подтвердите
+            отдельное согласие на обработку персональных данных.
           </Text>
 
           <View style={styles.docs}>
@@ -279,50 +252,10 @@ export default function ConsentGate() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.consentRow}
-            activeOpacity={0.8}
-            onPress={() => setCrossBorderAccepted(v => !v)}
-          >
-            <View style={[styles.checkbox, crossBorderAccepted && styles.checkboxActive]}>
-              {crossBorderAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.consentText}>
-                Добровольно соглашаюсь на трансграничную передачу ПДн для push/web-push
-                уведомлений. Можно не соглашаться.
-              </Text>
-              <TouchableOpacity
-                style={styles.crossLinkButton}
-                activeOpacity={0.7}
-                onPress={() => setOpen(open === 'crossBorderConsent' ? null : 'crossBorderConsent')}
-              >
-                <Text style={styles.link}>
-                  {open === 'crossBorderConsent' ? 'Скрыть текст согласия' : 'Прочитать отдельное согласие'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-
-          {open === 'crossBorderConsent' ? (
-            <View style={styles.crossDocBody}>
-              <Text style={styles.docTitle}>{LEGAL_DOCS.crossBorderConsent.title}</Text>
-              <Text style={styles.docVersion}>
-                Редакция от {formatLegalDate(LEGAL_DOCS.crossBorderConsent.version)}
-              </Text>
-              {LEGAL_DOCS.crossBorderConsent.sections.map((sec, i) => (
-                <View key={i} style={i > 0 ? { marginTop: rs(12) } : undefined}>
-                  {sec.heading ? <Text style={styles.secHeading}>{sec.heading}</Text> : null}
-                  <Text style={styles.secBody}>{sec.body}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Text style={styles.note}>
-            Основные документы — редакция от {дата}. Трансграничное согласие является отдельным и добровольным.
+            Основные документы — редакция от {дата}.
           </Text>
         </ScrollView>
 
