@@ -64,6 +64,15 @@ if ! cp -f "$REPO"/php-proxy/*.php "$PROXY"/; then
   log "FAIL $HEAD: php-proxy copy"
   exit 1
 fi
+
+# Push-токены в jm_users храним зашифрованными. Ключ живёт только рядом с
+# серверным PHP и не входит ни в git, ни в клиентскую сборку.
+if [ ! -s "$PROXY/push_token_key.php" ]; then
+  PUSH_TOKEN_KEY=$(openssl rand -base64 32 | tr -d '\n')
+  printf "<?php return '%s';\n" "$PUSH_TOKEN_KEY" > "$PROXY/push_token_key.php"
+  chmod 640 "$PROXY/push_token_key.php"
+  chown root:www-data "$PROXY/push_token_key.php" 2>/dev/null || true
+fi
 log "PHP $HEAD: proxy refreshed"
 
 # Одноразовый Web Push probe больше не нужен. Удаляем его и с уже
