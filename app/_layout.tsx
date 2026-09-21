@@ -230,7 +230,10 @@ export default function RootLayout() {
           <NotificationHandler />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FFFFFF' } }}>
             <Stack.Screen name="index" options={{ animation: 'none' }} />
-            <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
+            <Stack.Screen
+              name="(tabs)"
+              options={{ animation: 'none', contentStyle: { backgroundColor: 'transparent' } }}
+            />
             <Stack.Screen name="register-worker" />
             <Stack.Screen name="register-employer" />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />

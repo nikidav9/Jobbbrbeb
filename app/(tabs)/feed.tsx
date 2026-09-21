@@ -2088,11 +2088,21 @@ function WorkerCareer() {
     useCallback(() => {
       if (Platform.OS !== 'web' || typeof document === 'undefined') return;
       const meta = document.querySelector('meta[name="theme-color"]');
-      if (!meta) return;
-      const previous = meta.getAttribute('content');
-      meta.setAttribute('content', Colors.bgWarm);
+      const previousTheme = meta?.getAttribute('content') ?? null;
+      const previousHtmlBg = document.documentElement.style.backgroundColor;
+      const previousBodyBg = document.body.style.backgroundColor;
+
+      // iOS standalone PWA берёт фон зоны со временем из подложки документа,
+      // а не только из theme-color. Поэтому красим и HTML/BODY, пока активна
+      // вкладка вакансий. Родительский Stack для tabs прозрачный (см. _layout).
+      if (meta) meta.setAttribute('content', Colors.bgWarm);
+      document.documentElement.style.backgroundColor = Colors.bgWarm;
+      document.body.style.backgroundColor = Colors.bgWarm;
+
       return () => {
-        meta.setAttribute('content', previous || '#F5F7FA');
+        if (meta) meta.setAttribute('content', previousTheme || '#F5F7FA');
+        document.documentElement.style.backgroundColor = previousHtmlBg;
+        document.body.style.backgroundColor = previousBodyBg;
       };
     }, [])
   );
