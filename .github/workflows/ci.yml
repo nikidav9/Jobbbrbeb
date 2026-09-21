@@ -119,6 +119,7 @@ jobs:
           find infra -maxdepth 1 -name '*.sh' -print0 | xargs -0 -n1 bash -n
           python3 tests/referral_chain_test.py
           python3 tests/referral_data_policy_test.py
+          python3 tests/resume_data_policy_test.py
           python3 tests/user_id_contract_test.py
           python3 tests/seo_infra_test.py
           python3 tests/sitemap_invalidation_test.py
