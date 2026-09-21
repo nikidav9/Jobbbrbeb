@@ -20,7 +20,7 @@ for needle in [
 # Существенное расширение состава данных требует нового общего согласия.
 privacy = legal[legal.index("  privacy: {"):legal.index("  consent: {")]
 consent = legal[legal.index("  consent: {"):legal.index("  crossBorderConsent: {")]
-assert "version: '2026-09-21-3'" in privacy
+assert "version: '2026-09-21-4'" in privacy
 assert "consentVersion: '2026-09-21'" in privacy
 assert "version: '2026-09-21-3'" in consent
 assert "consentVersion: '2026-09-21'" in consent
