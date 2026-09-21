@@ -688,7 +688,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       stamp: LEGAL_STAMP,
       docs: coreDocs,
       ...(crossBorderConsent
-        ? { crossBorderVersion: LEGAL_DOCS.crossBorderConsent.version }
+        ? { crossBorderVersion: LEGAL_DOCS.crossBorderConsent.consentVersion }
         : {}),
     });
     if (referralCode) void clearPendingReferral();
