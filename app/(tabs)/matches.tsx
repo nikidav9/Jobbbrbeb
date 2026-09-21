@@ -452,10 +452,12 @@ function WorkerMatches() {
       {/* Шапка: марка слева, действия справа — как на макете. Конверт ведёт
           в переписки, закладка — в избранное, лупа раскрывает поиск. */}
       <View style={wm.header}>
-        <Text style={wm.logoMark}>
-          <Text style={wm.logoMarkJ}>J</Text>
-          <Text style={wm.logoMarkT}>T</Text>
-        </Text>
+        <Image
+          source={require('@/assets/images/header-jt-logo.png')}
+          style={wm.logoMark}
+          contentFit="contain"
+          accessibilityLabel="JobToo"
+        />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
             <TouchableOpacity
@@ -686,9 +688,7 @@ const wm = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(4),
   },
-  logoMark: { fontSize: rf(26), letterSpacing: -0.5 },
-  logoMarkJ: { fontWeight: '900', color: Colors.primary },
-  logoMarkT: { fontWeight: '900', color: Colors.textPrimary },
+  logoMark: { width: rs(34), height: rs(23), flexShrink: 0 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   headerBtn: {
     width: rs(44), height: rs(44), borderRadius: rs(22),
