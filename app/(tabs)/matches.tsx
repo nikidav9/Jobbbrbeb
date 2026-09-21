@@ -688,7 +688,7 @@ const wm = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(4),
   },
-  logoMark: { width: rs(34), height: rs(23), flexShrink: 0 },
+  logoMark: { width: rs(40), height: rs(26), flexShrink: 0 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   headerBtn: {
     width: rs(44), height: rs(44), borderRadius: rs(22),

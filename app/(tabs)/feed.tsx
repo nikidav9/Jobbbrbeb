@@ -1078,13 +1078,13 @@ const fh = StyleSheet.create({
     backgroundColor: Colors.bgWarm,
   },
   logoWrap: {
-    width: rs(34), height: rs(46), flexShrink: 0,
+    width: rs(40), height: rs(46), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },
   // Точный логотип, присланный владельцем. Уменьшен вдвое,
   // при этом остаётся выровнен по центру относительно поисковой строки.
   logoImage: {
-    width: rs(34), height: rs(23),
+    width: rs(40), height: rs(26),
   },
   search: {
     flex: 1, minWidth: 0, overflow: 'hidden',
