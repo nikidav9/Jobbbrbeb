@@ -134,7 +134,7 @@ export async function registerForPushNotifications(userId: string): Promise<bool
 
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbSavePushToken(userId, token);
-    console.info('[push] Expo push token saved for user:', userId);
+    console.info('[push] Expo push endpoint registered.');
     return true;
   } catch (error) {
     console.warn('[push] Failed to register Expo push token:', error);
