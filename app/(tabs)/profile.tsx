@@ -414,9 +414,6 @@ function PersonalTab({
   const relocationFromResume = resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
   const relocation = p.relocation || relocationFromResume;
 
-  const privateValue = (key: PersonalFieldKey, fallback?: string) =>
-    (p[key] as string | undefined) || fallback;
-
   return (
     <View style={personalS.content}>
       <PersonalSection title="Основная информация">
