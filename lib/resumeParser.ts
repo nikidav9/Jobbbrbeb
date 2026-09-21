@@ -348,7 +348,6 @@ export function parseResumeIdentity(rawText: string): {
   lastName?: string;
   middleName?: string;
   age?: number;
-  birthday?: string;
 } {
   const lines = rawText.split(/\r?\n/).map(clean).filter(Boolean);
   const name = lines.find(line =>
@@ -356,13 +355,10 @@ export function parseResumeIdentity(rawText: string): {
     || /^[A-Z][A-Za-z'-]+\s+[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)?$/.test(line),
   )?.split(' ');
   const age = Number(firstMatch(lines, /\d{1,2}\s+(?:год|года|лет)(?:\s|,|$)/i)?.match(/\d{1,2}/)?.[0] ?? '') || undefined;
-  const birthdayLine = firstMatch(lines, /родил(?:ся|ась)\s+\d{1,2}\s+[а-яё]+\s+\d{4}/i);
-  const birthday = birthdayLine?.match(/родил(?:ся|ась)\s+(\d{1,2}\s+[а-яё]+\s+\d{4})/i)?.[1];
   return {
     lastName: name?.[0],
     firstName: name?.[1],
     middleName: name?.[2],
     age,
-    birthday,
   };
 }
