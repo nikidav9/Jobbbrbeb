@@ -683,9 +683,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await dbUpsertUser(u, referralCode, {
       stamp: LEGAL_STAMP,
       docs: coreDocs,
-      ...(crossBorderConsent
-        ? { crossBorderVersion: LEGAL_DOCS.crossBorderConsent.consentVersion }
-        : {}),
     });
     if (referralCode) void clearPendingReferral();
     // Если человек пришёл из гостевого просмотра, замыкаем анонимную
