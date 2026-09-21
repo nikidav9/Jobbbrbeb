@@ -33,11 +33,11 @@ assert "personal_data" not in public_cols
 assert "resume_email" in db[db.index("define('USER_SELF_COLS'"):db.index("function is_bcrypt")]
 assert "personal_data" in db[db.index("define('USER_SELF_COLS'"):db.index("function is_bcrypt")]
 
-# Инвентаризация РКН должна помнить и про сейф, и про специальную категорию.
+# Инвентаризация РКН должна помнить про сейф и отсутствие удалённого поля.
 assert "jm_resume_files" in rkn
 assert "resume-files" in rkn
-assert "Сведения об инвалидности" in rkn
-assert "состоянии здоровья" in rkn
+assert "Сведения об инвалидности" not in rkn
+assert "disabilityStatus" not in types
 
 # Поля, которые документация перечисляет как резюме/личную анкету, существуют.
 assert "export interface ResumeProfile" in types
