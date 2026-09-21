@@ -50,7 +50,6 @@ import {
   dbMarkAllNotifsRead,
   dbAutoClosePastVacancies,
   dbRecordConsent,
-  dbGetCrossBorderConsent,
   dbCompleteGuestRegistration,
   setSessionExpiredHandler,
 } from '@/services/db';
@@ -118,7 +117,7 @@ export interface AppContextValue {
   optimisticUpdateChat: (c: Chat) => void;
   optimisticAddLike: (l: Like) => void;
   optimisticUpdateLike: (l: Like) => void;
-  registerUser: (u: User, crossBorderConsent?: boolean) => Promise<void>;
+  registerUser: (u: User) => Promise<void>;
   loginUser: (phone: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   /** Войти как гость (просмотр без регистрации) в роли соискателя. */
@@ -675,14 +674,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // ─── Auth actions ──────────────────────────────────────────────────────────
 
-  const registerUser = async (u: User, crossBorderConsent = false) => {
+  const registerUser = async (u: User) => {
     // Приглашение, если человек пришёл по ссылке знакомого. Забираем ДО
     // записи и стираем СРАЗУ после: чужой код, оставшийся в хранилище, был бы
     // приписан следующему, кто зарегистрируется на этом телефоне.
     const referralCode = (await getPendingReferral()) ?? undefined;
-    // Общее согласие и добровольное трансграничное решение — разные записи.
-    // При регистрации сервер получает их одним запросом, чтобы отдельная
-    // галочка не потерялась между созданием аккаунта и вторым сетевым вызовом.
     const coreDocs = legalVersions();
     await dbUpsertUser(u, referralCode, {
       stamp: LEGAL_STAMP,
@@ -702,10 +698,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     void dbRecordConsent(u.id, LEGAL_STAMP, coreDocs, 'registration');
     _setCurrentUser(u);
     await saveSessionUser(u);
-    // Иностранный push-транспорт включаем только после отдельного согласия.
-    if (crossBorderConsent) {
-      setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
-    }
+    setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
     setTimeout(() => {
       Promise.all([
         refreshUsers(),
@@ -727,11 +720,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!found) return null;
     _setCurrentUser(found);
     await saveSessionUser(found);
-    const crossBorderRecord = await dbGetCrossBorderConsent(found.id).catch(() => null);
-    const crossBorderAllowed = crossBorderRecord?.accepted === true;
-    // Иностранный push-транспорт не включаем только по факту входа:
-    // нужна отдельная текущая редакция трансграничного согласия.
-    if (crossBorderAllowed) registerForPushNotifications(found.id).catch(() => {});
+    registerForPushNotifications(found.id).catch(() => {});
     setTimeout(() => {
       Promise.all([
         refreshUsers(),
