@@ -372,13 +372,12 @@ function notify_worker(string $workerId, string $title, string $body): void {
     // Колокольчик — всегда: он хранится в российской базе.
     sb('POST', 'jm_notifications', [], ['user_id' => $workerId, 'title' => $title, 'body' => $body]);
 
-    // Telegram и Expo — иностранные каналы. Без отдельного действующего
-    // согласия пользователь увидит событие только внутри JobToo.
-    if (!jt_has_crossborder_consent($workerId)) return;
-
+    // Telegram остаётся отдельным каналом с собственной проверкой согласия.
+    // Expo push ниже проходит через нейтрализатор payload и не содержит
+    // сведений о пользователе или событии.
     $w = sb_one('jm_users', ['id' => 'eq.' . $workerId], 'telegram_id,push_token');
     if (!$w) return;
-    if (!empty($w['telegram_id'])) {
+    if (jt_has_crossborder_consent($workerId) && !empty($w['telegram_id'])) {
         tg('sendMessage', [
             'chat_id' => (int)$w['telegram_id'],
             'text' => $title . "\n\n" . $body,
