@@ -182,7 +182,7 @@ export default function TabLayout() {
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bgWarm }}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       <Tabs
         initialRouteName="feed"
         screenOptions={{
@@ -202,6 +202,13 @@ export default function TabLayout() {
             state={props.state}
             navigation={props.navigation}
             tabs={tabs}
+            backgroundColor={
+              props.state.routes[props.state.index]?.name === 'feed'
+                ? Colors.bgWarm
+                : props.state.routes[props.state.index]?.name === 'profile'
+                  ? Colors.outerBg
+                  : Colors.bg
+            }
           />
         )}
       >
