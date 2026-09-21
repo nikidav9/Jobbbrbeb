@@ -14,9 +14,6 @@ import { Colors, Radius } from '@/constants/theme';
 import { registerForPushNotifications } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
 import { useApp } from '@/hooks/useApp';
-import {
-  dbGetConsent, dbGetCrossBorderConsent, dbRecordCrossBorderConsent,
-} from '@/services/db';
 import { LEGAL_DOCS, needsReconsent } from '@/constants/legal';
 
 import { rs, rf } from '@/constants/scale';
@@ -37,60 +34,17 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 export default function NotificationPermissionSheet() {
   const insets = useSafeAreaInsets();
   const app = useApp();
-  const router = useRouter();
   // Гостю — ничего: он не зарегистрирован, подписывать на пуши некого.
   const userId = app?.currentUser?.isGuest ? null : (app?.currentUser?.id ?? null);
 
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [crossBorderAccepted, setCrossBorderAccepted] = useState(false);
-  const [consentBusy, setConsentBusy] = useState(false);
 
   const slideY = useRef(new Animated.Value(SCREEN_H)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const dragY = useRef(new Animated.Value(0)).current;
   const sheetHeightRef = useRef(480);
-
-  useEffect(() => {
-    if (!userId) {
-      setCrossBorderAccepted(false);
-      return;
-    }
-    let alive = true;
-    dbGetCrossBorderConsent(userId)
-      .then(c => { if (alive) setCrossBorderAccepted(c?.accepted === true); })
-      .catch(() => { if (alive) setCrossBorderAccepted(false); });
-    return () => { alive = false; };
-  }, [userId]);
-
-  async function acceptCrossBorderConsent() {
-    if (!userId || consentBusy || crossBorderAccepted) return;
-    setConsentBusy(true);
-    setErrorMsg('');
-    try {
-      const current = await dbGetConsent(userId);
-      if (!current || needsReconsent(current.stamp)) {
-        setErrorMsg('Сначала примите актуальные основные документы JobToo.');
-        return;
-      }
-      await dbRecordCrossBorderConsent(
-        userId,
-        LEGAL_DOCS.crossBorderConsent.consentVersion,
-        'crossborder:push',
-      );
-      const saved = await dbGetCrossBorderConsent(userId);
-      if (saved?.accepted !== true) {
-        setErrorMsg('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
-        return;
-      }
-      setCrossBorderAccepted(true);
-    } catch {
-      setErrorMsg('Не удалось сохранить отдельное согласие. Попробуйте ещё раз.');
-    } finally {
-      setConsentBusy(false);
-    }
-  }
 
   // ─── Decide whether to show ────────────────────────────────────────────────
   // The sheet appears on EVERY entry until notifications are actually enabled.
@@ -206,11 +160,7 @@ export default function NotificationPermissionSheet() {
   const handleSkip = () => close();
 
   const handleEnable = async () => {
-    if (busy || consentBusy) return;
-    if (!crossBorderAccepted) {
-      setErrorMsg('Сначала подтвердите отдельное согласие на трансграничную передачу.');
-      return;
-    }
+    if (busy) return;
     setBusy(true);
     setErrorMsg('');
     try {
@@ -301,40 +251,15 @@ export default function NotificationPermissionSheet() {
           <Reason icon="checkmark-circle-outline" text="Не пропустите подтверждение смены" />
         </View>
 
-        <TouchableOpacity
-          style={st.consentRow}
-          onPress={() => {
-            if (!crossBorderAccepted) void acceptCrossBorderConsent();
-          }}
-          activeOpacity={0.8}
-          disabled={consentBusy}
-        >
-          <View style={[st.checkbox, crossBorderAccepted && st.checkboxActive]}>
-            {crossBorderAccepted ? <Text style={st.checkmark}>✓</Text> : null}
-          </View>
-          <Text style={st.consentText}>
-            {consentBusy ? 'Сохраняем отдельное согласие…' : 'Согласен(на) на '}
-            {!consentBusy ? (
-              <Text
-                style={st.consentLink}
-                onPress={() => router.push({ pathname: '/legal', params: { doc: 'crossBorderConsent' } })}
-              >
-                трансграничную передачу ПДн
-              </Text>
-            ) : null}
-            {!consentBusy ? ' для доставки уведомлений. Это добровольно.' : ''}
-          </Text>
-        </TouchableOpacity>
-
         {/* Buttons */}
         <TouchableOpacity style={st.skipBtn} onPress={handleSkip} activeOpacity={0.7}>
           <Text style={st.skipText}>Не сейчас</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[st.enableBtn, (busy || consentBusy || !crossBorderAccepted) && { opacity: 0.55 }]}
+          style={[st.enableBtn, busy && { opacity: 0.55 }]}
           onPress={handleEnable}
           activeOpacity={0.85}
-          disabled={busy || consentBusy || !crossBorderAccepted}
+          disabled={busy}
         >
           <Text style={st.enableText}>{busy ? 'Подключаем…' : errorMsg ? 'Попробовать ещё раз' : 'Включить уведомления'}</Text>
         </TouchableOpacity>
