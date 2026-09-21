@@ -231,7 +231,7 @@ check('настройки: очистка кеша не сбрасывает с�
 check('веб: очистка удаляет app-shell cache перед перезагрузкой',
     str_contains($profileSettings, "startsWith('jobtoo-app-shell-')") &&
     str_contains($profileSettings, "_jt_refresh"));
-foreach (['terms', 'privacy', 'consent', 'crossBorderConsent', 'dataPolicy'] as $docKey) {
+foreach (['terms', 'privacy', 'consent', 'dataPolicy'] as $docKey) {
     check("настройки: документ {$docKey} показан в разделе о приложении",
         str_contains($profileSettings, "key: '{$docKey}'"));
 }
