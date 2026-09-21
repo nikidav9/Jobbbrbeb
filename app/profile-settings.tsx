@@ -11,7 +11,7 @@ import { rs, rf } from '@/constants/scale';
 import { useApp } from '@/hooks/useApp';
 import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
-  dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
+  dbDeleteWebPushSubscription,
 } from '@/services/db';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -37,7 +37,6 @@ const ABOUT_DOCS: {
   { key: 'terms', icon: 'document-text-outline' },
   { key: 'privacy', icon: 'shield-checkmark-outline' },
   { key: 'consent', icon: 'checkmark-circle-outline' },
-  { key: 'crossBorderConsent', icon: 'globe-outline' },
   { key: 'dataPolicy', icon: 'lock-closed-outline' },
 ];
 
