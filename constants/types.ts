@@ -62,9 +62,7 @@ export interface PersonalDetails {
   middleName?: string;
   preferredName?: string;
   title?: string;
-  birthday?: string;
   contactEmail?: string;
-  emergencyContact?: string;
   links?: string;
   citizenship?: string;
   workAuthorization?: string;
@@ -72,14 +70,6 @@ export interface PersonalDetails {
   workAvailability?: string;
   relocation?: string;
   driversLicense?: string;
-  veteranStatus?: string;
-  gender?: string;
-  pronouns?: string;
-  race?: string;
-  sexualOrientation?: string;
-  professionalReferences?: string;
-  militaryService?: string;
-  securityClearance?: string;
   employmentRestrictions?: string;
 }
 
