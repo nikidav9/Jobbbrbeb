@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isOnboardingDone, onOnboardingDone } from '@/components/OnboardingOverlay';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +13,6 @@ import { Colors, Radius } from '@/constants/theme';
 import { registerForPushNotifications } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
 import { useApp } from '@/hooks/useApp';
-import { LEGAL_DOCS, needsReconsent } from '@/constants/legal';
 
 import { rs, rf } from '@/constants/scale';
 
