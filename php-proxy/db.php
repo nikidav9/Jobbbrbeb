@@ -19,6 +19,7 @@ require_once __DIR__ . '/funnel.php';
 require_once __DIR__ . '/shift_funnel.php';
 require_once __DIR__ . '/feed_funnel.php';
 require_once __DIR__ . '/sitemap_cache.php';
+require_once __DIR__ . '/push_privacy.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(array $payload, int $code = 200): void {
@@ -1818,7 +1819,30 @@ function tg_send_message(int $chatId, string $text, bool|string $withAppButton =
  * (наша база в Москве) и в телеграм. Развилка — в notify_user(), параметр
  * $pushBody.
  */
+function jt_encrypt_legacy_push_tokens_once(): void {
+    $marker = __DIR__ . '/.push_tokens_encrypted_v1';
+    if (is_file($marker)) return;
+
+    try {
+        $rows = sb_select_all('jm_users', ['push_token' => 'not.is.null'], 'id,push_token');
+        foreach ($rows as $row) {
+            $uid = (string)($row['id'] ?? '');
+            $stored = trim((string)($row['push_token'] ?? ''));
+            if ($uid === '' || $stored === '' || jt_push_is_encrypted($stored)) continue;
+            sb_update('jm_users', ['id' => 'eq.' . $uid], ['push_token' => jt_push_encrypt($stored)]);
+        }
+        @file_put_contents($marker, gmdate('c'), LOCK_EX);
+    } catch (Throwable $e) {
+        // Доставка не должна падать из-за фоновой миграции: legacy-токены
+        // всё равно читаются helper'ом и будут переписаны при регистрации.
+    }
+}
+
 function expo_push(array $messages): void {
+    jt_encrypt_legacy_push_tokens_once();
+    $messages = jt_push_prepare_expo_messages($messages);
+    if (empty($messages)) return;
+
     for ($i = 0; $i < count($messages); $i += 100) {
         $chunk = array_slice($messages, $i, 100);
         $ch = curl_init('https://exp.host/--/api/v2/push/send');
@@ -6336,12 +6360,30 @@ try {
         // аккаунт, тот же токен остался бы записан и за прежним — и уведомления
         // для обоих приходили бы на один телефон. Поэтому сначала снимаем его
         // со всех остальных.
-        case 'dbSavePushToken':
-            if (!jt_has_crossborder_consent((string)($args[0] ?? ''))) {
+        case 'dbSavePushToken': {
+            $uid = (string)($args[0] ?? '');
+            $plainToken = trim((string)($args[1] ?? ''));
+            if (!jt_has_crossborder_consent($uid)) {
                 $data = ['error' => 'Нужно отдельное согласие на трансграничную передачу']; break;
             }
-            sb_update('jm_users', ['push_token' => 'eq.' . $args[1], 'id' => 'neq.' . $args[0]], ['push_token' => null]);
-            sb_update('jm_users', ['id' => 'eq.' . $args[0]], ['push_token' => $args[1]]); break;
+            if ($plainToken === '') {
+                $data = ['error' => 'Пустой push-токен']; break;
+            }
+
+            // Один provider token может принадлежать только одному текущему
+            // аккаунту. Ищем и legacy plaintext, и новый keyed fingerprint.
+            sb_update('jm_users',
+                ['push_token' => 'eq.' . $plainToken, 'id' => 'neq.' . $uid],
+                ['push_token' => null]);
+            sb_update('jm_users',
+                ['push_token' => 'like.' . jt_push_lookup_pattern($plainToken), 'id' => 'neq.' . $uid],
+                ['push_token' => null]);
+
+            sb_update('jm_users', ['id' => 'eq.' . $uid],
+                ['push_token' => jt_push_encrypt($plainToken)]);
+            $data = ['ok' => true];
+            break;
+        }
 
         // Выход из аккаунта. Без этого сервер продолжал слать уведомления на
         // телефон, с которого человек вышел: приложение он не удалял, а токен
@@ -6356,14 +6398,26 @@ try {
         // телефоне. Чужой токен отвязывать незачем ни при каком раскладе, а
         // проверки не было: зная токен (его отдавала dbGetPushToken любому),
         // можно было лишить человека уведомлений.
-        case 'dbReleasePushToken':
-            sb_update('jm_users',
-                ['push_token' => 'eq.' . $args[0], 'id' => 'eq.' . (string)($authUid ?? '')],
-                ['push_token' => null]); break;
+        case 'dbReleasePushToken': {
+            $plainToken = trim((string)($args[0] ?? ''));
+            $uid = (string)($authUid ?? '');
+            if ($plainToken !== '' && $uid !== '') {
+                sb_update('jm_users',
+                    ['push_token' => 'eq.' . $plainToken, 'id' => 'eq.' . $uid],
+                    ['push_token' => null]);
+                sb_update('jm_users',
+                    ['push_token' => 'like.' . jt_push_lookup_pattern($plainToken), 'id' => 'eq.' . $uid],
+                    ['push_token' => null]);
+            }
+            break;
+        }
 
         case 'dbGetPushToken': {
             $r = sb_single('jm_users', ['id' => 'eq.' . $args[0]], 'push_token');
-            $data = $r['push_token'] ?? null; break;
+            $stored = (string)($r['push_token'] ?? '');
+            $plain = $stored !== '' ? jt_push_decrypt($stored) : '';
+            $data = $plain !== '' ? 'push:' . jt_push_fingerprint($plain) : null;
+            break;
         }
 
         case 'dbGetWorkerTokensByMetro':
@@ -6404,16 +6458,9 @@ try {
                 'sound' => 'default', 'priority' => 'high',
                 'channelId' => $nd['channelId'] ?? 'default', 'data' => $nd,
             ], $tokens);
-            $payload = count($msgs) === 1 ? $msgs[0] : $msgs;
-            $ch = curl_init('https://exp.host/--/api/v2/push/send');
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($payload),
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-                CURLOPT_TIMEOUT => 15,
-            ]);
-            $resp = curl_exec($ch); curl_close($ch);
-            $data = json_decode($resp ?: 'null', true); break;
+            expo_push($msgs);
+            $data = ['ok' => true, 'queued' => count($msgs)];
+            break;
         }
 
         // args: [pushTitle, pushBody, tgHtml, dataType, groupHtml?, vacancyId?]
