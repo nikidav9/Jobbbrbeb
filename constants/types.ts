@@ -73,7 +73,6 @@ export interface PersonalDetails {
   relocation?: string;
   driversLicense?: string;
   veteranStatus?: string;
-  disabilityStatus?: string;
   gender?: string;
   pronouns?: string;
   race?: string;
