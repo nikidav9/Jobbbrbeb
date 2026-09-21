@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { dbSavePushToken, dbReleasePushToken, dbGetCrossBorderConsent } from '@/services/db';
+import { dbSavePushToken, dbReleasePushToken } from '@/services/db';
 
 export const NOTIFICATION_DISABLED_KEY = 'jm_notifications_disabled';
 
@@ -110,28 +110,6 @@ export async function registerForPushNotifications(userId: string): Promise<bool
   }
 
   try {
-    const consent = await dbGetCrossBorderConsent(userId).catch(() => null);
-    if (consent?.accepted !== true) {
-      console.info('[push] Separate cross-border consent is missing: skipping token registration.');
-      return false;
-    }
-
-    // Never trigger the OS permission dialog here — boot-time calls must stay
-    // silent. The dialog is requested only from NotificationPermissionSheet.
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status !== 'granted') {
-      console.info('[push] Permission not granted yet: skipping token registration.');
-      return false;
-    }
-
-    await setupAndroidChannels();
-
-    const projectId = getExpoProjectId();
-    if (!projectId) {
-      console.warn('[push] Missing EAS projectId. Build with EAS and keep expo.extra.eas.projectId in app config.');
-      return false;
-    }
-
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbSavePushToken(userId, token);
     console.info('[push] Expo push endpoint registered.');
