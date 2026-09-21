@@ -30,22 +30,6 @@ function jt_push_key(): string {
     static $key = null;
     if (is_string($key)) return $key;
 
-    $explicit = getenv('PUSH_TOKEN_ENCRYPTION_KEY');
-    if (is_string($explicit) && trim($explicit) !== '') {
-        $key = hash('sha256', trim($explicit), true);
-        return $key;
-    }
-
-    $secretsPath = __DIR__ . '/app_secrets.php';
-    if (is_readable($secretsPath)) {
-        $secrets = @include $secretsPath;
-        $explicit = is_array($secrets) ? (string)($secrets['PUSH_TOKEN_ENCRYPTION_KEY'] ?? '') : '';
-        if ($explicit !== '') {
-            $key = hash('sha256', $explicit, true);
-            return $key;
-        }
-    }
-
     $keyPath = __DIR__ . '/push_token_key.php';
     if (is_readable($keyPath)) {
         $saved = @include $keyPath;
@@ -58,7 +42,21 @@ function jt_push_key(): string {
         }
     }
 
-    $generated = random_bytes(32);
+    // Managed hosts/tests may provide a key explicitly. Production normally
+    // creates push_token_key.php during deploy so later secret rotations can't
+    // silently make already stored endpoints undecryptable.
+    $explicit = getenv('PUSH_TOKEN_ENCRYPTION_KEY');
+    if (!is_string($explicit) || trim($explicit) === '') {
+        $secretsPath = __DIR__ . '/app_secrets.php';
+        if (is_readable($secretsPath)) {
+            $secrets = @include $secretsPath;
+            $explicit = is_array($secrets) ? (string)($secrets['PUSH_TOKEN_ENCRYPTION_KEY'] ?? '') : '';
+        }
+    }
+
+    $generated = is_string($explicit) && trim($explicit) !== ''
+        ? hash('sha256', trim($explicit), true)
+        : random_bytes(32);
     $encoded = base64_encode($generated);
     $fh = @fopen($keyPath, 'x');
     if (is_resource($fh)) {
