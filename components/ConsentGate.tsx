@@ -116,7 +116,10 @@ export default function ConsentGate() {
       await dbRecordConsent(user.id, LEGAL_STAMP, legalVersions(), 'reconsent');
 
       if (crossBorderAccepted) {
-        await dbRecordCrossBorderConsent(user.id, LEGAL_DOCS.crossBorderConsent.version);
+        // Сервер валидирует поколение согласия (consentVersion), а не каждую
+        // редакционную правку текста документа. Иначе редакция 2026-09-19-5
+        // ошибочно считалась «устаревшей» при серверной версии 2026-09-19.
+        await dbRecordCrossBorderConsent(user.id, LEGAL_DOCS.crossBorderConsent.consentVersion);
       } else if (initialCrossBorderAccepted) {
         // Отзыв сразу отключает сохранённые адреса иностранных каналов
         // (push/web-push) на сервере.
