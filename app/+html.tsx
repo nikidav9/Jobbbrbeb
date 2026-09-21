@@ -173,7 +173,9 @@ export default function Root({ children }: PropsWithChildren) {
               // интерфейс светлый, поэтому возвращаем светлый цвет —
               // иначе сверху висит оранжевая плашка на белом экране
               var tc = document.querySelector('meta[name="theme-color"]');
-              if (tc) tc.setAttribute('content', '#F5F7FA');
+              if (tc && tc.getAttribute('content') === '#FF6B1A') {
+                tc.setAttribute('content', '#F5F7FA');
+              }
               if (splash) {
                 splash.classList.add('hidden');
                 setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
