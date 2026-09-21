@@ -76,7 +76,7 @@ export default function NotificationPermissionSheet() {
       }
       await dbRecordCrossBorderConsent(
         userId,
-        LEGAL_DOCS.crossBorderConsent.version,
+        LEGAL_DOCS.crossBorderConsent.consentVersion,
         'crossborder:push',
       );
       const saved = await dbGetCrossBorderConsent(userId);
