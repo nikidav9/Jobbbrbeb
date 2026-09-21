@@ -39,9 +39,9 @@ check('регистрация собирает основное согласие
     str_contains($ctx, 'const coreDocs = legalVersions();')
     && str_contains($ctx, 'stamp: LEGAL_STAMP')
     && str_contains($ctx, 'docs: coreDocs'));
-check('трансграничное согласие передаётся отдельно',
-    str_contains($ctx, 'crossBorderVersion: LEGAL_DOCS.crossBorderConsent.consentVersion')
-    && str_contains($db, "'source'      => 'crossborder:registration'"));
+check('регистрация больше не передаёт отдельное трансграничное согласие',
+    !str_contains($ctx, 'crossBorderVersion:')
+    && !str_contains($ctx, 'crossBorderConsent'));
 
 $attach = fn_body($db, 'jt_consent_attach');
 check('тело записи найдено', $attach !== '');
