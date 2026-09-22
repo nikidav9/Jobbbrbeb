@@ -124,6 +124,37 @@ SCRIPT_HTML = """<!doctype html>
 </body>
 </html>"""
 
+
+NETWORK_HTML = """<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Jupiter Network Runtime Test</title></head>
+<body>
+  <h1>Platform Engineer</h1>
+  <form id="network-form">
+    <label>Email <input type="email" name="email" required></label>
+    <button type="submit">Submit application</button>
+  </form>
+  <div id="network-success" hidden>
+    <h1>Application received</h1>
+    <p>Handled by Jupiter Network Runtime.</p>
+  </div>
+  <script>
+    const form = document.getElementById('network-form');
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const response = await fetch('/career-network-submit', {
+        method: 'POST',
+        body: new FormData(form)
+      });
+      if (response.ok) {
+        document.getElementById('network-form').hidden = true;
+        document.getElementById('network-success').hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>"""
+
 LOGIN_HTML = """<!doctype html>
 <html lang="ru">
 <head>
@@ -201,7 +232,7 @@ UI_HTML = """<!doctype html>
       <label>Город<input id="city" value="Москва"></label>
       <label>Опыт, лет<input id="experience_years" value="4"></label>
       <label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label>
-      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
+      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="network">fetch через Jupiter Network Runtime</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
     </div>
     <label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label>
     <div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div>
@@ -212,7 +243,7 @@ UI_HTML = """<!doctype html>
     <h3>Траектория</h3><pre id="trace"></pre>
   </div>
   <div class="card"><strong>Граница теста</strong>
-    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. Поддерживаемый DOM-script исполняется нашим Jupiter Runtime; неизвестный JavaScript, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
+    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. Поддерживаемый DOM-script и allow-listed fetch/XHR исполняются нашими Jupiter Runtime; неизвестный JavaScript, внешний network, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
   </div>
 </div>
 <script>
@@ -341,7 +372,7 @@ def _clip(value: Any, limit: int = 500) -> str:
 
 def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, str], str]:
     scenario = _clip(raw.get("scenario"), 20)
-    if scenario not in {"success", "script", "unknown"}:
+    if scenario not in {"success", "script", "network", "unknown"}:
         raise ValueError("Unknown scenario")
     values = {
         "first_name": _clip(raw.get("first_name"), 100),
@@ -368,6 +399,7 @@ def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
         page_name = {
             "success": "career-test",
             "script": "career-script",
+            "network": "career-network",
             "unknown": "career-unknown",
         }[scenario]
         target = f"http://127.0.0.1:{PORT}/{page_name}"
@@ -449,6 +481,12 @@ class Handler(BaseHTTPRequestHandler):
                 if self._is_loopback()
                 else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             )
+        if path == "/career-network":
+            return (
+                self._html(NETWORK_HTML)
+                if self._is_loopback()
+                else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            )
         if path == "/career-unknown":
             return (
                 self._html(UNKNOWN_HTML)
@@ -464,6 +502,27 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = self.path.split("?", 1)[0]
+
+        if path == "/career-network-submit":
+            if not self._is_loopback():
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return self._html("<h1>Invalid payload</h1>", HTTPStatus.BAD_REQUEST)
+            if length <= 0 or length > MAX_APPLICATION_BODY:
+                return self._html("<h1>Invalid payload</h1>", HTTPStatus.BAD_REQUEST)
+            body = self.rfile.read(length)
+            content_type = (self.headers.get("Content-Type") or "").lower()
+            if (
+                "multipart/form-data" not in content_type
+                or b'name="email"' not in body
+            ):
+                return self._html(
+                    "<h1>Network payload rejected</h1>",
+                    HTTPStatus.BAD_REQUEST,
+                )
+            return self._html("<p>network accepted</p>")
 
         if path == "/career-submit":
             if not self._is_loopback():
