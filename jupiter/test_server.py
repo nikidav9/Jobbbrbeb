@@ -470,31 +470,56 @@ def _clip(value: Any, limit: int = 500) -> str:
     return str(value or "").strip()[:limit]
 
 
-def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, str], str]:
-    scenario = _clip(raw.get("scenario"), 20)
-    if scenario not in {"success", "script", "network", "modern", "unknown"}:
-        raise ValueError("Unknown scenario")
-    values = {
+def candidate_values(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
         "first_name": _clip(raw.get("first_name"), 100),
         "last_name": _clip(raw.get("last_name"), 100),
+        "patronymic": _clip(raw.get("patronymic"), 100),
+        "birth_date": _clip(raw.get("birth_date"), 40),
         "email": _clip(raw.get("email"), 200),
         "phone": _clip(raw.get("phone"), 80),
         "city": _clip(raw.get("city"), 120),
+        "location_detail": _clip(raw.get("location_detail"), 120),
+        "citizenship": _clip(raw.get("citizenship"), 120),
+        "education": _clip(raw.get("education"), 160),
+        "desired_role": _clip(raw.get("desired_role"), 180),
+        "employment": _clip(raw.get("employment"), 120),
         "experience_years": _clip(raw.get("experience_years"), 20),
+        "desired_salary": _clip(raw.get("desired_salary"), 80),
+        "linkedin": _clip(raw.get("linkedin"), 500),
+        "resume_url": _clip(raw.get("resume_url"), 500),
         "work_format": _clip(raw.get("work_format"), 40),
         "cover_letter": _clip(raw.get("cover_letter"), 1200),
+        "consent": bool(raw.get("consent")),
+        "has_car": bool(raw.get("has_car")),
+        "talent_pool_consent": bool(raw.get("talent_pool_consent")),
     }
-    return values, scenario
 
 
-def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
+def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    scenario = _clip(raw.get("scenario"), 20)
+    if scenario not in {"success", "script", "network", "modern", "unknown"}:
+        raise ValueError("Unknown scenario")
+    return candidate_values(raw), scenario
+
+
+def validate_live_payload(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    url = validate_audited_url(_clip(raw.get("url"), 2000))
+    return candidate_values(raw), url
+
+
+def _lab_resume(tmp: str) -> str:
+    resume_path = Path(tmp) / "resume.txt"
+    resume_path.write_text(
+        "Jupiter private lab dry-run resume\n",
+        encoding="utf-8",
+    )
+    return str(resume_path)
+
+
+def run_demo(values: dict[str, Any], scenario: str) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="jupiter-lab-") as tmp:
-        resume_path = Path(tmp) / "resume.txt"
-        resume_path.write_text(
-            "Jupiter private lab test resume\n",
-            encoding="utf-8",
-        )
-        profile = CandidateProfile(values=values, resume_path=str(resume_path))
+        profile = CandidateProfile(values=values, resume_path=_lab_resume(tmp))
         agent = JupiterAgent({"127.0.0.1"}, max_steps=30)
         page_name = {
             "success": "career-test",
@@ -509,6 +534,27 @@ def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
         payload["engine"] = "jupiter-web-engine"
         payload["snapshot"] = agent.engine.semantic_snapshot()
         return payload
+
+
+def run_live_demo(values: dict[str, Any], url: str) -> dict[str, Any]:
+    target = validate_audited_url(url)
+    site = profile_for_url(target)
+    if site is None:
+        raise ValueError("Employer is not in the audited Jupiter registry")
+
+    with tempfile.TemporaryDirectory(prefix="jupiter-live-dry-") as tmp:
+        profile = CandidateProfile(values=values, resume_path=_lab_resume(tmp))
+        payload = run_target(
+            site.name,
+            target,
+            profile,
+            timeout=15.0,
+            max_steps=18,
+            include_snapshot=True,
+        )
+        payload["engine"] = "jupiter-web-engine"
+        return payload
+
 
 
 class Handler(BaseHTTPRequestHandler):
