@@ -54,6 +54,30 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Human handoff that can be resumed
+
+Stopping is not the hard part; continuing is. A person who solves a CAPTCHA in
+their own browser has not helped us — the session was ours. So every stop that
+needs a human now leaves two things behind: a `HumanActionRequest` the product
+can show, and a `ResumeState` the agent can come back to.
+
+`agent.resume(token, profile)` restores the allow-list and the cookie jar, opens
+the same page and continues from there. A fresh agent in a fresh process can
+pick up the task; the token is the only thing that has to travel.
+
+Handoff types: `CAPTCHA`, `OTP_EMAIL`, `OTP_PHONE`, `LOGIN`, `CONSENT`,
+`UNKNOWN_FIELD`, `LEGAL_CONFIRMATION`.
+
+Nothing here bypasses anything: no CAPTCHA solving, no MFA, no employer
+passwords stored. The only thing kept is the context, and only for a day —
+`HandoffStore` drops expired states, and a finished task drops its own.
+
+While wiring this up, a live false positive turned up: CAPTCHA detection grepped
+the whole HTML, so a form posting to `/captcha-submit` was itself read as a
+CAPTCHA. An application the person had already verified would have been stuck
+forever. Detection now looks at the visible text, the control names and the
+attributes where a widget actually declares itself.
+
 ## Candidate knowledge: facts, preferences, generated text, consents
 
 `candidate.py` splits what Jupiter knows into classes that behave differently,
@@ -285,6 +309,7 @@ python test_form_semantics.py
 python test_spa_payload.py
 python test_submission.py
 python test_candidate.py
+python test_handoff.py
 python test_e2e.py
 ```
 
@@ -339,7 +364,11 @@ The E2E suite starts a local synthetic employer server and verifies:
 43. HTTP 200 with the same form back not counting as a submitted application;
 44. only the consent the candidate actually gave being ticked;
 45. one checkbox for data and advertising going to the human;
-46. every filled value carrying its provenance.
+46. every filled value carrying its provenance;
+47. a CAPTCHA stop leaving a resume token and sending nothing;
+48. a fresh agent continuing in the same session once the human is done;
+49. an unknown resume token failing loudly;
+50. a missing legal answer asking the human with a token.
 
 CI runs the same suite on every PR.
 

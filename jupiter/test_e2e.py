@@ -10,6 +10,7 @@ from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
 from engine import EngineSecurityError, JupiterWebEngine
+from handoff import HandoffStore
 from submission import ReceiptStore
 from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
 
@@ -202,6 +203,22 @@ form.addEventListener('submit', async function(e) {
   }
 });
 """
+
+# ── Капча: остановка, которую можно продолжить ──────────────────────────────
+
+CAPTCHA_FORM_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета с проверкой</title>
+<form id="application-form" action="/captcha-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  CAPTCHA_SLOT
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
 
 # ── Согласия: три галочки с разным смыслом ──────────────────────────────────
 
@@ -674,6 +691,23 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/captcha-apply":
+            cookie = self.headers.get("Cookie", "")
+            solved = self.server.state["captcha_solved"]
+            slot = (
+                ""
+                if solved
+                else '<div class="g-recaptcha" data-sitekey="demo"></div>'
+            )
+            body = CAPTCHA_FORM_HTML.replace("CAPTCHA_SLOT", slot)
+            headers = {}
+            if "jt_session=" not in cookie:
+                headers["Set-Cookie"] = "jt_session=S1; Path=/"
+            elif solved:
+                # Продолжение возможно только в той же сессии: капчу решали
+                # именно для неё.
+                self.server.state["captcha_resumed_with_cookie"] = True
+            return self._html(body, headers=headers)
         if self.path == "/consents":
             return self._html(CONSENTS_HTML)
         if self.path == "/mixed-consent":
@@ -717,6 +751,12 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path == "/captcha-submit":
+            if "jt_session=S1" not in self.headers.get("Cookie", ""):
+                return self._html("<h1>Session lost</h1>", 400)
+            self.server.state["captcha_posts"] += 1
+            return self._html("<h1>Application received</h1><p>Спасибо за отклик.</p>")
 
         if self.path == "/dup-submit":
             self.server.state["dup_posts"] += 1
@@ -883,6 +923,9 @@ class JupiterNativeE2E(unittest.TestCase):
             "echo_body": b"",
             "wizard_posts": [],
             "wizard_final_body": b"",
+            "captcha_solved": False,
+            "captcha_posts": 0,
+            "captcha_resumed_with_cookie": False,
             "dup_posts": 0,
             "drop_posts": 0,
             "silent_posts": 0,
@@ -928,6 +971,75 @@ class JupiterNativeE2E(unittest.TestCase):
                 profile,
             )
             return result, agent
+
+    # ── Передача человеку и возврат ─────────────────────────────────────────
+
+    def test_captcha_stop_leaves_a_resume_token_and_sends_nothing(self):
+        self.server.state["captcha_solved"] = False
+        self.server.state["captcha_posts"] = 0
+        store = HandoffStore()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            agent = JupiterAgent({"127.0.0.1"}, handoffs=store)
+            result = agent.run(
+                f"http://127.0.0.1:{self.port}/captcha-apply", profile
+            )
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "CAPTCHA_REQUIRED")
+        self.assertEqual(self.server.state["captcha_posts"], 0)
+        self.assertIsNotNone(result.human_action)
+        self.assertEqual(result.human_action["type"], "CAPTCHA")
+        token = result.human_action["resume_token"]
+        self.assertTrue(token)
+        # Состояние сохранено вместе с куками: без них возвращаться некуда.
+        state = store.load(token)
+        self.assertIsNotNone(state)
+        self.assertTrue(any(c["name"] == "jt_session" for c in state.cookies))
+
+    def test_run_continues_in_the_same_session_after_the_human_is_done(self):
+        self.server.state["captcha_solved"] = False
+        self.server.state["captcha_posts"] = 0
+        self.server.state["captcha_resumed_with_cookie"] = False
+        store = HandoffStore()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            first = JupiterAgent({"127.0.0.1"}, handoffs=store).run(
+                f"http://127.0.0.1:{self.port}/captcha-apply", profile
+            )
+            token = first.human_action["resume_token"]
+
+            # Человек прошёл проверку.
+            self.server.state["captcha_solved"] = True
+
+            # Новый агент — то есть новый процесс и пустая банка кук. Продолжить
+            # он может только за счёт сохранённого состояния.
+            second = JupiterAgent({"127.0.0.1"}, handoffs=store).resume(
+                token, profile
+            )
+
+        self.assertEqual(second.status, "submitted", second.reason)
+        self.assertEqual(self.server.state["captcha_posts"], 1)
+        self.assertTrue(self.server.state["captcha_resumed_with_cookie"])
+        self.assertEqual(second.trajectory[0]["action"], "resume")
+        self.assertEqual(second.trajectory[0]["waited_for"], "CAPTCHA")
+        # Задача доведена — состояние возврата убрано вместе с куками.
+        self.assertIsNone(store.load(token))
+
+    def test_unknown_resume_token_fails_loudly(self):
+        agent = JupiterAgent({"127.0.0.1"}, handoffs=HandoffStore())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            result = agent.resume("nope", self.profile(Path(tmp_dir)))
+        self.assertEqual(result.status, "failed")
+
+    def test_missing_legal_answer_asks_the_human_with_a_token(self):
+        result, _ = self.run_path("/unknown", dry_run=True)
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertIsNotNone(result.human_action)
+        self.assertIn(
+            result.human_action["type"],
+            {"LEGAL_CONFIRMATION", "UNKNOWN_FIELD"},
+        )
+        self.assertTrue(result.human_action["resume_token"])
 
     # ── Согласия ────────────────────────────────────────────────────────────
 

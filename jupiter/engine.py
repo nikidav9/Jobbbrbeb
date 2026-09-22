@@ -1123,6 +1123,44 @@ class JupiterWebEngine:
             headers={"Content-Type": content_type},
         )
 
+    def export_cookies(self) -> list[dict[str, str]]:
+        """Куки в простом виде — чтобы пережить паузу на действие человека."""
+        return [
+            {
+                "name": cookie.name,
+                "value": cookie.value or "",
+                "domain": cookie.domain,
+                "path": cookie.path,
+            }
+            for cookie in self.cookies
+        ]
+
+    def import_cookies(self, items: list[dict[str, str]]) -> None:
+        for item in items or []:
+            name = str(item.get("name") or "")
+            if not name:
+                continue
+            self.cookies.set_cookie(http.cookiejar.Cookie(
+                version=0,
+                name=name,
+                value=str(item.get("value") or ""),
+                port=None,
+                port_specified=False,
+                domain=str(item.get("domain") or ""),
+                domain_specified=bool(item.get("domain")),
+                domain_initial_dot=str(item.get("domain") or "").startswith("."),
+                path=str(item.get("path") or "/"),
+                path_specified=True,
+                secure=False,
+                # Сессионная кука: истекает вместе с процессом, на диске
+                # дольше нужного не живёт.
+                expires=None,
+                discard=True,
+                comment=None,
+                comment_url=None,
+                rest={},
+            ))
+
     def semantic_snapshot(self) -> dict:
         if not self.page:
             return {"script_history": list(self.script_history)}
