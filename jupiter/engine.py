@@ -5,6 +5,7 @@ import html
 import http.cookiejar
 import json
 import mimetypes
+import re
 import secrets
 import urllib.error
 import urllib.parse
