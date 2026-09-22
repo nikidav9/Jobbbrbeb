@@ -394,6 +394,7 @@ class JupiterWebEngine:
         )
         self.page: PageState | None = None
         self.script_runtime: JupiterScriptRuntime | None = None
+        self.script_history: list[dict[str, str]] = []
         self.last_submit_mode = "none"
 
     def assert_allowed(self, url: str) -> None:
@@ -439,9 +440,30 @@ class JupiterWebEngine:
         page = parser.finish(semantic_html, status, headers)
         page.script_unsupported = script_result.unsupported
         page.script_diagnostics = script_result.diagnostic_dicts()
+        self._record_script_diagnostics(url, page.script_diagnostics)
         self.script_runtime = runtime if page.has_script else None
         self.page = page
         return page
+
+    def _record_script_diagnostics(
+        self,
+        url: str,
+        diagnostics: list[dict[str, str]],
+    ) -> None:
+        existing = {
+            (item.get("url", ""), item.get("kind", ""), item.get("detail", ""))
+            for item in self.script_history
+        }
+        for item in diagnostics:
+            record = {
+                "url": url,
+                "kind": str(item.get("kind", "")),
+                "detail": str(item.get("detail", "")),
+            }
+            key = (record["url"], record["kind"], record["detail"])
+            if key not in existing:
+                self.script_history.append(record)
+                existing.add(key)
 
     def _parse_runtime_dom(
         self,
@@ -460,6 +482,7 @@ class JupiterWebEngine:
             page.script_diagnostics = [
                 item.as_dict() for item in self.script_runtime.diagnostics
             ]
+            self._record_script_diagnostics(url, page.script_diagnostics)
         self.page = page
         return page
 
@@ -643,7 +666,11 @@ class JupiterWebEngine:
         )
 
     def semantic_snapshot(self) -> dict:
-        return self.page.snapshot() if self.page else {}
+        if not self.page:
+            return {"script_history": list(self.script_history)}
+        snapshot = self.page.snapshot()
+        snapshot["script_history"] = list(self.script_history)
+        return snapshot
 
 
 def snapshot_json(page: PageState) -> str:
