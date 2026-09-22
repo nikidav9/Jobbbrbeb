@@ -189,7 +189,6 @@ class JupiterScriptRuntime:
     FORBIDDEN_TOKENS = (
         "eval(",
         "new function",
-        "function(",
         "settimeout(",
         "setinterval(",
         "fetch(",
