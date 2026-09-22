@@ -36,10 +36,12 @@ The supported subset covers:
 - submit addEventListener callbacks;
 - preventDefault.
 
-This is enough for simple script-rendered forms and submit handlers. Arbitrary
-code execution, timers, WebSocket, storage, window navigation and external
-script bundles remain unsupported. When unsupported behavior is required,
-Jupiter returns action_required instead of silently falling back to Chromium.
+This is enough for simple script-rendered forms and submit handlers. Jupiter can
+also load same-origin external script files through the engine's allow-list,
+content-type checks and 256 KiB script limit. Arbitrary code execution, timers,
+WebSocket, storage and window navigation remain unsupported. When unsupported
+behavior is required, Jupiter returns action_required instead of silently
+falling back to Chromium.
 
 ## Jupiter Network Runtime v1
 
@@ -47,8 +49,10 @@ Network access from page scripts is a narrow capability owned by Jupiter, not
 general browser networking. The supported subset is:
 
 - literal-URL fetch with GET/POST;
-- FormData(form) and URLSearchParams(new FormData(form)) request bodies;
-- response.ok success/failure branches;
+- FormData(form), URLSearchParams(new FormData(form)) and controlled
+  JSON.stringify(Object.fromEntries(new FormData(form))) bodies;
+- literal safe headers plus CSRF/XSRF values read from same-page meta tags;
+- response.ok and response.json() boolean-field success branches;
 - XMLHttpRequest open/send with literal GET/POST URLs and FormData;
 - the same JobToo cookie jar used by the native HTTP engine.
 
@@ -56,6 +60,9 @@ Every script request is resolved relative to the current page and passes through
 the engine host allow-list and redirect policy. Computed URLs, arbitrary request
 bodies, unknown HTTP methods and unsupported network programs stop safely.
 Responses are capped in size and do not become navigation automatically.
+Script-request headers are restricted to Accept, Content-Type, X-CSRF-Token,
+X-XSRF-Token and X-Requested-With; Host, Cookie and authorization headers cannot
+be injected by page code.
 
 ## Runtime dependencies
 
@@ -103,7 +110,11 @@ The E2E suite starts a local synthetic employer server and verifies:
 11. allow-listed fetch + FormData with shared cookies;
 12. XMLHttpRequest + FormData;
 13. blocking script fetch when it tries to escape the allow-list;
-14. redirect blocking when navigation tries to escape the allow-list.
+14. redirect blocking when navigation tries to escape the allow-list;
+15. same-origin external script loading;
+16. JSON form submission with CSRF meta token;
+17. response.json() gating before DOM success;
+18. blocking cross-origin external scripts.
 
 CI runs the same suite on every PR.
 
@@ -118,8 +129,8 @@ JobToo admin account. A successful login creates a short-lived Secure HttpOnly
 Jupiter cookie.
 
 The lab includes native HTTP submission, a local DOM-only script submit,
-a network-backed script submit through Jupiter Network Runtime, and an unknown
-required question. After a run it displays the semantic page snapshot and the
+a FormData network submit, a modern same-origin external-script + JSON + CSRF
+scenario, and an unknown required question. After a run it displays the semantic page snapshot and the
 full Jupiter trajectory.
 
 The lab service binds only to 127.0.0.1 on the host, nginx sends
@@ -128,8 +139,8 @@ visit only 127.0.0.1.
 
 ## Next slice
 
-After these v1 runtimes are stable, the engine can grow controlled JSON request
-bodies, CSRF/meta-token skills, external script compatibility and site-specific
-skills. The agent API does not
+After these v1 runtimes are stable, the next compatibility work is controlled
+JSON field projections, CSRF hidden-input skills, multi-step SPA state machines,
+and site-specific skills. The agent API does not
 need to change: Planner and policy operate on Jupiter's semantic page model,
 not on a Chromium-specific API.
