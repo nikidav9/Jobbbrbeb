@@ -14,14 +14,19 @@ verification live in this repository.
 - stores and replays cookies;
 - parses HTML forms, labels, inputs, textareas, selects and buttons;
 - builds a machine-oriented semantic page state instead of relying on pixels;
-- maps fields to the structured JobToo candidate profile;
+- maps fields to the structured JobToo candidate profile, including names,
+  patronymic, birth date, phone/email, city, citizenship, education, desired
+  role, employment, resume/link, cover letter, car ownership and explicit
+  consent flags;
 - uploads a resume with native multipart/form-data encoding;
 - submits GET/POST forms directly;
 - follows multi-step HTML forms;
 - refuses to invent required candidate data;
 - stops on CAPTCHA;
 - requires an explicit success marker after submission;
-- records the complete action trajectory.
+- records the complete action trajectory;
+- supports a hard no-submit dry-run mode that fills and uploads but never sends
+  an application.
 
 ## Jupiter Script Runtime v1
 
@@ -80,8 +85,10 @@ There is no browser installation step.
 Each Jupiter run gets an explicit host allow-list. Redirects and form actions
 cannot escape it. URLs with embedded credentials are rejected.
 
-CAPTCHA solving/bypass is intentionally absent. Unknown required questions
-return action_required and are never fabricated.
+CAPTCHA solving/bypass is intentionally absent. In normal mode a CAPTCHA stops
+before submission. In --dry-run mode Jupiter is allowed to fill the rest of the
+form first, then reports the CAPTCHA as a remaining human step. Unknown required
+questions return action_required and are never fabricated.
 
 The private lab keeps its synthetic employer pages reachable only from
 loopback, so the lab cannot submit to a real employer.
@@ -144,3 +151,25 @@ JSON field projections, CSRF hidden-input skills, multi-step SPA state machines,
 and site-specific skills. The agent API does not
 need to change: Planner and policy operate on Jupiter's semantic page model,
 not on a Chromium-specific API.
+
+
+## Employer compatibility registry
+
+`site_compat.py` contains the 62 employer sources from the JobToo audit. The
+registry does not integrate with employer ATS APIs. It only gives Jupiter
+browser-navigation policy for explicitly observed apply hosts and semantic
+overrides for non-standard field names such as `JOB_POLICY_AGREE`,
+`agreedPersonalData`, `resumeFiles`, `brief` and similar controls.
+
+Known third-party apply destinations are allow-listed only per originating
+employer. Arbitrary cross-domain navigation remains blocked.
+
+## No-submit verification
+
+Use:
+
+`python agent.py --url <vacancy-or-apply-url> --profile profile.json --dry-run`
+
+A successful verification returns `ready_to_submit`. The trajectory must
+contain `ready_to_submit` and must not contain `click_submit`,
+`http_submit`, `script_submit` or `script_network_submit`.
