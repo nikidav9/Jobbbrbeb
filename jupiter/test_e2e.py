@@ -283,6 +283,111 @@ REACT_DRY_HTML = """<!doctype html>
 """
 
 
+VKUSVILL_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>VkusVill-like form</title>
+<form action="/never-submit" method="post">
+  <input name="JOB_STORE_NAME" required>
+  <input name="NAME" required>
+  <input type="date" name="BORN" required>
+  <input type="tel" name="PHONE" required>
+  <input name="CITIZENSHIP" required>
+  <input name="METRO">
+  <label><input type="radio" name="HAS_CAR" value="Да" required>Да</label>
+  <label><input type="radio" name="HAS_CAR" value="Нет" required>Нет</label>
+  <label><input type="checkbox" name="JOB_POLICY_AGREE" required>Согласие на обработку данных</label>
+  <button type="submit">Отправить</button>
+</form>
+"""
+
+LEMANA_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Lemana-like form</title>
+<form action="/never-submit" method="post" enctype="multipart/form-data">
+  <input name="firstName" autocomplete="given-name" required>
+  <input name="lastName" autocomplete="family-name" required>
+  <input type="tel" name="phone" required>
+  <input type="email" name="email" required>
+  <input type="file" name="resumeFiles[]" required>
+  <input type="url" name="resumeUrl">
+  <textarea name="comment"></textarea>
+  <label><input type="checkbox" name="consent" required>Я согласен на обработку персональных данных</label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+TEREMOK_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Teremok-like form</title>
+<form action="/never-submit" method="post" enctype="multipart/form-data">
+  <input name="PROPERTY[NAME][0]" required>
+  <input type="tel" name="PROPERTY[101][0]" required>
+  <input name="PROPERTY[104][0]" required>
+  <label><input type="checkbox" name="PROPERTY[105]" required>Согласие на обработку персональных данных</label>
+  <input type="file" name="PROPERTY_FILE_106_0">
+  <button type="submit">Отправить анкету</button>
+</form>
+"""
+
+COFFEEMANIA_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Coffeemania-like form</title>
+<form action="/never-submit" method="post">
+  <select name="vacancy" required>
+    <option value="">Выберите</option>
+    <option value="cashier">Кассир</option>
+  </select>
+  <input name="lastname" required>
+  <input name="firstname" required>
+  <input type="tel" name="phone" required>
+  <input type="email" name="email" required>
+  <input name="citizenship" required>
+  <label><input type="checkbox" name="agree" required>Согласие на обработку персональных данных</label>
+  <button type="submit">Отправить</button>
+</form>
+"""
+
+DODO_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Dodo-like form</title>
+<form action="/never-submit" method="post">
+  <input name="name" required>
+  <input name="lastname" required>
+  <input type="date" name="date" required>
+  <input type="tel" name="phone" required>
+  <input type="email" name="email" required>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+MEGAFON_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Megafon-like form</title>
+<form id="apply-form">
+  <input name="lastName" required>
+  <input name="firstName" required>
+  <input type="email" name="email" required>
+  <input type="tel" name="phone" required>
+  <textarea name="comment"></textarea>
+  <label><input type="checkbox" name="agreedReservation">Добавить в кадровый резерв</label>
+  <label><input type="checkbox" name="agreedPersonalData" required>Согласие на обработку персональных данных</label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+FORM_ATTR_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Form attribute</title>
+<form id="external-form" action="/never-submit" method="post"></form>
+<label>Email <input form="external-form" type="email" name="email" required></label>
+<label>Формат
+  <input form="external-form" type="radio" name="work_format" value="Office" required>Office
+  <input form="external-form" type="radio" name="work_format" value="Hybrid" required>Hybrid
+</label>
+<button form="external-form" type="submit">Apply</button>
+"""
+
+
 class CareersHandler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
@@ -546,6 +651,132 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertTrue(values["agreedPersonalData"]["checked"])
         self.assertFalse(values["agreedReservation"]["checked"])
         self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
+
+    def test_audited_site_specific_patterns_fill_without_submit(self):
+        cases = [
+            (
+                "https://vkusvill.ru/job/prodavets-konsultant.html",
+                VKUSVILL_DRY_HTML,
+                {
+                    "JOB_STORE_NAME": "Кассир",
+                    "NAME": "Davydov Nikita Александрович",
+                    "BORN": "1995-05-09",
+                    "PHONE": "+79990000000",
+                    "CITIZENSHIP": "Россия",
+                },
+                {"JOB_POLICY_AGREE": True, "HAS_CAR": True},
+            ),
+            (
+                "https://rabota.lemanapro.ru/vacancy/demo",
+                LEMANA_DRY_HTML,
+                {
+                    "firstName": "Nikita",
+                    "lastName": "Davydov",
+                    "phone": "+79990000000",
+                    "email": "nikita.demo@reply.jobtoo.ru",
+                },
+                {"consent": True},
+            ),
+            (
+                "https://rabota.teremok.ru/questionary/",
+                TEREMOK_DRY_HTML,
+                {
+                    "PROPERTY[NAME][0]": "Davydov Nikita Александрович",
+                    "PROPERTY[101][0]": "+79990000000",
+                    "PROPERTY[104][0]": "Кассир",
+                },
+                {"PROPERTY[105]": True},
+            ),
+            (
+                "https://rabota.coffeemania.ru/",
+                COFFEEMANIA_DRY_HTML,
+                {
+                    "vacancy": "cashier",
+                    "lastname": "Davydov",
+                    "firstname": "Nikita",
+                    "phone": "+79990000000",
+                    "email": "nikita.demo@reply.jobtoo.ru",
+                    "citizenship": "Россия",
+                },
+                {"agree": True},
+            ),
+            (
+                "https://rabotavdodo.ru/",
+                DODO_DRY_HTML,
+                {
+                    "name": "Nikita",
+                    "lastname": "Davydov",
+                    "date": "1995-05-09",
+                    "phone": "+79990000000",
+                    "email": "nikita.demo@reply.jobtoo.ru",
+                },
+                {},
+            ),
+            (
+                "https://job.megafon.ru/vacancy/demo/apply",
+                MEGAFON_DRY_HTML,
+                {
+                    "lastName": "Davydov",
+                    "firstName": "Nikita",
+                    "email": "nikita.demo@reply.jobtoo.ru",
+                    "phone": "+79990000000",
+                },
+                {
+                    "agreedPersonalData": True,
+                    "agreedReservation": False,
+                },
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            for logical_url, html_text, expected_values, expected_checks in cases:
+                with self.subTest(url=logical_url):
+                    host = logical_url.split("/", 3)[2]
+                    agent = JupiterAgent({host}, dry_run=True)
+                    result = agent.run_loaded_html(html_text, logical_url, profile)
+                    self.assertEqual(
+                        result.status,
+                        "ready_to_submit",
+                        json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+                    )
+                    actions = [item["action"] for item in result.trajectory]
+                    self.assertNotIn("click_submit", actions)
+                    snapshot = agent.engine.semantic_snapshot()
+                    controls = {
+                        item["name"]: item
+                        for item in snapshot["controls"]
+                        if item["name"]
+                    }
+                    for name, value in expected_values.items():
+                        self.assertEqual(controls[name]["value"], value, (logical_url, name))
+                    for name, checked in expected_checks.items():
+                        self.assertEqual(controls[name]["checked"], checked, (logical_url, name))
+
+    def test_form_attribute_and_required_radio_group_work_in_dry_run(self):
+        profile = CandidateProfile(values={
+            "email": "candidate@example.com",
+            "work_format": "Hybrid",
+        })
+        agent = JupiterAgent({"example.test"}, dry_run=True)
+        result = agent.run_loaded_html(
+            FORM_ATTR_DRY_HTML,
+            "https://example.test/apply",
+            profile,
+        )
+        self.assertEqual(
+            result.status,
+            "ready_to_submit",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        snapshot = agent.engine.semantic_snapshot()
+        controls = snapshot["controls"]
+        email = next(item for item in controls if item["name"] == "email")
+        radios = [item for item in controls if item["name"] == "work_format"]
+        self.assertEqual(email["form_index"], 0)
+        self.assertEqual(email["value"], "candidate@example.com")
+        self.assertEqual(sum(1 for item in radios if item["checked"]), 1)
+        self.assertTrue(next(item for item in radios if item["value"] == "Hybrid")["checked"])
 
     def test_dry_run_still_refuses_to_invent_unknown_required_data(self):
         result, _agent = self.run_path("/unknown", dry_run=True)
