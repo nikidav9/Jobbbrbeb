@@ -191,6 +191,30 @@ class Reason:
     SUBMIT_FAILED = "SUBMIT_FAILED"
     VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
     MAX_STEPS = "MAX_STEPS"
+    MULTI_STEP_DRY_RUN_LIMIT = "MULTI_STEP_DRY_RUN_LIMIT"
+    STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
+
+
+@dataclass
+class FormFlow:
+    """Где мы в многошаговой анкете.
+
+    Нужна по одной причине: «Далее» — не «Отправить». Без этого различия
+    Jupiter засчитывал переход между шагами за поданный отклик, а в dry-run
+    докладывал о готовности, заполнив только первый экран из трёх.
+    """
+
+    step_index: int = 0
+    signatures: list[str] = field(default_factory=list)
+    steps: list[dict[str, Any]] = field(default_factory=list)
+
+    def enter(self, signature: str, summary: dict[str, Any]) -> bool:
+        """Отметить шаг. False — такой шаг уже был, значит мы топчемся."""
+        repeated = signature in self.signatures
+        self.signatures.append(signature)
+        self.steps.append(summary)
+        self.step_index = len(self.signatures) - 1
+        return not repeated
 
 
 @dataclass
@@ -608,17 +632,57 @@ class JupiterAgent:
         ("сбросить", -60), ("reset", -60), ("отмена", -60), ("cancel", -60),
         ("назад", -60), ("back", -60), ("поиск", -30), ("search", -30),
     )
+    # «Далее» должно выигрывать у «Назад» и «Сохранить», но проигрывать
+    # «Откликнуться»: если на шаге есть и то и другое, отклик главнее.
+    STEP_NEXT = (
+        "далее", "продолжить", "дальше", "следующий", "next", "continue",
+        "вперед", "вперёд",
+    )
+    STEP_BACK = ("назад", "back", "вернуться", "предыдущий", "previous")
+    STEP_SAVE = ("сохранить", "черновик", "draft", "save")
+    # Слова, после которых шага уже не будет: это последняя кнопка анкеты.
+    FINAL_SUBMIT = (
+        "отклик", "откликнуться", "подать заявку", "оставить заявку",
+        "отправить", "submit", "apply", "send", "готово", "завершить",
+        "finish",
+    )
 
     @classmethod
-    def _submit_score(cls, control: ControlState) -> int:
-        text = normalize(" ".join(filter(None, [
+    def _button_text(cls, control: ControlState) -> str:
+        return normalize(" ".join(filter(None, [
             control.text, control.value, control.label, control.aria,
             control.title_attr, control.name, control.id,
         ])))
+
+    @classmethod
+    def submit_intent(cls, control: ControlState) -> str:
+        """apply / next / back / save / unknown.
+
+        Порядок проверок важен. «Отправить заявку» и «Далее» в одной строке
+        не встречаются, а вот «Сохранить и продолжить» — сплошь и рядом,
+        и это всё-таки переход, а не отправка.
+        """
+        text = cls._button_text(control)
+        if any(normalize(token) in text for token in cls.STEP_BACK):
+            return "back"
+        if any(normalize(token) in text for token in cls.STEP_NEXT):
+            return "next"
+        if any(normalize(token) in text for token in cls.FINAL_SUBMIT):
+            return "apply"
+        if any(normalize(token) in text for token in cls.STEP_SAVE):
+            return "save"
+        return "unknown"
+
+    @classmethod
+    def _submit_score(cls, control: ControlState) -> int:
+        text = cls._button_text(control)
         score = 0
         for token, weight in cls.SUBMIT_INTENT + cls.SUBMIT_AVOID:
             if normalize(token) in text:
                 score += weight
+        if cls.submit_intent(control) == "next":
+            # Ровно между «назад/сохранить» и «откликнуться».
+            score += 20
         return score
 
     @classmethod
@@ -794,12 +858,59 @@ class JupiterAgent:
         self.allowed_hosts.update(trusted_hosts_for(url))
         self.engine.allowed_hosts.update(self.allowed_hosts)
 
+    @staticmethod
+    def _step_signature(page: PageState, form_index: int | None) -> str:
+        """Отпечаток шага: адрес, адрес отправки и набор полей.
+
+        По нему видно, что «Далее» вернуло тот же экран. Ни текст страницы, ни
+        её адрес для этого не годятся: текст меняется сообщением об ошибке, а
+        адрес — самим POST, и топтание на месте выглядит движением. Шаг узнаётся
+        по тому, куда форма отправляется и из каких полей состоит.
+        """
+        if form_index is None or form_index >= len(page.forms):
+            return f"{page.url}|no-form"
+        form = page.forms[form_index]
+        names = sorted(
+            page.controls[index].name
+            for index in form.control_indices
+            if page.controls[index].name
+        )
+        return f"{page.resolve(form.action or page.url)}|{','.join(names)}"
+
     def _dry_run_complete(
         self,
         page: PageState,
         trajectory: list[dict[str, Any]],
         captcha: bool,
+        flow: "FormFlow | None" = None,
+        next_button: ControlState | None = None,
     ) -> AgentResult:
+        if next_button is not None:
+            # Честный ответ вместо удобного. Дальше по анкете можно пройти
+            # только настоящим POST, а dry-run его запрещает на уровне
+            # движка. Сказать «готово к отправке», заполнив первый экран из
+            # трёх, — это ровно тот ложный успех, ради которого весь dry-run
+            # и затевался.
+            reason = (
+                "Step filled and valid, but the form continues: "
+                f"button {self.descriptor(next_button) or next_button.text!r} "
+                "moves to the next step, and dry-run must not send anything"
+            )
+            if captcha:
+                reason += "; CAPTCHA/human verification also remains"
+            trajectory.append({
+                "action": "step_ready",
+                "url": page.url,
+                "captcha": captcha,
+                "html_validation": "passed",
+                "step_index": flow.step_index if flow else 0,
+                "next_button": self.descriptor(next_button) or next_button.text,
+                "submit_blocked_by_policy": True,
+            })
+            return AgentResult(
+                "step_ready", reason, trajectory, Reason.MULTI_STEP_DRY_RUN_LIMIT
+            )
+
         reason = "Dry-run complete: fields filled; submit was not attempted"
         if captcha:
             reason += "; CAPTCHA/human verification remains for the user"
@@ -808,6 +919,7 @@ class JupiterAgent:
             "url": page.url,
             "captcha": captcha,
             "html_validation": "passed",
+            "step_index": flow.step_index if flow else 0,
             "submit_blocked_by_policy": True,
             "filled_fields": sum(
                 1 for item in trajectory if item.get("action") in {"fill", "select"}
@@ -827,11 +939,15 @@ class JupiterAgent:
         profile: CandidateProfile,
         trajectory: list[dict[str, Any]],
     ) -> AgentResult:
-        submitted_once = False
+        # sent_once — «хоть один POST ушёл», в том числе переход между
+        # шагами. Отметка нужна, чтобы не принять за успех страницу, где
+        # слово «спасибо» стояло ещё до всякой отправки.
+        sent_once = False
+        flow = FormFlow()
         visited = {page.url}
 
         for _ in range(self.max_steps):
-            if submitted_once and self.detect_success(page):
+            if sent_once and self.detect_success(page):
                 trajectory.append({
                     "action": "success_detected",
                     "url": page.url,
@@ -843,9 +959,33 @@ class JupiterAgent:
             target_form_index = self._target_form_index(page, profile)
             filled_before = len(trajectory)
             if target_form_index is not None:
+                signature = self._step_signature(page, target_form_index)
+                advanced = flow.enter(signature, {
+                    "url": page.url,
+                    "form_index": target_form_index,
+                })
+                if not advanced and sent_once:
+                    # Тот же экран с тем же набором полей после отправки.
+                    # Значит, сервер нас вернул, а мы этого не поняли и
+                    # пошли по кругу.
+                    reason = (
+                        "Multi-step form returned the same step again: "
+                        "Jupiter is not making progress"
+                    )
+                    trajectory.append({
+                        "action": "action_required",
+                        "reason": reason,
+                        "reason_code": Reason.STEP_DID_NOT_ADVANCE,
+                        "step_index": flow.step_index,
+                    })
+                    return AgentResult(
+                        "action_required", reason, trajectory,
+                        Reason.STEP_DID_NOT_ADVANCE,
+                    )
                 trajectory.append({
                     "action": "target_form",
                     "form_index": target_form_index,
+                    "step_index": flow.step_index,
                     "score": self._form_score(page, target_form_index, profile),
                 })
                 for control in page.controls:
@@ -863,6 +1003,14 @@ class JupiterAgent:
 
             missing = self._required_missing(page, target_form_index)
             has_application_form = target_form_index is not None
+            submit = self._submit_control(page, target_form_index)
+            # Кнопка перехода — не кнопка отправки. Держим её отдельно:
+            # от этого зависит и отчёт dry-run, и то, чем мы назовём клик.
+            pending_next = (
+                submit
+                if submit is not None and self.submit_intent(submit) == "next"
+                else None
+            )
 
             if has_application_form or filled_any:
                 if missing:
@@ -894,7 +1042,9 @@ class JupiterAgent:
                     )
 
                 if self.dry_run:
-                    return self._dry_run_complete(page, trajectory, captcha)
+                    return self._dry_run_complete(
+                        page, trajectory, captcha, flow, pending_next
+                    )
 
                 if captcha:
                     reason = "CAPTCHA detected; fields are prepared but Jupiter does not bypass human verification"
@@ -907,8 +1057,6 @@ class JupiterAgent:
                         "action_required", reason, trajectory,
                         Reason.CAPTCHA_REQUIRED,
                     )
-
-            submit = self._submit_control(page, target_form_index)
 
             if submit is None:
                 next_url = self._best_navigation(page, visited)
@@ -944,7 +1092,9 @@ class JupiterAgent:
                     continue
 
                 if self.dry_run and (has_application_form or filled_any):
-                    return self._dry_run_complete(page, trajectory, captcha)
+                    return self._dry_run_complete(
+                        page, trajectory, captcha, flow, pending_next
+                    )
 
                 if page.has_script:
                     reason = (
@@ -970,7 +1120,9 @@ class JupiterAgent:
                 )
 
             if self.dry_run:
-                return self._dry_run_complete(page, trajectory, captcha)
+                return self._dry_run_complete(
+                    page, trajectory, captcha, flow, pending_next
+                )
 
             if captcha:
                 reason = "CAPTCHA detected; fields are prepared but Jupiter does not bypass human verification"
@@ -996,11 +1148,16 @@ class JupiterAgent:
                     "action_required", reason, trajectory, Reason.UNSUPPORTED_SCRIPT
                 )
 
+            # Промежуточная кнопка не отправка: так и записываем. По этой
+            # отметке потом считается, был ли отклик вообще подан.
+            clicked_next = pending_next is not None
             trajectory.append({
-                "action": "click_submit",
+                "action": "click_next" if clicked_next else "click_submit",
                 "field": self.descriptor(submit),
-                "method": form.method.upper(),
-                "action_url": form.action or page.url,
+                "intent": self.submit_intent(submit),
+                "step_index": flow.step_index,
+                "method": (submit.formmethod or form.method).upper(),
+                "action_url": submit.formaction or form.action or page.url,
             })
 
             before = page
@@ -1027,16 +1184,19 @@ class JupiterAgent:
                     "failed", reason, trajectory, Reason.SUBMIT_FAILED
                 )
 
-            submitted_once = True
+            sent_once = True
             submit_mode = getattr(self.engine, "last_submit_mode", "http")
             action_name = {
                 "script": "script_submit",
                 "script_network": "script_network_submit",
             }.get(submit_mode, "http_submit")
+            if clicked_next:
+                action_name = "http_step"
             trajectory.append({
                 "action": action_name,
                 "url": page.url,
                 "status": page.status,
+                "step_index": flow.step_index,
             })
 
             if self.detect_success(page):
@@ -1048,15 +1208,28 @@ class JupiterAgent:
                 return AgentResult("submitted", trajectory=trajectory)
 
             if self._same_page(before, page):
-                reason = "Submit returned the same page without explicit success confirmation"
+                if clicked_next:
+                    # «Далее» не увело дальше — обычно это отказ проверки на
+                    # сервере. Называть это неподтверждённой отправкой нельзя:
+                    # отклик мы ещё даже не подавали.
+                    reason = (
+                        "Step button did not move the form forward; "
+                        "the page came back unchanged"
+                    )
+                    code = Reason.STEP_DID_NOT_ADVANCE
+                else:
+                    reason = (
+                        "Submit returned the same page without explicit success "
+                        "confirmation"
+                    )
+                    code = Reason.SUCCESS_NOT_CONFIRMED
                 trajectory.append({
                     "action": "action_required",
                     "reason": reason,
-                    "reason_code": Reason.SUCCESS_NOT_CONFIRMED,
+                    "reason_code": code,
+                    "step_index": flow.step_index,
                 })
-                return AgentResult(
-                    "action_required", reason, trajectory, Reason.SUCCESS_NOT_CONFIRMED
-                )
+                return AgentResult("action_required", reason, trajectory, code)
 
         reason = "Max Jupiter steps exceeded"
         trajectory.append({

@@ -54,6 +54,29 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Multi-step form planner
+
+"Next" is not "Submit". Jupiter now classifies every submit-type control by
+intent — `apply`, `next`, `back`, `save` — and a `FormFlow` tracks which step
+of the form it is on.
+
+What this changes:
+
+- clicking a step button is recorded as `click_next` / `http_step`, never as
+  `click_submit` / `http_submit`, so an application is only ever counted once;
+- a step is identified by where its form posts and which fields it holds, not
+  by the page URL, which the POST itself changes. If the same step comes back,
+  Jupiter stops with `STEP_DID_NOT_ADVANCE` instead of resubmitting it;
+- in dry-run a multi-step form returns the status `step_ready` with reason code
+  `MULTI_STEP_DRY_RUN_LIMIT`, not `ready_to_submit`. Walking further needs a
+  real POST, and the read-only engine forbids one. Reporting readiness after
+  filling the first screen of three was exactly the false success dry-run
+  exists to prevent.
+
+The word lists that separate "Далее" from "Отправить" are deliberately short.
+A wide list is dangerous in one specific direction: it would mark a real submit
+button as intermediate, and the application would never be sent.
+
 ## HTML validation before submit
 
 `validation.py` answers one question: would the browser let this form go?
@@ -70,7 +93,8 @@ that fails validation now returns `action_required` with reason code
 `AgentResult` carries a machine-readable `reason_code` alongside the human
 text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
 `DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
-`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`.
+`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
+`MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`.
 Compatibility statistics must be built on the code, not on the prose.
 
 ## Jupiter Script Runtime v1
@@ -183,7 +207,11 @@ The E2E suite starts a local synthetic employer server and verifies:
 27. a relative action resolved through `<base href>`;
 28. required fields of a disabled fieldset not blocking the run;
 29. a value rejected by `pattern` stopping before submit;
-30. `<select multiple>` sending every selected option.
+30. `<select multiple>` sending every selected option;
+31. a three-step form walked to the end and submitted exactly once;
+32. dry-run reporting a step instead of readiness on a multi-step form;
+33. a single-step form still reporting `ready_to_submit` in dry-run;
+34. a step that returns itself being reported instead of resubmitted.
 
 CI runs the same suite on every PR.
 
