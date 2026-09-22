@@ -6,6 +6,7 @@ import http.cookiejar
 import json
 import mimetypes
 import secrets
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
 
+from network_runtime import NetworkRequest, NetworkResponse
 from script_runtime import JupiterScriptRuntime
 
 
@@ -611,6 +613,99 @@ class JupiterWebEngine:
         chunks.append(f"--{boundary}--\r\n".encode())
         return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
 
+    def _script_network_fetch(
+        self,
+        page: PageState,
+        form: FormState,
+        network_request: NetworkRequest,
+    ) -> NetworkResponse:
+        target = urllib.parse.urljoin(page.url, network_request.url)
+        self.assert_allowed(target)
+
+        method = network_request.method.upper()
+        if method not in {"GET", "POST"}:
+            raise EngineSecurityError(
+                f"Script network method '{method}' is not allowed"
+            )
+
+        if network_request.form_ref:
+            if not form.id or network_request.form_ref != form.id:
+                raise EngineSecurityError(
+                    "Script network request attempted to read a different form"
+                )
+
+        fields, files = self._successful_controls(page, form, None)
+        headers = {
+            "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+            "Accept": "application/json,text/plain,text/html;q=0.8,*/*;q=0.1",
+        }
+        data: bytes | None = None
+
+        if network_request.body_mode == "formdata":
+            if method != "POST":
+                raise EngineSecurityError(
+                    "FormData script requests require POST"
+                )
+            data, content_type = self._multipart(fields, files)
+            headers["Content-Type"] = content_type
+        elif network_request.body_mode == "urlencoded":
+            if files:
+                raise EngineSecurityError(
+                    "URL-encoded script request cannot include uploaded files"
+                )
+            if method != "POST":
+                raise EngineSecurityError(
+                    "URL-encoded script requests require POST"
+                )
+            data = urllib.parse.urlencode(fields, doseq=True).encode("utf-8")
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        elif network_request.body_mode != "none":
+            raise EngineSecurityError(
+                f"Unsupported script body mode: {network_request.body_mode}"
+            )
+
+        req = urllib.request.Request(
+            target,
+            data=data,
+            method=method,
+            headers=headers,
+        )
+
+        response = None
+        try:
+            response = self.opener.open(req, timeout=self.timeout)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        except EngineSecurityError:
+            raise
+        except Exception as exc:
+            raise EngineError(
+                f"Script network request failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        try:
+            final_url = response.geturl()
+            self.assert_allowed(final_url)
+            raw = response.read(min(self.max_response_bytes, 1024 * 1024) + 1)
+            if len(raw) > min(self.max_response_bytes, 1024 * 1024):
+                raise EngineError("Script network response is too large")
+            text = self._decode(raw, response.headers)
+            response_headers = {
+                key.lower(): value
+                for key, value in response.headers.items()
+            }
+            return NetworkResponse(
+                status=int(getattr(response, "status", response.getcode())),
+                url=final_url,
+                text=text,
+                headers=response_headers,
+            )
+        finally:
+            try:
+                response.close()
+            except Exception:
+                pass
+
     def submit(
         self,
         page: PageState,
@@ -618,11 +713,26 @@ class JupiterWebEngine:
         submit_control: ControlState | None = None,
     ) -> PageState:
         if self.script_runtime is not None and form.id:
-            event_result = self.script_runtime.handle_event(form.id, "submit")
+            event_result = self.script_runtime.handle_event(
+                form.id,
+                "submit",
+                network_fetch=lambda request: self._script_network_fetch(
+                    page,
+                    form,
+                    request,
+                ),
+            )
             if event_result is not None:
-                html_after, prevented, _diagnostics = event_result
+                html_after, prevented, diagnostics = event_result
                 if prevented:
-                    self.last_submit_mode = "script"
+                    self.last_submit_mode = (
+                        "script_network"
+                        if any(
+                            item.kind == "network_response"
+                            for item in diagnostics
+                        )
+                        else "script"
+                    )
                     return self._parse_runtime_dom(
                         url=page.url,
                         status=page.status,
