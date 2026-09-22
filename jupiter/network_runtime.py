@@ -53,7 +53,7 @@ def _decode_string(token: str) -> str:
     body = body.replace(r"\n", "\n")
     body = body.replace(r"\r", "\r")
     body = body.replace(r"\t", "\t")
-    body = body.replace(r"\\", "\")
+    body = body.replace(r"\\\\", "\\")
     body = body.replace(r"\'", "'")
     body = body.replace(r'\"', '"')
     return body
