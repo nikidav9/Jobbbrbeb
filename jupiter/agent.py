@@ -2,15 +2,20 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-from playwright.async_api import async_playwright, Page
+from engine import (
+    ControlState,
+    EngineError,
+    EngineSecurityError,
+    JupiterWebEngine,
+    PageState,
+)
+
 
 SUCCESS_MARKERS = (
     "application received",
@@ -31,6 +36,14 @@ SUBMIT_MARKERS = (
     "отправить",
 )
 
+CAPTCHA_MARKERS = (
+    "g-recaptcha",
+    "recaptcha",
+    "hcaptcha",
+    "cf-turnstile",
+    "captcha",
+)
+
 ALIASES = {
     "first_name": ("first name", "given name", "имя"),
     "last_name": ("last name", "surname", "family name", "фамилия"),
@@ -39,7 +52,13 @@ ALIASES = {
     "phone": ("phone", "mobile", "телефон", "номер телефона"),
     "city": ("city", "location", "город", "местоположение"),
     "linkedin": ("linkedin",),
-    "experience_years": ("years of experience", "experience years", "лет опыта", "стаж", "опыт работы"),
+    "experience_years": (
+        "years of experience",
+        "experience years",
+        "лет опыта",
+        "стаж",
+        "опыт работы",
+    ),
     "desired_salary": ("salary", "compensation", "зарплата", "доход"),
     "work_format": ("work format", "working format", "формат работы", "режим работы"),
     "cover_letter": (
@@ -54,6 +73,7 @@ ALIASES = {
     ),
 }
 
+
 @dataclass
 class CandidateProfile:
     values: dict[str, Any]
@@ -64,9 +84,17 @@ class CandidateProfile:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         resume = data.pop("resume_path", None)
         if resume:
-            p = Path(path).parent / resume
-            resume = str(p.resolve())
+            resume = str((Path(path).parent / resume).resolve())
+
+        if not data.get("full_name"):
+            full_name = " ".join(
+                str(data.get(k) or "").strip() for k in ("first_name", "last_name")
+            ).strip()
+            if full_name:
+                data["full_name"] = full_name
+
         return cls(values=data, resume_path=resume)
+
 
 @dataclass
 class AgentResult:
@@ -81,11 +109,13 @@ class AgentResult:
             "trajectory": self.trajectory,
         }
 
+
 def normalize(value: str | None) -> str:
     if not value:
         return ""
     value = value.lower().replace("_", " ").replace("-", " ")
     return re.sub(r"\s+", " ", value).strip()
+
 
 def score_alias(text: str, alias: str) -> int:
     text = normalize(text)
@@ -98,6 +128,7 @@ def score_alias(text: str, alias: str) -> int:
     overlap = len(words & set(text.split()))
     return overlap * 10
 
+
 def choose_key(descriptor: str, profile: CandidateProfile) -> str | None:
     best: tuple[int, str] = (0, "")
     for key, aliases in ALIASES.items():
@@ -109,212 +140,344 @@ def choose_key(descriptor: str, profile: CandidateProfile) -> str | None:
                 best = (score, key)
     return best[1] if best[0] >= 30 else None
 
+
 class JupiterAgent:
-    def __init__(self, allowed_hosts: set[str], max_steps: int = 80):
-        self.allowed_hosts = allowed_hosts
+    def __init__(
+        self,
+        allowed_hosts: set[str],
+        max_steps: int = 30,
+        *,
+        engine: JupiterWebEngine | None = None,
+    ):
+        self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
+        self.engine = engine or JupiterWebEngine(self.allowed_hosts)
 
-    def assert_allowed(self, url: str) -> None:
-        parsed = urlparse(url)
-        if parsed.scheme == "file":
-            if "__file__" not in self.allowed_hosts:
-                raise ValueError("file:// navigation is not allowed for this Jupiter run")
-            return
-        host = (parsed.hostname or "").lower()
-        if host not in self.allowed_hosts:
-            raise ValueError(f"Host '{host}' is not allowed for this Jupiter run")
-
-    async def observe(self, page: Page) -> list[dict[str, Any]]:
-        controls = page.locator("input, textarea, select, button")
-        return await controls.evaluate_all(
-            """els => els.map((el, index) => ({
-                index,
-                tag: el.tagName.toLowerCase(),
-                type: (el.getAttribute('type') || '').toLowerCase(),
-                name: el.getAttribute('name') || '',
-                id: el.id || '',
-                placeholder: el.getAttribute('placeholder') || '',
-                aria: el.getAttribute('aria-label') || '',
-                text: (el.innerText || el.value || '').trim(),
-                label: el.labels ? Array.from(el.labels).map(x => x.innerText || x.textContent || '').join(' ') : '',
-                required: !!el.required,
-                disabled: !!el.disabled,
-                value: el.value || '',
-                checked: !!el.checked,
-                accept: el.getAttribute('accept') || '',
-                options: el.tagName === 'SELECT'
-                    ? Array.from(el.options).map(o => ({label: (o.textContent || '').trim(), value: o.value}))
-                    : []
-            }))"""
-        )
-
-    def descriptor(self, c: dict[str, Any]) -> str:
+    @staticmethod
+    def descriptor(control: ControlState) -> str:
         return " ".join(
-            str(c.get(k, ""))
-            for k in ("label", "aria", "placeholder", "name", "id", "text")
+            str(value)
+            for value in (
+                control.label,
+                control.aria,
+                control.placeholder,
+                control.name,
+                control.id,
+                control.text,
+            )
+            if value
         ).strip()
 
-    def is_submit(self, c: dict[str, Any]) -> bool:
-        if c["tag"] != "button" and c.get("type") != "submit":
+    @staticmethod
+    def is_submit(control: ControlState) -> bool:
+        if control.type not in {"submit", "image"}:
             return False
-        d = normalize(self.descriptor(c))
-        return c.get("type") == "submit" or any(m in d for m in SUBMIT_MARKERS)
-
-    async def control_is_empty(self, page: Page, index: int) -> bool:
-        locator = page.locator("input, textarea, select, button").nth(index)
-        return await locator.evaluate(
-            """el => {
-                if (el.tagName === 'SELECT') return !el.value;
-                if ((el.type || '').toLowerCase() === 'checkbox' || (el.type || '').toLowerCase() === 'radio') return !el.checked;
-                if ((el.type || '').toLowerCase() === 'file') return !(el.files && el.files.length);
-                return !String(el.value || '').trim();
-            }"""
+        descriptor = normalize(JupiterAgent.descriptor(control))
+        return control.type in {"submit", "image"} or any(
+            marker in descriptor for marker in SUBMIT_MARKERS
         )
 
-    async def fill_control(
+    @staticmethod
+    def control_is_empty(control: ControlState) -> bool:
+        if control.type == "file":
+            return not bool(control.file_path)
+        if control.type in {"checkbox", "radio"}:
+            return not control.checked
+        return not str(control.value or "").strip()
+
+    def fill_control(
         self,
-        page: Page,
-        c: dict[str, Any],
+        control: ControlState,
         profile: CandidateProfile,
         trajectory: list[dict[str, Any]],
     ) -> bool:
-        locator = page.locator("input, textarea, select, button").nth(c["index"])
-        descriptor = self.descriptor(c)
-        ctype = c.get("type", "")
+        if control.type in {"hidden", "submit", "image", "button", "reset"}:
+            return False
 
-        if ctype == "file":
-            if profile.resume_path and Path(profile.resume_path).exists():
-                await locator.set_input_files(profile.resume_path)
-                trajectory.append({"action": "upload", "field": descriptor, "source": "resume"})
+        descriptor = self.descriptor(control)
+
+        if control.type == "file":
+            if profile.resume_path and Path(profile.resume_path).is_file():
+                control.file_path = profile.resume_path
+                trajectory.append({
+                    "action": "upload",
+                    "field": descriptor,
+                    "source": "resume",
+                    "filename": Path(profile.resume_path).name,
+                })
                 return True
             return False
 
         key = choose_key(descriptor, profile)
         if not key:
             return False
+
         value = profile.values.get(key)
         if value is None or value == "":
             return False
 
-        if c["tag"] == "select":
-            options = c.get("options") or []
+        if control.tag == "select":
             wanted = normalize(str(value))
             match = next(
-                (o for o in options if wanted == normalize(o["label"]) or wanted == normalize(o["value"])),
+                (
+                    option
+                    for option in control.options
+                    if wanted in {normalize(option.label), normalize(option.value)}
+                ),
                 None,
             )
-            if not match:
+            if match is None:
                 match = next(
-                    (o for o in options if wanted in normalize(o["label"]) or normalize(o["label"]) in wanted),
+                    (
+                        option
+                        for option in control.options
+                        if wanted in normalize(option.label)
+                        or normalize(option.label) in wanted
+                    ),
                     None,
                 )
-            if not match:
+            if match is None:
                 return False
-            await locator.select_option(value=match["value"])
-            trajectory.append({"action": "select", "field": descriptor, "key": key, "value": match["label"]})
+            control.value = match.value
+            for option in control.options:
+                option.selected = option is match
+            trajectory.append({
+                "action": "select",
+                "field": descriptor,
+                "key": key,
+                "value": match.label,
+            })
             return True
 
-        if ctype in ("checkbox", "radio"):
+        if control.type in {"checkbox", "radio"}:
             if bool(value):
-                await locator.check()
-                trajectory.append({"action": "check", "field": descriptor, "key": key})
+                control.checked = True
+                trajectory.append({
+                    "action": "check",
+                    "field": descriptor,
+                    "key": key,
+                })
                 return True
             return False
 
-        await locator.fill(str(value))
-        trajectory.append({"action": "fill", "field": descriptor, "key": key, "value": str(value)})
+        control.value = str(value)
+        trajectory.append({
+            "action": "fill",
+            "field": descriptor,
+            "key": key,
+            "value": str(value),
+        })
         return True
 
-    async def detect_success(self, page: Page) -> bool:
-        body = normalize(await page.locator("body").inner_text())
-        return any(marker in body for marker in SUCCESS_MARKERS)
+    @staticmethod
+    def detect_success(page: PageState) -> bool:
+        text = normalize(page.text)
+        return any(marker in text for marker in SUCCESS_MARKERS)
 
-    async def run_loaded_page(self, page: Page, logical_url: str, profile: CandidateProfile) -> AgentResult:
-        self.assert_allowed(logical_url)
-        trajectory: list[dict[str, Any]] = [{"action": "open", "url": logical_url}]
+    @staticmethod
+    def detect_captcha(page: PageState) -> bool:
+        raw = page.html.lower()
+        return any(marker in raw for marker in CAPTCHA_MARKERS)
+
+    def _required_missing(self, page: PageState) -> list[str]:
+        missing: list[str] = []
+        for control in page.controls:
+            if (
+                not control.required
+                or control.disabled
+                or control.type == "hidden"
+                or self.is_submit(control)
+            ):
+                continue
+            if self.control_is_empty(control):
+                missing.append(self.descriptor(control) or control.name or f"control:{control.index}")
+        return missing
+
+    @staticmethod
+    def _same_page(before: PageState, after: PageState) -> bool:
+        return (
+            before.url == after.url
+            and normalize(before.text)[:2000] == normalize(after.text)[:2000]
+        )
+
+    def _run_from_page(
+        self,
+        page: PageState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+    ) -> AgentResult:
+        submitted_once = False
 
         for _ in range(self.max_steps):
-            if await self.detect_success(page):
-                trajectory.append({"action": "success_detected", "url": page.url})
-                return AgentResult(status="submitted", trajectory=trajectory)
-
-            controls = await self.observe(page)
-            acted = False
-
-            for c in controls:
-                if c["disabled"] or self.is_submit(c):
-                    continue
-                if not await self.control_is_empty(page, c["index"]):
-                    continue
-                if await self.fill_control(page, c, profile, trajectory):
-                    acted = True
-                    break
-
-            if acted:
-                continue
-
-            unknown_required: list[str] = []
-            for c in controls:
-                if not c["required"] or c["disabled"] or self.is_submit(c):
-                    continue
-                if await self.control_is_empty(page, c["index"]):
-                    unknown_required.append(self.descriptor(c))
-
-            if unknown_required:
-                reason = "Missing candidate data for required field(s): " + "; ".join(unknown_required)
+            if self.detect_captcha(page):
+                reason = "CAPTCHA detected; Jupiter does not bypass human verification"
                 trajectory.append({"action": "action_required", "reason": reason})
-                return AgentResult(status="action_required", reason=reason, trajectory=trajectory)
+                return AgentResult("action_required", reason, trajectory)
 
-            submit = next((c for c in controls if self.is_submit(c) and not c["disabled"]), None)
-            if not submit:
-                return AgentResult(
-                    status="failed",
-                    reason="No submit control found",
-                    trajectory=trajectory,
-                )
+            if submitted_once and self.detect_success(page):
+                trajectory.append({
+                    "action": "success_detected",
+                    "url": page.url,
+                    "status": page.status,
+                })
+                return AgentResult("submitted", trajectory=trajectory)
 
-            locator = page.locator("input, textarea, select, button").nth(submit["index"])
-            trajectory.append({"action": "click_submit", "field": self.descriptor(submit)})
-            await locator.click()
+            for control in page.controls:
+                if control.disabled or self.is_submit(control):
+                    continue
+                if not self.control_is_empty(control):
+                    continue
+                self.fill_control(control, profile, trajectory)
+
+            missing = self._required_missing(page)
+            if missing:
+                reason = "Missing candidate data for required field(s): " + "; ".join(missing)
+                trajectory.append({"action": "action_required", "reason": reason})
+                return AgentResult("action_required", reason, trajectory)
+
+            submit = next(
+                (
+                    control
+                    for control in page.controls
+                    if self.is_submit(control)
+                    and not control.disabled
+                    and control.form_index is not None
+                ),
+                None,
+            )
+
+            if submit is None:
+                if page.has_script:
+                    reason = (
+                        "Page requires JavaScript interaction that Jupiter Web Engine v1 "
+                        "does not execute yet"
+                    )
+                    trajectory.append({"action": "action_required", "reason": reason})
+                    return AgentResult("action_required", reason, trajectory)
+                reason = "No explicit HTML form submit control found"
+                trajectory.append({"action": "failed", "reason": reason})
+                return AgentResult("failed", reason, trajectory)
+
+            form = page.forms[submit.form_index]
+            action = form.action.strip().lower()
+            if action.startswith("javascript:"):
+                reason = "Form submission depends on page JavaScript"
+                trajectory.append({"action": "action_required", "reason": reason})
+                return AgentResult("action_required", reason, trajectory)
+
+            trajectory.append({
+                "action": "click_submit",
+                "field": self.descriptor(submit),
+                "method": form.method.upper(),
+                "action_url": form.action or page.url,
+            })
+
+            before = page
             try:
-                await page.wait_for_load_state("domcontentloaded", timeout=3000)
-            except Exception:
-                pass
-            await page.wait_for_timeout(150)
+                page = self.engine.submit(before, form, submit)
+            except EngineSecurityError as exc:
+                reason = f"Navigation blocked by Jupiter policy: {exc}"
+                trajectory.append({"action": "action_required", "reason": reason})
+                return AgentResult("action_required", reason, trajectory)
+            except EngineError as exc:
+                reason = f"Jupiter Web Engine failed to submit form: {exc}"
+                trajectory.append({"action": "failed", "reason": reason})
+                return AgentResult("failed", reason, trajectory)
 
-        return AgentResult(status="failed", reason="Max steps exceeded", trajectory=trajectory)
+            submitted_once = True
+            trajectory.append({
+                "action": "http_submit",
+                "url": page.url,
+                "status": page.status,
+            })
 
-    async def run(self, page: Page, url: str, profile: CandidateProfile) -> AgentResult:
-        self.assert_allowed(url)
-        await page.goto(url, wait_until="domcontentloaded")
-        return await self.run_loaded_page(page, url, profile)
+            if self.detect_success(page):
+                trajectory.append({
+                    "action": "success_detected",
+                    "url": page.url,
+                    "status": page.status,
+                })
+                return AgentResult("submitted", trajectory=trajectory)
 
-async def _amain(args: argparse.Namespace) -> int:
-    profile = CandidateProfile.load(args.profile)
-    agent = JupiterAgent(set(args.allow_host), args.max_steps)
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=not args.headed,
-            executable_path=args.chromium,
-            args=["--no-sandbox"] if args.no_sandbox else [],
-        )
-        page = await browser.new_page()
-        result = await agent.run(page, args.url, profile)
-        print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
-        await browser.close()
-        return 0 if result.status in {"submitted", "action_required"} else 1
+            if self._same_page(before, page):
+                reason = "Submit returned the same page without explicit success confirmation"
+                trajectory.append({"action": "action_required", "reason": reason})
+                return AgentResult("action_required", reason, trajectory)
+
+        reason = "Max Jupiter steps exceeded"
+        trajectory.append({"action": "failed", "reason": reason})
+        return AgentResult("failed", reason, trajectory)
+
+    def run(self, url: str, profile: CandidateProfile) -> AgentResult:
+        try:
+            page = self.engine.open(url)
+        except EngineSecurityError as exc:
+            reason = f"Navigation blocked by Jupiter policy: {exc}"
+            return AgentResult(
+                "action_required",
+                reason,
+                [{"action": "action_required", "reason": reason}],
+            )
+        except EngineError as exc:
+            reason = f"Jupiter Web Engine failed to open page: {exc}"
+            return AgentResult(
+                "failed",
+                reason,
+                [{"action": "failed", "reason": reason}],
+            )
+
+        trajectory = [{
+            "action": "open",
+            "url": page.url,
+            "status": page.status,
+            "engine": "jupiter-web-engine",
+        }]
+        return self._run_from_page(page, profile, trajectory)
+
+    def run_loaded_html(
+        self,
+        html_text: str,
+        logical_url: str,
+        profile: CandidateProfile,
+    ) -> AgentResult:
+        try:
+            page = self.engine.load_html(html_text, logical_url)
+        except EngineSecurityError as exc:
+            reason = f"Navigation blocked by Jupiter policy: {exc}"
+            return AgentResult(
+                "action_required",
+                reason,
+                [{"action": "action_required", "reason": reason}],
+            )
+
+        trajectory = [{
+            "action": "open",
+            "url": page.url,
+            "status": page.status,
+            "engine": "jupiter-web-engine",
+            "source": "inline-test",
+        }]
+        return self._run_from_page(page, profile, trajectory)
+
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Jupiter deterministic browser agent")
+    parser = argparse.ArgumentParser(description="Jupiter native HTTP/HTML application agent")
     parser.add_argument("--url", required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--allow-host", action="append", default=["127.0.0.1", "localhost"])
-    parser.add_argument("--max-steps", type=int, default=80)
-    parser.add_argument("--chromium", default="/usr/bin/chromium")
-    parser.add_argument("--headed", action="store_true")
-    parser.add_argument("--no-sandbox", action="store_true")
+    parser.add_argument(
+        "--allow-host",
+        action="append",
+        default=["127.0.0.1", "localhost"],
+    )
+    parser.add_argument("--max-steps", type=int, default=30)
     args = parser.parse_args()
-    return asyncio.run(_amain(args))
+
+    profile = CandidateProfile.load(args.profile)
+    agent = JupiterAgent(set(args.allow_host), args.max_steps)
+    result = agent.run(args.url, profile)
+    print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+    return 0 if result.status in {"submitted", "action_required"} else 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

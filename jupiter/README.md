@@ -1,75 +1,106 @@
-# Jupiter MVP
+# Jupiter Web Engine
 
-Jupiter is JobToo's own browser agent for external job applications.
+Jupiter is JobToo's own application agent for external job applications.
 
-The first MVP intentionally has **no GPT/Yandex/GigaChat integration**. The browser, field understanding, decisions, safety boundary and trajectory logging are all owned by JobToo.
+The current runtime has no Chromium, Playwright, Selenium, external AI service,
+or ATS integration. The HTTP client, cookie jar, HTML/form parser, field
+mapping, multipart upload, navigation policy, submit flow and success
+verification live in this repository.
 
-## What it does
+## What Jupiter Web Engine v1 does
 
-- opens a career page in Chromium;
-- observes `input`, `textarea`, `select` and `button` controls plus labels/ARIA/name attributes;
-- maps fields to a structured candidate profile using Jupiter's semantic rules;
-- fills text/select fields and uploads a resume;
-- refuses to invent required data: an unknown required question returns `action_required`;
-- submits only after required fields are satisfied;
-- recognizes explicit success markers after submit;
-- records the full action trajectory for debugging and later training data.
+- opens HTTP/HTTPS pages with a strict host allow-list;
+- validates every redirect against the same allow-list;
+- stores and replays cookies;
+- parses HTML forms, labels, inputs, textareas, selects and buttons;
+- builds a machine-oriented semantic page state instead of relying on pixels;
+- maps fields to the structured JobToo candidate profile;
+- uploads a resume with native multipart/form-data encoding;
+- submits GET/POST forms directly;
+- follows multi-step HTML forms;
+- refuses to invent required candidate data;
+- stops on CAPTCHA;
+- requires an explicit success marker after submission;
+- records the complete action trajectory.
+
+## Deliberate v1 boundary
+
+Jupiter Web Engine v1 does not execute arbitrary page JavaScript.
+
+If a career site renders its application form only after JavaScript runs, or
+uses a JavaScript-only submit handler, Jupiter returns action_required. It does
+not silently fall back to Chrome or a third-party browser service.
+
+That boundary is intentional: the agent stays fully under JobToo control while
+we expand our own runtime. The next engine work is a controlled JS/DOM layer,
+not a hidden Chromium dependency.
+
+## Runtime dependencies
+
+The agent code uses only Python's standard library. requirements.txt is kept as
+an explicit declaration and is intentionally empty of third-party packages.
+
+The container uses a plain Python image and runs:
+
+`python test_server.py`
+
+There is no browser installation step.
 
 ## Safety
 
-Jupiter will not visit arbitrary hosts. Each run receives an explicit host allow-list. CAPTCHA solving/bypass is intentionally absent.
+Each Jupiter run gets an explicit host allow-list. Redirects and form actions
+cannot escape it. URLs with embedded credentials are rejected.
 
-## Test
+CAPTCHA solving/bypass is intentionally absent. Unknown required questions
+return action_required and are never fabricated.
 
-Install:
+The private lab keeps its synthetic employer pages reachable only from
+loopback, so the lab cannot submit to a real employer.
 
-```bash
-python -m pip install -r jupiter/requirements.txt
-python -m playwright install chromium
-```
+## Tests
 
-Run:
+Run locally with only Python:
 
 ```bash
 cd jupiter
 python test_e2e.py
 ```
 
-The E2E suite uses `test_site.html` as a synthetic careers page and verifies two cases:
+The E2E suite starts a local synthetic employer server and verifies:
 
-1. Jupiter fills the form, uploads a resume, submits it and detects `Application received`.
-2. A required question not present in the candidate profile (visa sponsorship) stops the agent with `action_required` and **does not submit**.
+1. cookie handling;
+2. semantic HTML/form parsing;
+3. candidate field mapping;
+4. multipart resume upload;
+5. real HTTP form submission;
+6. explicit success verification;
+7. stop-before-submit on an unknown required visa question;
+8. explicit handoff on a JS-only page;
+9. redirect blocking when navigation tries to escape the allow-list.
 
-The tests use `page.set_content()` so they also run in locked-down CI environments that block localhost navigation. Production `JupiterAgent.run()` navigates to a real URL through Playwright.
-
-## Next slice
-
-Wire the agent into JobToo's application queue with:
-
-`queued -> running -> action_required | submitted | failed`
-
-Then persist the trajectory, screenshots and confirmation metadata. The planner is deliberately isolated so a future self-hosted model can be added only for pages the deterministic rules cannot resolve.
-
+CI runs the same suite on every PR.
 
 ## Private lab
 
-The interactive staging harness is intentionally absent from the JobToo UI.
-
-After deployment it is available at:
+The lab is intentionally absent from the normal JobToo UI and is available at:
 
 `https://jobtoo.ru/jupiter/`
 
-The lab asks for the same phone/password used in JobToo and sends them through
-the existing `dbLogin` path. Jupiter then checks that the authenticated account
-is the same admin account already used by JobToo's in-app admin guard. Other
-JobToo accounts cannot enter.
+It accepts the same phone/password as JobToo and then allows only the existing
+JobToo admin account. A successful login creates a short-lived Secure HttpOnly
+Jupiter cookie.
 
-A successful login creates only a short-lived HttpOnly Jupiter cookie. The lab
-then lets the owner edit a synthetic candidate profile and run two scenarios:
-a successful application and an unknown required question. Each run starts real
-Chromium, returns the Jupiter trajectory and renders a final browser screenshot.
+The lab shows two synthetic scenarios: successful application and unknown
+required question. After a run it displays the semantic page snapshot and the
+full Jupiter trajectory.
 
-The browser allow-list is fixed to `127.0.0.1`; this staging UI cannot submit to
-real employer sites. nginx sends `noindex, nofollow, noarchive`, and the
-container port is bound to loopback only. The technical panel on port 8443 is
-unrelated and remains fully protected by its own Basic Auth.
+The lab service binds only to 127.0.0.1 on the host, nginx sends
+noindex/nofollow/noarchive, and the Jupiter engine inside the lab is allowed to
+visit only 127.0.0.1.
+
+## Next slice
+
+After v1 is stable, the engine can grow its own controlled JavaScript/DOM
+execution layer and site-specific compatibility skills. The agent API does not
+need to change: Planner and policy operate on Jupiter's semantic page model,
+not on a Chromium-specific API.

@@ -340,21 +340,17 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:nikidav9@gmail.com}
 
-  # Закрытый интерактивный стенд Jupiter. Наружу порт не публикуется:
-  # nginx отдаёт его только на admin-порту 8443, который уже закрыт Basic Auth.
-  # Chromium ходит исключительно на локальную synthetic-career страницу.
+  # Закрытый интерактивный стенд Jupiter. Без Chromium/Playwright:
+  # собственный HTTP/HTML runtime использует только Python stdlib.
+  # Порт привязан к loopback; наружу стенд отдаёт nginx по /jupiter/.
   jupiter-lab:
-    image: mcr.microsoft.com/playwright/python:v1.57.0-noble
+    image: python:3.12-slim
     restart: unless-stopped
     oom_score_adj: 850
-    mem_limit: 768m
-    shm_size: 256mb
+    mem_limit: 384m
     ports: ["127.0.0.1:8123:8123"]
     working_dir: /app
-    command:
-      - bash
-      - -lc
-      - python -c "import playwright" 2>/dev/null || pip install --no-cache-dir -r requirements.txt; exec python test_server.py
+    command: ["python", "test_server.py"]
     volumes:
       - ../jupiter:/app:ro
     environment:
