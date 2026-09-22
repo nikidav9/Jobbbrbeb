@@ -51,14 +51,13 @@ CAPTCHA_MARKERS = (
 
 CONSENT_MARKERS = (
     "consent",
-    "agree",
-    "agreed",
     "personal data",
     "privacy",
-    "policy",
-    "соглас",
+    "privacy policy",
+    "personal data policy",
     "персональн",
-    "обработк",
+    "обработк персональн",
+    "политик конфиденциальност",
 )
 
 ALIASES = {
