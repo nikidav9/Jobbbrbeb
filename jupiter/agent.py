@@ -234,8 +234,7 @@ def choose_key(
     if override:
         if override == "resume":
             return override
-        if override in profile.values:
-            return override
+        return override if override in profile.values else None
 
     name = normalize(control.name)
     cid = normalize(control.id)
