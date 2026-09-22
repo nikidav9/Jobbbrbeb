@@ -44,6 +44,9 @@ class ControlState:
     id: str = ""
     placeholder: str = ""
     aria: str = ""
+    autocomplete: str = ""
+    inputmode: str = ""
+    title_attr: str = ""
     label: str = ""
     text: str = ""
     required: bool = False
@@ -110,6 +113,9 @@ class PageState:
                     "label": c.label,
                     "placeholder": c.placeholder,
                     "aria": c.aria,
+                    "autocomplete": c.autocomplete,
+                    "inputmode": c.inputmode,
+                    "title_attr": c.title_attr,
                     "text": c.text,
                     "required": c.required,
                     "disabled": c.disabled,
@@ -189,8 +195,17 @@ class _SemanticParser(HTMLParser):
             id=attrs.get("id", ""),
             placeholder=attrs.get("placeholder", ""),
             aria=attrs.get("aria-label", ""),
-            required="required" in attrs,
-            disabled="disabled" in attrs,
+            autocomplete=attrs.get("autocomplete", ""),
+            inputmode=attrs.get("inputmode", ""),
+            title_attr=attrs.get("title", ""),
+            required=(
+                "required" in attrs
+                or attrs.get("aria-required", "").lower() == "true"
+            ),
+            disabled=(
+                "disabled" in attrs
+                or attrs.get("aria-disabled", "").lower() == "true"
+            ),
             value=value,
             checked="checked" in attrs,
             accept=attrs.get("accept", ""),
