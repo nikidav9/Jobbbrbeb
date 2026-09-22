@@ -275,13 +275,13 @@ class JupiterScriptRuntime:
     def _bind_nodes(self, source: str) -> None:
         pattern = re.compile(
             r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"
-            r"(document\.getElementById\(\s*(['\"])([^'\"]+)\2\s*\)"
-            r"|document\.querySelector\(\s*(['\"])(#[^'\"]+)\4\s*\))\s*;?",
+            r"(?:document\.getElementById\(\s*['\"]([^'\"]+)['\"]\s*\)"
+            r"|document\.querySelector\(\s*['\"](#[^'\"]+)['\"]\s*\))\s*;?",
             flags=re.DOTALL,
         )
         for match in pattern.finditer(source):
             name = match.group(1)
-            node_id = match.group(4) or (match.group(6) or "")[1:]
+            node_id = match.group(2) or (match.group(3) or "")[1:]
             if node_id:
                 self.bindings[name] = node_id
                 self.diagnostics.append(
