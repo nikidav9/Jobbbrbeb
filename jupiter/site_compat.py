@@ -180,7 +180,8 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
 
 def normalize_host(value: str) -> str:
     host = (urlparse(value).hostname if "://" in value else value) or ""
-    return host.lower().lstrip("www.")
+    host = host.lower()
+    return host[4:] if host.startswith("www.") else host
 
 
 def profile_for_url(url: str) -> SiteProfile | None:
