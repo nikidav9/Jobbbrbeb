@@ -155,6 +155,49 @@ NETWORK_HTML = """<!doctype html>
 </body>
 </html>"""
 
+
+MODERN_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="csrf-token" content="lab-csrf-456">
+  <title>Jupiter Modern Runtime Test</title>
+</head>
+<body>
+  <h1>Modern Full Stack Engineer</h1>
+  <form id="modern-form">
+    <label>Email <input type="email" name="email" required></label>
+    <label>Город <input name="city" required></label>
+    <button type="submit">Submit application</button>
+  </form>
+  <div id="modern-success" hidden>
+    <h1>Application received</h1>
+    <p>External script + JSON + CSRF + response.json completed.</p>
+  </div>
+  <script src="/career-modern.js"></script>
+</body>
+</html>"""
+
+MODERN_JS = """
+const form = document.getElementById('modern-form');
+form.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const response = await fetch('/career-modern-submit', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+    },
+    body: JSON.stringify(Object.fromEntries(new FormData(form)))
+  });
+  const data = await response.json();
+  if (data.accepted) {
+    document.getElementById('modern-form').hidden = true;
+    document.getElementById('modern-success').hidden = false;
+  }
+});
+"""
+
 LOGIN_HTML = """<!doctype html>
 <html lang="ru">
 <head>
@@ -232,7 +275,7 @@ UI_HTML = """<!doctype html>
       <label>Город<input id="city" value="Москва"></label>
       <label>Опыт, лет<input id="experience_years" value="4"></label>
       <label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label>
-      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="network">fetch через Jupiter Network Runtime</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
+      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="network">fetch через Jupiter Network Runtime</option><option value="modern">External JS + JSON + CSRF</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
     </div>
     <label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label>
     <div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div>
@@ -372,7 +415,7 @@ def _clip(value: Any, limit: int = 500) -> str:
 
 def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, str], str]:
     scenario = _clip(raw.get("scenario"), 20)
-    if scenario not in {"success", "script", "network", "unknown"}:
+    if scenario not in {"success", "script", "network", "modern", "unknown"}:
         raise ValueError("Unknown scenario")
     values = {
         "first_name": _clip(raw.get("first_name"), 100),
@@ -400,6 +443,7 @@ def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
             "success": "career-test",
             "script": "career-script",
             "network": "career-network",
+            "modern": "career-modern",
             "unknown": "career-unknown",
         }[scenario]
         target = f"http://127.0.0.1:{PORT}/{page_name}"
@@ -487,6 +531,19 @@ class Handler(BaseHTTPRequestHandler):
                 if self._is_loopback()
                 else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             )
+        if path == "/career-modern":
+            return (
+                self._html(MODERN_HTML)
+                if self._is_loopback()
+                else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            )
+        if path == "/career-modern.js":
+            if not self._is_loopback():
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            body = MODERN_JS.encode("utf-8")
+            self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8")
+            self.wfile.write(body)
+            return
         if path == "/career-unknown":
             return (
                 self._html(UNKNOWN_HTML)
@@ -502,6 +559,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = self.path.split("?", 1)[0]
+
+        if path == "/career-modern-submit":
+            if not self._is_loopback():
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return self._json(HTTPStatus.BAD_REQUEST, {"accepted": False})
+            if length <= 0 or length > MAX_APPLICATION_BODY:
+                return self._json(HTTPStatus.BAD_REQUEST, {"accepted": False})
+            try:
+                payload = json.loads(self.rfile.read(length))
+            except Exception:
+                return self._json(HTTPStatus.BAD_REQUEST, {"accepted": False})
+            accepted = (
+                "application/json" in (self.headers.get("Content-Type") or "").lower()
+                and self.headers.get("X-CSRF-Token") == "lab-csrf-456"
+                and payload.get("email") == "nikita.demo@reply.jobtoo.ru"
+                and payload.get("city") == "Москва"
+            )
+            return self._json(
+                HTTPStatus.OK if accepted else HTTPStatus.BAD_REQUEST,
+                {"accepted": accepted},
+            )
 
         if path == "/career-network-submit":
             if not self._is_loopback():

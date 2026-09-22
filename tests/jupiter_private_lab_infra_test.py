@@ -58,6 +58,11 @@ assert "execute_network_program" in network_runtime
 assert "XMLHttpRequest" in network_runtime
 assert "NetworkResponse" in engine
 assert "script_network_submit" in agent
+assert "json_form" in network_runtime
+assert "response.json()" in network_runtime
+assert "meta_headers" in network_runtime
+assert "_load_external_script" in engine
+assert "External scripts must be same-origin" in engine
 
 admin_anchor = "listen 8443 ssl http2;"
 assert admin_anchor in nginx
@@ -86,7 +91,7 @@ assert "8123" in bootstrap
 assert 'JupiterAgent({"127.0.0.1"}' in server
 assert 'X-Robots-Tag' in server
 assert 'JUPITER_SESSION_SECRET' in bootstrap
-assert 'career-test' in server and 'career-script' in server and 'career-network' in server and 'career-unknown' in server
+assert 'career-test' in server and 'career-script' in server and 'career-network' in server and 'career-modern' in server and 'career-unknown' in server
 assert 'action="/career-submit"' in server
 
 print("jupiter native engine infra: ok")

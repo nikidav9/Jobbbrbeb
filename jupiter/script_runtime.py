@@ -216,7 +216,11 @@ class JupiterScriptRuntime:
         "import(",
     )
 
-    def __init__(self, html_text: str):
+    def __init__(
+        self,
+        html_text: str,
+        external_loader: Callable[[str], str] | None = None,
+    ):
         parser = _DomParser()
         parser.feed(html_text)
         parser.close()
@@ -227,11 +231,12 @@ class JupiterScriptRuntime:
         self.handlers: list[_Handler] = []
         self.diagnostics: list[ScriptDiagnostic] = []
         self.unsupported = False
+        self.external_loader = external_loader
         self._scripts = self._extract_scripts(html_text)
 
     @staticmethod
-    def _extract_scripts(html_text: str) -> list[tuple[str, bool]]:
-        scripts: list[tuple[str, bool]] = []
+    def _extract_scripts(html_text: str) -> list[tuple[str, str | None]]:
+        scripts: list[tuple[str, str | None]] = []
         for match in re.finditer(
             r"<script\b([^>]*)>(.*?)</script\s*>",
             html_text,
@@ -239,10 +244,12 @@ class JupiterScriptRuntime:
         ):
             attrs = match.group(1) or ""
             body = match.group(2) or ""
-            external = bool(
-                re.search(r"\bsrc\s*=", attrs, flags=re.IGNORECASE)
+            src_match = re.search(
+                r"""\bsrc\s*=\s*["']([^"']+)["']""",
+                attrs,
+                flags=re.IGNORECASE,
             )
-            scripts.append((body, external))
+            scripts.append((body, src_match.group(1) if src_match else None))
         return scripts
 
     @staticmethod
@@ -529,16 +536,34 @@ class JupiterScriptRuntime:
         return mutations, prevented
 
     def bootstrap(self) -> ScriptRunResult:
-        for source, external in self._scripts:
-            if external:
-                self.unsupported = True
+        for source, external_src in self._scripts:
+            if external_src:
+                if self.external_loader is None:
+                    self.unsupported = True
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "unsupported",
+                            "external script loader unavailable",
+                        )
+                    )
+                    continue
+                try:
+                    source = self.external_loader(external_src)
+                except Exception as exc:
+                    self.unsupported = True
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "unsupported",
+                            f"external script blocked: {type(exc).__name__}: {exc}",
+                        )
+                    )
+                    continue
                 self.diagnostics.append(
                     ScriptDiagnostic(
-                        "unsupported",
-                        "external script src",
+                        "external_script",
+                        external_src,
                     )
                 )
-                continue
 
             if not source.strip():
                 continue

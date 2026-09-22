@@ -156,6 +156,50 @@ form.addEventListener('submit', async function(e) {
 </script>
 """
 
+
+MODERN_APP_HTML = """<!doctype html>
+<meta charset="utf-8">
+<meta name="csrf-token" content="csrf-demo-123">
+<title>Modern Careers</title>
+<form id="modern-form">
+  <label>Email <input type="email" name="email" required></label>
+  <label>City <input name="city" required></label>
+  <button type="submit">Submit application</button>
+</form>
+<div id="modern-success" hidden>
+  <h1>Application received</h1>
+  <p>JSON application accepted.</p>
+</div>
+<script src="/assets/modern-app.js"></script>
+"""
+
+MODERN_EXTERNAL_BLOCKED_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>External Script Policy</title>
+<div id="root"></div>
+<script src="http://example.com/evil.js"></script>
+"""
+
+MODERN_EXTERNAL_JS = """
+const form = document.getElementById('modern-form');
+form.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const response = await fetch('/json-submit', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+    },
+    body: JSON.stringify(Object.fromEntries(new FormData(form)))
+  });
+  const data = await response.json();
+  if (data.accepted) {
+    document.getElementById('modern-form').hidden = true;
+    document.getElementById('modern-success').hidden = false;
+  }
+});
+"""
+
 PROFILE = {
     "first_name": "Nikita",
     "last_name": "Davydov",
@@ -203,6 +247,18 @@ class CareersHandler(BaseHTTPRequestHandler):
             return self._html(JS_XHR_SUBMIT_HTML)
         if self.path == "/js-fetch-external":
             return self._html(JS_FETCH_EXTERNAL_HTML)
+        if self.path == "/modern-app":
+            return self._html(MODERN_APP_HTML)
+        if self.path == "/modern-external-blocked":
+            return self._html(MODERN_EXTERNAL_BLOCKED_HTML)
+        if self.path == "/assets/modern-app.js":
+            body = MODERN_EXTERNAL_JS.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/redirect-external":
             self.send_response(302)
             self.send_header("Location", "http://example.com/application")
@@ -213,6 +269,39 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path == "/json-submit":
+            self.server.state["json_post_count"] += 1
+            self.server.state["last_json_body"] = body
+            self.server.state["last_json_csrf"] = self.headers.get(
+                "X-CSRF-Token",
+                "",
+            )
+            self.server.state["last_json_content_type"] = self.headers.get(
+                "Content-Type",
+                "",
+            )
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except Exception:
+                payload = {}
+            accepted = (
+                "application/json"
+                in self.server.state["last_json_content_type"]
+                and self.server.state["last_json_csrf"] == "csrf-demo-123"
+                and payload.get("email") == "nikita.demo@reply.jobtoo.ru"
+                and payload.get("city") == "Москва"
+            )
+            response = json.dumps(
+                {"accepted": accepted},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            self.send_response(200 if accepted else 400)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
 
         if self.path == "/network-submit":
             self.server.state["network_post_count"] += 1
@@ -293,6 +382,10 @@ class JupiterNativeE2E(unittest.TestCase):
             "last_network_content_type": "",
             "xhr_post_count": 0,
             "last_xhr_body": b"",
+            "json_post_count": 0,
+            "last_json_body": b"",
+            "last_json_csrf": "",
+            "last_json_content_type": "",
         }
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -430,6 +523,50 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertEqual(result.status, "action_required")
         self.assertIn("blocked", (result.reason or "").lower())
         self.assertIn("example.com", result.reason or "")
+
+    def test_modern_runtime_external_script_json_csrf_and_response_json(self):
+        before = self.server.state["json_post_count"]
+        result, agent = self.run_path("/modern-app")
+        self.assertEqual(
+            result.status,
+            "submitted",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        self.assertEqual(self.server.state["json_post_count"], before + 1)
+        self.assertEqual(self.server.state["last_json_csrf"], "csrf-demo-123")
+        self.assertIn(
+            "application/json",
+            self.server.state["last_json_content_type"],
+        )
+        payload = json.loads(self.server.state["last_json_body"].decode("utf-8"))
+        self.assertEqual(payload["email"], "nikita.demo@reply.jobtoo.ru")
+        self.assertEqual(payload["city"], "Москва")
+        history = agent.engine.semantic_snapshot().get("script_history", [])
+        self.assertTrue(
+            any(item.get("kind") == "external_script" for item in history),
+            history,
+        )
+        self.assertTrue(
+            any(item.get("kind") == "network_response" for item in history),
+            history,
+        )
+        self.assertIn(
+            "script_network_submit",
+            [item["action"] for item in result.trajectory],
+        )
+
+    def test_external_script_must_be_same_origin(self):
+        result, agent = self.run_path("/modern-external-blocked")
+        self.assertEqual(result.status, "action_required")
+        history = agent.engine.semantic_snapshot().get("script_history", [])
+        self.assertTrue(
+            any(
+                item.get("kind") == "unsupported"
+                and "external script blocked" in item.get("detail", "")
+                for item in history
+            ),
+            history,
+        )
 
     def test_js_only_page_is_explicitly_handed_off(self):
         result, _agent = self.run_path("/js-only")
