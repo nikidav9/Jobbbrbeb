@@ -1,1 +1,1 @@
-playwright==1.57.0
+# Jupiter Web Engine v1 uses only the Python standard library.\n
