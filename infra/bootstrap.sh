@@ -392,6 +392,12 @@ fi
 grep -q '^SESSION_SECRET=' "$SECRETS" 2>/dev/null \
   || echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$SECRETS"
 
+# Отдельная подпись короткой cookie закрытого Jupiter Lab. Не используем
+# SESSION_SECRET приложения: компрометация тестового стенда не должна
+# обесценивать пользовательские сессии JobToo.
+grep -q '^JUPITER_SESSION_SECRET=' "$SECRETS" 2>/dev/null \
+  || echo "JUPITER_SESSION_SECRET=$(openssl rand -hex 32)" >> "$SECRETS"
+
 ln -sf "$SECRETS" "$REPO/infra/.env"
 grep -q "^PUBLIC_URL=" "$SECRETS" || echo "PUBLIC_URL=http://$(hostname -I | awk '{print $1}')" >> "$SECRETS"
 
