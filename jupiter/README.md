@@ -54,6 +54,40 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Candidate knowledge: facts, preferences, generated text, consents
+
+`candidate.py` splits what Jupiter knows into classes that behave differently,
+because mixing them is dangerous in one specific direction:
+
+- **FACT** — never invented. Contact details, names, city.
+- **LEGAL** — citizenship, work authorisation, visa, driving licence,
+  disability, clearance. Absent from the profile means `action_required`
+  with `UNKNOWN_REQUIRED_QUESTION`, never a guess: a wrong answer here is a
+  false statement made in someone's name.
+- **PREFERENCE** — salary, format, notice period. Taken from settings only.
+- **GENERATED** — cover letter and similar. May be written, but only from
+  real facts.
+- **CONSENT** — see below.
+
+Every filled value carries `provenance` in the trajectory: `field_class` plus
+the source (`PROFILE`, `RESUME`, `USER_PREFERENCE`, `GENERATED`,
+`SITE_DEFAULT`, `USER_CONFIRMATION`). Without it there is no way to tell a
+person what exactly was sent on their behalf.
+
+### Consents are not one checkbox
+
+"Согласен на обработку персональных данных" is not "хочу в кадровый резерв"
+and is not "хочу рекламу". Jupiter recognises the kind of each checkbox and:
+
+- ticks a **required** consent (personal data, privacy policy) when the
+  profile records it;
+- **never** ticks marketing or talent-pool by default — only when that exact
+  consent was granted by its own key;
+- treats a **mixed** checkbox — one box covering a required consent *and* an
+  optional one — as a question for the human, always, even when both were
+  granted separately. Bundling them is the employer's choice, and unbundling
+  it is not ours to make. The run stops with `CONSENT_REQUIRED`.
+
 ## Submission safety: evidence and one application per vacancy
 
 Two rules that gate every real submit.
@@ -173,7 +207,7 @@ text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
 `DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
 `NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
 `MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`, `DUPLICATE_BLOCKED`,
-`SUBMISSION_UNKNOWN`.
+`SUBMISSION_UNKNOWN`, `CONSENT_REQUIRED`, `UNKNOWN_REQUIRED_QUESTION`.
 Compatibility statistics must be built on the code, not on the prose.
 
 ## Jupiter Script Runtime v1
@@ -250,6 +284,7 @@ cd jupiter
 python test_form_semantics.py
 python test_spa_payload.py
 python test_submission.py
+python test_candidate.py
 python test_e2e.py
 ```
 
@@ -301,7 +336,10 @@ The E2E suite starts a local synthetic employer server and verifies:
 40. a campaign link not defeating the duplicate guard;
 41. a receipt surviving between runs through a file;
 42. a dropped connection becoming `submission_unknown`, never a retried POST;
-43. HTTP 200 with the same form back not counting as a submitted application.
+43. HTTP 200 with the same form back not counting as a submitted application;
+44. only the consent the candidate actually gave being ticked;
+45. one checkbox for data and advertising going to the human;
+46. every filled value carrying its provenance.
 
 CI runs the same suite on every PR.
 

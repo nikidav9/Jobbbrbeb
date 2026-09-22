@@ -135,10 +135,11 @@ jobs:
           python3 tests/health_endpoint_test.py
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/engine.py jupiter/agent.py jupiter/test_server.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/candidate.py jupiter/engine.py jupiter/agent.py jupiter/test_server.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
+          (cd jupiter && python3 test_candidate.py)
           (cd jupiter && python3 test_e2e.py)
           python3 tests/jupiter_private_lab_infra_test.py
           bash tests/nginx_config_test.sh

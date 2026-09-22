@@ -203,6 +203,41 @@ form.addEventListener('submit', async function(e) {
 });
 """
 
+# ── Согласия: три галочки с разным смыслом ──────────────────────────────────
+
+CONSENTS_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета с согласиями</title>
+<form id="application-form" action="/never-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <label><input type="checkbox" name="pd" required>
+    Согласен на обработку персональных данных</label>
+  <label><input type="checkbox" name="pool">
+    Включить меня в кадровый резерв для будущих вакансий</label>
+  <label><input type="checkbox" name="ads">
+    Хочу получать рекламные рассылки и новости компании</label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+MIXED_CONSENT_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета со смешанной галочкой</title>
+<form id="application-form" action="/never-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <label><input type="checkbox" name="all" required>
+    Согласен на обработку персональных данных и на получение рекламных
+    рассылок от партнёров</label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+
 # ── Один отклик — один раз, и «двести» не значит «принято» ──────────────────
 
 DUP_APPLY_HTML = """<!doctype html>
@@ -639,6 +674,10 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/consents":
+            return self._html(CONSENTS_HTML)
+        if self.path == "/mixed-consent":
+            return self._html(MIXED_CONSENT_HTML)
         if self.path == "/dup-apply":
             return self._html(DUP_APPLY_HTML)
         if self.path == "/drop-apply":
@@ -889,6 +928,57 @@ class JupiterNativeE2E(unittest.TestCase):
                 profile,
             )
             return result, agent
+
+    # ── Согласия ────────────────────────────────────────────────────────────
+
+    def test_only_the_consent_the_candidate_gave_is_ticked(self):
+        result, _ = self.run_path("/consents", dry_run=True)
+        self.assertEqual(result.status, "ready_to_submit", result.reason)
+        checked = [
+            item["field"] for item in result.trajectory
+            if item.get("action") == "check"
+        ]
+        skipped = [
+            item["consent_kinds"] for item in result.trajectory
+            if item.get("action") == "consent_skipped"
+        ]
+        self.assertTrue(any("персональных данных" in f for f in checked), checked)
+        # Ни кадровый резерв, ни реклама галочкой не отмечаются: профиль
+        # содержит согласие на обработку данных и ничего больше.
+        self.assertFalse(any("кадровый резерв" in f for f in checked), checked)
+        self.assertFalse(any("рекламные" in f for f in checked), checked)
+        flat = [kind for kinds in skipped for kind in kinds]
+        self.assertIn("talent_pool_consent", flat)
+        self.assertIn("marketing_consent", flat)
+
+    def test_one_checkbox_for_data_and_advertising_goes_to_the_human(self):
+        # Обязательное и необязательное согласие одной галочкой — решение
+        # человека, а не наше. Отклик не уходит.
+        before = self.server.state["post_count"]
+        result, _ = self.run_path("/mixed-consent")
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "CONSENT_REQUIRED")
+        self.assertEqual(self.server.state["post_count"], before)
+        asks = [
+            item for item in result.trajectory
+            if item.get("action") == "consent_needs_user"
+        ]
+        self.assertTrue(asks)
+        self.assertIn("personal_data_consent", asks[0]["consent_kinds"])
+        self.assertIn("marketing_consent", asks[0]["consent_kinds"])
+
+    def test_every_filled_value_says_where_it_came_from(self):
+        result, _ = self.run_path("/consents", dry_run=True)
+        filled = [
+            item for item in result.trajectory
+            if item.get("action") in {"fill", "select", "check", "upload"}
+        ]
+        self.assertTrue(filled)
+        for item in filled:
+            self.assertIn("provenance", item)
+            self.assertIn(item["provenance"]["field_class"], {
+                "FACT", "PREFERENCE", "GENERATED", "CONSENT", "LEGAL",
+            })
 
     # ── Безопасность отправки ───────────────────────────────────────────────
 

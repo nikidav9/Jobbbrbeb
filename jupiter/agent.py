@@ -18,6 +18,9 @@ from engine import (
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from candidate import (
+    FieldClass, classify_key, consent_kinds, decide_consent, provenance_for,
+)
 from spa_payload import extract_payloads, url_candidates
 from submission import (
     ApplicationFingerprint, Receipt, ReceiptStore, SubmissionEvidence,
@@ -201,6 +204,8 @@ class Reason:
     STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
     DUPLICATE_BLOCKED = "DUPLICATE_BLOCKED"
     SUBMISSION_UNKNOWN = "SUBMISSION_UNKNOWN"
+    CONSENT_REQUIRED = "CONSENT_REQUIRED"
+    UNKNOWN_REQUIRED_QUESTION = "UNKNOWN_REQUIRED_QUESTION"
 
 
 @dataclass
@@ -456,6 +461,33 @@ class JupiterAgent:
 
         descriptor = self.descriptor(control)
 
+        if control.type == "checkbox":
+            decision = decide_consent(descriptor, profile.values)
+            if decision.kinds:
+                # Галочка согласия — не обычное поле. Ставим её, только если
+                # человек дал именно это согласие; смешанную («данные и
+                # реклама» одним чекбоксом) не ставим сами никогда.
+                action = {
+                    "check": "check",
+                    "skip": "consent_skipped",
+                    "ask": "consent_needs_user",
+                }[decision.action]
+                trajectory.append({
+                    "action": action,
+                    "field": descriptor,
+                    "key": "consent",
+                    "consent_kinds": decision.kinds,
+                    "consent_reason": decision.reason,
+                    "provenance": {
+                        "field_class": FieldClass.CONSENT,
+                        "source": "USER_CONFIRMATION",
+                    },
+                })
+                if decision.action == "check":
+                    control.checked = True
+                    return True
+                return False
+
         if control.type == "file":
             if profile.resume_path and Path(profile.resume_path).is_file():
                 control.file_path = profile.resume_path
@@ -464,6 +496,10 @@ class JupiterAgent:
                     "field": descriptor,
                     "source": "resume",
                     "filename": Path(profile.resume_path).name,
+                    "provenance": {
+                        "field_class": FieldClass.FACT,
+                        "source": "RESUME",
+                    },
                 })
                 return True
             return False
@@ -487,6 +523,10 @@ class JupiterAgent:
                         "field": descriptor,
                         "key": "single_safe_option",
                         "value": match.label,
+                        "provenance": {
+                            "field_class": FieldClass.PREFERENCE,
+                            "source": "SITE_DEFAULT",
+                        },
                     })
                     return True
             return False
@@ -518,6 +558,7 @@ class JupiterAgent:
                 "field": descriptor,
                 "key": key,
                 "value": match.label,
+                "provenance": provenance_for(key, profile.values),
             })
             return True
 
@@ -528,6 +569,7 @@ class JupiterAgent:
                     "action": "check",
                     "field": descriptor,
                     "key": key,
+                    "provenance": provenance_for(key, profile.values),
                 })
                 return True
             return False
@@ -556,6 +598,7 @@ class JupiterAgent:
                     "field": descriptor,
                     "key": key,
                     "value": control.value,
+                    "provenance": provenance_for(key, profile.values),
                 })
                 return True
             return False
@@ -567,6 +610,7 @@ class JupiterAgent:
             "field": descriptor,
             "key": key,
             "value": text,
+            "provenance": provenance_for(key, profile.values),
         })
         return True
 
@@ -639,6 +683,38 @@ class JupiterAgent:
             and bool(peer.file_path)
             for peer in page.controls
         )
+
+    def _missing_reason_code(
+        self,
+        page: PageState,
+        form_index: int | None,
+    ) -> str:
+        """Почему обязательное поле пустое — согласие, закон или просто нет данных.
+
+        Три разных разговора с человеком. «Поставьте галочку» — одно,
+        «подтвердите гражданство» — другое, «заполните профиль» — третье.
+        """
+        consent_pending = False
+        legal_pending = False
+        for control in page.controls:
+            if form_index is not None and control.form_index != form_index:
+                continue
+            if not control.required or control.disabled:
+                continue
+            if not self.control_is_empty(control):
+                continue
+            descriptor = self.descriptor(control)
+            if control.type == "checkbox" and consent_kinds(descriptor):
+                consent_pending = True
+                continue
+            key = choose_key(control, CandidateProfile(values={}), page.url)
+            if key and classify_key(key) == FieldClass.LEGAL:
+                legal_pending = True
+        if consent_pending:
+            return Reason.CONSENT_REQUIRED
+        if legal_pending:
+            return Reason.UNKNOWN_REQUIRED_QUESTION
+        return Reason.MISSING_PROFILE_FIELD
 
     def _required_missing(
         self,
@@ -1220,16 +1296,14 @@ class JupiterAgent:
 
             if has_application_form or filled_any:
                 if missing:
+                    code = self._missing_reason_code(page, target_form_index)
                     reason = "Missing candidate data for required field(s): " + "; ".join(missing)
                     trajectory.append({
                         "action": "action_required",
                         "reason": reason,
-                        "reason_code": Reason.MISSING_PROFILE_FIELD,
+                        "reason_code": code,
                     })
-                    return AgentResult(
-                        "action_required", reason, trajectory,
-                        Reason.MISSING_PROFILE_FIELD,
-                    )
+                    return AgentResult("action_required", reason, trajectory, code)
 
                 issues = self._validation_issues(page, target_form_index)
                 if issues:
