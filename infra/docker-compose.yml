@@ -359,6 +359,10 @@ services:
       - ../jupiter:/app:ro
     environment:
       PYTHONUNBUFFERED: "1"
+      JOBTOO_API_ORIGIN: ${INTERNAL_API_ORIGIN:-https://147.45.184.99.sslip.io}
+      JOBTOO_APP_SECRET: ${EXPO_PUBLIC_APP_SECRET:-}
+      JUPITER_SESSION_SECRET: ${JUPITER_SESSION_SECRET:-}
+      JUPITER_ALLOWED_USER_IDS: ${JUPITER_ALLOWED_USER_IDS:-}
 
 volumes:
   db-data:
