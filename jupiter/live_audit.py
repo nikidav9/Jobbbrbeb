@@ -41,6 +41,7 @@ def run_target(
     *,
     timeout: float = 15.0,
     max_steps: int = 18,
+    include_snapshot: bool = False,
 ) -> dict[str, Any]:
     target = validate_audited_url(url)
     engine = JupiterWebEngine(
@@ -80,7 +81,7 @@ def run_target(
         and str(item.get("type") or "").lower()
         not in {"hidden", "submit", "button", "image"}
     ]
-    return {
+    payload = {
         "company": name,
         "start_url": target,
         "final_url": snapshot.get("url") if isinstance(snapshot, dict) else None,
@@ -97,6 +98,9 @@ def run_target(
             else []
         ),
     }
+    if include_snapshot:
+        payload["snapshot"] = snapshot
+    return payload
 
 
 def run_all(
