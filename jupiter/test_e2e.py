@@ -61,10 +61,10 @@ JS_RENDERED_FORM_HTML = """<!doctype html>
 <title>Jupiter Script Render Test</title>
 <div id="root"></div>
 <script>
-document.getElementById('root').innerHTML = \`<form id="js-form" action="/submit-js" method="post">
+document.getElementById('root').innerHTML = `<form id="js-form" action="/submit-js" method="post">
   <label>Email <input type="email" name="email" required></label>
   <button type="submit">Submit application</button>
-</form>\`;
+</form>`;
 </script>
 """
 
