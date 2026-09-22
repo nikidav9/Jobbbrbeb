@@ -170,7 +170,7 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "email": "email",
             "phone": "phone",
             "comment": "cover_letter",
-            "agreedreservation": "consent",
+            "agreedreservation": "talent_pool_consent",
             "agreedpersonaldata": "consent",
         },
     ),
