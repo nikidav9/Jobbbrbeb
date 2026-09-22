@@ -254,7 +254,7 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertTrue(
             any(
                 item.get("kind") == "dom_mutation"
-                for item in snapshot.get("script_diagnostics", [])
+                for item in snapshot.get("script_history", [])
             ),
             snapshot,
         )
