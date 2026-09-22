@@ -401,10 +401,12 @@ class JupiterWebEngine:
         *,
         timeout: float = 20.0,
         max_response_bytes: int = 5 * 1024 * 1024,
+        read_only: bool = False,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.timeout = timeout
         self.max_response_bytes = max_response_bytes
+        self.read_only = read_only
         self.cookies = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies),
@@ -590,6 +592,11 @@ class JupiterWebEngine:
         headers: dict[str, str] | None = None,
     ) -> PageState:
         self.assert_allowed(url)
+        method = method.upper()
+        if self.read_only and method not in {"GET", "HEAD"}:
+            raise EngineSecurityError(
+                f"Read-only Jupiter engine blocked mutating request: {method}"
+            )
         request_headers = {
             "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
             "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
@@ -598,7 +605,7 @@ class JupiterWebEngine:
         req = urllib.request.Request(
             url,
             data=data,
-            method=method.upper(),
+            method=method,
             headers=request_headers,
         )
         try:
@@ -707,6 +714,10 @@ class JupiterWebEngine:
         self.assert_allowed(target)
 
         method = network_request.method.upper()
+        if self.read_only and method not in {"GET", "HEAD"}:
+            raise EngineSecurityError(
+                f"Read-only Jupiter engine blocked script request: {method}"
+            )
         if method not in {"GET", "POST"}:
             raise EngineSecurityError(
                 f"Script network method '{method}' is not allowed"
@@ -848,6 +859,10 @@ class JupiterWebEngine:
         form: FormState,
         submit_control: ControlState | None = None,
     ) -> PageState:
+        if self.read_only:
+            raise EngineSecurityError(
+                "Read-only Jupiter engine blocked form submission"
+            )
         if self.script_runtime is not None and form.id:
             event_result = self.script_runtime.handle_event(
                 form.id,
