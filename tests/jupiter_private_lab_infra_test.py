@@ -86,7 +86,7 @@ assert "8123" in bootstrap
 assert 'JupiterAgent({"127.0.0.1"}' in server
 assert 'X-Robots-Tag' in server
 assert 'JUPITER_SESSION_SECRET' in bootstrap
-assert 'career-test' in server and 'career-script' in server and 'career-unknown' in server
+assert 'career-test' in server and 'career-script' in server and 'career-network' in server and 'career-unknown' in server
 assert 'action="/career-submit"' in server
 
 print("jupiter native engine infra: ok")
