@@ -32,7 +32,9 @@ SESSION_COOKIE = "jt_jupiter_lab"
 API_ORIGIN = os.environ.get("JOBTOO_API_ORIGIN", "https://147.45.184.99.sslip.io").rstrip("/")
 APP_SECRET = os.environ.get("JOBTOO_APP_SECRET", "")
 SESSION_SECRET = os.environ.get("JUPITER_SESSION_SECRET", "")
-ADMIN_PHONE = "89933431523"\n\nALLOWED_USER_IDS = {
+ADMIN_PHONE = "89933431523"
+
+ALLOWED_USER_IDS = {
     value.strip()
     for value in os.environ.get("JUPITER_ALLOWED_USER_IDS", "").split(",")
     if value.strip()
