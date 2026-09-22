@@ -84,7 +84,7 @@ fi
 # 9000 — php-fpm. Он и так настроен слушать только 127.0.0.1 (см. compose),
 # но контейнер работает в сети машины, и цена ошибки здесь — открытый наружу
 # обработчик PHP. Две независимые преграды вместо одной.
-for p in 5432 3000 3001 4000 5000 5001 9000 10050; do
+for p in 5432 3000 3001 4000 5000 5001 8123 9000 10050; do
   if ! iptables -C INPUT -p tcp --dport "$p" ! -i lo -j DROP 2>/dev/null; then
     iptables -I INPUT -p tcp --dport "$p" ! -i lo -j DROP 2>/dev/null || true
   fi
