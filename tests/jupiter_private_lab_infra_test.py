@@ -7,6 +7,7 @@ bootstrap = (ROOT / "infra" / "bootstrap.sh").read_text(encoding="utf-8")
 engine = (ROOT / "jupiter" / "engine.py").read_text(encoding="utf-8")
 script_runtime = (ROOT / "jupiter" / "script_runtime.py").read_text(encoding="utf-8")
 network_runtime = (ROOT / "jupiter" / "network_runtime.py").read_text(encoding="utf-8")
+site_compat = (ROOT / "jupiter" / "site_compat.py").read_text(encoding="utf-8")
 agent = (ROOT / "jupiter" / "agent.py").read_text(encoding="utf-8")
 server = (ROOT / "jupiter" / "test_server.py").read_text(encoding="utf-8")
 e2e = (ROOT / "jupiter" / "test_e2e.py").read_text(encoding="utf-8")
@@ -21,7 +22,7 @@ assert "image: python:3.12-slim" in compose
 assert 'command: ["python", "test_server.py"]' in compose
 
 # Jupiter runtime must remain independent of browser automation packages.
-runtime = "\n".join([engine, script_runtime, network_runtime, agent, server, e2e, requirements])
+runtime = "\n".join([engine, script_runtime, network_runtime, site_compat, agent, server, e2e, requirements])
 for forbidden in (
     "from playwright",
     "import playwright",
@@ -58,6 +59,11 @@ assert "execute_network_program" in network_runtime
 assert "XMLHttpRequest" in network_runtime
 assert "NetworkResponse" in engine
 assert "script_network_submit" in agent
+assert "--dry-run" in agent
+assert "ready_to_submit" in agent
+assert "AUDITED_SITES" in site_compat
+assert "Wildberries / РВБ" in site_compat
+assert "МегаФон" in site_compat
 assert "json_form" in network_runtime
 assert "response.json()" in network_runtime
 assert "meta_headers" in network_runtime
