@@ -281,7 +281,7 @@ class JupiterScriptRuntime:
         )
         for match in pattern.finditer(source):
             name = match.group(1)
-            node_id = match.group(3) or (match.group(5) or "")[1:]
+            node_id = match.group(4) or (match.group(6) or "")[1:]
             if node_id:
                 self.bindings[name] = node_id
                 self.diagnostics.append(
