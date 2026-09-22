@@ -54,6 +54,34 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Task queue: a swipe must not wait for someone else's website
+
+An external form takes tens of seconds; a CAPTCHA takes hours. So a swipe
+enqueues a task and a worker picks it up. `tasks.py` holds the model and the
+queue, `worker.py` is the thin bridge to the agent.
+
+- **Lease and heartbeat.** A worker that dies must not take the task with it,
+  and must not have it stolen while it is still alive.
+- **Checkpoints.** Opening the site, finding the vacancy and filling the form
+  is expensive. A restart resumes from the last checkpoint instead of touching
+  the employer's site again.
+- **Per-domain limit.** Twenty swipes on one employer must not become twenty
+  simultaneous requests to them.
+- **Backoff.** Retries wait 1, 4 then 9 minutes, and only for failures worth
+  repeating — a connection problem, not a closed vacancy.
+- **Terminal states include waiting for a human.** `action_required` and
+  `submission_unknown` are never handed back to a worker: the first needs a
+  person, and the second must be verified before anything is repeated.
+
+Every transition is logged on the task with its timestamp and attempt number.
+
+A task parked for a human keeps its `resume_token`, and the worker continues
+from it rather than starting over.
+
+**Not in this layer yet:** the production `application` table and the swipe →
+queue wiring in the app. That touches the live database and deploys on merge,
+so it is a separate change rather than part of a batch.
+
 ## Human handoff that can be resumed
 
 Stopping is not the hard part; continuing is. A person who solves a CAPTCHA in
@@ -310,6 +338,7 @@ python test_spa_payload.py
 python test_submission.py
 python test_candidate.py
 python test_handoff.py
+python test_tasks.py
 python test_e2e.py
 ```
 
@@ -368,7 +397,10 @@ The E2E suite starts a local synthetic employer server and verifies:
 47. a CAPTCHA stop leaving a resume token and sending nothing;
 48. a fresh agent continuing in the same session once the human is done;
 49. an unknown resume token failing loudly;
-50. a missing legal answer asking the human with a token.
+50. a missing legal answer asking the human with a token;
+51. a worker taking a task and recording its receipt;
+52. a worker parking a CAPTCHA task with its resume token;
+53. a worker resuming a parked task instead of starting over.
 
 CI runs the same suite on every PR.
 

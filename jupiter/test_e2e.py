@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import threading
 import unittest
@@ -11,6 +12,8 @@ from pathlib import Path
 from agent import CandidateProfile, JupiterAgent
 from engine import EngineSecurityError, JupiterWebEngine
 from handoff import HandoffStore
+from tasks import TaskQueue, TaskState
+from worker import run_once
 from submission import ReceiptStore
 from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
 
@@ -692,21 +695,27 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path == "/captcha-apply":
+            # Сессия у каждого визита своя, и капчу решают именно для неё.
+            # Постоянный номер сделал бы «продолжить» неотличимым от
+            # «начать заново», и тест перестал бы что-либо проверять.
             cookie = self.headers.get("Cookie", "")
-            solved = self.server.state["captcha_solved"]
+            sessions = self.server.state["captcha_sessions"]
+            match = re.search(r"jt_session=([A-Za-z0-9]+)", cookie)
+            sid = match.group(1) if match else None
+            headers = {}
+            if sid is None or sid not in sessions:
+                self.server.state["captcha_session_seq"] += 1
+                sid = f"S{self.server.state['captcha_session_seq']}"
+                sessions[sid] = False
+                headers["Set-Cookie"] = f"jt_session={sid}; Path=/"
+            elif sessions[sid]:
+                self.server.state["captcha_resumed_with_cookie"] = True
             slot = (
                 ""
-                if solved
+                if sessions.get(sid)
                 else '<div class="g-recaptcha" data-sitekey="demo"></div>'
             )
             body = CAPTCHA_FORM_HTML.replace("CAPTCHA_SLOT", slot)
-            headers = {}
-            if "jt_session=" not in cookie:
-                headers["Set-Cookie"] = "jt_session=S1; Path=/"
-            elif solved:
-                # Продолжение возможно только в той же сессии: капчу решали
-                # именно для неё.
-                self.server.state["captcha_resumed_with_cookie"] = True
             return self._html(body, headers=headers)
         if self.path == "/consents":
             return self._html(CONSENTS_HTML)
@@ -753,7 +762,12 @@ class CareersHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
 
         if self.path == "/captcha-submit":
-            if "jt_session=S1" not in self.headers.get("Cookie", ""):
+            match = re.search(
+                r"jt_session=([A-Za-z0-9]+)", self.headers.get("Cookie", "")
+            )
+            sessions = self.server.state["captcha_sessions"]
+            if match is None or not sessions.get(match.group(1)):
+                # Либо сессии нет, либо капчу в ней не проходили.
                 return self._html("<h1>Session lost</h1>", 400)
             self.server.state["captcha_posts"] += 1
             return self._html("<h1>Application received</h1><p>Спасибо за отклик.</p>")
@@ -923,7 +937,8 @@ class JupiterNativeE2E(unittest.TestCase):
             "echo_body": b"",
             "wizard_posts": [],
             "wizard_final_body": b"",
-            "captcha_solved": False,
+            "captcha_sessions": {},
+            "captcha_session_seq": 0,
             "captcha_posts": 0,
             "captcha_resumed_with_cookie": False,
             "dup_posts": 0,
@@ -972,10 +987,95 @@ class JupiterNativeE2E(unittest.TestCase):
             )
             return result, agent
 
+    def solve_captcha(self):
+        """Человек прошёл проверку в уже открытых сессиях, и только в них."""
+        sessions = self.server.state["captcha_sessions"]
+        for sid in list(sessions):
+            sessions[sid] = True
+
+    # ── Очередь и воркер ────────────────────────────────────────────────────
+
+    def test_worker_takes_a_task_and_records_the_receipt(self):
+        self.server.state["dup_posts"] = 0
+        queue = TaskQueue()
+        receipts = ReceiptStore()
+        task = queue.push(
+            "nikita.demo@reply.jobtoo.ru",
+            f"http://127.0.0.1:{self.port}/dup-apply",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            done, state = run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, receipts=receipts),
+            )
+        self.assertEqual(done.id, task.id)
+        self.assertEqual(state, TaskState.SUBMITTED)
+        self.assertEqual(self.server.state["dup_posts"], 1)
+        # Задача завершена — второй воркер её не получит.
+        self.assertIsNone(queue.lease("w2"))
+        states = [t["to"] for t in queue.get(task.id).transitions]
+        self.assertEqual(states[0], TaskState.QUEUED)
+        self.assertEqual(states[-1], TaskState.SUBMITTED)
+
+    def test_worker_parks_a_captcha_task_with_its_resume_token(self):
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
+        self.server.state["captcha_posts"] = 0
+        queue = TaskQueue()
+        handoffs = HandoffStore()
+        task = queue.push(
+            "nikita.demo@reply.jobtoo.ru",
+            f"http://127.0.0.1:{self.port}/captcha-apply",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            _, state = run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, handoffs=handoffs),
+            )
+            self.assertEqual(state, TaskState.ACTION_REQUIRED)
+            parked = queue.get(task.id)
+            self.assertEqual(parked.reason_code, "CAPTCHA_REQUIRED")
+            self.assertTrue(parked.resume_token)
+            # Пока ждём человека, воркеры задачу не трогают.
+            self.assertIsNone(queue.lease("w2"))
+        self.assertEqual(self.server.state["captcha_posts"], 0)
+
+    def test_worker_resumes_a_parked_task_instead_of_starting_over(self):
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
+        self.server.state["captcha_posts"] = 0
+        queue = TaskQueue()
+        handoffs = HandoffStore()
+        task = queue.push(
+            "nikita.demo@reply.jobtoo.ru",
+            f"http://127.0.0.1:{self.port}/captcha-apply",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, handoffs=handoffs),
+            )
+            self.solve_captcha()
+
+            # Человек закончил — задачу возвращают в очередь вручную, вместе
+            # с токеном, который уже лежит в ней.
+            parked = queue.get(task.id)
+            parked.state = TaskState.QUEUED
+            _, state = run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, handoffs=handoffs),
+            )
+        self.assertEqual(state, TaskState.SUBMITTED)
+        self.assertEqual(self.server.state["captcha_posts"], 1)
+
     # ── Передача человеку и возврат ─────────────────────────────────────────
 
     def test_captcha_stop_leaves_a_resume_token_and_sends_nothing(self):
-        self.server.state["captcha_solved"] = False
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
         self.server.state["captcha_posts"] = 0
         store = HandoffStore()
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -997,7 +1097,8 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertTrue(any(c["name"] == "jt_session" for c in state.cookies))
 
     def test_run_continues_in_the_same_session_after_the_human_is_done(self):
-        self.server.state["captcha_solved"] = False
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
         self.server.state["captcha_posts"] = 0
         self.server.state["captcha_resumed_with_cookie"] = False
         store = HandoffStore()
@@ -1008,8 +1109,8 @@ class JupiterNativeE2E(unittest.TestCase):
             )
             token = first.human_action["resume_token"]
 
-            # Человек прошёл проверку.
-            self.server.state["captcha_solved"] = True
+            # Человек прошёл проверку — в той сессии, что уже открыта.
+            self.solve_captcha()
 
             # Новый агент — то есть новый процесс и пустая банка кук. Продолжить
             # он может только за счёт сохранённого состояния.
