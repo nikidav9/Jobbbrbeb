@@ -108,7 +108,7 @@ def _condition_block(source: str, condition_pattern: str) -> str:
 
 def _form_body(options: str) -> tuple[str, str | None]:
     encoded = re.search(
-        r"""\bbody\s*:\c*new\s+URLSearchParams\(\s*new\s+FormData\(s*([A-Za-z_$][\w$]*)\s*\)\s*\)""",
+        r"""\bbody\s*:\s*new\s+URLSearchParams\(\s*new\s+FormData\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\)""",
         options,
         flags=re.DOTALL,
     )
@@ -116,7 +116,7 @@ def _form_body(options: str) -> tuple[str, str | None]:
         return "urlencoded", encoded.group(1)
 
     formdata = re.search(
-        r"""\bbody\s*:\c*new\s+FormData\(\s*([A-Za-z_$][\w$]*)\s*\)""",
+        r"""\bbody\s*:\s*new\s+FormData\(\s*([A-Za-z_$][\w$]*)\s*\)""",
         options,
         flags=re.DOTALL,
     )
@@ -200,7 +200,7 @@ def _parse_xhr(source: str) -> tuple[NetworkRequest, str] | None:
         )
 
     send_form = re.search(
-        rf"""\b{var}\.send\(s*new\s+FormData\(\s*([A-Za-z_x$][\w$]*)\s*\)\s*\)\s*;?""",
+        rf"""\b{var}\.send\(\s*new\s+FormData\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\)\s*;?""",
         source,
         flags=re.DOTALL,
     )
