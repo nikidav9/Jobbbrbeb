@@ -202,6 +202,78 @@ form.addEventListener('submit', async function(e) {
 });
 """
 
+# ── Формы, на которых Jupiter спотыкался до Semantic Form Engine v2 ──────────
+
+TWO_BUTTONS_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Two buttons</title>
+<form action="/draft" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="surname" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit" name="act" value="draft">Сохранить черновик</button>
+  <button type="submit" name="act" value="apply" formaction="/apply-now">Откликнуться</button>
+</form>
+"""
+
+BASE_HREF_HTML = """<!doctype html>
+<meta charset="utf-8">
+<base href="BASE_PLACEHOLDER">
+<title>Base href</title>
+<form action="apply-now" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+FIELDSET_OFF_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Fieldset off</title>
+<form action="/never-submit" method="post">
+  <fieldset><legend>Контакты</legend>
+    <label>Имя <input name="first_name" required></label>
+    <label>Фамилия <input name="last_name" required></label>
+    <label>Телефон <input type="tel" name="phone" required></label>
+    <label>Email <input type="email" name="email" required></label>
+  </fieldset>
+  <fieldset disabled><legend>Только для водителей</legend>
+    <label>Категория прав <input name="licence_category" required></label>
+    <label>Стаж вождения <input name="driving_years" required></label>
+  </fieldset>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+BAD_PATTERN_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Strict phone</title>
+<form action="/never-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input name="phone" required pattern="[0-9]{11}"></label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+MULTI_SELECT_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Multi select</title>
+<form action="/echo-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Смены
+    <select name="shifts" multiple>
+      <option value="day" selected>День</option>
+      <option value="night" selected>Ночь</option>
+      <option value="mixed">Смешанный</option>
+    </select>
+  </label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+
 PROFILE = {
     "first_name": "Nikita",
     "last_name": "Davydov",
@@ -440,6 +512,17 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/two-buttons":
+            return self._html(TWO_BUTTONS_HTML)
+        if self.path == "/fieldset-off":
+            return self._html(FIELDSET_OFF_HTML)
+        if self.path == "/bad-pattern":
+            return self._html(BAD_PATTERN_HTML)
+        if self.path == "/multi-select":
+            return self._html(MULTI_SELECT_HTML)
+        if self.path == "/nested/base-href":
+            base = f"http://127.0.0.1:{self.server.server_address[1]}/nested/"
+            return self._html(BASE_HREF_HTML.replace("BASE_PLACEHOLDER", base))
         if self.path == "/redirect-external":
             self.send_response(302)
             self.send_header("Location", "http://example.com/application")
@@ -450,6 +533,11 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path in {"/draft", "/apply-now", "/nested/apply-now", "/echo-submit"}:
+            self.server.state["echo_path"] = self.path
+            self.server.state["echo_body"] = body
+            return self._html("<h1>Application received</h1><p>Спасибо за отклик.</p>")
 
         if self.path == "/json-submit":
             self.server.state["json_post_count"] += 1
@@ -567,6 +655,8 @@ class JupiterNativeE2E(unittest.TestCase):
             "last_json_body": b"",
             "last_json_csrf": "",
             "last_json_content_type": "",
+            "echo_path": "",
+            "echo_body": b"",
         }
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -599,6 +689,70 @@ class JupiterNativeE2E(unittest.TestCase):
                 profile,
             )
             return result, agent
+
+    # ── Semantic Form Engine v2 ─────────────────────────────────────────────
+
+    def test_apply_button_wins_over_draft_and_its_formaction_is_used(self):
+        self.server.state["echo_path"] = ""
+        result, _agent = self.run_path("/two-buttons")
+        self.assertEqual(result.status, "submitted", result.reason)
+        # Адрес формы — /draft. Взять его вместо formaction значило бы
+        # сохранить черновик и отчитаться об отклике.
+        self.assertEqual(self.server.state["echo_path"], "/apply-now")
+        self.assertIn(b"act=apply", self.server.state["echo_body"])
+        self.assertNotIn(b"act=draft", self.server.state["echo_body"])
+
+    def test_relative_action_follows_base_href(self):
+        self.server.state["echo_path"] = ""
+        result, _agent = self.run_path("/nested/base-href")
+        self.assertEqual(result.status, "submitted", result.reason)
+        self.assertEqual(self.server.state["echo_path"], "/nested/apply-now")
+
+    def test_required_fields_of_a_disabled_fieldset_do_not_block_the_run(self):
+        # Браузер такие поля не отправляет и обязательными не считает. Раньше
+        # Jupiter считал — и упирался в action_required на ровном месте.
+        before = self.server.state["post_count"]
+        result, _agent = self.run_path("/fieldset-off", dry_run=True)
+        self.assertEqual(result.status, "ready_to_submit", result.reason)
+        self.assertEqual(self.server.state["post_count"], before)
+        actions = [item.get("action") for item in result.trajectory]
+        self.assertIn("ready_to_submit", actions)
+        filled = [
+            item.get("field", "")
+            for item in result.trajectory
+            if item.get("action") == "fill"
+        ]
+        self.assertFalse(
+            any("категория" in field.lower() for field in filled),
+            filled,
+        )
+
+    def test_value_rejected_by_html_pattern_stops_before_submit(self):
+        before = self.server.state["post_count"]
+        result, _agent = self.run_path("/bad-pattern", dry_run=True)
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "VALIDATION_FAILED")
+        self.assertEqual(self.server.state["post_count"], before)
+        issue_actions = [
+            item for item in result.trajectory
+            if item.get("action") == "validation_failed"
+        ]
+        self.assertTrue(issue_actions)
+        rules = [issue["rule"] for issue in issue_actions[0]["issues"]]
+        self.assertIn("pattern", rules)
+        self.assertNotIn(
+            "ready_to_submit",
+            [item.get("action") for item in result.trajectory],
+        )
+
+    def test_multiple_select_sends_every_selected_option(self):
+        self.server.state["echo_body"] = b""
+        result, _agent = self.run_path("/multi-select")
+        self.assertEqual(result.status, "submitted", result.reason)
+        body = self.server.state["echo_body"]
+        self.assertIn(b"shifts=day", body)
+        self.assertIn(b"shifts=night", body)
+        self.assertNotIn(b"shifts=mixed", body)
 
     def test_dry_run_fills_captcha_form_without_submitting(self):
         before = self.server.state["post_count"]

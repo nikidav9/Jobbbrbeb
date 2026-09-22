@@ -17,6 +17,7 @@ from engine import (
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from validation import ValidationIssue, validate_form
 
 
 SUCCESS_MARKERS = (
@@ -172,16 +173,38 @@ class CandidateProfile:
         return cls(values=data, resume_path=resume)
 
 
+class Reason:
+    """Коды причин остановки.
+
+    Свободный текст в reason остаётся для человека, но решать по нему
+    нельзя: он меняется от правки к правке. Аналитика совместимости и
+    выбор следующей задачи должны опираться на код.
+    """
+
+    CAPTCHA_REQUIRED = "CAPTCHA_REQUIRED"
+    MISSING_PROFILE_FIELD = "MISSING_PROFILE_FIELD"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    DOMAIN_BLOCKED = "DOMAIN_BLOCKED"
+    UNSUPPORTED_SCRIPT = "UNSUPPORTED_SCRIPT"
+    SUCCESS_NOT_CONFIRMED = "SUCCESS_NOT_CONFIRMED"
+    NAVIGATION_FAILED = "NAVIGATION_FAILED"
+    SUBMIT_FAILED = "SUBMIT_FAILED"
+    VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
+    MAX_STEPS = "MAX_STEPS"
+
+
 @dataclass
 class AgentResult:
     status: str
     reason: str | None = None
     trajectory: list[dict[str, Any]] = field(default_factory=list)
+    reason_code: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "reason": self.reason,
+            "reason_code": self.reason_code,
             "trajectory": self.trajectory,
         }
 
@@ -387,6 +410,10 @@ class JupiterAgent:
     ) -> bool:
         if control.type in {"hidden", "submit", "image", "button", "reset"}:
             return False
+        if control.readonly:
+            # readonly сервер всё равно отправит — но своим значением.
+            # Затирать его нельзя: там обычно то, что он сам и подставил.
+            return False
         if _looks_like_captcha(control):
             return False
 
@@ -409,7 +436,8 @@ class JupiterAgent:
             if control.tag == "select" and control.required:
                 real_options = [
                     option for option in control.options
-                    if normalize(option.label) not in {"", "choose", "select", "выберите"}
+                    if not option.disabled
+                    and normalize(option.label) not in {"", "choose", "select", "выберите"}
                     and str(option.value).strip() not in {"", "0", "-1"}
                 ]
                 if len(real_options) == 1:
@@ -436,7 +464,7 @@ class JupiterAgent:
         if control.tag == "select":
             wanted = str(value)
             ranked = sorted(
-                control.options,
+                [option for option in control.options if not option.disabled],
                 key=lambda option: self._option_score(wanted, option.label, option.value),
                 reverse=True,
             )
@@ -566,6 +594,79 @@ class JupiterAgent:
                     self.descriptor(control) or control.name or f"control:{control.index}"
                 )
         return missing
+
+    # Кнопки отправки в одной форме соревнуются: «сохранить черновик» рядом с
+    # «откликнуться» — обычное дело. Раньше бралась первая по порядку, и с
+    # formaction это стало уже не безобидно: черновик уходит на свой адрес.
+    SUBMIT_INTENT = (
+        ("отклик", 40), ("подать заявку", 40), ("оставить заявку", 40),
+        ("откликнуться", 40), ("отправить", 30), ("submit", 30),
+        ("apply", 30), ("send", 20), ("отправить заявку", 40),
+    )
+    SUBMIT_AVOID = (
+        ("сохранить", -40), ("черновик", -40), ("draft", -40), ("save", -40),
+        ("сбросить", -60), ("reset", -60), ("отмена", -60), ("cancel", -60),
+        ("назад", -60), ("back", -60), ("поиск", -30), ("search", -30),
+    )
+
+    @classmethod
+    def _submit_score(cls, control: ControlState) -> int:
+        text = normalize(" ".join(filter(None, [
+            control.text, control.value, control.label, control.aria,
+            control.title_attr, control.name, control.id,
+        ])))
+        score = 0
+        for token, weight in cls.SUBMIT_INTENT + cls.SUBMIT_AVOID:
+            if normalize(token) in text:
+                score += weight
+        return score
+
+    @classmethod
+    def _submit_control(
+        cls,
+        page: PageState,
+        target_form_index: int | None,
+    ) -> ControlState | None:
+        candidates = [
+            control
+            for control in page.controls
+            if cls.is_submit(control)
+            and not control.disabled
+            and control.form_index is not None
+            and (
+                target_form_index is None
+                or control.form_index == target_form_index
+            )
+        ]
+        if not candidates:
+            return None
+        # Порядок в разметке — последний довод: при равных намерениях
+        # поведение остаётся прежним.
+        return max(
+            candidates,
+            key=lambda control: (cls._submit_score(control), -control.index),
+        )
+
+    def _validation_issues(
+        self,
+        page: PageState,
+        form_index: int | None,
+    ) -> list[ValidationIssue]:
+        """Что забракует браузер, кроме пустых обязательных полей.
+
+        Правило required здесь намеренно отброшено: им владеет
+        _required_missing, и только он знает про альтернативы вроде
+        «файл резюме вместо ссылки». Два независимых ответа на один
+        вопрос рано или поздно разойдутся.
+        """
+        if form_index is None or form_index >= len(page.forms):
+            return []
+        submitter = self._submit_control(page, form_index)
+        return [
+            issue
+            for issue in validate_form(page, page.forms[form_index], submitter)
+            if issue.rule != "required"
+        ]
 
     @staticmethod
     def _same_page(before: PageState, after: PageState) -> bool:
@@ -706,6 +807,7 @@ class JupiterAgent:
             "action": "ready_to_submit",
             "url": page.url,
             "captcha": captcha,
+            "html_validation": "passed",
             "submit_blocked_by_policy": True,
             "filled_fields": sum(
                 1 for item in trajectory if item.get("action") in {"fill", "select"}
@@ -765,31 +867,48 @@ class JupiterAgent:
             if has_application_form or filled_any:
                 if missing:
                     reason = "Missing candidate data for required field(s): " + "; ".join(missing)
-                    trajectory.append({"action": "action_required", "reason": reason})
-                    return AgentResult("action_required", reason, trajectory)
+                    trajectory.append({
+                        "action": "action_required",
+                        "reason": reason,
+                        "reason_code": Reason.MISSING_PROFILE_FIELD,
+                    })
+                    return AgentResult(
+                        "action_required", reason, trajectory,
+                        Reason.MISSING_PROFILE_FIELD,
+                    )
+
+                issues = self._validation_issues(page, target_form_index)
+                if issues:
+                    reason = "Form fails HTML validation: " + "; ".join(
+                        f"{issue.field}: {issue.message}" for issue in issues
+                    )
+                    trajectory.append({
+                        "action": "validation_failed",
+                        "reason": reason,
+                        "reason_code": Reason.VALIDATION_FAILED,
+                        "issues": [issue.as_dict() for issue in issues],
+                    })
+                    return AgentResult(
+                        "action_required", reason, trajectory,
+                        Reason.VALIDATION_FAILED,
+                    )
 
                 if self.dry_run:
                     return self._dry_run_complete(page, trajectory, captcha)
 
                 if captcha:
                     reason = "CAPTCHA detected; fields are prepared but Jupiter does not bypass human verification"
-                    trajectory.append({"action": "action_required", "reason": reason})
-                    return AgentResult("action_required", reason, trajectory)
-
-            submit = next(
-                (
-                    control
-                    for control in page.controls
-                    if self.is_submit(control)
-                    and not control.disabled
-                    and control.form_index is not None
-                    and (
-                        target_form_index is None
-                        or control.form_index == target_form_index
+                    trajectory.append({
+                        "action": "action_required",
+                        "reason": reason,
+                        "reason_code": Reason.CAPTCHA_REQUIRED,
+                    })
+                    return AgentResult(
+                        "action_required", reason, trajectory,
+                        Reason.CAPTCHA_REQUIRED,
                     )
-                ),
-                None,
-            )
+
+            submit = self._submit_control(page, target_form_index)
 
             if submit is None:
                 next_url = self._best_navigation(page, visited)
@@ -803,12 +922,24 @@ class JupiterAgent:
                         page = self.engine.open(next_url)
                     except EngineSecurityError as exc:
                         reason = f"Navigation blocked by Jupiter policy: {exc}"
-                        trajectory.append({"action": "action_required", "reason": reason})
-                        return AgentResult("action_required", reason, trajectory)
+                        trajectory.append({
+                            "action": "action_required",
+                            "reason": reason,
+                            "reason_code": Reason.DOMAIN_BLOCKED,
+                        })
+                        return AgentResult(
+                            "action_required", reason, trajectory, Reason.DOMAIN_BLOCKED
+                        )
                     except EngineError as exc:
                         reason = f"Jupiter Web Engine failed to navigate: {exc}"
-                        trajectory.append({"action": "failed", "reason": reason})
-                        return AgentResult("failed", reason, trajectory)
+                        trajectory.append({
+                            "action": "failed",
+                            "reason": reason,
+                            "reason_code": Reason.NAVIGATION_FAILED,
+                        })
+                        return AgentResult(
+                            "failed", reason, trajectory, Reason.NAVIGATION_FAILED
+                        )
                     visited.add(page.url)
                     continue
 
@@ -820,26 +951,50 @@ class JupiterAgent:
                         "Page requires JavaScript interaction outside the supported "
                         "Jupiter runtime"
                     )
-                    trajectory.append({"action": "action_required", "reason": reason})
-                    return AgentResult("action_required", reason, trajectory)
+                    trajectory.append({
+                        "action": "action_required",
+                        "reason": reason,
+                        "reason_code": Reason.UNSUPPORTED_SCRIPT,
+                    })
+                    return AgentResult(
+                        "action_required", reason, trajectory, Reason.UNSUPPORTED_SCRIPT
+                    )
                 reason = "No explicit application form or apply navigation found"
-                trajectory.append({"action": "failed", "reason": reason})
-                return AgentResult("failed", reason, trajectory)
+                trajectory.append({
+                    "action": "failed",
+                    "reason": reason,
+                    "reason_code": Reason.VACANCY_NOT_FOUND,
+                })
+                return AgentResult(
+                    "failed", reason, trajectory, Reason.VACANCY_NOT_FOUND
+                )
 
             if self.dry_run:
                 return self._dry_run_complete(page, trajectory, captcha)
 
             if captcha:
                 reason = "CAPTCHA detected; fields are prepared but Jupiter does not bypass human verification"
-                trajectory.append({"action": "action_required", "reason": reason})
-                return AgentResult("action_required", reason, trajectory)
+                trajectory.append({
+                    "action": "action_required",
+                    "reason": reason,
+                    "reason_code": Reason.CAPTCHA_REQUIRED,
+                })
+                return AgentResult(
+                    "action_required", reason, trajectory, Reason.CAPTCHA_REQUIRED
+                )
 
             form = page.forms[submit.form_index]
             action = form.action.strip().lower()
             if action.startswith("javascript:"):
                 reason = "Form submission depends on page JavaScript"
-                trajectory.append({"action": "action_required", "reason": reason})
-                return AgentResult("action_required", reason, trajectory)
+                trajectory.append({
+                    "action": "action_required",
+                    "reason": reason,
+                    "reason_code": Reason.UNSUPPORTED_SCRIPT,
+                })
+                return AgentResult(
+                    "action_required", reason, trajectory, Reason.UNSUPPORTED_SCRIPT
+                )
 
             trajectory.append({
                 "action": "click_submit",
@@ -853,12 +1008,24 @@ class JupiterAgent:
                 page = self.engine.submit(before, form, submit)
             except EngineSecurityError as exc:
                 reason = f"Navigation blocked by Jupiter policy: {exc}"
-                trajectory.append({"action": "action_required", "reason": reason})
-                return AgentResult("action_required", reason, trajectory)
+                trajectory.append({
+                    "action": "action_required",
+                    "reason": reason,
+                    "reason_code": Reason.DOMAIN_BLOCKED,
+                })
+                return AgentResult(
+                    "action_required", reason, trajectory, Reason.DOMAIN_BLOCKED
+                )
             except EngineError as exc:
                 reason = f"Jupiter Web Engine failed to submit form: {exc}"
-                trajectory.append({"action": "failed", "reason": reason})
-                return AgentResult("failed", reason, trajectory)
+                trajectory.append({
+                    "action": "failed",
+                    "reason": reason,
+                    "reason_code": Reason.SUBMIT_FAILED,
+                })
+                return AgentResult(
+                    "failed", reason, trajectory, Reason.SUBMIT_FAILED
+                )
 
             submitted_once = True
             submit_mode = getattr(self.engine, "last_submit_mode", "http")
@@ -882,12 +1049,22 @@ class JupiterAgent:
 
             if self._same_page(before, page):
                 reason = "Submit returned the same page without explicit success confirmation"
-                trajectory.append({"action": "action_required", "reason": reason})
-                return AgentResult("action_required", reason, trajectory)
+                trajectory.append({
+                    "action": "action_required",
+                    "reason": reason,
+                    "reason_code": Reason.SUCCESS_NOT_CONFIRMED,
+                })
+                return AgentResult(
+                    "action_required", reason, trajectory, Reason.SUCCESS_NOT_CONFIRMED
+                )
 
         reason = "Max Jupiter steps exceeded"
-        trajectory.append({"action": "failed", "reason": reason})
-        return AgentResult("failed", reason, trajectory)
+        trajectory.append({
+            "action": "failed",
+            "reason": reason,
+            "reason_code": Reason.MAX_STEPS,
+        })
+        return AgentResult("failed", reason, trajectory, Reason.MAX_STEPS)
 
     def run(self, url: str, profile: CandidateProfile) -> AgentResult:
         self._root_url = url
@@ -899,14 +1076,24 @@ class JupiterAgent:
             return AgentResult(
                 "action_required",
                 reason,
-                [{"action": "action_required", "reason": reason}],
+                [{
+                    "action": "action_required",
+                    "reason": reason,
+                    "reason_code": Reason.DOMAIN_BLOCKED,
+                }],
+                Reason.DOMAIN_BLOCKED,
             )
         except EngineError as exc:
             reason = f"Jupiter Web Engine failed to open page: {exc}"
             return AgentResult(
                 "failed",
                 reason,
-                [{"action": "failed", "reason": reason}],
+                [{
+                    "action": "failed",
+                    "reason": reason,
+                    "reason_code": Reason.NAVIGATION_FAILED,
+                }],
+                Reason.NAVIGATION_FAILED,
             )
 
         trajectory = [{

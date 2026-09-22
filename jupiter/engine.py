@@ -32,6 +32,7 @@ class OptionState:
     label: str
     value: str
     selected: bool = False
+    disabled: bool = False
 
 
 @dataclass
@@ -52,11 +53,43 @@ class ControlState:
     text: str = ""
     required: bool = False
     disabled: bool = False
+    readonly: bool = False
+    multiple: bool = False
     value: str = ""
     checked: bool = False
     accept: str = ""
+    pattern: str = ""
+    minlength: int | None = None
+    maxlength: int | None = None
+    min_attr: str = ""
+    max_attr: str = ""
+    step: str = ""
+    # Кнопка отправки умеет перебить действие формы. Это не украшение: в одной
+    # анкете часто две кнопки — «сохранить черновик» и «откликнуться», — и они
+    # ведут на разные адреса.
+    formaction: str = ""
+    formmethod: str = ""
+    formenctype: str = ""
+    formnovalidate: bool = False
+    # Почему отдельно от disabled: причину надо показывать человеку. Поле,
+    # выключенное разделом анкеты, — это не «поле сломано», а «раздел не ваш».
+    disabled_by_fieldset: bool = False
+    # Заголовок <legend> раздела: ещё одна подсказка о смысле поля, когда у
+    # него нет ни label, ни name.
+    section: str = ""
     options: list[OptionState] = field(default_factory=list)
     file_path: str | None = None
+    file_paths: list[str] = field(default_factory=list)
+
+    @property
+    def selected_values(self) -> list[str]:
+        """Значения, которые уйдут на сервер. Для multiple их несколько."""
+        if self.tag != "select":
+            return [self.value]
+        chosen = [option.value for option in self.options if option.selected]
+        if self.multiple:
+            return chosen
+        return chosen[:1] if chosen else ([self.value] if self.value else [])
 
 
 @dataclass
@@ -66,6 +99,8 @@ class FormState:
     action: str
     enctype: str
     id: str = ""
+    name: str = ""
+    novalidate: bool = False
     control_indices: list[int] = field(default_factory=list)
 
 
@@ -82,10 +117,20 @@ class PageState:
     has_script: bool
     script_unsupported: bool = False
     script_diagnostics: list[dict[str, str]] = field(default_factory=list)
+    base_url: str = ""
+
+    def resolve(self, href: str) -> str:
+        """Адрес относительно <base href>, а не относительно адреса страницы.
+
+        Разница не косметическая: у страницы с <base href="/apply/"> форма с
+        action="send" уходит на /apply/send, а без учёта base — на /send.
+        """
+        return urllib.parse.urljoin(self.base_url or self.url, href)
 
     def snapshot(self) -> dict:
         return {
             "url": self.url,
+            "base_url": self.base_url or self.url,
             "status": self.status,
             "title": self.title,
             "text": self.text[:3000],
@@ -99,6 +144,8 @@ class PageState:
                     "action": f.action,
                     "enctype": f.enctype,
                     "id": f.id,
+                    "name": f.name,
+                    "novalidate": f.novalidate,
                     "controls": list(f.control_indices),
                 }
                 for f in self.forms
@@ -119,16 +166,35 @@ class PageState:
                     "inputmode": c.inputmode,
                     "title_attr": c.title_attr,
                     "text": c.text,
+                    "section": c.section,
                     "required": c.required,
                     "disabled": c.disabled,
+                    "disabled_by_fieldset": c.disabled_by_fieldset,
+                    "readonly": c.readonly,
+                    "multiple": c.multiple,
                     "value": c.value if c.type != "file" else "",
                     "checked": c.checked,
                     "accept": c.accept,
+                    "pattern": c.pattern,
+                    "minlength": c.minlength,
+                    "maxlength": c.maxlength,
+                    "min": c.min_attr,
+                    "max": c.max_attr,
+                    "step": c.step,
+                    "formaction": c.formaction,
+                    "formmethod": c.formmethod,
+                    "formenctype": c.formenctype,
+                    "formnovalidate": c.formnovalidate,
                     "options": [
-                        {"label": o.label, "value": o.value, "selected": o.selected}
+                        {
+                            "label": o.label,
+                            "value": o.value,
+                            "selected": o.selected,
+                            "disabled": o.disabled,
+                        }
                         for o in c.options
                     ],
-                    "file_attached": bool(c.file_path),
+                    "file_attached": bool(c.file_path or c.file_paths),
                 }
                 for c in self.controls
             ],
@@ -159,6 +225,12 @@ class _SemanticParser(HTMLParser):
         self.text_parts: list[str] = []
         self.hidden_tags: list[str] = []
         self.has_script = False
+        self.base_href = ""
+        # Стек разделов анкеты: каждый элемент — (выключен ли, заголовок).
+        # disabled у <fieldset> наследуется вглубь, и браузер такие поля вообще
+        # не отправляет — значит, и обязательными они не считаются.
+        self.fieldset_stack: list[dict] = []
+        self.current_legend: int | None = None
 
     @staticmethod
     def _attrs(attrs: list[tuple[str, str | None]]) -> dict[str, str]:
@@ -188,6 +260,22 @@ class _SemanticParser(HTMLParser):
         value = attrs.get("value", "")
         if ctype in {"checkbox", "radio"} and "value" not in attrs:
             value = "on"
+
+        def _int(name: str) -> int | None:
+            raw = attrs.get(name, "").strip()
+            if not raw.isdigit():
+                return None
+            return int(raw)
+
+        fieldset_off = any(item["disabled"] for item in self.fieldset_stack)
+        section = next(
+            (
+                item["legend"]
+                for item in reversed(self.fieldset_stack)
+                if item["legend"]
+            ),
+            "",
+        )
         c = ControlState(
             index=len(self.controls),
             form_index=self.current_form,
@@ -208,10 +296,26 @@ class _SemanticParser(HTMLParser):
             disabled=(
                 "disabled" in attrs
                 or attrs.get("aria-disabled", "").lower() == "true"
+                or fieldset_off
             ),
+            disabled_by_fieldset=fieldset_off,
+            readonly="readonly" in attrs
+            or attrs.get("aria-readonly", "").lower() == "true",
+            multiple="multiple" in attrs,
+            section=section,
             value=value,
             checked="checked" in attrs,
             accept=attrs.get("accept", ""),
+            pattern=attrs.get("pattern", ""),
+            minlength=_int("minlength"),
+            maxlength=_int("maxlength"),
+            min_attr=attrs.get("min", ""),
+            max_attr=attrs.get("max", ""),
+            step=attrs.get("step", ""),
+            formaction=attrs.get("formaction", ""),
+            formmethod=(attrs.get("formmethod", "") or "").lower(),
+            formenctype=(attrs.get("formenctype", "") or "").lower(),
+            formnovalidate="formnovalidate" in attrs,
         )
         self.controls.append(c)
         if self.current_form is not None:
@@ -231,6 +335,22 @@ class _SemanticParser(HTMLParser):
             self.in_title = True
             return
 
+        if tag == "base" and not self.base_href and attrs.get("href"):
+            self.base_href = urllib.parse.urljoin(self.url, attrs["href"])
+            return
+
+        if tag == "fieldset":
+            self.fieldset_stack.append({
+                "disabled": "disabled" in attrs,
+                "legend": "",
+                "parts": [],
+            })
+            return
+
+        if tag == "legend" and self.fieldset_stack:
+            self.current_legend = len(self.fieldset_stack) - 1
+            return
+
         if tag == "form":
             self.form_stack.append(self.current_form)
             form = FormState(
@@ -240,6 +360,8 @@ class _SemanticParser(HTMLParser):
                 enctype=(attrs.get("enctype", "application/x-www-form-urlencoded")
                          or "application/x-www-form-urlencoded").lower(),
                 id=attrs.get("id", ""),
+                name=attrs.get("name", ""),
+                novalidate="novalidate" in attrs,
             )
             self.forms.append(form)
             self.current_form = form.index
@@ -269,6 +391,7 @@ class _SemanticParser(HTMLParser):
             self.current_option = {
                 "value": attrs.get("value"),
                 "selected": "selected" in attrs,
+                "disabled": "disabled" in attrs,
                 "parts": [],
             }
             return
@@ -299,17 +422,21 @@ class _SemanticParser(HTMLParser):
                     label=label,
                     value=value,
                     selected=bool(self.current_option["selected"]),
+                    disabled=bool(self.current_option["disabled"]),
                 )
             )
             self.current_option = None
 
         if tag == "select" and self.current_select is not None:
             control = self.controls[self.current_select]
-            selected = next((o for o in control.options if o.selected), None)
-            if selected is None and control.options:
-                selected = control.options[0]
-            if selected is not None:
-                control.value = selected.value
+            selected = [o for o in control.options if o.selected]
+            if not selected and control.options and not control.multiple:
+                # Браузер сам подсвечивает первый пункт у обычного select. У
+                # multiple — нет: там пустой выбор законен.
+                first = control.options[0]
+                first.selected = True
+                selected = [first]
+            control.value = selected[0].value if selected else ""
             self.current_select = None
 
         if tag == "textarea":
@@ -317,6 +444,14 @@ class _SemanticParser(HTMLParser):
 
         if tag == "button":
             self.current_button = None
+
+        if tag == "legend" and self.current_legend is not None:
+            item = self.fieldset_stack[self.current_legend]
+            item["legend"] = " ".join("".join(item["parts"]).split())
+            self.current_legend = None
+
+        if tag == "fieldset" and self.fieldset_stack:
+            self.fieldset_stack.pop()
 
         if tag == "label" and self.label_stack:
             label = self.label_stack.pop()
@@ -349,6 +484,9 @@ class _SemanticParser(HTMLParser):
         if self.current_button is not None:
             self.controls[self.current_button].text += data
 
+        if self.current_legend is not None:
+            self.fieldset_stack[self.current_legend]["parts"].append(data)
+
         if self.label_stack:
             self.label_stack[-1]["parts"].append(data)
 
@@ -377,6 +515,7 @@ class _SemanticParser(HTMLParser):
                     form.control_indices.append(c.index)
         return PageState(
             url=self.url,
+            base_url=self.base_href or self.url,
             status=status,
             headers=headers,
             html=html_text,
@@ -671,13 +810,30 @@ class JupiterWebEngine:
             if control.type in {"checkbox", "radio"} and not control.checked:
                 continue
             if control.type == "file":
-                if control.file_path:
-                    files.append((control.name, Path(control.file_path)))
+                for path in control.file_paths or (
+                    [control.file_path] if control.file_path else []
+                ):
+                    files.append((control.name, Path(path)))
+                continue
+            if control.tag == "select":
+                # multiple отдаёт столько пар name=value, сколько выбрано.
+                # Одно значение вместо трёх — это молча отправленная не та
+                # анкета, а не ошибка отправки.
+                for value in control.selected_values:
+                    fields.append((control.name, value))
                 continue
             fields.append((control.name, control.value))
 
         if submit_control and submit_control.name and submit_control.type in {"submit", "image"}:
-            if (submit_control.name, submit_control.value) not in fields:
+            if submit_control.type == "image":
+                # У кнопки-картинки браузер шлёт координаты клика, а не value.
+                # Серверы, которые по ним отличают отправку от перезагрузки,
+                # без этих пар анкету не принимают.
+                fields.extend([
+                    (f"{submit_control.name}.x", "0"),
+                    (f"{submit_control.name}.y", "0"),
+                ])
+            elif (submit_control.name, submit_control.value) not in fields:
                 fields.append((submit_control.name, submit_control.value))
 
         return fields, files
@@ -723,7 +879,7 @@ class JupiterWebEngine:
         form: FormState,
         network_request: NetworkRequest,
     ) -> NetworkResponse:
-        target = urllib.parse.urljoin(page.url, network_request.url)
+        target = page.resolve(network_request.url)
         self.assert_allowed(target)
 
         method = network_request.method.upper()
@@ -905,7 +1061,11 @@ class JupiterWebEngine:
                     )
 
         self.last_submit_mode = "http"
-        target = urllib.parse.urljoin(page.url, form.action or page.url)
+        # Кнопка отправки главнее формы: formaction/formmethod/formenctype
+        # перебивают её атрибуты. Иначе «откликнуться» уходит туда же, куда
+        # «сохранить черновик».
+        action = (submit_control.formaction if submit_control else "") or form.action
+        target = page.resolve(action or page.url)
         self.assert_allowed(target)
 
         parsed = urllib.parse.urlparse(target)
@@ -913,7 +1073,15 @@ class JupiterWebEngine:
             raise EngineSecurityError("Form action uses an unsupported scheme")
 
         fields, files = self._successful_controls(page, form, submit_control)
-        method = (form.method or "get").upper()
+        method = (
+            (submit_control.formmethod if submit_control else "")
+            or form.method
+            or "get"
+        ).upper()
+        enctype = (
+            (submit_control.formenctype if submit_control else "")
+            or form.enctype
+        )
 
         if method == "GET":
             if files:
@@ -926,7 +1094,7 @@ class JupiterWebEngine:
         if method != "POST":
             raise EngineError(f"Unsupported form method: {method}")
 
-        if files or "multipart/form-data" in form.enctype:
+        if files or "multipart/form-data" in enctype:
             body, content_type = self._multipart(fields, files)
         else:
             body = urllib.parse.urlencode(fields, doseq=True).encode("utf-8")
