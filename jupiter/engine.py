@@ -42,6 +42,7 @@ class ControlState:
     type: str = ""
     name: str = ""
     id: str = ""
+    form_attr: str = ""
     placeholder: str = ""
     aria: str = ""
     autocomplete: str = ""
@@ -110,6 +111,7 @@ class PageState:
                     "type": c.type,
                     "name": c.name,
                     "id": c.id,
+                    "form_attr": c.form_attr,
                     "label": c.label,
                     "placeholder": c.placeholder,
                     "aria": c.aria,
@@ -193,6 +195,7 @@ class _SemanticParser(HTMLParser):
             type=ctype,
             name=attrs.get("name", ""),
             id=attrs.get("id", ""),
+            form_attr=attrs.get("form", ""),
             placeholder=attrs.get("placeholder", ""),
             aria=attrs.get("aria-label", ""),
             autocomplete=attrs.get("autocomplete", ""),
@@ -357,11 +360,21 @@ class _SemanticParser(HTMLParser):
     def finish(self, html_text: str, status: int, headers: dict[str, str]) -> PageState:
         title = " ".join("".join(self.title_parts).split())
         body_text = " ".join(self.text_parts)
+        form_ids = {
+            form.id: form.index
+            for form in self.forms
+            if form.id
+        }
         for c in self.controls:
             c.text = " ".join(c.text.split())
             c.label = " ".join(c.label.split())
             if c.tag == "textarea":
                 c.value = c.value.strip()
+            if c.form_index is None and c.form_attr in form_ids:
+                c.form_index = form_ids[c.form_attr]
+                form = self.forms[c.form_index]
+                if c.index not in form.control_indices:
+                    form.control_indices.append(c.index)
         return PageState(
             url=self.url,
             status=status,
