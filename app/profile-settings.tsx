@@ -11,7 +11,7 @@ import { rs, rf } from '@/constants/scale';
 import { useApp } from '@/hooks/useApp';
 import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
-  dbDeleteWebPushSubscription,
+  dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
 } from '@/services/db';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';

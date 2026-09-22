@@ -109,6 +109,12 @@ export async function registerForPushNotifications(userId: string): Promise<bool
     return false;
   }
 
+  const projectId = getExpoProjectId();
+  if (!projectId) {
+    console.warn('[push] Expo project ID is missing; push token registration skipped.');
+    return false;
+  }
+
   try {
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     await dbSavePushToken(userId, token);
