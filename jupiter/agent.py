@@ -323,8 +323,13 @@ class JupiterAgent:
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
-        self.engine = engine or JupiterWebEngine(self.allowed_hosts)
         self.dry_run = dry_run
+        self.engine = engine or JupiterWebEngine(
+            self.allowed_hosts,
+            read_only=dry_run,
+        )
+        if dry_run:
+            self.engine.read_only = True
         self._root_url = ""
 
     @staticmethod
