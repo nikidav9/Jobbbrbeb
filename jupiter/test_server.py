@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import hmac
 import json
 import os
-import shutil
 import tempfile
 import threading
 import time
@@ -19,17 +17,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from playwright.async_api import async_playwright
-
 from agent import CandidateProfile, JupiterAgent
+
 
 HOST = "0.0.0.0"
 PORT = 8123
 RUN_LOCK = threading.Lock()
 MAX_BODY = 32 * 1024
+MAX_APPLICATION_BODY = 3 * 1024 * 1024
 SESSION_TTL = 4 * 60 * 60
 SESSION_COOKIE = "jt_jupiter_lab"
-API_ORIGIN = os.environ.get("JOBTOO_API_ORIGIN", "https://147.45.184.99.sslip.io").rstrip("/")
+API_ORIGIN = os.environ.get(
+    "JOBTOO_API_ORIGIN",
+    "https://147.45.184.99.sslip.io",
+).rstrip("/")
 APP_SECRET = os.environ.get("JOBTOO_APP_SECRET", "")
 SESSION_SECRET = os.environ.get("JUPITER_SESSION_SECRET", "")
 ADMIN_PHONE = "89933431523"
@@ -40,54 +41,172 @@ ALLOWED_USER_IDS = {
     if value.strip()
 }
 
+
 TEST_HTML = """<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><title>Jupiter Test Careers</title>
-<style>body{font:16px system-ui;max-width:720px;margin:40px auto;padding:0 20px}label{display:block;margin:14px 0 5px}input,textarea,select,button{width:100%;padding:10px;box-sizing:border-box}button{margin-top:20px}</style></head>
-<body><h1>Backend Developer</h1><p>Тестовая карьерная страница JobToo.</p>
-<form id="application-form">
-<label>First name <input name="first_name" required></label>
-<label>Фамилия <input name="surname" required></label>
-<label>Email <input type="email" name="email" required></label>
-<label>Телефон <input type="tel" name="phone" required></label>
-<label>Город <input name="city" required></label>
-<label>Сколько лет опыта? <input name="experience_years" required></label>
-<label>Формат работы <select name="work_format" required><option value="">Выберите</option><option value="Office">Office</option><option value="Hybrid">Hybrid</option><option value="Remote">Remote</option></select></label>
-<label>Why are you interested in this role? <textarea name="motivation" required></textarea></label>
-<label>Resume <input type="file" name="resume" required></label>
-<button type="submit">Submit application</button>
-</form><div id="success" hidden><h1>Application received</h1><p>Jupiter test success.</p></div>
-<script>document.getElementById('application-form').addEventListener('submit',function(e){e.preventDefault();this.hidden=true;document.getElementById('success').hidden=false})</script>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Jupiter Test Careers</title>
+  <style>
+    body{font:16px system-ui;max-width:720px;margin:40px auto;padding:0 20px}
+    label{display:block;margin:14px 0 5px}
+    input,textarea,select,button{width:100%;padding:10px;box-sizing:border-box}
+    button{margin-top:20px}
+  </style>
+</head>
+<body>
+  <h1>Backend Developer</h1>
+  <p>Тестовая карьерная страница JobToo.</p>
+  <form action="/career-submit" method="post" enctype="multipart/form-data">
+    <label>First name <input name="first_name" required></label>
+    <label>Фамилия <input name="surname" required></label>
+    <label>Email <input type="email" name="email" required></label>
+    <label>Телефон <input type="tel" name="phone" required></label>
+    <label>Город <input name="city" required></label>
+    <label>Сколько лет опыта? <input name="experience_years" required></label>
+    <label>Формат работы
+      <select name="work_format" required>
+        <option value="">Выберите</option>
+        <option value="Office">Office</option>
+        <option value="Hybrid">Hybrid</option>
+        <option value="Remote">Remote</option>
+      </select>
+    </label>
+    <label>Why are you interested in this role?
+      <textarea name="motivation" required></textarea>
+    </label>
+    <label>Resume <input type="file" name="resume" required></label>
+    <button type="submit">Submit application</button>
+  </form>
+</body>
+</html>"""
+
+UNKNOWN_HTML = """<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Jupiter Action Required Test</title></head>
+<body>
+  <h1>QA Engineer</h1>
+  <p>Сценарий с неизвестным обязательным вопросом.</p>
+  <form action="/career-submit" method="post">
+    <label>Email <input type="email" name="email" required></label>
+    <label>Do you require visa sponsorship? <input name="visa_sponsorship" required></label>
+    <button type="submit">Submit application</button>
+  </form>
+</body>
+</html>"""
+
+SUCCESS_HTML = """<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Success</title></head>
+<body><h1>Application received</h1><p>Thank you for applying.</p></body></html>"""
+
+LOGIN_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Jupiter — вход</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#171717;background:#f5f5f5}
+    *{box-sizing:border-box}body{margin:0}.wrap{max-width:460px;margin:8vh auto;padding:20px}
+    .card{background:#fff;border:1px solid #e5e5e5;border-radius:20px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.05)}
+    h1{font-size:30px;margin:0 0 8px}.muted{color:#666}
+    label{display:block;font-size:13px;color:#555;margin-top:14px}
+    input{width:100%;margin-top:6px;padding:12px;border:1px solid #d6d6d6;border-radius:10px;font:inherit}
+    button{width:100%;margin-top:18px;border:0;border-radius:12px;padding:13px 16px;font-weight:800;background:#111;color:#fff;cursor:pointer}
+    .err{color:#b42318;margin-top:12px;min-height:20px}
+  </style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <h1>Jupiter Private Lab</h1>
+  <p class="muted">Войди тем же телефоном и паролем, которыми входишь в JobToo.</p>
+  <label>Телефон<input id="phone" inputmode="tel" autocomplete="username"></label>
+  <label>Пароль<input id="password" type="password" autocomplete="current-password"></label>
+  <button id="login">Войти</button><div class="err" id="err"></div>
+</div></div>
+<script>
+const b=document.getElementById('login'),e=document.getElementById('err');
+b.onclick=async()=>{b.disabled=true;e.textContent='';
+try{
+  const r=await fetch('api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({phone:document.getElementById('phone').value,password:document.getElementById('password').value})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||'Не удалось войти');location.reload()
+}catch(x){e.textContent=x.message||String(x)}finally{b.disabled=false}};
+</script>
 </body></html>"""
 
-UNKNOWN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Jupiter Action Required Test</title>
-<style>body{font:16px system-ui;max-width:720px;margin:40px auto;padding:0 20px}label{display:block;margin:14px 0 5px}input,button{width:100%;padding:10px;box-sizing:border-box}button{margin-top:20px}</style></head>
-<body><h1>QA Engineer</h1><p>Сценарий с неизвестным обязательным вопросом.</p><form>
-<label>Email <input type="email" name="email" required></label>
-<label>Do you require visa sponsorship? <input name="visa_sponsorship" required></label>
-<button type="submit">Submit application</button></form></body></html>"""
-
-LOGIN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jupiter — вход</title>
-<style>:root{font-family:Inter,system-ui,sans-serif;color:#171717;background:#f5f5f5}*{box-sizing:border-box}body{margin:0}.wrap{max-width:460px;margin:8vh auto;padding:20px}.card{background:#fff;border:1px solid #e5e5e5;border-radius:20px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.05)}h1{font-size:30px;margin:0 0 8px}.muted{color:#666}label{display:block;font-size:13px;color:#555;margin-top:14px}input{width:100%;margin-top:6px;padding:12px;border:1px solid #d6d6d6;border-radius:10px;font:inherit}button{width:100%;margin-top:18px;border:0;border-radius:12px;padding:13px 16px;font-weight:800;background:#111;color:#fff;cursor:pointer}.err{color:#b42318;margin-top:12px;min-height:20px}</style></head>
-<body><div class="wrap"><div class="card"><h1>Jupiter Private Lab</h1><p class="muted">Войди тем же телефоном и паролем, которыми входишь в JobToo. Технический пароль админ-панели больше не нужен.</p>
-<label>Телефон<input id="phone" inputmode="tel" autocomplete="username"></label>
-<label>Пароль<input id="password" type="password" autocomplete="current-password"></label>
-<button id="login">Войти</button><div class="err" id="err"></div></div></div>
-<script>const b=document.getElementById('login'),e=document.getElementById('err');b.onclick=async()=>{b.disabled=true;e.textContent='';try{const r=await fetch('api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:document.getElementById('phone').value,password:document.getElementById('password').value})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Не удалось войти');location.reload()}catch(x){e.textContent=x.message||String(x)}finally{b.disabled=false}};</script></body></html>"""
-
-UI_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jupiter Private Lab</title>
-<style>
-:root{font-family:Inter,system-ui,sans-serif;color:#171717;background:#f5f5f5}*{box-sizing:border-box}body{margin:0}.wrap{max-width:980px;margin:0 auto;padding:32px 18px 60px}.top{display:flex;justify-content:space-between;gap:12px;align-items:start}.card{background:#fff;border:1px solid #e5e5e5;border-radius:20px;padding:22px;margin:14px 0;box-shadow:0 8px 30px rgba(0,0,0,.04)}h1{font-size:32px;margin:0 0 8px}.muted{color:#666}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block;font-size:13px;color:#555}input,select,textarea{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #d6d6d6;border-radius:10px;font:inherit}textarea{min-height:90px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}button{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.secondary{background:#eee}.status{font-weight:800;font-size:18px}.ok{color:#0a7f42}.warn{color:#9a6700}.bad{color:#b42318}pre{background:#111;color:#e7e7e7;padding:16px;border-radius:14px;overflow:auto;max-height:420px;font-size:12px}img{max-width:100%;border-radius:14px;border:1px solid #ddd}code{background:#eee;padding:2px 5px;border-radius:5px}@media(max-width:720px){.grid{grid-template-columns:1fr}.top{display:block}}
-</style></head><body><div class="wrap"><div class="top"><div><h1>Jupiter Private Lab</h1><p class="muted">Закрытый стенд JobToo. Jupiter запускает настоящий Chromium, но может открыть только локальную тестовую карьерную страницу.</p></div><button class="secondary" id="logout">Выйти</button></div>
-<div class="card"><div class="grid"><label>Имя<input id="first_name" value="Nikita"></label><label>Фамилия<input id="last_name" value="Davydov"></label><label>Email<input id="email" value="nikita.demo@reply.jobtoo.ru"></label><label>Телефон<input id="phone" value="+79990000000"></label><label>Город<input id="city" value="Москва"></label><label>Опыт, лет<input id="experience_years" value="4"></label><label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label><label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label></div><label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label><div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div></div>
-<div class="card" id="result" hidden><div id="status" class="status"></div><p id="reason" class="muted"></p><h3>Что увидел браузер после работы</h3><img id="shot" alt="Скриншот результата Jupiter"><h3>Траектория</h3><pre id="trace"></pre></div>
-<div class="card"><strong>Граница теста</strong><p class="muted">Никаких реальных откликов. Разрешён только <code>127.0.0.1</code> внутри контейнера. CAPTCHA и обход защит не используются.</p></div></div>
+UI_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Jupiter Private Lab</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#171717;background:#f5f5f5}
+    *{box-sizing:border-box}body{margin:0}.wrap{max-width:980px;margin:0 auto;padding:32px 18px 60px}
+    .top{display:flex;justify-content:space-between;gap:12px;align-items:start}
+    .card{background:#fff;border:1px solid #e5e5e5;border-radius:20px;padding:22px;margin:14px 0;box-shadow:0 8px 30px rgba(0,0,0,.04)}
+    h1{font-size:32px;margin:0 0 8px}.muted{color:#666}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    label{display:block;font-size:13px;color:#555}input,select,textarea{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #d6d6d6;border-radius:10px;font:inherit}
+    textarea{min-height:90px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+    button{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.secondary{background:#eee}
+    .status{font-weight:800;font-size:18px}.ok{color:#0a7f42}.warn{color:#9a6700}.bad{color:#b42318}
+    pre{background:#111;color:#e7e7e7;padding:16px;border-radius:14px;overflow:auto;max-height:460px;font-size:12px}
+    code{background:#eee;padding:2px 5px;border-radius:5px}
+    @media(max-width:720px){.grid{grid-template-columns:1fr}.top{display:block}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Jupiter Private Lab</h1>
+      <p class="muted">Jupiter Web Engine работает без Chromium, Playwright и внешнего AI. Он сам читает HTML, заполняет форму и отправляет HTTP-запрос.</p>
+    </div>
+    <button class="secondary" id="logout">Выйти</button>
+  </div>
+  <div class="card">
+    <div class="grid">
+      <label>Имя<input id="first_name" value="Nikita"></label>
+      <label>Фамилия<input id="last_name" value="Davydov"></label>
+      <label>Email<input id="email" value="nikita.demo@reply.jobtoo.ru"></label>
+      <label>Телефон<input id="phone" value="+79990000000"></label>
+      <label>Город<input id="city" value="Москва"></label>
+      <label>Опыт, лет<input id="experience_years" value="4"></label>
+      <label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label>
+      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
+    </div>
+    <label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label>
+    <div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div>
+  </div>
+  <div class="card" id="result" hidden>
+    <div id="status" class="status"></div><p id="reason" class="muted"></p>
+    <h3>Semantic page после работы</h3><pre id="snapshot"></pre>
+    <h3>Траектория</h3><pre id="trace"></pre>
+  </div>
+  <div class="card"><strong>Граница теста</strong>
+    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. JavaScript-only формы, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
+  </div>
+</div>
 <script>
 const ids=['first_name','last_name','email','phone','city','experience_years','work_format','cover_letter','scenario'];
-const run=document.getElementById('run'),result=document.getElementById('result'),status=document.getElementById('status'),reason=document.getElementById('reason'),trace=document.getElementById('trace'),shot=document.getElementById('shot');
-run.onclick=async()=>{run.disabled=true;run.textContent='Jupiter работает…';result.hidden=false;status.className='status';status.textContent='Запускаю Chromium…';reason.textContent='';trace.textContent='';shot.removeAttribute('src');const payload={};ids.forEach(id=>payload[id]=document.getElementById(id).value);try{const r=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';status.className='status '+(d.status==='submitted'?'ok':d.status==='action_required'?'warn':'bad');reason.textContent=d.reason||'';trace.textContent=JSON.stringify(d.trajectory,null,2);if(d.screenshot)shot.src='data:image/png;base64,'+d.screenshot}catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}finally{run.disabled=false;run.textContent='Запустить Jupiter'}};
-document.getElementById('reset').onclick=()=>{result.hidden=true;trace.textContent='';shot.removeAttribute('src')};
+const run=document.getElementById('run'),result=document.getElementById('result'),status=document.getElementById('status'),reason=document.getElementById('reason'),trace=document.getElementById('trace'),snapshot=document.getElementById('snapshot');
+run.onclick=async()=>{run.disabled=true;run.textContent='Jupiter работает…';result.hidden=false;status.className='status';status.textContent='Запускаю Jupiter Web Engine…';reason.textContent='';trace.textContent='';snapshot.textContent='';
+const payload={};ids.forEach(id=>payload[id]=document.getElementById(id).value);
+try{
+ const r=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+ status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
+ status.className='status '+(d.status==='submitted'?'ok':d.status==='action_required'?'warn':'bad');
+ reason.textContent=d.reason||'';trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
+}catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}
+finally{run.disabled=false;run.textContent='Запустить Jupiter'}};
+document.getElementById('reset').onclick=()=>{result.hidden=true;trace.textContent='';snapshot.textContent=''};
 document.getElementById('logout').onclick=async()=>{await fetch('api/logout',{method:'POST'});location.reload()};
-</script></body></html>"""
+</script>
+</body></html>"""
 
 
 def _b64url(data: bytes) -> str:
@@ -106,7 +225,13 @@ def make_session(user_id: str) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     body = _b64url(payload)
-    sig = _b64url(hmac.new(SESSION_SECRET.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest())
+    sig = _b64url(
+        hmac.new(
+            SESSION_SECRET.encode("utf-8"),
+            body.encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+    )
     return body + "." + sig
 
 
@@ -114,7 +239,13 @@ def verify_session(token: str | None) -> dict[str, Any] | None:
     if not token or not SESSION_SECRET or "." not in token:
         return None
     body, sig = token.split(".", 1)
-    expected = _b64url(hmac.new(SESSION_SECRET.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest())
+    expected = _b64url(
+        hmac.new(
+            SESSION_SECRET.encode("utf-8"),
+            body.encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+    )
     if not hmac.compare_digest(sig, expected):
         return None
     try:
@@ -137,7 +268,11 @@ def authenticate_jobtoo(phone: str, password: str) -> dict[str, Any] | None:
         return None
     if not APP_SECRET:
         raise RuntimeError("JOBTOO_APP_SECRET is missing")
-    body = json.dumps({"fn": "dbLogin", "args": [phone, password]}, ensure_ascii=False).encode("utf-8")
+
+    body = json.dumps(
+        {"fn": "dbLogin", "args": [phone, password]},
+        ensure_ascii=False,
+    ).encode("utf-8")
     req = urllib.request.Request(
         API_ORIGIN + "/api/db.php",
         data=body,
@@ -154,14 +289,19 @@ def authenticate_jobtoo(phone: str, password: str) -> dict[str, Any] | None:
         if exc.code in {401, 403}:
             return None
         raise
+
     payload = json.loads(raw)
     data = payload.get("data") if isinstance(payload, dict) else None
     user = data.get("user") if isinstance(data, dict) else None
     if not isinstance(user, dict) or not data.get("session_token"):
         return None
-    returned_phone = "".join(ch for ch in str(user.get("phone", "")) if ch.isdigit())
+
+    returned_phone = "".join(
+        ch for ch in str(user.get("phone", "")) if ch.isdigit()
+    )
     if returned_phone != ADMIN_PHONE:
         return None
+
     uid = str(user.get("id", "")).strip()
     if not uid:
         return None
@@ -191,36 +331,28 @@ def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, str], str]:
     return values, scenario
 
 
-async def run_demo(values: dict[str, str], scenario: str, *, inline: bool = False) -> dict[str, Any]:
+def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="jupiter-lab-") as tmp:
         resume_path = Path(tmp) / "resume.txt"
-        resume_path.write_text("Jupiter private lab test resume\n", encoding="utf-8")
+        resume_path.write_text(
+            "Jupiter private lab test resume\n",
+            encoding="utf-8",
+        )
         profile = CandidateProfile(values=values, resume_path=str(resume_path))
-        agent = JupiterAgent({"127.0.0.1"}, max_steps=60)
-        target = f"http://127.0.0.1:{PORT}/career-{'test' if scenario == 'success' else 'unknown'}"
-
-        async with async_playwright() as p:
-            launch_args: dict[str, Any] = {"headless": True, "args": ["--no-sandbox"]}
-            system_chromium = shutil.which("chromium") or shutil.which("chromium-browser")
-            if system_chromium:
-                launch_args["executable_path"] = system_chromium
-            browser = await p.chromium.launch(**launch_args)
-            page = await browser.new_page(viewport={"width": 1280, "height": 1000})
-            if inline:
-                await page.set_content(TEST_HTML if scenario == "success" else UNKNOWN_HTML)
-                result = await agent.run_loaded_page(page, target, profile)
-            else:
-                result = await agent.run(page, target, profile)
-            screenshot = await page.screenshot(full_page=True)
-            await browser.close()
-
+        agent = JupiterAgent({"127.0.0.1"}, max_steps=30)
+        target = (
+            f"http://127.0.0.1:{PORT}/"
+            f"career-{'test' if scenario == 'success' else 'unknown'}"
+        )
+        result = agent.run(target, profile)
         payload = result.as_dict()
-        payload["screenshot"] = base64.b64encode(screenshot).decode("ascii")
+        payload["engine"] = "jupiter-web-engine"
+        payload["snapshot"] = agent.engine.semantic_snapshot()
         return payload
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "JupiterPrivateLab/1.1"
+    server_version = "JupiterPrivateLab/2.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.client_address[0]} {fmt % args}")
@@ -246,8 +378,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
 
-    def _html(self, body: str) -> None:
-        self._headers(HTTPStatus.OK, "text/html; charset=utf-8")
+    def _html(self, body: str, status: int = HTTPStatus.OK) -> None:
+        self._headers(status, "text/html; charset=utf-8")
         self.wfile.write(body.encode("utf-8"))
 
     def _json(
@@ -278,17 +410,59 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in {"/", "/index.html"}:
             return self._html(UI_HTML if self._session() else LOGIN_HTML)
-        # Synthetic career pages are for Jupiter's Chromium only, not for a remote browser.
         if path == "/career-test":
-            return self._html(TEST_HTML) if self._is_loopback() else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return (
+                self._html(TEST_HTML)
+                if self._is_loopback()
+                else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            )
         if path == "/career-unknown":
-            return self._html(UNKNOWN_HTML) if self._is_loopback() else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return (
+                self._html(UNKNOWN_HTML)
+                if self._is_loopback()
+                else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            )
         if path == "/health":
-            return self._json(HTTPStatus.OK, {"ok": True, "service": "jupiter-private-lab"})
+            return self._json(
+                HTTPStatus.OK,
+                {"ok": True, "service": "jupiter-private-lab", "engine": "native"},
+            )
         self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:
         path = self.path.split("?", 1)[0]
+
+        if path == "/career-submit":
+            if not self._is_loopback():
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return self._html("<h1>Invalid payload</h1>", HTTPStatus.BAD_REQUEST)
+            if length <= 0 or length > MAX_APPLICATION_BODY:
+                return self._html("<h1>Invalid payload</h1>", HTTPStatus.BAD_REQUEST)
+            body = self.rfile.read(length)
+            content_type = (self.headers.get("Content-Type") or "").lower()
+            required = [
+                b'name="first_name"',
+                b'name="surname"',
+                b'name="email"',
+                b'name="phone"',
+                b'name="city"',
+                b'name="experience_years"',
+                b'name="work_format"',
+                b'name="motivation"',
+                b'name="resume"',
+                b"Jupiter private lab test resume",
+            ]
+            if "multipart/form-data" not in content_type or not all(
+                marker in body for marker in required
+            ):
+                return self._html(
+                    "<h1>Application payload rejected</h1>",
+                    HTTPStatus.BAD_REQUEST,
+                )
+            return self._html(SUCCESS_HTML)
 
         if path == "/api/login":
             try:
@@ -299,40 +473,72 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Введите телефон и пароль")
                 user = authenticate_jobtoo(phone, password)
             except ValueError as exc:
-                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return self._json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": str(exc)},
+                )
             except Exception:
-                return self._json(HTTPStatus.BAD_GATEWAY, {"error": "Не удалось проверить вход через JobToo"})
+                return self._json(
+                    HTTPStatus.BAD_GATEWAY,
+                    {"error": "Не удалось проверить вход через JobToo"},
+                )
             if not user:
-                return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Неверный телефон или пароль JobToo"})
+                return self._json(
+                    HTTPStatus.UNAUTHORIZED,
+                    {"error": "Неверный телефон или пароль JobToo"},
+                )
             token = make_session(str(user["id"]))
             cookie = (
                 f"{SESSION_COOKIE}={token}; Path=/jupiter/; Max-Age={SESSION_TTL}; "
                 "HttpOnly; Secure; SameSite=Strict"
             )
-            return self._json(HTTPStatus.OK, {"ok": True}, [("Set-Cookie", cookie)])
+            return self._json(
+                HTTPStatus.OK,
+                {"ok": True},
+                [("Set-Cookie", cookie)],
+            )
 
         if path == "/api/logout":
-            cookie = f"{SESSION_COOKIE}=; Path=/jupiter/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
-            return self._json(HTTPStatus.OK, {"ok": True}, [("Set-Cookie", cookie)])
+            cookie = (
+                f"{SESSION_COOKIE}=; Path=/jupiter/; Max-Age=0; "
+                "HttpOnly; Secure; SameSite=Strict"
+            )
+            return self._json(
+                HTTPStatus.OK,
+                {"ok": True},
+                [("Set-Cookie", cookie)],
+            )
 
         if path != "/api/run":
             return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         if not self._session():
-            return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Войдите в JobToo"})
+            return self._json(
+                HTTPStatus.UNAUTHORIZED,
+                {"error": "Войдите в JobToo"},
+            )
 
         try:
             raw = self._read_json()
             values, scenario = validate_payload(raw)
         except (json.JSONDecodeError, ValueError) as exc:
-            return self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": str(exc)},
+            )
 
         if not RUN_LOCK.acquire(blocking=False):
-            return self._json(HTTPStatus.CONFLICT, {"error": "Jupiter is already running"})
+            return self._json(
+                HTTPStatus.CONFLICT,
+                {"error": "Jupiter is already running"},
+            )
         try:
-            payload = asyncio.run(run_demo(values, scenario))
+            payload = run_demo(values, scenario)
             self._json(HTTPStatus.OK, payload)
         except Exception as exc:
-            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Jupiter run failed: {type(exc).__name__}"})
+            self._json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": f"Jupiter run failed: {type(exc).__name__}"},
+            )
         finally:
             RUN_LOCK.release()
 
