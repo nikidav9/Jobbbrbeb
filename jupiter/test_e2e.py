@@ -55,6 +55,37 @@ JS_ONLY_HTML = """<!doctype html>
 <script>window.renderApplicationForm()</script>
 """
 
+
+JS_RENDERED_FORM_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Jupiter Script Render Test</title>
+<div id="root"></div>
+<script>
+document.getElementById('root').innerHTML = \`<form id="js-form" action="/submit-js" method="post">
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Submit application</button>
+</form>\`;
+</script>
+"""
+
+JS_INTERCEPT_SUBMIT_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Jupiter Script Submit Test</title>
+<form id="application-form">
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Submit application</button>
+</form>
+<div id="success" hidden><h1>Application received</h1><p>Jupiter script success.</p></div>
+<script>
+const form = document.getElementById('application-form');
+form.addEventListener('submit', function(e) {
+  e.preventDefault();
+  document.getElementById('application-form').hidden = true;
+  document.getElementById('success').hidden = false;
+});
+</script>
+"""
+
 PROFILE = {
     "first_name": "Nikita",
     "last_name": "Davydov",
@@ -89,6 +120,10 @@ class CareersHandler(BaseHTTPRequestHandler):
             return self._html(UNKNOWN_HTML)
         if self.path == "/js-only":
             return self._html(JS_ONLY_HTML)
+        if self.path == "/js-rendered":
+            return self._html(JS_RENDERED_FORM_HTML)
+        if self.path == "/js-intercept":
+            return self._html(JS_INTERCEPT_SUBMIT_HTML)
         if self.path == "/redirect-external":
             self.send_response(302)
             self.send_header("Location", "http://example.com/application")
@@ -97,11 +132,19 @@ class CareersHandler(BaseHTTPRequestHandler):
         self._html("<h1>Not found</h1>", 404)
 
     def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+
+        if self.path == "/submit-js":
+            self.server.state["js_post_count"] += 1
+            self.server.state["last_js_body"] = body
+            if b"email=" not in body:
+                return self._html("<h1>Bad JS application payload</h1>", 400)
+            return self._html("<h1>Application received</h1><p>JS-rendered form submitted.</p>")
+
         if self.path != "/submit":
             return self._html("<h1>Not found</h1>", 404)
 
-        length = int(self.headers.get("Content-Length", "0"))
-        body = self.rfile.read(length)
         self.server.state["post_count"] += 1
         self.server.state["last_body"] = body
         self.server.state["last_content_type"] = self.headers.get("Content-Type", "")
@@ -137,6 +180,8 @@ class JupiterNativeE2E(unittest.TestCase):
             "last_body": b"",
             "last_content_type": "",
             "last_cookie": "",
+            "js_post_count": 0,
+            "last_js_body": b"",
         }
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -194,6 +239,42 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertIn("visa", (result.reason or "").lower())
         self.assertEqual(self.server.state["post_count"], before)
         self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
+
+    def test_script_runtime_renders_form_then_native_engine_submits(self):
+        before = self.server.state["js_post_count"]
+        result, agent = self.run_path("/js-rendered")
+        self.assertEqual(
+            result.status,
+            "submitted",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        self.assertEqual(self.server.state["js_post_count"], before + 1)
+        self.assertIn(b"email=", self.server.state["last_js_body"])
+        snapshot = agent.engine.semantic_snapshot()
+        self.assertTrue(
+            any(
+                item.get("kind") == "dom_mutation"
+                for item in snapshot.get("script_diagnostics", [])
+            ),
+            snapshot,
+        )
+        self.assertIn("success_detected", [x["action"] for x in result.trajectory])
+
+    def test_script_runtime_handles_prevent_default_submit(self):
+        before = self.server.state["js_post_count"]
+        result, agent = self.run_path("/js-intercept")
+        self.assertEqual(
+            result.status,
+            "submitted",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        self.assertEqual(self.server.state["js_post_count"], before)
+        self.assertIn("Application received", agent.engine.page.text)
+        diagnostics = agent.engine.semantic_snapshot().get("script_diagnostics", [])
+        self.assertTrue(
+            any(item.get("detail") == "preventDefault" for item in diagnostics),
+            diagnostics,
+        )
 
     def test_js_only_page_is_explicitly_handed_off(self):
         result, _agent = self.run_path("/js-only")
