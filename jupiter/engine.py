@@ -13,6 +13,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
 
+from script_runtime import JupiterScriptRuntime
+
 
 class EngineError(RuntimeError):
     pass
@@ -56,6 +58,7 @@ class FormState:
     method: str
     action: str
     enctype: str
+    id: str = ""
     control_indices: list[int] = field(default_factory=list)
 
 
@@ -70,6 +73,8 @@ class PageState:
     controls: list[ControlState]
     forms: list[FormState]
     has_script: bool
+    script_unsupported: bool = False
+    script_diagnostics: list[dict[str, str]] = field(default_factory=list)
 
     def snapshot(self) -> dict:
         return {
@@ -78,12 +83,15 @@ class PageState:
             "title": self.title,
             "text": self.text[:3000],
             "has_script": self.has_script,
+            "script_unsupported": self.script_unsupported,
+            "script_diagnostics": list(self.script_diagnostics),
             "forms": [
                 {
                     "index": f.index,
                     "method": f.method,
                     "action": f.action,
                     "enctype": f.enctype,
+                    "id": f.id,
                     "controls": list(f.control_indices),
                 }
                 for f in self.forms
@@ -210,6 +218,7 @@ class _SemanticParser(HTMLParser):
                 action=attrs.get("action", ""),
                 enctype=(attrs.get("enctype", "application/x-www-form-urlencoded")
                          or "application/x-www-form-urlencoded").lower(),
+                id=attrs.get("id", ""),
             )
             self.forms.append(form)
             self.current_form = form.index
@@ -384,6 +393,9 @@ class JupiterWebEngine:
             _SafeRedirectHandler(self.assert_allowed),
         )
         self.page: PageState | None = None
+        self.script_runtime: JupiterScriptRuntime | None = None
+        self.script_history: list[dict[str, str]] = []
+        self.last_submit_mode = "none"
 
     def assert_allowed(self, url: str) -> None:
         parsed = urllib.parse.urlparse(url)
@@ -418,10 +430,59 @@ class JupiterWebEngine:
         headers: dict[str, str],
         html_text: str,
     ) -> PageState:
+        runtime = JupiterScriptRuntime(html_text)
+        script_result = runtime.bootstrap()
+        semantic_html = script_result.html
+
+        parser = _SemanticParser(url)
+        parser.feed(semantic_html)
+        parser.close()
+        page = parser.finish(semantic_html, status, headers)
+        page.script_unsupported = script_result.unsupported
+        page.script_diagnostics = script_result.diagnostic_dicts()
+        self._record_script_diagnostics(url, page.script_diagnostics)
+        self.script_runtime = runtime if page.has_script else None
+        self.page = page
+        return page
+
+    def _record_script_diagnostics(
+        self,
+        url: str,
+        diagnostics: list[dict[str, str]],
+    ) -> None:
+        existing = {
+            (item.get("url", ""), item.get("kind", ""), item.get("detail", ""))
+            for item in self.script_history
+        }
+        for item in diagnostics:
+            record = {
+                "url": url,
+                "kind": str(item.get("kind", "")),
+                "detail": str(item.get("detail", "")),
+            }
+            key = (record["url"], record["kind"], record["detail"])
+            if key not in existing:
+                self.script_history.append(record)
+                existing.add(key)
+
+    def _parse_runtime_dom(
+        self,
+        *,
+        url: str,
+        status: int,
+        headers: dict[str, str],
+        html_text: str,
+    ) -> PageState:
         parser = _SemanticParser(url)
         parser.feed(html_text)
         parser.close()
         page = parser.finish(html_text, status, headers)
+        if self.script_runtime is not None:
+            page.script_unsupported = self.script_runtime.unsupported
+            page.script_diagnostics = [
+                item.as_dict() for item in self.script_runtime.diagnostics
+            ]
+            self._record_script_diagnostics(url, page.script_diagnostics)
         self.page = page
         return page
 
@@ -556,6 +617,20 @@ class JupiterWebEngine:
         form: FormState,
         submit_control: ControlState | None = None,
     ) -> PageState:
+        if self.script_runtime is not None and form.id:
+            event_result = self.script_runtime.handle_event(form.id, "submit")
+            if event_result is not None:
+                html_after, prevented, _diagnostics = event_result
+                if prevented:
+                    self.last_submit_mode = "script"
+                    return self._parse_runtime_dom(
+                        url=page.url,
+                        status=page.status,
+                        headers=page.headers,
+                        html_text=html_after,
+                    )
+
+        self.last_submit_mode = "http"
         target = urllib.parse.urljoin(page.url, form.action or page.url)
         self.assert_allowed(target)
 
@@ -591,7 +666,11 @@ class JupiterWebEngine:
         )
 
     def semantic_snapshot(self) -> dict:
-        return self.page.snapshot() if self.page else {}
+        if not self.page:
+            return {"script_history": list(self.script_history)}
+        snapshot = self.page.snapshot()
+        snapshot["script_history"] = list(self.script_history)
+        return snapshot
 
 
 def snapshot_json(page: PageState) -> str:

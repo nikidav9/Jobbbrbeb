@@ -5,6 +5,7 @@ compose = (ROOT / "infra" / "docker-compose.yml").read_text(encoding="utf-8")
 nginx = (ROOT / "infra" / "nginx-site.conf").read_text(encoding="utf-8")
 bootstrap = (ROOT / "infra" / "bootstrap.sh").read_text(encoding="utf-8")
 engine = (ROOT / "jupiter" / "engine.py").read_text(encoding="utf-8")
+script_runtime = (ROOT / "jupiter" / "script_runtime.py").read_text(encoding="utf-8")
 agent = (ROOT / "jupiter" / "agent.py").read_text(encoding="utf-8")
 server = (ROOT / "jupiter" / "test_server.py").read_text(encoding="utf-8")
 e2e = (ROOT / "jupiter" / "test_e2e.py").read_text(encoding="utf-8")
@@ -19,7 +20,7 @@ assert "image: python:3.12-slim" in compose
 assert 'command: ["python", "test_server.py"]' in compose
 
 # Jupiter runtime must remain independent of browser automation packages.
-runtime = "\n".join([engine, agent, server, e2e, requirements])
+runtime = "\n".join([engine, script_runtime, agent, server, e2e, requirements])
 for forbidden in (
     "from playwright",
     "import playwright",
@@ -45,6 +46,12 @@ assert "multipart/form-data" in engine
 assert "self.assert_allowed(resolved)" not in engine or "_SafeRedirectHandler" in engine
 assert "JupiterWebEngine" in agent
 assert '"engine": "jupiter-web-engine"' in agent
+assert "class JupiterScriptRuntime" in script_runtime
+assert "addEventListener" in script_runtime
+assert "preventDefault" in script_runtime
+assert "eval(" in script_runtime
+assert "fetch(" in script_runtime
+assert "script_submit" in agent
 
 admin_anchor = "listen 8443 ssl http2;"
 assert admin_anchor in nginx
@@ -73,7 +80,7 @@ assert "8123" in bootstrap
 assert 'JupiterAgent({"127.0.0.1"}' in server
 assert 'X-Robots-Tag' in server
 assert 'JUPITER_SESSION_SECRET' in bootstrap
-assert 'career-test' in server and 'career-unknown' in server
+assert 'career-test' in server and 'career-script' in server and 'career-unknown' in server
 assert 'action="/career-submit"' in server
 
 print("jupiter native engine infra: ok")

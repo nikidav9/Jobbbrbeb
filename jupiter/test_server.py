@@ -99,6 +99,31 @@ SUCCESS_HTML = """<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><title>Success</title></head>
 <body><h1>Application received</h1><p>Thank you for applying.</p></body></html>"""
 
+
+SCRIPT_HTML = """<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Jupiter Script Runtime Test</title></head>
+<body>
+  <h1>Frontend Engineer</h1>
+  <form id="application-form">
+    <label>Email <input type="email" name="email" required></label>
+    <button type="submit">Submit application</button>
+  </form>
+  <div id="success" hidden>
+    <h1>Application received</h1>
+    <p>Handled by Jupiter Script Runtime.</p>
+  </div>
+  <script>
+    const form = document.getElementById('application-form');
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      document.getElementById('application-form').hidden = true;
+      document.getElementById('success').hidden = false;
+    });
+  </script>
+</body>
+</html>"""
+
 LOGIN_HTML = """<!doctype html>
 <html lang="ru">
 <head>
@@ -176,7 +201,7 @@ UI_HTML = """<!doctype html>
       <label>Город<input id="city" value="Москва"></label>
       <label>Опыт, лет<input id="experience_years" value="4"></label>
       <label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label>
-      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
+      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
     </div>
     <label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label>
     <div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div>
@@ -187,7 +212,7 @@ UI_HTML = """<!doctype html>
     <h3>Траектория</h3><pre id="trace"></pre>
   </div>
   <div class="card"><strong>Граница теста</strong>
-    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. JavaScript-only формы, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
+    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. Поддерживаемый DOM-script исполняется нашим Jupiter Runtime; неизвестный JavaScript, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
   </div>
 </div>
 <script>
@@ -316,7 +341,7 @@ def _clip(value: Any, limit: int = 500) -> str:
 
 def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, str], str]:
     scenario = _clip(raw.get("scenario"), 20)
-    if scenario not in {"success", "unknown"}:
+    if scenario not in {"success", "script", "unknown"}:
         raise ValueError("Unknown scenario")
     values = {
         "first_name": _clip(raw.get("first_name"), 100),
@@ -340,10 +365,12 @@ def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
         )
         profile = CandidateProfile(values=values, resume_path=str(resume_path))
         agent = JupiterAgent({"127.0.0.1"}, max_steps=30)
-        target = (
-            f"http://127.0.0.1:{PORT}/"
-            f"career-{'test' if scenario == 'success' else 'unknown'}"
-        )
+        page_name = {
+            "success": "career-test",
+            "script": "career-script",
+            "unknown": "career-unknown",
+        }[scenario]
+        target = f"http://127.0.0.1:{PORT}/{page_name}"
         result = agent.run(target, profile)
         payload = result.as_dict()
         payload["engine"] = "jupiter-web-engine"
@@ -413,6 +440,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/career-test":
             return (
                 self._html(TEST_HTML)
+                if self._is_loopback()
+                else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            )
+        if path == "/career-script":
+            return (
+                self._html(SCRIPT_HTML)
                 if self._is_loopback()
                 else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             )

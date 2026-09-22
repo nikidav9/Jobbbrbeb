@@ -23,17 +23,24 @@ verification live in this repository.
 - requires an explicit success marker after submission;
 - records the complete action trajectory.
 
-## Deliberate v1 boundary
+## Jupiter Script Runtime v1
 
-Jupiter Web Engine v1 does not execute arbitrary page JavaScript.
+The engine now includes a JobToo-owned, deterministic DOM scripting layer. It
+does not embed a general-purpose browser or JavaScript VM.
 
-If a career site renders its application form only after JavaScript runs, or
-uses a JavaScript-only submit handler, Jupiter returns action_required. It does
-not silently fall back to Chrome or a third-party browser service.
+The supported subset covers:
+- document.getElementById and #id querySelector bindings;
+- innerHTML, textContent/innerText, value and hidden mutations;
+- insertAdjacentHTML("beforeend", ...);
+- setAttribute/removeAttribute;
+- submit addEventListener callbacks;
+- preventDefault.
 
-That boundary is intentional: the agent stays fully under JobToo control while
-we expand our own runtime. The next engine work is a controlled JS/DOM layer,
-not a hidden Chromium dependency.
+This is enough for simple script-rendered forms and submit handlers. Unsupported
+or network-capable page APIs such as eval, timers, fetch/XHR, WebSocket,
+storage, window navigation and external script bundles are never executed.
+When they are required and no safe HTML form is available, Jupiter returns
+action_required instead of silently falling back to Chromium.
 
 ## Runtime dependencies
 
@@ -75,8 +82,10 @@ The E2E suite starts a local synthetic employer server and verifies:
 5. real HTTP form submission;
 6. explicit success verification;
 7. stop-before-submit on an unknown required visa question;
-8. explicit handoff on a JS-only page;
-9. redirect blocking when navigation tries to escape the allow-list.
+8. a form rendered by Jupiter Script Runtime and then submitted normally;
+9. a submit handler intercepted by Jupiter Script Runtime with preventDefault;
+10. explicit handoff on unsupported JavaScript;
+11. redirect blocking when navigation tries to escape the allow-list.
 
 CI runs the same suite on every PR.
 
@@ -90,7 +99,8 @@ It accepts the same phone/password as JobToo and then allows only the existing
 JobToo admin account. A successful login creates a short-lived Secure HttpOnly
 Jupiter cookie.
 
-The lab shows two synthetic scenarios: successful application and unknown
+The lab shows three synthetic scenarios: native HTTP form submission, a
+JavaScript submit handler executed by Jupiter Script Runtime, and an unknown
 required question. After a run it displays the semantic page snapshot and the
 full Jupiter trajectory.
 

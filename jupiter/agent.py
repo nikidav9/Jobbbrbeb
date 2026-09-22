@@ -385,8 +385,9 @@ class JupiterAgent:
                 return AgentResult("failed", reason, trajectory)
 
             submitted_once = True
+            submit_mode = getattr(self.engine, "last_submit_mode", "http")
             trajectory.append({
-                "action": "http_submit",
+                "action": "script_submit" if submit_mode == "script" else "http_submit",
                 "url": page.url,
                 "status": page.status,
             })
