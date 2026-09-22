@@ -197,9 +197,9 @@ class JupiterScriptRuntime:
     Deterministic JobToo-owned DOM scripting subset.
 
     It intentionally is not a general JavaScript VM. It executes only explicit
-    DOM mutations and submit listeners that Jupiter understands. Network APIs,
-    arbitrary code evaluation, timers, navigation and external bundles are
-    never executed.
+    DOM mutations and submit listeners that Jupiter understands. Supported
+    fetch/XHR is delegated to Jupiter Network Runtime; arbitrary code
+    evaluation, timers, navigation and external bundles are never executed.
     """
 
     FORBIDDEN_TOKENS = (
