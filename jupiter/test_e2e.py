@@ -202,6 +202,61 @@ form.addEventListener('submit', async function(e) {
 });
 """
 
+# ── Многошаговая анкета: «Далее» — не «Отправить» ───────────────────────────
+
+WIZARD_STEP1_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Отклик, шаг 1</title>
+<h1>Анкета кандидата</h1>
+<form id="application-form" action="/wizard-next" method="post">
+  <input type="hidden" name="step" value="1">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="surname" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <button type="submit">Далее</button>
+</form>
+"""
+
+WIZARD_STEP2_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Отклик, шаг 2</title>
+<h1>Анкета кандидата</h1>
+<form id="application-form" action="/wizard-next" method="post">
+  <input type="hidden" name="step" value="2">
+  <label>Город <input name="city" required></label>
+  <label>Опыт, лет <input name="experience_years" required></label>
+  <label>Формат работы <input name="work_format"></label>
+  <button type="submit">Далее</button>
+</form>
+"""
+
+WIZARD_STEP3_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Отклик, шаг 3</title>
+<h1>Анкета кандидата</h1>
+<form id="application-form" action="/wizard-submit" method="post">
+  <input type="hidden" name="step" value="3">
+  <label>Сопроводительное письмо
+    <textarea name="motivation" required></textarea>
+  </label>
+  <button type="submit">Отправить заявку</button>
+</form>
+"""
+
+WIZARD_STUCK_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Отклик, шаг без продолжения</title>
+<h1>Анкета кандидата</h1>
+<form id="application-form" action="/wizard-stuck-next" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="surname" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Далее</button>
+</form>
+"""
+
+
 # ── Формы, на которых Jupiter спотыкался до Semantic Form Engine v2 ──────────
 
 TWO_BUTTONS_HTML = """<!doctype html>
@@ -512,6 +567,10 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/wizard":
+            return self._html(WIZARD_STEP1_HTML)
+        if self.path == "/wizard-stuck":
+            return self._html(WIZARD_STUCK_HTML)
         if self.path == "/two-buttons":
             return self._html(TWO_BUTTONS_HTML)
         if self.path == "/fieldset-off":
@@ -533,6 +592,26 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path == "/wizard-next":
+            self.server.state["wizard_posts"].append(self.path)
+            if b"step=1" in body:
+                return self._html(WIZARD_STEP2_HTML)
+            if b"step=2" in body:
+                return self._html(WIZARD_STEP3_HTML)
+            return self._html("<h1>Unexpected wizard step</h1>", 400)
+
+        if self.path == "/wizard-submit":
+            self.server.state["wizard_posts"].append(self.path)
+            self.server.state["wizard_final_body"] = body
+            if b"step=3" not in body or b"motivation=" not in body:
+                return self._html("<h1>Bad wizard payload</h1>", 400)
+            return self._html("<h1>Application received</h1><p>Спасибо за отклик.</p>")
+
+        if self.path == "/wizard-stuck-next":
+            # Тот же шаг обратно: так ведёт себя форма, которую сервер не принял.
+            self.server.state["wizard_posts"].append(self.path)
+            return self._html(WIZARD_STUCK_HTML)
 
         if self.path in {"/draft", "/apply-now", "/nested/apply-now", "/echo-submit"}:
             self.server.state["echo_path"] = self.path
@@ -657,6 +736,8 @@ class JupiterNativeE2E(unittest.TestCase):
             "last_json_content_type": "",
             "echo_path": "",
             "echo_body": b"",
+            "wizard_posts": [],
+            "wizard_final_body": b"",
         }
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -689,6 +770,64 @@ class JupiterNativeE2E(unittest.TestCase):
                 profile,
             )
             return result, agent
+
+    # ── Многошаговая анкета ─────────────────────────────────────────────────
+
+    def test_three_step_form_is_walked_to_the_end_and_only_then_submitted(self):
+        self.server.state["wizard_posts"] = []
+        result, _agent = self.run_path("/wizard")
+        self.assertEqual(result.status, "submitted", result.reason)
+        self.assertEqual(
+            self.server.state["wizard_posts"],
+            ["/wizard-next", "/wizard-next", "/wizard-submit"],
+        )
+        actions = [item.get("action") for item in result.trajectory]
+        # Два перехода и ровно одна отправка. Если «Далее» считать отправкой,
+        # отклик будет засчитан трижды и ни разу по делу.
+        self.assertEqual(actions.count("click_next"), 2)
+        self.assertEqual(actions.count("click_submit"), 1)
+        self.assertEqual(actions.count("http_submit"), 1)
+        self.assertEqual(actions.count("http_step"), 2)
+        self.assertIn("success_detected", actions)
+        # Шаги пронумерованы, и номер растёт.
+        steps = [
+            item["step_index"] for item in result.trajectory
+            if item.get("action") == "target_form"
+        ]
+        self.assertEqual(steps, [0, 1, 2])
+        self.assertIn(b"motivation=", self.server.state["wizard_final_body"])
+
+    def test_dry_run_reports_a_step_not_readiness_on_a_multi_step_form(self):
+        self.server.state["wizard_posts"] = []
+        result, _agent = self.run_path("/wizard", dry_run=True)
+        # Честный ответ: первый экран заполнен, но анкета продолжается, а
+        # пройти дальше без настоящей отправки нельзя.
+        self.assertEqual(result.status, "step_ready", result.reason)
+        self.assertEqual(result.reason_code, "MULTI_STEP_DRY_RUN_LIMIT")
+        self.assertEqual(self.server.state["wizard_posts"], [])
+        actions = [item.get("action") for item in result.trajectory]
+        self.assertIn("step_ready", actions)
+        self.assertNotIn("ready_to_submit", actions)
+        self.assertNotIn("click_next", actions)
+        self.assertNotIn("click_submit", actions)
+
+    def test_single_step_form_still_reports_ready_to_submit_in_dry_run(self):
+        # Проверка на то, что новый статус не расползся на обычные анкеты.
+        result, _agent = self.run_path("/dry-cdek", dry_run=True)
+        self.assertEqual(result.status, "ready_to_submit", result.reason)
+        self.assertIsNone(result.reason_code)
+
+    def test_step_that_returns_the_same_step_is_reported_not_retried(self):
+        self.server.state["wizard_posts"] = []
+        result, _agent = self.run_path("/wizard-stuck")
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "STEP_DID_NOT_ADVANCE")
+        # Один раз попробовали и остановились, а не заспамили работодателя.
+        self.assertEqual(self.server.state["wizard_posts"], ["/wizard-stuck-next"])
+        self.assertNotIn(
+            "success_detected",
+            [item.get("action") for item in result.trajectory],
+        )
 
     # ── Semantic Form Engine v2 ─────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import unittest
 
+from agent import JupiterAgent
 from engine import JupiterWebEngine
 from validation import validate_form
 
@@ -176,6 +177,50 @@ class ReadonlyControls(unittest.TestCase):
         self.assertTrue(control(page, "source").readonly)
         fields, _ = JupiterWebEngine._successful_controls(page, page.forms[0], None)
         self.assertIn(("source", "jobtoo"), fields)
+
+
+class SubmitIntent(unittest.TestCase):
+    """Слова, по которым «Далее» отличается от «Отправить».
+
+    Список короткий и должен таким остаться: чем он шире, тем выше шанс
+    объявить настоящую кнопку отправки промежуточной и никогда не подать
+    отклик.
+    """
+
+    def intent(self, text: str) -> str:
+        from engine import ControlState
+        return JupiterAgent.submit_intent(
+            ControlState(index=0, form_index=0, tag="button", type="submit", text=text)
+        )
+
+    def test_next_and_apply_are_told_apart(self):
+        for text in ("Далее", "Продолжить", "Next step", "Дальше"):
+            self.assertEqual(self.intent(text), "next", text)
+        for text in ("Откликнуться", "Отправить заявку", "Submit", "Готово"):
+            self.assertEqual(self.intent(text), "apply", text)
+
+    def test_save_and_back_are_neither(self):
+        self.assertEqual(self.intent("Назад"), "back")
+        self.assertEqual(self.intent("Сохранить черновик"), "save")
+
+    def test_save_and_continue_is_a_step_not_a_draft(self):
+        # Сплошь и рядом на анкетах: сохранение — побочное действие кнопки,
+        # а смысл её — перейти дальше.
+        self.assertEqual(self.intent("Сохранить и продолжить"), "next")
+
+    def test_apply_button_outranks_next_and_next_outranks_back(self):
+        from engine import ControlState
+
+        def button(text):
+            return ControlState(
+                index=0, form_index=0, tag="button", type="submit", text=text
+            )
+
+        apply_score = JupiterAgent._submit_score(button("Откликнуться"))
+        next_score = JupiterAgent._submit_score(button("Далее"))
+        back_score = JupiterAgent._submit_score(button("Назад"))
+        self.assertGreater(apply_score, next_score)
+        self.assertGreater(next_score, back_score)
 
 
 class Constraints(unittest.TestCase):
