@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from agent import CandidateProfile, JupiterAgent
+from site_compat import profile_for_url
 
 
 HOST = "0.0.0.0"
@@ -270,15 +272,26 @@ UI_HTML = """<!doctype html>
     <div class="grid">
       <label>Имя<input id="first_name" value="Nikita"></label>
       <label>Фамилия<input id="last_name" value="Davydov"></label>
+      <label>Отчество<input id="patronymic" value="Александрович"></label>
+      <label>Дата рождения<input id="birth_date" value="09.05.1995"></label>
       <label>Email<input id="email" value="nikita.demo@reply.jobtoo.ru"></label>
       <label>Телефон<input id="phone" value="+79990000000"></label>
       <label>Город<input id="city" value="Москва"></label>
+      <label>Метро / район<input id="location_detail" value=""></label>
+      <label>Гражданство<input id="citizenship" value="Россия"></label>
+      <label>Образование<input id="education" value="Высшее"></label>
+      <label>Желаемая роль<input id="desired_role" value="Кассир"></label>
+      <label>Занятость<input id="employment" value="Полная"></label>
       <label>Опыт, лет<input id="experience_years" value="4"></label>
       <label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label>
+      <label>Есть автомобиль<select id="has_car"><option value="false">Нет</option><option value="true">Да</option></select></label>
+      <label>Согласие на обработку данных<select id="consent"><option value="true">Да</option><option value="false">Нет</option></select></label>
+      <label>Ссылка на резюме<input id="resume_url" value=""></label>
       <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="network">fetch через Jupiter Network Runtime</option><option value="modern">External JS + JSON + CSRF</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
     </div>
     <label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label>
-    <div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div>
+    <label style="margin-top:12px">URL вакансии/анкеты из аудированных 62 сайтов<input id="live_url" placeholder="https://..."></label>
+    <div class="actions"><button class="primary" id="liveRun">Live dry-run — заполнить, не отправлять</button><button class="secondary" id="run">Синтетический тест</button><button class="secondary" id="reset">Сбросить результат</button></div>
   </div>
   <div class="card" id="result" hidden>
     <div id="status" class="status"></div><p id="reason" class="muted"></p>
@@ -286,22 +299,24 @@ UI_HTML = """<!doctype html>
     <h3>Траектория</h3><pre id="trace"></pre>
   </div>
   <div class="card"><strong>Граница теста</strong>
-    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. Поддерживаемый DOM-script и allow-listed fetch/XHR исполняются нашими Jupiter Runtime; неизвестный JavaScript, внешний network, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
+    <p class="muted">Синтетические сценарии остаются на <code>127.0.0.1</code>. Live dry-run разрешён только для 62 аудированных работодателей и их явно доверенных apply-переходов. В live-режиме HTTP-движок read-only: POST/submit запрещены независимо от planner. CAPTCHA не обходится.</p>
   </div>
 </div>
 <script>
-const ids=['first_name','last_name','email','phone','city','experience_years','work_format','cover_letter','scenario'];
-const run=document.getElementById('run'),result=document.getElementById('result'),status=document.getElementById('status'),reason=document.getElementById('reason'),trace=document.getElementById('trace'),snapshot=document.getElementById('snapshot');
-run.onclick=async()=>{run.disabled=true;run.textContent='Jupiter работает…';result.hidden=false;status.className='status';status.textContent='Запускаю Jupiter Web Engine…';reason.textContent='';trace.textContent='';snapshot.textContent='';
-const payload={};ids.forEach(id=>payload[id]=document.getElementById(id).value);
+const ids=['first_name','last_name','patronymic','birth_date','email','phone','city','location_detail','citizenship','education','desired_role','employment','experience_years','work_format','has_car','consent','resume_url','cover_letter','scenario'];
+const run=document.getElementById('run'),liveRun=document.getElementById('liveRun'),result=document.getElementById('result'),status=document.getElementById('status'),reason=document.getElementById('reason'),trace=document.getElementById('trace'),snapshot=document.getElementById('snapshot');
+const payload=()=>{const p={};ids.forEach(id=>p[id]=document.getElementById(id).value);return p};
+const show=async(endpoint,body,button,label)=>{button.disabled=true;button.textContent='Jupiter работает…';result.hidden=false;status.className='status';status.textContent='Запускаю Jupiter Web Engine…';reason.textContent='';trace.textContent='';snapshot.textContent='';
 try{
- const r=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
- status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
- status.className='status '+(d.status==='submitted'?'ok':d.status==='action_required'?'warn':'bad');
- reason.textContent=d.reason||'';trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
+ status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='ready_to_submit'?'Готово к отправке — не отправляли':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
+ status.className='status '+(d.status==='submitted'||d.status==='ready_to_submit'?'ok':d.status==='action_required'?'warn':'bad');
+ reason.textContent=(d.site?('Сайт: '+d.site+'. '):'')+(d.reason||'');trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
 }catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}
-finally{run.disabled=false;run.textContent='Запустить Jupiter'}};
+finally{button.disabled=false;button.textContent=label}};
+run.onclick=()=>show('api/run',payload(),run,'Синтетический тест');
+liveRun.onclick=()=>{const p=payload();p.url=document.getElementById('live_url').value;show('api/live-dry-run',p,liveRun,'Live dry-run — заполнить, не отправлять')};
 document.getElementById('reset').onclick=()=>{result.hidden=true;trace.textContent='';snapshot.textContent=''};
 document.getElementById('logout').onclick=async()=>{await fetch('api/logout',{method:'POST'});location.reload()};
 </script>
@@ -413,21 +428,64 @@ def _clip(value: Any, limit: int = 500) -> str:
     return str(value or "").strip()[:limit]
 
 
-def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, str], str]:
+def _as_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "да", "on"}
+
+
+def validate_payload(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
     scenario = _clip(raw.get("scenario"), 20)
     if scenario not in {"success", "script", "network", "modern", "unknown"}:
         raise ValueError("Unknown scenario")
-    values = {
+    values: dict[str, Any] = {
         "first_name": _clip(raw.get("first_name"), 100),
         "last_name": _clip(raw.get("last_name"), 100),
+        "patronymic": _clip(raw.get("patronymic"), 100),
+        "birth_date": _clip(raw.get("birth_date"), 40),
         "email": _clip(raw.get("email"), 200),
         "phone": _clip(raw.get("phone"), 80),
         "city": _clip(raw.get("city"), 120),
+        "location_detail": _clip(raw.get("location_detail"), 120),
+        "citizenship": _clip(raw.get("citizenship"), 120),
+        "education": _clip(raw.get("education"), 160),
+        "desired_role": _clip(raw.get("desired_role"), 160),
+        "employment": _clip(raw.get("employment"), 80),
         "experience_years": _clip(raw.get("experience_years"), 20),
         "work_format": _clip(raw.get("work_format"), 40),
+        "resume_url": _clip(raw.get("resume_url"), 500),
         "cover_letter": _clip(raw.get("cover_letter"), 1200),
+        "has_car": _as_bool(raw.get("has_car")),
+        "consent": _as_bool(raw.get("consent")),
     }
     return values, scenario
+
+
+def validate_live_url(raw: Any) -> tuple[str, str]:
+    url = _clip(raw, 2000)
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("Live dry-run принимает только HTTPS URL")
+    site = profile_for_url(url)
+    if site is None:
+        raise ValueError("URL не относится к 62 аудированным работодателям")
+    return url, site.name
+
+
+def run_live_dry_run(values: dict[str, Any], url: str) -> dict[str, Any]:
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    with tempfile.TemporaryDirectory(prefix="jupiter-live-dry-") as tmp:
+        resume_path = Path(tmp) / "resume.txt"
+        resume_path.write_text(
+            "Jupiter private lab dry-run resume\n",
+            encoding="utf-8",
+        )
+        profile = CandidateProfile(values=values, resume_path=str(resume_path))
+        agent = JupiterAgent({host}, max_steps=30, dry_run=True)
+        result = agent.run(url, profile)
+        payload = result.as_dict()
+        payload["engine"] = "jupiter-web-engine"
+        payload["snapshot"] = agent.engine.semantic_snapshot()
+        return payload
 
 
 def run_demo(values: dict[str, str], scenario: str) -> dict[str, Any]:
@@ -682,7 +740,7 @@ class Handler(BaseHTTPRequestHandler):
                 [("Set-Cookie", cookie)],
             )
 
-        if path != "/api/run":
+        if path not in {"/api/run", "/api/live-dry-run"}:
             return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         if not self._session():
             return self._json(
@@ -693,6 +751,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             raw = self._read_json()
             values, scenario = validate_payload(raw)
+            live_url = None
+            site_name = None
+            if path == "/api/live-dry-run":
+                live_url, site_name = validate_live_url(raw.get("url"))
         except (json.JSONDecodeError, ValueError) as exc:
             return self._json(
                 HTTPStatus.BAD_REQUEST,
@@ -705,7 +767,11 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": "Jupiter is already running"},
             )
         try:
-            payload = run_demo(values, scenario)
+            if path == "/api/live-dry-run":
+                payload = run_live_dry_run(values, live_url or "")
+                payload["site"] = site_name
+            else:
+                payload = run_demo(values, scenario)
             self._json(HTTPStatus.OK, payload)
         except Exception as exc:
             self._json(
