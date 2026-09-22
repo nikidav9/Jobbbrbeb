@@ -42,8 +42,12 @@ class ControlState:
     type: str = ""
     name: str = ""
     id: str = ""
+    form_attr: str = ""
     placeholder: str = ""
     aria: str = ""
+    autocomplete: str = ""
+    inputmode: str = ""
+    title_attr: str = ""
     label: str = ""
     text: str = ""
     required: bool = False
@@ -107,9 +111,13 @@ class PageState:
                     "type": c.type,
                     "name": c.name,
                     "id": c.id,
+                    "form_attr": c.form_attr,
                     "label": c.label,
                     "placeholder": c.placeholder,
                     "aria": c.aria,
+                    "autocomplete": c.autocomplete,
+                    "inputmode": c.inputmode,
+                    "title_attr": c.title_attr,
                     "text": c.text,
                     "required": c.required,
                     "disabled": c.disabled,
@@ -187,10 +195,20 @@ class _SemanticParser(HTMLParser):
             type=ctype,
             name=attrs.get("name", ""),
             id=attrs.get("id", ""),
+            form_attr=attrs.get("form", ""),
             placeholder=attrs.get("placeholder", ""),
             aria=attrs.get("aria-label", ""),
-            required="required" in attrs,
-            disabled="disabled" in attrs,
+            autocomplete=attrs.get("autocomplete", ""),
+            inputmode=attrs.get("inputmode", ""),
+            title_attr=attrs.get("title", ""),
+            required=(
+                "required" in attrs
+                or attrs.get("aria-required", "").lower() == "true"
+            ),
+            disabled=(
+                "disabled" in attrs
+                or attrs.get("aria-disabled", "").lower() == "true"
+            ),
             value=value,
             checked="checked" in attrs,
             accept=attrs.get("accept", ""),
@@ -342,11 +360,21 @@ class _SemanticParser(HTMLParser):
     def finish(self, html_text: str, status: int, headers: dict[str, str]) -> PageState:
         title = " ".join("".join(self.title_parts).split())
         body_text = " ".join(self.text_parts)
+        form_ids = {
+            form.id: form.index
+            for form in self.forms
+            if form.id
+        }
         for c in self.controls:
             c.text = " ".join(c.text.split())
             c.label = " ".join(c.label.split())
             if c.tag == "textarea":
                 c.value = c.value.strip()
+            if c.form_index is None and c.form_attr in form_ids:
+                c.form_index = form_ids[c.form_attr]
+                form = self.forms[c.form_index]
+                if c.index not in form.control_indices:
+                    form.control_indices.append(c.index)
         return PageState(
             url=self.url,
             status=status,
@@ -386,10 +414,12 @@ class JupiterWebEngine:
         *,
         timeout: float = 20.0,
         max_response_bytes: int = 5 * 1024 * 1024,
+        read_only: bool = False,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.timeout = timeout
         self.max_response_bytes = max_response_bytes
+        self.read_only = read_only
         self.cookies = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies),
@@ -575,6 +605,11 @@ class JupiterWebEngine:
         headers: dict[str, str] | None = None,
     ) -> PageState:
         self.assert_allowed(url)
+        method = method.upper()
+        if self.read_only and method not in {"GET", "HEAD"}:
+            raise EngineSecurityError(
+                f"Read-only Jupiter engine blocked mutating request: {method}"
+            )
         request_headers = {
             "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
             "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
@@ -583,7 +618,7 @@ class JupiterWebEngine:
         req = urllib.request.Request(
             url,
             data=data,
-            method=method.upper(),
+            method=method,
             headers=request_headers,
         )
         try:
@@ -692,6 +727,10 @@ class JupiterWebEngine:
         self.assert_allowed(target)
 
         method = network_request.method.upper()
+        if self.read_only and method not in {"GET", "HEAD"}:
+            raise EngineSecurityError(
+                f"Read-only Jupiter engine blocked script request: {method}"
+            )
         if method not in {"GET", "POST"}:
             raise EngineSecurityError(
                 f"Script network method '{method}' is not allowed"
@@ -833,6 +872,10 @@ class JupiterWebEngine:
         form: FormState,
         submit_control: ControlState | None = None,
     ) -> PageState:
+        if self.read_only:
+            raise EngineSecurityError(
+                "Read-only Jupiter engine blocked form submission"
+            )
         if self.script_runtime is not None and form.id:
             event_result = self.script_runtime.handle_event(
                 form.id,

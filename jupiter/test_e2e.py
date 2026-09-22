@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
+from engine import EngineSecurityError, JupiterWebEngine
+from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
 
 
 APPLICATION_HTML = """<!doctype html>
@@ -206,11 +208,79 @@ PROFILE = {
     "email": "nikita.demo@reply.jobtoo.ru",
     "phone": "+79990000000",
     "city": "Москва",
+    "patronymic": "Александрович",
+    "birth_date": "09.05.1995",
+    "citizenship": "Россия",
+    "education": "Высшее",
+    "desired_role": "Кассир",
+    "employment": "Полная",
+    "consent": True,
+    "has_car": False,
     "experience_years": "4",
     "work_format": "Hybrid",
     "cover_letter": "Мне интересна роль, потому что мой опыт соответствует задачам команды.",
     "resume_path": "resume.txt",
 }
+
+
+SLATA_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Slata-like application</title>
+<form action="/never-submit" method="post" enctype="multipart/form-data">
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Имя <input name="first_name" required></label>
+  <label>Отчество <input name="patronymic" required></label>
+  <label>Дата рождения <input type="date" name="birthday" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Гражданство <input name="citizenship"></label>
+  <label>Образование
+    <select name="education" required>
+      <option value="">Выберите</option>
+      <option value="higher">Высшее</option>
+      <option value="middle">Среднее</option>
+    </select>
+  </label>
+  <label>Комментарий <textarea name="comment" required></textarea></label>
+  <label>Ссылка на резюме <input type="url" name="cv_url" required></label>
+  <label>Файл резюме <input type="file" name="cv_file"></label>
+  <label><input type="checkbox" name="agreedPersonalData" required> Согласие на обработку персональных данных</label>
+  <textarea name="g-recaptcha-response" required></textarea>
+  <div class="g-recaptcha"></div>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+CDEK_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>CDEK-like application</title>
+<form action="/never-submit" method="post" enctype="multipart/form-data">
+  <label>ФИО <input name="name" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Город <input name="city" required></label>
+  <label>Комментарий <textarea name="comment"></textarea></label>
+  <label>Ссылка на резюме <input name="brief_link" required></label>
+  <label>Резюме <input type="file" name="brief"></label>
+  <button type="submit">Отправить отклик</button>
+</form>
+"""
+
+REACT_DRY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>React-like application</title>
+<form id="application-form">
+  <input name="lastName" placeholder="Фамилия">
+  <input name="firstName" placeholder="Имя">
+  <input type="email" name="email" placeholder="Email">
+  <input type="tel" name="phone" placeholder="Телефон">
+  <textarea name="comment" placeholder="Комментарий"></textarea>
+  <input type="file">
+  <label><input type="checkbox" name="agreedReservation"> Согласен</label>
+  <label><input type="checkbox" name="agreedPersonalData"> Персональные данные</label>
+</form>
+<script>window.__NEXT_DATA__ = {"page":"apply"};</script>
+"""
 
 
 class CareersHandler(BaseHTTPRequestHandler):
@@ -251,6 +321,12 @@ class CareersHandler(BaseHTTPRequestHandler):
             return self._html(MODERN_APP_HTML)
         if self.path == "/modern-external-blocked":
             return self._html(MODERN_EXTERNAL_BLOCKED_HTML)
+        if self.path == "/dry-slata":
+            return self._html(SLATA_DRY_HTML)
+        if self.path == "/dry-cdek":
+            return self._html(CDEK_DRY_HTML)
+        if self.path == "/dry-react":
+            return self._html(REACT_DRY_HTML)
         if self.path == "/assets/modern-app.js":
             body = MODERN_EXTERNAL_JS.encode("utf-8")
             self.send_response(200)
@@ -409,15 +485,95 @@ class JupiterNativeE2E(unittest.TestCase):
         )
         return CandidateProfile.load(str(profile_path))
 
-    def run_path(self, path: str):
+    def run_path(self, path: str, *, dry_run: bool = False):
         with tempfile.TemporaryDirectory() as tmp_dir:
             profile = self.profile(Path(tmp_dir))
-            agent = JupiterAgent({"127.0.0.1"})
+            agent = JupiterAgent({"127.0.0.1"}, dry_run=dry_run)
             result = agent.run(
                 f"http://127.0.0.1:{self.port}{path}",
                 profile,
             )
             return result, agent
+
+    def test_dry_run_fills_captcha_form_without_submitting(self):
+        before = self.server.state["post_count"]
+        result, agent = self.run_path("/dry-slata", dry_run=True)
+        self.assertEqual(
+            result.status,
+            "ready_to_submit",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        self.assertEqual(self.server.state["post_count"], before)
+        actions = [item["action"] for item in result.trajectory]
+        self.assertIn("upload", actions)
+        self.assertIn("check", actions)
+        self.assertIn("ready_to_submit", actions)
+        self.assertNotIn("click_submit", actions)
+        self.assertIn("CAPTCHA", result.reason or "")
+        snapshot = agent.engine.semantic_snapshot()
+        controls = snapshot["controls"]
+        values = {item["name"]: item for item in controls if item["name"]}
+        self.assertEqual(values["birthday"]["value"], "1995-05-09")
+        self.assertTrue(values["agreedPersonalData"]["checked"])
+        self.assertTrue(values["cv_file"]["file_attached"])
+        self.assertEqual(values["cv_url"]["value"], "")
+
+    def test_dry_run_accepts_resume_file_instead_of_required_resume_link(self):
+        result, agent = self.run_path("/dry-cdek", dry_run=True)
+        self.assertEqual(
+            result.status,
+            "ready_to_submit",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        controls = agent.engine.semantic_snapshot()["controls"]
+        values = {item["name"]: item for item in controls if item["name"]}
+        self.assertTrue(values["brief"]["file_attached"])
+        self.assertEqual(values["brief_link"]["value"], "")
+        self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
+
+    def test_dry_run_fills_server_rendered_react_fields_without_submit(self):
+        result, agent = self.run_path("/dry-react", dry_run=True)
+        self.assertEqual(
+            result.status,
+            "ready_to_submit",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        controls = agent.engine.semantic_snapshot()["controls"]
+        values = {item["name"]: item for item in controls if item["name"]}
+        self.assertEqual(values["firstName"]["value"], "Nikita")
+        self.assertEqual(values["lastName"]["value"], "Davydov")
+        self.assertEqual(values["email"]["value"], "nikita.demo@reply.jobtoo.ru")
+        self.assertTrue(values["agreedPersonalData"]["checked"])
+        self.assertFalse(values["agreedReservation"]["checked"])
+        self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
+
+    def test_dry_run_still_refuses_to_invent_unknown_required_data(self):
+        result, _agent = self.run_path("/unknown", dry_run=True)
+        self.assertEqual(result.status, "action_required")
+        self.assertIn("visa", (result.reason or "").lower())
+        self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
+
+    def test_audited_registry_covers_all_62_sources_and_known_apply_hosts(self):
+        self.assertEqual(len(AUDITED_SITES), 62)
+        self.assertIn("job.wb.ru", trusted_hosts_for("https://career.rwb.ru/vacancies/34863"))
+        self.assertIn("hh.ru", trusted_hosts_for("https://career.lenta.com/"))
+        self.assertEqual(
+            field_override("https://vkusvill.ru/job/prodavets-konsultant.html", "BORN"),
+            "birth_date",
+        )
+        self.assertEqual(
+            field_override("https://job.megafon.ru/vacancy/x/apply", "agreedPersonalData"),
+            "consent",
+        )
+
+    def test_read_only_engine_blocks_direct_post_even_outside_agent(self):
+        engine = JupiterWebEngine({"127.0.0.1"}, read_only=True)
+        with self.assertRaises(EngineSecurityError):
+            engine.request(
+                f"http://127.0.0.1:{self.port}/submit",
+                method="POST",
+                data=b"should-never-leave",
+            )
 
     def test_native_engine_fills_uploads_cookies_and_submits(self):
         result, agent = self.run_path("/application")
