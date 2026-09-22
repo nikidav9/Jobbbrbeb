@@ -74,6 +74,11 @@ ALIASES = {
     "city": ("city", "town", "город", "населенный пункт", "населённый пункт"),
     "location_detail": ("metro", "location detail", "метро", "район"),
     "linkedin": ("linkedin",),
+    "github": ("github", "git hub"),
+    "portfolio": ("portfolio", "портфолио", "personal site", "website"),
+    "telegram": ("telegram", "телеграм"),
+    "current_company": ("current company", "company", "текущая компания", "работодатель"),
+    "current_title": ("current title", "job title", "должность сейчас", "текущая должность"),
     "experience_years": (
         "years of experience", "experience years", "лет опыта", "стаж", "опыт работы"
     ),
@@ -89,6 +94,15 @@ ALIASES = {
     "education": ("education", "образование"),
     "resume_url": ("resume url", "cv url", "resume link", "brief link", "ссылка на резюме"),
     "has_car": ("has car", "own car", "автомобиль", "есть машина", "личный автомобиль"),
+    "relocation": ("relocation", "relocate", "переезд", "готовность к переезду"),
+    "visa_sponsorship": (
+        "visa sponsorship", "sponsorship", "визовая поддержка", "спонсорство визы"
+    ),
+    "work_authorization": (
+        "work authorization", "right to work", "разрешение на работу", "право на работу"
+    ),
+    "notice_period": ("notice period", "start date", "дата выхода", "срок выхода"),
+    "english_level": ("english level", "english", "уровень английского", "английский"),
     "cover_letter": (
         "cover letter",
         "comment",
@@ -112,6 +126,29 @@ class CandidateProfile:
     resume_path: str | None = None
 
     def __post_init__(self) -> None:
+        aliases = {
+            "first_name": ("given_name", "firstName"),
+            "last_name": ("surname", "family_name", "lastName"),
+            "patronymic": ("middle_name", "additional_name"),
+            "birth_date": ("birthday", "date_of_birth", "dob"),
+            "city": ("town", "location_city"),
+            "desired_role": ("position", "job_title", "vacancy"),
+            "employment": ("employment_type",),
+            "cover_letter": ("motivation", "comment"),
+            "resume_url": ("cv_url", "resume_link"),
+            "current_company": ("employer",),
+            "current_title": ("current_position",),
+            "work_authorization": ("right_to_work",),
+            "visa_sponsorship": ("requires_sponsorship",),
+        }
+        for canonical, candidates in aliases.items():
+            if canonical in self.values and self.values.get(canonical) not in (None, ""):
+                continue
+            for candidate in candidates:
+                if candidate in self.values and self.values.get(candidate) not in (None, ""):
+                    self.values[canonical] = self.values[candidate]
+                    break
+
         if not self.values.get("full_name"):
             full_name = " ".join(
                 str(self.values.get(key) or "").strip()
