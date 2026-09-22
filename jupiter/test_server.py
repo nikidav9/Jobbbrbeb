@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from agent import CandidateProfile, JupiterAgent
+from live_audit import run_target, validate_audited_url
+from site_compat import AUDITED_SOURCE_URLS, profile_for_url
 
 
 HOST = "0.0.0.0"
@@ -244,17 +246,18 @@ UI_HTML = """<!doctype html>
   <title>Jupiter Private Lab</title>
   <style>
     :root{font-family:Inter,system-ui,sans-serif;color:#171717;background:#f5f5f5}
-    *{box-sizing:border-box}body{margin:0}.wrap{max-width:980px;margin:0 auto;padding:32px 18px 60px}
+    *{box-sizing:border-box}body{margin:0}.wrap{max-width:1040px;margin:0 auto;padding:32px 18px 60px}
     .top{display:flex;justify-content:space-between;gap:12px;align-items:start}
     .card{background:#fff;border:1px solid #e5e5e5;border-radius:20px;padding:22px;margin:14px 0;box-shadow:0 8px 30px rgba(0,0,0,.04)}
-    h1{font-size:32px;margin:0 0 8px}.muted{color:#666}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    h1{font-size:32px;margin:0 0 8px}h3{margin:0 0 12px}.muted{color:#666}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     label{display:block;font-size:13px;color:#555}input,select,textarea{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #d6d6d6;border-radius:10px;font:inherit}
+    input[type=checkbox]{width:auto;margin:0 8px 0 0}.check{display:flex;align-items:center;padding-top:26px}
     textarea{min-height:90px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
     button{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.secondary{background:#eee}
     .status{font-weight:800;font-size:18px}.ok{color:#0a7f42}.warn{color:#9a6700}.bad{color:#b42318}
     pre{background:#111;color:#e7e7e7;padding:16px;border-radius:14px;overflow:auto;max-height:460px;font-size:12px}
     code{background:#eee;padding:2px 5px;border-radius:5px}
-    @media(max-width:720px){.grid{grid-template-columns:1fr}.top{display:block}}
+    @media(max-width:720px){.grid{grid-template-columns:1fr}.top{display:block}.check{padding-top:8px}}
   </style>
 </head>
 <body>
@@ -262,48 +265,102 @@ UI_HTML = """<!doctype html>
   <div class="top">
     <div>
       <h1>Jupiter Private Lab</h1>
-      <p class="muted">Jupiter Web Engine работает без Chromium, Playwright и внешнего AI. Он сам читает HTML, заполняет форму и отправляет HTTP-запрос.</p>
+      <p class="muted">Synthetic submit tests + read-only live dry-run для 62 аудитных работодателей. Live dry-run заполняет semantic form, но engine блокирует любой POST/submit.</p>
     </div>
     <button class="secondary" id="logout">Выйти</button>
   </div>
+
   <div class="card">
+    <h3>Профиль для проверки</h3>
     <div class="grid">
       <label>Имя<input id="first_name" value="Nikita"></label>
       <label>Фамилия<input id="last_name" value="Davydov"></label>
+      <label>Отчество<input id="patronymic" value=""></label>
+      <label>Дата рождения<input id="birth_date" placeholder="09.05.1995"></label>
       <label>Email<input id="email" value="nikita.demo@reply.jobtoo.ru"></label>
       <label>Телефон<input id="phone" value="+79990000000"></label>
       <label>Город<input id="city" value="Москва"></label>
+      <label>Район / метро<input id="location_detail" value=""></label>
+      <label>Гражданство<input id="citizenship" value="Россия"></label>
+      <label>Образование<input id="education" value=""></label>
+      <label>Желаемая должность<input id="desired_role" value=""></label>
+      <label>Занятость<input id="employment" value=""></label>
       <label>Опыт, лет<input id="experience_years" value="4"></label>
+      <label>Желаемая зарплата<input id="desired_salary" value=""></label>
+      <label>LinkedIn / профиль<input id="linkedin" value=""></label>
+      <label>Ссылка на резюме<input id="resume_url" value=""></label>
       <label>Формат<select id="work_format"><option>Hybrid</option><option>Remote</option><option>Office</option></select></label>
-      <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="network">fetch через Jupiter Network Runtime</option><option value="modern">External JS + JSON + CSRF</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
+      <label class="check"><input id="consent" type="checkbox" checked>Согласие на обработку персональных данных</label>
+      <label class="check"><input id="has_car" type="checkbox">Есть личный автомобиль</label>
+      <label class="check"><input id="talent_pool_consent" type="checkbox">Согласие на кадровый резерв</label>
     </div>
     <label style="margin-top:12px">Сопроводительный текст<textarea id="cover_letter">Мне интересна роль, потому что мой опыт соответствует задачам команды.</textarea></label>
-    <div class="actions"><button class="primary" id="run">Запустить Jupiter</button><button class="secondary" id="reset">Сбросить результат</button></div>
   </div>
+
+  <div class="card">
+    <h3>Реальный сайт — только dry-run</h3>
+    <p class="muted">Можно выбрать только источник из 62-company registry. Jupiter читает сайт, переходит к вакансии/анкете и заполняет известные поля в памяти. Отправка технически запрещена read-only engine.</p>
+    <div class="grid">
+      <label>Компания<select id="live_site"><option value="">Загрузка списка…</option></select></label>
+      <label>URL на аудитном домене<input id="live_url" placeholder="Можно вставить конкретную вакансию"></label>
+    </div>
+    <div class="actions"><button class="primary" id="liveRun">Заполнить без отправки</button></div>
+  </div>
+
+  <div class="card">
+    <h3>Синтетический regression-test</h3>
+    <label>Сценарий<select id="scenario"><option value="success">Успешный отклик</option><option value="script">JS submit через Jupiter Runtime</option><option value="network">fetch через Jupiter Network Runtime</option><option value="modern">External JS + JSON + CSRF</option><option value="unknown">Неизвестный обязательный вопрос</option></select></label>
+    <div class="actions"><button class="secondary" id="run">Запустить synthetic submit test</button><button class="secondary" id="reset">Сбросить результат</button></div>
+  </div>
+
   <div class="card" id="result" hidden>
     <div id="status" class="status"></div><p id="reason" class="muted"></p>
     <h3>Semantic page после работы</h3><pre id="snapshot"></pre>
     <h3>Траектория</h3><pre id="trace"></pre>
   </div>
-  <div class="card"><strong>Граница теста</strong>
-    <p class="muted">Разрешён только <code>127.0.0.1</code>. Реальные работодатели в этом стенде недоступны. Поддерживаемый DOM-script и allow-listed fetch/XHR исполняются нашими Jupiter Runtime; неизвестный JavaScript, внешний network, CAPTCHA и неизвестные обязательные данные останавливают агент.</p>
+
+  <div class="card"><strong>Граница безопасности</strong>
+    <p class="muted">Live dry-run принимает только аудитные employer domains. <code>POST</code> и submit блокируются на уровне JupiterWebEngine, CAPTCHA не обходится, неизвестные обязательные факты не выдумываются. Synthetic сценарии по-прежнему работают только на loopback.</p>
   </div>
 </div>
 <script>
-const ids=['first_name','last_name','email','phone','city','experience_years','work_format','cover_letter','scenario'];
-const run=document.getElementById('run'),result=document.getElementById('result'),status=document.getElementById('status'),reason=document.getElementById('reason'),trace=document.getElementById('trace'),snapshot=document.getElementById('snapshot');
-run.onclick=async()=>{run.disabled=true;run.textContent='Jupiter работает…';result.hidden=false;status.className='status';status.textContent='Запускаю Jupiter Web Engine…';reason.textContent='';trace.textContent='';snapshot.textContent='';
-const payload={};ids.forEach(id=>payload[id]=document.getElementById(id).value);
-try{
- const r=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
- status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
- status.className='status '+(d.status==='submitted'?'ok':d.status==='action_required'?'warn':'bad');
- reason.textContent=d.reason||'';trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
-}catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}
-finally{run.disabled=false;run.textContent='Запустить Jupiter'}};
+const valueIds=['first_name','last_name','patronymic','birth_date','email','phone','city','location_detail','citizenship','education','desired_role','employment','experience_years','desired_salary','linkedin','resume_url','work_format','cover_letter'];
+const checkIds=['consent','has_car','talent_pool_consent'];
+const run=document.getElementById('run'),liveRun=document.getElementById('liveRun'),result=document.getElementById('result'),status=document.getElementById('status'),reason=document.getElementById('reason'),trace=document.getElementById('trace'),snapshot=document.getElementById('snapshot');
+
+function profilePayload(){
+  const payload={};
+  valueIds.forEach(id=>payload[id]=document.getElementById(id).value);
+  checkIds.forEach(id=>payload[id]=document.getElementById(id).checked);
+  return payload;
+}
+function showResult(d){
+  result.hidden=false;
+  const ready=d.status==='ready_to_submit';
+  const submitted=d.status==='submitted';
+  const actionRequired=d.status==='action_required';
+  status.textContent=ready?'Форма заполнена, отправка заблокирована':submitted?'Synthetic: отклик отправлен':actionRequired?'Нужен ответ пользователя':'Проверка завершена: '+d.status;
+  status.className='status '+((ready||submitted)?'ok':actionRequired?'warn':'bad');
+  reason.textContent=(d.company?d.company+' · ':'')+(d.reason||'');
+  trace.textContent=JSON.stringify(d.trajectory||d.actions||{},null,2);
+  snapshot.textContent=JSON.stringify(d.snapshot||{final_url:d.final_url,filled_count:d.filled_count,filled_controls:d.filled_controls,script_history:d.script_history},null,2);
+}
+async function callApi(path,payload,button,label){
+  button.disabled=true;button.textContent='Jupiter работает…';
+  result.hidden=false;status.className='status';status.textContent='Запускаю Jupiter…';reason.textContent='';trace.textContent='';snapshot.textContent='';
+  try{
+    const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+    showResult(d);
+  }catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}
+  finally{button.disabled=false;button.textContent=label}
+}
+run.onclick=()=>{const payload=profilePayload();payload.scenario=document.getElementById('scenario').value;callApi('api/run',payload,run,'Запустить synthetic submit test')};
+liveRun.onclick=()=>{const payload=profilePayload();payload.url=document.getElementById('live_url').value||document.getElementById('live_site').value;callApi('api/live-dry-run',payload,liveRun,'Заполнить без отправки')};
+document.getElementById('live_site').onchange=e=>{document.getElementById('live_url').value=e.target.value};
 document.getElementById('reset').onclick=()=>{result.hidden=true;trace.textContent='';snapshot.textContent=''};
 document.getElementById('logout').onclick=async()=>{await fetch('api/logout',{method:'POST'});location.reload()};
+(async()=>{try{const r=await fetch('api/sites');if(!r.ok)return;const d=await r.json();const select=document.getElementById('live_site');select.innerHTML='<option value="">Выберите компанию</option>';d.sites.forEach(x=>{const o=document.createElement('option');o.value=x.url;o.textContent=x.company;select.appendChild(o)})}catch(e){}})();
 </script>
 </body></html>"""
 
