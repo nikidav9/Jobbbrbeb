@@ -54,6 +54,46 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Submission safety: evidence and one application per vacancy
+
+Two rules that gate every real submit.
+
+**A click is not a success. HTTP 200 is not a success.** An employer can hand
+back the same form with an error and still answer with a 200. `submission.py`
+therefore collects weighted `SubmissionEvidence` and confirms only above a
+threshold:
+
+| Evidence | Weight | Why |
+|---|---|---|
+| `APPLICATION_ID` | 0.9 | a number the employer issued |
+| `JSON` `accepted/success: true` | 0.85 | an explicit answer from their API |
+| `DOM_TEXT` | 0.8 | only when the marker was **absent before** the submit |
+| `URL` | 0.75 | redirect to a confirmation address |
+| `FORM_GONE` | 0.35 | corroboration only — a login redirect removes the form too |
+| `HTTP_RESPONSE` | 0.0 | recorded, never counted |
+
+The score is the strongest piece plus 0.1 per corroborating one, capped at 1.0;
+0.8 confirms. The "absent before" condition on `DOM_TEXT` is what stops a site
+with "спасибо за отклик" in its footer from confirming everything.
+
+**One application, once.** `ApplicationFingerprint` hashes candidate, employer,
+canonical vacancy URL, apply URL and the form signature. Canonicalisation drops
+`utm_*`, `gclid`, `yclid`, `fbclid` and friends, so the same vacancy reached
+through a campaign link is the same application. The fingerprint is checked
+*before* the POST; a known receipt returns `duplicate` with
+`DUPLICATE_BLOCKED` and nothing is sent.
+
+**Unknown outcome is its own state.** `EngineTransportError` separates "the
+connection dropped" from "the server answered 4xx". A dropped POST may have
+landed, so Jupiter records a `submission_unknown` receipt, verifies once with a
+GET — which creates nothing and is safe to repeat — and never re-POSTs. A later
+run over the same fingerprint stays `submission_unknown` until verification
+says otherwise.
+
+Receipts live in `ReceiptStore` (a JSON file via `--receipts`, in memory
+otherwise). Without a file the duplicate guard only lasts one run, which is not
+enough: the second attempt usually happens a day later.
+
 ## SPA pages: reading the state instead of rendering it
 
 On a React/Next/Nuxt page the initial HTML holds an empty root and no link to
@@ -132,7 +172,8 @@ that fails validation now returns `action_required` with reason code
 text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
 `DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
 `NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
-`MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`.
+`MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`, `DUPLICATE_BLOCKED`,
+`SUBMISSION_UNKNOWN`.
 Compatibility statistics must be built on the code, not on the prose.
 
 ## Jupiter Script Runtime v1
@@ -208,6 +249,7 @@ Run locally with only Python:
 cd jupiter
 python test_form_semantics.py
 python test_spa_payload.py
+python test_submission.py
 python test_e2e.py
 ```
 
@@ -254,7 +296,12 @@ The E2E suite starts a local synthetic employer server and verifies:
 35. an apply link taken from `__NEXT_DATA__` when the markup has none;
 36. embedded state without an application link staying an honest dead end;
 37. state being unable to send Jupiter to a host outside the allow-list;
-38. a JSON data block not being treated as a program.
+38. a JSON data block not being treated as a program;
+39. the same application never being sent twice;
+40. a campaign link not defeating the duplicate guard;
+41. a receipt surviving between runs through a file;
+42. a dropped connection becoming `submission_unknown`, never a retried POST;
+43. HTTP 200 with the same form back not counting as a submitted application.
 
 CI runs the same suite on every PR.
 
