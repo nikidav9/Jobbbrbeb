@@ -36,12 +36,10 @@ function FloatingTabBar({
   state,
   navigation,
   tabs,
-  backgroundColor,
 }: {
   state: any;
   navigation: any;
   tabs: TabDef[];
-  backgroundColor: string;
 }) {
   const insets = useSafeAreaInsets();
   // На части прошивок insets.bottom приходит нулём, хотя панель кнопок
@@ -51,14 +49,17 @@ function FloatingTabBar({
 
   return (
     <>
-    {/* Safe-area gap under the floating pill continues the current tab
-        background instead of painting a mismatched strip at the bottom. */}
-    {safeBottom > 0 && (
-      <View style={{
+    {/* White dock rises behind the lower half of the pill. This removes the
+        page-background wedges that otherwise show through beside the rounded
+        bottom corners, while the top half keeps the floating-pill silhouette. */}
+    <View
+      pointerEvents="none"
+      style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: safeBottom + 13, backgroundColor,
-      }} />
-    )}
+        height: safeBottom + 13 + rs(32),
+        backgroundColor: Colors.card,
+      }}
+    />
     {/* Outer: shadow (overflow:hidden would clip Android elevation) */}
     <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
       {/* Inner: clips blur to rounded shape */}
@@ -204,13 +205,6 @@ export default function TabLayout() {
             state={props.state}
             navigation={props.navigation}
             tabs={tabs}
-            backgroundColor={
-              props.state.routes[props.state.index]?.name === 'feed'
-                ? Colors.bgWarm
-                : props.state.routes[props.state.index]?.name === 'profile'
-                  ? Colors.outerBg
-                  : Colors.bg
-            }
           />
         )}
       >
