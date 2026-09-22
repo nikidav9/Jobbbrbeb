@@ -19,6 +19,12 @@ from network_runtime import (
 BACKTICK = chr(96)
 
 
+_EXECUTABLE_SCRIPT_TYPES = {
+    "module", "text/javascript", "application/javascript",
+    "text/ecmascript", "application/ecmascript", "text/jscript",
+}
+
+
 class ScriptRuntimeError(RuntimeError):
     pass
 
@@ -244,6 +250,18 @@ class JupiterScriptRuntime:
         ):
             attrs = match.group(1) or ""
             body = match.group(2) or ""
+            type_match = re.search(
+                r"""\btype\s*=\s*["']([^"']*)["']""",
+                attrs,
+                flags=re.IGNORECASE,
+            )
+            script_type = (type_match.group(1) if type_match else "").strip().lower()
+            # По стандарту браузер исполняет только скрипт без type и с типом
+            # JavaScript. <script type="application/json"> — это данные, и
+            # принимать их за программу значит объявлять страницу
+            # неподдерживаемой из-за блока, который никто и не исполнял.
+            if script_type and script_type not in _EXECUTABLE_SCRIPT_TYPES:
+                continue
             src_match = re.search(
                 r"""\bsrc\s*=\s*["']([^"']+)["']""",
                 attrs,

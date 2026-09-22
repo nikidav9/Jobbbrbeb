@@ -202,6 +202,53 @@ form.addEventListener('submit', async function(e) {
 });
 """
 
+# ── SPA: формы нет в разметке, но адрес анкеты лежит в состоянии ────────────
+
+SPA_VACANCY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Кассир — вакансия</title>
+<div id="__next"></div>
+<script id="__NEXT_DATA__" type="application/json">
+{"props":{"pageProps":{"vacancy":{"id":"777","title":"Кассир",
+"applyUrl":"/spa-apply"}}},"page":"/vacancy/[id]"}
+</script>
+<script>var hydrate=1;</script>
+"""
+
+SPA_APPLY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета</title>
+<form id="application-form" action="/never-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+SPA_DEAD_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Кассир — вакансия</title>
+<div id="__next"></div>
+<script id="__NEXT_DATA__" type="application/json">
+{"props":{"pageProps":{"vacancy":{"id":"777","title":"Кассир",
+"salary":"60000","city":"Москва"}}}}
+</script>
+<script>var hydrate=1;</script>
+"""
+
+SPA_EXTERNAL_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Кассир — вакансия</title>
+<div id="__next"></div>
+<script id="__NEXT_DATA__" type="application/json">
+{"props":{"pageProps":{"vacancy":{"applyUrl":"http://example.com/apply/777"}}}}
+</script>
+<script>var hydrate=1;</script>
+"""
+
+
 # ── Многошаговая анкета: «Далее» — не «Отправить» ───────────────────────────
 
 WIZARD_STEP1_HTML = """<!doctype html>
@@ -567,6 +614,14 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/spa-vacancy":
+            return self._html(SPA_VACANCY_HTML)
+        if self.path == "/spa-apply":
+            return self._html(SPA_APPLY_HTML)
+        if self.path == "/spa-dead":
+            return self._html(SPA_DEAD_HTML)
+        if self.path == "/spa-external":
+            return self._html(SPA_EXTERNAL_HTML)
         if self.path == "/wizard":
             return self._html(WIZARD_STEP1_HTML)
         if self.path == "/wizard-stuck":
@@ -770,6 +825,62 @@ class JupiterNativeE2E(unittest.TestCase):
                 profile,
             )
             return result, agent
+
+    # ── SPA: состояние страницы вместо разметки ─────────────────────────────
+
+    def test_apply_link_is_taken_from_next_data_when_markup_has_none(self):
+        before = self.server.state["post_count"]
+        result, _agent = self.run_path("/spa-vacancy", dry_run=True)
+        # Раньше здесь был тупик UNSUPPORTED_SCRIPT: ссылки на анкету в
+        # разметке нет, её дорисовывает браузер. Адрес при этом лежал открытым
+        # текстом в __NEXT_DATA__.
+        self.assertEqual(result.status, "ready_to_submit", result.reason)
+        self.assertEqual(self.server.state["post_count"], before)
+        navigations = [
+            item for item in result.trajectory if item.get("action") == "navigate"
+        ]
+        self.assertTrue(navigations)
+        self.assertEqual(navigations[0]["found_in"], "spa_state")
+        self.assertTrue(navigations[0]["url"].endswith("/spa-apply"))
+
+    def test_state_without_an_application_link_is_an_honest_dead_end(self):
+        result, _agent = self.run_path("/spa-dead", dry_run=True)
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "UNSUPPORTED_SCRIPT")
+        # Видно, что состояние читали, а не просто сдались на слове «script».
+        handoff = [
+            item for item in result.trajectory
+            if item.get("action") == "action_required"
+        ][-1]
+        self.assertEqual(handoff["spa_payloads"], ["next_data"])
+        self.assertIn("embedded state was read", result.reason)
+
+    def test_state_cannot_send_jupiter_to_an_unallowed_host(self):
+        # Состояние страницы — данные работодателя, а не разрешение. Адрес
+        # оттуда проходит ту же проверку хоста, что и обычная ссылка.
+        result, _agent = self.run_path("/spa-external", dry_run=True)
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "UNSUPPORTED_SCRIPT")
+        self.assertEqual(
+            [item.get("url") for item in result.trajectory
+             if item.get("action") == "navigate"],
+            [],
+        )
+
+    def test_json_data_block_is_not_treated_as_a_program(self):
+        # <script type="application/json"> браузер не исполняет. Считать его
+        # неподдерживаемой программой — значит объявить негодной всякую
+        # Next-страницу, где такой блок есть всегда.
+        data_only = (
+            '<div id="__next"></div>'
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"id":"7"}}}</script>'
+            '<script type="application/ld+json">{"@type":"JobPosting"}</script>'
+        )
+        engine = JupiterWebEngine({"127.0.0.1"}, read_only=True)
+        page = engine.load_html(data_only, "http://127.0.0.1/spa-dead")
+        self.assertTrue(page.has_script)
+        self.assertFalse(page.script_unsupported)
 
     # ── Многошаговая анкета ─────────────────────────────────────────────────
 
