@@ -221,7 +221,7 @@ def _parse_xhr(source: str) -> tuple[NetworkRequest, str] | None:
         )
 
     onload = re.search(
-        rf"""\b{var}\.onload\s*=\s*(?:function\s*\(\s*\)|\(\s*\)\s*=>)\s*\{""",
+        rf"""\b{var}\.onload\s*=\s*(?:function\s*\(\s*\)|\(\s*\)\s*=>)\s*\{{""",
         source,
         flags=re.DOTALL,
     )
