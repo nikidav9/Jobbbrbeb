@@ -54,6 +54,35 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Network policy and SSRF hardening
+
+A host allow-list on its own protects nothing. Where a name points is decided
+by DNS — by the other side. An employer domain pointing at `169.254.169.254`
+turns the agent into a cloud-metadata reader; at `10.0.0.5`, into an internal
+network scanner.
+
+`policy.py` therefore checks the address, not the name:
+
+- every request resolves the host and refuses private, loopback, link-local,
+  reserved, multicast and unspecified addresses — one bad answer among good
+  ones is enough to refuse, because round-robin is rebinding without the
+  second query;
+- the connection then goes to **that** address. `Host` and TLS SNI keep the
+  original name, so nothing is weakened, but the window between the check and
+  the connect — the DNS rebinding window — is closed;
+- non-HTTP schemes and URLs with credentials are refused before any of this.
+
+Internal addresses are reachable only when the engine was **built** with
+permission (`allow_private_addresses`, derived once from the hosts passed at
+construction). This matters because the allow-list grows: the agent adds the
+run's start host to it. Deriving the permission from the current list would let
+a start URL of `http://127.0.0.1/` authorise itself. The lab and the tests pass
+loopback at construction; a production run passes employer domains.
+
+Name-only validation is kept separate (`assert_allowed`) for logical URLs that
+fetch nothing — parsing supplied HTML must not fail because a domain does not
+resolve.
+
 ## Task queue: a swipe must not wait for someone else's website
 
 An external form takes tens of seconds; a CAPTCHA takes hours. So a swipe
@@ -339,6 +368,7 @@ python test_submission.py
 python test_candidate.py
 python test_handoff.py
 python test_tasks.py
+python test_policy.py
 python test_e2e.py
 ```
 
@@ -401,6 +431,10 @@ The E2E suite starts a local synthetic employer server and verifies:
 51. a worker taking a task and recording its receipt;
 52. a worker parking a CAPTCHA task with its resume token;
 53. a worker resuming a parked task instead of starting over.
+
+`test_policy.py` additionally covers SSRF: blocked ranges, an allow-listed host
+resolving inside, a poisoned round-robin answer, loopback permission that a
+start URL cannot grant itself, and the pinned address the connection uses.
 
 CI runs the same suite on every PR.
 

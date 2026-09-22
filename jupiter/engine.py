@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import html
+import http.client
 import http.cookiejar
 import json
 import mimetypes
 import re
+import socket
 import secrets
 import urllib.error
 import urllib.parse
@@ -16,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from network_runtime import NetworkRequest, NetworkResponse
+from policy import NetworkPolicy, PolicyError, is_blocked_address, literal_loopback
 from script_runtime import JupiterScriptRuntime
 
 
@@ -536,6 +539,59 @@ class _SemanticParser(HTMLParser):
         )
 
 
+def _pinned_connection(base, pinned_ip: str | None):
+    """Соединение ровно на тот адрес, который прошёл проверку.
+
+    Между проверкой DNS и подключением остаётся окно, в которое бьёт DNS
+    rebinding: первый ответ безобидный, второй указывает внутрь сети. Окно
+    закрывается тем, что подключаемся по уже проверенному адресу, а имя
+    оставляем для заголовка Host и для TLS.
+    """
+
+    class _Pinned(base):
+        def connect(self):
+            target = pinned_ip or self.host
+            self.sock = socket.create_connection(
+                (target, self.port), self.timeout, self.source_address
+            )
+            if getattr(self, "_tunnel_host", None):
+                self._tunnel()
+            context = getattr(self, "_context", None)
+            if context is not None:
+                self.sock = context.wrap_socket(
+                    self.sock, server_hostname=self.host
+                )
+
+    return _Pinned
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, pins: dict[str, str]):
+        super().__init__()
+        self.pins = pins
+
+    def http_open(self, req):
+        host = (req.host or "").split(":")[0].lower()
+        return self.do_open(
+            _pinned_connection(http.client.HTTPConnection, self.pins.get(host)),
+            req,
+        )
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, pins: dict[str, str]):
+        super().__init__()
+        self.pins = pins
+
+    def https_open(self, req):
+        host = (req.host or "").split(":")[0].lower()
+        return self.do_open(
+            _pinned_connection(http.client.HTTPSConnection, self.pins.get(host)),
+            req,
+            context=self._context,
+        )
+
+
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, validator: Callable[[str], None]):
         super().__init__()
@@ -563,15 +619,32 @@ class JupiterWebEngine:
         timeout: float = 20.0,
         max_response_bytes: int = 5 * 1024 * 1024,
         read_only: bool = False,
+        allow_private_addresses: bool | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
+        # Внутренние адреса разрешены, только если петлю или частный адрес
+        # вписали в список ПРИ СОЗДАНИИ движка. Позже список пополняется
+        # адресом запуска, и выводить разрешение из него нельзя: стартовый
+        # адрес разрешил бы себя сам.
+        self.allow_private_addresses = (
+            any(
+                literal_loopback(host) or is_blocked_address(host.strip("[]"))
+                for host in self.allowed_hosts
+            )
+            if allow_private_addresses is None
+            else allow_private_addresses
+        )
         self.timeout = timeout
         self.max_response_bytes = max_response_bytes
         self.read_only = read_only
         self.cookies = http.cookiejar.CookieJar()
+        # Адреса, прошедшие проверку: по ним и подключаемся.
+        self._pins: dict[str, str] = {}
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies),
-            _SafeRedirectHandler(self.assert_allowed),
+            _PinnedHTTPHandler(self._pins),
+            _PinnedHTTPSHandler(self._pins),
+            _SafeRedirectHandler(self.assert_reachable),
         )
         self.page: PageState | None = None
         self.script_runtime: JupiterScriptRuntime | None = None
@@ -579,14 +652,30 @@ class JupiterWebEngine:
         self.last_submit_mode = "none"
 
     def assert_allowed(self, url: str) -> None:
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme not in {"http", "https"}:
-            raise EngineSecurityError(f"Scheme '{parsed.scheme}' is not allowed")
-        if parsed.username or parsed.password:
-            raise EngineSecurityError("Credentials in URL are not allowed")
-        host = (parsed.hostname or "").lower()
-        if host not in self.allowed_hosts:
-            raise EngineSecurityError(f"Host '{host}' is not allowed for this Jupiter run")
+        """Имя разрешено: схема, отсутствие логина в адресе, список хостов."""
+        self._check(url, resolve=False)
+
+    def assert_reachable(self, url: str) -> None:
+        """Туда можно идти — и вот по какому IP.
+
+        Проверка имени сама по себе ничего не стоит: куда указывает домен,
+        решает чужая сторона. Поэтому перед каждым запросом адрес резолвится,
+        внутренние сети и метаданные облака отсекаются, а результат
+        запоминается — на него и пойдёт соединение.
+        """
+        self._check(url, resolve=True)
+
+    def _check(self, url: str, *, resolve: bool) -> None:
+        policy = NetworkPolicy(
+            self.allowed_hosts, allow_private=self.allow_private_addresses
+        )
+        try:
+            addresses = policy.check_url(url, resolve=resolve)
+        except PolicyError as exc:
+            raise EngineSecurityError(str(exc)) from exc
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        if addresses:
+            self._pins[host] = addresses[0]
 
     def _decode(self, raw: bytes, headers) -> str:
         charset = None
@@ -625,7 +714,7 @@ class JupiterWebEngine:
 
     def _load_external_script(self, page_url: str, src: str) -> str:
         target = urllib.parse.urljoin(page_url, src)
-        self.assert_allowed(target)
+        self.assert_reachable(target)
         if self._origin(target) != self._origin(page_url):
             raise EngineSecurityError("External scripts must be same-origin")
 
@@ -752,7 +841,7 @@ class JupiterWebEngine:
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> PageState:
-        self.assert_allowed(url)
+        self.assert_reachable(url)
         method = method.upper()
         if self.read_only and method not in {"GET", "HEAD"}:
             raise EngineSecurityError(
@@ -896,7 +985,7 @@ class JupiterWebEngine:
         network_request: NetworkRequest,
     ) -> NetworkResponse:
         target = page.resolve(network_request.url)
-        self.assert_allowed(target)
+        self.assert_reachable(target)
 
         method = network_request.method.upper()
         if self.read_only and method not in {"GET", "HEAD"}:
