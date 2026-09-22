@@ -86,6 +86,76 @@ form.addEventListener('submit', function(e) {
 </script>
 """
 
+
+JS_FETCH_SUBMIT_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Jupiter Fetch Submit Test</title>
+<form id="network-form">
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Submit application</button>
+</form>
+<div id="network-success" hidden><h1>Application received</h1><p>Fetch completed.</p></div>
+<script>
+const form = document.getElementById('network-form');
+form.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const response = await fetch('/network-submit', {
+    method: 'POST',
+    body: new FormData(form)
+  });
+  if (response.ok) {
+    document.getElementById('network-form').hidden = true;
+    document.getElementById('network-success').hidden = false;
+  }
+});
+</script>
+"""
+
+JS_XHR_SUBMIT_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Jupiter XHR Submit Test</title>
+<form id="xhr-form">
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Submit application</button>
+</form>
+<div id="xhr-success" hidden><h1>Application received</h1><p>XHR completed.</p></div>
+<script>
+const form = document.getElementById('xhr-form');
+form.addEventListener('submit', function(e) {
+  e.preventDefault();
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/xhr-submit');
+  xhr.onload = function() {
+    document.getElementById('xhr-form').hidden = true;
+    document.getElementById('xhr-success').hidden = false;
+  };
+  xhr.send(new FormData(form));
+});
+</script>
+"""
+
+JS_FETCH_EXTERNAL_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Jupiter Fetch Policy Test</title>
+<form id="blocked-form">
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+const form = document.getElementById('blocked-form');
+form.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const response = await fetch('http://example.com/apply', {
+    method: 'POST',
+    body: new FormData(form)
+  });
+  if (response.ok) {
+    document.getElementById('blocked-form').hidden = true;
+  }
+});
+</script>
+"""
+
 PROFILE = {
     "first_name": "Nikita",
     "last_name": "Davydov",
@@ -124,6 +194,15 @@ class CareersHandler(BaseHTTPRequestHandler):
             return self._html(JS_RENDERED_FORM_HTML)
         if self.path == "/js-intercept":
             return self._html(JS_INTERCEPT_SUBMIT_HTML)
+        if self.path == "/js-fetch":
+            return self._html(
+                JS_FETCH_SUBMIT_HTML,
+                headers={"Set-Cookie": "jt_network=1; Path=/"},
+            )
+        if self.path == "/js-xhr":
+            return self._html(JS_XHR_SUBMIT_HTML)
+        if self.path == "/js-fetch-external":
+            return self._html(JS_FETCH_EXTERNAL_HTML)
         if self.path == "/redirect-external":
             self.send_response(302)
             self.send_header("Location", "http://example.com/application")
@@ -134,6 +213,32 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path == "/network-submit":
+            self.server.state["network_post_count"] += 1
+            self.server.state["last_network_body"] = body
+            self.server.state["last_network_cookie"] = self.headers.get("Cookie", "")
+            self.server.state["last_network_content_type"] = self.headers.get(
+                "Content-Type",
+                "",
+            )
+            if "jt_network=1" not in self.server.state["last_network_cookie"]:
+                return self._html("<h1>Network cookie missing</h1>", 400)
+            if (
+                "multipart/form-data"
+                not in self.server.state["last_network_content_type"]
+                or b'name="email"' not in body
+                or b"nikita.demo%40" in body
+            ):
+                return self._html("<h1>Bad network application payload</h1>", 400)
+            return self._html("network accepted")
+
+        if self.path == "/xhr-submit":
+            self.server.state["xhr_post_count"] += 1
+            self.server.state["last_xhr_body"] = body
+            if b'name="email"' not in body:
+                return self._html("<h1>Bad XHR payload</h1>", 400)
+            return self._html("xhr accepted")
 
         if self.path == "/submit-js":
             self.server.state["js_post_count"] += 1
@@ -182,6 +287,12 @@ class JupiterNativeE2E(unittest.TestCase):
             "last_cookie": "",
             "js_post_count": 0,
             "last_js_body": b"",
+            "network_post_count": 0,
+            "last_network_body": b"",
+            "last_network_cookie": "",
+            "last_network_content_type": "",
+            "xhr_post_count": 0,
+            "last_xhr_body": b"",
         }
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -275,6 +386,50 @@ class JupiterNativeE2E(unittest.TestCase):
             any(item.get("detail") == "preventDefault" for item in diagnostics),
             diagnostics,
         )
+
+    def test_network_runtime_fetches_formdata_with_cookie(self):
+        before = self.server.state["network_post_count"]
+        result, agent = self.run_path("/js-fetch")
+        self.assertEqual(
+            result.status,
+            "submitted",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        self.assertEqual(self.server.state["network_post_count"], before + 1)
+        self.assertIn(
+            "multipart/form-data",
+            self.server.state["last_network_content_type"],
+        )
+        self.assertIn("jt_network=1", self.server.state["last_network_cookie"])
+        self.assertIn(b"nikita.demo@reply.jobtoo.ru", self.server.state["last_network_body"])
+        actions = [item["action"] for item in result.trajectory]
+        self.assertIn("script_network_submit", actions)
+        history = agent.engine.semantic_snapshot().get("script_history", [])
+        self.assertTrue(
+            any(item.get("kind") == "network_response" for item in history),
+            history,
+        )
+
+    def test_network_runtime_handles_xmlhttprequest(self):
+        before = self.server.state["xhr_post_count"]
+        result, _agent = self.run_path("/js-xhr")
+        self.assertEqual(
+            result.status,
+            "submitted",
+            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        )
+        self.assertEqual(self.server.state["xhr_post_count"], before + 1)
+        self.assertIn(b"nikita.demo@reply.jobtoo.ru", self.server.state["last_xhr_body"])
+        self.assertIn(
+            "script_network_submit",
+            [item["action"] for item in result.trajectory],
+        )
+
+    def test_network_runtime_cannot_escape_allow_list(self):
+        result, _agent = self.run_path("/js-fetch-external")
+        self.assertEqual(result.status, "action_required")
+        self.assertIn("blocked", (result.reason or "").lower())
+        self.assertIn("example.com", result.reason or "")
 
     def test_js_only_page_is_explicitly_handed_off(self):
         result, _agent = self.run_path("/js-only")
