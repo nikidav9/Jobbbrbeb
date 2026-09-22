@@ -424,6 +424,71 @@ class JupiterWebEngine:
                 continue
         return raw.decode("utf-8", errors="replace")
 
+    @staticmethod
+    def _origin(url: str) -> tuple[str, str, int | None]:
+        parsed = urllib.parse.urlparse(url)
+        return (parsed.scheme.lower(), (parsed.hostname or "").lower(), parsed.port)
+
+    @staticmethod
+    def _meta_content(html_text: str, name: str) -> str | None:
+        for match in re.finditer(r"<meta\b[^>]*>", html_text, flags=re.IGNORECASE):
+            attrs = {
+                key.lower(): value
+                for key, _quote, value in re.findall(
+                    r"""([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(["'])(.*?)\2""",
+                    match.group(0),
+                    flags=re.DOTALL,
+                )
+            }
+            if attrs.get("name") == name and attrs.get("content") is not None:
+                return attrs["content"]
+        return None
+
+    def _load_external_script(self, page_url: str, src: str) -> str:
+        target = urllib.parse.urljoin(page_url, src)
+        self.assert_allowed(target)
+        if self._origin(target) != self._origin(page_url):
+            raise EngineSecurityError("External scripts must be same-origin")
+
+        req = urllib.request.Request(
+            target,
+            method="GET",
+            headers={
+                "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+                "Accept": "application/javascript,text/javascript;q=0.9,text/plain;q=0.5",
+            },
+        )
+        try:
+            with self.opener.open(req, timeout=self.timeout) as response:
+                final_url = response.geturl()
+                self.assert_allowed(final_url)
+                if self._origin(final_url) != self._origin(page_url):
+                    raise EngineSecurityError(
+                        "External script redirect escaped same-origin"
+                    )
+                content_type = (
+                    response.headers.get("Content-Type") or ""
+                ).lower()
+                if content_type and not (
+                    "javascript" in content_type
+                    or "ecmascript" in content_type
+                    or "text/plain" in content_type
+                ):
+                    raise EngineSecurityError(
+                        f"External script type is not allowed: {content_type}"
+                    )
+                limit = 256 * 1024
+                raw = response.read(limit + 1)
+                if len(raw) > limit:
+                    raise EngineError("External script is too large")
+                return self._decode(raw, response.headers)
+        except EngineError:
+            raise
+        except Exception as exc:
+            raise EngineError(
+                f"External script load failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
     def _parse(
         self,
         *,
@@ -432,7 +497,10 @@ class JupiterWebEngine:
         headers: dict[str, str],
         html_text: str,
     ) -> PageState:
-        runtime = JupiterScriptRuntime(html_text)
+        runtime = JupiterScriptRuntime(
+            html_text,
+            external_loader=lambda src: self._load_external_script(url, src),
+        )
         script_result = runtime.bootstrap()
         semantic_html = script_result.html
 
@@ -639,6 +707,30 @@ class JupiterWebEngine:
             "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
             "Accept": "application/json,text/plain,text/html;q=0.8,*/*;q=0.1",
         }
+        safe_headers = {
+            "accept",
+            "content-type",
+            "x-csrf-token",
+            "x-xsrf-token",
+            "x-requested-with",
+        }
+        for key, value in network_request.headers.items():
+            if key.lower() not in safe_headers:
+                raise EngineSecurityError(
+                    f"Script request header is not allowed: {key}"
+                )
+            headers[key] = value
+        for key, meta_name in network_request.meta_headers.items():
+            if key.lower() not in safe_headers:
+                raise EngineSecurityError(
+                    f"Script request header is not allowed: {key}"
+                )
+            meta_value = self._meta_content(page.html, meta_name)
+            if meta_value is None:
+                raise EngineSecurityError(
+                    f"Required meta token is missing: {meta_name}"
+                )
+            headers[key] = meta_value
         data: bytes | None = None
 
         if network_request.body_mode == "formdata":
@@ -659,6 +751,22 @@ class JupiterWebEngine:
                 )
             data = urllib.parse.urlencode(fields, doseq=True).encode("utf-8")
             headers["Content-Type"] = "application/x-www-form-urlencoded"
+        elif network_request.body_mode == "json_form":
+            if files:
+                raise EngineSecurityError(
+                    "JSON form request cannot include uploaded files"
+                )
+            if method != "POST":
+                raise EngineSecurityError(
+                    "JSON form requests require POST"
+                )
+            payload = {name: value for name, value in fields}
+            data = json.dumps(
+                payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            headers["Content-Type"] = "application/json"
         elif network_request.body_mode != "none":
             raise EngineSecurityError(
                 f"Unsupported script body mode: {network_request.body_mode}"
