@@ -36,10 +36,12 @@ function FloatingTabBar({
   state,
   navigation,
   tabs,
+  backgroundColor,
 }: {
   state: any;
   navigation: any;
   tabs: TabDef[];
+  backgroundColor: string;
 }) {
   const insets = useSafeAreaInsets();
   // На части прошивок insets.bottom приходит нулём, хотя панель кнопок
@@ -49,12 +51,12 @@ function FloatingTabBar({
 
   return (
     <>
-    {/* Safe-area gap under the floating pill continues the branded page
-        background instead of painting a white strip at the bottom. */}
+    {/* Safe-area gap under the floating pill continues the current tab
+        background instead of painting a mismatched strip at the bottom. */}
     {safeBottom > 0 && (
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: safeBottom + 13, backgroundColor: Colors.bgWarm,
+        height: safeBottom + 13, backgroundColor,
       }} />
     )}
     {/* Outer: shadow (overflow:hidden would clip Android elevation) */}
