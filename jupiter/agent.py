@@ -18,6 +18,12 @@ from engine import (
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from candidate import (
+    FieldClass, classify_key, consent_kinds, decide_consent, provenance_for,
+)
+from handoff import (
+    HandoffStore, HumanAction, HumanActionRequest, ResumeState, new_token,
+)
 from spa_payload import extract_payloads, url_candidates
 from submission import (
     ApplicationFingerprint, Receipt, ReceiptStore, SubmissionEvidence,
@@ -201,6 +207,8 @@ class Reason:
     STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
     DUPLICATE_BLOCKED = "DUPLICATE_BLOCKED"
     SUBMISSION_UNKNOWN = "SUBMISSION_UNKNOWN"
+    CONSENT_REQUIRED = "CONSENT_REQUIRED"
+    UNKNOWN_REQUIRED_QUESTION = "UNKNOWN_REQUIRED_QUESTION"
 
 
 @dataclass
@@ -231,12 +239,14 @@ class AgentResult:
     reason: str | None = None
     trajectory: list[dict[str, Any]] = field(default_factory=list)
     reason_code: str | None = None
+    human_action: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "reason": self.reason,
             "reason_code": self.reason_code,
+            "human_action": self.human_action,
             "trajectory": self.trajectory,
         }
 
@@ -374,6 +384,7 @@ class JupiterAgent:
         engine: JupiterWebEngine | None = None,
         dry_run: bool = False,
         receipts: ReceiptStore | None = None,
+        handoffs: HandoffStore | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -382,6 +393,10 @@ class JupiterAgent:
         # только внутри одного прогона — этого мало, повтор чаще всего
         # случается на второй попытке через день.
         self.receipts = receipts if receipts is not None else ReceiptStore()
+        # Состояния возврата: без них «нужен человек» означает «начинай
+        # сначала», а начинать сначала после решённой капчи бессмысленно —
+        # капча была привязана к нашей прежней сессии.
+        self.handoffs = handoffs if handoffs is not None else HandoffStore()
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -456,6 +471,33 @@ class JupiterAgent:
 
         descriptor = self.descriptor(control)
 
+        if control.type == "checkbox":
+            decision = decide_consent(descriptor, profile.values)
+            if decision.kinds:
+                # Галочка согласия — не обычное поле. Ставим её, только если
+                # человек дал именно это согласие; смешанную («данные и
+                # реклама» одним чекбоксом) не ставим сами никогда.
+                action = {
+                    "check": "check",
+                    "skip": "consent_skipped",
+                    "ask": "consent_needs_user",
+                }[decision.action]
+                trajectory.append({
+                    "action": action,
+                    "field": descriptor,
+                    "key": "consent",
+                    "consent_kinds": decision.kinds,
+                    "consent_reason": decision.reason,
+                    "provenance": {
+                        "field_class": FieldClass.CONSENT,
+                        "source": "USER_CONFIRMATION",
+                    },
+                })
+                if decision.action == "check":
+                    control.checked = True
+                    return True
+                return False
+
         if control.type == "file":
             if profile.resume_path and Path(profile.resume_path).is_file():
                 control.file_path = profile.resume_path
@@ -464,6 +506,10 @@ class JupiterAgent:
                     "field": descriptor,
                     "source": "resume",
                     "filename": Path(profile.resume_path).name,
+                    "provenance": {
+                        "field_class": FieldClass.FACT,
+                        "source": "RESUME",
+                    },
                 })
                 return True
             return False
@@ -487,6 +533,10 @@ class JupiterAgent:
                         "field": descriptor,
                         "key": "single_safe_option",
                         "value": match.label,
+                        "provenance": {
+                            "field_class": FieldClass.PREFERENCE,
+                            "source": "SITE_DEFAULT",
+                        },
                     })
                     return True
             return False
@@ -518,6 +568,7 @@ class JupiterAgent:
                 "field": descriptor,
                 "key": key,
                 "value": match.label,
+                "provenance": provenance_for(key, profile.values),
             })
             return True
 
@@ -528,6 +579,7 @@ class JupiterAgent:
                     "action": "check",
                     "field": descriptor,
                     "key": key,
+                    "provenance": provenance_for(key, profile.values),
                 })
                 return True
             return False
@@ -556,6 +608,7 @@ class JupiterAgent:
                     "field": descriptor,
                     "key": key,
                     "value": control.value,
+                    "provenance": provenance_for(key, profile.values),
                 })
                 return True
             return False
@@ -567,6 +620,7 @@ class JupiterAgent:
             "field": descriptor,
             "key": key,
             "value": text,
+            "provenance": provenance_for(key, profile.values),
         })
         return True
 
@@ -622,10 +676,31 @@ class JupiterAgent:
             action=page.resolve(action or page.url),
         )
 
-    @staticmethod
-    def detect_captcha(page: PageState) -> bool:
-        raw = page.html.lower()
-        return any(marker in raw for marker in CAPTCHA_MARKERS)
+    # Где капча может быть упомянута по делу. Раньше проверялся весь HTML
+    # целиком, и форма с action="/captcha-submit" объявлялась капчей — то есть
+    # анкета, которую человек уже прошёл, застревала навсегда.
+    _CAPTCHA_ATTR_RE = re.compile(
+        r"""\b(?:class|id|name|src|data-sitekey|data-captcha)\s*=\s*"""
+        r"""["']([^"']*)["']""",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def detect_captcha(cls, page: PageState) -> bool:
+        haystacks = [normalize(page.text)]
+        haystacks.extend(
+            value.lower()
+            for value in cls._CAPTCHA_ATTR_RE.findall(page.html or "")
+        )
+        for control in page.controls:
+            haystacks.append(
+                " ".join([control.name, control.id, control.label]).lower()
+            )
+        return any(
+            marker in haystack
+            for haystack in haystacks
+            for marker in CAPTCHA_MARKERS
+        )
 
     def _resume_alternative_satisfied(self, page: PageState, control: ControlState) -> bool:
         descriptor = normalize(self.descriptor(control))
@@ -639,6 +714,38 @@ class JupiterAgent:
             and bool(peer.file_path)
             for peer in page.controls
         )
+
+    def _missing_reason_code(
+        self,
+        page: PageState,
+        form_index: int | None,
+    ) -> str:
+        """Почему обязательное поле пустое — согласие, закон или просто нет данных.
+
+        Три разных разговора с человеком. «Поставьте галочку» — одно,
+        «подтвердите гражданство» — другое, «заполните профиль» — третье.
+        """
+        consent_pending = False
+        legal_pending = False
+        for control in page.controls:
+            if form_index is not None and control.form_index != form_index:
+                continue
+            if not control.required or control.disabled:
+                continue
+            if not self.control_is_empty(control):
+                continue
+            descriptor = self.descriptor(control)
+            if control.type == "checkbox" and consent_kinds(descriptor):
+                consent_pending = True
+                continue
+            key = choose_key(control, CandidateProfile(values={}), page.url)
+            if key and classify_key(key) == FieldClass.LEGAL:
+                legal_pending = True
+        if consent_pending:
+            return Reason.CONSENT_REQUIRED
+        if legal_pending:
+            return Reason.UNKNOWN_REQUIRED_QUESTION
+        return Reason.MISSING_PROFILE_FIELD
 
     def _required_missing(
         self,
@@ -1028,6 +1135,86 @@ class JupiterAgent:
         })
         return AgentResult("ready_to_submit", reason, trajectory)
 
+    def _handoff(
+        self,
+        page: PageState,
+        trajectory: list[dict[str, Any]],
+        *,
+        action_type: str,
+        prompt: str,
+        reason_code: str,
+        field_name: str | None = None,
+    ) -> AgentResult:
+        """Остановиться так, чтобы можно было вернуться."""
+        token = new_token()
+        request = HumanActionRequest(
+            type=action_type,
+            prompt=prompt,
+            page_url=page.url,
+            resume_token=token,
+            field=field_name,
+        )
+        self.handoffs.save(ResumeState(
+            token=token,
+            page_url=page.url,
+            allowed_hosts=sorted(self.engine.allowed_hosts),
+            dry_run=self.dry_run,
+            cookies=self.engine.export_cookies(),
+            request=request.as_dict(),
+        ))
+        trajectory.append({
+            "action": "action_required",
+            "reason": prompt,
+            "reason_code": reason_code,
+            "human_action": request.as_dict(),
+        })
+        return AgentResult(
+            "action_required", prompt, trajectory, reason_code, request.as_dict()
+        )
+
+    def resume(self, token: str, profile: CandidateProfile) -> AgentResult:
+        """Продолжить с того шага, на котором остановились.
+
+        Человек сделал свою часть — решил капчу, ввёл код, вошёл. Сессия при
+        этом наша, поэтому возвращаемся со своими куками на тот же адрес.
+        """
+        state = self.handoffs.load(token)
+        if state is None:
+            reason = "Resume token is unknown or expired"
+            return AgentResult(
+                "failed", reason,
+                [{"action": "failed", "reason": reason}],
+                Reason.NAVIGATION_FAILED,
+            )
+
+        self.allowed_hosts.update(state.allowed_hosts)
+        self.engine.allowed_hosts.update(state.allowed_hosts)
+        self.engine.import_cookies(state.cookies)
+        self._root_url = state.page_url
+        try:
+            page = self.engine.open(state.page_url)
+        except EngineError as exc:
+            reason = f"Jupiter Web Engine failed to resume: {exc}"
+            return AgentResult(
+                "failed", reason,
+                [{"action": "failed", "reason": reason}],
+                Reason.NAVIGATION_FAILED,
+            )
+
+        trajectory = [{
+            "action": "resume",
+            "url": page.url,
+            "status": page.status,
+            "token": token,
+            "waited_for": (state.request or {}).get("type"),
+        }]
+        result = self._run_from_page(page, profile, trajectory)
+        if result.status in {"submitted", "ready_to_submit"}:
+            # Задача доведена — состояние возврата больше не нужно, а куки
+            # работодателя незачем хранить дольше нужного.
+            self.handoffs.drop(token)
+        return result
+
     def _record_receipt(
         self,
         fingerprint: ApplicationFingerprint,
@@ -1220,15 +1407,21 @@ class JupiterAgent:
 
             if has_application_form or filled_any:
                 if missing:
-                    reason = "Missing candidate data for required field(s): " + "; ".join(missing)
-                    trajectory.append({
-                        "action": "action_required",
-                        "reason": reason,
-                        "reason_code": Reason.MISSING_PROFILE_FIELD,
-                    })
-                    return AgentResult(
-                        "action_required", reason, trajectory,
-                        Reason.MISSING_PROFILE_FIELD,
+                    code = self._missing_reason_code(page, target_form_index)
+                    action_type = {
+                        Reason.CONSENT_REQUIRED: HumanAction.CONSENT,
+                        Reason.UNKNOWN_REQUIRED_QUESTION:
+                            HumanAction.LEGAL_CONFIRMATION,
+                    }.get(code, HumanAction.UNKNOWN_FIELD)
+                    return self._handoff(
+                        page, trajectory,
+                        action_type=action_type,
+                        prompt=(
+                            "Missing candidate data for required field(s): "
+                            + "; ".join(missing)
+                        ),
+                        reason_code=code,
+                        field_name=missing[0],
                     )
 
                 issues = self._validation_issues(page, target_form_index)
@@ -1253,15 +1446,14 @@ class JupiterAgent:
                     )
 
                 if captcha:
-                    reason = "CAPTCHA detected; fields are prepared but Jupiter does not bypass human verification"
-                    trajectory.append({
-                        "action": "action_required",
-                        "reason": reason,
-                        "reason_code": Reason.CAPTCHA_REQUIRED,
-                    })
-                    return AgentResult(
-                        "action_required", reason, trajectory,
-                        Reason.CAPTCHA_REQUIRED,
+                    return self._handoff(
+                        page, trajectory,
+                        action_type=HumanAction.CAPTCHA,
+                        prompt=(
+                            "CAPTCHA detected; the form is filled and waits for "
+                            "human verification. Jupiter does not bypass it"
+                        ),
+                        reason_code=Reason.CAPTCHA_REQUIRED,
                     )
 
             if submit is None:
@@ -1344,14 +1536,14 @@ class JupiterAgent:
                 )
 
             if captcha:
-                reason = "CAPTCHA detected; fields are prepared but Jupiter does not bypass human verification"
-                trajectory.append({
-                    "action": "action_required",
-                    "reason": reason,
-                    "reason_code": Reason.CAPTCHA_REQUIRED,
-                })
-                return AgentResult(
-                    "action_required", reason, trajectory, Reason.CAPTCHA_REQUIRED
+                return self._handoff(
+                    page, trajectory,
+                    action_type=HumanAction.CAPTCHA,
+                    prompt=(
+                        "CAPTCHA detected; the form is filled and waits for "
+                        "human verification. Jupiter does not bypass it"
+                    ),
+                    reason_code=Reason.CAPTCHA_REQUIRED,
                 )
 
             form = page.forms[submit.form_index]

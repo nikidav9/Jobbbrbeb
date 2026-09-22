@@ -54,6 +54,121 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## Network policy and SSRF hardening
+
+A host allow-list on its own protects nothing. Where a name points is decided
+by DNS — by the other side. An employer domain pointing at `169.254.169.254`
+turns the agent into a cloud-metadata reader; at `10.0.0.5`, into an internal
+network scanner.
+
+`policy.py` therefore checks the address, not the name:
+
+- every request resolves the host and refuses private, loopback, link-local,
+  reserved, multicast and unspecified addresses — one bad answer among good
+  ones is enough to refuse, because round-robin is rebinding without the
+  second query;
+- the connection then goes to **that** address. `Host` and TLS SNI keep the
+  original name, so nothing is weakened, but the window between the check and
+  the connect — the DNS rebinding window — is closed;
+- non-HTTP schemes and URLs with credentials are refused before any of this.
+
+Internal addresses are reachable only when the engine was **built** with
+permission (`allow_private_addresses`, derived once from the hosts passed at
+construction). This matters because the allow-list grows: the agent adds the
+run's start host to it. Deriving the permission from the current list would let
+a start URL of `http://127.0.0.1/` authorise itself. The lab and the tests pass
+loopback at construction; a production run passes employer domains.
+
+Name-only validation is kept separate (`assert_allowed`) for logical URLs that
+fetch nothing — parsing supplied HTML must not fail because a domain does not
+resolve.
+
+## Task queue: a swipe must not wait for someone else's website
+
+An external form takes tens of seconds; a CAPTCHA takes hours. So a swipe
+enqueues a task and a worker picks it up. `tasks.py` holds the model and the
+queue, `worker.py` is the thin bridge to the agent.
+
+- **Lease and heartbeat.** A worker that dies must not take the task with it,
+  and must not have it stolen while it is still alive.
+- **Checkpoints.** Opening the site, finding the vacancy and filling the form
+  is expensive. A restart resumes from the last checkpoint instead of touching
+  the employer's site again.
+- **Per-domain limit.** Twenty swipes on one employer must not become twenty
+  simultaneous requests to them.
+- **Backoff.** Retries wait 1, 4 then 9 minutes, and only for failures worth
+  repeating — a connection problem, not a closed vacancy.
+- **Terminal states include waiting for a human.** `action_required` and
+  `submission_unknown` are never handed back to a worker: the first needs a
+  person, and the second must be verified before anything is repeated.
+
+Every transition is logged on the task with its timestamp and attempt number.
+
+A task parked for a human keeps its `resume_token`, and the worker continues
+from it rather than starting over.
+
+**Not in this layer yet:** the production `application` table and the swipe →
+queue wiring in the app. That touches the live database and deploys on merge,
+so it is a separate change rather than part of a batch.
+
+## Human handoff that can be resumed
+
+Stopping is not the hard part; continuing is. A person who solves a CAPTCHA in
+their own browser has not helped us — the session was ours. So every stop that
+needs a human now leaves two things behind: a `HumanActionRequest` the product
+can show, and a `ResumeState` the agent can come back to.
+
+`agent.resume(token, profile)` restores the allow-list and the cookie jar, opens
+the same page and continues from there. A fresh agent in a fresh process can
+pick up the task; the token is the only thing that has to travel.
+
+Handoff types: `CAPTCHA`, `OTP_EMAIL`, `OTP_PHONE`, `LOGIN`, `CONSENT`,
+`UNKNOWN_FIELD`, `LEGAL_CONFIRMATION`.
+
+Nothing here bypasses anything: no CAPTCHA solving, no MFA, no employer
+passwords stored. The only thing kept is the context, and only for a day —
+`HandoffStore` drops expired states, and a finished task drops its own.
+
+While wiring this up, a live false positive turned up: CAPTCHA detection grepped
+the whole HTML, so a form posting to `/captcha-submit` was itself read as a
+CAPTCHA. An application the person had already verified would have been stuck
+forever. Detection now looks at the visible text, the control names and the
+attributes where a widget actually declares itself.
+
+## Candidate knowledge: facts, preferences, generated text, consents
+
+`candidate.py` splits what Jupiter knows into classes that behave differently,
+because mixing them is dangerous in one specific direction:
+
+- **FACT** — never invented. Contact details, names, city.
+- **LEGAL** — citizenship, work authorisation, visa, driving licence,
+  disability, clearance. Absent from the profile means `action_required`
+  with `UNKNOWN_REQUIRED_QUESTION`, never a guess: a wrong answer here is a
+  false statement made in someone's name.
+- **PREFERENCE** — salary, format, notice period. Taken from settings only.
+- **GENERATED** — cover letter and similar. May be written, but only from
+  real facts.
+- **CONSENT** — see below.
+
+Every filled value carries `provenance` in the trajectory: `field_class` plus
+the source (`PROFILE`, `RESUME`, `USER_PREFERENCE`, `GENERATED`,
+`SITE_DEFAULT`, `USER_CONFIRMATION`). Without it there is no way to tell a
+person what exactly was sent on their behalf.
+
+### Consents are not one checkbox
+
+"Согласен на обработку персональных данных" is not "хочу в кадровый резерв"
+and is not "хочу рекламу". Jupiter recognises the kind of each checkbox and:
+
+- ticks a **required** consent (personal data, privacy policy) when the
+  profile records it;
+- **never** ticks marketing or talent-pool by default — only when that exact
+  consent was granted by its own key;
+- treats a **mixed** checkbox — one box covering a required consent *and* an
+  optional one — as a question for the human, always, even when both were
+  granted separately. Bundling them is the employer's choice, and unbundling
+  it is not ours to make. The run stops with `CONSENT_REQUIRED`.
+
 ## Submission safety: evidence and one application per vacancy
 
 Two rules that gate every real submit.
@@ -173,7 +288,7 @@ text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
 `DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
 `NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
 `MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`, `DUPLICATE_BLOCKED`,
-`SUBMISSION_UNKNOWN`.
+`SUBMISSION_UNKNOWN`, `CONSENT_REQUIRED`, `UNKNOWN_REQUIRED_QUESTION`.
 Compatibility statistics must be built on the code, not on the prose.
 
 ## Jupiter Script Runtime v1
@@ -250,6 +365,10 @@ cd jupiter
 python test_form_semantics.py
 python test_spa_payload.py
 python test_submission.py
+python test_candidate.py
+python test_handoff.py
+python test_tasks.py
+python test_policy.py
 python test_e2e.py
 ```
 
@@ -301,7 +420,21 @@ The E2E suite starts a local synthetic employer server and verifies:
 40. a campaign link not defeating the duplicate guard;
 41. a receipt surviving between runs through a file;
 42. a dropped connection becoming `submission_unknown`, never a retried POST;
-43. HTTP 200 with the same form back not counting as a submitted application.
+43. HTTP 200 with the same form back not counting as a submitted application;
+44. only the consent the candidate actually gave being ticked;
+45. one checkbox for data and advertising going to the human;
+46. every filled value carrying its provenance;
+47. a CAPTCHA stop leaving a resume token and sending nothing;
+48. a fresh agent continuing in the same session once the human is done;
+49. an unknown resume token failing loudly;
+50. a missing legal answer asking the human with a token;
+51. a worker taking a task and recording its receipt;
+52. a worker parking a CAPTCHA task with its resume token;
+53. a worker resuming a parked task instead of starting over.
+
+`test_policy.py` additionally covers SSRF: blocked ranges, an allow-listed host
+resolving inside, a poisoned round-robin answer, loopback permission that a
+start URL cannot grant itself, and the pinned address the connection uses.
 
 CI runs the same suite on every PR.
 

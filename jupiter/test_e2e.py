@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import threading
 import unittest
@@ -10,6 +11,9 @@ from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
 from engine import EngineSecurityError, JupiterWebEngine
+from handoff import HandoffStore
+from tasks import TaskQueue, TaskState
+from worker import run_once
 from submission import ReceiptStore
 from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
 
@@ -202,6 +206,57 @@ form.addEventListener('submit', async function(e) {
   }
 });
 """
+
+# ── Капча: остановка, которую можно продолжить ──────────────────────────────
+
+CAPTCHA_FORM_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета с проверкой</title>
+<form id="application-form" action="/captcha-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  CAPTCHA_SLOT
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+
+# ── Согласия: три галочки с разным смыслом ──────────────────────────────────
+
+CONSENTS_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета с согласиями</title>
+<form id="application-form" action="/never-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <label><input type="checkbox" name="pd" required>
+    Согласен на обработку персональных данных</label>
+  <label><input type="checkbox" name="pool">
+    Включить меня в кадровый резерв для будущих вакансий</label>
+  <label><input type="checkbox" name="ads">
+    Хочу получать рекламные рассылки и новости компании</label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+MIXED_CONSENT_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета со смешанной галочкой</title>
+<form id="application-form" action="/never-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <label><input type="checkbox" name="all" required>
+    Согласен на обработку персональных данных и на получение рекламных
+    рассылок от партнёров</label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
 
 # ── Один отклик — один раз, и «двести» не значит «принято» ──────────────────
 
@@ -639,6 +694,33 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/captcha-apply":
+            # Сессия у каждого визита своя, и капчу решают именно для неё.
+            # Постоянный номер сделал бы «продолжить» неотличимым от
+            # «начать заново», и тест перестал бы что-либо проверять.
+            cookie = self.headers.get("Cookie", "")
+            sessions = self.server.state["captcha_sessions"]
+            match = re.search(r"jt_session=([A-Za-z0-9]+)", cookie)
+            sid = match.group(1) if match else None
+            headers = {}
+            if sid is None or sid not in sessions:
+                self.server.state["captcha_session_seq"] += 1
+                sid = f"S{self.server.state['captcha_session_seq']}"
+                sessions[sid] = False
+                headers["Set-Cookie"] = f"jt_session={sid}; Path=/"
+            elif sessions[sid]:
+                self.server.state["captcha_resumed_with_cookie"] = True
+            slot = (
+                ""
+                if sessions.get(sid)
+                else '<div class="g-recaptcha" data-sitekey="demo"></div>'
+            )
+            body = CAPTCHA_FORM_HTML.replace("CAPTCHA_SLOT", slot)
+            return self._html(body, headers=headers)
+        if self.path == "/consents":
+            return self._html(CONSENTS_HTML)
+        if self.path == "/mixed-consent":
+            return self._html(MIXED_CONSENT_HTML)
         if self.path == "/dup-apply":
             return self._html(DUP_APPLY_HTML)
         if self.path == "/drop-apply":
@@ -678,6 +760,17 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path == "/captcha-submit":
+            match = re.search(
+                r"jt_session=([A-Za-z0-9]+)", self.headers.get("Cookie", "")
+            )
+            sessions = self.server.state["captcha_sessions"]
+            if match is None or not sessions.get(match.group(1)):
+                # Либо сессии нет, либо капчу в ней не проходили.
+                return self._html("<h1>Session lost</h1>", 400)
+            self.server.state["captcha_posts"] += 1
+            return self._html("<h1>Application received</h1><p>Спасибо за отклик.</p>")
 
         if self.path == "/dup-submit":
             self.server.state["dup_posts"] += 1
@@ -844,6 +937,10 @@ class JupiterNativeE2E(unittest.TestCase):
             "echo_body": b"",
             "wizard_posts": [],
             "wizard_final_body": b"",
+            "captcha_sessions": {},
+            "captcha_session_seq": 0,
+            "captcha_posts": 0,
+            "captcha_resumed_with_cookie": False,
             "dup_posts": 0,
             "drop_posts": 0,
             "silent_posts": 0,
@@ -889,6 +986,212 @@ class JupiterNativeE2E(unittest.TestCase):
                 profile,
             )
             return result, agent
+
+    def solve_captcha(self):
+        """Человек прошёл проверку в уже открытых сессиях, и только в них."""
+        sessions = self.server.state["captcha_sessions"]
+        for sid in list(sessions):
+            sessions[sid] = True
+
+    # ── Очередь и воркер ────────────────────────────────────────────────────
+
+    def test_worker_takes_a_task_and_records_the_receipt(self):
+        self.server.state["dup_posts"] = 0
+        queue = TaskQueue()
+        receipts = ReceiptStore()
+        task = queue.push(
+            "nikita.demo@reply.jobtoo.ru",
+            f"http://127.0.0.1:{self.port}/dup-apply",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            done, state = run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, receipts=receipts),
+            )
+        self.assertEqual(done.id, task.id)
+        self.assertEqual(state, TaskState.SUBMITTED)
+        self.assertEqual(self.server.state["dup_posts"], 1)
+        # Задача завершена — второй воркер её не получит.
+        self.assertIsNone(queue.lease("w2"))
+        states = [t["to"] for t in queue.get(task.id).transitions]
+        self.assertEqual(states[0], TaskState.QUEUED)
+        self.assertEqual(states[-1], TaskState.SUBMITTED)
+
+    def test_worker_parks_a_captcha_task_with_its_resume_token(self):
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
+        self.server.state["captcha_posts"] = 0
+        queue = TaskQueue()
+        handoffs = HandoffStore()
+        task = queue.push(
+            "nikita.demo@reply.jobtoo.ru",
+            f"http://127.0.0.1:{self.port}/captcha-apply",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            _, state = run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, handoffs=handoffs),
+            )
+            self.assertEqual(state, TaskState.ACTION_REQUIRED)
+            parked = queue.get(task.id)
+            self.assertEqual(parked.reason_code, "CAPTCHA_REQUIRED")
+            self.assertTrue(parked.resume_token)
+            # Пока ждём человека, воркеры задачу не трогают.
+            self.assertIsNone(queue.lease("w2"))
+        self.assertEqual(self.server.state["captcha_posts"], 0)
+
+    def test_worker_resumes_a_parked_task_instead_of_starting_over(self):
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
+        self.server.state["captcha_posts"] = 0
+        queue = TaskQueue()
+        handoffs = HandoffStore()
+        task = queue.push(
+            "nikita.demo@reply.jobtoo.ru",
+            f"http://127.0.0.1:{self.port}/captcha-apply",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, handoffs=handoffs),
+            )
+            self.solve_captcha()
+
+            # Человек закончил — задачу возвращают в очередь вручную, вместе
+            # с токеном, который уже лежит в ней.
+            parked = queue.get(task.id)
+            parked.state = TaskState.QUEUED
+            _, state = run_once(
+                queue, profile,
+                lambda t: JupiterAgent({"127.0.0.1"}, handoffs=handoffs),
+            )
+        self.assertEqual(state, TaskState.SUBMITTED)
+        self.assertEqual(self.server.state["captcha_posts"], 1)
+
+    # ── Передача человеку и возврат ─────────────────────────────────────────
+
+    def test_captcha_stop_leaves_a_resume_token_and_sends_nothing(self):
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
+        self.server.state["captcha_posts"] = 0
+        store = HandoffStore()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            agent = JupiterAgent({"127.0.0.1"}, handoffs=store)
+            result = agent.run(
+                f"http://127.0.0.1:{self.port}/captcha-apply", profile
+            )
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "CAPTCHA_REQUIRED")
+        self.assertEqual(self.server.state["captcha_posts"], 0)
+        self.assertIsNotNone(result.human_action)
+        self.assertEqual(result.human_action["type"], "CAPTCHA")
+        token = result.human_action["resume_token"]
+        self.assertTrue(token)
+        # Состояние сохранено вместе с куками: без них возвращаться некуда.
+        state = store.load(token)
+        self.assertIsNotNone(state)
+        self.assertTrue(any(c["name"] == "jt_session" for c in state.cookies))
+
+    def test_run_continues_in_the_same_session_after_the_human_is_done(self):
+        self.server.state["captcha_sessions"] = {}
+        self.server.state["captcha_session_seq"] = 0
+        self.server.state["captcha_posts"] = 0
+        self.server.state["captcha_resumed_with_cookie"] = False
+        store = HandoffStore()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            first = JupiterAgent({"127.0.0.1"}, handoffs=store).run(
+                f"http://127.0.0.1:{self.port}/captcha-apply", profile
+            )
+            token = first.human_action["resume_token"]
+
+            # Человек прошёл проверку — в той сессии, что уже открыта.
+            self.solve_captcha()
+
+            # Новый агент — то есть новый процесс и пустая банка кук. Продолжить
+            # он может только за счёт сохранённого состояния.
+            second = JupiterAgent({"127.0.0.1"}, handoffs=store).resume(
+                token, profile
+            )
+
+        self.assertEqual(second.status, "submitted", second.reason)
+        self.assertEqual(self.server.state["captcha_posts"], 1)
+        self.assertTrue(self.server.state["captcha_resumed_with_cookie"])
+        self.assertEqual(second.trajectory[0]["action"], "resume")
+        self.assertEqual(second.trajectory[0]["waited_for"], "CAPTCHA")
+        # Задача доведена — состояние возврата убрано вместе с куками.
+        self.assertIsNone(store.load(token))
+
+    def test_unknown_resume_token_fails_loudly(self):
+        agent = JupiterAgent({"127.0.0.1"}, handoffs=HandoffStore())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            result = agent.resume("nope", self.profile(Path(tmp_dir)))
+        self.assertEqual(result.status, "failed")
+
+    def test_missing_legal_answer_asks_the_human_with_a_token(self):
+        result, _ = self.run_path("/unknown", dry_run=True)
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertIsNotNone(result.human_action)
+        self.assertIn(
+            result.human_action["type"],
+            {"LEGAL_CONFIRMATION", "UNKNOWN_FIELD"},
+        )
+        self.assertTrue(result.human_action["resume_token"])
+
+    # ── Согласия ────────────────────────────────────────────────────────────
+
+    def test_only_the_consent_the_candidate_gave_is_ticked(self):
+        result, _ = self.run_path("/consents", dry_run=True)
+        self.assertEqual(result.status, "ready_to_submit", result.reason)
+        checked = [
+            item["field"] for item in result.trajectory
+            if item.get("action") == "check"
+        ]
+        skipped = [
+            item["consent_kinds"] for item in result.trajectory
+            if item.get("action") == "consent_skipped"
+        ]
+        self.assertTrue(any("персональных данных" in f for f in checked), checked)
+        # Ни кадровый резерв, ни реклама галочкой не отмечаются: профиль
+        # содержит согласие на обработку данных и ничего больше.
+        self.assertFalse(any("кадровый резерв" in f for f in checked), checked)
+        self.assertFalse(any("рекламные" in f for f in checked), checked)
+        flat = [kind for kinds in skipped for kind in kinds]
+        self.assertIn("talent_pool_consent", flat)
+        self.assertIn("marketing_consent", flat)
+
+    def test_one_checkbox_for_data_and_advertising_goes_to_the_human(self):
+        # Обязательное и необязательное согласие одной галочкой — решение
+        # человека, а не наше. Отклик не уходит.
+        before = self.server.state["post_count"]
+        result, _ = self.run_path("/mixed-consent")
+        self.assertEqual(result.status, "action_required", result.reason)
+        self.assertEqual(result.reason_code, "CONSENT_REQUIRED")
+        self.assertEqual(self.server.state["post_count"], before)
+        asks = [
+            item for item in result.trajectory
+            if item.get("action") == "consent_needs_user"
+        ]
+        self.assertTrue(asks)
+        self.assertIn("personal_data_consent", asks[0]["consent_kinds"])
+        self.assertIn("marketing_consent", asks[0]["consent_kinds"])
+
+    def test_every_filled_value_says_where_it_came_from(self):
+        result, _ = self.run_path("/consents", dry_run=True)
+        filled = [
+            item for item in result.trajectory
+            if item.get("action") in {"fill", "select", "check", "upload"}
+        ]
+        self.assertTrue(filled)
+        for item in filled:
+            self.assertIn("provenance", item)
+            self.assertIn(item["provenance"]["field_class"], {
+                "FACT", "PREFERENCE", "GENERATED", "CONSENT", "LEGAL",
+            })
 
     # ── Безопасность отправки ───────────────────────────────────────────────
 
