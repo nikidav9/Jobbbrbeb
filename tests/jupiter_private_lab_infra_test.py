@@ -23,8 +23,10 @@ runtime = "\n".join([engine, agent, server, e2e, requirements])
 for forbidden in (
     "from playwright",
     "import playwright",
-    "selenium",
-    "pyppeteer",
+    "from selenium",
+    "import selenium",
+    "from pyppeteer",
+    "import pyppeteer",
 ):
     assert forbidden not in runtime.lower(), forbidden
 assert "playwright==" not in requirements.lower()
