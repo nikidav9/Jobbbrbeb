@@ -17,6 +17,7 @@ from engine import (
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from spa_payload import extract_payloads, url_candidates
 from validation import ValidationIssue, validate_form
 
 
@@ -756,8 +757,31 @@ class JupiterAgent:
                 continue
             text = re.sub(r"<[^>]+>", " ", inner)
             text = " ".join(text.split())
-            links.append((urllib.parse.urljoin(page.url, href), text))
+            links.append((page.resolve(href), text))
         return links
+
+    @staticmethod
+    def _spa_links(page: PageState) -> list[tuple[str, str]]:
+        """Адреса из состояния SPA — второй источник ссылок, не замена первому.
+
+        На React/Next-странице <a href> на анкету может не быть вовсе: его
+        дорисовывает браузер. Но сам адрес обычно уже лежит в __NEXT_DATA__ или
+        в ld+json. Права это не расширяет: кандидат проходит ту же проверку
+        хоста, что и обычная ссылка.
+        """
+        payloads = extract_payloads(page.html)
+        if not payloads:
+            return []
+        return url_candidates(payloads, page.base_url or page.url)
+
+    @staticmethod
+    def _spa_payload_kinds(page: PageState) -> list[str]:
+        seen: list[str] = []
+        for payload in extract_payloads(page.html):
+            label = payload.as_diagnostic()["kind"]
+            if label not in seen:
+                seen.append(label)
+        return seen
 
     def _navigation_score(self, url: str, text: str) -> int:
         descriptor = normalize(f"{text} {url}")
@@ -777,21 +801,33 @@ class JupiterAgent:
             score += 30
         return score
 
-    def _best_navigation(self, page: PageState, visited: set[str]) -> str | None:
-        ranked: list[tuple[int, str]] = []
-        for url, text in self._extract_links(page):
-            if url in visited:
-                continue
-            parsed = urllib.parse.urlparse(url)
-            if (parsed.hostname or "").lower() not in self.engine.allowed_hosts:
-                continue
-            score = self._navigation_score(url, text)
-            if score > 0:
-                ranked.append((score, url))
+    def _best_navigation(
+        self,
+        page: PageState,
+        visited: set[str],
+    ) -> tuple[str, str] | None:
+        """Лучший следующий адрес и откуда он взят."""
+        ranked: list[tuple[int, int, str, str]] = []
+        sources: list[tuple[list[tuple[str, str]], str, int]] = [
+            (self._extract_links(page), "link", 1),
+            # Состояние SPA — запасной источник: при равном счёте обычная
+            # ссылка вперёд. Она видна человеку, а значит проверяема.
+            (self._spa_links(page), "spa_state", 0),
+        ]
+        for candidates, origin, priority in sources:
+            for url, text in candidates:
+                if url in visited:
+                    continue
+                parsed = urllib.parse.urlparse(url)
+                if (parsed.hostname or "").lower() not in self.engine.allowed_hosts:
+                    continue
+                score = self._navigation_score(url, text)
+                if score > 0:
+                    ranked.append((score, priority, url, origin))
         if not ranked:
             return None
-        ranked.sort(reverse=True)
-        return ranked[0][1]
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return ranked[0][2], ranked[0][3]
 
     def _form_score(
         self,
@@ -1059,12 +1095,14 @@ class JupiterAgent:
                     )
 
             if submit is None:
-                next_url = self._best_navigation(page, visited)
-                if next_url is not None:
+                next_step = self._best_navigation(page, visited)
+                if next_step is not None:
+                    next_url, next_origin = next_step
                     trajectory.append({
                         "action": "navigate",
                         "from": page.url,
                         "url": next_url,
+                        "found_in": next_origin,
                     })
                     try:
                         page = self.engine.open(next_url)
@@ -1097,14 +1135,25 @@ class JupiterAgent:
                     )
 
                 if page.has_script:
+                    # Состояние страницы читали и адреса анкеты в нём не нашли.
+                    # Это другое сообщение, чем «не умеем JS»: видно, что
+                    # именно проверили, и не надо гадать при разборе.
+                    kinds = self._spa_payload_kinds(page)
                     reason = (
                         "Page requires JavaScript interaction outside the supported "
                         "Jupiter runtime"
                     )
+                    if kinds:
+                        reason += (
+                            "; embedded state was read ("
+                            + ", ".join(kinds)
+                            + ") and holds no application link"
+                        )
                     trajectory.append({
                         "action": "action_required",
                         "reason": reason,
                         "reason_code": Reason.UNSUPPORTED_SCRIPT,
+                        "spa_payloads": kinds,
                     })
                     return AgentResult(
                         "action_required", reason, trajectory, Reason.UNSUPPORTED_SCRIPT

@@ -54,6 +54,44 @@ browser on real employer pages:
 Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
 черновик" in the same form. Document order stays the tie-break.
 
+## SPA pages: reading the state instead of rendering it
+
+On a React/Next/Nuxt page the initial HTML holds an empty root and no link to
+the application form — the browser draws it. Jupiter used to call that
+`UNSUPPORTED_SCRIPT` and stop, while the address was sitting in the markup in
+plain text.
+
+`spa_payload.py` reads the JSON that the page already ships:
+
+- `<script id="__NEXT_DATA__">`;
+- `<script type="application/ld+json">` (JobPosting and friends);
+- any `<script type="application/json">` data block;
+- `window.__NUXT__` / `__INITIAL_STATE__` / `__APOLLO_STATE__` when the value
+  is a real JSON object. When Nuxt ships a function there instead, it is
+  skipped — executing it is precisely the arbitrary JS Jupiter does not have.
+
+URLs found this way become extra navigation candidates, ranked by the same
+apply-intent scoring as ordinary links, with the JSON key path used as the
+hint: `applyUrl` shows intent where the address alone shows nothing. A plain
+`<a href>` wins ties, because a human can see it too.
+
+**This is not rendering.** If the address is not in the state, the answer is
+the same honest dead end as before — but the trajectory now says which payload
+kinds were read, so the failure can be told apart from "we never looked".
+
+Two traps this slice had to handle:
+
+- `__NEXT_DATA__` always carries `"page": "/vacancy/[id]"`, a route template,
+  not an address. It outscored the real apply link and led to a 404, so values
+  holding `[]`, `{}` or `/:param` are rejected.
+- a `<script type="application/json">` block was being fed to the script
+  interpreter as a program, which marked every Next page as unsupported
+  JavaScript. Per the standard only an absent or JavaScript `type` executes.
+
+State is untrusted employer data, never permission: a URL from it passes the
+same host allow-list as any other, and a hostile `<base href>` cannot turn a
+path into a `file://` address.
+
 ## Multi-step form planner
 
 "Next" is not "Submit". Jupiter now classifies every submit-type control by
@@ -169,6 +207,7 @@ Run locally with only Python:
 ```bash
 cd jupiter
 python test_form_semantics.py
+python test_spa_payload.py
 python test_e2e.py
 ```
 
@@ -211,7 +250,11 @@ The E2E suite starts a local synthetic employer server and verifies:
 31. a three-step form walked to the end and submitted exactly once;
 32. dry-run reporting a step instead of readiness on a multi-step form;
 33. a single-step form still reporting `ready_to_submit` in dry-run;
-34. a step that returns itself being reported instead of resubmitted.
+34. a step that returns itself being reported instead of resubmitted;
+35. an apply link taken from `__NEXT_DATA__` when the markup has none;
+36. embedded state without an application link staying an honest dead end;
+37. state being unable to send Jupiter to a host outside the allow-list;
+38. a JSON data block not being treated as a program.
 
 CI runs the same suite on every PR.
 
