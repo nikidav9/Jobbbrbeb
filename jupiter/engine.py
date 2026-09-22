@@ -394,6 +394,7 @@ class JupiterWebEngine:
         )
         self.page: PageState | None = None
         self.script_runtime: JupiterScriptRuntime | None = None
+        self.last_submit_mode = "none"
 
     def assert_allowed(self, url: str) -> None:
         parsed = urllib.parse.urlparse(url)
@@ -598,6 +599,7 @@ class JupiterWebEngine:
             if event_result is not None:
                 html_after, prevented, _diagnostics = event_result
                 if prevented:
+                    self.last_submit_mode = "script"
                     return self._parse_runtime_dom(
                         url=page.url,
                         status=page.status,
@@ -605,6 +607,7 @@ class JupiterWebEngine:
                         html_text=html_after,
                     )
 
+        self.last_submit_mode = "http"
         target = urllib.parse.urljoin(page.url, form.action or page.url)
         self.assert_allowed(target)
 
