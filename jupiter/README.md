@@ -36,11 +36,26 @@ The supported subset covers:
 - submit addEventListener callbacks;
 - preventDefault.
 
-This is enough for simple script-rendered forms and submit handlers. Unsupported
-or network-capable page APIs such as eval, timers, fetch/XHR, WebSocket,
-storage, window navigation and external script bundles are never executed.
-When they are required and no safe HTML form is available, Jupiter returns
-action_required instead of silently falling back to Chromium.
+This is enough for simple script-rendered forms and submit handlers. Arbitrary
+code execution, timers, WebSocket, storage, window navigation and external
+script bundles remain unsupported. When unsupported behavior is required,
+Jupiter returns action_required instead of silently falling back to Chromium.
+
+## Jupiter Network Runtime v1
+
+Network access from page scripts is a narrow capability owned by Jupiter, not
+general browser networking. The supported subset is:
+
+- literal-URL fetch with GET/POST;
+- FormData(form) and URLSearchParams(new FormData(form)) request bodies;
+- response.ok success/failure branches;
+- XMLHttpRequest open/send with literal GET/POST URLs and FormData;
+- the same JobToo cookie jar used by the native HTTP engine.
+
+Every script request is resolved relative to the current page and passes through
+the engine host allow-list and redirect policy. Computed URLs, arbitrary request
+bodies, unknown HTTP methods and unsupported network programs stop safely.
+Responses are capped in size and do not become navigation automatically.
 
 ## Runtime dependencies
 
@@ -85,7 +100,10 @@ The E2E suite starts a local synthetic employer server and verifies:
 8. a form rendered by Jupiter Script Runtime and then submitted normally;
 9. a submit handler intercepted by Jupiter Script Runtime with preventDefault;
 10. explicit handoff on unsupported JavaScript;
-11. redirect blocking when navigation tries to escape the allow-list.
+11. allow-listed fetch + FormData with shared cookies;
+12. XMLHttpRequest + FormData;
+13. blocking script fetch when it tries to escape the allow-list;
+14. redirect blocking when navigation tries to escape the allow-list.
 
 CI runs the same suite on every PR.
 
@@ -99,8 +117,8 @@ It accepts the same phone/password as JobToo and then allows only the existing
 JobToo admin account. A successful login creates a short-lived Secure HttpOnly
 Jupiter cookie.
 
-The lab shows three synthetic scenarios: native HTTP form submission, a
-JavaScript submit handler executed by Jupiter Script Runtime, and an unknown
+The lab includes native HTTP submission, a local DOM-only script submit,
+a network-backed script submit through Jupiter Network Runtime, and an unknown
 required question. After a run it displays the semantic page snapshot and the
 full Jupiter trajectory.
 
@@ -110,7 +128,8 @@ visit only 127.0.0.1.
 
 ## Next slice
 
-After v1 is stable, the engine can grow its own controlled JavaScript/DOM
-execution layer and site-specific compatibility skills. The agent API does not
+After these v1 runtimes are stable, the engine can grow controlled JSON request
+bodies, CSRF/meta-token skills, external script compatibility and site-specific
+skills. The agent API does not
 need to change: Planner and policy operate on Jupiter's semantic page model,
 not on a Chromium-specific API.

@@ -5,7 +5,15 @@ import html
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Callable
+
+from network_runtime import (
+    NetworkProgramError,
+    NetworkRequest,
+    NetworkResponse,
+    contains_network_api,
+    execute_network_program,
+)
 
 
 BACKTICK = chr(96)
@@ -189,9 +197,9 @@ class JupiterScriptRuntime:
     Deterministic JobToo-owned DOM scripting subset.
 
     It intentionally is not a general JavaScript VM. It executes only explicit
-    DOM mutations and submit listeners that Jupiter understands. Network APIs,
-    arbitrary code evaluation, timers, navigation and external bundles are
-    never executed.
+    DOM mutations and submit listeners that Jupiter understands. Supported
+    fetch/XHR is delegated to Jupiter Network Runtime; arbitrary code
+    evaluation, timers, navigation and external bundles are never executed.
     """
 
     FORBIDDEN_TOKENS = (
@@ -199,8 +207,6 @@ class JupiterScriptRuntime:
         "newfunction",
         "settimeout(",
         "setinterval(",
-        "fetch(",
-        "xmlhttprequest",
         "websocket",
         "navigator.",
         "localstorage",
@@ -324,7 +330,7 @@ class JupiterScriptRuntime:
             cursor = match.end()
             tail = source[cursor:]
             callback = re.match(
-                r"""\s*(?:function\s*\(\s*([A-Za-z_$][\w$]*)?\s*\)|\(?\s*([A-Za-z_$][\w$]*)?\s*\)?\s*=>)\s*\{""",
+                r"""\s*(?:async\s+)?(?:function\s*\(\s*([A-Za-z_$][\w$]*)?\s*\)|\(?\s*([A-Za-z_$][\w$]*)?\s*\)?\s*=>)\s*\{""",
                 tail,
                 flags=re.DOTALL,
             )
@@ -551,7 +557,13 @@ class JupiterScriptRuntime:
 
             bindings = self._bind_nodes(source)
             listeners = self._register_handlers(source)
-            mutations, _ = self._execute_dom(source)
+            listener_start = source.find(".addEventListener")
+            bootstrap_source = (
+                source
+                if listener_start < 0
+                else source[:listener_start]
+            )
+            mutations, _ = self._execute_dom(bootstrap_source)
 
             if mutations:
                 self.diagnostics.append(
@@ -580,6 +592,7 @@ class JupiterScriptRuntime:
         self,
         target_id: str,
         event: str,
+        network_fetch: Callable[[NetworkRequest], NetworkResponse] | None = None,
     ) -> tuple[str, bool, list[ScriptDiagnostic]] | None:
         matching = [
             handler
@@ -604,6 +617,91 @@ class JupiterScriptRuntime:
                 )
                 continue
 
+            handler_prevented = bool(
+                re.search(
+                    rf"\b{re.escape(handler.event_var)}\.preventDefault\(\s*\)",
+                    handler.body,
+                )
+            )
+
+            if contains_network_api(handler.body):
+                if network_fetch is None:
+                    self.unsupported = True
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "unsupported",
+                            "network capability is unavailable",
+                        )
+                    )
+                    prevented = prevented or handler_prevented
+                    continue
+
+                def resolved_fetch(request: NetworkRequest) -> NetworkResponse:
+                    if request.form_ref:
+                        request.form_ref = self.bindings.get(
+                            request.form_ref,
+                            request.form_ref,
+                        )
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "network_request",
+                            f"{request.api}:{request.method} {request.url}",
+                        )
+                    )
+                    response = network_fetch(request)
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "network_response",
+                            f"{request.api}:{response.status} {response.url}",
+                        )
+                    )
+                    return response
+
+                try:
+                    execution = execute_network_program(
+                        handler.body,
+                        resolved_fetch,
+                    )
+                except NetworkProgramError as exc:
+                    self.unsupported = True
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "unsupported",
+                            f"network runtime: {exc}",
+                        )
+                    )
+                    prevented = prevented or handler_prevented
+                    continue
+
+                mutations = 0
+                if execution is not None and execution.dom_source:
+                    mutations, _ = self._execute_dom(
+                        execution.dom_source,
+                        this_id=target_id,
+                    )
+                if handler_prevented:
+                    self.diagnostics.append(
+                        ScriptDiagnostic("event", "preventDefault")
+                    )
+                prevented = prevented or handler_prevented
+
+                if execution is None:
+                    self.unsupported = True
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "unsupported",
+                            f"network program not understood in #{target_id}:{event}",
+                        )
+                    )
+                elif not mutations and execution.response.ok:
+                    self.diagnostics.append(
+                        ScriptDiagnostic(
+                            "network",
+                            "request completed without DOM mutation",
+                        )
+                    )
+                continue
+
             mutations, did_prevent = self._execute_dom(
                 handler.body,
                 this_id=target_id,
@@ -625,3 +723,4 @@ class JupiterScriptRuntime:
             prevented,
             list(self.diagnostics),
         )
+
