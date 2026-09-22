@@ -90,6 +90,10 @@ assert "normalized_phone != ADMIN_PHONE" in server
 assert "returned_phone != ADMIN_PHONE" in server
 assert '"fn": "dbLogin"' in server
 assert "if not self._session()" in server
+assert '"/api/live-dry-run"' in server
+assert "profile_for_url" in server
+assert "dry_run=True" in server
+assert "Live dry-run" in server
 assert "HttpOnly; Secure; SameSite=Strict" in server
 
 # Lab browser boundary remains loopback-only.

@@ -121,7 +121,15 @@ The E2E suite starts a local synthetic employer server and verifies:
 15. same-origin external script loading;
 16. JSON form submission with CSRF meta token;
 17. response.json() gating before DOM success;
-18. blocking cross-origin external scripts.
+18. blocking cross-origin external scripts;
+19. no-submit filling on CAPTCHA forms;
+20. resume-file alternatives for required resume URLs;
+21. server-rendered React/Next form filling without submit;
+22. unknown required fields still stop dry-run;
+23. hard read-only rejection of direct POST;
+24. audited field patterns for VkusVill, Lemana PRO, Teremok, Coffeemania,
+    Dodo and MegaFon;
+25. controls linked with the HTML form attribute and required radio groups.
 
 CI runs the same suite on every PR.
 
@@ -137,8 +145,12 @@ Jupiter cookie.
 
 The lab includes native HTTP submission, a local DOM-only script submit,
 a FormData network submit, a modern same-origin external-script + JSON + CSRF
-scenario, and an unknown required question. After a run it displays the semantic page snapshot and the
-full Jupiter trajectory.
+scenario, and an unknown required question. It also has an admin-only Live
+dry-run field for real vacancy/application URLs from the 62 audited employers.
+That live path always constructs Jupiter with dry_run=True/read_only=True:
+navigation and GET assets are allowed, but form submission and mutating script
+requests are blocked by the engine even if planner logic regresses. After a run
+the lab displays the semantic page snapshot and the full Jupiter trajectory.
 
 The lab service binds only to 127.0.0.1 on the host, nginx sends
 noindex/nofollow/noarchive, and the Jupiter engine inside the lab is allowed to
