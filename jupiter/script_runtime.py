@@ -167,9 +167,9 @@ class ScriptRunResult:
 _STRING_RE = r"(?:'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\`(?:\\.|[^\`\\])*\`)"
 
 _TARGET_EXPR_RE = (
-    r"(?:[A-Za-z_$][\\w$]*|this"
-    r"|document\\.getElementById\\(\\s*[\'\\\"][^\'\\\"]+[\'\\\"]\\s*\\)"
-    r"|document\\.querySelector\\(\\s*[\'\\\"][^\'\\\"]+[\'\\\"]\\s*\\))"
+    r"(?:[A-Za-z_$][\w$]*|this"
+    r"|document\.getElementById\(\s*[\'\\"][^\'\\"]+[\'\\"]\s*\)"
+    r"|document\.querySelector\(\s*[\'\\"][^\'\\"]+[\'\\"]\s*\))"
 )
 
 
@@ -299,15 +299,15 @@ class JupiterScriptRuntime:
         out: list[tuple[str, str, str, str]] = []
         pattern = re.compile(
             rf"(?P<target>{_TARGET_EXPR_RE})"
-            r"\\.addEventListener\\(\\s*['\\\"](?P<event>[^'\\\"]+)['\\\"]\\s*,",
+            r"\.addEventListener\(\s*['\\"](?P<event>[^'\\"]+)['\\"]\s*,",
             flags=re.DOTALL,
         )
         for match in pattern.finditer(source):
             cursor = match.end()
             tail = source[cursor:]
             callback = re.match(
-                r"\\s*(?:function\\s*\\(\\s*([A-Za-z_$][\\w$]*)?\\s*\\)"
-                r"|\\(?\\s*([A-Za-z_$][\\w$]*)?\\s*\\)?\\s*=>)\\s*\\{",
+                r"\s*(?:function\s*\(\s*([A-Za-z_$][\w$]*)?\s*\)"
+                r"|\(?\s*([A-Za-z_$][\w$]*)?\s*\)?\s*=>)\s*\{",
                 tail,
                 flags=re.DOTALL,
             )
@@ -423,8 +423,8 @@ class JupiterScriptRuntime:
 
         assign = re.compile(
             rf"(?P<target>{_TARGET_EXPR_RE})"
-            r"\\s*\\.\\s*(?P<prop>innerHTML|textContent|innerText|value|hidden)"
-            rf"\\s*=\\s*(?P<value>{_STRING_RE}|true|false)\\s*;?",
+            r"\s*\.\s*(?P<prop>innerHTML|textContent|innerText|value|hidden)"
+            rf"\s*=\s*(?P<value>{_STRING_RE}|true|false)\s*;?",
             flags=re.DOTALL,
         )
         for match in assign.finditer(source):
@@ -440,7 +440,7 @@ class JupiterScriptRuntime:
 
         insert = re.compile(
             rf"(?P<target>{_TARGET_EXPR_RE})"
-            rf"\\.insertAdjacentHTML\\(\\s*['\\\"]beforeend['\\\"]\\s*,\\s*(?P<value>{_STRING_RE})\\s*\\)\\s*;?",
+            rf"\.insertAdjacentHTML\(\s*['\\"]beforeend['\\"]\s*,\s*(?P<value>{_STRING_RE})\s*\)\s*;?",
             flags=re.DOTALL | re.IGNORECASE,
         )
         for match in insert.finditer(source):
@@ -460,8 +460,8 @@ class JupiterScriptRuntime:
 
         attr = re.compile(
             rf"(?P<target>{_TARGET_EXPR_RE})"
-            r"\\.(?P<op>setAttribute|removeAttribute)\\(\\s*['\\\"](?P<name>[^'\\\"]+)['\\\"]"
-            rf"(?:\\s*,\\s*(?P<value>{_STRING_RE}))?\\s*\\)\\s*;?",
+            r"\.(?P<op>setAttribute|removeAttribute)\(\s*['\\"](?P<name>[^'\\"]+)['\\"]"
+            rf"(?:\s*,\s*(?P<value>{_STRING_RE}))?\s*\)\s*;?",
             flags=re.DOTALL,
         )
         for match in attr.finditer(source):
