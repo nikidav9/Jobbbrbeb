@@ -510,7 +510,7 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertNotIn("click_submit", actions)
         self.assertIn("CAPTCHA", result.reason or "")
         snapshot = agent.engine.semantic_snapshot()
-        controls = snapshot["page"]["controls"]
+        controls = snapshot["controls"]
         values = {item["name"]: item for item in controls if item["name"]}
         self.assertEqual(values["birthday"]["value"], "1995-05-09")
         self.assertTrue(values["agreedPersonalData"]["checked"])
@@ -524,7 +524,7 @@ class JupiterNativeE2E(unittest.TestCase):
             "ready_to_submit",
             json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
         )
-        controls = agent.engine.semantic_snapshot()["page"]["controls"]
+        controls = agent.engine.semantic_snapshot()["controls"]
         values = {item["name"]: item for item in controls if item["name"]}
         self.assertTrue(values["brief"]["file_attached"])
         self.assertEqual(values["brief_link"]["value"], "")
@@ -537,7 +537,7 @@ class JupiterNativeE2E(unittest.TestCase):
             "ready_to_submit",
             json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
         )
-        controls = agent.engine.semantic_snapshot()["page"]["controls"]
+        controls = agent.engine.semantic_snapshot()["controls"]
         values = {item["name"]: item for item in controls if item["name"]}
         self.assertEqual(values["firstName"]["value"], "Nikita")
         self.assertEqual(values["lastName"]["value"], "Davydov")
