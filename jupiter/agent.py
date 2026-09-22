@@ -534,6 +534,14 @@ class JupiterAgent:
         form_index: int | None = None,
     ) -> list[str]:
         missing: list[str] = []
+        radio_groups_checked = {
+            control.name
+            for control in page.controls
+            if control.type == "radio"
+            and control.name
+            and control.checked
+            and (form_index is None or control.form_index == form_index)
+        }
         for control in page.controls:
             if form_index is not None and control.form_index != form_index:
                 continue
@@ -543,6 +551,12 @@ class JupiterAgent:
                 or control.type == "hidden"
                 or self.is_submit(control)
                 or _looks_like_captcha(control)
+            ):
+                continue
+            if (
+                control.type == "radio"
+                and control.name
+                and control.name in radio_groups_checked
             ):
                 continue
             if self.control_is_empty(control) and not self._resume_alternative_satisfied(
