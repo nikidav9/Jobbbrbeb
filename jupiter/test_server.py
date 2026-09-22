@@ -32,6 +32,8 @@ SESSION_COOKIE = "jt_jupiter_lab"
 API_ORIGIN = os.environ.get("JOBTOO_API_ORIGIN", "https://147.45.184.99.sslip.io").rstrip("/")
 APP_SECRET = os.environ.get("JOBTOO_APP_SECRET", "")
 SESSION_SECRET = os.environ.get("JUPITER_SESSION_SECRET", "")
+ADMIN_PHONE = "89933431523"
+
 ALLOWED_USER_IDS = {
     value.strip()
     for value in os.environ.get("JUPITER_ALLOWED_USER_IDS", "").split(",")
@@ -130,6 +132,9 @@ def verify_session(token: str | None) -> dict[str, Any] | None:
 
 
 def authenticate_jobtoo(phone: str, password: str) -> dict[str, Any] | None:
+    normalized_phone = "".join(ch for ch in phone if ch.isdigit())
+    if normalized_phone != ADMIN_PHONE:
+        return None
     if not APP_SECRET:
         raise RuntimeError("JOBTOO_APP_SECRET is missing")
     body = json.dumps({"fn": "dbLogin", "args": [phone, password]}, ensure_ascii=False).encode("utf-8")
@@ -153,6 +158,9 @@ def authenticate_jobtoo(phone: str, password: str) -> dict[str, Any] | None:
     data = payload.get("data") if isinstance(payload, dict) else None
     user = data.get("user") if isinstance(data, dict) else None
     if not isinstance(user, dict) or not data.get("session_token"):
+        return None
+    returned_phone = "".join(ch for ch in str(user.get("phone", "")) if ch.isdigit())
+    if returned_phone != ADMIN_PHONE:
         return None
     uid = str(user.get("id", "")).strip()
     if not uid:

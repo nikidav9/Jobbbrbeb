@@ -53,18 +53,23 @@ Then persist the trajectory, screenshots and confirmation metadata. The planner 
 
 ## Private lab
 
-The interactive staging harness is intentionally absent from the public JobToo UI. It uses the normal JobToo account login; the technical Basic Auth password for the admin/studio panel is not required.
+The interactive staging harness is intentionally absent from the JobToo UI.
 
-After deployment it is available only through the existing Basic-Auth protected
-admin listener:
+After deployment it is available at:
 
-`https://jobtoo.ru:8443/jupiter/`
+`https://jobtoo.ru/jupiter/`
 
-The lab first asks for the same phone/password used in JobToo, exchanges them through the existing `dbLogin`, and stores only a short-lived HttpOnly lab cookie. It then lets the tester edit a synthetic candidate profile and run two scenarios:
+The lab asks for the same phone/password used in JobToo and sends them through
+the existing `dbLogin` path. Jupiter then checks that the authenticated account
+is the same admin account already used by JobToo's in-app admin guard. Other
+JobToo accounts cannot enter.
+
+A successful login creates only a short-lived HttpOnly Jupiter cookie. The lab
+then lets the owner edit a synthetic candidate profile and run two scenarios:
 a successful application and an unknown required question. Each run starts real
 Chromium, returns the Jupiter trajectory and renders a final browser screenshot.
 
 The browser allow-list is fixed to `127.0.0.1`; this staging UI cannot submit to
-real employer sites. nginx also sends `noindex, nofollow, noarchive`, the
-container port is bound to loopback only, and Basic Auth is disabled only for
-`/jupiter/` while the rest of port 8443 remains protected by `.htpasswd`.
+real employer sites. nginx sends `noindex, nofollow, noarchive`, and the
+container port is bound to loopback only. The technical panel on port 8443 is
+unrelated and remains fully protected by its own Basic Auth.
