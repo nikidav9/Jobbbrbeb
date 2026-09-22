@@ -8,6 +8,9 @@ from html.parser import HTMLParser
 from typing import Any
 
 
+BACKTICK = chr(96)
+
+
 class ScriptRuntimeError(RuntimeError):
     pass
 
@@ -46,26 +49,12 @@ class _Node:
                 return found
         return None
 
-    def find_first_tag(self, tag: str) -> "_Node | None":
-        if self.tag == tag:
-            return self
-        for child in self.children:
-            found = child.find_first_tag(tag)
-            if found is not None:
-                return found
-        return None
-
-    def text_content(self) -> str:
-        if self.is_text:
-            return self.text
-        return "".join(child.text_content() for child in self.children)
-
     def set_text_content(self, value: str) -> None:
         self.children = []
         self.append(_Node(text=value))
 
     def set_inner_html(self, fragment: str) -> None:
-        parser = _DomParser(fragment=True)
+        parser = _DomParser()
         parser.feed(fragment)
         parser.close()
         self.children = parser.root.children
@@ -73,7 +62,7 @@ class _Node:
             child.parent = self
 
     def append_html(self, fragment: str) -> None:
-        parser = _DomParser(fragment=True)
+        parser = _DomParser()
         parser.feed(fragment)
         parser.close()
         for child in parser.root.children:
@@ -84,15 +73,31 @@ class _Node:
             return html.escape(self.text, quote=False)
         if self.tag == "__root__":
             return "".join(child.serialize() for child in self.children)
+
         attrs = "".join(
-            f' {name}' if value == "" else f' {name}="{html.escape(value, quote=True)}"'
+            f" {name}"
+            if value == ""
+            else f' {name}="{html.escape(value, quote=True)}"'
             for name, value in self.attrs.items()
         )
         if self.tag in {
-            "area", "base", "br", "col", "embed", "hr", "img", "input",
-            "link", "meta", "param", "source", "track", "wbr",
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
         }:
             return f"<{self.tag}{attrs}>"
+
         return (
             f"<{self.tag}{attrs}>"
             + "".join(child.serialize() for child in self.children)
@@ -101,32 +106,49 @@ class _Node:
 
 
 class _DomParser(HTMLParser):
-    def __init__(self, *, fragment: bool = False):
+    def __init__(self):
         super().__init__(convert_charrefs=True)
         self.root = _Node(tag="__root__")
         self.stack: list[_Node] = [self.root]
-        self.fragment = fragment
 
     @staticmethod
     def _attrs(attrs: list[tuple[str, str | None]]) -> dict[str, str]:
-        return {k.lower(): (v or "") for k, v in attrs}
+        return {name.lower(): (value or "") for name, value in attrs}
 
-    def handle_decl(self, decl: str) -> None:
-        if not self.fragment:
-            self.stack[-1].append(_Node(text=f"<!{decl}>"))
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = _Node(tag=tag.lower(), attrs=self._attrs(attrs))
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        tag = tag.lower()
+        node = _Node(tag=tag, attrs=self._attrs(attrs))
         self.stack[-1].append(node)
-        if tag.lower() not in {
-            "area", "base", "br", "col", "embed", "hr", "img", "input",
-            "link", "meta", "param", "source", "track", "wbr",
+        if tag not in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
         }:
             self.stack.append(node)
 
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = _Node(tag=tag.lower(), attrs=self._attrs(attrs))
-        self.stack[-1].append(node)
+    def handle_startendtag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        self.stack[-1].append(
+            _Node(tag=tag.lower(), attrs=self._attrs(attrs))
+        )
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
@@ -138,63 +160,43 @@ class _DomParser(HTMLParser):
     def handle_data(self, data: str) -> None:
         self.stack[-1].append(_Node(text=data))
 
-    def handle_entityref(self, name: str) -> None:
-        self.stack[-1].append(_Node(text=html.unescape(f"&{name};")))
-
-    def handle_charref(self, name: str) -> None:
-        self.stack[-1].append(_Node(text=html.unescape(f"&#{name};")))
-
 
 @dataclass
 class _Handler:
     target_id: str
     event: str
     body: str
-    event_var: str = "event"
+    event_var: str
 
 
 @dataclass
 class ScriptRunResult:
     html: str
     diagnostics: list[ScriptDiagnostic]
-    handlers: list[_Handler]
     unsupported: bool
 
     def diagnostic_dicts(self) -> list[dict[str, str]]:
         return [item.as_dict() for item in self.diagnostics]
 
 
-_STRING_RE = r"(?:'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\`(?:\\.|[^\`\\])*\`)"
+_STRING_RE = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|\x60(?:\\.|[^\x60\\])*\x60)"""
 
-_TARGET_EXPR_RE = (
-    r"(?:[A-Za-z_$][\w$]*|this"
-    r"|document\.getElementById\(\s*[\'\\"][^\'\\"]+[\'\\"]\s*\)"
-    r"|document\.querySelector\(\s*[\'\\"][^\'\\"]+[\'\\"]\s*\))"
-)
+_TARGET_EXPR_RE = r"""(?:[A-Za-z_$][\w$]*|this|document\.getElementById\(\s*["'][^"']+["']\s*\)|document\.querySelector\(\s*["'][^"']+["']\s*\))"""
 
 
 class JupiterScriptRuntime:
     """
-    Deliberately small, deterministic DOM scripting runtime.
+    Deterministic JobToo-owned DOM scripting subset.
 
-    This is not a general JavaScript VM. It supports a constrained subset that
-    is common in simple job application pages and test harnesses:
-      - document.getElementById / document.querySelector("#id")
-      - const/let/var bindings to those DOM nodes
-      - innerHTML / textContent / value / hidden assignments
-      - insertAdjacentHTML("beforeend", ...)
-      - setAttribute/removeAttribute for non-network DOM mutation
-      - addEventListener("submit", callback)
-      - event.preventDefault()
-
-    Anything outside the subset is recorded as unsupported. No eval, Function,
-    imports, timers, window navigation, fetch/XHR, WebSocket or storage APIs are
-    executed here.
+    It intentionally is not a general JavaScript VM. It executes only explicit
+    DOM mutations and submit listeners that Jupiter understands. Network APIs,
+    arbitrary code evaluation, timers, navigation and external bundles are
+    never executed.
     """
 
     FORBIDDEN_TOKENS = (
         "eval(",
-        "new function",
+        "newfunction",
         "settimeout(",
         "setinterval(",
         "fetch(",
@@ -212,17 +214,18 @@ class JupiterScriptRuntime:
         parser = _DomParser()
         parser.feed(html_text)
         parser.close()
+
         self.root = parser.root
         self.original_html = html_text
         self.bindings: dict[str, str] = {}
         self.handlers: list[_Handler] = []
         self.diagnostics: list[ScriptDiagnostic] = []
         self.unsupported = False
-        self._scripts = self._extract_inline_scripts(html_text)
+        self._scripts = self._extract_scripts(html_text)
 
     @staticmethod
-    def _extract_inline_scripts(html_text: str) -> list[str]:
-        scripts: list[str] = []
+    def _extract_scripts(html_text: str) -> list[tuple[str, bool]]:
+        scripts: list[tuple[str, bool]] = []
         for match in re.finditer(
             r"<script\b([^>]*)>(.*?)</script\s*>",
             html_text,
@@ -230,10 +233,10 @@ class JupiterScriptRuntime:
         ):
             attrs = match.group(1) or ""
             body = match.group(2) or ""
-            if re.search(r"\bsrc\s*=", attrs, flags=re.IGNORECASE):
-                scripts.append("__EXTERNAL_SCRIPT__")
-            else:
-                scripts.append(body)
+            external = bool(
+                re.search(r"\bsrc\s*=", attrs, flags=re.IGNORECASE)
+            )
+            scripts.append((body, external))
         return scripts
 
     @staticmethod
@@ -241,152 +244,181 @@ class JupiterScriptRuntime:
         token = token.strip()
         if len(token) < 2:
             raise ScriptRuntimeError("invalid string literal")
+
         quote = token[0]
-        if quote not in {"'", '"', "`"} or token[-1] != quote:
+        if quote not in {"'", '"', BACKTICK} or token[-1] != quote:
             raise ScriptRuntimeError("invalid string literal")
+
         body = token[1:-1]
-        body = re.sub(r"\\n", "\n", body)
-        body = re.sub(r"\\r", "\r", body)
-        body = re.sub(r"\\t", "\t", body)
-        body = body.replace("\\'", "'").replace('\\"', '"').replace("\\`", "`")
-        body = body.replace("\\\\", "\\")
+        body = body.replace(r"\n", "\n")
+        body = body.replace(r"\r", "\r")
+        body = body.replace(r"\t", "\t")
+        body = body.replace(r"\\", "\\")
+        body = body.replace(r"\'", "'")
+        body = body.replace(r'\"', '"')
+        body = body.replace("\\" + BACKTICK, BACKTICK)
         return body
 
-    def _node_for_selector(self, selector: str) -> _Node | None:
-        selector = selector.strip()
-        if selector.startswith("#"):
-            return self.root.find_id(selector[1:])
-        return None
-
-    def _target_id_from_expr(self, expr: str) -> str | None:
+    def _target_id(self, expr: str, this_id: str | None = None) -> str | None:
         expr = expr.strip()
+
         direct = re.fullmatch(
-            r"document\.getElementById\(\s*(['\"])([^'\"]+)\1\s*\)",
+            r"""document\.getElementById\(\s*["']([^"']+)["']\s*\)""",
             expr,
         )
         if direct:
-            return direct.group(2)
+            return direct.group(1)
+
         query = re.fullmatch(
-            r"document\.querySelector\(\s*(['\"])(#[^'\"]+)\1\s*\)",
+            r"""document\.querySelector\(\s*["'](#[^"']+)["']\s*\)""",
             expr,
         )
         if query:
-            return query.group(2)[1:]
+            return query.group(1)[1:]
+
+        if expr == "this":
+            return this_id
+
         if re.fullmatch(r"[A-Za-z_$][\w$]*", expr):
             return self.bindings.get(expr)
-        if expr == "this":
-            return "__this__"
+
         return None
 
-    def _bind_nodes(self, source: str) -> None:
+    def _forbidden(self, source: str) -> list[str]:
+        compact = re.sub(r"\s+", "", source.lower())
+        return [
+            token
+            for token in self.FORBIDDEN_TOKENS
+            if token in compact
+        ]
+
+    def _bind_nodes(self, source: str) -> int:
+        count = 0
         pattern = re.compile(
-            r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"
-            r"(?:document\.getElementById\(\s*['\"]([^'\"]+)['\"]\s*\)"
-            r"|document\.querySelector\(\s*['\"](#[^'\"]+)['\"]\s*\))\s*;?",
+            r"""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:document\.getElementById\(\s*["']([^"']+)["']\s*\)|document\.querySelector\(\s*["'](#[^"']+)["']\s*\))\s*;?""",
             flags=re.DOTALL,
         )
         for match in pattern.finditer(source):
             name = match.group(1)
             node_id = match.group(2) or (match.group(3) or "")[1:]
-            if node_id:
-                self.bindings[name] = node_id
-                self.diagnostics.append(
-                    ScriptDiagnostic("bind", f"{name} -> #{node_id}")
-                )
+            if not node_id:
+                continue
+            self.bindings[name] = node_id
+            count += 1
+            self.diagnostics.append(
+                ScriptDiagnostic("bind", f"{name} -> #{node_id}")
+            )
+        return count
 
     @staticmethod
-    def _iter_listener_blocks(source: str) -> list[tuple[str, str, str, str]]:
-        out: list[tuple[str, str, str, str]] = []
+    def _listener_blocks(
+        source: str,
+    ) -> list[tuple[str, str, str, str]]:
         pattern = re.compile(
-            rf"(?P<target>{_TARGET_EXPR_RE})"
-            r"\.addEventListener\(\s*['\\"](?P<event>[^'\\"]+)['\\"]\s*,",
+            rf"""(?P<target>{_TARGET_EXPR_RE})\.addEventListener\(\s*["'](?P<event>[^"']+)["']\s*,""",
             flags=re.DOTALL,
         )
+        found: list[tuple[str, str, str, str]] = []
+
         for match in pattern.finditer(source):
             cursor = match.end()
             tail = source[cursor:]
             callback = re.match(
-                r"\s*(?:function\s*\(\s*([A-Za-z_$][\w$]*)?\s*\)"
-                r"|\(?\s*([A-Za-z_$][\w$]*)?\s*\)?\s*=>)\s*\{",
+                r"""\s*(?:function\s*\(\s*([A-Za-z_$][\w$]*)?\s*\)|\(?\s*([A-Za-z_$][\w$]*)?\s*\)?\s*=>)\s*\{""",
                 tail,
                 flags=re.DOTALL,
             )
             if not callback:
                 continue
+
             event_var = callback.group(1) or callback.group(2) or "event"
             body_start = cursor + callback.end()
             depth = 1
-            i = body_start
             quote: str | None = None
             escaped = False
-            while i < len(source):
-                ch = source[i]
+            index = body_start
+
+            while index < len(source):
+                char = source[index]
+
                 if quote is not None:
                     if escaped:
                         escaped = False
-                    elif ch == "\\":
+                    elif char == "\\":
                         escaped = True
-                    elif ch == quote:
+                    elif char == quote:
                         quote = None
-                    i += 1
+                    index += 1
                     continue
-                if ch in {"'", '"', "`"}:
-                    quote = ch
-                    i += 1
+
+                if char in {"'", '"', BACKTICK}:
+                    quote = char
+                    index += 1
                     continue
-                if ch == "{":
+
+                if char == "{":
                     depth += 1
-                elif ch == "}":
+                elif char == "}":
                     depth -= 1
                     if depth == 0:
-                        body = source[body_start:i]
-                        out.append(
+                        found.append(
                             (
                                 match.group("target"),
-                                match.group("event"),
+                                match.group("event").lower(),
                                 event_var,
-                                body,
+                                source[body_start:index],
                             )
                         )
                         break
-                i += 1
-        return out
 
-    def _register_handlers(self, source: str) -> None:
-        for target_expr, event, event_var, body in self._iter_listener_blocks(source):
-            target_id = self._target_id_from_expr(target_expr)
-            if not target_id or target_id == "__this__":
+                index += 1
+
+        return found
+
+    def _register_handlers(self, source: str) -> int:
+        count = 0
+        for target_expr, event, event_var, body in self._listener_blocks(source):
+            target_id = self._target_id(target_expr)
+            if not target_id:
                 continue
+
             self.handlers.append(
                 _Handler(
                     target_id=target_id,
-                    event=event.lower(),
+                    event=event,
                     body=body,
                     event_var=event_var,
                 )
             )
+            count += 1
             self.diagnostics.append(
-                ScriptDiagnostic("listener", f"#{target_id}:{event.lower()}")
+                ScriptDiagnostic("listener", f"#{target_id}:{event}")
             )
+        return count
 
-    def _apply_assignment(self, target_expr: str, prop: str, raw_value: str, *, this_id: str | None = None) -> bool:
-        target_id = self._target_id_from_expr(target_expr)
-        if target_id == "__this__":
-            target_id = this_id
+    def _apply_assignment(
+        self,
+        target_expr: str,
+        prop: str,
+        raw_value: str,
+        *,
+        this_id: str | None = None,
+    ) -> bool:
+        target_id = self._target_id(target_expr, this_id)
         if not target_id:
             return False
+
         node = self.root.find_id(target_id)
         if node is None:
             return False
 
-        prop = prop.strip()
         raw_value = raw_value.strip()
-        if raw_value in {"true", "false"}:
-            value: Any = raw_value == "true"
-        elif raw_value.startswith(("'", '"', "`")):
-            value = self._decode_string(raw_value)
+        if raw_value == "true":
+            value: Any = True
+        elif raw_value == "false":
+            value = False
         else:
-            return False
+            value = self._decode_string(raw_value)
 
         if prop == "innerHTML" and isinstance(value, str):
             node.set_inner_html(value)
@@ -407,169 +439,160 @@ class JupiterScriptRuntime:
         )
         return True
 
-    def _execute_dom_statements(self, source: str, *, this_id: str | None = None, event_var: str | None = None) -> tuple[bool, bool]:
-        changed = False
+    def _execute_dom(
+        self,
+        source: str,
+        *,
+        this_id: str | None = None,
+        event_var: str | None = None,
+    ) -> tuple[int, bool]:
+        mutations = 0
         prevented = False
 
-        if event_var:
-            if re.search(
-                rf"\b{re.escape(event_var)}\.preventDefault\(\s*\)",
-                source,
-            ):
-                prevented = True
-                self.diagnostics.append(
-                    ScriptDiagnostic("event", "preventDefault")
-                )
-
-        assign = re.compile(
-            rf"(?P<target>{_TARGET_EXPR_RE})"
-            r"\s*\.\s*(?P<prop>innerHTML|textContent|innerText|value|hidden)"
-            rf"\s*=\s*(?P<value>{_STRING_RE}|true|false)\s*;?",
-            flags=re.DOTALL,
-        )
-        for match in assign.finditer(source):
-            changed = (
-                self._apply_assignment(
-                    match.group("target"),
-                    match.group("prop"),
-                    match.group("value"),
-                    this_id=this_id,
-                )
-                or changed
+        if event_var and re.search(
+            rf"\b{re.escape(event_var)}\.preventDefault\(\s*\)",
+            source,
+        ):
+            prevented = True
+            self.diagnostics.append(
+                ScriptDiagnostic("event", "preventDefault")
             )
 
+        assignment = re.compile(
+            rf"""(?P<target>{_TARGET_EXPR_RE})\s*\.\s*(?P<prop>innerHTML|textContent|innerText|value|hidden)\s*=\s*(?P<value>{_STRING_RE}|true|false)\s*;?""",
+            flags=re.DOTALL,
+        )
+        for match in assignment.finditer(source):
+            if self._apply_assignment(
+                match.group("target"),
+                match.group("prop"),
+                match.group("value"),
+                this_id=this_id,
+            ):
+                mutations += 1
+
         insert = re.compile(
-            rf"(?P<target>{_TARGET_EXPR_RE})"
-            rf"\.insertAdjacentHTML\(\s*['\\"]beforeend['\\"]\s*,\s*(?P<value>{_STRING_RE})\s*\)\s*;?",
+            rf"""(?P<target>{_TARGET_EXPR_RE})\.insertAdjacentHTML\(\s*["']beforeend["']\s*,\s*(?P<value>{_STRING_RE})\s*\)\s*;?""",
             flags=re.DOTALL | re.IGNORECASE,
         )
         for match in insert.finditer(source):
-            target_id = self._target_id_from_expr(match.group("target"))
-            if target_id == "__this__":
-                target_id = this_id
-            if not target_id:
-                continue
-            node = self.root.find_id(target_id)
+            target_id = self._target_id(match.group("target"), this_id)
+            node = self.root.find_id(target_id) if target_id else None
             if node is None:
                 continue
-            node.append_html(self._decode_string(match.group("value")))
-            changed = True
+            node.append_html(
+                self._decode_string(match.group("value"))
+            )
+            mutations += 1
             self.diagnostics.append(
-                ScriptDiagnostic("dom_mutation", f"#{target_id}.insertAdjacentHTML")
+                ScriptDiagnostic(
+                    "dom_mutation",
+                    f"#{target_id}.insertAdjacentHTML",
+                )
             )
 
-        attr = re.compile(
-            rf"(?P<target>{_TARGET_EXPR_RE})"
-            r"\.(?P<op>setAttribute|removeAttribute)\(\s*['\\"](?P<name>[^'\\"]+)['\\"]"
-            rf"(?:\s*,\s*(?P<value>{_STRING_RE}))?\s*\)\s*;?",
+        attributes = re.compile(
+            rf"""(?P<target>{_TARGET_EXPR_RE})\.(?P<op>setAttribute|removeAttribute)\(\s*["'](?P<name>[^"']+)["'](?:\s*,\s*(?P<value>{_STRING_RE}))?\s*\)\s*;?""",
             flags=re.DOTALL,
         )
-        for match in attr.finditer(source):
-            target_id = self._target_id_from_expr(match.group("target"))
-            if target_id == "__this__":
-                target_id = this_id
-            if not target_id:
-                continue
-            node = self.root.find_id(target_id)
+        for match in attributes.finditer(source):
+            target_id = self._target_id(match.group("target"), this_id)
+            node = self.root.find_id(target_id) if target_id else None
             if node is None:
                 continue
+
             name = match.group("name")
             if match.group("op") == "removeAttribute":
                 node.attrs.pop(name, None)
             else:
                 raw = match.group("value")
-                node.attrs[name] = self._decode_string(raw) if raw else ""
-            changed = True
+                node.attrs[name] = (
+                    self._decode_string(raw)
+                    if raw is not None
+                    else ""
+                )
+
+            mutations += 1
             self.diagnostics.append(
-                ScriptDiagnostic("dom_mutation", f"#{target_id}.{match.group('op')}({name})")
+                ScriptDiagnostic(
+                    "dom_mutation",
+                    f"#{target_id}.{match.group('op')}({name})",
+                )
             )
 
-        return changed, prevented
-
-    def _contains_forbidden(self, source: str) -> list[str]:
-        lowered = re.sub(r"\s+", "", source.lower())
-        return [token for token in self.FORBIDDEN_TOKENS if token.replace(" ", "") in lowered]
+        return mutations, prevented
 
     def bootstrap(self) -> ScriptRunResult:
-        for script in self._scripts:
-            if script == "__EXTERNAL_SCRIPT__":
+        for source, external in self._scripts:
+            if external:
                 self.unsupported = True
                 self.diagnostics.append(
-                    ScriptDiagnostic("unsupported", "external script src")
+                    ScriptDiagnostic(
+                        "unsupported",
+                        "external script src",
+                    )
                 )
                 continue
 
-            forbidden = self._contains_forbidden(script)
+            if not source.strip():
+                continue
+
+            forbidden = self._forbidden(source)
             if forbidden:
                 self.unsupported = True
                 self.diagnostics.append(
                     ScriptDiagnostic(
                         "unsupported",
-                        "forbidden API: " + ", ".join(sorted(set(forbidden))),
+                        "forbidden API: "
+                        + ", ".join(sorted(set(forbidden))),
+                    )
+                )
+                continue
+
+            bindings = self._bind_nodes(source)
+            listeners = self._register_handlers(source)
+            mutations, _ = self._execute_dom(source)
+
+            if mutations:
+                self.diagnostics.append(
+                    ScriptDiagnostic(
+                        "bootstrap",
+                        "safe DOM mutations applied",
                     )
                 )
 
-            self._bind_nodes(script)
-            self._register_handlers(script)
-            changed, _ = self._execute_dom_statements(script)
-            if changed:
-                self.diagnostics.append(
-                    ScriptDiagnostic("bootstrap", "safe DOM mutations applied")
-                )
-
-            stripped = re.sub(
-                r"//[^\n]*|/\*.*?\*/",
-                "",
-                script,
-                flags=re.DOTALL,
-            )
-            stripped = re.sub(
-                r"\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*"
-                r"(?:document\.getElementById\([^;]+\)|document\.querySelector\([^;]+\))\s*;?",
-                "",
-                stripped,
-            )
-            stripped = re.sub(
-                r"[^;{}]+\.addEventListener\([^;]+\{.*?\}\s*\)?\s*;?",
-                "",
-                stripped,
-                flags=re.DOTALL,
-            )
-            stripped = re.sub(
-                rf"(?:(?:[A-Za-z_$][\w$]*|this|document\.[^;]+)"
-                rf"\.(?:innerHTML|textContent|innerText|value|hidden)\s*=\s*(?:{_STRING_RE}|true|false)\s*;?)",
-                "",
-                stripped,
-                flags=re.DOTALL,
-            )
-            if stripped.strip() and not forbidden:
-                # We do not reject a page merely because extra JS exists; we
-                # mark it so the agent can decide whether enough DOM was
-                # produced to continue safely.
+            if not bindings and not listeners and not mutations:
                 self.unsupported = True
                 self.diagnostics.append(
-                    ScriptDiagnostic("unsupported", "unparsed script statements remain")
+                    ScriptDiagnostic(
+                        "unsupported",
+                        "script is outside Jupiter subset",
+                    )
                 )
 
         return ScriptRunResult(
             html=self.root.serialize(),
             diagnostics=list(self.diagnostics),
-            handlers=list(self.handlers),
             unsupported=self.unsupported,
         )
 
-    def handle_event(self, target_id: str, event: str) -> tuple[str, bool, list[ScriptDiagnostic]] | None:
+    def handle_event(
+        self,
+        target_id: str,
+        event: str,
+    ) -> tuple[str, bool, list[ScriptDiagnostic]] | None:
         matching = [
             handler
             for handler in self.handlers
-            if handler.target_id == target_id and handler.event == event.lower()
+            if handler.target_id == target_id
+            and handler.event == event.lower()
         ]
         if not matching:
             return None
 
         prevented = False
         for handler in matching:
-            forbidden = self._contains_forbidden(handler.body)
+            forbidden = self._forbidden(handler.body)
             if forbidden:
                 self.unsupported = True
                 self.diagnostics.append(
@@ -580,13 +603,15 @@ class JupiterScriptRuntime:
                     )
                 )
                 continue
-            changed, did_prevent = self._execute_dom_statements(
+
+            mutations, did_prevent = self._execute_dom(
                 handler.body,
                 this_id=target_id,
                 event_var=handler.event_var,
             )
             prevented = prevented or did_prevent
-            if not changed and not did_prevent:
+
+            if not mutations and not did_prevent:
                 self.unsupported = True
                 self.diagnostics.append(
                     ScriptDiagnostic(
@@ -595,4 +620,8 @@ class JupiterScriptRuntime:
                     )
                 )
 
-        return self.root.serialize(), prevented, list(self.diagnostics)
+        return (
+            self.root.serialize(),
+            prevented,
+            list(self.diagnostics),
+        )
