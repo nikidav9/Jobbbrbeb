@@ -28,6 +28,51 @@ verification live in this repository.
 - supports a hard no-submit dry-run mode that fills and uploads but never sends
   an application.
 
+## Semantic Form Engine v2
+
+The form layer now follows the parts of the HTML standard that decide what a
+browser would actually send, because Jupiter was quietly disagreeing with the
+browser on real employer pages:
+
+- `<base href>` resolution for form actions and page-script network calls
+  (external `<script src>` still resolves against the page URL, because it is
+  fetched before the document is parsed, and its same-origin check is tied to
+  the page origin on purpose);
+- `<fieldset disabled>` propagation, so a switched-off section is neither
+  filled, nor submitted, nor counted as a missing required field;
+- `<legend>` captured as the section hint of every control inside it;
+- `formaction`, `formmethod`, `formenctype` and `formnovalidate` on the pressed
+  submit button, which override the form's own attributes;
+- `<select multiple>`, which serializes every selected option instead of one;
+- browser-style default selection for single `<select>`, and `disabled` options
+  that Jupiter will never pick;
+- `readonly` controls, which are submitted but never overwritten;
+- `type=image` submit buttons, which send the click coordinates;
+- constraint attributes: `pattern`, `minlength`, `maxlength`, `min`, `max`,
+  `step`.
+
+Submit buttons are ranked by intent, so "Откликнуться" wins over "Сохранить
+черновик" in the same form. Document order stays the tie-break.
+
+## HTML validation before submit
+
+`validation.py` answers one question: would the browser let this form go?
+It implements the standard constraint validation rules — required (including
+radio groups), `pattern` anchored to the whole value, length, range, step and
+the `email`/`url`/`number` input types — and returns `ValidationIssue`
+records instead of a boolean.
+
+This closes the worst kind of failure Jupiter had: reporting
+`ready_to_submit` for a form the employer's page would have refused. A form
+that fails validation now returns `action_required` with reason code
+`VALIDATION_FAILED` and the list of offending fields.
+
+`AgentResult` carries a machine-readable `reason_code` alongside the human
+text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
+`DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
+`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`.
+Compatibility statistics must be built on the code, not on the prose.
+
 ## Jupiter Script Runtime v1
 
 The engine now includes a JobToo-owned, deterministic DOM scripting layer. It
@@ -99,8 +144,12 @@ Run locally with only Python:
 
 ```bash
 cd jupiter
+python test_form_semantics.py
 python test_e2e.py
 ```
+
+`test_form_semantics.py` needs no server: it checks HTML form semantics and
+constraint validation directly.
 
 The E2E suite starts a local synthetic employer server and verifies:
 
@@ -129,7 +178,12 @@ The E2E suite starts a local synthetic employer server and verifies:
 23. hard read-only rejection of direct POST;
 24. audited field patterns for VkusVill, Lemana PRO, Teremok, Coffeemania,
     Dodo and MegaFon;
-25. controls linked with the HTML form attribute and required radio groups.
+25. controls linked with the HTML form attribute and required radio groups;
+26. the apply button winning over a draft button, with its `formaction` used;
+27. a relative action resolved through `<base href>`;
+28. required fields of a disabled fieldset not blocking the run;
+29. a value rejected by `pattern` stopping before submit;
+30. `<select multiple>` sending every selected option.
 
 CI runs the same suite on every PR.
 

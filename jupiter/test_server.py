@@ -312,7 +312,7 @@ try{
  const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
  status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='ready_to_submit'?'Готово к отправке — не отправляли':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
  status.className='status '+(d.status==='submitted'||d.status==='ready_to_submit'?'ok':d.status==='action_required'?'warn':'bad');
- reason.textContent=(d.site?('Сайт: '+d.site+'. '):'')+(d.reason||'');trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
+ reason.textContent=(d.site?('Сайт: '+d.site+'. '):'')+(d.reason_code?('['+d.reason_code+'] '):'')+(d.reason||'');trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
 }catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}
 finally{button.disabled=false;button.textContent=label}};
 run.onclick=()=>show('api/run',payload(),run,'Синтетический тест');
