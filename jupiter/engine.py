@@ -686,6 +686,18 @@ class JupiterWebEngine:
         try:
             final_url = response.geturl()
             self.assert_allowed(final_url)
+            content_type = (
+                response.headers.get("Content-Type") or ""
+            ).lower()
+            if content_type and not (
+                "application/json" in content_type
+                or "+json" in content_type
+                or "text/plain" in content_type
+                or "text/html" in content_type
+            ):
+                raise EngineSecurityError(
+                    f"Script network response type is not allowed: {content_type}"
+                )
             raw = response.read(min(self.max_response_bytes, 1024 * 1024) + 1)
             if len(raw) > min(self.max_response_bytes, 1024 * 1024):
                 raise EngineError("Script network response is too large")
