@@ -202,6 +202,22 @@ def choose_key(
 
     name = normalize(control.name)
     cid = normalize(control.id)
+    autocomplete = normalize(control.autocomplete)
+    autocomplete_map = {
+        "given name": "first_name",
+        "family name": "last_name",
+        "additional name": "patronymic",
+        "name": "full_name",
+        "email": "email",
+        "tel": "phone",
+        "address level2": "city",
+        "bday": "birth_date",
+    }
+    if autocomplete in autocomplete_map:
+        key = autocomplete_map[autocomplete]
+        if key in profile.values:
+            return key
+
     exact = {
         "firstname": "first_name",
         "first name": "first_name",
@@ -281,6 +297,9 @@ class JupiterAgent:
             for value in (
                 control.label,
                 control.aria,
+                control.autocomplete,
+                control.inputmode,
+                control.title_attr,
                 control.placeholder,
                 control.name,
                 control.id,
@@ -469,9 +488,15 @@ class JupiterAgent:
             for peer in page.controls
         )
 
-    def _required_missing(self, page: PageState) -> list[str]:
+    def _required_missing(
+        self,
+        page: PageState,
+        form_index: int | None = None,
+    ) -> list[str]:
         missing: list[str] = []
         for control in page.controls:
+            if form_index is not None and control.form_index != form_index:
+                continue
             if (
                 not control.required
                 or control.disabled
@@ -549,34 +574,63 @@ class JupiterAgent:
         ranked.sort(reverse=True)
         return ranked[0][1]
 
-    def _application_form_present(self, page: PageState) -> bool:
+    def _form_score(
+        self,
+        page: PageState,
+        form_index: int,
+        profile: CandidateProfile,
+    ) -> int:
+        score = 0
         keys: set[str] = set()
+        form = page.forms[form_index]
+        descriptors: list[str] = [form.action, form.id]
         for control in page.controls:
-            if control.disabled or control.type in {"hidden", "submit", "image", "button"}:
+            if control.form_index != form_index or control.disabled:
                 continue
+            descriptor = self.descriptor(control)
+            descriptors.append(descriptor)
             if control.type == "file":
+                score += 35
                 keys.add("resume")
                 continue
-            key = choose_key(control, CandidateProfile(values={
-                "first_name": "x",
-                "last_name": "x",
-                "full_name": "x",
-                "email": "x",
-                "phone": "x",
-                "city": "x",
-                "birth_date": "2000-01-01",
-                "citizenship": "x",
-                "education": "x",
-                "desired_role": "x",
-                "employment": "x",
-                "cover_letter": "x",
-                "resume_url": "x",
-                "consent": True,
-                "has_car": True,
-            }), page.url)
-            if key:
+            if self.is_submit(control):
+                if any(marker in normalize(descriptor) for marker in SUBMIT_MARKERS):
+                    score += 30
+                continue
+            key = choose_key(control, profile, page.url)
+            if key and key not in keys:
                 keys.add(key)
-        return len(keys) >= 2 or "resume" in keys
+                score += 20
+            if control.required:
+                score += 2
+
+        context = normalize(" ".join(descriptors))
+        if any(marker in context for marker in (
+            "search", "поиск", "newsletter", "subscribe", "подпис",
+            "login", "sign in", "войти", "авторизац",
+        )):
+            score -= 60
+        if any(marker in context for marker in (
+            "apply", "отклик", "application", "анкета", "resume", "резюм",
+        )):
+            score += 25
+        return score
+
+    def _target_form_index(
+        self,
+        page: PageState,
+        profile: CandidateProfile,
+    ) -> int | None:
+        if not page.forms:
+            return None
+        scored = [
+            (self._form_score(page, form.index, profile), form.index)
+            for form in page.forms
+        ]
+        scored.sort(reverse=True)
+        if not scored or scored[0][0] < 40:
+            return None
+        return scored[0][1]
 
     def _expand_policy_for_start(self, url: str) -> None:
         parsed = urllib.parse.urlparse(url)
@@ -599,6 +653,15 @@ class JupiterAgent:
             "url": page.url,
             "captcha": captcha,
             "submit_blocked_by_policy": True,
+            "filled_fields": sum(
+                1 for item in trajectory if item.get("action") in {"fill", "select"}
+            ),
+            "uploads": sum(
+                1 for item in trajectory if item.get("action") == "upload"
+            ),
+            "checks": sum(
+                1 for item in trajectory if item.get("action") == "check"
+            ),
         })
         return AgentResult("ready_to_submit", reason, trajectory)
 
@@ -621,17 +684,29 @@ class JupiterAgent:
                 return AgentResult("submitted", trajectory=trajectory)
 
             captcha = self.detect_captcha(page)
+            target_form_index = self._target_form_index(page, profile)
             filled_before = len(trajectory)
-            for control in page.controls:
-                if control.disabled or self.is_submit(control):
-                    continue
-                if not self.control_is_empty(control):
-                    continue
-                self.fill_control(page, control, profile, trajectory)
-            filled_any = len(trajectory) > filled_before
+            if target_form_index is not None:
+                trajectory.append({
+                    "action": "target_form",
+                    "form_index": target_form_index,
+                    "score": self._form_score(page, target_form_index, profile),
+                })
+                for control in page.controls:
+                    if control.form_index != target_form_index:
+                        continue
+                    if control.disabled or self.is_submit(control):
+                        continue
+                    if not self.control_is_empty(control):
+                        continue
+                    self.fill_control(page, control, profile, trajectory)
+            filled_any = any(
+                item.get("action") in {"fill", "select", "check", "upload"}
+                for item in trajectory[filled_before:]
+            )
 
-            missing = self._required_missing(page)
-            has_application_form = self._application_form_present(page)
+            missing = self._required_missing(page, target_form_index)
+            has_application_form = target_form_index is not None
 
             if has_application_form or filled_any:
                 if missing:
@@ -654,6 +729,10 @@ class JupiterAgent:
                     if self.is_submit(control)
                     and not control.disabled
                     and control.form_index is not None
+                    and (
+                        target_form_index is None
+                        or control.form_index == target_form_index
+                    )
                 ),
                 None,
             )
