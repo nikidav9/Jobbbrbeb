@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Jupiter Test Careers</title>
+  <style>
+    body { font: 16px system-ui; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+    label { display:block; margin: 14px 0 5px; }
+    input, textarea, select, button { width:100%; padding:10px; box-sizing:border-box; }
+    button { margin-top:20px; }
+  </style>
+</head>
+<body>
+  <h1>Backend Developer</h1>
+  <p>Тестовая карьерная страница JobToo.</p>
+  <form id="application-form">
+    <label>First name <input name="first_name" required></label>
+    <label>Фамилия <input name="surname" required></label>
+    <label>Email <input type="email" name="email" required></label>
+    <label>Телефон <input type="tel" name="phone" required></label>
+    <label>Город <input name="city" required></label>
+    <label>Сколько лет опыта? <input name="experience_years" required></label>
+    <label>Формат работы
+      <select name="work_format" required>
+        <option value="">Выберите</option>
+        <option value="Office">Office</option>
+        <option value="Hybrid">Hybrid</option>
+        <option value="Remote">Remote</option>
+      </select>
+    </label>
+    <label>Why are you interested in this role?
+      <textarea name="motivation" required></textarea>
+    </label>
+    <label>Resume <input type="file" name="resume" required></label>
+    <button type="submit">Submit application</button>
+  </form>
+  <div id="success" hidden><h1>Application received</h1><p>Jupiter test success.</p></div>
+  <script>
+    document.getElementById('application-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      this.hidden = true;
+      document.getElementById('success').hidden = false;
+    });
+  </script>
+</body>
+</html>
