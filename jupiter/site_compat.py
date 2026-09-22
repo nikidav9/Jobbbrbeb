@@ -204,9 +204,18 @@ def field_override(url: str, *candidates: str) -> str | None:
     if profile is None:
         return None
     for candidate in candidates:
-        key = (candidate or "").strip().lower()
-        if key and key in profile.field_overrides:
-            return profile.field_overrides[key]
+        raw = (candidate or "").strip().lower()
+        if not raw:
+            continue
+        variants = {
+            raw,
+            raw.removesuffix("[]"),
+            raw.replace("-", "_"),
+            raw.removesuffix("[]").replace("-", "_"),
+        }
+        for key in variants:
+            if key in profile.field_overrides:
+                return profile.field_overrides[key]
     return None
 
 
