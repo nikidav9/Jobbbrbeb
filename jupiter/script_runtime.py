@@ -166,6 +166,12 @@ class ScriptRunResult:
 
 _STRING_RE = r"(?:'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\`(?:\\.|[^\`\\])*\`)"
 
+_TARGET_EXPR_RE = (
+    r"(?:[A-Za-z_$][\\w$]*|this"
+    r"|document\\.getElementById\\(\\s*[\'\\\"][^\'\\\"]+[\'\\\"]\\s*\\)"
+    r"|document\\.querySelector\\(\\s*[\'\\\"][^\'\\\"]+[\'\\\"]\\s*\\))"
+)
+
 
 class JupiterScriptRuntime:
     """
