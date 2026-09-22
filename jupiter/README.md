@@ -49,3 +49,21 @@ Wire the agent into JobToo's application queue with:
 `queued -> running -> action_required | submitted | failed`
 
 Then persist the trajectory, screenshots and confirmation metadata. The planner is deliberately isolated so a future self-hosted model can be added only for pages the deterministic rules cannot resolve.
+
+
+## Private lab
+
+The interactive staging harness is intentionally absent from the public JobToo UI.
+
+After deployment it is available only through the existing Basic-Auth protected
+admin listener:
+
+`https://jobtoo.ru:8443/jupiter/`
+
+The lab lets the owner edit a synthetic candidate profile and run two scenarios:
+a successful application and an unknown required question. Each run starts real
+Chromium, returns the Jupiter trajectory and renders a final browser screenshot.
+
+The browser allow-list is fixed to `127.0.0.1`; this staging UI cannot submit to
+real employer sites. nginx also sends `noindex, nofollow, noarchive` and the
+container port is bound to loopback only.
