@@ -511,7 +511,7 @@ def validate_live_payload(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
 def _lab_resume(tmp: str) -> str:
     resume_path = Path(tmp) / "resume.txt"
     resume_path.write_text(
-        "Jupiter private lab dry-run resume\n",
+        "Jupiter private lab test resume\nJupiter private lab dry-run resume\n",
         encoding="utf-8",
     )
     return str(resume_path)
@@ -616,6 +616,21 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in {"/", "/index.html"}:
             return self._html(UI_HTML if self._session() else LOGIN_HTML)
+        if path == "/api/sites":
+            if not self._session():
+                return self._json(
+                    HTTPStatus.UNAUTHORIZED,
+                    {"error": "Войдите в JobToo"},
+                )
+            return self._json(
+                HTTPStatus.OK,
+                {
+                    "sites": [
+                        {"company": name, "url": url}
+                        for name, url in AUDITED_SOURCE_URLS.items()
+                    ]
+                },
+            )
         if path == "/career-test":
             return (
                 self._html(TEST_HTML)
@@ -785,7 +800,7 @@ class Handler(BaseHTTPRequestHandler):
                 [("Set-Cookie", cookie)],
             )
 
-        if path != "/api/run":
+        if path not in {"/api/run", "/api/live-dry-run"}:
             return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         if not self._session():
             return self._json(
@@ -795,7 +810,12 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             raw = self._read_json()
-            values, scenario = validate_payload(raw)
+            if path == "/api/live-dry-run":
+                values, live_url = validate_live_payload(raw)
+                scenario = None
+            else:
+                values, scenario = validate_payload(raw)
+                live_url = None
         except (json.JSONDecodeError, ValueError) as exc:
             return self._json(
                 HTTPStatus.BAD_REQUEST,
@@ -808,8 +828,16 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": "Jupiter is already running"},
             )
         try:
-            payload = run_demo(values, scenario)
+            if path == "/api/live-dry-run":
+                payload = run_live_demo(values, str(live_url))
+            else:
+                payload = run_demo(values, str(scenario))
             self._json(HTTPStatus.OK, payload)
+        except ValueError as exc:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": str(exc)},
+            )
         except Exception as exc:
             self._json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -817,6 +845,7 @@ class Handler(BaseHTTPRequestHandler):
             )
         finally:
             RUN_LOCK.release()
+
 
 
 def main() -> None:
