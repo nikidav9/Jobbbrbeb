@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
+from engine import EngineSecurityError, JupiterWebEngine
 from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
 
 
@@ -543,6 +544,7 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertEqual(values["lastName"]["value"], "Davydov")
         self.assertEqual(values["email"]["value"], "nikita.demo@reply.jobtoo.ru")
         self.assertTrue(values["agreedPersonalData"]["checked"])
+        self.assertFalse(values["agreedReservation"]["checked"])
         self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
 
     def test_dry_run_still_refuses_to_invent_unknown_required_data(self):
@@ -563,6 +565,15 @@ class JupiterNativeE2E(unittest.TestCase):
             field_override("https://job.megafon.ru/vacancy/x/apply", "agreedPersonalData"),
             "consent",
         )
+
+    def test_read_only_engine_blocks_direct_post_even_outside_agent(self):
+        engine = JupiterWebEngine({"127.0.0.1"}, read_only=True)
+        with self.assertRaises(EngineSecurityError):
+            engine.request(
+                f"http://127.0.0.1:{self.port}/submit",
+                method="POST",
+                data=b"should-never-leave",
+            )
 
     def test_native_engine_fills_uploads_cookies_and_submits(self):
         result, agent = self.run_path("/application")
