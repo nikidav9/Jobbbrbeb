@@ -27,6 +27,15 @@ class EngineSecurityError(EngineError):
     pass
 
 
+class EngineTransportError(EngineError):
+    """Ответа не было вовсе: обрыв, таймаут, недоступный хост.
+
+    Отличать это от ответа с кодом 4xx/5xx обязательно. Сервер, ответивший
+    четырьмястами, заявку точно не принял. Сервер, оборвавший соединение,
+    мог принять её и не успеть сказать — и повторять туда POST нельзя.
+    """
+
+
 @dataclass
 class OptionState:
     label: str
@@ -784,8 +793,15 @@ class JupiterWebEngine:
                 )
         except EngineError:
             raise
+        except urllib.error.HTTPError as exc:
+            # Код состояния есть — значит запрос дошёл и был обработан.
+            raise EngineError(
+                f"HTTP request failed: HTTPError: {exc}"
+            ) from exc
         except Exception as exc:
-            raise EngineError(f"HTTP request failed: {type(exc).__name__}: {exc}") from exc
+            raise EngineTransportError(
+                f"HTTP transport failed: {type(exc).__name__}: {exc}"
+            ) from exc
 
     def open(self, url: str) -> PageState:
         return self.request(url)

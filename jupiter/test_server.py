@@ -310,8 +310,8 @@ const show=async(endpoint,body,button,label)=>{button.disabled=true;button.textC
 try{
  const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  const d=await r.json();if(r.status===401){location.reload();return}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
- status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='ready_to_submit'?'Готово к отправке — не отправляли':d.status==='step_ready'?'Шаг заполнен, анкета продолжается':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
- status.className='status '+(d.status==='submitted'||d.status==='ready_to_submit'?'ok':d.status==='action_required'||d.status==='step_ready'?'warn':'bad');
+ status.textContent=d.status==='submitted'?'Отклик отправлен':d.status==='ready_to_submit'?'Готово к отправке — не отправляли':d.status==='step_ready'?'Шаг заполнен, анкета продолжается':d.status==='duplicate'?'Этот отклик уже подавали':d.status==='submission_unknown'?'Исход отправки неизвестен — нужна проверка':d.status==='action_required'?'Нужен ответ пользователя':'Ошибка';
+ status.className='status '+(d.status==='submitted'||d.status==='ready_to_submit'?'ok':d.status==='action_required'||d.status==='step_ready'||d.status==='duplicate'||d.status==='submission_unknown'?'warn':'bad');
  reason.textContent=(d.site?('Сайт: '+d.site+'. '):'')+(d.reason_code?('['+d.reason_code+'] '):'')+(d.reason||'');trace.textContent=JSON.stringify(d.trajectory,null,2);snapshot.textContent=JSON.stringify(d.snapshot,null,2)
 }catch(e){status.textContent='Ошибка стенда';status.className='status bad';reason.textContent=String(e)}
 finally{button.disabled=false;button.textContent=label}};

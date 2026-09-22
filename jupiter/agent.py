@@ -13,11 +13,16 @@ from engine import (
     ControlState,
     EngineError,
     EngineSecurityError,
+    EngineTransportError,
     JupiterWebEngine,
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
 from spa_payload import extract_payloads, url_candidates
+from submission import (
+    ApplicationFingerprint, Receipt, ReceiptStore, SubmissionEvidence,
+    collect_evidence, is_confirmed, score_evidence,
+)
 from validation import ValidationIssue, validate_form
 
 
@@ -194,6 +199,8 @@ class Reason:
     MAX_STEPS = "MAX_STEPS"
     MULTI_STEP_DRY_RUN_LIMIT = "MULTI_STEP_DRY_RUN_LIMIT"
     STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
+    DUPLICATE_BLOCKED = "DUPLICATE_BLOCKED"
+    SUBMISSION_UNKNOWN = "SUBMISSION_UNKNOWN"
 
 
 @dataclass
@@ -366,10 +373,15 @@ class JupiterAgent:
         *,
         engine: JupiterWebEngine | None = None,
         dry_run: bool = False,
+        receipts: ReceiptStore | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
         self.dry_run = dry_run
+        # Журнал поданных откликов. Без него защита от повтора действует
+        # только внутри одного прогона — этого мало, повтор чаще всего
+        # случается на второй попытке через день.
+        self.receipts = receipts if receipts is not None else ReceiptStore()
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -559,9 +571,56 @@ class JupiterAgent:
         return True
 
     @staticmethod
-    def detect_success(page: PageState) -> bool:
-        text = normalize(page.text)
-        return any(marker in text for marker in SUCCESS_MARKERS)
+    def _evidence(
+        before: PageState,
+        after: PageState,
+        form_gone: bool,
+    ) -> list[SubmissionEvidence]:
+        """Доказательства того, что отклик приняли.
+
+        Единственный механизм: раньше рядом жила проверка «есть ли на
+        странице слово „спасибо“», и она подтверждала отправку на сайте, где
+        это слово стоит в подвале всегда.
+        """
+        return collect_evidence(
+            before_url=before.url,
+            before_text=before.text,
+            after_url=after.url,
+            after_text=after.text,
+            after_status=after.status,
+            success_markers=SUCCESS_MARKERS,
+            form_gone=form_gone,
+            normalize=normalize,
+        )
+
+    @staticmethod
+    def _candidate_id(profile: CandidateProfile) -> str:
+        for key in ("candidate_id", "email", "phone", "full_name"):
+            value = str(profile.values.get(key) or "").strip()
+            if value:
+                return value
+        return "anonymous"
+
+    def _fingerprint(
+        self,
+        page: PageState,
+        form,
+        submit: ControlState | None,
+        profile: CandidateProfile,
+    ) -> ApplicationFingerprint:
+        names = [
+            page.controls[index].name
+            for index in form.control_indices
+            if page.controls[index].name
+        ]
+        action = submit.formaction if submit and submit.formaction else form.action
+        return ApplicationFingerprint.build(
+            candidate_id=self._candidate_id(profile),
+            vacancy_url=self._root_url or page.url,
+            apply_url=page.url,
+            control_names=names,
+            action=page.resolve(action or page.url),
+        )
 
     @staticmethod
     def detect_captcha(page: PageState) -> bool:
@@ -969,6 +1028,116 @@ class JupiterAgent:
         })
         return AgentResult("ready_to_submit", reason, trajectory)
 
+    def _record_receipt(
+        self,
+        fingerprint: ApplicationFingerprint,
+        status: str,
+        apply_url: str,
+        evidence: list[SubmissionEvidence],
+    ) -> Receipt:
+        external_id = next(
+            (item.value for item in evidence if item.type == "APPLICATION_ID"),
+            None,
+        )
+        receipt = Receipt(
+            key=fingerprint.key(),
+            status=status,
+            apply_url=apply_url,
+            evidence=[item.as_dict() for item in evidence],
+            external_application_id=external_id,
+        )
+        self.receipts.record(receipt)
+        return receipt
+
+    def _already_submitted(
+        self,
+        known: Receipt,
+        fingerprint: ApplicationFingerprint,
+        trajectory: list[dict[str, Any]],
+    ) -> AgentResult:
+        """Этот отклик уже подавали. Второй раз — не подаём."""
+        if known.status == "submitted":
+            reason = (
+                "This application was already submitted "
+                f"(receipt {known.key[:12]}); Jupiter does not send it twice"
+            )
+            code = Reason.DUPLICATE_BLOCKED
+            status = "duplicate"
+        else:
+            # Прошлый раз ответа не было. Повторять POST вслепую нельзя —
+            # именно так и рождается второй отклик у работодателя.
+            reason = (
+                "A previous attempt left the outcome unknown; "
+                "verification is required before any retry"
+            )
+            code = Reason.SUBMISSION_UNKNOWN
+            status = "submission_unknown"
+        trajectory.append({
+            "action": status,
+            "reason": reason,
+            "reason_code": code,
+            "fingerprint": fingerprint.as_dict(),
+            "receipt": known.as_dict(),
+        })
+        return AgentResult(status, reason, trajectory, code)
+
+    def _unknown_outcome(
+        self,
+        before: PageState,
+        fingerprint: ApplicationFingerprint,
+        trajectory: list[dict[str, Any]],
+        detail: str,
+    ) -> AgentResult:
+        """POST ушёл, ответа нет. Сначала отметка, потом одна проверка GET-ом."""
+        receipt = self._record_receipt(
+            fingerprint, "submission_unknown", before.url, []
+        )
+        trajectory.append({
+            "action": "submission_unknown",
+            "url": before.url,
+            "reason": detail,
+            "reason_code": Reason.SUBMISSION_UNKNOWN,
+            "receipt": receipt.as_dict(),
+        })
+
+        # Одна попытка узнать правду безопасным способом. GET ничего не
+        # создаёт, поэтому его повторить можно, в отличие от POST.
+        try:
+            after = self.engine.open(before.url)
+        except EngineError as exc:
+            reason = (
+                "Submission outcome is unknown: the connection dropped and "
+                f"verification also failed ({exc})"
+            )
+            trajectory.append({
+                "action": "verification_failed",
+                "reason": reason,
+                "reason_code": Reason.SUBMISSION_UNKNOWN,
+            })
+            return AgentResult(
+                "submission_unknown", reason, trajectory, Reason.SUBMISSION_UNKNOWN
+            )
+
+        evidence = self._evidence(before, after, form_gone=not after.forms)
+        trajectory.append({
+            "action": "verify_submission",
+            "url": after.url,
+            "confirmed": is_confirmed(evidence),
+            "score": round(score_evidence(evidence), 2),
+            "evidence": [item.as_dict() for item in evidence],
+        })
+        if is_confirmed(evidence):
+            self._record_receipt(fingerprint, "submitted", after.url, evidence)
+            return AgentResult("submitted", trajectory=trajectory)
+
+        reason = (
+            "Submission outcome is unknown: the connection dropped and the "
+            "page shows no confirmation. Jupiter will not repeat the POST"
+        )
+        return AgentResult(
+            "submission_unknown", reason, trajectory, Reason.SUBMISSION_UNKNOWN
+        )
+
     def _run_from_page(
         self,
         page: PageState,
@@ -979,18 +1148,15 @@ class JupiterAgent:
         # шагами. Отметка нужна, чтобы не принять за успех страницу, где
         # слово «спасибо» стояло ещё до всякой отправки.
         sent_once = False
+        # Чем был последний ушедший запрос: отправкой отклика или переходом
+        # между шагами. Без этого повтор экрана после настоящей отправки
+        # объявлялся «шаг не сдвинулся» — и статистика совместимости считала
+        # бы неподтверждённые отправки проблемой многошаговых анкет.
+        last_click_was_submit = False
         flow = FormFlow()
         visited = {page.url}
 
         for _ in range(self.max_steps):
-            if sent_once and self.detect_success(page):
-                trajectory.append({
-                    "action": "success_detected",
-                    "url": page.url,
-                    "status": page.status,
-                })
-                return AgentResult("submitted", trajectory=trajectory)
-
             captcha = self.detect_captcha(page)
             target_form_index = self._target_form_index(page, profile)
             filled_before = len(trajectory)
@@ -1001,23 +1167,27 @@ class JupiterAgent:
                     "form_index": target_form_index,
                 })
                 if not advanced and sent_once:
-                    # Тот же экран с тем же набором полей после отправки.
-                    # Значит, сервер нас вернул, а мы этого не поняли и
-                    # пошли по кругу.
-                    reason = (
-                        "Multi-step form returned the same step again: "
-                        "Jupiter is not making progress"
-                    )
+                    # Тот же экран с тем же набором полей после запроса.
+                    # Значит, сервер нас вернул, а мы этого не поняли.
+                    if last_click_was_submit:
+                        reason = (
+                            "Submit returned the same form again without any "
+                            "confirmation that the application was accepted"
+                        )
+                        code = Reason.SUCCESS_NOT_CONFIRMED
+                    else:
+                        reason = (
+                            "Multi-step form returned the same step again: "
+                            "Jupiter is not making progress"
+                        )
+                        code = Reason.STEP_DID_NOT_ADVANCE
                     trajectory.append({
                         "action": "action_required",
                         "reason": reason,
-                        "reason_code": Reason.STEP_DID_NOT_ADVANCE,
+                        "reason_code": code,
                         "step_index": flow.step_index,
                     })
-                    return AgentResult(
-                        "action_required", reason, trajectory,
-                        Reason.STEP_DID_NOT_ADVANCE,
-                    )
+                    return AgentResult("action_required", reason, trajectory, code)
                 trajectory.append({
                     "action": "target_form",
                     "form_index": target_form_index,
@@ -1209,7 +1379,18 @@ class JupiterAgent:
                 "action_url": submit.formaction or form.action or page.url,
             })
 
+            # Отпечаток считается ДО отправки. После неё он уже не нужен:
+            # если POST ушёл, а ответа не было, отметку всё равно надо на что-то
+            # повесить.
+            fingerprint = None
+            if not clicked_next:
+                fingerprint = self._fingerprint(page, form, submit, profile)
+                known = self.receipts.find(fingerprint.key())
+                if known is not None:
+                    return self._already_submitted(known, fingerprint, trajectory)
+
             before = page
+            before_form_index = form.index
             try:
                 page = self.engine.submit(before, form, submit)
             except EngineSecurityError as exc:
@@ -1221,6 +1402,22 @@ class JupiterAgent:
                 })
                 return AgentResult(
                     "action_required", reason, trajectory, Reason.DOMAIN_BLOCKED
+                )
+            except EngineTransportError as exc:
+                # Ответа не было. Заявка могла дойти и могла не дойти — и это
+                # ровно тот случай, когда повторять POST нельзя.
+                if fingerprint is not None:
+                    return self._unknown_outcome(
+                        before, fingerprint, trajectory, str(exc)
+                    )
+                reason = f"Jupiter Web Engine lost the connection: {exc}"
+                trajectory.append({
+                    "action": "failed",
+                    "reason": reason,
+                    "reason_code": Reason.NAVIGATION_FAILED,
+                })
+                return AgentResult(
+                    "failed", reason, trajectory, Reason.NAVIGATION_FAILED
                 )
             except EngineError as exc:
                 reason = f"Jupiter Web Engine failed to submit form: {exc}"
@@ -1234,6 +1431,7 @@ class JupiterAgent:
                 )
 
             sent_once = True
+            last_click_was_submit = not clicked_next
             submit_mode = getattr(self.engine, "last_submit_mode", "http")
             action_name = {
                 "script": "script_submit",
@@ -1248,7 +1446,24 @@ class JupiterAgent:
                 "step_index": flow.step_index,
             })
 
-            if self.detect_success(page):
+            form_gone = not any(
+                self._step_signature(page, index) == self._step_signature(
+                    before, before_form_index
+                )
+                for index in range(len(page.forms))
+            )
+            evidence = self._evidence(before, page, form_gone)
+            trajectory.append({
+                "action": "verify_submission",
+                "url": page.url,
+                "confirmed": is_confirmed(evidence),
+                "score": round(score_evidence(evidence), 2),
+                "evidence": [item.as_dict() for item in evidence],
+            })
+
+            if is_confirmed(evidence):
+                if fingerprint is not None:
+                    self._record_receipt(fingerprint, "submitted", page.url, evidence)
                 trajectory.append({
                     "action": "success_detected",
                     "url": page.url,
@@ -1371,14 +1586,27 @@ def main() -> int:
         action="store_true",
         help="Fill and prepare the application, but never submit it",
     )
+    parser.add_argument(
+        "--receipts",
+        help=(
+            "Path to the submitted-applications journal. Without it the "
+            "duplicate guard only lasts for this run"
+        ),
+    )
     args = parser.parse_args()
 
     profile = CandidateProfile.load(args.profile)
-    agent = JupiterAgent(set(args.allow_host), args.max_steps, dry_run=args.dry_run)
+    agent = JupiterAgent(
+        set(args.allow_host),
+        args.max_steps,
+        dry_run=args.dry_run,
+        receipts=ReceiptStore(args.receipts),
+    )
     result = agent.run(args.url, profile)
     print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
     return 0 if result.status in {
-        "submitted", "ready_to_submit", "action_required"
+        "submitted", "ready_to_submit", "step_ready", "action_required",
+        "duplicate",
     } else 1
 
 

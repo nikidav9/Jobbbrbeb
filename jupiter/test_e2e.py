@@ -10,6 +10,7 @@ from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
 from engine import EngineSecurityError, JupiterWebEngine
+from submission import ReceiptStore
 from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
 
 
@@ -201,6 +202,27 @@ form.addEventListener('submit', async function(e) {
   }
 });
 """
+
+# ── Один отклик — один раз, и «двести» не значит «принято» ──────────────────
+
+DUP_APPLY_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Анкета</title>
+<form id="application-form" action="/dup-submit" method="post">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Телефон <input type="tel" name="phone" required></label>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
+
+DROP_APPLY_HTML = DUP_APPLY_HTML.replace("/dup-submit", "/drop-submit")
+
+# Двести, та же форма и ни слова о принятой заявке. Ровно так выглядит
+# молчаливый отказ на стороне работодателя.
+SILENT_REJECT_HTML = DUP_APPLY_HTML.replace("/dup-submit", "/silent-submit")
+
 
 # ── SPA: формы нет в разметке, но адрес анкеты лежит в состоянии ────────────
 
@@ -577,6 +599,9 @@ class CareersHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def do_GET(self):
+        # Отрезаем строку запроса: рекламные метки в адресе не должны делать
+        # из знакомой страницы незнакомую.
+        self.path = self.path.split("?", 1)[0]
         if self.path == "/application":
             return self._html(APPLICATION_HTML, headers={"Set-Cookie": "jt_e2e=1; Path=/"})
         if self.path == "/unknown":
@@ -614,6 +639,12 @@ class CareersHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/dup-apply":
+            return self._html(DUP_APPLY_HTML)
+        if self.path == "/drop-apply":
+            return self._html(DROP_APPLY_HTML)
+        if self.path == "/silent-apply":
+            return self._html(SILENT_REJECT_HTML)
         if self.path == "/spa-vacancy":
             return self._html(SPA_VACANCY_HTML)
         if self.path == "/spa-apply":
@@ -647,6 +678,26 @@ class CareersHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
+
+        if self.path == "/dup-submit":
+            self.server.state["dup_posts"] += 1
+            return self._html("<h1>Application received</h1><p>Спасибо за отклик.</p>")
+
+        if self.path == "/silent-submit":
+            # Двести и та же форма обратно: сервер не принял, но и не сказал.
+            self.server.state["silent_posts"] += 1
+            return self._html(SILENT_REJECT_HTML)
+
+        if self.path == "/drop-submit":
+            # Тело прочитано — значит запрос дошёл, — и связь рвётся без
+            # ответа. Исход неизвестен, и повторять POST нельзя.
+            self.server.state["drop_posts"] += 1
+            self.close_connection = True
+            try:
+                self.connection.close()
+            except OSError:
+                pass
+            return
 
         if self.path == "/wizard-next":
             self.server.state["wizard_posts"].append(self.path)
@@ -793,6 +844,9 @@ class JupiterNativeE2E(unittest.TestCase):
             "echo_body": b"",
             "wizard_posts": [],
             "wizard_final_body": b"",
+            "dup_posts": 0,
+            "drop_posts": 0,
+            "silent_posts": 0,
         }
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -816,15 +870,102 @@ class JupiterNativeE2E(unittest.TestCase):
         )
         return CandidateProfile.load(str(profile_path))
 
-    def run_path(self, path: str, *, dry_run: bool = False):
+    def run_path(
+        self,
+        path: str,
+        *,
+        dry_run: bool = False,
+        receipts=None,
+    ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             profile = self.profile(Path(tmp_dir))
-            agent = JupiterAgent({"127.0.0.1"}, dry_run=dry_run)
+            agent = JupiterAgent(
+                {"127.0.0.1"},
+                dry_run=dry_run,
+                receipts=receipts,
+            )
             result = agent.run(
                 f"http://127.0.0.1:{self.port}{path}",
                 profile,
             )
             return result, agent
+
+    # ── Безопасность отправки ───────────────────────────────────────────────
+
+    def test_the_same_application_is_not_sent_twice(self):
+        store = ReceiptStore()
+        self.server.state["dup_posts"] = 0
+        first, _ = self.run_path("/dup-apply", receipts=store)
+        self.assertEqual(first.status, "submitted", first.reason)
+
+        second, _ = self.run_path("/dup-apply", receipts=store)
+        self.assertEqual(second.status, "duplicate", second.reason)
+        self.assertEqual(second.reason_code, "DUPLICATE_BLOCKED")
+        # Главное здесь — счётчик. Повторный отклик виден человеку на той
+        # стороне и выглядит как спам.
+        self.assertEqual(self.server.state["dup_posts"], 1)
+
+    def test_campaign_link_does_not_defeat_the_duplicate_guard(self):
+        store = ReceiptStore()
+        self.server.state["dup_posts"] = 0
+        first, _ = self.run_path("/dup-apply", receipts=store)
+        self.assertEqual(first.status, "submitted", first.reason)
+
+        second, _ = self.run_path(
+            "/dup-apply?utm_source=mail&gclid=xyz", receipts=store
+        )
+        self.assertEqual(second.status, "duplicate", second.reason)
+        self.assertEqual(self.server.state["dup_posts"], 1)
+
+    def test_receipt_survives_between_runs_through_a_file(self):
+        self.server.state["dup_posts"] = 0
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = str(Path(tmp_dir) / "receipts.json")
+            first, _ = self.run_path("/dup-apply", receipts=ReceiptStore(path))
+            self.assertEqual(first.status, "submitted", first.reason)
+            # Новый ReceiptStore = новый запуск процесса.
+            second, _ = self.run_path("/dup-apply", receipts=ReceiptStore(path))
+            self.assertEqual(second.status, "duplicate", second.reason)
+        self.assertEqual(self.server.state["dup_posts"], 1)
+
+    def test_dropped_connection_is_unknown_not_failed(self):
+        store = ReceiptStore()
+        self.server.state["drop_posts"] = 0
+        result, _ = self.run_path("/drop-apply", receipts=store)
+        self.assertEqual(result.status, "submission_unknown", result.reason)
+        self.assertEqual(result.reason_code, "SUBMISSION_UNKNOWN")
+        # Ровно один POST: проверка исхода идётGET-ом, который ничего не создаёт.
+        self.assertEqual(self.server.state["drop_posts"], 1)
+        actions = [item.get("action") for item in result.trajectory]
+        self.assertIn("submission_unknown", actions)
+        self.assertNotIn("success_detected", actions)
+
+    def test_unknown_outcome_is_never_retried_with_a_post(self):
+        store = ReceiptStore()
+        self.server.state["drop_posts"] = 0
+        self.run_path("/drop-apply", receipts=store)
+        second, _ = self.run_path("/drop-apply", receipts=store)
+        self.assertEqual(second.status, "submission_unknown", second.reason)
+        self.assertEqual(second.reason_code, "SUBMISSION_UNKNOWN")
+        self.assertEqual(self.server.state["drop_posts"], 1)
+
+    def test_http_200_with_the_same_form_is_not_a_submitted_application(self):
+        self.server.state["silent_posts"] = 0
+        result, _ = self.run_path("/silent-apply")
+        self.assertNotEqual(result.status, "submitted")
+        self.assertEqual(result.reason_code, "SUCCESS_NOT_CONFIRMED")
+        self.assertEqual(self.server.state["silent_posts"], 1)
+        verdicts = [
+            item for item in result.trajectory
+            if item.get("action") == "verify_submission"
+        ]
+        self.assertTrue(verdicts)
+        self.assertFalse(verdicts[-1]["confirmed"])
+        # HTTP-ответ в доказательствах есть, но веса не имеет.
+        http = [
+            e for e in verdicts[-1]["evidence"] if e["type"] == "HTTP_RESPONSE"
+        ]
+        self.assertEqual(http[0]["confidence"], 0.0)
 
     # ── SPA: состояние страницы вместо разметки ─────────────────────────────
 
