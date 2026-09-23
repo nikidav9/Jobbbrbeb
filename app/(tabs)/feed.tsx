@@ -1152,6 +1152,10 @@ function WorkerPermMode() {
   // Описание на карточке сначала компактное, как в референсе; по нажатию
   // раскрывается прямо внутри карточки, без отдельного экрана.
   const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
+  // Отдельно запоминаем, действительно ли текст занимает больше семи строк.
+  // Проверять длину строки в символах ненадёжно: одна и та же длина на узком
+  // экране может занимать вдвое больше строк.
+  const [expandableDescriptionId, setExpandableDescriptionId] = useState<string | null>(null);
   const cardScrollRef = useRef<React.ComponentRef<typeof GHScrollView>>(null);
   const cardViewH = useRef(0);
   const cardContentH = useRef(0);
@@ -1389,6 +1393,7 @@ function WorkerPermMode() {
     cardScrollRef.current?.scrollTo({ y: 0, animated: false });
     setMoreBelow(false);
     setExpandedDescriptionId(null);
+    setExpandableDescriptionId(null);
   };
   const swFly = swDeck.flyOut;
 
@@ -1533,13 +1538,31 @@ function WorkerPermMode() {
                     {description ? (
                       <View style={pS.descriptionPanel}>
                         <Text style={pS.descriptionPanelTitle}>Описание вакансии</Text>
+
+                        {/* Невидимая копия измеряет реальное число строк без
+                            numberOfLines. Так кнопка появляется именно тогда,
+                            когда текст действительно обрезан на этом экране. */}
+                        <Text
+                          style={[pS.desc, pS.descriptionMeasure]}
+                          accessible={false}
+                          pointerEvents="none"
+                          onTextLayout={e => {
+                            if (e.nativeEvent.lines.length > 7 && expandableDescriptionId !== v.id) {
+                              setExpandableDescriptionId(v.id);
+                            }
+                          }}
+                        >
+                          {description}
+                        </Text>
+
                         <Text
                           style={pS.desc}
                           numberOfLines={expandedDescriptionId === v.id ? undefined : 7}
                         >
                           {description}
                         </Text>
-                        {description.length > 260 ? (
+
+                        {(expandableDescriptionId === v.id || expandedDescriptionId === v.id) ? (
                           <TouchableOpacity
                             style={pS.descriptionToggle}
                             activeOpacity={0.78}
@@ -2361,6 +2384,13 @@ const pS = StyleSheet.create({
     lineHeight: rf(20),
     fontWeight: '800',
     color: Colors.textPrimary,
+  },
+  descriptionMeasure: {
+    position: 'absolute',
+    left: rs(16),
+    right: rs(16),
+    top: rs(46),
+    opacity: 0,
   },
   descriptionToggle: {
     minHeight: rs(40),
