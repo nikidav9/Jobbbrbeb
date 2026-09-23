@@ -107,9 +107,41 @@ Every transition is logged on the task with its timestamp and attempt number.
 A task parked for a human keeps its `resume_token`, and the worker continues
 from it rather than starting over.
 
-**Not in this layer yet:** the production `application` table and the swipe →
-queue wiring in the app. That touches the live database and deploys on merge,
-so it is a separate change rather than part of a batch.
+## Remote task queue: server database as the source
+
+`remote_tasks.py` provides `RemoteTaskQueue`, an HTTP bridge between the
+server's `jm_jupiter_applications` table and `worker.run_once`. It implements
+the same `TaskQueueProto` protocol as the local `TaskQueue` — lease, checkpoint,
+finish, fail — but every call is an RPC to `db.php` with `X-Admin-Token`.
+
+`run_worker.py` is the entry point that connects the two:
+
+```bash
+JOBTOO_URL=https://jobtoo.ru \
+JOBTOO_ADMIN_TOKEN=secret \
+JUPITER_PROFILE=./candidate.json \
+python3 run_worker.py
+```
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `JOBTOO_URL` | yes | — | Server base URL |
+| `JOBTOO_ADMIN_TOKEN` or `ADMIN_API_TOKEN` | yes | — | Admin token for RPC |
+| `JUPITER_PROFILE` | yes | — | Path to candidate profile JSON |
+| `JUPITER_WORKER_ID` | no | `jupiter-<hostname>` | Worker identifier |
+| `JUPITER_POLL_INTERVAL` | no | 30 | Seconds between polls when queue is empty |
+| `JUPITER_MAX_STEPS` | no | 30 | Max agent steps per task |
+| `JUPITER_DRY_RUN` | no | false | Fill forms but never submit |
+| `JUPITER_RECEIPTS` | no | — | Path to receipts journal file |
+| `JUPITER_HANDOFFS` | no | — | Path to handoff state file |
+| `JUPITER_LEASE_SECONDS` | no | 300 | Lease duration in seconds |
+
+The process stops gracefully on SIGTERM/SIGINT — the current task is completed
+before exit.
+
+On the server, `bootstrap.sh` creates the `jt-jupiter.service` systemd unit
+(disabled by default — enable after placing the candidate profile at
+`/var/lib/jupiter/profile.json`).
 
 ## Human handoff that can be resumed
 
@@ -368,6 +400,8 @@ python test_submission.py
 python test_candidate.py
 python test_handoff.py
 python test_tasks.py
+python test_remote_tasks.py
+python test_run_worker.py
 python test_policy.py
 python test_e2e.py
 ```
