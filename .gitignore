@@ -65,3 +65,9 @@ php-proxy/deploy_token.php
 php-proxy/studio_credentials.php
 php-proxy/gh_token.php
 php-proxy/backup_s3.php
+
+# Ключ шифрования пуш-токенов. Его создаёт сам сервер при первом запуске
+# push_privacy.php — в том числе когда db.php подключают локально. Файл
+# секретный и машинный: в репозиторий ему нельзя, а попасть туда он может
+# незаметно, одним `git add -A`.
+php-proxy/push_token_key.php

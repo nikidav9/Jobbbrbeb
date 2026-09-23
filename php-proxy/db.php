@@ -174,6 +174,10 @@ $adminFns = [
     // проглатывается пустым catch.
     'tgNotifyUser', 'sendPushNotification', 'tgNotifyNewApplication',
     'dbGetPushToken', 'dbSaveNotification',
+    // Воркер Jupiter. Ходит с админским токеном, а не от имени человека:
+    // он берёт чужие задачи по очереди, и подставлять сюда пользовательскую
+    // сессию значило бы дать одному человеку доступ к заявкам другого.
+    'jupiterLease', 'jupiterHeartbeat', 'jupiterFinish',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -263,6 +267,8 @@ $selfArgFns = [
     'dbRecordVacancyView' => 1, 'dbRecordPermVacancyView' => 1,
     'dbRemoveLike' => 1,
     'dbApplyPermVacancy' => 1,
+    // Заявки Jupiter: человек видит и ставит в очередь только свои.
+    'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -469,6 +475,41 @@ function uid(): string {
 
 function jt_new_user_id_is_valid(string $id): bool {
     return preg_match('~\A[a-z0-9]{8,32}\z~', $id) === 1;
+}
+
+/**
+ * Адрес вакансии без рекламных меток, якоря и регистра хоста.
+ *
+ * По нему считается повтор. Та же вакансия из рассылки и из ленты отличается
+ * только метками — и без нормализации была бы новой заявкой, то есть вторым
+ * откликом одному работодателю.
+ */
+function jupiter_canonical_url(string $url): string
+{
+    $parts = @parse_url(trim($url));
+    if (!$parts || empty($parts['host'])) return '';
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    if (!in_array($scheme, ['http', 'https'], true)) return '';
+    $drop = [
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        'utm_referrer', 'gclid', 'yclid', 'fbclid', 'ysclid', '_openstat',
+        'from', 'ref', 'referrer', 'source',
+    ];
+    $query = [];
+    if (!empty($parts['query'])) {
+        parse_str($parts['query'], $query);
+        foreach (array_keys($query) as $key) {
+            if (in_array(strtolower((string)$key), $drop, true)) unset($query[$key]);
+        }
+        ksort($query);
+    }
+    $path = rtrim((string)($parts['path'] ?? ''), '/');
+    if ($path === '') $path = '/';
+    $out = $scheme . '://' . strtolower((string)$parts['host']);
+    if (!empty($parts['port'])) $out .= ':' . (int)$parts['port'];
+    $out .= $path;
+    if ($query) $out .= '?' . http_build_query($query);
+    return mb_substr($out, 0, 2048);
 }
 
 function now_iso(): string {
@@ -5959,6 +6000,126 @@ try {
 
         case 'dbGetPermApplicationsForVacancy':
             $data = sb_select('jm_perm_applications', ['vacancy_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;
+
+        // ── Заявки Jupiter на внешних сайтах ─────────────────────────────
+        //
+        // Отклик внутри JobToo (dbApplyPermVacancy) и заявка Jupiter — разные
+        // вещи. Первый решает работодатель у нас, вторая живёт на чужом сайте
+        // и проходит фоновым прогоном. Общего у них только слово «отклик».
+
+        // Поставить вакансию в очередь. Повтор не ошибка: человек мог нажать
+        // дважды, и правильный ответ — отдать ту же заявку, а не завести
+        // вторую. От гонки двух запросов защищает уникальный индекс в базе,
+        // а не эта проверка.
+        case 'jupiterEnqueue': {
+            $uidArg = (string)($args[0] ?? '');
+            $url = trim((string)($args[1] ?? ''));
+            $company = trim((string)($args[2] ?? ''));
+            if ($url === '') { jt_respond(['error' => 'Нужен адрес вакансии'], 400); exit; }
+            $canonical = jupiter_canonical_url($url);
+            if ($canonical === '') {
+                jt_respond(['error' => 'Адрес вакансии не похож на ссылку'], 400); exit;
+            }
+            $existing = sb_single('jm_jupiter_applications', [
+                'user_id' => 'eq.' . $uidArg,
+                'canonical_url' => 'eq.' . $canonical,
+            ]);
+            if ($existing) { jt_respond($existing); exit; }
+            $row = [
+                'id' => uid(),
+                'user_id' => $uidArg,
+                'vacancy_url' => mb_substr($url, 0, 2048),
+                'canonical_url' => $canonical,
+                'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
+                'state' => 'queued',
+                'created_at' => now_iso(),
+                'updated_at' => now_iso(),
+            ];
+            sb_upsert('jm_jupiter_applications', $row, 'user_id,canonical_url');
+            jt_respond($row); exit;
+        }
+
+        case 'jupiterMyApplications': {
+            jt_respond(sb_select(
+                'jm_jupiter_applications',
+                ['user_id' => 'eq.' . (string)($args[0] ?? '')],
+                'id,vacancy_url,company,state,reason_code,resume_token,'
+                . 'external_application_id,created_at,updated_at,submitted_at,verified_at',
+                'created_at.desc'
+            )); exit;
+        }
+
+        // Воркер берёт задачу. Аренда, а не «пометил и забыл»: воркер может
+        // умереть, и тогда задача должна вернуться, но не раньше срока —
+        // иначе за неё возьмутся двое и работодатель получит два отклика.
+        case 'jupiterLease': {
+            $worker = trim((string)($args[0] ?? ''));
+            $leaseSeconds = (int)($args[1] ?? 300);
+            if ($worker === '') { jt_respond(['error' => 'Нужен идентификатор воркера'], 400); exit; }
+            $leaseSeconds = max(30, min(3600, $leaseSeconds));
+            $task = sb_rpc('jupiter_lease_task', [
+                'p_worker' => $worker,
+                'p_lease_seconds' => $leaseSeconds,
+            ]);
+            jt_respond($task ?: null); exit;
+        }
+
+        case 'jupiterHeartbeat': {
+            $id = (string)($args[0] ?? '');
+            $worker = (string)($args[1] ?? '');
+            $leaseSeconds = max(30, min(3600, (int)($args[2] ?? 300)));
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id], 'lease_owner');
+            // Продлить аренду может только тот, кто её держит. Иначе чужой
+            // воркер способен вечно держать задачу за живым владельцем.
+            if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
+                jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
+            }
+            sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], [
+                'heartbeat_at' => now_iso(),
+                'lease_until' => gmdate('c', time() + $leaseSeconds),
+                'updated_at' => now_iso(),
+            ]);
+            jt_respond(['ok' => true]); exit;
+        }
+
+        case 'jupiterFinish': {
+            $id = (string)($args[0] ?? '');
+            $worker = (string)($args[1] ?? '');
+            $state = (string)($args[2] ?? '');
+            $extra = is_array($args[3] ?? null) ? $args[3] : [];
+            $allowed = [
+                'queued', 'ready_to_submit', 'submitted', 'action_required',
+                'submission_unknown', 'duplicate', 'retryable_failed', 'failed',
+            ];
+            if (!in_array($state, $allowed, true)) {
+                jt_respond(['error' => 'Unknown state'], 400); exit;
+            }
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id], 'lease_owner');
+            if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
+                jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
+            }
+            $patch = [
+                'state' => $state,
+                'lease_owner' => null,
+                'lease_until' => null,
+                'updated_at' => now_iso(),
+            ];
+            // Белый список полей: воркер не должен уметь переписать чужой
+            // user_id или подменить адрес вакансии задним числом.
+            foreach ([
+                'reason_code', 'resume_token', 'receipt_key',
+                'external_application_id', 'last_error', 'not_before',
+                'checkpoint', 'attempt_count',
+            ] as $key) {
+                if (array_key_exists($key, $extra)) $patch[$key] = $extra[$key];
+            }
+            if ($state === 'submitted') $patch['submitted_at'] = now_iso();
+            if ($state === 'submitted' && !empty($extra['verified'])) {
+                $patch['verified_at'] = now_iso();
+            }
+            sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
+            jt_respond(['ok' => true]); exit;
+        }
 
         case 'dbApplyPermVacancy': {
             [$vid, $wid, $eid, $sm] = [$args[0], $args[1], $args[2], $args[3] ?? null];
