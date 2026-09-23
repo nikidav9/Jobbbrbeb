@@ -33,18 +33,18 @@ check('jupiterMyApplications проверяет владельца',
 // сессией значило бы дать одному человеку доступ к заявкам другого.
 $adminBlock = substr($db, strpos($db, '$adminFns = ['),
     strpos($db, '];', strpos($db, '$adminFns = [')) - strpos($db, '$adminFns = ['));
-foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterFinish'] as $fn) {
+foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish'] as $fn) {
     check("$fn в списке админских", str_contains($adminBlock, "'$fn'"));
 }
 $selfBlock = substr($db, strpos($db, '$selfArgFns = ['),
     strpos($db, '];', strpos($db, '$selfArgFns = [')) - strpos($db, '$selfArgFns = ['));
-foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterFinish'] as $fn) {
+foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish'] as $fn) {
     check("$fn НЕ выдаётся по пользовательской сессии",
         !str_contains($selfBlock, "'$fn'"));
 }
 
 // Аренду продлевает и закрывает только тот воркер, который её держит.
-foreach (['jupiterHeartbeat', 'jupiterFinish'] as $fn) {
+foreach (['jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish'] as $fn) {
     $start = strpos($db, "case '$fn':");
     $body = $start !== false ? substr($db, $start, 1800) : '';
     check("$fn сверяет владельца аренды",

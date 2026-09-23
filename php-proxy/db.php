@@ -177,7 +177,7 @@ $adminFns = [
     // Воркер Jupiter. Ходит с админским токеном, а не от имени человека:
     // он берёт чужие задачи по очереди, и подставлять сюда пользовательскую
     // сессию значило бы дать одному человеку доступ к заявкам другого.
-    'jupiterLease', 'jupiterHeartbeat', 'jupiterFinish',
+    'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -6084,6 +6084,25 @@ try {
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], [
                 'heartbeat_at' => now_iso(),
                 'lease_until' => gmdate('c', time() + $leaseSeconds),
+                'updated_at' => now_iso(),
+            ]);
+            jt_respond(['ok' => true]); exit;
+        }
+
+        case 'jupiterCheckpoint': {
+            $id = (string)($args[0] ?? '');
+            $worker = (string)($args[1] ?? '');
+            $state = (string)($args[2] ?? '');
+            $data = is_array($args[3] ?? null) ? $args[3] : [];
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id], 'lease_owner');
+            if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
+                jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
+            }
+            sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], [
+                'state' => $state,
+                'checkpoint' => json_encode($data),
+                'heartbeat_at' => now_iso(),
+                'lease_until' => gmdate('c', time() + max(30, min(3600, (int)($args[4] ?? 300)))),
                 'updated_at' => now_iso(),
             ]);
             jt_respond(['ok' => true]); exit;
