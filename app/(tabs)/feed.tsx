@@ -18,7 +18,7 @@ import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
 import { DAILY_ENERGY } from '@/services/energy';
-import { User, PermVacancy, ExtVacancy } from '@/constants/types';
+import { User, PermVacancy, ExtVacancy, WorkType } from '@/constants/types';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
@@ -1296,12 +1296,12 @@ function WorkerPermMode() {
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
 
-  const feedCards: FeedCard[] = useMemo(() => {
+  const feedCards: FeedCard[] = (() => {
     const own: FeedCard[] = openVacancies.map(v => ({ _ext: false as const, v }));
     if (!showCareer) return own;
     const ext: FeedCard[] = careerVacancies.map(v => ({ _ext: true as const, v }));
     return [...own, ...ext];
-  }, [openVacancies, showCareer, careerVacancies]);
+  })();
 
   const applyToExt = async (ev: ExtVacancy) => {
     if (!currentUser) return;
@@ -1717,8 +1717,8 @@ function WorkerPermMode() {
     const salary = typeof ev.salary === 'number' ? ev.salary : 0;
     const schedule = ev.schedule;
     const workTypeRaw = ev.workType;
-    const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw]?.label ?? workTypeRaw) : undefined;
-    const description = cleanDescription(ev.description);
+    const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw as WorkType]?.label ?? workTypeRaw) : undefined;
+    const description = cleanDescription(ev.description ?? undefined);
     const metroLine = ev.metroStation
       ? METRO_LINES.find(l => l.stations.includes(ev.metroStation!)) ?? null
       : null;
@@ -1855,7 +1855,6 @@ function WorkerPermMode() {
 
   return (
     <View style={{ flex: 1 }}>
-      {isGuest && (
       {isGuest && (
         <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister({ vacancyKind: 'permanent' })}>
           <Ionicons name="lock-closed" size={rs(15)} color="#fff" />
