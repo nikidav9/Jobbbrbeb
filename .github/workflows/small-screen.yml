@@ -67,8 +67,13 @@ jobs:
           EXPO_PUBLIC_DASHBOARD_URL: https://example.invalid
         run: npx expo export --platform web --max-workers 2
 
+      # Флаг нужен, чтобы сторож импортировал настоящий constants/legal.ts:
+      # штамп согласия должен приезжать из кода, а не копией в скрипте.
       - name: Check rendered narrow layouts
-        run: node scripts/check-small-screens.mjs
+        run: >-
+          node --experimental-strip-types
+          --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+          scripts/check-small-screens.mjs
 
       - name: Upload failure screenshots
         if: failure()

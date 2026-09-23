@@ -11,6 +11,9 @@
  * их как artifact, чтобы было видно, что именно вылезло за экран.
  */
 import { chromium } from 'playwright';
+// Штамп действующей редакции документов. Импорт, а не копия: копия разойдётся
+// при следующем поднятии версии, и сторож снова ослепнет молча.
+import { LEGAL_STAMP } from '../constants/legal.ts';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -117,8 +120,21 @@ function toAppUser(r) {
   };
 }
 
+// Кто «вошёл» в текущей проверке. Ставится перед открытием экрана.
+let CURRENT = null;
+
 function dbResponse(fn, args) {
   switch (fn) {
+    // Приложение проверяет сессию на сервере (AppContext → dbRestoreSession →
+    // dbSession). Без ответа сторож видел экран выбора роли вместо ленты,
+    // откликов, чата и профиля — и был зелёным, ничего не проверяя.
+    case 'dbSession': return CURRENT ? { user: CURRENT } : null;
+    // То же про документы: ConsentGate иначе закрывает экран окном
+    // «Примите документы».
+    case 'dbGetConsent':
+      return CURRENT
+        ? { stamp: LEGAL_STAMP, docs: {}, source: 'small-screen', accepted_at: iso(now) }
+        : null;
     case 'dbCheckPhoneExists': return false;
     case 'dbGetUsers': return [worker, employer];
     case 'dbGetUserById': return [worker, employer].find(u => u.id === args?.[0]) ?? null;
@@ -214,12 +230,17 @@ async function inspectLayout(page) {
         });
       }
     }
+    // Что вообще нарисовано. Нужно, чтобы отличить «экран узкий и в порядке»
+    // от «экран не тот»: сторож измеряет ширину чего угодно и на подменённом
+    // экране остаётся зелёным.
+    const text = (body?.innerText || '').slice(0, 4000);
     return {
       viewport: window.innerWidth,
       htmlScrollWidth: html?.scrollWidth || 0,
       bodyScrollWidth: body?.scrollWidth || 0,
       overflow: Math.round(overflow),
       clippedFixed,
+      text,
     };
   }, TOLERANCE);
 }
@@ -232,6 +253,7 @@ const checked = [];
 try {
   for (const width of WIDTHS) {
     for (const screen of screens) {
+      CURRENT = screen.who ?? null;
       const context = await browser.newContext({
         viewport: { width, height: HEIGHT },
         locale: 'ru-RU', timezoneId: 'Europe/Moscow', deviceScaleFactor: 1,
@@ -255,8 +277,13 @@ try {
       if (screen.who) {
         await page.addInitScript(user => {
           localStorage.setItem('jm_currentUser', JSON.stringify(user));
+          // На вебе токен лежит в AsyncStorage, то есть в обычном localStorage:
+          // SecureStore включается только на телефоне. Без токена
+          // dbRestoreSession возвращает null, не дойдя до сервера.
+          localStorage.setItem('jm_session_token', 'small-screen-token');
           localStorage.setItem(`jm_onboarding_v3_${user.id}`, JSON.stringify({ status: 'done', step: 999 }));
           localStorage.setItem('jm_notif_prompt_choice', 'enabled');
+          localStorage.setItem('jm_complete_profile_prompt_v1', '1');
         }, toAppUser(screen.who));
       }
 
@@ -270,8 +297,29 @@ try {
         await page.waitForTimeout(700);
 
         const layout = await inspectLayout(page);
+
+        // Экран вошедшего обязан быть экраном вошедшего.
+        //
+        // С середины сентября сторож этого не проверял и мерил ширину экрана
+        // выбора роли вместо ленты, откликов, чата и профиля: приложение стало
+        // проверять сессию на сервере, заглушка про это не знала, и вход молча
+        // отваливался. Проверка была зелёной и не значила ничего.
+        //
+        // Поэтому теперь это не измерение, а условие: увидели на экране
+        // вошедшего приглашение выбрать роль или окно про документы — значит
+        // сломалась сама проверка, и молчать об этом нельзя.
+        const wrongScreen = screen.who && /Ищу работу|Ищу работника|Примите документы/.test(layout.text);
+        delete layout.text;
         checked.push({ key, ...layout });
-        if (layout.overflow > TOLERANCE || layout.clippedFixed.length) {
+        if (wrongScreen) {
+          const png = path.join(OUT, `${key}.png`);
+          await page.screenshot({ path: png, fullPage: true });
+          failures.push({
+            key,
+            error: 'вход не сработал: показан выбор роли или окно согласия, а не экран приложения',
+            screenshot: png,
+          });
+        } else if (layout.overflow > TOLERANCE || layout.clippedFixed.length) {
           const png = path.join(OUT, `${key}.png`);
           await page.screenshot({ path: png, fullPage: true });
           failures.push({ key, ...layout, screenshot: png });
