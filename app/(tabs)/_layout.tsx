@@ -64,7 +64,7 @@ function FloatingTabBar({
         style={[fS.bottomFade, { height: safeBottom + rs(145) }]}
       />
       {/* Shadow sits on top of the fade. The page stays visible behind both. */}
-    <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
+      <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
       {/* Inner: clips blur to rounded shape */}
       <View style={fS.pillClip}>
         {/* Frosted glass background */}
@@ -205,6 +205,8 @@ export default function TabLayout() {
         ? Colors.bgWarm
         : activeRoute === 'profile' ? Colors.outerBg : Colors.bg,
     }}>
+      {/* Keep the navigator free of a tab-bar footer so cards and text can
+          continue to the screen edge. The floating bar is a sibling overlay. */}
       <Tabs
         initialRouteName="feed"
         screenOptions={{
@@ -223,9 +225,6 @@ export default function TabLayout() {
           tabBarBackground: () => null,
           tabBarShowLabel: false,
         }}
-        // Rendering no bar here makes the navigator's scenes fill the whole
-        // viewport. A custom bar inside Tabs still reserved the iOS bottom
-        // safe-area strip, abruptly clipping cards and text above the edge.
         tabBar={() => null}
       >
         <Tabs.Screen name="feed" options={{ tabBarIcon: () => null }} />
