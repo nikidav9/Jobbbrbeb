@@ -6,13 +6,22 @@
 // приложение: те же компоненты, цвета, шрифты и отступы, что у людей.
 //
 //   npx expo export -p web --output-dir .figma-export
-//   node scripts/shoot-screens.mjs
+//   node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+//        scripts/shoot-screens.mjs
+//
+// Флаг нужен, чтобы импортировать настоящий constants/legal.ts: штамп согласия
+// должен приезжать из кода, а не переписываться сюда руками. Переписанный
+// однажды разойдётся с документами, и снимки молча станут окном «Примите
+// документы» — ровно так уже случилось с сессией.
 //
 // Результат: docs/screens/*.png
 
 // playwright стоит глобально, а не в зависимостях проекта — берём по пути
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import http from 'node:http';
+// Штамп действующей редакции документов. Не копия и не константа: ConsentGate
+// сравнивает ответ сервера именно с этим значением.
+import { LEGAL_STAMP } from '../constants/legal.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -126,8 +135,22 @@ const RATINGS = [{
 }];
 
 // Ответ на любой вызов прокси
+// Кто «вошёл» в текущем снимке. Приложение с осени проверяет сессию на
+// сервере (AppContext → dbRestoreSession → dbSession): кэш профиля в
+// localStorage входом больше не считается. Без ответа на dbSession снимок
+// выходил экраном выбора роли — и так вышли ВСЕ 35 снимков, потому что
+// заглушка про эту функцию не знала.
+let CURRENT = null;
+
 function respond(fn, args) {
   switch (fn) {
+    case 'dbSession': return CURRENT ? { user: CURRENT } : null;
+    // Согласие принято текущей редакцией: иначе ConsentGate закрывает экран
+    // окном «Примите документы», и снимок показывает его, а не приложение.
+    case 'dbGetConsent':
+      return CURRENT
+        ? { stamp: LEGAL_STAMP, docs: {}, source: 'screenshot', accepted_at: iso(NOW) }
+        : null;
     case 'dbGetUsers': return USERS;
     case 'dbCheckPhoneExists': return false;
     case 'dbGetUserById': return USERS.find(u => u.id === args?.[0]) ?? null;
@@ -376,14 +399,23 @@ for (const shot of SHOTS) {
   });
 
   const page = await ctx.newPage();
+  CURRENT = null;
   if (shot.who) {
+    CURRENT = shot.who;
     await page.addInitScript((u) => {
       try {
         window.localStorage.setItem('jm_currentUser', JSON.stringify(u));
+        // На вебе токен лежит в AsyncStorage (то есть в обычном localStorage):
+        // SecureStore включается только на телефоне. Без токена
+        // dbRestoreSession возвращает null, не дойдя до сервера.
+        window.localStorage.setItem('jm_session_token', 'shot-token');
         // Обучалка и предложение включить уведомления перекрывают экран —
         // помечаем пройденными, снимок должен показывать сам интерфейс
         window.localStorage.setItem(`jm_onboarding_v3_${u.id}`, JSON.stringify({ status: 'done', step: 999 }));
         window.localStorage.setItem('jm_notif_prompt_choice', 'enabled');
+        // «Заполните профиль до конца» — та же история, что обучалка: окно
+        // поверх экрана, помечаем показанным.
+        window.localStorage.setItem('jm_complete_profile_prompt_v1', '1');
       } catch {}
     }, toAppUser(shot.who));
   }

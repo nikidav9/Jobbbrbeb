@@ -42,7 +42,7 @@ import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
-import { ReplyBadge } from '@/components/feature/ReplyBadge';
+import { ReplyBadge, hasReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -1522,10 +1522,17 @@ function WorkerPermMode() {
                   </View>
 
                   {/* Репутация работодателя остаётся до отклика — это важная
-                      информация для решения, но визуально она отделена от шапки. */}
-                  <View style={styles.replyBadgeWrap}>
-                    <ReplyBadge stats={responsivenessMap[v.employerId]} />
-                  </View>
+                      информация для решения, но визуально она отделена от шапки.
+
+                      Обёртка условна: ReplyBadge ничего не рисует, когда
+                      переписок меньше двух, а отступы вокруг неё оставались
+                      всегда — и у работодателя без переписок в карточке зияли
+                      42 пикселя пустоты. */}
+                  {hasReplyBadge(responsivenessMap[v.employerId]) ? (
+                    <View style={styles.replyBadgeWrap}>
+                      <ReplyBadge stats={responsivenessMap[v.employerId]} />
+                    </View>
+                  ) : null}
 
                   <View style={styles.cardDivider} />
 
