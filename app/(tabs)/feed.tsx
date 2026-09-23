@@ -1435,9 +1435,10 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
-  // Нижнюю часть уплотняем: действия стоят ближе к плавающему таббару,
-  // а карточка тянется ниже и забирает пустоту между ними.
-  const deckActionGap = rs(4);
+  // Опускаем ряд ✕ / фильтр / ♥ ещё ниже, ближе к плавающему таббару.
+  // Резерв карточки считается от той же координаты, поэтому её видимая высота
+  // увеличивается ровно на столько же и снизу не появляется новая пустота.
+  const deckActionGap = rs(-6);
   const deckCardGap = rs(8);
   const deckActionSize = rs(68);
   const deckActionBottom = tabBarHeight + deckActionGap;
