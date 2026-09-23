@@ -65,8 +65,11 @@ $chipsAt = strpos($body, '<View style={styles.chipsRow}>');
 check('плашка внутри тела карточки', $badgeAt !== false);
 check('плашка стоит после чипов',
     $badgeAt !== false && $chipsAt !== false && $chipsAt < $badgeAt);
-check('плашка стоит до разделителя',
-    $badgeAt !== false && $dividerAt !== false && $badgeAt < $dividerAt);
+// Перенесено из #193: редизайн карточки убрал разделитель из тела, и
+// проверка требовала не порядка, а наличия разделителя. Смысл — «предупредить
+// до решения» — держат соседние проверки: после чипов и ДО описания.
+check('плашка стоит до разделителя, если он есть',
+    $badgeAt !== false && ($dividerAt === false || $badgeAt < $dividerAt));
 check('плашка стоит до описания вакансии',
     $badgeAt !== false && $descAt !== false && $badgeAt < $descAt);
 

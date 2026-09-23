@@ -1149,6 +1149,9 @@ function WorkerPermMode() {
   const [limitOpen, setLimitOpen] = useState(false);
   // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
   const [moreBelow, setMoreBelow] = useState(false);
+  // Описание на карточке сначала компактное, как в референсе; по нажатию
+  // раскрывается прямо внутри карточки, без отдельного экрана.
+  const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
   const cardScrollRef = useRef<React.ComponentRef<typeof GHScrollView>>(null);
   const cardViewH = useRef(0);
   const cardContentH = useRef(0);
@@ -1385,6 +1388,7 @@ function WorkerPermMode() {
   const resetCardScroll = () => {
     cardScrollRef.current?.scrollTo({ y: 0, animated: false });
     setMoreBelow(false);
+    setExpandedDescriptionId(null);
   };
   const swFly = swDeck.flyOut;
 
@@ -1493,22 +1497,20 @@ function WorkerPermMode() {
                     после прокрутки и уводило со страницы. */}
                 <View style={styles.cardBody}>
                   <View style={styles.cardTop}>
-                    <View style={styles.companyRow}>
-                      <CompanyMark company={v.company} size={34} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text
-                          style={styles.companyName}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                        >
-                          {displayCompany}
-                        </Text>
-                        {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
-                      </View>
+                    {/* Верх карточки — как в референсе: отдельный знак компании,
+                        справа служебные кнопки, ниже крупная должность и компания. */}
+                    <View style={styles.cardLogoRow}>
+                      <CompanyMark company={v.company} size={52} />
                       <View style={pS.deckUtilitySpacer} />
                     </View>
 
                     <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
+
+                    <View style={styles.companyMetaLine}>
+                      <Ionicons name="business-outline" size={15} color={Colors.textMuted} />
+                      <Text style={styles.companyName} numberOfLines={1}>{displayCompany}</Text>
+                      {posted ? <Text style={styles.postedAgo}>· {posted}</Text> : null}
+                    </View>
 
                     <View style={styles.chipsRow}>
                       {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/мес`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
@@ -1519,18 +1521,48 @@ function WorkerPermMode() {
                     </View>
                   </View>
 
-                  {/* Как отвечает этот работодатель — до отклика, а не после.
-                      Раньше плашка стояла на карточке смены; смен больше нет,
-                      а решение как принималось свайпом, так и принимается. */}
+                  {/* Репутация работодателя остаётся до отклика — это важная
+                      информация для решения, но визуально она отделена от шапки.
+
+                      Обёртка условна: ReplyBadge ничего не рисует, когда
+                      переписок меньше двух, а отступы вокруг неё оставались
+                      всегда — и у работодателя без переписок в карточке зияли
+                      42 пикселя пустоты. */}
                   {hasReplyBadge(responsivenessMap[v.employerId]) ? (
                     <View style={styles.replyBadgeWrap}>
                       <ReplyBadge stats={responsivenessMap[v.employerId]} />
                     </View>
                   ) : null}
 
-                  <View style={styles.cardDivider} />
-
                   <View style={styles.cardMiddle}>
+                    {description ? (
+                      <View style={pS.descriptionPanel}>
+                        <Text style={pS.descriptionPanelTitle}>Описание вакансии</Text>
+                        <Text
+                          style={pS.desc}
+                          numberOfLines={expandedDescriptionId === v.id ? undefined : 7}
+                        >
+                          {description}
+                        </Text>
+                        {description.length > 260 ? (
+                          <TouchableOpacity
+                            style={pS.descriptionToggle}
+                            activeOpacity={0.78}
+                            onPress={() => setExpandedDescriptionId(id => id === v.id ? null : v.id)}
+                          >
+                            <Text style={pS.descriptionToggleText}>
+                              {expandedDescriptionId === v.id ? 'Свернуть' : 'Читать далее'}
+                            </Text>
+                            <Ionicons
+                              name={expandedDescriptionId === v.id ? 'chevron-up' : 'chevron-down'}
+                              size={16}
+                              color={Colors.primary}
+                            />
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    ) : null}
+
                     {(v.metroStation || v.address) ? (
                       <View style={pS.sectionBlock}>
                         <View style={pS.blockHead}>
@@ -1556,8 +1588,6 @@ function WorkerPermMode() {
                             <Text style={[pS.locValue, { flex: 1 }]}>{v.address}</Text>
                           </View>
                         ) : null}
-                        {/* Маршрут до точки. Откуда ехать, Яндекс подставит сам
-                            по геопозиции — своего разрешения на неё не просим. */}
                         {v.lat != null && v.lng != null ? (
                           <TouchableOpacity
                             style={pS.mapBtn}
@@ -1573,16 +1603,6 @@ function WorkerPermMode() {
                         ) : null}
                       </View>
                     ) : null}
-
-                    <View style={pS.sectionBlock}>
-                      {description ? (
-                        <View style={pS.blockHead}>
-                          <Ionicons name="document-text-outline" size={16} color={Colors.textPrimary} />
-                          <Text style={pS.descTitle}>Описание вакансии</Text>
-                        </View>
-                      ) : null}
-                      {description ? <Text style={pS.desc}>{description}</Text> : null}
-                    </View>
                   </View>
                 </View>
               </View>
@@ -2256,9 +2276,9 @@ const pS = StyleSheet.create({
   limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
   limitClose: { paddingVertical: rs(8) },
   limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
-  deckUtilitySpacer: { width: rs(94), height: rs(48), flexShrink: 0 },
+  deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
   deckUtilityOverlay: {
-    position: 'absolute', top: rs(16), right: rs(10), zIndex: 30, elevation: 30,
+    position: 'absolute', top: rs(18), right: rs(13), zIndex: 30, elevation: 30,
     flexDirection: 'row', alignItems: 'center', gap: rs(2),
   },
   deckUtilityTap: {
@@ -2329,11 +2349,41 @@ const pS = StyleSheet.create({
   // schedule row
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
-  // desc
-  // marginBottom убран намеренно: он складывался с gap контейнера, и между
-  // секциями выходило 26 при 8 внутри секции. Промежуток задаёт cardMiddle,
-  // в одном месте.
-  sectionBlock: { gap: rs(8) },
+  // desc / location
+  sectionBlock: { gap: rs(8), marginBottom: rs(13) },
+  descriptionPanel: {
+    borderWidth: 1,
+    borderColor: '#E8E9ED',
+    borderRadius: rs(19),
+    backgroundColor: '#FBFBFC',
+    paddingHorizontal: rs(16),
+    paddingTop: rs(16),
+    paddingBottom: rs(13),
+    gap: rs(10),
+  },
+  descriptionPanelTitle: {
+    fontSize: rf(15),
+    lineHeight: rf(20),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  descriptionToggle: {
+    minHeight: rs(40),
+    marginTop: rs(2),
+    borderRadius: rs(100),
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1,
+    borderColor: '#FFD7C4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: rs(6),
+  },
+  descriptionToggleText: {
+    fontSize: rf(13),
+    fontWeight: '800',
+    color: Colors.primary,
+  },
   blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
   locRow: {
@@ -2348,7 +2398,7 @@ const pS = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(13), paddingVertical: rs(13),
   },
   mapBtnTxt: { fontSize: rf(14.5), fontWeight: '700', color: Colors.primary },
-  desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(21) },
+  desc: { fontSize: rf(13.5), color: Colors.textSecondary, lineHeight: rf(21) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -2448,10 +2498,19 @@ const styles = StyleSheet.create({
   ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0 },
   // Скругление принадлежит viewport, а не прокручиваемому содержимому.
   // Поэтому верх и низ карточки остаются закруглёнными на любой позиции скролла.
-  cardViewportShell: { flex: 1, borderRadius: Radius.card },
-  cardViewportClip: {
-    flex: 1, borderRadius: Radius.card, overflow: 'hidden',
+  cardViewportShell: {
+    flex: 1,
+    borderRadius: rs(24),
     backgroundColor: Colors.bg,
+    ...Shadow.card,
+  },
+  cardViewportClip: {
+    flex: 1,
+    borderRadius: rs(24),
+    overflow: 'hidden',
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: '#E3E5E9',
   },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
@@ -2459,34 +2518,29 @@ const styles = StyleSheet.create({
   // Тело занимает карточку целиком, чтобы фон и разделители шли до краёв.
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
-  postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(5) },
+  postedAgo: { fontSize: rf(12), fontWeight: '500', color: Colors.textMuted, flexShrink: 0 },
   card: { flexGrow: 1, backgroundColor: Colors.bg },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  // Сетка карточки вакансии — один шаг на все блоки, а не три разных.
-  // 21 — поля карточки и промежуток между секциями, 13 — внутри верхнего
-  // блока (работодатель → должность → чипы), 8 — внутри секции. Числа
-  // соседние по Фибоначчи: следующий шаг всегда заметно больше предыдущего,
-  // поэтому вложенность читается без разделителей.
-  cardTop: { padding: rs(21), gap: rs(13) },
+  cardTop: { paddingHorizontal: rs(21), paddingTop: rs(20), paddingBottom: rs(14), gap: rs(13) },
+  cardLogoRow: { minHeight: rs(52), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
+  companyMetaLine: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: 0 },
   cardHeadSpacer: { height: rs(2) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarImg: { width: rs(44), height: rs(44), borderRadius: rs(22), flexShrink: 0 },
   avatarText: { fontSize: rf(17), fontWeight: '700', color: '#fff' },
-  companyName: { flexShrink: 1, fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
+  companyName: { flexShrink: 1, fontSize: rf(13.5), fontWeight: '600', color: Colors.textSecondary },
   metroHint: { fontSize: rf(12), color: Colors.textMuted },
   urgentTag: { flexDirection: 'row', alignItems: 'center', gap: rs(3), backgroundColor: '#FEF3C7', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), flexShrink: 0 },
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
   cardBadges: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  jobTitle: { fontSize: rf(24), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(29), marginTop: 0 },
+  jobTitle: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(30), marginTop: rs(1) },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  // Было 8 против 21 у всего остального: плашка торчала шире чипов над ней
-  // и разделителя под ней, и именно это читалось как «съехавшая вёрстка».
-  replyBadgeWrap: { marginHorizontal: rs(21), marginBottom: rs(21) },
+  replyBadgeWrap: { marginHorizontal: rs(20), marginBottom: rs(14) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
@@ -2494,7 +2548,7 @@ const styles = StyleSheet.create({
   addressChipIcon: { fontSize: rf(15), marginTop: rs(1) },
   addressChipText: { flex: 1, fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary, lineHeight: rf(20) },
   cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(21) },
-  cardMiddle: { flexGrow: 1, padding: rs(21), gap: rs(21) },
+  cardMiddle: { flexGrow: 1, paddingBottom: rs(18), paddingHorizontal: rs(21), gap: rs(16) },
   slotsRow: { flexDirection: 'row' },
   slotInfo: { flex: 1, alignItems: 'center', paddingVertical: rs(2) },
   slotInfoBordered: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: Colors.divider },
