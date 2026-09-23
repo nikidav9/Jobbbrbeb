@@ -65,3 +65,11 @@ php-proxy/deploy_token.php
 php-proxy/studio_credentials.php
 php-proxy/gh_token.php
 php-proxy/backup_s3.php
+
+# Ключ шифрования push-подписок. Создаётся сам при первом запуске php-proxy
+# (например, прогоном tests/push_privacy_test.php) и у каждой установки свой.
+# В репозитории ему делать нечего по двум причинам: это секрет, и выкладка
+# копирует php-proxy/*.php на сервер, не удаляя локальные секреты, — файл из
+# git затёр бы производственный ключ, и уже сохранённые подписки перестали бы
+# расшифровываться.
+php-proxy/push_token_key.php
