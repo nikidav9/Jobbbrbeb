@@ -69,6 +69,19 @@ for f in $(ls "$REPO"/supabase/migrations/*.sql | sort); do
   fi
 done
 
+# ── Единый каталог карьерных сайтов ───────────────────────────────────────
+# scripts/career-sites.tsv и scripts/career-endpoints.json — master-list, а не
+# документы «для справки». После каждого pull синхронизируем их в
+# connector_config, и новые компании не требуют вручную копировать сотни URL в
+# SQL-миграцию. Скрипт идемпотентен и сбрасывает last_run_at только если список
+# изменился.
+if [ -f "$REPO/infra/sync-career-catalog.sh" ]; then
+  if ! bash "$REPO/infra/sync-career-catalog.sh" >/tmp/jt-career-sync.log 2>&1; then
+    say "миграции" "CAREER CATALOG: $(tail -8 /tmp/jt-career-sync.log | tr '\n' ' ' | cut -c1-500)"
+    exit 1
+  fi
+fi
+
 # ── Проверка защитного контура БД ─────────────────────────────────────────
 # Наличие файла 013 в репозитории ещё не доказывает, что он применён на живой
 # базе. После каждого прохода мигратора проверяем реальный pg_catalog: RLS

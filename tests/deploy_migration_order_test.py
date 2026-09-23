@@ -17,15 +17,32 @@ protected = sorted(set(re.findall(r"'((?:jm_)[a-z0-9_]+)'", lockdown)))
 # Таблицы, заведённые позже 013: защиту они включают сами, и сторож обязан
 # их видеть. Иначе новая таблица тихо выпадает из проверки — а замечают это
 # обычно после того, как из неё что-то утекло.
-later_tables = sorted({
-    name
-    for path in (root / "supabase/migrations").glob("*.sql")
-    if int(path.name.split("_", 1)[0]) > 13
+#
+# Список строится проходом по миграциям в том же порядке, в каком их катит
+# infra/migrate.sh, и учитывает удаления. Без этого сторож требовал охранять
+# jm_ext_clicks — таблицу, которую миграция 096 снесла полтора месяца назад:
+# регулярка видела «включён RLS» в миграции 036 и не видела drop в 096.
+# Требование охранять несуществующее выглядит как строгость, а работает
+# наоборот: строку держат в списке, чтобы проверка молчала, и перестают
+# понимать, что в этом списке настоящее.
+rls_enabled: set[str] = set()
+alive: set[str] = set()
+for path in sorted((root / "supabase/migrations").glob("*.sql"), key=lambda p: p.name):
+    body = path.read_text(encoding="utf-8")
+    number = int(path.name.split("_", 1)[0])
+    for name in re.findall(r"create table (?:if not exists )?(?:public\.)?(jm_[a-z0-9_]+)", body):
+        alive.add(name)
     for name in re.findall(
-        r"alter table (jm_[a-z0-9_]+) enable row level security",
-        path.read_text(encoding="utf-8"),
-    )
-})
+        r"alter table (?:if exists )?(?:public\.)?(jm_[a-z0-9_]+) enable row level security",
+        body,
+    ):
+        if number > 13:
+            rls_enabled.add(name)
+    for name in re.findall(r"drop table (?:if exists )?(?:public\.)?(jm_[a-z0-9_]+)", body):
+        alive.discard(name)
+        rls_enabled.discard(name)
+
+later_tables = sorted(rls_enabled & alive)
 missing_guard_tables = [
     name for name in protected + later_tables if f"('{name}')" not in guard
 ]

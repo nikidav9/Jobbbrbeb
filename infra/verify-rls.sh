@@ -28,8 +28,16 @@ with required(table_name) as (
     ('jm_support_messages'), ('jm_support_threads'), ('jm_support_knowledge'),
     -- Заведены позже миграции 013 и защиту включают сами. В стороже их
     -- не было: RLS на них стоял, но никто этого не проверял.
-    ('jm_bot_messages'), ('jm_consents'), ('jm_ext_clicks'),
-    ('jm_skill_results'), ('jm_jupiter_applications')
+    ('jm_bot_messages'), ('jm_consents'),
+    ('jm_skill_results'), ('jm_jupiter_applications'),
+    -- Карьерные источники, вернувшиеся миграцией 105. В jm_ext_sources лежат
+    -- заголовки доступа к чужим API — эту таблицу нельзя показывать никому,
+    -- кроме сервисной роли.
+    ('jm_ext_sources'), ('jm_ext_vacancies'), ('jm_ext_ingest_runs'),
+    -- Были невидимы для сторожа: список таблиц выводился регуляркой, которая
+    -- не понимала записи вида `alter table public.jm_… enable row level
+    -- security`. jm_resume_files — резюме людей, там персональные данные.
+    ('jm_guest_events'), ('jm_referral_rewards'), ('jm_resume_files')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r

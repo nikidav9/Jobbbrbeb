@@ -70,6 +70,18 @@ jobs:
       - name: Заявки Jupiter — свои свои, воркер не подменяет чужое
         run: php tests/jupiter_applications_test.php
 
+      - name: Карьерная страница превращается в вакансии, а не в мусор
+        run: php tests/career_feed_test.php
+
+      - name: Карьерный JSON разбирается по карте полей
+        run: php tests/career_json_test.php
+
+      - name: Карьерный коннектор ходит тем же методом, что записан
+        run: php tests/career_http_method_test.php
+
+      - name: Один и тот же отклик не превращается в два
+        run: php tests/ingest_dedupe_test.php
+
       - name: Отклик на смену меняет его сторона, а отказ доходит до человека
         run: php tests/like_authz_test.php
 
@@ -130,6 +142,7 @@ jobs:
           python3 tests/seo_infra_test.py
           python3 tests/sitemap_invalidation_test.py
           python3 tests/deploy_migration_order_test.py
+          python3 tests/career_full_catalog_test.py
           python3 tests/deploy_webhook_order_test.py
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py
