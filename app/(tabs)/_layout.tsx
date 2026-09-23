@@ -49,17 +49,8 @@ function FloatingTabBar({
 
   return (
     <>
-    {/* White dock rises behind the lower half of the pill. This removes the
-        page-background wedges that otherwise show through beside the rounded
-        bottom corners, while the top half keeps the floating-pill silhouette. */}
-    <View
-      pointerEvents="none"
-      style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: safeBottom + 13 + rs(32),
-        backgroundColor: Colors.card,
-      }}
-    />
+    {/* The page itself continues all the way to the bottom. The tab bar is
+        only an overlay: there is deliberately no backing strip/dock behind it. */}
     {/* Outer: shadow (overflow:hidden would clip Android elevation) */}
     <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
       {/* Inner: clips blur to rounded shape */}
@@ -191,6 +182,7 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           tabBarStyle: {
+            position: 'absolute',
             height: tabBarHeight,
             backgroundColor: 'transparent',
             borderTopWidth: 0,
