@@ -1562,11 +1562,15 @@ function WorkerPermMode() {
                           {description}
                         </Text>
 
-                        {(expandableDescriptionId === v.id || expandedDescriptionId === v.id) ? (
+                        {(description.trim().length > 120 ||
+                          expandableDescriptionId === v.id ||
+                          expandedDescriptionId === v.id) ? (
                           <TouchableOpacity
                             style={pS.descriptionToggle}
                             activeOpacity={0.78}
                             onPress={() => setExpandedDescriptionId(id => id === v.id ? null : v.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={expandedDescriptionId === v.id ? 'Свернуть описание вакансии' : 'Читать описание вакансии полностью'}
                           >
                             <Text style={pS.descriptionToggleText}>
                               {expandedDescriptionId === v.id ? 'Свернуть' : 'Читать далее'}
@@ -1574,7 +1578,7 @@ function WorkerPermMode() {
                             <Ionicons
                               name={expandedDescriptionId === v.id ? 'chevron-up' : 'chevron-down'}
                               size={16}
-                              color={Colors.primary}
+                              color={Colors.textSecondary}
                             />
                           </TouchableOpacity>
                         ) : null}
@@ -2393,21 +2397,21 @@ const pS = StyleSheet.create({
     opacity: 0,
   },
   descriptionToggle: {
-    minHeight: rs(40),
-    marginTop: rs(2),
+    minHeight: rs(42),
+    marginTop: rs(3),
     borderRadius: rs(100),
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#FFD7C4',
+    borderColor: '#E6E8EC',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: rs(6),
+    gap: rs(7),
   },
   descriptionToggleText: {
-    fontSize: rf(13),
-    fontWeight: '800',
-    color: Colors.primary,
+    fontSize: rf(13.5),
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
   blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
