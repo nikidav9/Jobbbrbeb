@@ -236,7 +236,7 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
-    'dbResponsivenessMap',
+    'dbResponsivenessMap', 'dbGetExtVacancies',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
     jt_respond(['error' => 'Authentication required'], 401); exit;
@@ -5974,6 +5974,13 @@ try {
         // ── Permanent vacancies ────────────────────────────────────────────────
         case 'dbGetPermVacancies':
             $data = sb_select('jm_perm_vacancies', ['status' => 'eq.open'], '*', 'created_at.desc'); break;
+
+        case 'dbGetExtVacancies': {
+            $f = ['active' => 'eq.true'];
+            if (!empty($args[0])) $f['company'] = 'eq.' . $args[0];
+            $data = sb_select('jm_ext_vacancies', $f, '*', 'last_seen_at.desc');
+            break;
+        }
 
         case 'dbGetPermVacanciesByEmployer':
             $data = sb_select('jm_perm_vacancies', ['employer_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;

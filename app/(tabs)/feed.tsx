@@ -18,7 +18,7 @@ import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
 import { DAILY_ENERGY } from '@/services/energy';
-import { User, PermVacancy } from '@/constants/types';
+import { User, PermVacancy, ExtVacancy } from '@/constants/types';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
@@ -37,6 +37,8 @@ import {
   dbRemovePermSaved,
   dbRecordGuestEvent,
   dbStartGuestRegistration,
+  dbGetExtVacancies,
+  jupiterEnqueue,
 } from '@/services/db';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
@@ -472,6 +474,10 @@ export type PermFilters = {
   companies: string[];
 };
 export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [] };
+
+type FeedCard =
+  | { _ext: false; v: PermVacancy }
+  | { _ext: true;  v: ExtVacancy };
 
 const postedWithin = (iso: string | undefined, p: PermFilters['posted']) => {
   if (p === 'all' || !iso) return true;
@@ -1161,6 +1167,9 @@ function WorkerPermMode() {
   // Вакансия, по которой человек сейчас пишет отклик (null — окно закрыто)
   const [permApplyFor, setPermApplyFor] = useState<PermVacancy | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [showCareer, setShowCareer] = useState(false);
+  const [careerVacancies, setCareerVacancies] = useState<ExtVacancy[]>([]);
+  const [careerLoading, setCareerLoading] = useState(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
   const permCompanyOptions = useMemo(() => {
@@ -1192,11 +1201,23 @@ function WorkerPermMode() {
     [permVacancies, filterCompanies],
   );
 
+  useEffect(() => {
+    if (!showCareer) return;
+    let cancelled = false;
+    setCareerLoading(true);
+    dbGetExtVacancies().then(data => {
+      if (!cancelled) setCareerVacancies(data);
+    }).catch(() => {}).finally(() => { if (!cancelled) setCareerLoading(false); });
+    return () => { cancelled = true; };
+  }, [showCareer]);
+
   const onRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await Promise.all([refreshPermVacancies(), refreshPermApplications()]);
+      const promises: Promise<void>[] = [refreshPermVacancies(), refreshPermApplications()];
+      if (showCareer) promises.push(dbGetExtVacancies().then(setCareerVacancies));
+      await Promise.all(promises);
       await energy.sync();
     } catch {
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
@@ -1275,12 +1296,27 @@ function WorkerPermMode() {
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
 
-  const shownVacancies: PermVacancy[] = openVacancies;
+  const feedCards: FeedCard[] = useMemo(() => {
+    const own: FeedCard[] = openVacancies.map(v => ({ _ext: false as const, v }));
+    if (!showCareer) return own;
+    const ext: FeedCard[] = careerVacancies.map(v => ({ _ext: true as const, v }));
+    return [...own, ...ext];
+  }, [openVacancies, showCareer, careerVacancies]);
 
-  // Отклик на постоянную вакансию раньше уходил молча — строка в таблице со
-  // статусом «ожидает», и всё. Теперь сначала спрашиваем пару слов о себе, и
-  // отклик открывает переписку: сказать о себе было негде, а именно сюда
-  // приходит большая часть откликов.
+  const applyToExt = async (ev: ExtVacancy) => {
+    if (!currentUser) return;
+    if (currentUser.isGuest) { promptRegister({ vacancyKind: 'permanent' }); return; }
+    setApplying(ev.id);
+    try {
+      await jupiterEnqueue(currentUser.id, ev.url, ev.company);
+      showToast('Заявка поставлена в очередь Jupiter', 'success');
+    } catch {
+      showToast('Не удалось создать заявку', 'error');
+    } finally {
+      setApplying(null);
+    }
+  };
+
   const applyTo = (v: PermVacancy) : void => {
     if (!currentUser) return;
     if (currentUser.isGuest) {
@@ -1378,8 +1414,8 @@ function WorkerPermMode() {
   // Верхняя открытая вакансия — карточка: вправо откликнуться, влево
   // пропустить. Порядок пролистанных хранится в swHistory, чтобы кнопка
   // возврата в шапке вернула последнюю.
-  const deckCards = shownVacancies.filter(v => !swSkipped.has(v.id));
-  const swTop = deckCards[0];
+  const deckCards = feedCards.filter(c => !swSkipped.has(c.v.id));
+  const swTop = deckCards[0] ?? null;
 
   /** Новая карточка начинается сверху, а не там, где бросили предыдущую. */
   const resetCardScroll = () => {
@@ -1396,18 +1432,14 @@ function WorkerPermMode() {
     if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
     swFly('right', vx, () => {
       resetCardScroll();
-      setSwSkipped(s => new Set(s).add(c.id));
-      setSwHistory(h => [...h, c.id]);
-      applyTo(c);
+      setSwSkipped(s => new Set(s).add(c.v.id));
+      setSwHistory(h => [...h, c.v.id]);
+      if (c._ext) { void applyToExt(c.v); } else { applyTo(c.v); }
     });
   };
-  // Влево — отказ: листаем дальше. В «Избранном» отказ убирает из избранного.
   const swSkip = (vx = 0.5) => {
     const c = swTop;
     if (!c) return;
-    // Гость упирается в стену регистрации раньше, чем в дневной запас.
-    // snapBack обязателен: без него карточка, отпущенная жестом, так и
-    // осталась бы висеть сбоку — это был старый недосмотр.
     if (isGuest) {
       if (guestSkipCount >= GUEST_SKIP_LIMIT) {
         promptRegister({ vacancyKind: 'permanent' });
@@ -1419,8 +1451,8 @@ function WorkerPermMode() {
     if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
     swFly('left', vx, () => {
       resetCardScroll();
-      setSwSkipped(s => new Set(s).add(c.id));
-      setSwHistory(h => [...h, c.id]);
+      setSwSkipped(s => new Set(s).add(c.v.id));
+      setSwHistory(h => [...h, c.v.id]);
     });
   };
   swWantRef.current = swWant;
@@ -1680,11 +1712,150 @@ function WorkerPermMode() {
     );
   };
 
+  const renderExtDeckCard = (ev: ExtVacancy) => {
+    const displayCompany = ev.company || 'Карьерный сайт';
+    const salary = typeof ev.salary === 'number' ? ev.salary : 0;
+    const schedule = ev.schedule;
+    const workTypeRaw = ev.workType;
+    const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw]?.label ?? workTypeRaw) : undefined;
+    const description = cleanDescription(ev.description);
+    const metroLine = ev.metroStation
+      ? METRO_LINES.find(l => l.stations.includes(ev.metroStation!)) ?? null
+      : null;
+    return (
+      <View style={[styles.cardArea, { paddingBottom: deckBottomReserve }]}>
+        {deckCards[2] ? <View style={[styles.ghost2, { bottom: deckBottomReserve }]} /> : null}
+        {deckCards[1] ? <View style={[styles.ghost1, { bottom: deckBottomReserve }]} /> : null}
+        <View style={styles.cardViewportShell}>
+          <GHScrollView
+            ref={cardScrollRef}
+            style={styles.cardViewportClip}
+            contentContainerStyle={{ flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
+            onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
+            onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
+            refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+          >
+          <GestureDetector gesture={swDeck.gesture}>
+            <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
+              <View style={styles.card}>
+                <Reanimated.View style={[styles.wantOverlay, swDeck.wantStyle]}>
+                  <Text style={styles.wantText}>JUPITER ♥</Text>
+                </Reanimated.View>
+                <Reanimated.View style={[styles.skipOverlay, swDeck.skipStyle]}>
+                  <Text style={styles.skipText}>НЕТ ✕</Text>
+                </Reanimated.View>
+
+                <View style={styles.cardBody}>
+                  <View style={styles.cardTop}>
+                    <View style={styles.companyRow}>
+                      <CompanyMark company={displayCompany} size={34} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.companyName} numberOfLines={1} adjustsFontSizeToFit>
+                          {displayCompany}
+                        </Text>
+                        <Text style={[styles.postedAgo, { color: Colors.primary }]}>Карьерный сайт</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.jobTitle} numberOfLines={2}>{ev.title}</Text>
+
+                    <View style={styles.chipsRow}>
+                      {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
+                      {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" textSize={11} /> : null}
+                      {workType ? <Chip label={workType} variant="neutral" icon="briefcase-outline" textSize={11} /> : null}
+                      {ev.metroStation ? <Chip label={ev.metroStation} variant="neutral" icon="subway-outline" textSize={11} /> : null}
+                    </View>
+                  </View>
+
+                  <View style={styles.cardMiddle}>
+                    {(ev.metroStation || ev.address) ? (
+                      <View style={pS.sectionBlock}>
+                        <View style={pS.blockHead}>
+                          <Ionicons name="location-outline" size={16} color={Colors.textPrimary} />
+                          <Text style={pS.descTitle}>Расположение</Text>
+                        </View>
+                        {ev.metroStation ? (
+                          <View style={pS.locRow}>
+                            {metroLine ? (
+                              <View style={[pS.metroDot, { backgroundColor: metroLine.color }]} />
+                            ) : (
+                              <Ionicons name="subway-outline" size={16} color={Colors.textMuted} />
+                            )}
+                            <View style={{ flex: 1 }}>
+                              {metroLine ? <Text style={pS.metroLineName}>{metroLine.name}</Text> : null}
+                              <Text style={pS.locValue}>{ev.metroStation}</Text>
+                            </View>
+                          </View>
+                        ) : null}
+                        {ev.address ? (
+                          <View style={pS.locRow}>
+                            <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
+                            <Text style={[pS.locValue, { flex: 1 }]}>{ev.address}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : null}
+
+                    <View style={pS.sectionBlock}>
+                      {description ? (
+                        <View style={pS.blockHead}>
+                          <Ionicons name="document-text-outline" size={16} color={Colors.textPrimary} />
+                          <Text style={pS.descTitle}>Описание вакансии</Text>
+                        </View>
+                      ) : null}
+                      {description ? <Text style={pS.desc}>{description}</Text> : null}
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </Reanimated.View>
+          </GestureDetector>
+          </GHScrollView>
+        </View>
+
+        {moreBelow ? (
+          <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve }]} pointerEvents="none">
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', Colors.bg]}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={pS.scrollHint}>
+              <Ionicons name="chevron-down" size={14} color={Colors.textSecondary} />
+              <Text style={pS.scrollHintTxt}>Листайте вниз</Text>
+            </View>
+          </View>
+        ) : null}
+
+        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
+          <View style={styles.shiftDeckRow}>
+            <TouchableOpacity
+              accessibilityLabel="Пропустить"
+              style={[styles.deckFloatingAction, styles.deckFloatingSkip]}
+              onPress={() => swSkip(0.5)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="close" size={31} color={Colors.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel="Подать заявку через Jupiter"
+              style={[styles.deckFloatingAction, styles.deckFloatingWant]}
+              onPress={() => swWant(0.5)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="heart" size={31} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={{ flex: 1 }}>
-      {/* Плашка гостя жила в ленте смен; та лента удалена, а сама плашка
-          осталась нужной: без неё гость узнаёт о стене регистрации только
-          в момент отклика. */}
+      {isGuest && (
       {isGuest && (
         <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister({ vacancyKind: 'permanent' })}>
           <Ionicons name="lock-closed" size={rs(15)} color="#fff" />
@@ -1796,10 +1967,12 @@ function WorkerPermMode() {
             </TouchableOpacity>
           ) : null}
         </ScrollView>
+      ) : swTop._ext ? (
+        <>{renderExtDeckCard(swTop.v)}</>
       ) : (
         <>
-          <PermDeckViewRecorder vacancy={swTop} userId={currentUser.id} isGuest={isGuest} />
-          {renderPermDeckCard(swTop)}
+          <PermDeckViewRecorder vacancy={swTop.v} userId={currentUser.id} isGuest={isGuest} />
+          {renderPermDeckCard(swTop.v)}
         </>
       )}
 
