@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
-import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication } from '@/constants/types';
+import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 
@@ -1664,6 +1664,35 @@ export async function jupiterMyApplications(
 ): Promise<JupiterApplication[]> {
   const rows = (await proxy('jupiterMyApplications', [userId])) as any[];
   return (rows ?? []).map(toJupiterApplication);
+}
+
+function toExtVacancy(row: any): ExtVacancy {
+  return {
+    id: String(row.id),
+    sourceId: String(row.source_id ?? ''),
+    externalId: String(row.external_id ?? ''),
+    title: String(row.title ?? ''),
+    company: String(row.company ?? ''),
+    metroStation: row.metro_station ?? null,
+    metroLineId: row.metro_line_id ?? null,
+    workType: row.work_type ?? null,
+    address: row.address ?? null,
+    lat: row.lat ?? null,
+    lng: row.lng ?? null,
+    salary: row.salary != null ? Number(row.salary) : null,
+    payPeriod: row.pay_period ?? null,
+    schedule: row.schedule ?? null,
+    description: row.description ?? null,
+    url: String(row.url ?? ''),
+    active: !!row.active,
+    firstSeenAt: String(row.first_seen_at ?? ''),
+    lastSeenAt: String(row.last_seen_at ?? ''),
+  };
+}
+
+export async function dbGetExtVacancies(company?: string): Promise<ExtVacancy[]> {
+  const rows = (await proxy('dbGetExtVacancies', company ? [company] : [])) as any[];
+  return (rows ?? []).map(toExtVacancy);
 }
 
 export async function dbAddPermSaved(userId: string, vacancyId: string): Promise<void> {

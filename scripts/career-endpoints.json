@@ -1,0 +1,958 @@
+[
+  {
+    "map": {
+      "id": "id",
+      "pay": "salaryFrom",
+      "list": "items",
+      "title": "name",
+      "address": "address",
+      "schedule": "schedule",
+      "description": "description",
+      "url_template": "https://rabota5ka.ru/vacancy/{id}",
+      "company_const": "Пятёрочка"
+    },
+    "url": "https://rabota5ka.ru/api/vacancy/hire-request",
+    "paging": {
+      "type": "page",
+      "limit": 100,
+      "param": "page",
+      "start": 1,
+      "max_pages": 200,
+      "limit_param": "limit"
+    },
+    "company_hint": "Пятёрочка"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "items",
+      "title": "name",
+      "address": "address",
+      "schedule": "schedule",
+      "description": "description",
+      "url_template": "https://rabota.perekrestok.ru/vacancies/{id}",
+      "company_const": "Перекрёсток"
+    },
+    "url": "https://rabota5ka.ru/gw/api/vacancy/hire-request?portals%5B0%5D=cross",
+    "paging": {
+      "type": "page",
+      "limit": 100,
+      "param": "page",
+      "start": 1,
+      "max_pages": 50,
+      "limit_param": "limit"
+    },
+    "company_hint": "Перекрёсток"
+  },
+  {
+    "map": {
+      "link_path": "/job/",
+      "min_title": 8,
+      "company_const": "ВкусВилл"
+    },
+    "url": "https://vkusvill.ru/job/vacancys/",
+    "mode": "html_links",
+    "company_hint": "ВкусВилл"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/item/",
+      "min_title": 8,
+      "company_const": "CDEK"
+    },
+    "url": "https://rabota.cdek.ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "CDEK"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Лемана ПРО"
+    },
+    "url": "https://rabota.lemanapro.ru/vacancies/moskva-i-oblast",
+    "mode": "html_links",
+    "company_hint": "Лемана ПРО"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Норникель"
+    },
+    "url": "https://career.nornickel.ru/vacancies/",
+    "mode": "html_links",
+    "company_hint": "Норникель"
+  },
+  {
+    "map": {
+      "link_path": "/vakansii/",
+      "min_title": 8,
+      "company_const": "Мария-Ра"
+    },
+    "url": "https://www.maria-ra.ru/karera-v-seti/vakansii",
+    "mode": "html_links",
+    "company_hint": "Мария-Ра"
+  },
+  {
+    "map": {
+      "id": "vacancyId",
+      "pay": "salaryMin",
+      "list": "vacancy",
+      "title": "vacancyName",
+      "schedule": "chartOfWork",
+      "description": "responsibility",
+      "url_template": "https://rabota.metro-cc.ru/vacancy/{vacancyId}",
+      "company_const": "METRO"
+    },
+    "url": "https://rabota.metro-cc.ru/SupportSrv/SupportSrv.svc/Support/v1/metro/vacancy?objtype=VacancyMetro",
+    "body": {},
+    "method": "POST",
+    "paging": {
+      "type": "offset",
+      "limit": 50,
+      "param": "line",
+      "max_pages": 10,
+      "limit_param": "linesPerPage"
+    },
+    "company_hint": "METRO"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "vacancies",
+      "title": "name",
+      "address": "city",
+      "company": "directions",
+      "description": "whatWeToDo",
+      "url_template": "https://job.rt.ru/vacancy/{id}",
+      "company_const": "Ростелеком"
+    },
+    "url": "https://job.rt.ru/backend/api/vacancies",
+    "paging": {
+      "type": "page",
+      "limit": 20,
+      "param": "page",
+      "start": 1,
+      "max_pages": 25
+    },
+    "company_hint": "Ростелеком"
+  },
+  {
+    "map": {
+      "id": "slug",
+      "list": "results",
+      "title": "title",
+      "address": "city",
+      "company": "direction",
+      "schedule": "empl",
+      "description": "description",
+      "url_template": "https://careers.yadro.com/vacancy/{slug}",
+      "company_const": "Yadro"
+    },
+    "url": "https://careers.yadro.com/api/v1/vacancies/",
+    "paging": {
+      "type": "offset",
+      "limit": 100,
+      "param": "offset",
+      "max_pages": 10,
+      "limit_param": "limit"
+    },
+    "company_hint": "Yadro"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "data.items",
+      "title": "name",
+      "address": "city_title",
+      "schedule": "employment_types",
+      "url_template": "https://career.rwb.ru/vacancy/{id}",
+      "company_const": "Wildberries"
+    },
+    "url": "https://career.rwb.ru/hr-crm-api/api/v2/pub/vacancies",
+    "paging": {
+      "type": "offset",
+      "limit": 50,
+      "param": "offset",
+      "max_pages": 20,
+      "limit_param": "limit"
+    },
+    "company_hint": "Wildberries"
+  },
+  {
+    "map": {
+      "id": "slug",
+      "list": "data",
+      "title": "title",
+      "address": "region",
+      "company": "employer",
+      "url_template": "https://job.mts.ru/vacancy/{slug}",
+      "company_const": "МТС"
+    },
+    "url": "https://job.mts.ru/api/v2/vacancies",
+    "paging": {
+      "type": "page",
+      "limit": 25,
+      "param": "page",
+      "start": 1,
+      "max_pages": 110
+    },
+    "company_hint": "МТС"
+  },
+  {
+    "map": {
+      "id": "slug",
+      "list": "data",
+      "title": "name",
+      "address": "location",
+      "company": "department",
+      "url_template": "https://job.lamoda.ru/vacancies/{slug}",
+      "company_const": "Lamoda"
+    },
+    "url": "https://job.lamoda.ru/api/hr/vacancies/compact",
+    "paging": {
+      "type": "offset",
+      "limit": 100,
+      "param": "pagination[start]",
+      "max_pages": 10,
+      "limit_param": "pagination[limit]"
+    },
+    "company_hint": "Lamoda"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "",
+      "title": "position",
+      "address": "workPlace",
+      "company": "team",
+      "url_template": "https://www.aviasales.ru/about/vacancies/{id}",
+      "company_const": "Авиасейлс"
+    },
+    "url": "https://vacancies-app.aviasales.ru/api/vacancies?language=ru",
+    "company_hint": "Авиасейлс"
+  },
+  {
+    "map": {
+      "id": "slug",
+      "list": "vacancies",
+      "title": "title",
+      "url_template": "https://job.megafon.ru/vacancy/{slug}",
+      "company_const": "МегаФон"
+    },
+    "url": "https://job.megafon.ru/api/v1/vacancies",
+    "paging": {
+      "type": "page",
+      "limit": 10,
+      "param": "page",
+      "start": 1,
+      "max_pages": 110
+    },
+    "company_hint": "МегаФон"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Контур"
+    },
+    "url": "https://kontur.ru/career/vacancies",
+    "mode": "html_links",
+    "company_hint": "Контур"
+  },
+  {
+    "map": {
+      "link_path": "/jobs/",
+      "min_title": 8,
+      "company_const": "IBS"
+    },
+    "url": "https://ibs.ru/career/jobs/",
+    "mode": "html_links",
+    "company_hint": "IBS"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Navio"
+    },
+    "url": "https://navio.auto/vacancies",
+    "mode": "html_links",
+    "company_hint": "Navio"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Orion soft"
+    },
+    "url": "https://career.orionsoft.ru/vacancy",
+    "mode": "html_links",
+    "company_hint": "Orion soft"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Bell Integrator"
+    },
+    "url": "https://bellintegrator.ru/information/vacancies",
+    "mode": "html_links",
+    "company_hint": "Bell Integrator"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Техвилл"
+    },
+    "url": "https://techvill.ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "Техвилл"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Mish"
+    },
+    "url": "https://mish.design/ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "Mish"
+  },
+  {
+    "map": {
+      "link_path": "/jobs/",
+      "min_title": 8,
+      "company_const": "Inline Group"
+    },
+    "url": "https://inlinegroup.ru/about/jobs/",
+    "mode": "html_links",
+    "company_hint": "Inline Group"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "BSL"
+    },
+    "url": "https://bsl.dev/vacancies.html",
+    "mode": "html_links",
+    "company_hint": "BSL"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "X5 Tech"
+    },
+    "url": "https://x5.tech/vacancy",
+    "mode": "html_links",
+    "company_hint": "X5 Tech"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Cloud.ru"
+    },
+    "url": "https://cloud.ru/career/vacancies",
+    "mode": "html_links",
+    "company_hint": "Cloud.ru"
+  },
+  {
+    "map": {
+      "link_path": "/jobs/",
+      "min_title": 8,
+      "company_const": "iSpring"
+    },
+    "url": "https://www.ispring.ru/company/jobs/vacancies",
+    "mode": "html_links",
+    "company_hint": "iSpring"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Островок"
+    },
+    "url": "https://career.ostrovok.ru/vacancy",
+    "mode": "html_links",
+    "company_hint": "Островок"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "kokos group"
+    },
+    "url": "https://career.kokocgroup.ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "kokos group"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "1С"
+    },
+    "url": "https://1c.ru/rus/firm1c/vacan/search",
+    "mode": "html_links",
+    "company_hint": "1С"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Performance Lab"
+    },
+    "url": "https://www.performance-lab.ru/vacancy",
+    "mode": "html_links",
+    "company_hint": "Performance Lab"
+  },
+  {
+    "map": {
+      "link_path": "/vakansii/",
+      "min_title": 8,
+      "company_const": "Just AI"
+    },
+    "url": "https://careers.just-ai.com/vakansii",
+    "mode": "html_links",
+    "company_hint": "Just AI"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "props.pageProps.initialVacancies",
+      "title": "title",
+      "address": "town",
+      "schedule": "work_format",
+      "url_template": "https://team.vk.company/vacancy/{id}",
+      "company_const": "VK"
+    },
+    "url": "https://team.vk.company/vacancy",
+    "mode": "embedded",
+    "company_hint": "VK"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "company_const": "М.Видео-Эльдорадо"
+    },
+    "url": "https://career.mvideoeldorado.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "company_const": "Авито"
+    },
+    "url": "https://career.avito.com/vacancies/",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "id": "vacancyId",
+      "list": "vacancy",
+      "title": "name",
+      "url_template": "https://rabota.metro-cc.ru/vacancy/{vacancyId}",
+      "company_const": "METRO"
+    },
+    "url": "https://rabota.metro-cc.ru/SupportSrv/SupportSrv.svc/Support/v1/metro/vacancy?line=0&linesPerPage=10&objtype=VacancyMetro",
+    "body": {
+      "storeCity": "Москва и Московская область",
+      "mglAddress": false,
+      "storeAddress": true,
+      "centralOffice": false
+    },
+    "method": "POST"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "items",
+      "title": "name",
+      "address": "city",
+      "schedule": "schedule",
+      "description": "description",
+      "url_template": "https://rabota.perekrestok.ru/vacancies/{id}",
+      "company_const": "Перекрёсток"
+    },
+    "url": "https://rabota5ka.ru/gw/api/vacancy/hire-request?page=1&limit=7&radius=30000&warehouseRadius=100&portals%5B0%5D=cross"
+  },
+  {
+    "map": {
+      "link_path": "/job/",
+      "min_title": 8,
+      "company_const": "ВкусВилл"
+    },
+    "url": "https://vkusvill.ru/job/vacancys",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "data",
+      "title": "name",
+      "address": "location",
+      "company": "direction",
+      "url_template": "https://job.lamoda.ru/vacancies/{slug}",
+      "company_const": "Lamoda"
+    },
+    "url": "https://job.lamoda.ru/api/hr/vacancies/compact?search=&minExperience=&pagination[start]=0&pagination[limit]=10"
+  },
+  {
+    "map": {
+      "link_path": "/vakancies/",
+      "min_title": 8,
+      "company_const": "Петрович"
+    },
+    "url": "https://petrovichjob.ru",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/career/",
+      "min_title": 8,
+      "company_const": "РУСАЛ"
+    },
+    "url": "https://www.rusal.ru/career/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Северсталь"
+    },
+    "url": "https://career.severstal.com/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Норникель"
+    },
+    "url": "https://career.nornickel.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "results",
+      "title": "title",
+      "address": "town",
+      "schedule": "work_format",
+      "url_template": "https://team.vk.company/vacancy/{id}",
+      "company_const": "VK"
+    },
+    "url": "https://team.vk.company/career/api/v2/vacancies/?limit=25&offset=25&title=&specialty=&town=&tags=&remote="
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Иви"
+    },
+    "url": "https://corp.ivi.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "GRASS"
+    },
+    "url": "https://job.thgrass.com/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "items",
+      "title": "name",
+      "address": "city",
+      "schedule": "work_format",
+      "url_template": "https://x5.tech/vacancy/{id}",
+      "company_const": "X5 Tech"
+    },
+    "url": "https://prod-lkk-back.x5.ru/api/v2/x5-tech/vacancies/"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Kaspersky"
+    },
+    "url": "https://careers.kaspersky.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/career/jobs/",
+      "min_title": 8,
+      "company_const": "IBS"
+    },
+    "url": "https://ibs.ru/career/jobs",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "id": "id",
+      "pay": "salary",
+      "url": "url",
+      "list": "props.pageProps.fallback./vtb-federal-campaign/vacancies.items",
+      "title": "name",
+      "address": "address",
+      "company": "employer",
+      "schedule": "work_format",
+      "company_const": "ВТБ"
+    },
+    "url": "https://rabota-vtb.ru/career",
+    "mode": "embedded"
+  },
+  {
+    "map": {
+      "link_path": "/jobs/",
+      "min_title": 8,
+      "company_const": "amoCRM"
+    },
+    "url": "https://www.amocrm.ru/jobs",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "КОРУС Консалтинг"
+    },
+    "url": "https://career.korusconsulting.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/careers/vacancy/",
+      "min_title": 8,
+      "company_const": "Agima"
+    },
+    "url": "https://www.agima.ru/careers",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/career/vacancies/",
+      "min_title": 8,
+      "company_const": "Инфосистемы Джет"
+    },
+    "url": "https://jet.su/career/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/about/jobs/",
+      "min_title": 8,
+      "company_const": "Inline Group"
+    },
+    "url": "https://inlinegroup.ru/about/jobs",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/career/vacancies/",
+      "min_title": 8,
+      "company_const": "TerraLink"
+    },
+    "url": "https://terralink.ru/career/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Reksoft"
+    },
+    "url": "https://career.reksoft.com/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Солар"
+    },
+    "url": "https://team.rt-solar.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/company/rabota-u-nas/",
+      "min_title": 8,
+      "company_const": "С-Терра"
+    },
+    "url": "https://www.s-terra.ru/company/rabota-u-nas",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Юзтех"
+    },
+    "url": "https://usetech.ru/career",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/job/vacancies/",
+      "min_title": 8,
+      "company_const": "Baum"
+    },
+    "url": "https://baum.ru/job",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Crosstech"
+    },
+    "url": "https://crosstech.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/position/",
+      "min_title": 8,
+      "company_const": "Аурига"
+    },
+    "url": "https://hr.auriga.ru",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/about/career/",
+      "min_title": 8,
+      "company_const": "Linx"
+    },
+    "url": "https://linx.ru/about/career",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Контакт"
+    },
+    "url": "https://itcontact.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Дельта Компьютерс"
+    },
+    "url": "https://deltacomputers.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/logistics/",
+      "company_const": "Детский мир"
+    },
+    "url": "https://jobs.detmir.ru",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/dm/",
+      "company_const": "Детский мир"
+    },
+    "url": "https://jobs.detmir.ru/",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vakancies/",
+      "min_title": 8,
+      "link_regex": "~^/vakancies/[0-9]+/?$~",
+      "company_const": "Петрович"
+    },
+    "url": "https://petrovichjob.ru/vakancies/",
+    "mode": "html_links",
+    "paging": {
+      "type": "page",
+      "limit": 10,
+      "param": "PAGEN_3",
+      "start": 1,
+      "max_pages": 20
+    },
+    "company_hint": "Петрович"
+  },
+  {
+    "map": {
+      "id": "slug",
+      "pay": "salaryFrom",
+      "list": "data",
+      "title": "title",
+      "address": "region",
+      "schedule": "workSchedules",
+      "description": "description",
+      "url_template": "https://job.mts.ru/vacancy/{slug}",
+      "company_const": "МТС"
+    },
+    "url": "https://job.mts.ru/api/v2/vacancies?pagination%5BpageSize%5D=100",
+    "paging": {
+      "type": "page",
+      "limit": 100,
+      "param": "pagination[page]",
+      "start": 1
+    }
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "link_regex": "~^/vacancy/[0-9]+/?(?:\\\\?.*)?$~",
+      "company_const": "Kaspersky"
+    },
+    "url": "https://careers.kaspersky.com/vacancies?page=0",
+    "mode": "html_links",
+    "paging": {
+      "type": "page",
+      "limit": 14,
+      "param": "page",
+      "start": 0,
+      "max_pages": 10
+    },
+    "company_hint": "Kaspersky"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "props.pageProps.blocks.0.data.vacancies",
+      "title": "attributes.title",
+      "address": "attributes.city.data.attributes.name",
+      "url_template": "https://koronatech.ru/vacancy/{id}/",
+      "company_const": "Koronatech"
+    },
+    "url": "https://koronatech.ru/vacancy/",
+    "mode": "embedded",
+    "company_hint": "Koronatech"
+  },
+  {
+    "map": {
+      "link_path": "/careers/all/vacancy/",
+      "min_title": 8,
+      "link_regex": "~^/careers/all/vacancy/[0-9]+/?$~",
+      "company_const": "Селектел"
+    },
+    "url": "https://selectel.ru/careers/all",
+    "mode": "html_links",
+    "company_hint": "Селектел"
+  },
+  {
+    "map": {
+      "id": "slug",
+      "list": "vacancies",
+      "title": "title",
+      "address": "city",
+      "schedule": "empl",
+      "description": "description",
+      "url_template": "https://careers.yadro.com/vacancy/{slug}",
+      "company_const": "Yadro"
+    },
+    "url": "https://careers.yadro.com/api/vacancies/?siteId=career"
+  },
+  {
+    "map": {
+      "pay": "wage",
+      "list": "items",
+      "title": "name",
+      "address": "address",
+      "schedule": "workDays",
+      "url_template": "https://www.phosagro.ru/career-education/vacancies/{link}",
+      "company_const": "ФосАгро"
+    },
+    "url": "https://www.phosagro.ru/api/vacancies?page=1",
+    "paging": {
+      "type": "page",
+      "limit": 12,
+      "param": "page",
+      "start": 1
+    }
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "items",
+      "title": "title",
+      "address": "city",
+      "schedule": "timetable_mode",
+      "url_template": "https://selectel.ru/careers/all/vacancy/{id}/",
+      "company_const": "Селектел"
+    },
+    "url": "https://api.selectel.ru/proxy/public/employee/api/public/vacancies?per_page=1000&page=1&brand=selectel"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "vacancies",
+      "title": "title",
+      "address": "location_city",
+      "url_template": "https://join.lesta.team/vacancy/{slug}/{id}",
+      "company_const": "Lesta Games"
+    },
+    "url": "https://join.lesta.team/filters?offset=0&limit=15",
+    "paging": {
+      "type": "offset",
+      "limit": 15,
+      "param": "offset",
+      "limit_param": "limit"
+    }
+  },
+  {
+    "map": {
+      "id": "id",
+      "pay": "salary_human",
+      "list": "results",
+      "title": "name",
+      "address": "address",
+      "schedule": "schedule_title",
+      "description": "responsibilities",
+      "url_template": "https://rabota.magnit.ru/vacancy/{id}",
+      "company_const": "Магнит"
+    },
+    "url": "https://rabota.magnit.ru/api/v1/vacancy?overview=list&page=1&per_page=100&locality_id%5B%5D=3047&locality_id%5B%5D=3078&locality_id%5B%5D=2562&locality_id%5B%5D=1949&locality_id%5B%5D=506&locality_id%5B%5D=313&locality_id%5B%5D=2269&locality_id%5B%5D=2431&locality_id%5B%5D=20&locality_id%5B%5D=687&locality_id%5B%5D=2173&locality_id%5B%5D=1002",
+    "paging": {
+      "type": "page",
+      "limit": 100,
+      "param": "page",
+      "start": 1
+    }
+  },
+  {
+    "map": {
+      "id": "internalId",
+      "pay": "salary_min",
+      "list": "data.vacancies",
+      "title": "title",
+      "address": "city",
+      "description": "introduction",
+      "url_template": "https://rabota.sber.ru/search/vacancy-{internalId}/",
+      "company_const": "Сбер"
+    },
+    "url": "https://rabota.sber.ru/public/app-candidate-public-api-gateway/api/v1/publications",
+    "mode": "json",
+    "paging": {
+      "type": "offset",
+      "limit": 100,
+      "param": "skip",
+      "max_pages": 50,
+      "limit_param": "take"
+    },
+    "company_hint": "Сбер"
+  }
+]
