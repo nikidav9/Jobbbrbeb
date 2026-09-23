@@ -599,8 +599,8 @@ HTML и форм, политика переходов, отправка и пр�
 | `jupiter/network_runtime.py` | Контролируемые fetch/XHR со страницы |
 | `jupiter/policy.py` | Сетевая политика: резолв, отсечение внутренних сетей, закрепление адреса |
 | `jupiter/tasks.py` | Очередь задач подачи: аренда, сердцебиение, чекпоинты, повторы |
-| `jupiter/remote_tasks.py` | HTTP-мост к серверной очереди (`jm_jupiter_applications` через db.php) |
-| `jupiter/run_worker.py` | Точка входа: цикл `run_once` на серверной очереди, конфиг из env |
+| `jupiter/remote_tasks.py` | HTTP-мост к серверной очереди + `fetch_profile` для загрузки профиля кандидата из базы |
+| `jupiter/run_worker.py` | Точка входа: цикл `run_once`, профиль кандидата из базы по `user_id` задачи |
 | `jupiter/worker.py` | Воркер: берёт задачу и доводит её агентом |
 | `jupiter/handoff.py` | Просьба к человеку и состояние возврата: токен, куки, адрес шага |
 | `jupiter/candidate.py` | Классы знаний о кандидате, разбор согласий, provenance |

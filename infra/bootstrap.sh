@@ -265,8 +265,7 @@ EOF
 fi
 
 # ── Jupiter: воркер подачи откликов ──────────────────────────────────────
-# Создаётся отключённым: для запуска нужен профиль кандидата, которого пока
-# нет. Включается вручную: systemctl enable --now jt-jupiter.service
+# Профиль кандидата достаётся из базы по user_id задачи (jupiterGetCandidateProfile).
 if [ -f "$REPO/jupiter/run_worker.py" ] && [ ! -f /etc/systemd/system/jt-jupiter.service ]; then
   mkdir -p /var/lib/jupiter
   cat > /etc/systemd/system/jt-jupiter.service <<SVCEOF
@@ -279,7 +278,6 @@ Wants=docker.service
 WorkingDirectory=$REPO/jupiter
 EnvironmentFile=$SECRETS
 Environment=JOBTOO_URL=https://jobtoo.ru
-Environment=JUPITER_PROFILE=/var/lib/jupiter/profile.json
 Environment=JUPITER_RECEIPTS=/var/lib/jupiter/receipts.json
 Environment=JUPITER_HANDOFFS=/var/lib/jupiter/handoffs.json
 ExecStart=/usr/bin/python3 $REPO/jupiter/run_worker.py
@@ -292,7 +290,8 @@ StandardError=append:/var/log/jt-jupiter.log
 WantedBy=multi-user.target
 SVCEOF
   systemctl daemon-reload
-  say "jupiter" "юнит создан (отключён, нужен профиль)"
+  systemctl enable jt-jupiter.service 2>/dev/null || true
+  say "jupiter" "юнит создан и включён"
 fi
 if systemctl is-active --quiet jt-jupiter.service 2>/dev/null; then
   if ! cmp -s "$REPO/jupiter/run_worker.py" /var/lib/jupiter/.deployed 2>/dev/null; then

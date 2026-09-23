@@ -10,10 +10,13 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import urllib.request
 import urllib.error
 from typing import Any
 
+from agent import CandidateProfile
 from tasks import ApplicationTask, TaskState
 
 DEFAULT_LEASE_SECONDS = 300
@@ -138,3 +141,48 @@ class RemoteTaskQueue:
         except RemoteError:
             return TaskState.FAILED
         return state
+
+    # ── профиль кандидата ──────────────────────────────────────────────────
+
+    def fetch_profile(self, user_id: str) -> CandidateProfile:
+        """Собрать профиль кандидата из данных в базе."""
+        raw = self._call("jupiterGetCandidateProfile", [user_id])
+        if not isinstance(raw, dict) or raw.get("error"):
+            raise RemoteError(0, raw.get("error", "empty profile") if isinstance(raw, dict) else "bad response")
+        values: dict[str, Any] = {}
+        for key in ("first_name", "last_name", "phone", "email", "age"):
+            if raw.get(key) not in (None, ""):
+                values[key] = raw[key]
+        pd = raw.get("personal_data")
+        if isinstance(pd, dict):
+            for key in ("patronymic", "birth_date", "citizenship", "city",
+                        "desired_role", "employment", "cover_letter",
+                        "work_authorization"):
+                if pd.get(key) not in (None, ""):
+                    values[key] = pd[key]
+            if pd.get("consent"):
+                values["consent"] = pd["consent"]
+        rd = raw.get("resume_data")
+        if isinstance(rd, dict):
+            for key, val in rd.items():
+                if key not in values and val not in (None, ""):
+                    values[key] = val
+        resume_path = self._download_resume(raw.get("resume_url"))
+        return CandidateProfile(values=values, resume_path=resume_path)
+
+    @staticmethod
+    def _download_resume(url: str | None) -> str | None:
+        if not url:
+            return None
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+            if not data or data[:4] != b"%PDF":
+                return None
+            fd, path = tempfile.mkstemp(suffix=".pdf", prefix="jupiter_resume_")
+            os.write(fd, data)
+            os.close(fd)
+            return path
+        except Exception:
+            return None

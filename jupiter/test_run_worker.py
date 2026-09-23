@@ -5,12 +5,11 @@ from __future__ import annotations
 import os
 import signal
 import sys
-import threading
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+from agent import CandidateProfile
 from tasks import ApplicationTask, TaskState
 
 
@@ -87,7 +86,7 @@ class TestWorkerLoop(unittest.TestCase):
         calls = []
         original_run_once = worker_mod.run_once
 
-        def fake_run_once(queue, profile, factory, wid):
+        def fake_run_once(queue, profile_factory, factory, wid):
             calls.append(wid)
             run_worker._stop = True
             return None
@@ -98,9 +97,6 @@ class TestWorkerLoop(unittest.TestCase):
         env = {
             "JOBTOO_URL": "https://example.com",
             "JOBTOO_ADMIN_TOKEN": "tok",
-            "JUPITER_PROFILE": os.path.join(
-                os.path.dirname(__file__), "test_fixtures", "empty_profile.json"
-            ),
             "JUPITER_POLL_INTERVAL": "0",
             "JUPITER_WORKER_ID": "test-w",
         }
@@ -108,14 +104,6 @@ class TestWorkerLoop(unittest.TestCase):
         for k, v in env.items():
             old[k] = os.environ.get(k)
             os.environ[k] = v
-
-        fixture_dir = os.path.join(os.path.dirname(__file__), "test_fixtures")
-        os.makedirs(fixture_dir, exist_ok=True)
-        profile_file = os.path.join(fixture_dir, "empty_profile.json")
-        if not os.path.exists(profile_file):
-            import json
-            with open(profile_file, "w") as f:
-                json.dump({"name": "Тест"}, f)
 
         try:
             code = run_worker.main()
@@ -128,6 +116,84 @@ class TestWorkerLoop(unittest.TestCase):
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+
+class TestProfileFactory(unittest.TestCase):
+    """Проверяем, что worker.run_once вызывает фабрику профиля с задачей."""
+
+    def test_profile_factory_called_with_task(self):
+        import worker as worker_mod
+
+        task = ApplicationTask(
+            id="t1", candidate_id="user-42", vacancy_url="https://example.com/job",
+            state=TaskState.QUEUED,
+        )
+        queue = FakeQueue([task])
+        profile = CandidateProfile(values={"first_name": "Иван"})
+
+        factory_calls: list[str] = []
+
+        def profile_factory(t: ApplicationTask) -> CandidateProfile:
+            factory_calls.append(t.candidate_id)
+            return profile
+
+        class FakeAgent:
+            def run(self, url, prof):
+                from agent import AgentResult
+                return AgentResult(status="submitted")
+
+        def agent_factory(t):
+            return FakeAgent()
+
+        result = worker_mod.run_once(queue, profile_factory, agent_factory, "w1")
+        self.assertIsNotNone(result)
+        self.assertEqual(factory_calls, ["user-42"])
+        self.assertEqual(result[1], TaskState.SUBMITTED)
+
+
+class TestFetchProfileBuildsValues(unittest.TestCase):
+    """Проверяем сборку CandidateProfile из серверного ответа."""
+
+    def test_builds_from_server_response(self):
+        from remote_tasks import RemoteTaskQueue
+
+        q = RemoteTaskQueue.__new__(RemoteTaskQueue)
+        q._url = "http://test"
+        q._token = "tok"
+
+        server_response = {
+            "user_id": "u1",
+            "first_name": "Мария",
+            "last_name": "Петрова",
+            "age": 28,
+            "phone": "+79001234567",
+            "email": "m@example.com",
+            "personal_data": {
+                "patronymic": "Ивановна",
+                "birth_date": "1998-03-15",
+                "city": "Москва",
+                "consent": True,
+            },
+            "resume_data": {
+                "desired_role": "Менеджер",
+                "experience": "3 года",
+            },
+            "resume_url": None,
+        }
+
+        original_call = getattr(q, '_call', None)
+        q._call = lambda fn, args: server_response
+
+        profile = q.fetch_profile("u1")
+        self.assertEqual(profile.values["first_name"], "Мария")
+        self.assertEqual(profile.values["last_name"], "Петрова")
+        self.assertEqual(profile.values["patronymic"], "Ивановна")
+        self.assertEqual(profile.values["birth_date"], "1998-03-15")
+        self.assertEqual(profile.values["city"], "Москва")
+        self.assertEqual(profile.values["desired_role"], "Менеджер")
+        self.assertEqual(profile.values["experience"], "3 года")
+        self.assertEqual(profile.values["consent"], True)
+        self.assertIsNone(profile.resume_path)
 
 
 if __name__ == "__main__":

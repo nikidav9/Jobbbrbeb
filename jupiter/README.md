@@ -114,12 +114,16 @@ server's `jm_jupiter_applications` table and `worker.run_once`. It implements
 the same `TaskQueueProto` protocol as the local `TaskQueue` — lease, checkpoint,
 finish, fail — but every call is an RPC to `db.php` with `X-Admin-Token`.
 
+Candidate profile is fetched dynamically per task: `RemoteTaskQueue.fetch_profile`
+calls `jupiterGetCandidateProfile` with the task's `user_id` and assembles a
+`CandidateProfile` from `jm_users` + the selected `jm_resume_files` entry.
+The resume PDF is downloaded via a signed URL and written to a temporary file.
+
 `run_worker.py` is the entry point that connects the two:
 
 ```bash
 JOBTOO_URL=https://jobtoo.ru \
 JOBTOO_ADMIN_TOKEN=secret \
-JUPITER_PROFILE=./candidate.json \
 python3 run_worker.py
 ```
 
@@ -127,7 +131,6 @@ python3 run_worker.py
 |---|---|---|---|
 | `JOBTOO_URL` | yes | — | Server base URL |
 | `JOBTOO_ADMIN_TOKEN` or `ADMIN_API_TOKEN` | yes | — | Admin token for RPC |
-| `JUPITER_PROFILE` | yes | — | Path to candidate profile JSON |
 | `JUPITER_WORKER_ID` | no | `jupiter-<hostname>` | Worker identifier |
 | `JUPITER_POLL_INTERVAL` | no | 30 | Seconds between polls when queue is empty |
 | `JUPITER_MAX_STEPS` | no | 30 | Max agent steps per task |
@@ -139,9 +142,7 @@ python3 run_worker.py
 The process stops gracefully on SIGTERM/SIGINT — the current task is completed
 before exit.
 
-On the server, `bootstrap.sh` creates the `jt-jupiter.service` systemd unit
-(disabled by default — enable after placing the candidate profile at
-`/var/lib/jupiter/profile.json`).
+On the server, `bootstrap.sh` creates and enables `jt-jupiter.service`.
 
 ## Human handoff that can be resumed
 

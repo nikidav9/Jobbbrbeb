@@ -3,8 +3,10 @@
 
     JOBTOO_URL=https://example.com \
     JOBTOO_ADMIN_TOKEN=secret \
-    JUPITER_PROFILE=./candidate.json \
     python3 run_worker.py
+
+Профиль кандидата достаётся из базы по user_id задачи, а не из файла:
+у каждой задачи свой кандидат, и данные берутся из его загруженного резюме.
 
 Останавливается по SIGTERM / SIGINT (текущий прогон доводится до конца).
 Только stdlib — как и весь Jupiter.
@@ -57,7 +59,6 @@ def main() -> int:
     )
     if not admin_token:
         sys.exit("переменная JOBTOO_ADMIN_TOKEN (или ADMIN_API_TOKEN) не задана")
-    profile_path = _require_env("JUPITER_PROFILE")
 
     worker_id = os.environ.get("JUPITER_WORKER_ID", "").strip()
     if not worker_id:
@@ -70,13 +71,15 @@ def main() -> int:
     handoffs_path = os.environ.get("JUPITER_HANDOFFS", "").strip() or None
     lease_seconds = int(os.environ.get("JUPITER_LEASE_SECONDS", "300"))
 
-    profile = CandidateProfile.load(profile_path)
     receipts = ReceiptStore(receipts_path)
     handoffs = HandoffStore(handoffs_path)
 
     queue = RemoteTaskQueue(
         base_url, admin_token, lease_seconds=lease_seconds,
     )
+
+    def profile_factory(task: ApplicationTask) -> CandidateProfile:
+        return queue.fetch_profile(task.candidate_id)
 
     def agent_factory(task: ApplicationTask) -> JupiterAgent:
         return JupiterAgent(
@@ -91,13 +94,13 @@ def main() -> int:
     signal.signal(signal.SIGINT, _on_signal)
 
     log.info(
-        "воркер %s запущен, сервер %s, профиль %s, dry_run=%s",
-        worker_id, base_url, profile_path, dry_run,
+        "воркер %s запущен, сервер %s, dry_run=%s",
+        worker_id, base_url, dry_run,
     )
 
     while not _stop:
         try:
-            result = worker.run_once(queue, profile, agent_factory, worker_id)
+            result = worker.run_once(queue, profile_factory, agent_factory, worker_id)
         except Exception:
             log.exception("ошибка в run_once")
             time.sleep(poll_interval)

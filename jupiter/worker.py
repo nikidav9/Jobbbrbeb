@@ -58,7 +58,7 @@ def apply_result(queue: TaskQueueProto, task: ApplicationTask, result: AgentResu
 
 def run_once(
     queue: TaskQueueProto,
-    profile: CandidateProfile,
+    profile: CandidateProfile | Callable[[ApplicationTask], CandidateProfile],
     agent_factory: Callable[[ApplicationTask], JupiterAgent],
     worker: str = "worker-1",
 ) -> tuple[ApplicationTask, str] | None:
@@ -67,13 +67,13 @@ def run_once(
     if task is None:
         return None
 
+    resolved = profile(task) if callable(profile) else profile
     agent = agent_factory(task)
     queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
         "url": task.vacancy_url,
     })
     if task.resume_token:
-        # Человек сделал свою часть — продолжаем, а не начинаем заново.
-        result = agent.resume(task.resume_token, profile)
+        result = agent.resume(task.resume_token, resolved)
     else:
-        result = agent.run(task.vacancy_url, profile)
+        result = agent.run(task.vacancy_url, resolved)
     return task, apply_result(queue, task, result)

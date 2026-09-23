@@ -178,6 +178,7 @@ $adminFns = [
     // он берёт чужие задачи по очереди, и подставлять сюда пользовательскую
     // сессию значило бы дать одному человеку доступ к заявкам другого.
     'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
+    'jupiterGetCandidateProfile',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -6145,6 +6146,50 @@ try {
             }
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
             jt_respond(['ok' => true]); exit;
+        }
+
+        case 'jupiterGetCandidateProfile': {
+            $uid = (string)($args[0] ?? '');
+            if ($uid === '') { jt_respond(['error' => 'Нужен user_id'], 400); exit; }
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uid],
+                'id,first_name,last_name,age,phone,resume_data,resume_email,personal_data');
+            if (!$user) { jt_respond(['error' => 'Пользователь не найден'], 404); exit; }
+            $resume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uid,
+                'selected' => 'eq.true',
+            ], 'id,storage_path,resume_data,resume_email');
+            $resumeUrl = null;
+            if ($resume && !empty($resume['storage_path'])) {
+                try { $resumeUrl = jt_resume_signed_url($resume['storage_path']); }
+                catch (Throwable $e) { /* PDF недоступен — не фатально */ }
+            }
+            $personalData = null;
+            if (!empty($user['personal_data'])) {
+                $personalData = is_string($user['personal_data'])
+                    ? json_decode($user['personal_data'], true)
+                    : $user['personal_data'];
+            }
+            $resumeData = null;
+            if ($resume && !empty($resume['resume_data'])) {
+                $resumeData = is_string($resume['resume_data'])
+                    ? json_decode($resume['resume_data'], true)
+                    : $resume['resume_data'];
+            } elseif (!empty($user['resume_data'])) {
+                $resumeData = is_string($user['resume_data'])
+                    ? json_decode($user['resume_data'], true)
+                    : $user['resume_data'];
+            }
+            jt_respond([
+                'user_id' => $uid,
+                'first_name' => $user['first_name'] ?? null,
+                'last_name' => $user['last_name'] ?? null,
+                'age' => $user['age'] ?? null,
+                'phone' => $user['phone'] ?? null,
+                'email' => $resume['resume_email'] ?? $user['resume_email'] ?? null,
+                'personal_data' => $personalData,
+                'resume_data' => $resumeData,
+                'resume_url' => $resumeUrl,
+            ]); exit;
         }
 
         case 'dbApplyPermVacancy': {
