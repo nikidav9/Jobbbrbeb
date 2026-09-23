@@ -1152,6 +1152,10 @@ function WorkerPermMode() {
   // Описание на карточке сначала компактное, как в референсе; по нажатию
   // раскрывается прямо внутри карточки, без отдельного экрана.
   const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
+  // Отдельно запоминаем, действительно ли текст занимает больше семи строк.
+  // Проверять длину строки в символах ненадёжно: одна и та же длина на узком
+  // экране может занимать вдвое больше строк.
+  const [expandableDescriptionId, setExpandableDescriptionId] = useState<string | null>(null);
   const cardScrollRef = useRef<React.ComponentRef<typeof GHScrollView>>(null);
   const cardViewH = useRef(0);
   const cardContentH = useRef(0);
@@ -1389,6 +1393,7 @@ function WorkerPermMode() {
     cardScrollRef.current?.scrollTo({ y: 0, animated: false });
     setMoreBelow(false);
     setExpandedDescriptionId(null);
+    setExpandableDescriptionId(null);
   };
   const swFly = swDeck.flyOut;
 
@@ -1430,13 +1435,14 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
-  // Нижняя композиция держится на одном шаге: 13pt от карточки до ряда
-  // действий и ещё 13pt от ряда до верхней границы плавающего таббара.
-  // Резерв считаем от реальной высоты таббара, а не магическим числом — так
-  // одинаковый ритм сохраняется и на iPhone с разным safe area, и на Android.
-  const deckEdgeGap = rs(13);
+  // Опускаем ряд ✕ / фильтр / ♥ ещё ниже, ближе к плавающему таббару.
+  // Резерв карточки считается от той же координаты, поэтому её видимая высота
+  // увеличивается ровно на столько же и снизу не появляется новая пустота.
+  const deckActionGap = rs(-6);
+  const deckCardGap = rs(8);
   const deckActionSize = rs(68);
-  const deckBottomReserve = tabBarHeight + deckActionSize + deckEdgeGap * 2;
+  const deckActionBottom = tabBarHeight + deckActionGap;
+  const deckBottomReserve = deckActionBottom + deckActionSize + deckCardGap;
 
   // Карточка колоды «Работа» — тот же макет, что у смены: рамка во весь экран,
   // чипы с иконками, снизу футер undo / ✕ / чат / ♥.
@@ -1471,6 +1477,7 @@ function WorkerPermMode() {
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
         <OnboardingTarget targetKey="worker.feed.card" style={styles.cardViewportShell}>
+          <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
           <GHScrollView
             ref={cardScrollRef}
             style={styles.cardViewportClip}
@@ -1483,7 +1490,7 @@ function WorkerPermMode() {
             refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
           >
           <GestureDetector gesture={swDeck.gesture}>
-            <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
+            <Reanimated.View style={styles.cardAnimated}>
               <View style={styles.card}>
                 <Reanimated.View style={[styles.wantOverlay, swDeck.wantStyle]}>
                   <Text style={styles.wantText}>ОТКЛИК ♥</Text>
@@ -1500,7 +1507,7 @@ function WorkerPermMode() {
                     {/* Верх карточки — как в референсе: отдельный знак компании,
                         справа служебные кнопки, ниже крупная должность и компания. */}
                     <View style={styles.cardLogoRow}>
-                      <CompanyMark company={v.company} size={52} />
+                      <View style={styles.companyLogoSpacer} />
                       <View style={pS.deckUtilitySpacer} />
                     </View>
 
@@ -1534,21 +1541,45 @@ function WorkerPermMode() {
                     </View>
                   ) : null}
 
+                  <View style={styles.cardDivider} />
+
                   <View style={styles.cardMiddle}>
                     {description ? (
                       <View style={pS.descriptionPanel}>
                         <Text style={pS.descriptionPanelTitle}>Описание вакансии</Text>
+
+                        {/* Невидимая копия измеряет реальное число строк без
+                            numberOfLines. Так кнопка появляется именно тогда,
+                            когда текст действительно обрезан на этом экране. */}
+                        <Text
+                          style={[pS.desc, pS.descriptionMeasure]}
+                          accessible={false}
+                          pointerEvents="none"
+                          onTextLayout={e => {
+                            if (e.nativeEvent.lines.length > 7 && expandableDescriptionId !== v.id) {
+                              setExpandableDescriptionId(v.id);
+                            }
+                          }}
+                        >
+                          {description}
+                        </Text>
+
                         <Text
                           style={pS.desc}
                           numberOfLines={expandedDescriptionId === v.id ? undefined : 7}
                         >
                           {description}
                         </Text>
-                        {description.length > 260 ? (
+
+                        {(description.trim().length > 120 ||
+                          expandableDescriptionId === v.id ||
+                          expandedDescriptionId === v.id) ? (
                           <TouchableOpacity
                             style={pS.descriptionToggle}
                             activeOpacity={0.78}
                             onPress={() => setExpandedDescriptionId(id => id === v.id ? null : v.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={expandedDescriptionId === v.id ? 'Свернуть описание вакансии' : 'Читать описание вакансии полностью'}
                           >
                             <Text style={pS.descriptionToggleText}>
                               {expandedDescriptionId === v.id ? 'Свернуть' : 'Читать далее'}
@@ -1556,7 +1587,7 @@ function WorkerPermMode() {
                             <Ionicons
                               name={expandedDescriptionId === v.id ? 'chevron-up' : 'chevron-down'}
                               size={16}
-                              color={Colors.primary}
+                              color={Colors.textSecondary}
                             />
                           </TouchableOpacity>
                         ) : null}
@@ -1608,6 +1639,22 @@ function WorkerPermMode() {
               </View>
             </Reanimated.View>
           </GestureDetector>
+
+          {/* The company logo is deliberately outside the card Pan gesture.
+              Its 72×72 hit target covers the whole visible logo plus padding,
+              so every part of the mark opens the company reliably. */}
+          <TouchableOpacity
+            style={pS.deckCompanyLogoOverlay}
+            activeOpacity={0.78}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={`Открыть компанию ${displayCompany}`}
+            onPress={() => {
+              router.navigate({ pathname: '/(tabs)/company', params: { company: displayCompany } });
+            }}
+          >
+            <CompanyMark company={v.company} size={52} />
+          </TouchableOpacity>
           </GHScrollView>
 
           <View
@@ -1643,6 +1690,7 @@ function WorkerPermMode() {
               </View>
             </TouchableOpacity>
           </View>
+          </Reanimated.View>
         </OnboardingTarget>
 
         {moreBelow ? (
@@ -1662,7 +1710,7 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
+        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
           <OnboardingTarget targetKey="worker.feed.reject">
             <TouchableOpacity
@@ -2277,6 +2325,18 @@ const pS = StyleSheet.create({
   limitClose: { paddingVertical: rs(8) },
   limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
   deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
+  deckCompanyLogoOverlay: {
+    position: 'absolute',
+    top: rs(10),
+    left: rs(11),
+    width: rs(72),
+    height: rs(72),
+    borderRadius: rs(24),
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 31,
+    elevation: 31,
+  },
   deckUtilityOverlay: {
     position: 'absolute', top: rs(18), right: rs(13), zIndex: 30, elevation: 30,
     flexDirection: 'row', alignItems: 'center', gap: rs(2),
@@ -2367,22 +2427,29 @@ const pS = StyleSheet.create({
     fontWeight: '800',
     color: Colors.textPrimary,
   },
+  descriptionMeasure: {
+    position: 'absolute',
+    left: rs(16),
+    right: rs(16),
+    top: rs(46),
+    opacity: 0,
+  },
   descriptionToggle: {
-    minHeight: rs(40),
-    marginTop: rs(2),
+    minHeight: rs(42),
+    marginTop: rs(3),
     borderRadius: rs(100),
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#FFD7C4',
+    borderColor: '#E6E8EC',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: rs(6),
+    gap: rs(7),
   },
   descriptionToggleText: {
-    fontSize: rf(13),
-    fontWeight: '800',
-    color: Colors.primary,
+    fontSize: rf(13.5),
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
   blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
@@ -2504,6 +2571,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg,
     ...Shadow.card,
   },
+  // One transform owner for the whole visual card. Interactive overlays stay
+  // outside GestureDetector but inside this layer, so they never look pinned
+  // to the screen while the vacancy is being swiped.
+  deckSwipeLayer: { flex: 1 },
   cardViewportClip: {
     flex: 1,
     borderRadius: rs(24),
@@ -2526,6 +2597,7 @@ const styles = StyleSheet.create({
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   cardTop: { paddingHorizontal: rs(21), paddingTop: rs(20), paddingBottom: rs(14), gap: rs(13) },
   cardLogoRow: { minHeight: rs(52), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  companyLogoSpacer: { width: rs(52), height: rs(52), flexShrink: 0 },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   companyMetaLine: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: 0 },
   cardHeadSpacer: { height: rs(2) },

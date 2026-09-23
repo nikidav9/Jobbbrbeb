@@ -312,6 +312,34 @@ export interface PermVacancy {
 // её можно во вкладке «Активные».
 export type PermApplicationStatus = 'pending' | 'approved' | 'rejected' | 'hired';
 
+/**
+ * Заявка, которую Jupiter подаёт на внешнем карьерном сайте.
+ *
+ * Не путать с PermApplication: та про отклик внутри JobToo, где решение
+ * принимает работодатель. Здесь — чужой сайт, чужая форма и фоновый прогон,
+ * поэтому и состояния свои.
+ */
+export type JupiterApplicationState =
+  | 'queued' | 'opening_site' | 'finding_vacancy' | 'opening_application'
+  | 'filling' | 'validating' | 'ready_to_submit' | 'submitting' | 'verifying'
+  | 'submitted' | 'action_required' | 'submission_unknown' | 'duplicate'
+  | 'retryable_failed' | 'failed';
+
+export interface JupiterApplication {
+  id: string;
+  vacancyUrl: string;
+  company?: string | null;
+  state: JupiterApplicationState;
+  reasonCode?: string | null;
+  /** Есть, когда прогон ждёт человека: капча, код из письма, вход. */
+  resumeToken?: string | null;
+  externalApplicationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string | null;
+  verifiedAt?: string | null;
+}
+
 export interface PermApplication {
   id: string;
   vacancyId: string;

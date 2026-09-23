@@ -67,6 +67,9 @@ jobs:
       - name: Решение по отклику принимает владелец вакансии и оно доходит
         run: php tests/perm_app_test.php
 
+      - name: Заявки Jupiter — свои свои, воркер не подменяет чужое
+        run: php tests/jupiter_applications_test.php
+
       - name: Отклик на смену меняет его сторона, а отказ доходит до человека
         run: php tests/like_authz_test.php
 

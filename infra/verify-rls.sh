@@ -25,7 +25,11 @@ with required(table_name) as (
     ('jm_notifications'), ('jm_complaints'), ('jm_bulletins'),
     ('jm_saved'), ('jm_perm_saved'), ('jm_vacancy_views'), ('jm_perm_vacancy_views'),
     ('jm_bulletin_views'), ('jm_web_push_subscriptions'), ('jm_worker_slots'),
-    ('jm_support_messages'), ('jm_support_threads'), ('jm_support_knowledge')
+    ('jm_support_messages'), ('jm_support_threads'), ('jm_support_knowledge'),
+    -- Заведены позже миграции 013 и защиту включают сами. В стороже их
+    -- не было: RLS на них стоял, но никто этого не проверял.
+    ('jm_bot_messages'), ('jm_consents'), ('jm_ext_clicks'),
+    ('jm_skill_results'), ('jm_jupiter_applications')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r

@@ -13,7 +13,22 @@ tls = (root / "infra/nginx-tls.conf").read_text(encoding="utf-8")
 lockdown = (root / "supabase/migrations/013_lock_down_rls.sql").read_text(encoding="utf-8")
 
 protected = sorted(set(re.findall(r"'((?:jm_)[a-z0-9_]+)'", lockdown)))
-missing_guard_tables = [name for name in protected if f"('{name}')" not in guard]
+
+# Таблицы, заведённые позже 013: защиту они включают сами, и сторож обязан
+# их видеть. Иначе новая таблица тихо выпадает из проверки — а замечают это
+# обычно после того, как из неё что-то утекло.
+later_tables = sorted({
+    name
+    for path in (root / "supabase/migrations").glob("*.sql")
+    if int(path.name.split("_", 1)[0]) > 13
+    for name in re.findall(
+        r"alter table (jm_[a-z0-9_]+) enable row level security",
+        path.read_text(encoding="utf-8"),
+    )
+})
+missing_guard_tables = [
+    name for name in protected + later_tables if f"('{name}')" not in guard
+]
 
 checks = {
     "неготовый Storage считается ошибкой": (
@@ -62,7 +77,10 @@ checks = {
     "RLS guard проверяет relrowsecurity": "relrowsecurity" in guard,
     "RLS guard проверяет права anon": "has_table_privilege('anon'" in guard,
     "RLS guard проверяет права authenticated": "has_table_privilege('authenticated'" in guard,
-    "RLS guard покрывает все таблицы migration 013": bool(protected) and not missing_guard_tables,
+    "RLS guard покрывает все защищённые таблицы": (
+        bool(protected) and not missing_guard_tables
+    ),
+    "поздние таблицы включают RLS в своей миграции": bool(later_tables),
 }
 
 failed = [name for name, ok in checks.items() if not ok]
@@ -73,4 +91,7 @@ if failed:
     if missing_guard_tables:
         print("  - отсутствуют в RLS guard:", ", ".join(missing_guard_tables))
     raise SystemExit(1)
-print(f"migration deployment order: ok; RLS guard covers {len(protected)} tables")
+print(
+    "migration deployment order: ok; RLS guard covers "
+    f"{len(set(protected + later_tables))} tables"
+)
