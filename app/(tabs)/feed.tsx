@@ -1477,6 +1477,7 @@ function WorkerPermMode() {
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
         <OnboardingTarget targetKey="worker.feed.card" style={styles.cardViewportShell}>
+          <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
           <GHScrollView
             ref={cardScrollRef}
             style={styles.cardViewportClip}
@@ -1489,7 +1490,7 @@ function WorkerPermMode() {
             refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
           >
           <GestureDetector gesture={swDeck.gesture}>
-            <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
+            <Reanimated.View style={styles.cardAnimated}>
               <View style={styles.card}>
                 <Reanimated.View style={[styles.wantOverlay, swDeck.wantStyle]}>
                   <Text style={styles.wantText}>ОТКЛИК ♥</Text>
@@ -1682,6 +1683,7 @@ function WorkerPermMode() {
               </View>
             </TouchableOpacity>
           </View>
+          </Reanimated.View>
         </OnboardingTarget>
 
         {moreBelow ? (
@@ -2562,6 +2564,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg,
     ...Shadow.card,
   },
+  // One transform owner for the whole visual card. Interactive overlays stay
+  // outside GestureDetector but inside this layer, so they never look pinned
+  // to the screen while the vacancy is being swiped.
+  deckSwipeLayer: { flex: 1 },
   cardViewportClip: {
     flex: 1,
     borderRadius: rs(24),
