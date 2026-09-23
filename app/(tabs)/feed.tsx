@@ -42,7 +42,7 @@ import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
-import { ReplyBadge } from '@/components/feature/ReplyBadge';
+import { ReplyBadge, hasReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -1522,9 +1522,11 @@ function WorkerPermMode() {
                   {/* Как отвечает этот работодатель — до отклика, а не после.
                       Раньше плашка стояла на карточке смены; смен больше нет,
                       а решение как принималось свайпом, так и принимается. */}
-                  <View style={styles.replyBadgeWrap}>
-                    <ReplyBadge stats={responsivenessMap[v.employerId]} />
-                  </View>
+                  {hasReplyBadge(responsivenessMap[v.employerId]) ? (
+                    <View style={styles.replyBadgeWrap}>
+                      <ReplyBadge stats={responsivenessMap[v.employerId]} />
+                    </View>
+                  ) : null}
 
                   <View style={styles.cardDivider} />
 
