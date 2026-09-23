@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
-from tasks import ApplicationTask, TaskQueue, TaskState
+from tasks import ApplicationTask, TaskQueueProto, TaskState
 
 # Что имеет смысл повторить: связь, время ожидания, дроссель на той стороне.
 # Всё остальное повторять бессмысленно — со второго раза страница не станет
@@ -30,7 +30,7 @@ RESULT_TO_STATE = {
 }
 
 
-def apply_result(queue: TaskQueue, task: ApplicationTask, result: AgentResult) -> str:
+def apply_result(queue: TaskQueueProto, task: ApplicationTask, result: AgentResult) -> str:
     """Перевести итог прогона в состояние задачи."""
     if result.status == "failed":
         retryable = result.reason_code in RETRYABLE_CODES
@@ -57,7 +57,7 @@ def apply_result(queue: TaskQueue, task: ApplicationTask, result: AgentResult) -
 
 
 def run_once(
-    queue: TaskQueue,
+    queue: TaskQueueProto,
     profile: CandidateProfile,
     agent_factory: Callable[[ApplicationTask], JupiterAgent],
     worker: str = "worker-1",
