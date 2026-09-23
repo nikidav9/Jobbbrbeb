@@ -50,18 +50,21 @@ function FloatingTabBar({
   // Fade the scrolled page under the floating bar, rather than inserting an
   // opaque dock. Each tab fades into its own background (orange / white / gray).
   const fadeColors: [string, string, string] = activeRoute === 'feed'
-    ? ['rgba(255,212,181,0)', 'rgba(255,212,181,0.30)', 'rgba(255,212,181,0.88)']
+    ? ['rgba(255,212,181,0)', 'rgba(255,212,181,0.10)', 'rgba(255,212,181,0.46)']
     : activeRoute === 'profile'
-      ? ['rgba(245,245,245,0)', 'rgba(241,241,241,0.32)', 'rgba(245,245,245,0.88)']
-      : ['rgba(255,255,255,0)', 'rgba(248,248,248,0.30)', 'rgba(255,255,255,0.88)'];
+      ? ['rgba(245,245,245,0)', 'rgba(245,245,245,0.12)', 'rgba(245,245,245,0.48)']
+      : ['rgba(255,255,255,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.45)'];
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <LinearGradient
         pointerEvents="none"
         colors={fadeColors}
-        locations={[0, 0.45, 1]}
-        style={[fS.bottomFade, { height: safeBottom + rs(145) }]}
+        locations={[0, 0.42, 1]}
+        // Keep the scrim local to the bar. It softens the content like the
+        // reference, but stays translucent enough for text/cards to remain
+        // visible all the way through the iOS home-indicator area.
+        style={[fS.bottomFade, { height: safeBottom + rs(98) }]}
       />
       {/* Shadow sits on top of the fade. The page stays visible behind both. */}
       <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
