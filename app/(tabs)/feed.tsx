@@ -1430,13 +1430,13 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
-  // Нижняя композиция держится на одном шаге: 13pt от карточки до ряда
-  // действий и ещё 13pt от ряда до верхней границы плавающего таббара.
-  // Резерв считаем от реальной высоты таббара, а не магическим числом — так
-  // одинаковый ритм сохраняется и на iPhone с разным safe area, и на Android.
-  const deckEdgeGap = rs(13);
+  // Нижнюю часть уплотняем: действия стоят ближе к плавающему таббару,
+  // а карточка тянется ниже и забирает пустоту между ними.
+  const deckActionGap = rs(4);
+  const deckCardGap = rs(8);
   const deckActionSize = rs(68);
-  const deckBottomReserve = tabBarHeight + deckActionSize + deckEdgeGap * 2;
+  const deckActionBottom = tabBarHeight + deckActionGap;
+  const deckBottomReserve = deckActionBottom + deckActionSize + deckCardGap;
 
   // Карточка колоды «Работа» — тот же макет, что у смены: рамка во весь экран,
   // чипы с иконками, снизу футер undo / ✕ / чат / ♥.
@@ -1655,7 +1655,7 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
+        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
           <OnboardingTarget targetKey="worker.feed.reject">
             <TouchableOpacity
