@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import {
   Platform, View, Text, StyleSheet, TouchableOpacity,
 } from 'react-native';
@@ -9,6 +9,7 @@ import { StackActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import NotificationPermissionSheet from '@/components/NotificationPermissionSheet';
@@ -33,12 +34,12 @@ interface TabDef {
 }
 
 function FloatingTabBar({
-  state,
-  navigation,
+  activeRoute,
+  onTabPress,
   tabs,
 }: {
-  state: any;
-  navigation: any;
+  activeRoute: string;
+  onTabPress: (route: string) => void;
   tabs: TabDef[];
 }) {
   const insets = useSafeAreaInsets();
@@ -46,12 +47,23 @@ function FloatingTabBar({
   // есть — меряем её отдельно, иначе плашка вкладок садится под
   // системные «назад/домой».
   const safeBottom = bottomSafe(insets.bottom);
+  // Fade the scrolled page under the floating bar, rather than inserting an
+  // opaque dock. Each tab fades into its own background (orange / white / gray).
+  const fadeColors: [string, string, string] = activeRoute === 'feed'
+    ? ['rgba(255,212,181,0)', 'rgba(255,212,181,0.30)', 'rgba(255,212,181,0.88)']
+    : activeRoute === 'profile'
+      ? ['rgba(245,245,245,0)', 'rgba(241,241,241,0.32)', 'rgba(245,245,245,0.88)']
+      : ['rgba(255,255,255,0)', 'rgba(248,248,248,0.30)', 'rgba(255,255,255,0.88)'];
 
   return (
-    <>
-    {/* The page itself continues all the way to the bottom. The tab bar is
-        only an overlay: there is deliberately no backing strip/dock behind it. */}
-    {/* Outer: shadow (overflow:hidden would clip Android elevation) */}
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={fadeColors}
+        locations={[0, 0.45, 1]}
+        style={[fS.bottomFade, { height: safeBottom + rs(145) }]}
+      />
+      {/* Shadow sits on top of the fade. The page stays visible behind both. */}
     <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
       {/* Inner: clips blur to rounded shape */}
       <View style={fS.pillClip}>
@@ -65,14 +77,13 @@ function FloatingTabBar({
             «переезда» индикатора. */}
         <View style={fS.tabsRow}>
           {tabs.map((tab) => {
-            const routeIndex = state.routes.findIndex((r: any) => r.name === tab.route);
-            const focused = routeIndex >= 0 && state.index === routeIndex;
+            const focused = activeRoute === tab.route;
             return (
               <TouchableOpacity
                 key={tab.route}
                 style={fS.tabItem}
                 activeOpacity={0.7}
-                onPress={() => { if (!focused) navigation.navigate(tab.route); }}
+                onPress={() => { if (!focused) onTabPress(tab.route); }}
               >
                 <OnboardingTarget
                   targetKey={`tab.${tab.route}`}
@@ -101,7 +112,7 @@ function FloatingTabBar({
         </View>
       </View>
     </View>
-    </>
+    </View>
   );
 }
 
@@ -109,6 +120,12 @@ function FloatingTabBar({
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const pathname = usePathname();
+  const lastSegment = pathname.split('/').filter(Boolean).pop();
+  const activeRoute = lastSegment === 'profile' || lastSegment === 'matches' || lastSegment === 'feed'
+    ? lastSegment
+    : lastSegment === 'chats' ? 'matches' : 'feed';
   const app = useApp();
   const currentUser = app?.currentUser ?? null;
   const unreadCount = app?.unreadCount ?? 0;
@@ -175,12 +192,26 @@ export default function TabLayout() {
     default: 77,
   });
 
+  const onTabPress = (route: string) => {
+    if (route === 'feed') router.navigate('/(tabs)/feed');
+    else if (route === 'matches') router.navigate('/(tabs)/matches');
+    else if (route === 'profile') router.navigate('/(tabs)/profile');
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+    <View style={{
+      flex: 1,
+      backgroundColor: activeRoute === 'feed'
+        ? Colors.bgWarm
+        : activeRoute === 'profile' ? Colors.outerBg : Colors.bg,
+    }}>
       <Tabs
         initialRouteName="feed"
         screenOptions={{
           headerShown: false,
+          // The real bar is a sibling overlay below. Keep this height only
+          // for useBottomTabBarHeight() so scrollable screens leave enough
+          // trailing space to reveal their final items above the bar.
           tabBarStyle: {
             position: 'absolute',
             height: tabBarHeight,
@@ -192,13 +223,10 @@ export default function TabLayout() {
           tabBarBackground: () => null,
           tabBarShowLabel: false,
         }}
-        tabBar={(props) => (
-          <FloatingTabBar
-            state={props.state}
-            navigation={props.navigation}
-            tabs={tabs}
-          />
-        )}
+        // Rendering no bar here makes the navigator's scenes fill the whole
+        // viewport. A custom bar inside Tabs still reserved the iOS bottom
+        // safe-area strip, abruptly clipping cards and text above the edge.
+        tabBar={() => null}
       >
         <Tabs.Screen name="feed" options={{ tabBarIcon: () => null }} />
         <Tabs.Screen name="index" options={{ href: null }} />
@@ -207,6 +235,7 @@ export default function TabLayout() {
         <Tabs.Screen name="chats" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ tabBarIcon: () => null }} />
       </Tabs>
+      <FloatingTabBar activeRoute={activeRoute} onTabPress={onTabPress} tabs={tabs} />
       <NotificationPermissionSheet />
       <CompleteProfileSheet />
       <EntryTransition />
@@ -217,6 +246,12 @@ export default function TabLayout() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const fS = StyleSheet.create({
+  bottomFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   // Outer view: carries the shadow (can't use overflow:hidden here on Android)
   pillShadow: {
     position: 'absolute',
