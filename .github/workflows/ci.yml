@@ -118,6 +118,18 @@ jobs:
       - name: Обрыв связи не выдаётся за пустоту
         run: php tests/offline_states_test.php
 
+      # Три сторожа жестов лежали в tests/, но ни один не был подключён: они
+      # были зелёными и никогда не запускались. Поломка проводки жеста не
+      # видна ни typecheck, ни на снимках экрана — только настоящим касанием.
+      - name: Карточка в ленте листается пальцем, а не только колесом
+        run: php tests/card_scroll_test.php
+
+      - name: Свайп-удаление переписки отпускает прокрутку
+        run: php tests/chats_swipe_test.php
+
+      - name: Свайп не тратит энергию впустую
+        run: php tests/swipe_energy_test.php
+
       - name: Service worker and infrastructure syntax
         run: |
           node --check public/sw.js
