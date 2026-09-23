@@ -1527,6 +1527,8 @@ function WorkerPermMode() {
                     <ReplyBadge stats={responsivenessMap[v.employerId]} />
                   </View>
 
+                  <View style={styles.cardDivider} />
+
                   <View style={styles.cardMiddle}>
                     {description ? (
                       <View style={pS.descriptionPanel}>
