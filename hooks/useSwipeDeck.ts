@@ -9,9 +9,11 @@ import {
 const { width: SW } = Dimensions.get('window');
 
 /** Сколько карточка должна уехать вбок, чтобы отпускание засчиталось решением. */
-export const SWIPE_THRESHOLD = 80;
-/** Быстрый бросок засчитывается и без этого расстояния. Пиксели в миллисекунду. */
-export const VELOCITY_THRESHOLD = 0.3;
+export const SWIPE_THRESHOLD = 115;
+/** Быстрый бросок засчитывается только после осмысленного смещения. */
+export const VELOCITY_THRESHOLD = 0.65;
+/** Даже быстрый микрожест не должен случайно принимать/отклонять вакансию. */
+export const MIN_FLING_DISTANCE = 36;
 
 const MAX_ROTATION = 8;
 const SPRING = { damping: 22, stiffness: 250, mass: 1 } as const;
@@ -105,7 +107,7 @@ export function useSwipeDeck(handlers: SwipeDeckHandlers) {
 
   const gesture = useMemo(() => {
     const pan = Gesture.Pan()
-      .activeOffsetX([-8, 8])
+      .activeOffsetX([-10, 10])
       // Палец ушёл вниз на двадцать пикселей, не набрав восьми вбок — это не
       // свайп, а потягивание для обновления: жест проигрывает, и его забирает
       // список с RefreshControl.
@@ -139,9 +141,11 @@ export function useSwipeDeck(handlers: SwipeDeckHandlers) {
         // миллисекунду. Без деления любое касание считалось бы броском.
         const vx = e.velocityX / 1000;
         const dx = e.translationX;
-        if (dx > SWIPE_THRESHOLD || vx > VELOCITY_THRESHOLD) {
+        const rightFling = dx >= MIN_FLING_DISTANCE && vx > VELOCITY_THRESHOLD;
+        const leftFling = dx <= -MIN_FLING_DISTANCE && vx < -VELOCITY_THRESHOLD;
+        if (dx > SWIPE_THRESHOLD || rightFling) {
           runOnJS(callWant)(Math.abs(vx));
-        } else if (dx < -SWIPE_THRESHOLD || vx < -VELOCITY_THRESHOLD) {
+        } else if (dx < -SWIPE_THRESHOLD || leftFling) {
           runOnJS(callSkip)(Math.abs(vx));
         } else {
           x.value = withSpring(0, SPRING);
