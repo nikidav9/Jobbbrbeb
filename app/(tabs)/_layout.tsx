@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import {
-  Platform, View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
@@ -9,6 +9,7 @@ import { StackActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import NotificationPermissionSheet from '@/components/NotificationPermissionSheet';
@@ -20,6 +21,19 @@ import { matchBadgeCount } from '@/services/matchCounts';
 import { rs, rf } from '@/constants/scale';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const FLOATING_TAB_HEIGHT = rs(62);
+const FLOATING_TAB_SIDE = rs(40);
+const FLOATING_TAB_RADIUS = rs(31);
+const FLOATING_TAB_SAFE_OVERLAP = rs(13);
+const FLOATING_TAB_MIN_BOTTOM = rs(8);
+
+function floatingTabBottom(safeBottom: number): number {
+  // The reference bar sits partly inside the iOS home-indicator safe area.
+  // We keep an 8pt floor for gesture-only / web layouts and move the pill
+  // down by ~13pt relative to the safe-area boundary.
+  return Math.max(FLOATING_TAB_MIN_BOTTOM, safeBottom - FLOATING_TAB_SAFE_OVERLAP);
+}
 
 
 // ─── Floating tab bar ───────────────────────────────────────────────────────
@@ -33,12 +47,14 @@ interface TabDef {
 }
 
 function FloatingTabBar({
-  state,
-  navigation,
+  activeRoute,
+  surfaceRoute,
+  onTabPress,
   tabs,
 }: {
-  state: any;
-  navigation: any;
+  activeRoute: string;
+  surfaceRoute: string;
+  onTabPress: (route: string) => void;
   tabs: TabDef[];
 }) {
   const insets = useSafeAreaInsets();
@@ -46,13 +62,28 @@ function FloatingTabBar({
   // есть — меряем её отдельно, иначе плашка вкладок садится под
   // системные «назад/домой».
   const safeBottom = bottomSafe(insets.bottom);
+  const tabBottom = floatingTabBottom(safeBottom);
+  // Fade the scrolled page under the floating bar, rather than inserting an
+  // opaque dock. Each tab fades into its own background (orange / white / gray).
+  const fadeColors: [string, string, string] = surfaceRoute === 'feed'
+    ? ['rgba(255,212,181,0)', 'rgba(255,212,181,0.10)', 'rgba(255,212,181,0.46)']
+    : surfaceRoute === 'profile' || surfaceRoute === 'company'
+      ? ['rgba(245,245,245,0)', 'rgba(245,245,245,0.12)', 'rgba(245,245,245,0.48)']
+      : ['rgba(255,255,255,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.45)'];
 
   return (
-    <>
-    {/* The page itself continues all the way to the bottom. The tab bar is
-        only an overlay: there is deliberately no backing strip/dock behind it. */}
-    {/* Outer: shadow (overflow:hidden would clip Android elevation) */}
-    <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={fadeColors}
+        locations={[0, 0.42, 1]}
+        // Keep the scrim local to the bar. It softens the content like the
+        // reference, but stays translucent enough for text/cards to remain
+        // visible all the way through the iOS home-indicator area.
+        style={[fS.bottomFade, { height: tabBottom + FLOATING_TAB_HEIGHT + rs(36) }]}
+      />
+      {/* Shadow sits on top of the fade. The page stays visible behind both. */}
+      <View style={[fS.pillShadow, { bottom: tabBottom }]}>
       {/* Inner: clips blur to rounded shape */}
       <View style={fS.pillClip}>
         {/* Frosted glass background */}
@@ -65,14 +96,13 @@ function FloatingTabBar({
             «переезда» индикатора. */}
         <View style={fS.tabsRow}>
           {tabs.map((tab) => {
-            const routeIndex = state.routes.findIndex((r: any) => r.name === tab.route);
-            const focused = routeIndex >= 0 && state.index === routeIndex;
+            const focused = activeRoute === tab.route;
             return (
               <TouchableOpacity
                 key={tab.route}
                 style={fS.tabItem}
                 activeOpacity={0.7}
-                onPress={() => { if (!focused) navigation.navigate(tab.route); }}
+                onPress={() => { if (!focused) onTabPress(tab.route); }}
               >
                 <OnboardingTarget
                   targetKey={`tab.${tab.route}`}
@@ -101,7 +131,7 @@ function FloatingTabBar({
         </View>
       </View>
     </View>
-    </>
+    </View>
   );
 }
 
@@ -109,6 +139,15 @@ function FloatingTabBar({
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const pathname = usePathname();
+  const lastSegment = pathname.split('/').filter(Boolean).pop();
+  const activeRoute = lastSegment === 'profile' || lastSegment === 'matches' || lastSegment === 'feed'
+    ? lastSegment
+    : lastSegment === 'chats' ? 'matches' : 'feed';
+  // Company profile is opened from the vacancy feed, so the Vacancies tab stays
+  // selected, while its surface/fade is neutral gray rather than feed orange.
+  const surfaceRoute = lastSegment === 'company' ? 'company' : activeRoute;
   const app = useApp();
   const currentUser = app?.currentUser ?? null;
   const unreadCount = app?.unreadCount ?? 0;
@@ -168,19 +207,35 @@ export default function TabLayout() {
     { route: 'profile', iconFilled: 'person', iconOutline: 'person-outline', label: 'Профиль' },
   ];
 
-  // ─── Tab bar height (keeps useBottomTabBarHeight working in screens) ──────
-  const tabBarHeight = Platform.select({
-    ios: insets.bottom + 64 + 13,
-    android: bottomSafe(insets.bottom) + 64 + 13,
-    default: 77,
-  });
+  // Height exposed to useBottomTabBarHeight(): exactly the distance from the
+  // physical bottom edge to the pill's top edge. Worker vacancy cards and
+  // floating actions use this value, so lowering the pill also lets the card
+  // grow down by the same amount instead of leaving an empty band.
+  const layoutSafeBottom = bottomSafe(insets.bottom);
+  const tabBarHeight = floatingTabBottom(layoutSafeBottom) + FLOATING_TAB_HEIGHT;
+
+  const onTabPress = (route: string) => {
+    if (route === 'feed') router.navigate('/(tabs)/feed');
+    else if (route === 'matches') router.navigate('/(tabs)/matches');
+    else if (route === 'profile') router.navigate('/(tabs)/profile');
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+    <View style={{
+      flex: 1,
+      backgroundColor: surfaceRoute === 'feed'
+        ? Colors.bgWarm
+        : surfaceRoute === 'profile' || surfaceRoute === 'company' ? Colors.outerBg : Colors.bg,
+    }}>
+      {/* Keep the navigator free of a tab-bar footer so cards and text can
+          continue to the screen edge. The floating bar is a sibling overlay. */}
       <Tabs
         initialRouteName="feed"
         screenOptions={{
           headerShown: false,
+          // The real bar is a sibling overlay below. Keep this height only
+          // for useBottomTabBarHeight() so scrollable screens leave enough
+          // trailing space to reveal their final items above the bar.
           tabBarStyle: {
             position: 'absolute',
             height: tabBarHeight,
@@ -192,21 +247,17 @@ export default function TabLayout() {
           tabBarBackground: () => null,
           tabBarShowLabel: false,
         }}
-        tabBar={(props) => (
-          <FloatingTabBar
-            state={props.state}
-            navigation={props.navigation}
-            tabs={tabs}
-          />
-        )}
+        tabBar={() => null}
       >
         <Tabs.Screen name="feed" options={{ tabBarIcon: () => null }} />
         <Tabs.Screen name="index" options={{ href: null }} />
         <Tabs.Screen name="matches" options={{ tabBarIcon: () => null }} />
-        {/* Переписка — экран, а не вкладка: вход из «Откликов». */}
+        {/* Переписка и профиль компании — вложенные экраны, не отдельные вкладки. */}
         <Tabs.Screen name="chats" options={{ href: null }} />
+        <Tabs.Screen name="company" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ tabBarIcon: () => null }} />
       </Tabs>
+      <FloatingTabBar activeRoute={activeRoute} surfaceRoute={surfaceRoute} onTabPress={onTabPress} tabs={tabs} />
       <NotificationPermissionSheet />
       <CompleteProfileSheet />
       <EntryTransition />
@@ -217,13 +268,19 @@ export default function TabLayout() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const fS = StyleSheet.create({
+  bottomFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   // Outer view: carries the shadow (can't use overflow:hidden here on Android)
   pillShadow: {
     position: 'absolute',
-    left: rs(16),
-    right: rs(16),
-    height: rs(64),
-    borderRadius: rs(28),
+    left: FLOATING_TAB_SIDE,
+    right: FLOATING_TAB_SIDE,
+    height: FLOATING_TAB_HEIGHT,
+    borderRadius: FLOATING_TAB_RADIUS,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.13,
@@ -233,7 +290,7 @@ const fS = StyleSheet.create({
   // Inner view: clips blur + indicator to pill shape
   pillClip: {
     flex: 1,
-    borderRadius: rs(28),
+    borderRadius: FLOATING_TAB_RADIUS,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.75)',

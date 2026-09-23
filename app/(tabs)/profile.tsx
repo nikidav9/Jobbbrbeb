@@ -6,6 +6,7 @@ import {
   ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -733,6 +734,7 @@ function ResumeVaultTab({
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
   const [editSection, setEditSection] = useState<EditSection>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
@@ -1165,7 +1167,14 @@ export default function ProfileScreen() {
         }
       />
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        // The profile now scrolls to the physical bottom under the floating
+        // navigation, but its last section can still clear the pill on scroll.
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + rs(16) }]}
+        showsVerticalScrollIndicator={false}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+      >
 
         {/* User card — horizontal layout */}
         <View style={styles.userCard}>
@@ -2541,7 +2550,7 @@ const sS = StyleSheet.create({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.outerBg ?? '#F5F7FA' },
-  scroll: { padding: rs(16), paddingBottom: rs(100), gap: rs(12) },
+  scroll: { padding: rs(16), gap: rs(12) },
   // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: rs(12), marginBottom: rs(8) },
   logo: { fontSize: rf(26), fontWeight: '800' },

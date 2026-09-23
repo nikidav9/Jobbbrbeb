@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
-import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile } from '@/constants/types';
+import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication } from '@/constants/types';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 
@@ -1619,6 +1619,51 @@ export async function dbGetPermSavedDetailed(
   );
   if (error) throwOnError('dbGetPermSavedDetailed', error);
   return (data ?? []).map((r: any) => ({ vacancyId: r.vacancy_id, savedAt: r.created_at ?? null }));
+}
+
+// ── Заявки Jupiter на внешних сайтах ────────────────────────────────────────
+//
+// Только через прокси: таблица закрыта построчной защитой, и ходить в неё
+// публичным ключом нечем. Прямой ветки supabase здесь намеренно нет — она
+// была бы мёртвой, как и остальные (IS_NATIVE всегда true).
+
+function toJupiterApplication(row: any): JupiterApplication {
+  return {
+    id: String(row.id),
+    vacancyUrl: String(row.vacancy_url ?? ''),
+    company: row.company ?? null,
+    state: (row.state ?? 'queued') as JupiterApplication['state'],
+    reasonCode: row.reason_code ?? null,
+    resumeToken: row.resume_token ?? null,
+    externalApplicationId: row.external_application_id ?? null,
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
+    submittedAt: row.submitted_at ?? null,
+    verifiedAt: row.verified_at ?? null,
+  };
+}
+
+/**
+ * Поставить внешнюю вакансию в очередь Jupiter.
+ *
+ * Повторный вызов по тому же адресу возвращает прежнюю заявку, а не заводит
+ * вторую: человек мог нажать дважды, и это не повод отправить работодателю
+ * второй отклик.
+ */
+export async function jupiterEnqueue(
+  userId: string,
+  vacancyUrl: string,
+  company?: string,
+): Promise<JupiterApplication> {
+  const row = await proxy('jupiterEnqueue', [userId, vacancyUrl, company ?? '']);
+  return toJupiterApplication(row);
+}
+
+export async function jupiterMyApplications(
+  userId: string,
+): Promise<JupiterApplication[]> {
+  const rows = (await proxy('jupiterMyApplications', [userId])) as any[];
+  return (rows ?? []).map(toJupiterApplication);
 }
 
 export async function dbAddPermSaved(userId: string, vacancyId: string): Promise<void> {
