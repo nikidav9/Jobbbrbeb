@@ -1871,15 +1871,28 @@ function WorkerPermMode() {
         onEnergyPress={() => setLimitOpen(true)}
       />
 
-      {filterStations.length > 0 ? (
-        <TouchableOpacity style={pS.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
-          <Ionicons name="location" size={13} color={Colors.primary} />
-          <Text style={pS.activeStationTxt}>
-            {filterStations.length === 1 ? `м. ${filterStations[0]}` : `Станций: ${filterStations.length}`}
-          </Text>
-          <Ionicons name="close" size={14} color={Colors.textMuted} />
+      <View style={pS.chipRow}>
+        {filterStations.length > 0 ? (
+          <TouchableOpacity style={pS.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
+            <Ionicons name="location" size={13} color={Colors.primary} />
+            <Text style={pS.activeStationTxt}>
+              {filterStations.length === 1 ? `м. ${filterStations[0]}` : `Станций: ${filterStations.length}`}
+            </Text>
+            <Ionicons name="close" size={14} color={Colors.textMuted} />
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          style={[pS.activeStationChip, showCareer && { backgroundColor: Colors.primary + '18', borderColor: Colors.primary }]}
+          onPress={() => setShowCareer(c => !c)}
+          activeOpacity={0.8}
+        >
+          {careerLoading
+            ? <ActivityIndicator size={13} color={Colors.primary} />
+            : <Ionicons name="briefcase-outline" size={13} color={showCareer ? Colors.primary : Colors.textMuted} />}
+          <Text style={[pS.activeStationTxt, { color: showCareer ? Colors.primary : Colors.textMuted }]}>Карьерные сайты</Text>
+          {showCareer ? <Ionicons name="close" size={14} color={Colors.primary} /> : null}
         </TouchableOpacity>
-      ) : null}
+      </View>
 
       <MetroMap
         visible={mapOpen}
@@ -2374,10 +2387,14 @@ const pS = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: rf(13), color: Colors.textPrimary },
   searchClear: { fontSize: rf(13), color: Colors.textMuted },
-  activeStationChip: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6), alignSelf: 'flex-start',
+  chipRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: rs(6),
     marginHorizontal: rs(16), marginBottom: rs(4),
+  },
+  activeStationChip: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(6),
     backgroundColor: Colors.primaryLight, borderRadius: rs(100), paddingHorizontal: rs(12), paddingVertical: rs(6),
+    borderWidth: 1, borderColor: 'transparent',
   },
   activeStationTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
 
