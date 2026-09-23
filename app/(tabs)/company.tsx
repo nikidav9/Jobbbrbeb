@@ -95,7 +95,7 @@ export default function CompanyScreen() {
         <TouchableOpacity
           style={s.roundButton}
           activeOpacity={0.75}
-          onPress={() => router.back()}
+          onPress={() => router.navigate('/(tabs)/feed')}
           accessibilityRole="button"
           accessibilityLabel="Назад"
         >
