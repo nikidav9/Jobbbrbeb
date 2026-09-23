@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import {
-  Platform, View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
