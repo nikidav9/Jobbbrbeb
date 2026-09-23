@@ -1506,7 +1506,19 @@ function WorkerPermMode() {
                     {/* Верх карточки — как в референсе: отдельный знак компании,
                         справа служебные кнопки, ниже крупная должность и компания. */}
                     <View style={styles.cardLogoRow}>
-                      <CompanyMark company={v.company} size={52} />
+                      <TouchableOpacity
+                        style={styles.companyLogoTap}
+                        activeOpacity={0.78}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Открыть компанию ${displayCompany}`}
+                        onPress={() => {
+                          if (swDeck.wasSwipe()) return;
+                          router.push({ pathname: '/(tabs)/company', params: { company: displayCompany } });
+                        }}
+                      >
+                        <CompanyMark company={v.company} size={52} />
+                      </TouchableOpacity>
                       <View style={pS.deckUtilitySpacer} />
                     </View>
 
@@ -2556,6 +2568,7 @@ const styles = StyleSheet.create({
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   cardTop: { paddingHorizontal: rs(21), paddingTop: rs(20), paddingBottom: rs(14), gap: rs(13) },
   cardLogoRow: { minHeight: rs(52), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  companyLogoTap: { borderRadius: rs(18) },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   companyMetaLine: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: 0 },
   cardHeadSpacer: { height: rs(2) },
