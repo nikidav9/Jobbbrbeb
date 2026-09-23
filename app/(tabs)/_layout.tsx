@@ -48,10 +48,12 @@ interface TabDef {
 
 function FloatingTabBar({
   activeRoute,
+  surfaceRoute,
   onTabPress,
   tabs,
 }: {
   activeRoute: string;
+  surfaceRoute: string;
   onTabPress: (route: string) => void;
   tabs: TabDef[];
 }) {
@@ -63,9 +65,9 @@ function FloatingTabBar({
   const tabBottom = floatingTabBottom(safeBottom);
   // Fade the scrolled page under the floating bar, rather than inserting an
   // opaque dock. Each tab fades into its own background (orange / white / gray).
-  const fadeColors: [string, string, string] = activeRoute === 'feed'
+  const fadeColors: [string, string, string] = surfaceRoute === 'feed'
     ? ['rgba(255,212,181,0)', 'rgba(255,212,181,0.10)', 'rgba(255,212,181,0.46)']
-    : activeRoute === 'profile'
+    : surfaceRoute === 'profile' || surfaceRoute === 'company'
       ? ['rgba(245,245,245,0)', 'rgba(245,245,245,0.12)', 'rgba(245,245,245,0.48)']
       : ['rgba(255,255,255,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.45)'];
 
@@ -143,6 +145,9 @@ export default function TabLayout() {
   const activeRoute = lastSegment === 'profile' || lastSegment === 'matches' || lastSegment === 'feed'
     ? lastSegment
     : lastSegment === 'chats' ? 'matches' : 'feed';
+  // Company profile is opened from the vacancy feed, so the Vacancies tab stays
+  // selected, while its surface/fade is neutral gray rather than feed orange.
+  const surfaceRoute = lastSegment === 'company' ? 'company' : activeRoute;
   const app = useApp();
   const currentUser = app?.currentUser ?? null;
   const unreadCount = app?.unreadCount ?? 0;
@@ -218,9 +223,9 @@ export default function TabLayout() {
   return (
     <View style={{
       flex: 1,
-      backgroundColor: activeRoute === 'feed'
+      backgroundColor: surfaceRoute === 'feed'
         ? Colors.bgWarm
-        : activeRoute === 'profile' ? Colors.outerBg : Colors.bg,
+        : surfaceRoute === 'profile' || surfaceRoute === 'company' ? Colors.outerBg : Colors.bg,
     }}>
       {/* Keep the navigator free of a tab-bar footer so cards and text can
           continue to the screen edge. The floating bar is a sibling overlay. */}
@@ -247,11 +252,12 @@ export default function TabLayout() {
         <Tabs.Screen name="feed" options={{ tabBarIcon: () => null }} />
         <Tabs.Screen name="index" options={{ href: null }} />
         <Tabs.Screen name="matches" options={{ tabBarIcon: () => null }} />
-        {/* Переписка — экран, а не вкладка: вход из «Откликов». */}
+        {/* Переписка и профиль компании — вложенные экраны, не отдельные вкладки. */}
         <Tabs.Screen name="chats" options={{ href: null }} />
+        <Tabs.Screen name="company" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ tabBarIcon: () => null }} />
       </Tabs>
-      <FloatingTabBar activeRoute={activeRoute} onTabPress={onTabPress} tabs={tabs} />
+      <FloatingTabBar activeRoute={activeRoute} surfaceRoute={surfaceRoute} onTabPress={onTabPress} tabs={tabs} />
       <NotificationPermissionSheet />
       <CompleteProfileSheet />
       <EntryTransition />
