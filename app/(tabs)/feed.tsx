@@ -1513,8 +1513,7 @@ function WorkerPermMode() {
                         accessibilityRole="button"
                         accessibilityLabel={`Открыть компанию ${displayCompany}`}
                         onPress={() => {
-                          if (swDeck.wasSwipe()) return;
-                          router.push({ pathname: '/(tabs)/company', params: { company: displayCompany } });
+                          router.navigate({ pathname: '/(tabs)/company', params: { company: displayCompany } });
                         }}
                       >
                         <CompanyMark company={v.company} size={52} />
