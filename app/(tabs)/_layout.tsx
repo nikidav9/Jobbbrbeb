@@ -22,6 +22,19 @@ import { rs, rf } from '@/constants/scale';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
+const FLOATING_TAB_HEIGHT = rs(62);
+const FLOATING_TAB_SIDE = rs(40);
+const FLOATING_TAB_RADIUS = rs(31);
+const FLOATING_TAB_SAFE_OVERLAP = rs(13);
+const FLOATING_TAB_MIN_BOTTOM = rs(8);
+
+function floatingTabBottom(safeBottom: number): number {
+  // The reference bar sits partly inside the iOS home-indicator safe area.
+  // We keep an 8pt floor for gesture-only / web layouts and move the pill
+  // down by ~13pt relative to the safe-area boundary.
+  return Math.max(FLOATING_TAB_MIN_BOTTOM, safeBottom - FLOATING_TAB_SAFE_OVERLAP);
+}
+
 
 // ─── Floating tab bar ───────────────────────────────────────────────────────
 
@@ -47,6 +60,7 @@ function FloatingTabBar({
   // есть — меряем её отдельно, иначе плашка вкладок садится под
   // системные «назад/домой».
   const safeBottom = bottomSafe(insets.bottom);
+  const tabBottom = floatingTabBottom(safeBottom);
   // Fade the scrolled page under the floating bar, rather than inserting an
   // opaque dock. Each tab fades into its own background (orange / white / gray).
   const fadeColors: [string, string, string] = activeRoute === 'feed'
@@ -64,10 +78,10 @@ function FloatingTabBar({
         // Keep the scrim local to the bar. It softens the content like the
         // reference, but stays translucent enough for text/cards to remain
         // visible all the way through the iOS home-indicator area.
-        style={[fS.bottomFade, { height: safeBottom + rs(98) }]}
+        style={[fS.bottomFade, { height: tabBottom + FLOATING_TAB_HEIGHT + rs(36) }]}
       />
       {/* Shadow sits on top of the fade. The page stays visible behind both. */}
-      <View style={[fS.pillShadow, { bottom: safeBottom + 13 }]}>
+      <View style={[fS.pillShadow, { bottom: tabBottom }]}>
       {/* Inner: clips blur to rounded shape */}
       <View style={fS.pillClip}>
         {/* Frosted glass background */}
@@ -188,12 +202,12 @@ export default function TabLayout() {
     { route: 'profile', iconFilled: 'person', iconOutline: 'person-outline', label: 'Профиль' },
   ];
 
-  // ─── Tab bar height (keeps useBottomTabBarHeight working in screens) ──────
-  const tabBarHeight = Platform.select({
-    ios: insets.bottom + 64 + 13,
-    android: bottomSafe(insets.bottom) + 64 + 13,
-    default: 77,
-  });
+  // Height exposed to useBottomTabBarHeight(): exactly the distance from the
+  // physical bottom edge to the pill's top edge. Worker vacancy cards and
+  // floating actions use this value, so lowering the pill also lets the card
+  // grow down by the same amount instead of leaving an empty band.
+  const layoutSafeBottom = bottomSafe(insets.bottom);
+  const tabBarHeight = floatingTabBottom(layoutSafeBottom) + FLOATING_TAB_HEIGHT;
 
   const onTabPress = (route: string) => {
     if (route === 'feed') router.navigate('/(tabs)/feed');
@@ -257,10 +271,10 @@ const fS = StyleSheet.create({
   // Outer view: carries the shadow (can't use overflow:hidden here on Android)
   pillShadow: {
     position: 'absolute',
-    left: rs(16),
-    right: rs(16),
-    height: rs(64),
-    borderRadius: rs(28),
+    left: FLOATING_TAB_SIDE,
+    right: FLOATING_TAB_SIDE,
+    height: FLOATING_TAB_HEIGHT,
+    borderRadius: FLOATING_TAB_RADIUS,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.13,
@@ -270,7 +284,7 @@ const fS = StyleSheet.create({
   // Inner view: clips blur + indicator to pill shape
   pillClip: {
     flex: 1,
-    borderRadius: rs(28),
+    borderRadius: FLOATING_TAB_RADIUS,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.75)',
