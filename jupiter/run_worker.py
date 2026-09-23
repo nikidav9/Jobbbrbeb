@@ -51,7 +51,12 @@ def main() -> int:
     )
 
     base_url = _require_env("JOBTOO_URL")
-    admin_token = _require_env("JOBTOO_ADMIN_TOKEN")
+    admin_token = (
+        os.environ.get("JOBTOO_ADMIN_TOKEN", "").strip()
+        or os.environ.get("ADMIN_API_TOKEN", "").strip()
+    )
+    if not admin_token:
+        sys.exit("переменная JOBTOO_ADMIN_TOKEN (или ADMIN_API_TOKEN) не задана")
     profile_path = _require_env("JUPITER_PROFILE")
 
     worker_id = os.environ.get("JUPITER_WORKER_ID", "").strip()

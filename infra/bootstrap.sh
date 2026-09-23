@@ -264,6 +264,44 @@ EOF
   systemctl is-active --quiet jt-tgpoll.service || systemctl start jt-tgpoll.service 2>/dev/null || true
 fi
 
+# ── Jupiter: воркер подачи откликов ──────────────────────────────────────
+# Создаётся отключённым: для запуска нужен профиль кандидата, которого пока
+# нет. Включается вручную: systemctl enable --now jt-jupiter.service
+if [ -f "$REPO/jupiter/run_worker.py" ] && [ ! -f /etc/systemd/system/jt-jupiter.service ]; then
+  mkdir -p /var/lib/jupiter
+  cat > /etc/systemd/system/jt-jupiter.service <<SVCEOF
+[Unit]
+Description=JobToo: Jupiter — подача откликов на карьерные сайты
+After=docker.service
+Wants=docker.service
+
+[Service]
+WorkingDirectory=$REPO/jupiter
+EnvironmentFile=$SECRETS
+Environment=JOBTOO_URL=https://jobtoo.ru
+Environment=JUPITER_PROFILE=/var/lib/jupiter/profile.json
+Environment=JUPITER_RECEIPTS=/var/lib/jupiter/receipts.json
+Environment=JUPITER_HANDOFFS=/var/lib/jupiter/handoffs.json
+ExecStart=/usr/bin/python3 $REPO/jupiter/run_worker.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/var/log/jt-jupiter.log
+StandardError=append:/var/log/jt-jupiter.log
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+  systemctl daemon-reload
+  say "jupiter" "юнит создан (отключён, нужен профиль)"
+fi
+if systemctl is-active --quiet jt-jupiter.service 2>/dev/null; then
+  if ! cmp -s "$REPO/jupiter/run_worker.py" /var/lib/jupiter/.deployed 2>/dev/null; then
+    cp -f "$REPO/jupiter/run_worker.py" /var/lib/jupiter/.deployed
+    systemctl restart jt-jupiter.service 2>/dev/null || true
+    say "jupiter" "перезапущен на новой версии"
+  fi
+fi
+
 # Сторож — теперь запасной выход, а не основной путь.
 #
 # Пока забор жив, вебхука быть не должно вовсе: у Телеграма это
