@@ -1165,7 +1165,12 @@ export default function ProfileScreen() {
         }
       />
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+      >
 
         {/* User card — horizontal layout */}
         <View style={styles.userCard}>
