@@ -126,8 +126,16 @@ const RATINGS = [{
 }];
 
 // Ответ на любой вызов прокси
+// Кто «вошёл» в текущем снимке. Приложение с осени проверяет сессию на
+// сервере (AppContext → dbRestoreSession → dbSession): кэш профиля в
+// localStorage входом больше не считается. Без ответа на dbSession снимок
+// выходил экраном выбора роли — и так вышли ВСЕ 35 снимков, потому что
+// заглушка про эту функцию не знала.
+let CURRENT = null;
+
 function respond(fn, args) {
   switch (fn) {
+    case 'dbSession': return CURRENT ? { user: CURRENT } : null;
     case 'dbGetUsers': return USERS;
     case 'dbCheckPhoneExists': return false;
     case 'dbGetUserById': return USERS.find(u => u.id === args?.[0]) ?? null;
@@ -376,10 +384,16 @@ for (const shot of SHOTS) {
   });
 
   const page = await ctx.newPage();
+  CURRENT = null;
   if (shot.who) {
+    CURRENT = shot.who;
     await page.addInitScript((u) => {
       try {
         window.localStorage.setItem('jm_currentUser', JSON.stringify(u));
+        // На вебе токен лежит в AsyncStorage (то есть в обычном localStorage):
+        // SecureStore включается только на телефоне. Без токена
+        // dbRestoreSession возвращает null, не дойдя до сервера.
+        window.localStorage.setItem('jm_session_token', 'shot-token');
         // Обучалка и предложение включить уведомления перекрывают экран —
         // помечаем пройденными, снимок должен показывать сам интерфейс
         window.localStorage.setItem(`jm_onboarding_v3_${u.id}`, JSON.stringify({ status: 'done', step: 999 }));

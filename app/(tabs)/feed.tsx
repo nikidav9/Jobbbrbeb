@@ -2328,7 +2328,10 @@ const pS = StyleSheet.create({
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
   // desc
-  sectionBlock: { gap: rs(8), marginBottom: rs(13) },
+  // marginBottom убран намеренно: он складывался с gap контейнера, и между
+  // секциями выходило 26 при 8 внутри секции. Промежуток задаёт cardMiddle,
+  // в одном месте.
+  sectionBlock: { gap: rs(8) },
   blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
   locRow: {
@@ -2460,7 +2463,12 @@ const styles = StyleSheet.create({
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  cardTop: { padding: rs(21), paddingBottom: rs(13), gap: rs(13) },
+  // Сетка карточки вакансии — один шаг на все блоки, а не три разных.
+  // 21 — поля карточки и промежуток между секциями, 13 — внутри верхнего
+  // блока (работодатель → должность → чипы), 8 — внутри секции. Числа
+  // соседние по Фибоначчи: следующий шаг всегда заметно больше предыдущего,
+  // поэтому вложенность читается без разделителей.
+  cardTop: { padding: rs(21), gap: rs(13) },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   cardHeadSpacer: { height: rs(2) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -2474,7 +2482,9 @@ const styles = StyleSheet.create({
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
   jobTitle: { fontSize: rf(24), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(29), marginTop: 0 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  replyBadgeWrap: { marginHorizontal: rs(8), marginBottom: rs(13) },
+  // Было 8 против 21 у всего остального: плашка торчала шире чипов над ней
+  // и разделителя под ней, и именно это читалось как «съехавшая вёрстка».
+  replyBadgeWrap: { marginHorizontal: rs(21), marginBottom: rs(21) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
@@ -2482,7 +2492,7 @@ const styles = StyleSheet.create({
   addressChipIcon: { fontSize: rf(15), marginTop: rs(1) },
   addressChipText: { flex: 1, fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary, lineHeight: rf(20) },
   cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(21) },
-  cardMiddle: { flexGrow: 1, paddingVertical: rs(13), paddingHorizontal: rs(21), gap: rs(13) },
+  cardMiddle: { flexGrow: 1, padding: rs(21), gap: rs(21) },
   slotsRow: { flexDirection: 'row' },
   slotInfo: { flex: 1, alignItems: 'center', paddingVertical: rs(2) },
   slotInfoBordered: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: Colors.divider },
