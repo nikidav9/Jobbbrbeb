@@ -19,8 +19,23 @@ import { rs, rf } from '@/constants/scale';
 
 type Props = { stats?: Responsiveness | null };
 
+/**
+ * Будет ли плашка нарисована. Нужно тому, кто её оборачивает: обёртка с
+ * отступами вокруг пустоты оставляет в карточке дыру, а у нового работодателя
+ * переписок нет вовсе — то есть дыра у большинства свежих вакансий.
+ *
+ * Отдельной функцией, а не повторённым `chats < 2` на стороне вызова: порог
+ * должен меняться в одном месте, иначе однажды он разъедется с отрисовкой.
+ *
+ * Предикат типа, а не просто boolean: иначе внутри самой плашки после проверки
+ * пришлось бы ещё раз убеждаться, что stats не пустой.
+ */
+export function hasReplyBadge(stats?: Responsiveness | null): stats is Responsiveness {
+  return !!stats && stats.chats >= 2;
+}
+
 export function ReplyBadge({ stats }: Props) {
-  if (!stats || stats.chats < 2) return null;
+  if (!hasReplyBadge(stats)) return null;
 
   const { chats, answered } = stats;
   const speed = replySpeedLabel(stats.medianSeconds);

@@ -42,7 +42,7 @@ import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
-import { ReplyBadge } from '@/components/feature/ReplyBadge';
+import { ReplyBadge, hasReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -1492,13 +1492,6 @@ function WorkerPermMode() {
           <GestureDetector gesture={swDeck.gesture}>
             <Reanimated.View style={styles.cardAnimated}>
               <View style={styles.card}>
-                <Reanimated.View style={[styles.wantOverlay, swDeck.wantStyle]}>
-                  <Text style={styles.wantText}>ОТКЛИК ♥</Text>
-                </Reanimated.View>
-                <Reanimated.View style={[styles.skipOverlay, swDeck.skipStyle]}>
-                  <Text style={styles.skipText}>НЕТ ✕</Text>
-                </Reanimated.View>
-
                 {/* Тело карточки — не кнопка. Вся вакансия здесь, открывать
                     нечего, а нажатие на всю площадь срабатывало на отпускании
                     после прокрутки и уводило со страницы. */}
@@ -1529,10 +1522,17 @@ function WorkerPermMode() {
                   </View>
 
                   {/* Репутация работодателя остаётся до отклика — это важная
-                      информация для решения, но визуально она отделена от шапки. */}
-                  <View style={styles.replyBadgeWrap}>
-                    <ReplyBadge stats={responsivenessMap[v.employerId]} />
-                  </View>
+                      информация для решения, но визуально она отделена от шапки.
+
+                      Обёртка условна: ReplyBadge ничего не рисует, когда
+                      переписок меньше двух, а отступы вокруг неё оставались
+                      всегда — и у работодателя без переписок в карточке зияли
+                      42 пикселя пустоты. */}
+                  {hasReplyBadge(responsivenessMap[v.employerId]) ? (
+                    <View style={styles.replyBadgeWrap}>
+                      <ReplyBadge stats={responsivenessMap[v.employerId]} />
+                    </View>
+                  ) : null}
 
                   <View style={styles.cardDivider} />
 
@@ -1683,6 +1683,21 @@ function WorkerPermMode() {
               </View>
             </TouchableOpacity>
           </View>
+
+          {/* Swipe decision labels live above every interactive overlay
+              (logo, bookmark, share) so they are always on the visual front. */}
+          <Reanimated.View
+            pointerEvents="none"
+            style={[styles.wantOverlay, swDeck.wantStyle]}
+          >
+            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+          </Reanimated.View>
+          <Reanimated.View
+            pointerEvents="none"
+            style={[styles.skipOverlay, swDeck.skipStyle]}
+          >
+            <Text style={styles.skipText}>НЕТ ✕</Text>
+          </Reanimated.View>
           </Reanimated.View>
         </OnboardingTarget>
 
@@ -2584,9 +2599,9 @@ const styles = StyleSheet.create({
   cardBody: { flexGrow: 1 },
   postedAgo: { fontSize: rf(12), fontWeight: '500', color: Colors.textMuted, flexShrink: 0 },
   card: { flexGrow: 1, backgroundColor: Colors.bg },
-  wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
+  wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 80, elevation: 80, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
+  skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 80, elevation: 80, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   cardTop: { paddingHorizontal: rs(21), paddingTop: rs(20), paddingBottom: rs(14), gap: rs(13) },
   cardLogoRow: { minHeight: rs(52), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
