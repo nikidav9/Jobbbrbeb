@@ -1506,18 +1506,7 @@ function WorkerPermMode() {
                     {/* Верх карточки — как в референсе: отдельный знак компании,
                         справа служебные кнопки, ниже крупная должность и компания. */}
                     <View style={styles.cardLogoRow}>
-                      <TouchableOpacity
-                        style={styles.companyLogoTap}
-                        activeOpacity={0.78}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Открыть компанию ${displayCompany}`}
-                        onPress={() => {
-                          router.navigate({ pathname: '/(tabs)/company', params: { company: displayCompany } });
-                        }}
-                      >
-                        <CompanyMark company={v.company} size={52} />
-                      </TouchableOpacity>
+                      <View style={styles.companyLogoSpacer} />
                       <View style={pS.deckUtilitySpacer} />
                     </View>
 
@@ -1642,6 +1631,22 @@ function WorkerPermMode() {
               </View>
             </Reanimated.View>
           </GestureDetector>
+
+          {/* The company logo is deliberately outside the card Pan gesture.
+              Its 72×72 hit target covers the whole visible logo plus padding,
+              so every part of the mark opens the company reliably. */}
+          <TouchableOpacity
+            style={pS.deckCompanyLogoOverlay}
+            activeOpacity={0.78}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={`Открыть компанию ${displayCompany}`}
+            onPress={() => {
+              router.navigate({ pathname: '/(tabs)/company', params: { company: displayCompany } });
+            }}
+          >
+            <CompanyMark company={v.company} size={52} />
+          </TouchableOpacity>
           </GHScrollView>
 
           <View
@@ -2311,6 +2316,18 @@ const pS = StyleSheet.create({
   limitClose: { paddingVertical: rs(8) },
   limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
   deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
+  deckCompanyLogoOverlay: {
+    position: 'absolute',
+    top: rs(10),
+    left: rs(11),
+    width: rs(72),
+    height: rs(72),
+    borderRadius: rs(24),
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 31,
+    elevation: 31,
+  },
   deckUtilityOverlay: {
     position: 'absolute', top: rs(18), right: rs(13), zIndex: 30, elevation: 30,
     flexDirection: 'row', alignItems: 'center', gap: rs(2),
@@ -2567,7 +2584,7 @@ const styles = StyleSheet.create({
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   cardTop: { paddingHorizontal: rs(21), paddingTop: rs(20), paddingBottom: rs(14), gap: rs(13) },
   cardLogoRow: { minHeight: rs(52), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  companyLogoTap: { borderRadius: rs(18) },
+  companyLogoSpacer: { width: rs(52), height: rs(52), flexShrink: 0 },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   companyMetaLine: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: 0 },
   cardHeadSpacer: { height: rs(2) },
