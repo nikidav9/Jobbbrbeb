@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent import CandidateProfile
+from agent import CandidateProfile, JupiterAgent, Reason
+from engine import JupiterWebEngine
 import sber
 
 
@@ -111,6 +112,51 @@ class SberAdapterTest(unittest.TestCase):
         outcome, message, _ = sber.submit_payload(engine, page(), {})
         self.assertEqual(outcome, "duplicate")
         self.assertIn("already applied", message)
+
+    def test_agent_stops_for_explicit_sber_consent_before_post(self):
+        with tempfile.TemporaryDirectory() as td:
+            resume = Path(td) / "resume.pdf"
+            resume.write_bytes(b"%PDF-1.4\njobtoo\n")
+            agent = JupiterAgent(set(), dry_run=False)
+            result = agent.run_loaded_html(
+                page().html,
+                page().url,
+                self.profile(str(resume), consent=False),
+            )
+            self.assertEqual(result.status, "action_required")
+            self.assertEqual(result.reason_code, Reason.CONSENT_REQUIRED)
+            self.assertTrue(any(
+                item.get("site_adapter") == "sber_public_api"
+                for item in result.trajectory
+            ))
+
+    def test_agent_submits_sber_only_after_explicit_consent(self):
+        with tempfile.TemporaryDirectory() as td:
+            resume = Path(td) / "resume.pdf"
+            resume.write_bytes(b"%PDF-1.4\njobtoo\n")
+            engine = JupiterWebEngine(set())
+            calls = []
+
+            def fake_request_json(url, *, method="GET", payload=None, headers=None):
+                calls.append((url, method, payload, headers))
+                return 200, {"success": True}
+
+            engine.request_json = fake_request_json
+            agent = JupiterAgent(set(), engine=engine, dry_run=False)
+            guarded = []
+            agent.before_submit = lambda url, intermediate: guarded.append(
+                (url, intermediate)
+            )
+            result = agent.run_loaded_html(
+                page().html,
+                page().url,
+                self.profile(str(resume), consent=True),
+            )
+            self.assertEqual(result.status, "submitted", result.reason)
+            self.assertEqual(len(guarded), 1)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][0], sber.SBER_APPLICATION_URL)
+            self.assertEqual(calls[0][1], "POST")
 
 
 if __name__ == "__main__":
