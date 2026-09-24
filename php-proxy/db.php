@@ -6185,12 +6185,42 @@ try {
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
-            if ($existing) { $data = $existing; break; }
-            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
+            if ($existing) {
+                // A second swipe after live mode was enabled is an explicit
+                // authorization for this vacancy. Reuse the existing row
+                // (the unique index still prevents duplicate employer
+                // submissions), but do not leave an old dry-run row stuck
+                // forever with submission_authorized_at = null.
+                $canAuthorizeExisting = !empty($user['jupiter_live_enabled_at'])
+                    && empty($existing['submission_authorized_at'])
+                    && empty($existing['lease_owner'])
+                    && in_array((string)($existing['state'] ?? ''), ['queued', 'ready_to_submit'], true);
+                if ($canAuthorizeExisting) {
+                    sb_update('jm_jupiter_applications', [
+                        'id' => 'eq.' . (string)$existing['id'],
+                        'user_id' => 'eq.' . $uidArg,
+                        'submission_authorized_at' => 'is.null',
+                        'lease_owner' => 'is.null',
+                    ], [
+                        'state' => 'queued',
+                        'submission_authorized_at' => now_iso(),
+                        'reason_code' => null,
+                        'not_before' => null,
+                        'updated_at' => now_iso(),
+                    ]);
+                    $existing = sb_single('jm_jupiter_applications', [
+                        'id' => 'eq.' . (string)$existing['id'],
+                        'user_id' => 'eq.' . $uidArg,
+                    ]);
+                }
+                $data = $existing;
+                break;
+            }
             $row = [
                 'id' => uid(),
                 'user_id' => $uidArg,
