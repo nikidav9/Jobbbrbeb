@@ -80,6 +80,12 @@ CONSENT_MARKERS = (
 # «порекомендуй знакомого»).
 _CONTACT_FIELD_MARKERS = ("phone", "tel", "mail", "телефон", "почт", "e-mail")
 _COMPANY_FIELD_MARKERS = ("company", "organization", "organisation", "компани", "организац")
+# Поле, которое бывает только у кандидата. Имя не годится: форма «свяжитесь
+# с нами» для клиентов тоже спрашивает имя и компанию.
+_CANDIDATE_FIELD_MARKERS = (
+    "resume", "резюм", "cv", "vacanc", "ваканс", "position", "должност",
+    "о себе", "portfolio", "портфолио", "cover", "сопроводит",
+)
 _REFERRER_LABEL_MARKERS = ("рекомендател", "порекомендуй", "рекомендую друга", "friend")
 _STRUCTURAL_CONTROL_TYPES = {"checkbox", "radio", "hidden", "submit", "button", "file"}
 
@@ -494,6 +500,8 @@ def is_application_form(
         return False
 
     has_contact = False
+    has_candidate_field = False
+    requires_company = False
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -508,6 +516,8 @@ def is_application_form(
         if any(marker in normalize(control.label) for marker in _REFERRER_LABEL_MARKERS):
             return False
 
+        if control.type == "file":
+            has_candidate_field = True  # резюме или портфолио файлом
         if control.type in _STRUCTURAL_CONTROL_TYPES:
             continue
 
@@ -524,16 +534,25 @@ def is_application_form(
             ) if value
         ))
 
-        # Форма для клиентов (заявка от компании), а не для кандидата.
+        # Форма для клиентов (заявка от компании), а не для кандидата. ИНН —
+        # признак сразу. Обязательная «компания» — только если в форме нет
+        # ни одного поля кандидата (резюме, вакансия, «о себе»; проверка после
+        # цикла): в IT-анкетах бывает обязательная «текущая компания».
         if control.required:
             tokens = set(haystack.split())
-            is_inn = "inn" in tokens or "инн" in tokens
-            if is_inn or any(marker in haystack for marker in _COMPANY_FIELD_MARKERS):
+            if "inn" in tokens or "инн" in tokens:
                 return False
+            if any(marker in haystack for marker in _COMPANY_FIELD_MARKERS):
+                requires_company = True
+        if any(marker in haystack.split() or len(marker) > 3 and marker in haystack
+               for marker in _CANDIDATE_FIELD_MARKERS):
+            has_candidate_field = True
 
         if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
             has_contact = True
 
+    if requires_company and not has_candidate_field:
+        return False
     return has_contact if require_contact else True
 
 
