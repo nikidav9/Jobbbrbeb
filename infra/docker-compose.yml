@@ -253,6 +253,7 @@ services:
       # продолжит работать. Так сделано, чтобы выкатка не уронила вход у всех,
       # если секрет почему-то не создался.
       SESSION_SECRET: ${SESSION_SECRET:-}
+      JUPITER_MAIL_VERIFIED: ${JUPITER_MAIL_VERIFIED:-0}
     depends_on: [rest]
 
   # Self-hosted дашборд на московском сервере.
