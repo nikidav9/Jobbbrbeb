@@ -25,6 +25,9 @@ $live = (string)file_get_contents(
 $mail = (string)file_get_contents(
     __DIR__ . '/../supabase/migrations/107_jupiter_mail.sql'
 );
+$thirdPartyConsent = (string)file_get_contents(
+    __DIR__ . '/../supabase/migrations/109_jupiter_third_party_consent.sql'
+);
 $guard = (string)file_get_contents(__DIR__ . '/../infra/verify-rls.sh');
 
 // Комментарии выброшены намеренно. Первая версия теста ловила «for update skip
@@ -50,7 +53,8 @@ $selfBlock = substr($db, strpos($db, '$selfArgFns = ['),
 check('проверка разрешения перед отправкой доступна только воркеру',
     str_contains($adminBlock, "'jupiterSubmitGuard'")
     && !str_contains($selfBlock, "'jupiterSubmitGuard'"));
-foreach (['jupiterLiveStatus', 'jupiterSetLive', 'jupiterRequeueLive'] as $fn) {
+foreach (['jupiterLiveStatus', 'jupiterSetLive', 'jupiterRequeueLive',
+          'jupiterGrantThirdPartyConsent'] as $fn) {
     check("$fn привязан к владельцу", str_contains($selfBlock, "'$fn' => 0"));
 }
 foreach (['jupiterMailbox', 'jupiterMailList', 'jupiterMailRead'] as $fn) {
@@ -66,6 +70,16 @@ check('почтовые данные закрыты от клиентских р
 check('отклик заблокирован до подключения почты и резюме',
     str_contains($db, "jt_secret('JUPITER_MAIL_VERIFIED') !== '1'")
     && str_contains($db, 'Сначала загрузите и выберите резюме PDF'));
+check('согласие работодателю хранится отдельно на конкретной заявке',
+    str_contains($thirdPartyConsent, 'third_party_consent_at timestamptz')
+    && str_contains($thirdPartyConsent, 'third_party_terms_url text'));
+check('согласие Сберу принимает только его точный URL условий',
+    str_contains($db, "case 'jupiterGrantThirdPartyConsent':")
+    && str_contains($db, "https://rabota.sber.ru/terms")
+    && str_contains($db, "\$host !== 'rabota.sber.ru'"));
+check('согласие Сберу не подменяет глобальное согласие JobToo',
+    str_contains($db, "'third_party_consent_at' => \$now")
+    && !str_contains($thirdPartyConsent, 'jm_users'));
 foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish'] as $fn) {
     check("$fn НЕ выдаётся по пользовательской сессии",
         !str_contains($selfBlock, "'$fn'"));
