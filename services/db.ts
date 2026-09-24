@@ -1644,6 +1644,8 @@ function toJupiterApplication(row: any): JupiterApplication {
     submittedAt: row.submitted_at ?? null,
     verifiedAt: row.verified_at ?? null,
     submissionAuthorizedAt: row.submission_authorized_at ?? null,
+    thirdPartyConsentAt: row.third_party_consent_at ?? null,
+    thirdPartyTermsUrl: row.third_party_terms_url ?? null,
   };
 }
 
@@ -1701,6 +1703,16 @@ export async function jupiterSetLive(userId: string, enabled: boolean): Promise<
 
 export async function jupiterRequeueLive(userId: string, applicationId: string): Promise<JupiterApplication> {
   return toJupiterApplication(await proxy('jupiterRequeueLive', [userId, applicationId]));
+}
+
+export async function jupiterGrantThirdPartyConsent(
+  userId: string,
+  applicationId: string,
+  termsUrl: string,
+): Promise<JupiterApplication> {
+  return toJupiterApplication(
+    await proxy('jupiterGrantThirdPartyConsent', [userId, applicationId, termsUrl]),
+  );
 }
 
 function toExtVacancy(row: any): ExtVacancy {
