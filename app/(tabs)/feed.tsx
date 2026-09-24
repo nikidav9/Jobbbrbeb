@@ -1907,7 +1907,7 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
+        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
             <TouchableOpacity
               accessibilityLabel="Пропустить"
