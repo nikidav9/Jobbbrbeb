@@ -1705,6 +1705,31 @@ export async function jupiterRequeueLive(userId: string, applicationId: string):
   return toJupiterApplication(await proxy('jupiterRequeueLive', [userId, applicationId]));
 }
 
+/** Собственные поля человека для ручного заполнения анкеты в WebView. */
+export type JupiterFillProfile = {
+  first_name: string | null;
+  last_name: string | null;
+  patronymic: string | null;
+  full_name: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  citizenship: string | null;
+  desired_role: string | null;
+};
+
+export async function jupiterFillProfile(userId: string): Promise<JupiterFillProfile> {
+  return proxy('jupiterFillProfile', [userId]);
+}
+
+/** Человек сам прошёл капчу и нажал «Отправить» в WebView. */
+export async function jupiterMarkManualSubmitted(
+  userId: string,
+  applicationId: string,
+): Promise<JupiterApplication> {
+  return toJupiterApplication(await proxy('jupiterMarkManualSubmitted', [userId, applicationId]));
+}
+
 export async function jupiterGrantThirdPartyConsent(
   userId: string,
   applicationId: string,

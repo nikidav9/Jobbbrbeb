@@ -15,7 +15,7 @@ from handoff import HandoffStore
 from tasks import TaskQueue, TaskState
 from worker import run_once
 from submission import ReceiptStore
-from site_compat import AUDITED_SITES, field_override, trusted_hosts_for
+from site_compat import AUDITED_SITES, AUDITED_SOURCE_URLS, field_override, live_ready, trusted_hosts_for
 
 
 APPLICATION_HTML = """<!doctype html>
@@ -430,7 +430,9 @@ BAD_PATTERN_HTML = """<!doctype html>
 <form action="/never-submit" method="post">
   <label>Имя <input name="first_name" required></label>
   <label>Email <input type="email" name="email" required></label>
-  <label>Телефон <input name="phone" required pattern="[0-9]{11}"></label>
+  <!-- Шаблон, которому номер не отвечает ни в какой записи: цифры, +7, 8…
+       агент подбирает сам (_phone_for_control), а тут подбирать нечего. -->
+  <label>Телефон <input name="phone" required pattern="[0-9]{4}"></label>
   <button type="submit">Откликнуться</button>
 </form>
 """
@@ -1667,7 +1669,21 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertNotIn("click_submit", [x["action"] for x in result.trajectory])
 
     def test_audited_registry_covers_all_62_sources_and_known_apply_hosts(self):
-        self.assertEqual(len(AUDITED_SITES), 62)
+        # 62 источника владельца — все в реестре; сверху — сайты каталога,
+        # которым разведка сняла карту полей.
+        names = {site.name for site in AUDITED_SITES}
+        self.assertEqual(len(AUDITED_SOURCE_URLS), 62)
+        self.assertLessEqual(set(AUDITED_SOURCE_URLS), names)
+        self.assertEqual(len(names), len(AUDITED_SITES))
+        # Боевая подача — только туда, где разведка прошла dry-run без капчи.
+        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 29)
+        self.assertTrue(live_ready("https://rabota.sber.ru/search/123"))
+        self.assertTrue(live_ready("https://www.x5.tech/vacancy/1"))
+        self.assertFalse(live_ready("https://www.slata.ru/vacancy/"))  # заполнял фильтр
+        self.assertFalse(live_ready("https://vkusvill.ru/job/"))  # капча
+        self.assertFalse(live_ready("https://unknown.example/job"))
+        # Доверенный хост с www остаётся с www: политика сравнивает буквально.
+        self.assertIn("www.career.reksoft.com", trusted_hosts_for("https://career.reksoft.com/vacancies"))
         self.assertIn("job.wb.ru", trusted_hosts_for("https://career.rwb.ru/vacancies/34863"))
         self.assertIn("hh.ru", trusted_hosts_for("https://career.lenta.com/"))
         self.assertEqual(

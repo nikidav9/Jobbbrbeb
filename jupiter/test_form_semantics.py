@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent import JupiterAgent
+from agent import CandidateProfile, JupiterAgent, choose_key, is_application_form
 from engine import JupiterWebEngine
 from validation import validate_form
 
@@ -323,6 +323,215 @@ class Constraints(unittest.TestCase):
     def test_empty_optional_field_is_not_an_issue(self):
         html = '<form action="/s" method="post"><input type="email" name="mail"></form>'
         self.assertEqual(self.issues(html), [])
+
+
+class ApplicationFormSelection(unittest.TestCase):
+    """is_application_form: анкета кандидата против соседних форм сайта.
+
+    Разведка живых сайтов (19 разделов) показала, что агент путал с анкетой
+    фильтр вакансий, подписку на рассылку и форму «порекомендуй знакомого» —
+    все они формально набирают очки скоринга не хуже настоящей анкеты.
+    """
+
+    def test_name_and_phone_is_an_application_form(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input name="full_name" required>'
+            '<input name="phone" type="tel" required>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_phone_and_birth_date_is_an_application_form(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input name="phone" type="tel">'
+            '<input name="birth_date" type="date">'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_vacancy_filter_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/search" method="get">'
+            '<select name="city"><option value="msk">Москва</option></select>'
+            '<input type="checkbox" name="remote" value="1">'
+            '<button type="submit">Найти</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_newsletter_subscription_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/subscribe" method="post">'
+            '<input name="subscribe" type="text">'
+            '<input name="email" type="email">'
+            '<button type="submit">Подписаться</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_client_lead_form_with_required_company_and_inn_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/lead" method="post">'
+            '<input name="company" required placeholder="Компания">'
+            '<input name="inn" required placeholder="ИНН">'
+            '<input name="phone" type="tel" required>'
+            '<button type="submit">Отправить</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_refer_a_friend_form_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/refer" method="post">'
+            '<input name="referrer_name">'
+            '<input name="referrer_phone" type="tel">'
+            '<input name="name">'
+            '<input name="phone" type="tel">'
+            '<button type="submit">Порекомендовать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_subscribe_checkbox_does_not_disqualify_a_real_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input name="phone" type="tel">'
+            '<label><input type="checkbox" name="subscribe" value="1"> '
+            "Подписаться на новости</label>"
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_require_contact_false_accepts_a_step_without_contact_fields(self):
+        # Поздний шаг уже распознанной анкеты: контакт был на первом экране
+        # визарда, здесь его по делу нет.
+        page = parse(
+            '<form action="/wizard-submit" method="post">'
+            '<textarea name="motivation" required></textarea>'
+            '<button type="submit">Отправить заявку</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+        self.assertTrue(is_application_form(page, 0, require_contact=False))
+
+    def test_require_contact_false_still_rejects_a_refer_a_friend_form(self):
+        # Дисквалификаторы действуют независимо от require_contact: это не
+        # про отсутствие контакта, а про то, что форма — чужая.
+        page = parse(
+            '<form action="/refer" method="post">'
+            '<input name="referrer_name">'
+            '<input name="referrer_phone" type="tel">'
+            '<input name="name">'
+            '<input name="phone" type="tel">'
+            '<button type="submit">Порекомендовать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0, require_contact=False))
+
+    def test_dry_run_does_not_report_ready_to_submit_for_a_subscription_only_page(self):
+        # Тот самый случай из разведки: единственная форма на странице —
+        # подписка с полем email name=subscribe. Анкеты нет вовсе, и агент
+        # обязан пойти по пути «анкета не найдена», а не подать чужую форму.
+        html = (
+            '<form action="/subscribe" method="post">'
+            '<input name="subscribe" type="email" placeholder="Ваша почта">'
+            '<button type="submit">Подписаться</button>'
+            "</form>"
+        )
+        profile = CandidateProfile(values={
+            "email": "candidate@example.com",
+            "phone": "+79990000000",
+        })
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        result = agent.run_loaded_html(html, "http://127.0.0.1/careers", profile)
+        self.assertNotEqual(result.status, "ready_to_submit")
+        self.assertNotEqual(result.status, "submitted")
+
+
+
+class FieldMeaning(unittest.TestCase):
+    """Что вписать в поле. Ошибки отсюда нашла разведка живых сайтов 24.09."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров", "patronymic": "Сергеевич",
+        "email": "i@example.com", "phone": "+79990000000", "city": "Москва",
+        "education": "Высшее", "desired_role": "Продавец-кассир",
+    })
+
+    def key_for(self, field_html: str) -> str | None:
+        page = parse(f"<form method=post>{field_html}<button>Отправить</button></form>")
+        control = next(c for c in page.controls if c.type not in {"submit"} and c.tag != "button")
+        return choose_key(control, self.PROFILE, "https://employer.example/job")
+
+    def test_label_with_several_name_parts_means_full_name(self):
+        # 1С, Cloud.ru, ITG: раньше уходили только отчество или только фамилия.
+        self.assertEqual(self.key_for('<label>Фамилия имя и отчество * <input name="fio"></label>'), "full_name")
+        self.assertEqual(self.key_for('<label>Фамилия и Имя <input name="text"></label>'), "full_name")
+        self.assertEqual(self.key_for('<label>Имя, фамилия* <input name="name"></label>'), "full_name")
+        self.assertEqual(self.key_for('<label>Фамилия <input name="surname"></label>'), "last_name")
+
+    def test_inner_field_name_wins_over_section(self):
+        # Agima: VACANCY[NAME] получал желаемую должность вместо имени.
+        self.assertEqual(self.key_for('<label>Имя <input name="VACANCY[NAME]"></label>'), "first_name")
+        self.assertEqual(self.key_for('<label>Телефон <input name="VACANCY[PHONE]"></label>'), "phone")
+
+    def test_work_and_education_history_is_never_invented(self):
+        # Петрович: «Высшее» уходило в год окончания и учебное заведение,
+        # желаемая должность — в должность на прошлом месте работы.
+        self.assertIsNone(self.key_for('<label>ваш ответ <input name="EDUCATION[YEAR][]"></label>'))
+        self.assertIsNone(self.key_for('<label>ваш ответ <input name="EDUCATION[BUILDING][]"></label>'))
+        self.assertIsNone(self.key_for('<label>Должность <input name="WORK[POSITION][]"></label>'))
+        self.assertIsNone(self.key_for('<label>Город <input name="WORK[CITY][]"></label>'))
+        self.assertEqual(self.key_for('<label>Уровень <input name="EDUCATION[LEVEL][]"></label>'), "education")
+
+    def test_form_prefix_is_not_a_history_section(self):
+        # Greenhouse: job_application[…] — это вся анкета, а не прошлая работа.
+        self.assertEqual(self.key_for('<label>First name <input name="job_application[first_name]"></label>'), "first_name")
+        self.assertEqual(self.key_for('<input type="email" name="job_application[email]">'), "email")
+        self.assertEqual(self.key_for('<input type="tel" name="jobform[phone]">'), "phone")
+        self.assertEqual(self.key_for('<label>Почта <input name="career_form[email]"></label>'), "email")
+        self.assertIsNone(self.key_for('<label>Должность <input name="work_history[position]"></label>'))
+        self.assertIsNone(self.key_for('<label>Компания <input name="experiences[company]"></label>'))
+
+
+
+class ValueFitsField(unittest.TestCase):
+    """Значение профиля в записи, которую поле примет."""
+
+    def fill(self, html: str, values: dict) -> dict:
+        page = parse(f"<form method=post>{html}<button>Отправить</button></form>")
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        profile = CandidateProfile(values=dict(values))
+        for c in page.controls:
+            if c.tag != "button":
+                agent.fill_control(page, c, profile, [])
+        return {c.name: (c.value, c.checked) for c in page.controls if c.name}
+
+    def test_phone_follows_digits_only_pattern(self):
+        # Macroscop: pattern="[0-9]*" отвергал «+7…» ещё до отправки.
+        got = self.fill('<label>Телефон <input name="phone" pattern="[0-9]*"></label>', {"phone": "+79001234567"})
+        self.assertEqual(got["phone"][0], "79001234567")
+
+    def test_phone_follows_maxlength(self):
+        got = self.fill('<label>Телефон <input name="phone" maxlength="10"></label>', {"phone": "+7 900 123-45-67"})
+        self.assertEqual(got["phone"][0], "9001234567")  # тот же номер, 10 цифр
+
+    def test_phone_without_constraints_is_untouched(self):
+        got = self.fill('<label>Телефон <input name="phone"></label>', {"phone": "+79001234567"})
+        self.assertEqual(got["phone"][0], "+79001234567")
+
+    def test_russia_matches_russian_federation_option(self):
+        # Норникель: вариант «Российская Федерация», в профиле «Россия».
+        got = self.fill(
+            '<label>Гражданство <select name="citizenship"><option value="">—</option>'
+            '<option value="rf">Российская Федерация</option><option value="by">Беларусь</option></select></label>',
+            {"citizenship": "Россия"},
+        )
+        self.assertEqual(got["citizenship"][0], "rf")
 
 
 if __name__ == "__main__":

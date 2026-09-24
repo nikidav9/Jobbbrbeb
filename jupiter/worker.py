@@ -23,6 +23,8 @@ RETRYABLE_CODES = {
     Reason.SUBMIT_FAILED,
 }
 log = logging.getLogger("jupiter")
+# Сайт не отмечен live_ready в site_compat: боевую заявку не исполняем.
+SITE_NOT_VERIFIED = "SITE_NOT_VERIFIED"
 
 RESULT_TO_STATE = {
     "submitted": TaskState.SUBMITTED,
@@ -82,11 +84,21 @@ def run_once(
     profile: CandidateProfile | Callable[[ApplicationTask], CandidateProfile],
     agent_factory: Callable[[ApplicationTask], JupiterAgent],
     worker: str = "worker-1",
+    site_gate: Callable[[str], bool] | None = None,
 ) -> tuple[ApplicationTask, str] | None:
-    """Взять одну задачу и довести её. None — брать нечего."""
+    """Взять одну задачу и довести её. None — брать нечего.
+
+    site_gate — пропускает ли сайт боевую подачу. Проверяется до профиля и
+    агента: на непроверенный сайт живая заявка не должна даже открываться,
+    иначе агент мог бы принять за анкету фильтр или подписку и отправить её
+    от имени человека. Заявка не теряется — она ждёт с SITE_NOT_VERIFIED.
+    """
     task = queue.lease(worker)
     if task is None:
         return None
+    if site_gate is not None and task.submission_authorized_at and not site_gate(task.vacancy_url):
+        queue.finish(task.id, TaskState.ACTION_REQUIRED, reason_code=SITE_NOT_VERIFIED)
+        return task, TaskState.ACTION_REQUIRED
 
     try:
         resolved = profile(task) if callable(profile) else profile

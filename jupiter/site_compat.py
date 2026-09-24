@@ -11,11 +11,22 @@ class SiteProfile:
     hosts: tuple[str, ...]
     trusted_apply_hosts: tuple[str, ...] = ()
     field_overrides: dict[str, str] = field(default_factory=dict)
+    # Боевая подача разрешена. Ставит владелец, и только после того, как
+    # разведка (recon.py) дошла на живом сайте до анкеты кандидата, заполнила
+    # её целиком без капчи и остановилась перед отправкой. Без флага воркер
+    # боевую задачу не исполняет: отклик сохраняется со SITE_NOT_VERIFIED.
+    live_ready: bool = False
 
 
 AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Пятёрочка", ("rabota5ka.ru",)),
-    SiteProfile("Перекрёсток", ("rabota.perekrestok.ru",)),
+    SiteProfile(
+        "Перекрёсток",
+        ("rabota.perekrestok.ru",),
+        # Быстрый отклик: ФИО, телефон, дата рождения. Разведка 2026-09-24.
+        field_overrides={"fullname": "full_name", "birthdate": "birth_date"},
+        live_ready=True,
+    ),
     SiteProfile("Магнит", ("rabota.magnit.ru",)),
     SiteProfile("Лента", ("career.lenta.com",), ("hh.ru", "spb.hh.ru", "superjob.ru", "avito.ru")),
     SiteProfile(
@@ -61,11 +72,11 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "cv_file": "resume",
         },
     ),
-    SiteProfile("Мария-Ра", ("maria-ra.ru",)),
+    SiteProfile("Мария-Ра", ("maria-ra.ru",), live_ready=True),
     SiteProfile("Ярче!", ("xn--80aacr7bjeo1cwe.xn--p1ai", "работаярче.рф")),
     SiteProfile("Wildberries / РВБ", ("career.rwb.ru",), ("job.wb.ru",)),
     SiteProfile("Ozon", ("career.ozon.ru",)),
-    SiteProfile("Lamoda", ("job.lamoda.ru",)),
+    SiteProfile("Lamoda", ("job.lamoda.ru",), live_ready=True),
     SiteProfile("Самокат", ("vacancy.samokat.ru",)),
     SiteProfile("Спортмастер", ("job.sportmaster.ru",)),
     SiteProfile("М.Видео-Эльдорадо", ("career.mvideoeldorado.ru",)),
@@ -84,6 +95,7 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "comment": "cover_letter",
             "consent": "consent",
         },
+        live_ready=True,
     ),
     SiteProfile("Петрович", ("petrovichjob.ru",)),
     SiteProfile("Детский мир", ("jobs.detmir.ru",), ("job.detmir.ru",)),
@@ -93,7 +105,11 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Подружка", ("rabotavpodrygke.ru",)),
     SiteProfile("kari", ("kari.com",)),
     SiteProfile("Gloria Jeans", ("lookbook.gloria-jeans.ru",)),
-    SiteProfile("Befree", ("befree.ru",)),
+    SiteProfile(
+        "Befree",
+        ("befree.ru",),
+        field_overrides={"title": "desired_role", "name": "full_name"},
+    ),
     SiteProfile("HENDERSON", ("henderson.ru",)),
     SiteProfile(
         "CDEK",
@@ -107,6 +123,7 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "brief_link": "resume_url",
             "brief": "resume",
         },
+        live_ready=True,
     ),
     SiteProfile("Деловые Линии", ("job.dellin.ru",)),
     SiteProfile("ПЭК", ("hr.pecom.ru",)),
@@ -116,7 +133,17 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Аэрофлот", ("vacancy.aeroflot.ru",)),
     SiteProfile("Шереметьево", ("job.svo.su",)),
     SiteProfile("Черкизово", ("vacancies.cherkizovo.com",)),
-    SiteProfile("Северсталь", ("career.severstal.com",)),
+    SiteProfile(
+        "Северсталь",
+        ("career.severstal.com",),
+        # name стоит рядом с lastname — это имя, а не ФИО.
+        field_overrides={
+            "name": "first_name",
+            "lastname": "last_name",
+            "about": "cover_letter",
+            "link": "resume_url",
+        },
+    ),
     SiteProfile("СИБУР", ("career.sibur.ru",)),
     SiteProfile("Балтика", ("career.baltika.ru",)),
     SiteProfile("Норникель", ("career.nornickel.ru",)),
@@ -160,7 +187,7 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     ),
     SiteProfile("Шоколадница", ("regions.shoko.ru",)),
     SiteProfile("AZIMUT Hotels", ("azimuthotels.com",), ("hh.ru",)),
-    SiteProfile("Сбер", ("rabota.sber.ru",)),
+    SiteProfile("Сбер", ("rabota.sber.ru",), live_ready=True),
     SiteProfile(
         "МегаФон",
         ("job.megafon.ru",),
@@ -175,6 +202,70 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
         },
     ),
     SiteProfile("Яндекс", ("yandex.ru",), ("forms.yandex.ru",)),
+    # Ниже — каталог cofinder, не исходный список владельца. Карты сняты
+    # разведкой (recon.py) по подписям полей на живой странице; поле без
+    # подписи не угадываем.
+    SiteProfile(
+        "Yadro",
+        ("careers.yadro.com",),
+        field_overrides={"name": "first_name", "last_name": "last_name", "message": "cover_letter"},
+        live_ready=True,
+    ),
+    SiteProfile("Солар", ("team.rt-solar.ru",), field_overrides={"form_text_20": "resume_url"}),
+    SiteProfile(
+        "Centicore Group",
+        ("centicore.ru",),
+        field_overrides={
+            "name2": "first_name",
+            "lastname2": "last_name",
+            "message2": "cover_letter",
+            "link": "resume_url",
+            "position": "desired_role",
+        },
+        live_ready=True,
+    ),
+    SiteProfile(
+        "Effective Technologies",
+        ("career.effective-group.ru",),
+        field_overrides={"name": "first_name", "subname": "last_name", "rezum": "resume_url"},
+    ),
+    SiteProfile(
+        "PIX Robotics",
+        ("pix.ru",),
+        field_overrides={"order_name": "full_name", "order_post": "desired_role"},
+    ),
+    SiteProfile(
+        "Дельта Компьютерс",
+        ("deltacomputers.ru",),
+        field_overrides={"f_name": "full_name", "f_post": "desired_role"},
+    ),
+    # Разведка 24.09: dry-run пройден без карты полей — агент понял анкету сам.
+    SiteProfile("Авиасейлс", ("aviasales.ru",), live_ready=True),
+    SiteProfile("2ГИС", ("job.2gis.ru",), live_ready=True),
+    SiteProfile("X5 Tech", ("x5.tech",), live_ready=True),
+    SiteProfile("Cloud.ru", ("cloud.ru",), live_ready=True),
+    SiteProfile("Aston", ("career.astondevs.ru",), live_ready=True),
+    SiteProfile("Гараж 8", ("garage-eight.com",), live_ready=True),
+    SiteProfile("Selecty", ("selecty.ru",), live_ready=True),
+    SiteProfile("iSpring", ("ispring.ru",), live_ready=True),
+    SiteProfile("1С", ("1c.ru",), live_ready=True),
+    SiteProfile("kokos group", ("career.kokocgroup.ru",), live_ready=True),
+    SiteProfile("Agima", ("agima.ru",), live_ready=True),
+    SiteProfile("Navio", ("navio.auto",), live_ready=True),
+    SiteProfile("ДатаРу", ("dataru.ru",), live_ready=True),
+    SiteProfile("BSL", ("bsl.dev",), live_ready=True),
+    SiteProfile("Юзтех", ("usetech.ru",), live_ready=True),
+    SiteProfile("Траектория технологий", ("trctech.ru",), live_ready=True),
+    SiteProfile("РДВ Технолоджи", ("rdwcomp.ru",), live_ready=True),
+    SiteProfile("ITG", ("itglobal.com",), live_ready=True),
+    SiteProfile("КРОК", ("careers.croc.ru",), live_ready=True),
+    SiteProfile("Macroscop", ("pro.macroscop.com",), live_ready=True),
+    SiteProfile("RedLab", ("redlab.dev",), live_ready=True),
+    # Раздел переехал на другой хост: без него политика верно режет редирект.
+    # trusted_apply_hosts сравниваются как есть, поэтому www — отдельной строкой.
+    SiteProfile("Reksoft", ("career.reksoft.com",), ("www.career.reksoft.com",)),
+    SiteProfile("iFellow", ("ifellow.ru",), ("ifellowgroup.ru", "www.ifellowgroup.ru")),
+    SiteProfile("Arenadata", ("career.arenadata.tech",), ("arenadata.tech", "www.arenadata.tech")),
 )
 
 
@@ -192,11 +283,21 @@ def profile_for_url(url: str) -> SiteProfile | None:
     return None
 
 
+def live_ready(url: str) -> bool:
+    """Можно ли подавать сюда по-настоящему. Незнакомый сайт — нельзя."""
+    profile = profile_for_url(url)
+    return bool(profile and profile.live_ready)
+
+
 def trusted_hosts_for(url: str) -> set[str]:
     profile = profile_for_url(url)
     if profile is None:
         return set()
-    return {normalize_host(item) for item in (*profile.hosts, *profile.trusted_apply_hosts)}
+    items = (*profile.hosts, *profile.trusted_apply_hosts)
+    # Политика сверяет хосты буквально, поэтому нужен и вид «как записан»:
+    # без него www.career.reksoft.com из списка тихо превращался в
+    # career.reksoft.com, и редирект на www резался как чужой.
+    return {normalize_host(item) for item in items} | {item.lower() for item in items}
 
 
 def field_override(url: str, *candidates: str) -> str | None:

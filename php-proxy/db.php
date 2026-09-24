@@ -273,6 +273,7 @@ $selfArgFns = [
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
+    'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -6223,6 +6224,93 @@ try {
             if (!$data || empty($data['submission_authorized_at'])) {
                 jt_respond(['error' => 'Не удалось поставить заявку в очередь'], 409); exit;
             }
+            break;
+        }
+
+        // Данные для ручного заполнения анкеты в WebView. Отдаём только
+        // собственные поля человека — без резюме, ссылок и согласий: их
+        // заполняет отдельный экран, а не этот скрипт.
+        case 'jupiterFillProfile': {
+            $uidArg = (string)($args[0] ?? '');
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg],
+                'first_name,last_name,phone,personal_data,resume_data');
+            if (!$user) { jt_respond(['error' => 'Пользователь не найден'], 404); exit; }
+            $personalData = null;
+            if (!empty($user['personal_data'])) {
+                $personalData = is_string($user['personal_data'])
+                    ? json_decode($user['personal_data'], true)
+                    : $user['personal_data'];
+            }
+            if (!is_array($personalData)) $personalData = [];
+            $resume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uidArg, 'selected' => 'eq.true',
+            ], 'resume_data');
+            $resumeData = null;
+            if ($resume && !empty($resume['resume_data'])) {
+                $resumeData = is_string($resume['resume_data'])
+                    ? json_decode($resume['resume_data'], true)
+                    : $resume['resume_data'];
+            } elseif (!empty($user['resume_data'])) {
+                $resumeData = is_string($user['resume_data'])
+                    ? json_decode($user['resume_data'], true)
+                    : $user['resume_data'];
+            }
+            if (!is_array($resumeData)) $resumeData = [];
+            $mailbox = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address');
+            $firstName = trim((string)($user['first_name'] ?? ''));
+            $lastName = trim((string)($user['last_name'] ?? ''));
+            $patronymic = trim((string)($personalData['middleName'] ?? ''));
+            $fullName = trim(implode(' ', array_filter(
+                [$lastName, $firstName, $patronymic], fn($v) => $v !== ''
+            )));
+            $citizenship = trim((string)($personalData['citizenship'] ?? $resumeData['citizenship'] ?? ''));
+            $city = trim((string)($resumeData['city'] ?? ''));
+            $desiredRole = trim((string)($resumeData['desiredPosition'] ?? ''));
+            jt_respond(['data' => [
+                'first_name' => $firstName !== '' ? $firstName : null,
+                'last_name' => $lastName !== '' ? $lastName : null,
+                'patronymic' => $patronymic !== '' ? $patronymic : null,
+                'full_name' => $fullName !== '' ? $fullName : null,
+                'phone' => $user['phone'] ?? null,
+                'email' => $mailbox['address'] ?? null,
+                'city' => $city !== '' ? $city : null,
+                'citizenship' => $citizenship !== '' ? $citizenship : null,
+                'desired_role' => $desiredRole !== '' ? $desiredRole : null,
+            ]]); exit;
+        }
+
+        // Человек сам прошёл капчу и нажал «Отправить» в WebView. Условное
+        // обновление (state = текущее, lease_owner пуст) не даёт затереть
+        // заявку, которую в этот момент уже взял в работу воркер.
+        case 'jupiterMarkManualSubmitted': {
+            $uidArg = (string)($args[0] ?? '');
+            $id = (string)($args[1] ?? '');
+            $existing = sb_single('jm_jupiter_applications', [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
+            ], 'id,state,lease_owner');
+            $allowedStates = ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'];
+            $canMark = $existing && empty($existing['lease_owner'])
+                && in_array((string)($existing['state'] ?? ''), $allowedStates, true);
+            if (!$canMark) {
+                jt_respond(['error' => 'Эту заявку нельзя отметить отправленной'], 409); exit;
+            }
+            $now = now_iso();
+            sb_update('jm_jupiter_applications', [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
+                'state' => 'eq.' . $existing['state'], 'lease_owner' => 'is.null',
+            ], [
+                'state' => 'submitted',
+                'reason_code' => 'MANUAL_WEBVIEW',
+                'submitted_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $data = sb_single('jm_jupiter_applications', [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
+            ]);
+            if (!$data || $data['state'] !== 'submitted') {
+                jt_respond(['error' => 'Эту заявку нельзя отметить отправленной'], 409); exit;
+            }
+            rt_touch('jm_jupiter_applications');
             break;
         }
 

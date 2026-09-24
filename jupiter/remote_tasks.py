@@ -204,7 +204,21 @@ class RemoteTaskQueue:
                     values[key] = pd[key]
             if pd.get("consent"):
                 values["consent"] = pd["consent"]
+        # Настоящие имена полей в базе — из PersonalDetails и ResumeProfile
+        # (constants/types.ts), а не из словаря агента. Без этого сопоставления
+        # отчество, желаемая должность и тип занятости до агента не доходили.
         rd = raw.get("resume_data")
+        for source, mapping in (
+            (rd, {"desiredPosition": "desired_role", "employmentType": "employment",
+                  "city": "city", "citizenship": "citizenship"}),
+            (pd, {"middleName": "patronymic", "citizenship": "citizenship",
+                  "location": "city", "workAuthorization": "work_authorization"}),
+        ):
+            if not isinstance(source, dict):
+                continue
+            for field, key in mapping.items():
+                if key not in values and source.get(field) not in (None, ""):
+                    values[key] = source[field]
         if isinstance(rd, dict):
             for key, val in rd.items():
                 if key not in values and val not in (None, ""):

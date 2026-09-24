@@ -23,6 +23,7 @@ import time
 from agent import CandidateProfile, JupiterAgent
 from handoff import HandoffStore
 from remote_tasks import RemoteTaskQueue
+from site_compat import live_ready
 from submission import ReceiptStore
 from tasks import ApplicationTask
 import worker
@@ -105,7 +106,10 @@ def main() -> int:
 
     while not _stop:
         try:
-            result = worker.run_once(queue, profile_factory, agent_factory, worker_id)
+            result = worker.run_once(
+                queue, profile_factory, agent_factory, worker_id,
+                site_gate=live_ready,
+            )
         except Exception:
             log.exception("ошибка в run_once")
             time.sleep(poll_interval)
