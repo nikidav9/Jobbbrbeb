@@ -352,6 +352,32 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertTrue(is_application_form(page, 0))
 
+    def test_required_current_company_with_resume_is_an_application(self):
+        # IT-анкета: «Текущая компания*» обязательна, но есть резюме файлом.
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<label>Текущая компания <input name="company" required></label>'
+            '<label>Резюме <input type="file" name="cv"></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_contact_us_with_name_and_company_is_not_an_application(self):
+        # «Свяжитесь с нами» для клиентов тоже спрашивает имя — имя не признак.
+        page = parse(
+            '<form action="/lead" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Фамилия <input name="surname" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Компания <input name="company" required></label>'
+            '<button type="submit">Отправить</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
     def test_vacancy_filter_is_not_an_application_form(self):
         page = parse(
             '<form action="/search" method="get">'
