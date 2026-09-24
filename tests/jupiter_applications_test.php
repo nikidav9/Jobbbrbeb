@@ -95,8 +95,10 @@ check('jupiterFinish принимает только известные сост
 // запросов, уникальный индекс — нет.
 check('уникальность заявки закреплена индексом',
     (bool)preg_match('~create unique index[^;]*jm_jupiter_applications\s*\(user_id, canonical_url\)~s', $sqlCode));
-check('повторная постановка возвращает прежнюю заявку',
-    str_contains($db, "if (\$existing) { \$data = \$existing; break; }"));
+check('повторный свайп после live-режима разрешает прежнюю dry-run заявку',
+    str_contains($db, '$canAuthorizeExisting')
+    && str_contains($db, "'submission_authorized_at' => now_iso()")
+    && str_contains($db, "'id' => 'eq.' . (string)\$existing['id']"));
 check('публичные методы Jupiter возвращают data как другие методы db.php',
     str_contains($db, "\$data = \$inserted[0] ?? sb_single('jm_jupiter_applications'")
     && str_contains($db, "case 'jupiterMyApplications': {\n            \$data = sb_select(")
