@@ -118,25 +118,7 @@ def build_payload(page: Any, profile: Any, vacancy: SberVacancy) -> dict[str, st
     }
 
 
-def submit(engine: Any, page: Any, profile: Any) -> tuple[str, str | None, object]:
-    """Submit through Sber's public application endpoint.
-
-    Returns (outcome, message, raw_response), where outcome is one of
-    submitted / duplicate / rejected.
-    """
-    vacancy = extract_vacancy(page)
-    if vacancy is None:
-        return "rejected", "Sber vacancy identifiers were not found", {}
-    payload = build_payload(page, profile, vacancy)
-    status, body = engine.request_json(
-        SBER_APPLICATION_URL,
-        method="POST",
-        payload=payload,
-        headers={
-            "Origin": "https://rabota.sber.ru",
-            "Referer": str(getattr(page, "url", "")),
-        },
-    )
+def interpret_response(status: int, body: object) -> tuple[str, str | None, object]:
     if isinstance(body, dict) and body.get("success") is True and 200 <= status < 300:
         return "submitted", None, body
     message = None
@@ -149,3 +131,24 @@ def submit(engine: Any, page: Any, profile: Any) -> tuple[str, str | None, objec
     if message == "Candidate has already applied for the job requisition":
         return "duplicate", message, body
     return "rejected", message or f"Sber API returned HTTP {status}", body
+
+
+def submit_payload(engine: Any, page: Any, payload: dict[str, str]) -> tuple[str, str | None, object]:
+    status, body = engine.request_json(
+        SBER_APPLICATION_URL,
+        method="POST",
+        payload=payload,
+        headers={
+            "Origin": "https://rabota.sber.ru",
+            "Referer": str(getattr(page, "url", "")),
+        },
+    )
+    return interpret_response(status, body)
+
+
+def submit(engine: Any, page: Any, profile: Any) -> tuple[str, str | None, object]:
+    """Submit through Sber's public application endpoint."""
+    vacancy = extract_vacancy(page)
+    if vacancy is None:
+        return "rejected", "Sber vacancy identifiers were not found", {}
+    return submit_payload(engine, page, build_payload(page, profile, vacancy))
