@@ -148,6 +148,11 @@ class RemoteTaskQueue:
         if self._worker is None:
             return
         extra: dict[str, Any] = {}
+        # The worker only emits SUBMITTED after its success-verification path
+        # has confirmed the employer response. Preserve that fact server-side
+        # so the UI can distinguish "POST attempted" from "accepted".
+        if state == TaskState.SUBMITTED:
+            extra["verified"] = True
         if reason_code is not None:
             extra["reason_code"] = reason_code
         if resume_token is not None:
