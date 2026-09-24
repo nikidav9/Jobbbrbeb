@@ -1,0 +1,73 @@
+name: Забрать вакансии с карьерных сайтов
+
+# Единственный способ наполнить jm_ext_vacancies: сервер идёт по адресам
+# из connector_config источника career_owner, парсит страницы/JSON и кладёт
+# вакансии в таблицу. Без этого задания таблица остаётся пустой, а Jupiter
+# не имеет вакансий, на которые подавать.
+#
+# Частота: каждые 6 часов. period_min в источнике тоже 360. Чаще
+# бессмысленно — карьерные страницы обновляются не в реальном времени, —
+# а запросы к чужим серверам на каждый заход неизбежны.
+#
+# Что происходит. Один вызов ingest.php запускает обход: он зовёт
+# career.php?source=career_owner, тот поочерёдно ходит по каждому endpoint
+# из connector_config (Пятёрочка, ВкусВилл, METRO, Лемана ПРО, …),
+# нормализует ответ и отдаёт в общем формате. ingest.php пишет
+# jm_ext_vacancies, гасит протухшие и ведёт журнал jm_ext_ingest_runs.
+#
+# Падение одного endpoint'а не ломает остальные: career.php возвращает
+# partial=true и переходит к следующему, а ingest не гасит его вакансии.
+
+on:
+  schedule:
+    # 02:30, 08:30, 14:30, 20:30 UTC — каждые 6 часов со сдвигом,
+    # чтобы не совпадать с ежечасным announce-missed.
+    - cron: '30 2,8,14,20 * * *'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'ID источника (по умолчанию career_owner)'
+        default: 'career_owner'
+      force:
+        description: 'Перезабрать даже если period_min не прошёл'
+        type: boolean
+        default: false
+
+jobs:
+  ingest:
+    name: Забрать карьерные вакансии
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Вызвать ingest.php
+        env:
+          ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
+          SOURCE: ${{ github.event.inputs.source || 'career_owner' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+        run: |
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "DASHBOARD_PASSWORD не настроен в секретах репозитория"; exit 1
+          fi
+
+          URL="https://jobtoo.ru/api/ingest.php?source=${SOURCE}"
+          if [ "$FORCE" = "true" ]; then
+            URL="${URL}&force=1"
+          fi
+
+          for attempt in 1 2 3; do
+            RESP=$(curl -fsS -X GET "$URL" \
+              -H "X-Admin-Token: $ADMIN_TOKEN" \
+              --max-time 600) || RESP=''
+            echo "Попытка $attempt: $RESP"
+
+            # Успех: в ответе есть received (число принятых вакансий).
+            echo "$RESP" | grep -q '"received"' && {
+              echo "Забор завершён"
+              echo "$RESP" | python3 -m json.tool 2>/dev/null || true
+              exit 0
+            }
+
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+
+          echo "ingest.php не отработал за три попытки"; exit 1
