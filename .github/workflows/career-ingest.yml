@@ -37,7 +37,7 @@ jobs:
   ingest:
     name: Забрать карьерные вакансии
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - name: Вызвать ingest.php
         env:
