@@ -1,20 +1,22 @@
-"""Incoming mail must not be routed by a sender-controlled To/Cc header."""
+"""Incoming mail routing must use Timeweb's trusted envelope recipient."""
 import unittest
 
 from mail_sync import parse_message
 
 
 class MailRoutingTests(unittest.TestCase):
-    def test_requires_original_envelope_recipient(self):
+    def test_requires_timeweb_ingress_envelope_recipient(self):
         raw = (b"From: recruiter@example.org\r\n"
                b"To: u-aabbcc@jobtoo.ru\r\n"
                b"Subject: Interview\r\n\r\nHello")
         self.assertIsNone(parse_message(raw, "8", "2"))
 
-    def test_routes_original_recipient_and_decodes_body(self):
-        raw = (b"From: recruiter@example.org\r\n"
-               b"To: catchall@jobtoo.ru\r\n"
-               b"X-Original-To: u-aabbcc@jobtoo.ru\r\n"
+    def test_routes_timeweb_ingress_recipient_and_decodes_body(self):
+        raw = (b"Received: from sender.example [203.0.113.8]\r\n"
+               b"\tby mx1.timeweb.ru with esmtps id abc123\r\n"
+               b"\tfor <u-aabbcc@jobtoo.ru>; Thu, 24 Sep 2026 13:41:30 +0300\r\n"
+               b"From: recruiter@example.org\r\n"
+               b"To: support@jobtoo.ru\r\n"
                b"Subject: Interview\r\n"
                b"Content-Type: text/plain; charset=utf-8\r\n\r\nHello")
         address, letter = parse_message(raw, "8", "2")
@@ -22,10 +24,23 @@ class MailRoutingTests(unittest.TestCase):
         self.assertEqual(letter["imap_uid"], "2:8")
         self.assertEqual(letter["body"], "Hello")
 
-    def test_ambiguous_original_recipient_is_not_assigned(self):
-        raw = (b"From: recruiter@example.org\r\n"
-               b"X-Original-To: u-aabbcc@jobtoo.ru\r\n"
-               b"X-Original-To: u-ddffee@jobtoo.ru\r\n\r\nHello")
+    def test_sender_controlled_original_headers_are_ignored(self):
+        raw = (b"Received: from sender.example [203.0.113.8]\r\n"
+               b"\tby mx1.timeweb.ru with esmtps id abc123\r\n"
+               b"\tfor <u-real@jobtoo.ru>; Thu, 24 Sep 2026 13:41:30 +0300\r\n"
+               b"X-Original-To: u-victim@jobtoo.ru\r\n"
+               b"Envelope-To: u-victim@jobtoo.ru\r\n"
+               b"To: u-victim@jobtoo.ru\r\n\r\nHello")
+        address, _ = parse_message(raw, "8", "2")
+        self.assertEqual(address, "u-real@jobtoo.ru")
+
+    def test_forged_lower_received_cannot_override_real_timeweb_hop(self):
+        raw = (b"Received: from sender.example [203.0.113.8]\r\n"
+               b"\tby mx1.timeweb.ru with esmtps id real123\r\n"
+               b"\tfor <support@jobtoo.ru>; Thu, 24 Sep 2026 13:41:30 +0300\r\n"
+               b"Received: from attacker.example by mx1.timeweb.ru\r\n"
+               b"\tfor <u-victim@jobtoo.ru>; Thu, 24 Sep 2026 13:40:00 +0300\r\n"
+               b"To: u-victim@jobtoo.ru\r\n\r\nHello")
         self.assertIsNone(parse_message(raw, "8", "2"))
 
 
