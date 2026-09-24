@@ -6116,6 +6116,69 @@ try {
             break;
         }
 
+        case 'jupiterGrantThirdPartyConsent': {
+            $uidArg = (string)($args[0] ?? '');
+            $id = (string)($args[1] ?? '');
+            $termsUrl = trim((string)($args[2] ?? ''));
+            if ($termsUrl !== 'https://rabota.sber.ru/terms') {
+                jt_respond(['error' => 'Неизвестные условия работодателя'], 400); exit;
+            }
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at,is_blocked');
+            if (!$user || empty($user['jupiter_live_enabled_at']) || !empty($user['is_blocked'])) {
+                jt_respond(['error' => 'Сначала включите отправку откликов'], 403); exit;
+            }
+            $existing = sb_single('jm_jupiter_applications', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . $uidArg,
+            ], 'id,vacancy_url,state,reason_code,lease_owner,submission_authorized_at');
+            $host = $existing ? strtolower((string)(parse_url((string)$existing['vacancy_url'], PHP_URL_HOST) ?: '')) : '';
+            $allowedReason = $existing && in_array(
+                (string)($existing['reason_code'] ?? ''),
+                ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'],
+                true
+            );
+            if (!$existing || $host !== 'rabota.sber.ru'
+                || $existing['state'] !== 'action_required'
+                || !$allowedReason || !empty($existing['lease_owner'])) {
+                jt_respond(['error' => 'Для этой заявки согласие сейчас не требуется'], 409); exit;
+            }
+            $resume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uidArg,
+                'selected' => 'eq.true',
+            ], 'storage_path');
+            $mailbox = sb_single('jm_jupiter_mailboxes', [
+                'user_id' => 'eq.' . $uidArg,
+            ], 'address');
+            if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1'
+                || empty($resume['storage_path']) || empty($mailbox['address'])) {
+                jt_respond(['error' => 'Почта или выбранное PDF-резюме недоступны'], 409); exit;
+            }
+            $now = now_iso();
+            sb_update('jm_jupiter_applications', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . $uidArg,
+                'state' => 'eq.action_required',
+                'lease_owner' => 'is.null',
+            ], [
+                'state' => 'queued',
+                'reason_code' => null,
+                'not_before' => null,
+                'third_party_consent_at' => $now,
+                'third_party_terms_url' => $termsUrl,
+                'submission_authorized_at' => !empty($existing['submission_authorized_at'])
+                    ? $existing['submission_authorized_at'] : $now,
+                'updated_at' => $now,
+            ]);
+            $data = sb_single('jm_jupiter_applications', [
+                'id' => 'eq.' . $id,
+                'user_id' => 'eq.' . $uidArg,
+            ]);
+            if (!$data || empty($data['third_party_consent_at'])) {
+                jt_respond(['error' => 'Не удалось сохранить согласие'], 409); exit;
+            }
+            break;
+        }
+
         case 'jupiterRequeueLive': {
             $uidArg = (string)$args[0];
             $id = (string)($args[1] ?? '');
@@ -6253,7 +6316,7 @@ try {
                 ['user_id' => 'eq.' . (string)($args[0] ?? '')],
                 'id,vacancy_url,company,state,reason_code,resume_token,'
                 . 'external_application_id,created_at,updated_at,submitted_at,verified_at,'
-                . 'submission_authorized_at',
+                . 'submission_authorized_at,third_party_consent_at,third_party_terms_url',
                 'created_at.desc'
             ); break;
         }
