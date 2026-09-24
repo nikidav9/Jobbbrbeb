@@ -11,6 +11,11 @@ class SiteProfile:
     hosts: tuple[str, ...]
     trusted_apply_hosts: tuple[str, ...] = ()
     field_overrides: dict[str, str] = field(default_factory=dict)
+    # Боевая подача разрешена. Ставит владелец, и только после того, как
+    # разведка (recon.py) дошла на живом сайте до анкеты кандидата, заполнила
+    # её целиком без капчи и остановилась перед отправкой. Без флага воркер
+    # боевую задачу не исполняет: отклик сохраняется со SITE_NOT_VERIFIED.
+    live_ready: bool = False
 
 
 AUDITED_SITES: tuple[SiteProfile, ...] = (
@@ -244,6 +249,12 @@ def profile_for_url(url: str) -> SiteProfile | None:
         if any(host == normalize_host(item) for item in profile.hosts):
             return profile
     return None
+
+
+def live_ready(url: str) -> bool:
+    """Можно ли подавать сюда по-настоящему. Незнакомый сайт — нельзя."""
+    profile = profile_for_url(url)
+    return bool(profile and profile.live_ready)
 
 
 def trusted_hosts_for(url: str) -> set[str]:
