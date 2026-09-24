@@ -172,6 +172,7 @@ jobs:
           (cd jupiter && python3 test_tasks.py)
           (cd jupiter && python3 test_remote_tasks.py)
           (cd jupiter && python3 test_run_worker.py)
+          (cd jupiter && python3 test_mail_sync.py)
           (cd jupiter && python3 test_policy.py)
           (cd jupiter && python3 test_e2e.py)
           python3 tests/jupiter_private_lab_infra_test.py
