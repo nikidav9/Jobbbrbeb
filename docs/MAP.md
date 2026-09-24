@@ -37,6 +37,7 @@
 | `infra/` | Развёртывание: `bootstrap.sh` (сервер тянет обновления), nginx, docker |
 | `docs/` | Документация, включая эту карту |
 | `.claude/skills/` | Библиотека скиллов, 872 |
+| `.claude/agents/` | Команда моделей `opus-team` (saint4ai/claude-setups@38ead88, не обновлять): `coder` — Sonnet, `checker` — Haiku, `architect` — Opus; модель по умолчанию `opusplan` в `.claude/settings.json` |
 | `tests/` | Тесты на node:test, запуск `npm test` |
 
 ## Куда идти за чем
