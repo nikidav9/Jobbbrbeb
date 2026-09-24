@@ -383,6 +383,19 @@ function WorkerMatches() {
 
   useFocusEffect(useCallback(() => { void loadJupiter(); }, [loadJupiter]));
 
+  // Пока Юпитер действительно работает, статус должен обновляться сам.
+  // Иначе человек видит "обрабатывает" до ручного свайпа экрана и не понимает,
+  // ушёл ли отклик работодателю.
+  const jupiterWorking = jupiterApps.some(a => [
+    'queued', 'opening_site', 'finding_vacancy', 'opening_application',
+    'filling', 'validating', 'submitting', 'verifying', 'retryable_failed',
+  ].includes(a.state));
+  useEffect(() => {
+    if (!jupiterWorking) return;
+    const timer = setInterval(() => { void loadJupiter(); }, 5000);
+    return () => clearInterval(timer);
+  }, [jupiterWorking, loadJupiter]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
