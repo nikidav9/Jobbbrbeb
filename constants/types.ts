@@ -339,6 +339,10 @@ export interface JupiterApplication {
   submittedAt?: string | null;
   verifiedAt?: string | null;
   submissionAuthorizedAt?: string | null;
+  /** Явное согласие с условиями конкретного внешнего работодателя. */
+  thirdPartyConsentAt?: string | null;
+  /** Адрес условий, с которыми пользователь согласился для этой заявки. */
+  thirdPartyTermsUrl?: string | null;
 }
 
 export interface ExtVacancy {
