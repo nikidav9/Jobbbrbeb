@@ -435,7 +435,8 @@ def render_markdown(results: list[ReconResult], today: str) -> str:
     lines = [
         "# Разведка форм отклика",
         "",
-        f"Прогон {today}: `cd jupiter && python3 recon.py --markdown ../docs/разведка-форм.md`.",
+        f"Прогон {today}: `cd jupiter && python3 recon.py --ua-retry --markdown ../docs/разведка-форм.md`",
+        "(в облачном контейнере — ещё `--via-proxy`).",
         "Разведчик — Jupiter в dry-run с синтетическим кандидатом: движок с",
         "`read_only=True` пропускает только GET и HEAD, заявки не уходят.",
         "Запросы идут из облачного контейнера, поэтому `blocked` может означать",
