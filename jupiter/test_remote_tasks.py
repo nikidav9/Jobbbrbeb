@@ -192,6 +192,15 @@ class RemoteTaskQueueTest(unittest.TestCase):
         q = self._queue()
         self.assertIsNone(q.lease("w1"))
 
+    def test_lease_treats_null_composite_as_empty_queue(self) -> None:
+        q = self._queue()
+        original = q._call
+        q._call = lambda fn, args: {"id": None, "user_id": None, "vacancy_url": None}
+        try:
+            self.assertIsNone(q.lease("w1"))
+        finally:
+            q._call = original
+
     # ── heartbeat ──────────────────────────────────────────────────────────
 
     def test_heartbeat_succeeds_for_lease_holder(self) -> None:
