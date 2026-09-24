@@ -892,6 +892,65 @@ class JupiterWebEngine:
                 f"HTTP transport failed: {type(exc).__name__}: {exc}"
             ) from exc
 
+    def request_json(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        payload: dict | list | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, object]:
+        """JSON request with the same network/read-only policy as HTML navigation.
+
+        This exists for employer public APIs used by their own application UI.
+        It does not execute page JavaScript and it never weakens read_only.
+        """
+        self.assert_reachable(url)
+        method = method.upper()
+        if self.read_only and method not in {"GET", "HEAD"}:
+            raise EngineSecurityError(
+                f"Read-only Jupiter engine blocked mutating request: {method}"
+            )
+        request_headers = {
+            "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+            "Accept": "application/json",
+        }
+        data = None
+        if payload is not None:
+            data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            request_headers["Content-Type"] = "application/json"
+        request_headers.update(headers or {})
+        req = urllib.request.Request(
+            url, data=data, method=method, headers=request_headers,
+        )
+        try:
+            with self.opener.open(req, timeout=self.timeout) as response:
+                final_url = response.geturl()
+                self.assert_allowed(final_url)
+                raw = response.read(self.max_response_bytes + 1)
+                if len(raw) > self.max_response_bytes:
+                    raise EngineError("Response is too large")
+                try:
+                    body = json.loads(raw.decode("utf-8", errors="strict") or "null")
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise EngineError("Employer API returned invalid JSON") from exc
+                return int(getattr(response, "status", 200)), body
+        except EngineError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raw = exc.read(self.max_response_bytes + 1)
+            if len(raw) > self.max_response_bytes:
+                raise EngineError("Response is too large") from exc
+            try:
+                body = json.loads(raw.decode("utf-8", errors="replace") or "null")
+            except json.JSONDecodeError:
+                body = {"error": {"message": str(exc)}}
+            return int(exc.code), body
+        except Exception as exc:
+            raise EngineTransportError(
+                f"HTTP transport failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
     def open(self, url: str) -> PageState:
         return self.request(url)
 
