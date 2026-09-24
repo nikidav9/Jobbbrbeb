@@ -79,7 +79,12 @@ def main() -> int:
     )
 
     def profile_factory(task: ApplicationTask) -> CandidateProfile:
-        return queue.fetch_profile(task.candidate_id)
+        profile = queue.fetch_profile(task.candidate_id)
+        # Third-party legal consent is intentionally scoped to one application
+        # row. It is never copied from JobToo's own consent or reused globally.
+        if task.third_party_consent_at:
+            profile.values["personal_data_consent"] = True
+        return profile
 
     def agent_factory(task: ApplicationTask) -> JupiterAgent:
         return JupiterAgent(
