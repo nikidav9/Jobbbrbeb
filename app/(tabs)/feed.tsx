@@ -1327,9 +1327,11 @@ function WorkerPermMode() {
     setApplying(ev.id);
     try {
       await jupiterEnqueue(currentUser.id, ev.url, ev.company);
-      showToast('Заявка поставлена в очередь Jupiter', 'success');
-    } catch {
-      showToast('Не удалось создать заявку', 'error');
+      showToast('Заявка поставлена в очередь', 'success');
+    } catch (e: any) {
+      const msg = e?.message ?? '';
+      console.warn('[applyToExt]', msg);
+      showToast(msg || 'Не удалось создать заявку', 'error');
     } finally {
       setApplying(null);
     }
@@ -1926,7 +1928,15 @@ function WorkerPermMode() {
               onPress={() => swSkip(0.5)}
               activeOpacity={0.75}
             >
-              <Ionicons name="close" size={31} color={Colors.textMuted} />
+              <Ionicons name="close" size={34} color={Colors.red} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
+              style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
+              onPress={() => setPermFilterOpen(true)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity
               accessibilityLabel="Подать заявку через Jupiter"
@@ -1968,19 +1978,6 @@ function WorkerPermMode() {
               {filterStations.length === 1 ? `м. ${filterStations[0]}` : `Станций: ${filterStations.length}`}
             </Text>
             <Ionicons name="close" size={14} color={Colors.textMuted} />
-          </TouchableOpacity>
-        ) : null}
-        {showCareer ? (
-          <TouchableOpacity
-            style={[pS.activeStationChip, { backgroundColor: Colors.primary + '18', borderColor: Colors.primary }]}
-            onPress={() => setShowCareer(false)}
-            activeOpacity={0.8}
-          >
-            {careerLoading
-              ? <ActivityIndicator size={13} color={Colors.primary} />
-              : <Ionicons name="briefcase-outline" size={13} color={Colors.primary} />}
-            <Text style={[pS.activeStationTxt, { color: Colors.primary }]}>Карьерные сайты</Text>
-            <Ionicons name="close" size={14} color={Colors.primary} />
           </TouchableOpacity>
         ) : null}
       </View>
