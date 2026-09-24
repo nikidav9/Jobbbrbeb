@@ -1,0 +1,104 @@
+[
+  {
+    "url": "https://rabota5ka.ru/api/vacancy/hire-request",
+    "company": "Пятёрочка",
+    "reason": "production 404",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://rabota5ka.ru/gw/api/vacancy/hire-request?portals%5B0%5D=cross",
+    "company": "Перекрёсток",
+    "reason": "production 404",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://rabota.cdek.ru/vacancies",
+    "company": "CDEK",
+    "reason": "production 405",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://www.maria-ra.ru/karera-v-seti/vakansii",
+    "company": "Мария-Ра",
+    "reason": "production TLS certificate mismatch",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://job.rt.ru/backend/api/vacancies",
+    "company": "Ростелеком",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://careers.yadro.com/api/v1/vacancies/",
+    "company": "Yadro",
+    "reason": "production 477",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://career.rwb.ru/hr-crm-api/api/v2/pub/vacancies",
+    "company": "Wildberries",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://job.mts.ru/api/v2/vacancies",
+    "company": "МТС",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://job.lamoda.ru/api/hr/vacancies/compact",
+    "company": "Lamoda",
+    "reason": "production 405",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://vacancies-app.aviasales.ru/api/vacancies?language=ru",
+    "company": "Авиасейлс",
+    "reason": "production 404",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://job.megafon.ru/api/v1/vacancies",
+    "company": "МегаФон",
+    "reason": "rejected by production SSRF/DNS guard; do not weaken guard",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://bsl.dev/vacancies.html",
+    "company": "BSL",
+    "reason": "production 405",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://cloud.ru/career/vacancies",
+    "company": "Cloud.ru",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://www.ispring.ru/company/jobs/vacancies",
+    "company": "iSpring",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://1c.ru/rus/firm1c/vacan/search",
+    "company": "1С",
+    "reason": "production 405",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://team.vk.company/vacancy",
+    "company": "VK",
+    "reason": "production 308 redirect; redirects are intentionally not followed by career fetcher",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://career.mvideoeldorado.ru/vacancies",
+    "company": "М.Видео-Эльдорадо",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  }
+]

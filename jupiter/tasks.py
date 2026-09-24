@@ -26,7 +26,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 class TaskState:
@@ -130,6 +130,21 @@ class ApplicationTask:
         task.created_at = float(raw.get("created_at", 0) or time.time())
         task.updated_at = float(raw.get("updated_at", 0) or time.time())
         return task
+
+
+@runtime_checkable
+class TaskQueueProto(Protocol):
+    """Минимум, который нужен воркеру от любой очереди."""
+
+    def lease(self, worker: str) -> ApplicationTask | None: ...
+    def checkpoint(self, task_id: str, state: str, data: dict[str, Any]) -> None: ...
+    def finish(
+        self, task_id: str, state: str, *,
+        reason_code: str | None = ...,
+        resume_token: str | None = ...,
+        receipt_key: str | None = ...,
+    ) -> None: ...
+    def fail(self, task_id: str, error: str, *, retryable: bool = ...) -> str: ...
 
 
 class TaskQueue:

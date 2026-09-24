@@ -340,6 +340,28 @@ export interface JupiterApplication {
   verifiedAt?: string | null;
 }
 
+export interface ExtVacancy {
+  id: string;
+  sourceId: string;
+  externalId: string;
+  title: string;
+  company: string;
+  metroStation?: string | null;
+  metroLineId?: string | null;
+  workType?: string | null;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  salary?: number | null;
+  payPeriod?: string | null;
+  schedule?: string | null;
+  description?: string | null;
+  url: string;
+  active: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
 export interface PermApplication {
   id: string;
   vacancyId: string;

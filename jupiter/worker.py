@@ -7,10 +7,11 @@
 """
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
-from tasks import ApplicationTask, TaskQueue, TaskState
+from tasks import ApplicationTask, TaskQueueProto, TaskState
 
 # Что имеет смысл повторить: связь, время ожидания, дроссель на той стороне.
 # Всё остальное повторять бессмысленно — со второго раза страница не станет
@@ -30,7 +31,7 @@ RESULT_TO_STATE = {
 }
 
 
-def apply_result(queue: TaskQueue, task: ApplicationTask, result: AgentResult) -> str:
+def apply_result(queue: TaskQueueProto, task: ApplicationTask, result: AgentResult) -> str:
     """Перевести итог прогона в состояние задачи."""
     if result.status == "failed":
         retryable = result.reason_code in RETRYABLE_CODES
@@ -56,9 +57,19 @@ def apply_result(queue: TaskQueue, task: ApplicationTask, result: AgentResult) -
     return state
 
 
+def _cleanup_resume(profile: CandidateProfile) -> None:
+    """Удалить временный PDF, скачанный для этого прогона."""
+    path = profile.resume_path
+    if path and os.path.isfile(path) and "/jupiter_resume_" in path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def run_once(
-    queue: TaskQueue,
-    profile: CandidateProfile,
+    queue: TaskQueueProto,
+    profile: CandidateProfile | Callable[[ApplicationTask], CandidateProfile],
     agent_factory: Callable[[ApplicationTask], JupiterAgent],
     worker: str = "worker-1",
 ) -> tuple[ApplicationTask, str] | None:
@@ -67,13 +78,16 @@ def run_once(
     if task is None:
         return None
 
+    resolved = profile(task) if callable(profile) else profile
     agent = agent_factory(task)
     queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
         "url": task.vacancy_url,
     })
-    if task.resume_token:
-        # Человек сделал свою часть — продолжаем, а не начинаем заново.
-        result = agent.resume(task.resume_token, profile)
-    else:
-        result = agent.run(task.vacancy_url, profile)
-    return task, apply_result(queue, task, result)
+    try:
+        if task.resume_token:
+            result = agent.resume(task.resume_token, resolved)
+        else:
+            result = agent.run(task.vacancy_url, resolved)
+        return task, apply_result(queue, task, result)
+    finally:
+        _cleanup_resume(resolved)

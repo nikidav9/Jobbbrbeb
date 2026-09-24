@@ -177,7 +177,8 @@ $adminFns = [
     // Воркер Jupiter. Ходит с админским токеном, а не от имени человека:
     // он берёт чужие задачи по очереди, и подставлять сюда пользовательскую
     // сессию значило бы дать одному человеку доступ к заявкам другого.
-    'jupiterLease', 'jupiterHeartbeat', 'jupiterFinish',
+    'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
+    'jupiterGetCandidateProfile',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -236,7 +237,7 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
-    'dbResponsivenessMap',
+    'dbResponsivenessMap', 'dbGetExtVacancies',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
     jt_respond(['error' => 'Authentication required'], 401); exit;
@@ -5975,6 +5976,13 @@ try {
         case 'dbGetPermVacancies':
             $data = sb_select('jm_perm_vacancies', ['status' => 'eq.open'], '*', 'created_at.desc'); break;
 
+        case 'dbGetExtVacancies': {
+            $f = ['active' => 'eq.true'];
+            if (!empty($args[0])) $f['company'] = 'eq.' . $args[0];
+            $data = sb_select('jm_ext_vacancies', $f, '*', 'last_seen_at.desc');
+            break;
+        }
+
         case 'dbGetPermVacanciesByEmployer':
             $data = sb_select('jm_perm_vacancies', ['employer_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;
 
@@ -6082,6 +6090,25 @@ try {
             jt_respond(['ok' => true]); exit;
         }
 
+        case 'jupiterCheckpoint': {
+            $id = (string)($args[0] ?? '');
+            $worker = (string)($args[1] ?? '');
+            $state = (string)($args[2] ?? '');
+            $data = is_array($args[3] ?? null) ? $args[3] : [];
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id], 'lease_owner');
+            if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
+                jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
+            }
+            sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], [
+                'state' => $state,
+                'checkpoint' => json_encode($data),
+                'heartbeat_at' => now_iso(),
+                'lease_until' => gmdate('c', time() + max(30, min(3600, (int)($args[4] ?? 300)))),
+                'updated_at' => now_iso(),
+            ]);
+            jt_respond(['ok' => true]); exit;
+        }
+
         case 'jupiterFinish': {
             $id = (string)($args[0] ?? '');
             $worker = (string)($args[1] ?? '');
@@ -6119,6 +6146,58 @@ try {
             }
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
             jt_respond(['ok' => true]); exit;
+        }
+
+        case 'jupiterGetCandidateProfile': {
+            $uid = (string)($args[0] ?? '');
+            if ($uid === '') { jt_respond(['error' => 'Нужен user_id'], 400); exit; }
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uid],
+                'id,first_name,last_name,age,phone,resume_data,resume_email,personal_data');
+            if (!$user) { jt_respond(['error' => 'Пользователь не найден'], 404); exit; }
+            $resume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uid,
+                'selected' => 'eq.true',
+            ], 'id,storage_path,resume_data,resume_email');
+            $resumeUrl = null;
+            if ($resume && !empty($resume['storage_path'])) {
+                try { $resumeUrl = jt_resume_signed_url($resume['storage_path']); }
+                catch (Throwable $e) { /* PDF недоступен — не фатально */ }
+            }
+            $personalData = null;
+            if (!empty($user['personal_data'])) {
+                $personalData = is_string($user['personal_data'])
+                    ? json_decode($user['personal_data'], true)
+                    : $user['personal_data'];
+            }
+            if (!is_array($personalData)) $personalData = [];
+            $resumeData = null;
+            if ($resume && !empty($resume['resume_data'])) {
+                $resumeData = is_string($resume['resume_data'])
+                    ? json_decode($resume['resume_data'], true)
+                    : $resume['resume_data'];
+            } elseif (!empty($user['resume_data'])) {
+                $resumeData = is_string($user['resume_data'])
+                    ? json_decode($user['resume_data'], true)
+                    : $user['resume_data'];
+            }
+            $consentRow = sb_single('jm_consents', [
+                'user_id' => 'eq.' . $uid,
+                'source'  => 'not.like.crossborder:%',
+            ], 'stamp,accepted_at');
+            if ($consentRow && !empty($consentRow['stamp'])) {
+                $personalData['consent'] = true;
+            }
+            jt_respond([
+                'user_id' => $uid,
+                'first_name' => $user['first_name'] ?? null,
+                'last_name' => $user['last_name'] ?? null,
+                'age' => $user['age'] ?? null,
+                'phone' => $user['phone'] ?? null,
+                'email' => $resume['resume_email'] ?? $user['resume_email'] ?? null,
+                'personal_data' => $personalData,
+                'resume_data' => $resumeData,
+                'resume_url' => $resumeUrl,
+            ]); exit;
         }
 
         case 'dbApplyPermVacancy': {

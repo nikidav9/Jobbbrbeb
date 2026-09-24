@@ -70,6 +70,18 @@ jobs:
       - name: Заявки Jupiter — свои свои, воркер не подменяет чужое
         run: php tests/jupiter_applications_test.php
 
+      - name: Карьерная страница превращается в вакансии, а не в мусор
+        run: php tests/career_feed_test.php
+
+      - name: Карьерный JSON разбирается по карте полей
+        run: php tests/career_json_test.php
+
+      - name: Карьерный коннектор ходит тем же методом, что записан
+        run: php tests/career_http_method_test.php
+
+      - name: Один и тот же отклик не превращается в два
+        run: php tests/ingest_dedupe_test.php
+
       - name: Отклик на смену меняет его сторона, а отказ доходит до человека
         run: php tests/like_authz_test.php
 
@@ -142,6 +154,7 @@ jobs:
           python3 tests/seo_infra_test.py
           python3 tests/sitemap_invalidation_test.py
           python3 tests/deploy_migration_order_test.py
+          python3 tests/career_full_catalog_test.py
           python3 tests/deploy_webhook_order_test.py
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py
@@ -150,13 +163,15 @@ jobs:
           python3 tests/health_endpoint_test.py
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/policy.py jupiter/engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
           (cd jupiter && python3 test_candidate.py)
           (cd jupiter && python3 test_handoff.py)
           (cd jupiter && python3 test_tasks.py)
+          (cd jupiter && python3 test_remote_tasks.py)
+          (cd jupiter && python3 test_run_worker.py)
           (cd jupiter && python3 test_policy.py)
           (cd jupiter && python3 test_e2e.py)
           python3 tests/jupiter_private_lab_infra_test.py
