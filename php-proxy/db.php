@@ -271,7 +271,7 @@ $selfArgFns = [
     // Заявки Jupiter: человек видит и ставит в очередь только свои.
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
-    'jupiterRequeueLive' => 0,
+    'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
