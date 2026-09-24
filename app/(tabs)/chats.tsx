@@ -1,8 +1,17 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, Animated, PanResponder, Dimensions, Alert, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity,
+  TextInput, Alert,
 } from 'react-native';
+// Список и потягивание берём из gesture-handler, а не из react-native. Обычный
+// FlatList лежит ВНЕ разбора жестов: отпустить касание, когда палец пошёл
+// вниз, там некому, и строка держала бы прокрутку. Урок 17.09, записан в
+// docs/очередь-задач.md.
+import {
+  Gesture, GestureDetector,
+  FlatList as GHFlatList, RefreshControl as GHRefreshControl,
+} from 'react-native-gesture-handler';
+import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
@@ -20,8 +29,13 @@ import { rs, rf } from '@/constants/scale';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { messagePreview } from '@/services/messagePreview';
 
-const { width: SW } = Dimensions.get('window');
 const DELETE_THRESHOLD = -80;
+// Ширина кнопки удаления: на столько строка и отъезжает. Раньше число -120
+// стояло в коде жеста, а ширина — в стилях, и совпадали они на честном слове.
+const ACTION_WIDTH = rs(120);
+// Тот же отклик, что у карточки в ленте: движение под пальцем должно
+// ощущаться одинаково во всём приложении.
+const SPRING = { damping: 22, stiffness: 250, mass: 1 } as const;
 
 function UserAvatar({ name, avatarUrl, size = 44 }: { name: string; avatarUrl?: string; size?: number }) {
   const color = nameColorFromString(name);
@@ -53,28 +67,51 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
   first: boolean;
   last: boolean;
 }) {
-  const pan = useRef(new Animated.Value(0)).current;
+  const x = useSharedValue(0);
+  const startX = useSharedValue(0);
   const [deleting, setDeleting] = useState(false);
   const [deleted, setDeleted] = useState(false);
 
-  const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy),
-    onPanResponderGrant: () => {
-      pan.setOffset((pan as any)._value);
-      pan.setValue(0);
-    },
-    onPanResponderMove: (_, g) => {
-      if (g.dx <= 0) pan.setValue(g.dx);
-    },
-    onPanResponderRelease: (_, g) => {
-      pan.flattenOffset();
-      if (g.dx < DELETE_THRESHOLD) {
-        Animated.spring(pan, { toValue: -120, useNativeDriver: false }).start();
-      } else {
-        Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
-      }
-    },
-  })).current;
+  // На вебе браузер после перетаскивания всё равно присылает click, и нажатие
+  // срабатывает следом за свайпом: строка отъезжает и одновременно открывается
+  // переписка. На телефоне такого нет — жест забирает касание у системы
+  // нажатий, — но веб у нас рабочий. Тот же приём, что в ленте.
+  const lastSwipeAt = useRef(0);
+  const markSwipe = useCallback(() => { lastSwipeAt.current = Date.now(); }, []);
+  const wasSwipe = useCallback(() => Date.now() - lastSwipeAt.current < 400, []);
+
+  const close = useCallback(() => { x.value = withSpring(0, SPRING); }, [x]);
+
+  const gesture = React.useMemo(() => {
+    const pan = Gesture.Pan()
+      // Вход вбок раньше, чем отмена вниз: диагональное движение читается как
+      // прокрутка списка, а не как открытие кнопки удаления.
+      .activeOffsetX([-10, 10])
+      // Главное, чего не умел PanResponder: сказать «я ошибся, забирайте».
+      // Без этого палец, ушедший вниз, оставался у строки, и список не
+      // прокручивался.
+      .failOffsetY([-12, 12])
+      .onBegin(() => { startX.value = x.value; })
+      .onUpdate(e => {
+        // Открывается только влево и не дальше кнопки.
+        x.value = Math.min(0, Math.max(-ACTION_WIDTH, startX.value + e.translationX));
+      })
+      .onEnd(() => {
+        x.value = withSpring(x.value < DELETE_THRESHOLD ? -ACTION_WIDTH : 0, SPRING);
+        runOnJS(markSwipe)();
+      });
+    // Только для веба: 'pan-y' отдаёт вертикаль браузеру, оставляя нам
+    // горизонталь. Без этого gesture-handler ставит на область
+    // touch-action: none, и страница не листается пальцем ВООБЩЕ — даже
+    // после того, как failOffsetY отменил жест. Колесо мыши при этом
+    // работает, поэтому на снимках экрана поломка не видна.
+    // Пишем в config напрямую: в 2.24 свойство поддерживается, а метода-
+    // настройщика для него в цепочке нет.
+    pan.config.touchAction = 'pan-y';
+    return pan;
+  }, [x, startX, markSwipe]);
+
+  const rowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
   const otherId = currentUser.role === 'worker' ? item.employerId : item.workerId;
   const other = users.find((u: any) => u.id === otherId);
@@ -89,7 +126,7 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
       'Удалить переписку?',
       'Переписка будет удалена только у вас.',
       [
-        { text: 'Отмена', style: 'cancel', onPress: () => Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start() },
+        { text: 'Отмена', style: 'cancel', onPress: close },
         {
           text: 'Удалить', style: 'destructive', onPress: async () => {
             if (deleting) return;
@@ -101,7 +138,7 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
               setDeleted(true);
             } catch {
               setDeleting(false);
-              Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
+              close();
             }
           },
         },
@@ -121,8 +158,15 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
         </TouchableOpacity>
       </View>
 
-      <Animated.View style={[styles.chatRowAnimated, { transform: [{ translateX: pan }] }]} {...panResponder.panHandlers}>
-        <TouchableOpacity style={[styles.chatRow, isLast && styles.chatRowLast]} onPress={onPress} activeOpacity={0.85}>
+      <GestureDetector gesture={gesture}>
+        <Reanimated.View style={[styles.chatRowAnimated, rowStyle]}>
+        <TouchableOpacity
+          style={[styles.chatRow, isLast && styles.chatRowLast]}
+          // Нажатие сразу после перетаскивания пропускаем: это click от
+          // браузера, а не намерение открыть переписку.
+          onPress={() => { if (!wasSwipe()) onPress(); }}
+          activeOpacity={0.85}
+        >
           <View>
             <UserAvatar name={name} avatarUrl={avatarUrl} size={44} />
             {/* Конверт в углу аватарки — это и есть отметка непрочитанного.
@@ -161,7 +205,8 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
             </View>
           </View>
         </TouchableOpacity>
-      </Animated.View>
+        </Reanimated.View>
+      </GestureDetector>
     </View>
   );
 }
@@ -346,13 +391,13 @@ export default function ChatsScreen() {
           )}
         </View>
       ) : (
-        <FlatList
+        <GHFlatList
           data={filtered}
           keyExtractor={c => c.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + rs(16) }]}
           refreshControl={
-            <RefreshControl
+            <GHRefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
               tintColor={Colors.primary}
@@ -416,7 +461,7 @@ const styles = StyleSheet.create({
   swipeRowLast: { borderBottomLeftRadius: Radius.lg, borderBottomRightRadius: Radius.lg },
   deleteAction: {
     position: 'absolute', right: 0, top: 0, bottom: 0,
-    width: rs(120), alignItems: 'center', justifyContent: 'center',
+    width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.red,
   },
   deleteBtn: { alignItems: 'center', gap: rs(4) },

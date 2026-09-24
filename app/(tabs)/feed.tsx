@@ -44,7 +44,7 @@ import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
-import { ReplyBadge } from '@/components/feature/ReplyBadge';
+import { ReplyBadge, hasReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -1155,6 +1155,13 @@ function WorkerPermMode() {
   const [limitOpen, setLimitOpen] = useState(false);
   // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
   const [moreBelow, setMoreBelow] = useState(false);
+  // Описание на карточке сначала компактное, как в референсе; по нажатию
+  // раскрывается прямо внутри карточки, без отдельного экрана.
+  const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
+  // Отдельно запоминаем, действительно ли текст занимает больше семи строк.
+  // Проверять длину строки в символах ненадёжно: одна и та же длина на узком
+  // экране может занимать вдвое больше строк.
+  const [expandableDescriptionId, setExpandableDescriptionId] = useState<string | null>(null);
   const cardScrollRef = useRef<React.ComponentRef<typeof GHScrollView>>(null);
   const cardViewH = useRef(0);
   const cardContentH = useRef(0);
@@ -1421,6 +1428,8 @@ function WorkerPermMode() {
   const resetCardScroll = () => {
     cardScrollRef.current?.scrollTo({ y: 0, animated: false });
     setMoreBelow(false);
+    setExpandedDescriptionId(null);
+    setExpandableDescriptionId(null);
   };
   const swFly = swDeck.flyOut;
 
@@ -1458,13 +1467,14 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
-  // Нижняя композиция держится на одном шаге: 13pt от карточки до ряда
-  // действий и ещё 13pt от ряда до верхней границы плавающего таббара.
-  // Резерв считаем от реальной высоты таббара, а не магическим числом — так
-  // одинаковый ритм сохраняется и на iPhone с разным safe area, и на Android.
-  const deckEdgeGap = rs(13);
+  // Опускаем ряд ✕ / фильтр / ♥ ещё ниже, ближе к плавающему таббару.
+  // Резерв карточки считается от той же координаты, поэтому её видимая высота
+  // увеличивается ровно на столько же и снизу не появляется новая пустота.
+  const deckActionGap = rs(-6);
+  const deckCardGap = rs(8);
   const deckActionSize = rs(68);
-  const deckBottomReserve = tabBarHeight + deckActionSize + deckEdgeGap * 2;
+  const deckActionBottom = tabBarHeight + deckActionGap;
+  const deckBottomReserve = deckActionBottom + deckActionSize + deckCardGap;
 
   // Карточка колоды «Работа» — тот же макет, что у смены: рамка во весь экран,
   // чипы с иконками, снизу футер undo / ✕ / чат / ♥.
@@ -1499,6 +1509,7 @@ function WorkerPermMode() {
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
         <OnboardingTarget targetKey="worker.feed.card" style={styles.cardViewportShell}>
+          <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
           <GHScrollView
             ref={cardScrollRef}
             style={styles.cardViewportClip}
@@ -1511,36 +1522,27 @@ function WorkerPermMode() {
             refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
           >
           <GestureDetector gesture={swDeck.gesture}>
-            <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
+            <Reanimated.View style={styles.cardAnimated}>
               <View style={styles.card}>
-                <Reanimated.View style={[styles.wantOverlay, swDeck.wantStyle]}>
-                  <Text style={styles.wantText}>ОТКЛИК ♥</Text>
-                </Reanimated.View>
-                <Reanimated.View style={[styles.skipOverlay, swDeck.skipStyle]}>
-                  <Text style={styles.skipText}>НЕТ ✕</Text>
-                </Reanimated.View>
-
                 {/* Тело карточки — не кнопка. Вся вакансия здесь, открывать
                     нечего, а нажатие на всю площадь срабатывало на отпускании
                     после прокрутки и уводило со страницы. */}
                 <View style={styles.cardBody}>
                   <View style={styles.cardTop}>
-                    <View style={styles.companyRow}>
-                      <CompanyMark company={v.company} size={34} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text
-                          style={styles.companyName}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                        >
-                          {displayCompany}
-                        </Text>
-                        {posted ? <Text style={styles.postedAgo}>{posted}</Text> : null}
-                      </View>
+                    {/* Верх карточки — как в референсе: отдельный знак компании,
+                        справа служебные кнопки, ниже крупная должность и компания. */}
+                    <View style={styles.cardLogoRow}>
+                      <View style={styles.companyLogoSpacer} />
                       <View style={pS.deckUtilitySpacer} />
                     </View>
 
                     <Text style={styles.jobTitle} numberOfLines={2}>{v.title}</Text>
+
+                    <View style={styles.companyMetaLine}>
+                      <Ionicons name="business-outline" size={15} color={Colors.textMuted} />
+                      <Text style={styles.companyName} numberOfLines={1}>{displayCompany}</Text>
+                      {posted ? <Text style={styles.postedAgo}>· {posted}</Text> : null}
+                    </View>
 
                     <View style={styles.chipsRow}>
                       {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/мес`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
@@ -1551,16 +1553,72 @@ function WorkerPermMode() {
                     </View>
                   </View>
 
-                  {/* Как отвечает этот работодатель — до отклика, а не после.
-                      Раньше плашка стояла на карточке смены; смен больше нет,
-                      а решение как принималось свайпом, так и принимается. */}
-                  <View style={styles.replyBadgeWrap}>
-                    <ReplyBadge stats={responsivenessMap[v.employerId]} />
-                  </View>
+                  {/* Репутация работодателя остаётся до отклика — это важная
+                      информация для решения, но визуально она отделена от шапки.
+
+                      Обёртка условна: ReplyBadge ничего не рисует, когда
+                      переписок меньше двух, а отступы вокруг неё оставались
+                      всегда — и у работодателя без переписок в карточке зияли
+                      42 пикселя пустоты. */}
+                  {hasReplyBadge(responsivenessMap[v.employerId]) ? (
+                    <View style={styles.replyBadgeWrap}>
+                      <ReplyBadge stats={responsivenessMap[v.employerId]} />
+                    </View>
+                  ) : null}
 
                   <View style={styles.cardDivider} />
 
                   <View style={styles.cardMiddle}>
+                    {description ? (
+                      <View style={pS.descriptionPanel}>
+                        <Text style={pS.descriptionPanelTitle}>Описание вакансии</Text>
+
+                        {/* Невидимая копия измеряет реальное число строк без
+                            numberOfLines. Так кнопка появляется именно тогда,
+                            когда текст действительно обрезан на этом экране. */}
+                        <Text
+                          style={[pS.desc, pS.descriptionMeasure]}
+                          accessible={false}
+                          pointerEvents="none"
+                          onTextLayout={e => {
+                            if (e.nativeEvent.lines.length > 7 && expandableDescriptionId !== v.id) {
+                              setExpandableDescriptionId(v.id);
+                            }
+                          }}
+                        >
+                          {description}
+                        </Text>
+
+                        <Text
+                          style={pS.desc}
+                          numberOfLines={expandedDescriptionId === v.id ? undefined : 7}
+                        >
+                          {description}
+                        </Text>
+
+                        {(description.trim().length > 120 ||
+                          expandableDescriptionId === v.id ||
+                          expandedDescriptionId === v.id) ? (
+                          <TouchableOpacity
+                            style={pS.descriptionToggle}
+                            activeOpacity={0.78}
+                            onPress={() => setExpandedDescriptionId(id => id === v.id ? null : v.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={expandedDescriptionId === v.id ? 'Свернуть описание вакансии' : 'Читать описание вакансии полностью'}
+                          >
+                            <Text style={pS.descriptionToggleText}>
+                              {expandedDescriptionId === v.id ? 'Свернуть' : 'Читать далее'}
+                            </Text>
+                            <Ionicons
+                              name={expandedDescriptionId === v.id ? 'chevron-up' : 'chevron-down'}
+                              size={16}
+                              color={Colors.textSecondary}
+                            />
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    ) : null}
+
                     {(v.metroStation || v.address) ? (
                       <View style={pS.sectionBlock}>
                         <View style={pS.blockHead}>
@@ -1586,8 +1644,6 @@ function WorkerPermMode() {
                             <Text style={[pS.locValue, { flex: 1 }]}>{v.address}</Text>
                           </View>
                         ) : null}
-                        {/* Маршрут до точки. Откуда ехать, Яндекс подставит сам
-                            по геопозиции — своего разрешения на неё не просим. */}
                         {v.lat != null && v.lng != null ? (
                           <TouchableOpacity
                             style={pS.mapBtn}
@@ -1603,21 +1659,27 @@ function WorkerPermMode() {
                         ) : null}
                       </View>
                     ) : null}
-
-                    <View style={pS.sectionBlock}>
-                      {description ? (
-                        <View style={pS.blockHead}>
-                          <Ionicons name="document-text-outline" size={16} color={Colors.textPrimary} />
-                          <Text style={pS.descTitle}>Описание вакансии</Text>
-                        </View>
-                      ) : null}
-                      {description ? <Text style={pS.desc}>{description}</Text> : null}
-                    </View>
                   </View>
                 </View>
               </View>
             </Reanimated.View>
           </GestureDetector>
+
+          {/* The company logo is deliberately outside the card Pan gesture.
+              Its 72×72 hit target covers the whole visible logo plus padding,
+              so every part of the mark opens the company reliably. */}
+          <TouchableOpacity
+            style={pS.deckCompanyLogoOverlay}
+            activeOpacity={0.78}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={`Открыть компанию ${displayCompany}`}
+            onPress={() => {
+              router.navigate({ pathname: '/(tabs)/company', params: { company: displayCompany } });
+            }}
+          >
+            <CompanyMark company={v.company} size={52} />
+          </TouchableOpacity>
           </GHScrollView>
 
           <View
@@ -1653,6 +1715,22 @@ function WorkerPermMode() {
               </View>
             </TouchableOpacity>
           </View>
+
+          {/* Swipe decision labels live above every interactive overlay
+              (logo, bookmark, share) so they are always on the visual front. */}
+          <Reanimated.View
+            pointerEvents="none"
+            style={[styles.wantOverlay, swDeck.wantStyle]}
+          >
+            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+          </Reanimated.View>
+          <Reanimated.View
+            pointerEvents="none"
+            style={[styles.skipOverlay, swDeck.skipStyle]}
+          >
+            <Text style={styles.skipText}>НЕТ ✕</Text>
+          </Reanimated.View>
+          </Reanimated.View>
         </OnboardingTarget>
 
         {moreBelow ? (
@@ -1672,7 +1750,7 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: tabBarHeight + deckEdgeGap }]} pointerEvents="box-none">
+        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
           <View style={styles.shiftDeckRow}>
           <OnboardingTarget targetKey="worker.feed.reject">
             <TouchableOpacity
@@ -2443,9 +2521,21 @@ const pS = StyleSheet.create({
   limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
   limitClose: { paddingVertical: rs(8) },
   limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
-  deckUtilitySpacer: { width: rs(94), height: rs(48), flexShrink: 0 },
+  deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
+  deckCompanyLogoOverlay: {
+    position: 'absolute',
+    top: rs(10),
+    left: rs(11),
+    width: rs(72),
+    height: rs(72),
+    borderRadius: rs(24),
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 31,
+    elevation: 31,
+  },
   deckUtilityOverlay: {
-    position: 'absolute', top: rs(16), right: rs(10), zIndex: 30, elevation: 30,
+    position: 'absolute', top: rs(18), right: rs(13), zIndex: 30, elevation: 30,
     flexDirection: 'row', alignItems: 'center', gap: rs(2),
   },
   deckUtilityTap: {
@@ -2516,8 +2606,48 @@ const pS = StyleSheet.create({
   // schedule row
   scheduleRow: { flexDirection: 'row', gap: rs(16) },
 
-  // desc
+  // desc / location
   sectionBlock: { gap: rs(8), marginBottom: rs(13) },
+  descriptionPanel: {
+    borderWidth: 1,
+    borderColor: '#E8E9ED',
+    borderRadius: rs(19),
+    backgroundColor: '#FBFBFC',
+    paddingHorizontal: rs(16),
+    paddingTop: rs(16),
+    paddingBottom: rs(13),
+    gap: rs(10),
+  },
+  descriptionPanelTitle: {
+    fontSize: rf(15),
+    lineHeight: rf(20),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  descriptionMeasure: {
+    position: 'absolute',
+    left: rs(16),
+    right: rs(16),
+    top: rs(46),
+    opacity: 0,
+  },
+  descriptionToggle: {
+    minHeight: rs(42),
+    marginTop: rs(3),
+    borderRadius: rs(100),
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E6E8EC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: rs(7),
+  },
+  descriptionToggleText: {
+    fontSize: rf(13.5),
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
   blockHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   descTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
   locRow: {
@@ -2532,7 +2662,7 @@ const pS = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(13), paddingVertical: rs(13),
   },
   mapBtnTxt: { fontSize: rf(14.5), fontWeight: '700', color: Colors.primary },
-  desc: { fontSize: rf(13.5), color: Colors.textMuted, lineHeight: rf(21) },
+  desc: { fontSize: rf(13.5), color: Colors.textSecondary, lineHeight: rf(21) },
 
   // action row
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(2) },
@@ -2632,10 +2762,23 @@ const styles = StyleSheet.create({
   ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0 },
   // Скругление принадлежит viewport, а не прокручиваемому содержимому.
   // Поэтому верх и низ карточки остаются закруглёнными на любой позиции скролла.
-  cardViewportShell: { flex: 1, borderRadius: Radius.card },
-  cardViewportClip: {
-    flex: 1, borderRadius: Radius.card, overflow: 'hidden',
+  cardViewportShell: {
+    flex: 1,
+    borderRadius: rs(24),
     backgroundColor: Colors.bg,
+    ...Shadow.card,
+  },
+  // One transform owner for the whole visual card. Interactive overlays stay
+  // outside GestureDetector but inside this layer, so they never look pinned
+  // to the screen while the vacancy is being swiped.
+  deckSwipeLayer: { flex: 1 },
+  cardViewportClip: {
+    flex: 1,
+    borderRadius: rs(24),
+    overflow: 'hidden',
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: '#E3E5E9',
   },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
@@ -2643,27 +2786,30 @@ const styles = StyleSheet.create({
   // Тело занимает карточку целиком, чтобы фон и разделители шли до краёв.
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
-  postedAgo: { fontSize: rf(12.5), fontWeight: '500', color: Colors.textMuted, marginTop: rs(5) },
+  postedAgo: { fontSize: rf(12), fontWeight: '500', color: Colors.textMuted, flexShrink: 0 },
   card: { flexGrow: 1, backgroundColor: Colors.bg },
-  wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 10, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
+  wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 80, elevation: 80, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 10, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
+  skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 80, elevation: 80, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
   skipText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
-  cardTop: { padding: rs(21), paddingBottom: rs(13), gap: rs(13) },
+  cardTop: { paddingHorizontal: rs(21), paddingTop: rs(20), paddingBottom: rs(14), gap: rs(13) },
+  cardLogoRow: { minHeight: rs(52), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  companyLogoSpacer: { width: rs(52), height: rs(52), flexShrink: 0 },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
+  companyMetaLine: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: 0 },
   cardHeadSpacer: { height: rs(2) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarImg: { width: rs(44), height: rs(44), borderRadius: rs(22), flexShrink: 0 },
   avatarText: { fontSize: rf(17), fontWeight: '700', color: '#fff' },
-  companyName: { flexShrink: 1, fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
+  companyName: { flexShrink: 1, fontSize: rf(13.5), fontWeight: '600', color: Colors.textSecondary },
   metroHint: { fontSize: rf(12), color: Colors.textMuted },
   urgentTag: { flexDirection: 'row', alignItems: 'center', gap: rs(3), backgroundColor: '#FEF3C7', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), flexShrink: 0 },
   urgentTagTxt: { fontSize: rf(11), fontWeight: '700', color: '#92400E' },
   cardBadges: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
-  jobTitle: { fontSize: rf(24), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(29), marginTop: 0 },
+  jobTitle: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(30), marginTop: rs(1) },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  replyBadgeWrap: { marginHorizontal: rs(8), marginBottom: rs(13) },
+  replyBadgeWrap: { marginHorizontal: rs(20), marginBottom: rs(14) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),
@@ -2671,7 +2817,7 @@ const styles = StyleSheet.create({
   addressChipIcon: { fontSize: rf(15), marginTop: rs(1) },
   addressChipText: { flex: 1, fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary, lineHeight: rf(20) },
   cardDivider: { height: 1, backgroundColor: Colors.divider, marginHorizontal: rs(21) },
-  cardMiddle: { flexGrow: 1, paddingVertical: rs(13), paddingHorizontal: rs(21), gap: rs(13) },
+  cardMiddle: { flexGrow: 1, paddingBottom: rs(18), paddingHorizontal: rs(21), gap: rs(16) },
   slotsRow: { flexDirection: 'row' },
   slotInfo: { flex: 1, alignItems: 'center', paddingVertical: rs(2) },
   slotInfoBordered: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: Colors.divider },
