@@ -26,6 +26,7 @@ from candidate import (
 from handoff import (
     HandoffStore, HumanAction, HumanActionRequest, ResumeState, new_token,
 )
+from js_engine import JsEngine, JsEngineError, JsEngineResult
 from spa_payload import extract_payloads, url_candidates
 from submission import (
     ApplicationFingerprint, Receipt, ReceiptStore, SubmissionEvidence,
@@ -1155,6 +1156,43 @@ class JupiterAgent:
                 seen.append(label)
         return seen
 
+    def _js_engine_navigation(
+        self,
+        page: PageState,
+        visited: set[str],
+    ) -> tuple[str, str] | None:
+        """QuickJS: выполнить скрипты страницы, найти fetch/XHR-вызовы."""
+        try:
+            js = JsEngine()
+            result = js.execute_page(page.html, page.url)
+        except (JsEngineError, Exception):
+            return None
+        if not result.intercepted:
+            return None
+        ranked: list[tuple[int, str]] = []
+        for req in result.intercepted:
+            url = req.url
+            if not url or url in visited:
+                continue
+            parsed = urllib.parse.urlparse(url)
+            host = (parsed.hostname or "").lower()
+            if host and host not in self.engine.allowed_hosts:
+                continue
+            score = self._navigation_score(url, req.method)
+            if score <= 0:
+                low = url.lower()
+                if any(k in low for k in (
+                    "/api/", "/v1/", "/v2/", "/graphql",
+                    "application", "vacanc", "resume", "apply",
+                )):
+                    score = max(score, 10)
+            if score > 0:
+                ranked.append((score, url))
+        if not ranked:
+            return None
+        ranked.sort(reverse=True)
+        return ranked[0][1], "js_engine"
+
     def _navigation_score(self, url: str, text: str) -> int:
         descriptor = normalize(f"{text} {url}")
         score = 0
@@ -1854,9 +1892,42 @@ class JupiterAgent:
                     )
 
                 if page.has_script:
-                    # Состояние страницы читали и адреса анкеты в нём не нашли.
-                    # Это другое сообщение, чем «не умеем JS»: видно, что
-                    # именно проверили, и не надо гадать при разборе.
+                    js_nav = self._js_engine_navigation(page, visited)
+                    if js_nav is not None:
+                        js_url, js_origin = js_nav
+                        trajectory.append({
+                            "action": "navigate",
+                            "from": page.url,
+                            "url": js_url,
+                            "found_in": js_origin,
+                        })
+                        try:
+                            page = self.engine.open(js_url)
+                        except EngineSecurityError as exc:
+                            reason = f"JS-discovered URL blocked by policy: {exc}"
+                            trajectory.append({
+                                "action": "action_required",
+                                "reason": reason,
+                                "reason_code": Reason.DOMAIN_BLOCKED,
+                            })
+                            return AgentResult(
+                                "action_required", reason, trajectory,
+                                Reason.DOMAIN_BLOCKED,
+                            )
+                        except EngineError as exc:
+                            reason = f"JS-discovered URL failed: {exc}"
+                            trajectory.append({
+                                "action": "failed",
+                                "reason": reason,
+                                "reason_code": Reason.NAVIGATION_FAILED,
+                            })
+                            return AgentResult(
+                                "failed", reason, trajectory,
+                                Reason.NAVIGATION_FAILED,
+                            )
+                        visited.add(page.url)
+                        continue
+
                     kinds = self._spa_payload_kinds(page)
                     reason = (
                         "Page requires JavaScript interaction outside the supported "
