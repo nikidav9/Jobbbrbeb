@@ -283,6 +283,53 @@ def score_alias(text: str, alias: str) -> int:
     return overlap * 10
 
 
+# Одно и то же значение, записанное по-разному. Только то, что встречалось на
+# живых анкетах: Норникель пишет «Российская Федерация», профиль — «Россия».
+_EQUIVALENT_VALUES = (
+    # Короткое «рф» нарочно нет: сравнение по подстроке нашло бы его в
+    # «перфоратор».
+    ("россия", "российская федерация", "russia", "russian federation"),
+    ("беларусь", "белоруссия", "республика беларусь", "belarus"),
+)
+
+
+def _value_variants(value: str) -> list[str]:
+    wanted = normalize(value)
+    for group in _EQUIVALENT_VALUES:
+        if wanted in group:
+            return [value, *[item for item in group if item != wanted]]
+    return [value]
+
+
+def _phone_for_control(phone: str, control: ControlState) -> str:
+    """Тот же номер в записи, которую поле примет.
+
+    Macroscop просит pattern="[0-9]*", а профиль хранит +7…: форма падала на
+    проверке до отправки. Номер не меняется — меняется только запись: цифры,
+    с восьмёркой, без кода страны, с плюсом.
+    """
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) == 11 and digits[0] in "78":
+        local = digits[1:]
+    elif len(digits) == 10:
+        local = digits
+    else:
+        return phone
+    variants = [phone, "+7" + local, "7" + local, "8" + local, local,
+                f"+7 ({local[:3]}) {local[3:6]}-{local[6:8]}-{local[8:]}"]
+    for variant in variants:
+        if control.maxlength is not None and len(variant) > control.maxlength:
+            continue
+        if control.pattern:
+            try:
+                if not re.fullmatch(control.pattern, variant):
+                    continue
+            except re.error:
+                return phone
+        return variant
+    return phone
+
+
 def _date_for_html(value: Any) -> str:
     text = str(value or "").strip()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
@@ -554,6 +601,13 @@ class JupiterAgent:
 
     @staticmethod
     def _option_score(wanted: str, label: str, value: str) -> int:
+        return max(
+            JupiterAgent._option_score_one(variant, label, value)
+            for variant in _value_variants(str(wanted))
+        )
+
+    @staticmethod
+    def _option_score_one(wanted: str, label: str, value: str) -> int:
         wanted_n = normalize(wanted)
         label_n = normalize(label)
         value_n = normalize(value)
@@ -704,7 +758,10 @@ class JupiterAgent:
                 no = any(token in normalize(descriptor_and_value) for token in ("no", "нет", "false", "0"))
                 should_check = yes if wanted else no
             else:
-                should_check = score_alias(descriptor_and_value, str(wanted)) >= 30
+                should_check = any(
+                    score_alias(descriptor_and_value, variant) >= 30
+                    for variant in _value_variants(str(wanted))
+                )
             if should_check:
                 for peer in page.controls:
                     if (
@@ -726,6 +783,8 @@ class JupiterAgent:
             return False
 
         text = _date_for_html(value) if control.type == "date" or key == "birth_date" else str(value)
+        if key == "phone":
+            text = _phone_for_control(text, control)
         control.value = text
         trajectory.append({
             "action": "fill",

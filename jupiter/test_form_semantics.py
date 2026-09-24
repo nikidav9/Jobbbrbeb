@@ -489,5 +489,41 @@ class FieldMeaning(unittest.TestCase):
         self.assertEqual(self.key_for('<label>Уровень <input name="EDUCATION[LEVEL][]"></label>'), "education")
 
 
+
+class ValueFitsField(unittest.TestCase):
+    """Значение профиля в записи, которую поле примет."""
+
+    def fill(self, html: str, values: dict) -> dict:
+        page = parse(f"<form method=post>{html}<button>Отправить</button></form>")
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        profile = CandidateProfile(values=dict(values))
+        for c in page.controls:
+            if c.tag != "button":
+                agent.fill_control(page, c, profile, [])
+        return {c.name: (c.value, c.checked) for c in page.controls if c.name}
+
+    def test_phone_follows_digits_only_pattern(self):
+        # Macroscop: pattern="[0-9]*" отвергал «+7…» ещё до отправки.
+        got = self.fill('<label>Телефон <input name="phone" pattern="[0-9]*"></label>', {"phone": "+79001234567"})
+        self.assertEqual(got["phone"][0], "79001234567")
+
+    def test_phone_follows_maxlength(self):
+        got = self.fill('<label>Телефон <input name="phone" maxlength="10"></label>', {"phone": "+7 900 123-45-67"})
+        self.assertEqual(got["phone"][0], "9001234567")  # тот же номер, 10 цифр
+
+    def test_phone_without_constraints_is_untouched(self):
+        got = self.fill('<label>Телефон <input name="phone"></label>', {"phone": "+79001234567"})
+        self.assertEqual(got["phone"][0], "+79001234567")
+
+    def test_russia_matches_russian_federation_option(self):
+        # Норникель: вариант «Российская Федерация», в профиле «Россия».
+        got = self.fill(
+            '<label>Гражданство <select name="citizenship"><option value="">—</option>'
+            '<option value="rf">Российская Федерация</option><option value="by">Беларусь</option></select></label>',
+            {"citizenship": "Россия"},
+        )
+        self.assertEqual(got["citizenship"][0], "rf")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

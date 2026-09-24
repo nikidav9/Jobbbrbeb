@@ -259,6 +259,7 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("РДВ Технолоджи", ("rdwcomp.ru",), live_ready=True),
     SiteProfile("ITG", ("itglobal.com",), live_ready=True),
     SiteProfile("КРОК", ("careers.croc.ru",), live_ready=True),
+    SiteProfile("Macroscop", ("pro.macroscop.com",), live_ready=True),
     # Раздел переехал на другой хост: без него политика верно режет редирект.
     # trusted_apply_hosts сравниваются как есть, поэтому www — отдельной строкой.
     SiteProfile("Reksoft", ("career.reksoft.com",), ("www.career.reksoft.com",)),

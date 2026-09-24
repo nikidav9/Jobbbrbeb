@@ -430,7 +430,9 @@ BAD_PATTERN_HTML = """<!doctype html>
 <form action="/never-submit" method="post">
   <label>Имя <input name="first_name" required></label>
   <label>Email <input type="email" name="email" required></label>
-  <label>Телефон <input name="phone" required pattern="[0-9]{11}"></label>
+  <!-- Шаблон, которому номер не отвечает ни в какой записи: цифры, +7, 8…
+       агент подбирает сам (_phone_for_control), а тут подбирать нечего. -->
+  <label>Телефон <input name="phone" required pattern="[0-9]{4}"></label>
   <button type="submit">Откликнуться</button>
 </form>
 """
@@ -1674,7 +1676,7 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertLessEqual(set(AUDITED_SOURCE_URLS), names)
         self.assertEqual(len(names), len(AUDITED_SITES))
         # Боевая подача — только туда, где разведка прошла dry-run без капчи.
-        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 27)
+        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 28)
         self.assertTrue(live_ready("https://rabota.sber.ru/search/123"))
         self.assertTrue(live_ready("https://www.x5.tech/vacancy/1"))
         self.assertFalse(live_ready("https://www.slata.ru/vacancy/"))  # заполнял фильтр
