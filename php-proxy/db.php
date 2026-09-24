@@ -6358,9 +6358,16 @@ try {
             $id = (string)($args[0] ?? '');
             $worker = (string)($args[1] ?? '');
             $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
-                'user_id,lease_owner,lease_until,submission_authorized_at,state');
+                'user_id,vacancy_url,lease_owner,lease_until,submission_authorized_at,state,'
+                . 'third_party_consent_at,third_party_terms_url');
             $user = $task ? sb_single('jm_users', ['id' => 'eq.' . $task['user_id']],
                 'jupiter_live_enabled_at,is_blocked') : null;
+            $taskHost = $task
+                ? strtolower((string)(parse_url((string)($task['vacancy_url'] ?? ''), PHP_URL_HOST) ?: ''))
+                : '';
+            $missingSberConsent = $taskHost === 'rabota.sber.ru'
+                && (empty($task['third_party_consent_at'])
+                    || (string)($task['third_party_terms_url'] ?? '') !== 'https://rabota.sber.ru/terms');
             $resume = $task ? sb_single('jm_resume_files', [
                 'user_id' => 'eq.' . $task['user_id'], 'selected' => 'eq.true',
             ], 'storage_path') : null;
@@ -6373,6 +6380,7 @@ try {
                 || (string)($task['lease_owner'] ?? '') !== $worker
                 || (int)strtotime((string)($task['lease_until'] ?? '')) <= time()
                 || empty($task['submission_authorized_at'])
+                || $missingSberConsent
                 || empty($user['jupiter_live_enabled_at']) || !empty($user['is_blocked'])
                 || new DateTimeImmutable((string)$task['submission_authorized_at'])
                    < new DateTimeImmutable((string)$user['jupiter_live_enabled_at'])
