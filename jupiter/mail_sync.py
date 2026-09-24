@@ -10,6 +10,7 @@ from html.parser import HTMLParser
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -17,6 +18,28 @@ from urllib.request import Request, urlopen
 
 LOG = logging.getLogger("jupiter.mail")
 DOMAIN = "jobtoo.ru"
+
+# Timeweb prepends a Received header at its public MX before forwarding the
+# message to the catch-all mailbox. Sender-supplied headers appear *below*
+# that hop, so only the first Received line whose "by" host is Timeweb's
+# public MX is authoritative for the original envelope recipient.
+_TIMEWEB_INGRESS = re.compile(r"\\bby\\s+mx\\d+\\.timeweb\\.ru\\b", re.IGNORECASE)
+_TIMEWEB_FOR = re.compile(
+    r"\\bfor\\s+<?\\s*(u-[a-z0-9-]+@jobtoo\\.ru)\\s*>?\\s*;",
+    re.IGNORECASE,
+)
+
+
+def _timeweb_envelope_recipient(message: email.message.Message) -> str | None:
+    for received in message.get_all("Received", []):
+        if not _TIMEWEB_INGRESS.search(received):
+            continue
+        # Stop at the first Timeweb ingress hop even if it has no valid
+        # personal alias. Looking lower would allow a forged Received header
+        # supplied by the sender to win.
+        match = _TIMEWEB_FOR.search(received)
+        return match.group(1).lower() if match else None
+    return None
 
 
 class _PlainHTML(HTMLParser):
@@ -44,16 +67,12 @@ class _PlainHTML(HTMLParser):
 
 def parse_message(raw: bytes, uid: str, uidvalidity: str) -> tuple[str, dict] | None:
     message = email.message_from_bytes(raw)
-    # Original recipient must be provided by the delivery server. To/Cc are
-    # author-controlled and can leak Bcc mail to another candidate.
-    trusted = message.get_all("X-Original-To", []) or message.get_all("Envelope-To", [])
-    if not trusted:
-        return None
-    recipients = {addr.lower() for _, addr in getaddresses(trusted)}
-    if len(recipients) != 1:
-        return None
-    address = recipients.pop()
-    if not address.startswith("u-") or not address.endswith("@" + DOMAIN):
+    # Timeweb does not preserve the original recipient in X-Original-To or
+    # Envelope-To for catch-all delivery. Those headers are also sender-
+    # controllable in our observed path, so never route on them. The envelope
+    # recipient is taken only from Timeweb's own ingress Received line.
+    address = _timeweb_envelope_recipient(message)
+    if not address:
         return None
     subject = str(make_header(decode_header(message.get("Subject", ""))))
     sender = str(make_header(decode_header(message.get("From", ""))))
