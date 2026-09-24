@@ -351,7 +351,11 @@ _SECTION_FIELD_RE = re.compile(r"([a-z_]+)\[([a-z_]+)\](?:\[\d*\])*")
 # Разделы биографии: прошлые места работы и учёбы. Этих фактов в профиле нет,
 # а совпадение по слову давало выдумку — «должность на прошлой работе» из
 # желаемой должности, «год окончания» из уровня образования.
-_HISTORY_SECTIONS = ("work", "experience", "job", "career", "employment", "educat", "study", "course")
+# Сравнивается ВСЁ внешнее слово, не начало: по началу под запрет попадали
+# job_application[email] (разметка Greenhouse), career_form[…], jobform[…].
+_HISTORY_SECTION_RE = re.compile(
+    r"(?:work|experience|job|career|employment|education|study|studie|course)s?(?:_history)?"
+)
 _NAME_PARTS = (("фамил",), ("имя", "имени"), ("отчеств",))
 
 
@@ -367,9 +371,10 @@ def choose_key(
         return override if override in profile.values else None
 
     section = _SECTION_FIELD_RE.fullmatch((control.name or "").strip().lower())
-    if section:
+    # Почта и телефон — контакт кандидата, биографией они не бывают.
+    if section and control.type not in {"email", "tel"}:
         outer, inner = section.groups()
-        if outer.startswith(_HISTORY_SECTIONS):
+        if _HISTORY_SECTION_RE.fullmatch(outer):
             # Уровень образования — факт профиля; остальное в разделе — нет.
             if outer.startswith("educat") and inner == "level" and "education" in profile.values:
                 return "education"

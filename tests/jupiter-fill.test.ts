@@ -98,3 +98,10 @@ test('данные вписываются только на сайте вака�
   assert.equal(run('https://career.example.ru.evil.example/'), false);
   assert.equal(run('http://career.example.ru/vacancy/1'), false);
 });
+
+test('префикс анкеты — не раздел биографии', () => {
+  assert.equal(jtKeyForField('First name', 'text', 'job_application[first_name]'), 'first_name');
+  assert.equal(jtKeyForField('Телефон', 'text', 'jobform[phone]'), 'phone');
+  assert.equal(jtKeyForField('Должность', 'text', 'work_history[position]'), null);
+  assert.equal(jtKeyForField('Должность', 'text', 'WORK[POSITION][]'), null);
+});

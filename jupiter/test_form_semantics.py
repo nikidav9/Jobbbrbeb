@@ -488,6 +488,15 @@ class FieldMeaning(unittest.TestCase):
         self.assertIsNone(self.key_for('<label>Город <input name="WORK[CITY][]"></label>'))
         self.assertEqual(self.key_for('<label>Уровень <input name="EDUCATION[LEVEL][]"></label>'), "education")
 
+    def test_form_prefix_is_not_a_history_section(self):
+        # Greenhouse: job_application[…] — это вся анкета, а не прошлая работа.
+        self.assertEqual(self.key_for('<label>First name <input name="job_application[first_name]"></label>'), "first_name")
+        self.assertEqual(self.key_for('<input type="email" name="job_application[email]">'), "email")
+        self.assertEqual(self.key_for('<input type="tel" name="jobform[phone]">'), "phone")
+        self.assertEqual(self.key_for('<label>Почта <input name="career_form[email]"></label>'), "email")
+        self.assertIsNone(self.key_for('<label>Должность <input name="work_history[position]"></label>'))
+        self.assertIsNone(self.key_for('<label>Компания <input name="experiences[company]"></label>'))
+
 
 
 class ValueFitsField(unittest.TestCase):

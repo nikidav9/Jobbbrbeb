@@ -57,10 +57,12 @@ function jtKeyForField(text, type, name) {
   // Составное имя вида РАЗДЕЛ[ПОЛЕ] (VACANCY[NAME], WORK[POSITION][]…):
   // биографию (опыт, образование) не выдумываем — раздел решает раньше
   // подписи поля.
-  var bracket = /^([a-zA-Z]+)\\[([^\\]]*)\\]/.exec(name);
+  var bracket = /^([a-zA-Z_]+)\\[([^\\]]*)\\]/.exec(name);
   if (bracket) {
     var section = bracket[1].toLowerCase();
-    if (/^(work|experience|job|career|employment|educat|study|course)/.test(section)) return null;
+    // Раздел — всё слово целиком, как в jupiter/agent.py: по началу слова
+    // под запрет попадали job_application[…] (Greenhouse) и jobform[…].
+    if (/^(work|experience|job|career|employment|education|study|studie|course)s?(_history)?$/.test(section)) return null;
     var inner = (bracket[2] || '').toLowerCase();
     return classify((text + ' ' + inner).trim());
   }
