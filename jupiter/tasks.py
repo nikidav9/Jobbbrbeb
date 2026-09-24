@@ -84,6 +84,8 @@ class ApplicationTask:
     resume_token: str | None = None
     receipt_key: str | None = None
     submission_authorized_at: str | None = None
+    third_party_consent_at: str | None = None
+    third_party_terms_url: str | None = None
     transitions: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -109,6 +111,8 @@ class ApplicationTask:
             "resume_token": self.resume_token,
             "receipt_key": self.receipt_key,
             "submission_authorized_at": self.submission_authorized_at,
+            "third_party_consent_at": self.third_party_consent_at,
+            "third_party_terms_url": self.third_party_terms_url,
             "transitions": list(self.transitions),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -132,6 +136,8 @@ class ApplicationTask:
             resume_token=raw.get("resume_token"),
             receipt_key=raw.get("receipt_key"),
             submission_authorized_at=raw.get("submission_authorized_at"),
+            third_party_consent_at=raw.get("third_party_consent_at"),
+            third_party_terms_url=raw.get("third_party_terms_url"),
             transitions=list(raw.get("transitions") or []),
         )
         task.created_at = float(raw.get("created_at", 0) or time.time())
