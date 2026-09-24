@@ -145,6 +145,9 @@ check('публичные роли к таблице не допущены',
     && str_contains($sqlCode, 'revoke all on jm_jupiter_applications from authenticated'));
 check('функция аренды недоступна публичным ролям',
     str_contains($sqlCode, 'revoke all on function jupiter_lease_task(text, integer) from anon'));
+check('воркеру разрешено брать задачи через service_role',
+    str_contains(file_get_contents(__DIR__ . '/../supabase/migrations/108_jupiter_lease_service_role.sql'),
+        'grant execute on function public.jupiter_lease_task(text, integer) to service_role;'));
 check('сторож RLS видит новую таблицу',
     str_contains($guard, "('jm_jupiter_applications')"));
 
