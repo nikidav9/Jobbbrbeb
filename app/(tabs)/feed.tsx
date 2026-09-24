@@ -1188,6 +1188,7 @@ function WorkerPermMode() {
   const [showCareer, setShowCareer] = useState(false);
   const [careerVacancies, setCareerVacancies] = useState<ExtVacancy[]>([]);
   const [careerLoading, setCareerLoading] = useState(false);
+  const swDecisionPending = useRef(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
   const permCompanyOptions = useMemo(() => {
@@ -1321,17 +1322,20 @@ function WorkerPermMode() {
     return openVacancies.map(v => ({ _ext: false as const, v }));
   })();
 
-  const applyToExt = async (ev: ExtVacancy) => {
-    if (!currentUser) return;
-    if (currentUser.isGuest) { promptRegister({ vacancyKind: 'permanent' }); return; }
+  const applyToExt = async (ev: ExtVacancy): Promise<boolean> => {
+    if (!currentUser || currentUser.isGuest) return false;
     setApplying(ev.id);
     try {
-      await jupiterEnqueue(currentUser.id, ev.url, ev.company);
-      showToast('Заявка поставлена в очередь', 'success');
+      const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
+      showToast(application.state === 'queued'
+        ? 'Юпитер получил заявку. Статус — в «Откликах».'
+        : 'Заявка уже есть. Статус — в «Откликах».', 'success');
+      return true;
     } catch (e: any) {
       const msg = e?.message ?? '';
       console.warn('[applyToExt]', msg);
       showToast(msg || 'Не удалось создать заявку', 'error');
+      return false;
     } finally {
       setApplying(null);
     }
@@ -1450,18 +1454,38 @@ function WorkerPermMode() {
   // «Избранном» вдобавок убираем из избранного.
   const swWant = (vx = 0.5) => {
     const c = swTop;
-    if (!c) return;
+    if (!c || swDecisionPending.current) return;
+    if (c._ext && isGuest) {
+      promptRegister({ vacancyKind: 'permanent' });
+      swDeck.snapBack();
+      return;
+    }
     if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
+    swDecisionPending.current = true;
     swFly('right', vx, () => {
-      resetCardScroll();
-      setSwSkipped(s => new Set(s).add(c.v.id));
-      setSwHistory(h => [...h, c.v.id]);
-      if (c._ext) { void applyToExt(c.v); } else { applyTo(c.v); }
+      if (c._ext) {
+        void applyToExt(c.v).then(accepted => {
+          if (accepted) {
+            resetCardScroll();
+            setSwSkipped(s => new Set(s).add(c.v.id));
+            setSwHistory(h => [...h, c.v.id]);
+          } else {
+            energy.refundOne();
+            swDeck.snapBack();
+          }
+        }).finally(() => { swDecisionPending.current = false; });
+      } else {
+        resetCardScroll();
+        setSwSkipped(s => new Set(s).add(c.v.id));
+        setSwHistory(h => [...h, c.v.id]);
+        applyTo(c.v);
+        swDecisionPending.current = false;
+      }
     });
   };
   const swSkip = (vx = 0.5) => {
     const c = swTop;
-    if (!c) return;
+    if (!c || swDecisionPending.current) return;
     if (isGuest) {
       if (guestSkipCount >= GUEST_SKIP_LIMIT) {
         promptRegister({ vacancyKind: 'permanent' });
@@ -1471,10 +1495,12 @@ function WorkerPermMode() {
       guestSkipCount += 1;
     }
     if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
+    swDecisionPending.current = true;
     swFly('left', vx, () => {
       resetCardScroll();
       setSwSkipped(s => new Set(s).add(c.v.id));
       setSwHistory(h => [...h, c.v.id]);
+      swDecisionPending.current = false;
     });
   };
   swWantRef.current = swWant;

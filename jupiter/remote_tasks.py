@@ -12,12 +12,13 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 import urllib.request
 import urllib.error
 from typing import Any
 
 from agent import CandidateProfile
-from tasks import ApplicationTask, TaskState
+from tasks import ApplicationTask, TaskState, BACKOFF_BASE_SECONDS, MAX_ATTEMPTS
 
 DEFAULT_LEASE_SECONDS = 300
 
@@ -36,13 +37,17 @@ class RemoteTaskQueue:
         self,
         base_url: str,
         admin_token: str,
+        app_secret: str,
         *,
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
     ):
         self._url = base_url.rstrip("/") + "/api/db.php"
         self._token = admin_token
+        self._app_secret = app_secret
         self._lease_seconds = lease_seconds
+        self.heartbeat_interval = max(5, min(60, lease_seconds // 3))
         self._worker: str | None = None
+        self._attempts: dict[str, int] = {}
 
     def _call(self, fn: str, args: list[Any]) -> Any:
         body = json.dumps({"fn": fn, "args": args}).encode()
@@ -52,6 +57,7 @@ class RemoteTaskQueue:
             headers={
                 "Content-Type": "application/json",
                 "X-Admin-Token": self._token,
+                "X-App-Secret": self._app_secret,
             },
             method="POST",
         )
@@ -84,7 +90,9 @@ class RemoteTaskQueue:
         result = self._call("jupiterLease", [worker, self._lease_seconds])
         if result is None:
             return None
-        return self._row_to_task(result)
+        task = self._row_to_task(result)
+        self._attempts[task.id] = task.attempt_count
+        return task
 
     def heartbeat(self, task_id: str) -> bool:
         if self._worker is None:
@@ -134,8 +142,14 @@ class RemoteTaskQueue:
         *,
         retryable: bool = True,
     ) -> str:
-        state = TaskState.RETRYABLE_FAILED if retryable else TaskState.FAILED
+        attempt = self._attempts.get(task_id, MAX_ATTEMPTS)
+        state = TaskState.RETRYABLE_FAILED if retryable and attempt < MAX_ATTEMPTS else TaskState.FAILED
         extra: dict[str, Any] = {"last_error": error[:500]}
+        if state == TaskState.RETRYABLE_FAILED:
+            extra["not_before"] = (
+                datetime.now(timezone.utc)
+                + timedelta(seconds=BACKOFF_BASE_SECONDS * attempt ** 2)
+            ).isoformat()
         try:
             self._call("jupiterFinish", [task_id, self._worker, state, extra])
         except RemoteError:

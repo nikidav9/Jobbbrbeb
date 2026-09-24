@@ -1628,6 +1628,9 @@ export async function dbGetPermSavedDetailed(
 // была бы мёртвой, как и остальные (IS_NATIVE всегда true).
 
 function toJupiterApplication(row: any): JupiterApplication {
+  if (!row || typeof row.id !== 'string' || !row.id || typeof row.state !== 'string') {
+    throw new Error('Сервер вернул неполную заявку Jupiter. Обновите страницу и попробуйте ещё раз.');
+  }
   return {
     id: String(row.id),
     vacancyUrl: String(row.vacancy_url ?? ''),
@@ -1663,7 +1666,10 @@ export async function jupiterMyApplications(
   userId: string,
 ): Promise<JupiterApplication[]> {
   const rows = (await proxy('jupiterMyApplications', [userId])) as any[];
-  return (rows ?? []).map(toJupiterApplication);
+  if (!Array.isArray(rows)) {
+    throw new Error('Сервер не вернул список заявок Jupiter. Попробуйте обновить экран.');
+  }
+  return rows.map(toJupiterApplication);
 }
 
 function toExtVacancy(row: any): ExtVacancy {
