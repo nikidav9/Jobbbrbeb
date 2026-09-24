@@ -156,6 +156,31 @@ check('серверный submit guard повторно требует согл�
 check('срок аренды ограничен сверху и снизу',
     (bool)preg_match('~max\(30, min\(3600~', $db));
 
+// ── Ручной путь через WebView ───────────────────────────────────────────────
+// Человек сам открывает сайт работодателя и жмёт «Отправить»: сервер отдаёт
+// только его собственные поля и принимает пометку, что отклик отправлен.
+foreach (['jupiterFillProfile', 'jupiterMarkManualSubmitted'] as $fn) {
+    check("$fn привязан к владельцу", str_contains($selfBlock, "'$fn' => 0"));
+}
+$fillProfile = substr($db, strpos($db, "case 'jupiterFillProfile':"),
+    strpos($db, "case 'jupiterMarkManualSubmitted':") - strpos($db, "case 'jupiterFillProfile':"));
+check('jupiterFillProfile не отдаёт резюме, ссылки и согласия',
+    $fillProfile !== ''
+    && !str_contains($fillProfile, 'resume_url')
+    && !str_contains($fillProfile, 'storage_path')
+    && !str_contains($fillProfile, 'jt_resume_signed_url')
+    && !str_contains($fillProfile, 'consent'));
+check('jupiterFillProfile не собирает дату рождения',
+    !str_contains($fillProfile, 'birth') && !str_contains($fillProfile, 'birthday'));
+
+$markManual = substr($db, strpos($db, "case 'jupiterMarkManualSubmitted':"), 2200);
+check('jupiterMarkManualSubmitted не трогает чужие заявки и чужую аренду',
+    str_contains($markManual, "'user_id' => 'eq.' . \$uidArg")
+    && str_contains($markManual, "'lease_owner' => 'is.null'"));
+check('jupiterMarkManualSubmitted помечает заявку MANUAL_WEBVIEW',
+    str_contains($markManual, "'reason_code' => 'MANUAL_WEBVIEW'")
+    && str_contains($markManual, "'state' => 'submitted'"));
+
 // ── Защита таблицы ──────────────────────────────────────────────────────────
 check('таблица закрыта построчной защитой',
     str_contains($sqlCode, 'enable row level security'));

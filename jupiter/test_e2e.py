@@ -1676,7 +1676,7 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertLessEqual(set(AUDITED_SOURCE_URLS), names)
         self.assertEqual(len(names), len(AUDITED_SITES))
         # Боевая подача — только туда, где разведка прошла dry-run без капчи.
-        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 28)
+        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 29)
         self.assertTrue(live_ready("https://rabota.sber.ru/search/123"))
         self.assertTrue(live_ready("https://www.x5.tech/vacancy/1"))
         self.assertFalse(live_ready("https://www.slata.ru/vacancy/"))  # заполнял фильтр

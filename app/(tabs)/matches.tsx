@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TextInput,
-  TouchableOpacity, ActivityIndicator, RefreshControl, Linking, Alert,
+  TouchableOpacity, ActivityIndicator, RefreshControl, Linking, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -338,6 +338,21 @@ function jupiterAppStatus(state: JupiterApplicationState): { label: string; fg: 
   }
 }
 
+// Заявка, которую сервер сам отправить не может (капча, SPA, сайт ещё не в
+// списке проверенных) — человек её отправляет сам во встроенном браузере
+// (`app/jupiter-fill.tsx`). Особые пути Сбера (согласие) и повторная
+// авторизация автоотклика остаются на своей прежней кнопке — их поведение
+// не трогаем.
+function jupiterManualEligible(a: JupiterApplication): boolean {
+  const isSber = /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
+  const needsSberConsent = isSber
+    && a.state === 'action_required'
+    && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
+  return ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'].includes(a.state)
+    && !needsSberConsent
+    && a.reasonCode !== 'LIVE_AUTHORIZATION_REVOKED';
+}
+
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
 
 const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
@@ -443,6 +458,10 @@ function WorkerMatches() {
   const shownJupiterApps = filter === 'all'
     ? jupiterApps.filter(a => !q || `${a.company ?? ''} ${a.vacancyUrl}`.toLowerCase().includes(q))
     : [];
+  // Заявки, которые человек может отправить сам, — первыми и отдельным блоком:
+  // это единственное реальное действие, которого от него ждут прямо сейчас.
+  const manualJupiterApps = shownJupiterApps.filter(jupiterManualEligible);
+  const restJupiterApps = shownJupiterApps.filter(a => !jupiterManualEligible(a));
   const shownApps = myApps.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
     if (!q) return true;
@@ -522,16 +541,30 @@ function WorkerMatches() {
           ? { label: 'Нужен браузер · отклик не отправлен', fg: '#B45309', bg: '#FEF3C7' }
           : a.reasonCode === 'SITE_NOT_VERIFIED'
             ? { label: 'Сайт ещё подключаем · отклик сохранён', fg: '#1D4ED8', bg: '#DBEAFE' }
-            : jupiterAppStatus(a.state);
+            : a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW'
+              ? { label: 'Отправлено вами', fg: '#047857', bg: '#D1FAE5' }
+              : jupiterAppStatus(a.state);
     const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
+    // Ручной путь через встроенный браузер — своё, более широкое условие
+    // (доступен и для retryable_failed), кроме особых путей Сбера и
+    // повторной авторизации: у тех остаётся прежняя кнопка ниже.
+    const canApplyManuallyWebview = jupiterManualEligible(a);
+    const canOpen = canApplyManuallyWebview || canApplyManually;
+    const onRowPress = () => {
+      if (canApplyManuallyWebview && Platform.OS !== 'web') {
+        router.push({ pathname: '/jupiter-fill', params: { id: a.id, company } });
+        return;
+      }
+      Linking.openURL(a.vacancyUrl).catch(() => showToast('Не удалось открыть сайт компании', 'error'));
+    };
     return (
       <React.Fragment key={a.id}>
       <TouchableOpacity
         style={[wm.row, !last && wm.rowDivider]}
-        activeOpacity={canApplyManually ? 0.85 : 1}
-        disabled={!canApplyManually}
-        onPress={() => Linking.openURL(a.vacancyUrl).catch(() => showToast('Не удалось открыть сайт компании', 'error'))}
-        accessibilityLabel={`${company}. ${status.label}${canApplyManually ? '. Открыть вакансию на сайте' : ''}`}
+        activeOpacity={canOpen ? 0.85 : 1}
+        disabled={!canOpen}
+        onPress={onRowPress}
+        accessibilityLabel={`${company}. ${status.label}${canOpen ? '. Открыть вакансию на сайте' : ''}`}
       >
         <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
           <Text style={wm.logoTxt}>{getInitials(company)}</Text>
@@ -543,7 +576,7 @@ function WorkerMatches() {
             <Text style={[wm.statusTxt, { color: status.fg }]}>{status.label}</Text>
           </View>
         </View>
-        {canApplyManually ? <Ionicons name="open-outline" size={18} color={Colors.primary} /> : null}
+        {canOpen ? <Ionicons name="open-outline" size={18} color={Colors.primary} /> : null}
       </TouchableOpacity>
       {((a.state === 'ready_to_submit' && !a.submissionAuthorizedAt)
         || (a.state === 'action_required' && a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED')) ? (
@@ -757,9 +790,22 @@ function WorkerMatches() {
                   </TouchableOpacity>
                 ) : null}
                 {jupiterError ? <Text style={s.emptySub}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
-                {shownJupiterApps.length > 0 ? (
+                {manualJupiterApps.length > 0 ? (
+                  <>
+                    <View style={wm.sectionHead}>
+                      <Text style={wm.sectionTitle}>Ждут вас · {manualJupiterApps.length}</Text>
+                    </View>
+                    <Text style={[s.emptySub, { textAlign: 'left', marginBottom: rs(8) }]}>
+                      Отправьте сами — анкета заполнится за вас
+                    </Text>
+                    <View style={[wm.group, { marginBottom: rs(16) }]}>
+                      {manualJupiterApps.map((a, i) => renderJupiterApp(a, i === manualJupiterApps.length - 1))}
+                    </View>
+                  </>
+                ) : null}
+                {restJupiterApps.length > 0 ? (
                   <View style={wm.group}>
-                    {shownJupiterApps.map((a, i) => renderJupiterApp(a, i === shownJupiterApps.length - 1))}
+                    {restJupiterApps.map((a, i) => renderJupiterApp(a, i === restJupiterApps.length - 1))}
                   </View>
                 ) : null}
               </>
