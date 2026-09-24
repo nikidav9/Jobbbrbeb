@@ -249,6 +249,9 @@ class RemoteTaskQueueTest(unittest.TestCase):
         self.assertEqual(ft.data["state"], TaskState.SUBMITTED)
         self.assertIsNone(ft.data["lease_owner"])
         self.assertEqual(ft.data["receipt_key"], "k1")
+        finish_call = FakeDbHandler.calls[-1]
+        self.assertEqual(finish_call[0], "jupiterFinish")
+        self.assertTrue(finish_call[1][3]["verified"])
 
     def test_finish_with_action_required_stores_resume_token(self) -> None:
         tid = self._seed()
