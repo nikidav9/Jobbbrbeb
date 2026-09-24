@@ -36,6 +36,17 @@ PAGES = {
         <input name="tg" placeholder="Telegram*">
         <button type="submit">Откликнуться</button>
       </form></body></html>""",
+    "/prefilled-neighbour": """<html><body>
+      <form method="post" action="/send">
+        <input name="form_id" value="42">
+        <label>*Ваше имя <input name="discussion-name"></label>
+      </form>
+      <form method="post" action="/send">
+        <input name="form_id" value="43">
+        <label>ФИО <input name="fio" required></label>
+        <label>Телефон <input type="tel" name="phone" required></label>
+        <button type="submit">Откликнуться</button>
+      </form></body></html>""",
     "/filter": """<html><body>
       <form method="get" action="/filter">
         <label>Город <select name="city"><option>Москва</option></select></label>
@@ -127,6 +138,10 @@ class ReconTest(unittest.TestCase):
     def test_empty_field_starred_in_label_is_not_ready(self):
         # Звёздочка вместо required: браузер пропустит, сервер отклонит.
         self.assertEqual(self.recon("/starred").klass, "form_unmapped")
+
+    def test_site_prefilled_neighbour_form_does_not_block_ready(self):
+        # RedLab: сайт сам заполняет form_id в каждой форме.
+        self.assertEqual(self.recon("/prefilled-neighbour").klass, "dry_run_ok")
 
     def test_filter_form_is_not_an_application(self):
         self.assertNotIn(self.recon("/filter").klass, {"dry_run_ok", "form_unmapped", "captcha"})

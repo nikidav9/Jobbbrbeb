@@ -290,9 +290,14 @@ def _starred_empty(page: PageState | None) -> list[str]:
     """
     if page is None:
         return []
+    # Заполненная агентом форма — та, где стоит контакт кандидата. Любое
+    # непустое поле не годится: у RedLab сайт сам кладёт form_id в каждую
+    # форму, и соседняя форма со звёздочками выглядела заполненной.
     filled_forms = {
         c.form_index for c in page.controls
-        if c.form_index is not None and c.value and c.type not in {"hidden", "checkbox", "radio", "submit", "button"}
+        if c.form_index is not None and c.value
+        and c.type not in {"hidden", "checkbox", "radio", "submit", "button"}
+        and _CONTACT_RE.search(_describe(c))
     }
     return [
         c.label or c.placeholder or c.name
