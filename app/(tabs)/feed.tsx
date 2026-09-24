@@ -472,8 +472,9 @@ export type PermFilters = {
   salaryFrom: string; // сырой ввод из поля «От»
   schedules: string[];
   companies: string[];
+  showCareer: boolean;
 };
-export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [] };
+export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [], showCareer: false };
 
 type FeedCard =
   | { _ext: false; v: PermVacancy }
@@ -700,6 +701,16 @@ function PermFilterSheet({
             />
             <View style={pfl.rub}><Text style={pfl.rubTxt}>₽</Text></View>
           </View>
+
+          <Text style={fst.label}>Источник</Text>
+          <TouchableOpacity
+            style={[fst.chip, draft.showCareer && fst.chipOn]}
+            onPress={() => setDraft(d => ({ ...d, showCareer: !d.showCareer }))}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="briefcase-outline" size={13} color={draft.showCareer ? '#fff' : Colors.textMuted} style={{ marginRight: rs(4) }} />
+            <Text style={[fst.chipTxt, draft.showCareer && fst.chipTxtOn]}>Карьерные сайты</Text>
+          </TouchableOpacity>
         </ScrollView>
 
         <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
@@ -1266,8 +1277,8 @@ function WorkerPermMode() {
 
   // Текущие применённые фильтры одним объектом — так их удобно и применять,
   // и считать «Показать N» для черновика в шторке.
-  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies };
-  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0;
+  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies, showCareer };
+  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0 || showCareer;
 
   const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
     if (!f.query) return true;
@@ -1959,17 +1970,19 @@ function WorkerPermMode() {
             <Ionicons name="close" size={14} color={Colors.textMuted} />
           </TouchableOpacity>
         ) : null}
-        <TouchableOpacity
-          style={[pS.activeStationChip, showCareer && { backgroundColor: Colors.primary + '18', borderColor: Colors.primary }]}
-          onPress={() => setShowCareer(c => !c)}
-          activeOpacity={0.8}
-        >
-          {careerLoading
-            ? <ActivityIndicator size={13} color={Colors.primary} />
-            : <Ionicons name="briefcase-outline" size={13} color={showCareer ? Colors.primary : Colors.textMuted} />}
-          <Text style={[pS.activeStationTxt, { color: showCareer ? Colors.primary : Colors.textMuted }]}>Карьерные сайты</Text>
-          {showCareer ? <Ionicons name="close" size={14} color={Colors.primary} /> : null}
-        </TouchableOpacity>
+        {showCareer ? (
+          <TouchableOpacity
+            style={[pS.activeStationChip, { backgroundColor: Colors.primary + '18', borderColor: Colors.primary }]}
+            onPress={() => setShowCareer(false)}
+            activeOpacity={0.8}
+          >
+            {careerLoading
+              ? <ActivityIndicator size={13} color={Colors.primary} />
+              : <Ionicons name="briefcase-outline" size={13} color={Colors.primary} />}
+            <Text style={[pS.activeStationTxt, { color: Colors.primary }]}>Карьерные сайты</Text>
+            <Ionicons name="close" size={14} color={Colors.primary} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <MetroMap
@@ -2031,6 +2044,7 @@ function WorkerPermMode() {
             setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
             setSchedules(f.schedules);
             setFilterCompanies(f.companies);
+            setShowCareer(f.showCareer);
           }}
           onClose={() => setPermFilterOpen(false)}
           onOpenMap={() => { setPermFilterOpen(false); setMapOpen(true); }}
