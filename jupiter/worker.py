@@ -13,7 +13,7 @@ import threading
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
-from tasks import ApplicationTask, TaskQueueProto, TaskState
+from tasks import ApplicationTask, TaskQueueProto, TaskState, SubmissionAuthorizationRevoked
 
 # Что имеет смысл повторить: связь, время ожидания, дроссель на той стороне.
 # Всё остальное повторять бессмысленно — со второго раза страница не станет
@@ -34,9 +34,16 @@ RESULT_TO_STATE = {
 }
 
 
-def apply_result(queue: TaskQueueProto, task: ApplicationTask, result: AgentResult) -> str:
+def apply_result(
+    queue: TaskQueueProto, task: ApplicationTask, result: AgentResult,
+    *, submission_attempted: bool = False,
+) -> str:
     """Перевести итог прогона в состояние задачи."""
     if result.status == "failed":
+        if submission_attempted:
+            queue.finish(task.id, TaskState.SUBMISSION_UNKNOWN,
+                         reason_code="POST_OUTCOME_UNCERTAIN")
+            return TaskState.SUBMISSION_UNKNOWN
         retryable = result.reason_code in RETRYABLE_CODES
         return queue.fail(
             task.id, result.reason or "failed", retryable=retryable
@@ -84,7 +91,8 @@ def run_once(
     try:
         resolved = profile(task) if callable(profile) else profile
     except Exception as exc:
-        state = queue.fail(task.id, f"Candidate profile unavailable: {exc}", retryable=False)
+        retryable = getattr(exc, "status", 0) in (429, 500, 502, 503, 504)
+        state = queue.fail(task.id, f"Candidate profile unavailable: {exc}", retryable=retryable)
         return task, state
 
     heartbeat = getattr(queue, "heartbeat", None)
@@ -107,14 +115,32 @@ def run_once(
 
     try:
         agent = agent_factory(task)
+        submission_attempted = False
+        if not getattr(agent, "dry_run", True):
+            def before_submit(url: str, intermediate: bool) -> None:
+                nonlocal submission_attempted
+                guard = getattr(queue, "authorize_submit", None)
+                if callable(guard):
+                    guard(task.id)
+                queue.checkpoint(task.id, TaskState.SUBMITTING, {
+                    "url": url, "intermediate": intermediate,
+                })
+                submission_attempted = True
+            agent.before_submit = before_submit
         queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
             "url": task.vacancy_url,
         })
-        if task.resume_token:
-            result = agent.resume(task.resume_token, resolved)
-        else:
-            result = agent.run(task.vacancy_url, resolved)
-        return task, apply_result(queue, task, result)
+        try:
+            if task.resume_token:
+                result = agent.resume(task.resume_token, resolved)
+            else:
+                result = agent.run(task.vacancy_url, resolved)
+        except SubmissionAuthorizationRevoked:
+            queue.finish(task.id, TaskState.ACTION_REQUIRED,
+                         reason_code="LIVE_AUTHORIZATION_REVOKED")
+            return task, TaskState.ACTION_REQUIRED
+        return task, apply_result(queue, task, result,
+                                  submission_attempted=submission_attempted)
     finally:
         stop_heartbeat.set()
         if thread is not None:

@@ -178,7 +178,7 @@ $adminFns = [
     // он берёт чужие задачи по очереди, и подставлять сюда пользовательскую
     // сессию значило бы дать одному человеку доступ к заявкам другого.
     'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
-    'jupiterGetCandidateProfile',
+    'jupiterGetCandidateProfile', 'jupiterSubmitGuard', 'jupiterMailIngest',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -270,6 +270,9 @@ $selfArgFns = [
     'dbApplyPermVacancy' => 1,
     // Заявки Jupiter: человек видит и ставит в очередь только свои.
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
+    'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
+    'jupiterRequeueLive' => 0,
+    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -6020,6 +6023,146 @@ try {
         // вещи. Первый решает работодатель у нас, вторая живёт на чужом сайте
         // и проходит фоновым прогоном. Общего у них только слово «отклик».
 
+        case 'jupiterMailbox': {
+            $uidArg = (string)$args[0];
+            $box = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address');
+            if (!$box) {
+                $address = 'u-' . bin2hex(random_bytes(12)) . '@jobtoo.ru';
+                $rows = sb('POST', 'jm_jupiter_mailboxes', ['on_conflict' => 'user_id'], [
+                    'user_id' => $uidArg, 'address' => $address,
+                ], ['Prefer: resolution=ignore-duplicates,return=representation']);
+                $box = $rows[0] ?? sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address');
+            }
+            $data = ['address' => $box['address'] ?? null,
+                'ready' => jt_secret('JUPITER_MAIL_VERIFIED') === '1'];
+            break;
+        }
+
+        case 'jupiterMailList': {
+            $data = sb_select('jm_jupiter_emails', [
+                'user_id' => 'eq.' . (string)$args[0], 'limit' => '100',
+            ], 'id,sender,subject,body,received_at,read_at', 'received_at.desc');
+            break;
+        }
+
+        case 'jupiterMailRead': {
+            $uidArg = (string)$args[0];
+            $id = (string)($args[1] ?? '');
+            sb_update('jm_jupiter_emails', [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg, 'read_at' => 'is.null',
+            ], ['read_at' => now_iso()]);
+            $data = ['ok' => true];
+            break;
+        }
+
+        case 'jupiterMailIngest': {
+            $recipient = strtolower(trim((string)($args[0] ?? '')));
+            $message = is_array($args[1] ?? null) ? $args[1] : [];
+            $box = sb_single('jm_jupiter_mailboxes', ['address' => 'eq.' . $recipient], 'user_id');
+            if (!$box) { $data = ['stored' => false]; break; }
+            $key = trim((string)($message['imap_uid'] ?? ''));
+            if ($key === '') { jt_respond(['error' => 'Missing IMAP UID'], 400); exit; }
+            sb('POST', 'jm_jupiter_emails', ['on_conflict' => 'imap_uid'], [
+                'id' => uid(), 'user_id' => $box['user_id'], 'mailbox_address' => $recipient,
+                'imap_uid' => mb_substr($key, 0, 180),
+                'sender' => mb_substr((string)($message['sender'] ?? ''), 0, 320),
+                'subject' => mb_substr((string)($message['subject'] ?? ''), 0, 998),
+                'body' => mb_substr((string)($message['body'] ?? ''), 0, 100000),
+                'received_at' => $message['received_at'] ?? now_iso(),
+            ], ['Prefer: resolution=ignore-duplicates,return=representation']);
+            $data = ['stored' => true];
+            break;
+        }
+
+        case 'jupiterLiveStatus': {
+            $user = sb_single('jm_users', ['id' => 'eq.' . (string)$args[0]], 'jupiter_live_enabled_at');
+            $data = ['enabled' => !empty($user['jupiter_live_enabled_at'])];
+            break;
+        }
+
+        case 'jupiterSetLive': {
+            $uidArg = (string)$args[0];
+            $enabled = ($args[1] ?? null) === true;
+            if ($enabled && jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
+                jt_respond(['error' => 'Почта JobToo ещё не подключена. Отклики пока нельзя отправлять.'], 503); exit;
+            }
+            if ($enabled && !sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uidArg, 'selected' => 'eq.true',
+                'storage_path' => 'not.is.null',
+            ], 'id')) {
+                jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit;
+            }
+            if ($enabled && !sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address')) {
+                jt_respond(['error' => 'Сначала откройте почту JobToo для создания адреса'], 409); exit;
+            }
+            sb_update('jm_users', ['id' => 'eq.' . $uidArg], [
+                'jupiter_live_enabled_at' => $enabled ? now_iso() : null,
+            ]);
+            if (!$enabled) {
+                // Unleased requests must not spring back to life after a later opt-in.
+                sb_update('jm_jupiter_applications', [
+                    'user_id' => 'eq.' . $uidArg,
+                    'state' => 'in.(queued,retryable_failed,ready_to_submit)',
+                    'lease_owner' => 'is.null',
+                    'submission_authorized_at' => 'not.is.null',
+                ], [
+                    'state' => 'ready_to_submit',
+                    'submission_authorized_at' => null,
+                    'reason_code' => 'LIVE_AUTHORIZATION_REVOKED',
+                    'updated_at' => now_iso(),
+                ]);
+            }
+            $data = ['enabled' => $enabled];
+            break;
+        }
+
+        case 'jupiterRequeueLive': {
+            $uidArg = (string)$args[0];
+            $id = (string)($args[1] ?? '');
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
+            if (empty($user['jupiter_live_enabled_at'])) {
+                jt_respond(['error' => 'Сначала включите отправку откликов'], 403); exit;
+            }
+            if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
+                jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
+            }
+            $selectedResume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uidArg, 'selected' => 'eq.true',
+            ], 'id,storage_path');
+            if (empty($selectedResume['storage_path'])) {
+                jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit;
+            }
+            $existing = sb_single('jm_jupiter_applications', [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
+            ], 'id,state,lease_owner,submission_authorized_at,reason_code');
+            $canRequeue = $existing && (
+                ($existing['state'] === 'ready_to_submit' && empty($existing['submission_authorized_at']))
+                || ($existing['state'] === 'action_required'
+                    && ($existing['reason_code'] ?? '') === 'LIVE_AUTHORIZATION_REVOKED')
+            );
+            if (!$canRequeue || !empty($existing['lease_owner'])) {
+                jt_respond(['error' => 'Эту заявку нельзя отправить повторно'], 409); exit;
+            }
+            $filters = [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
+                'state' => 'eq.' . $existing['state'], 'lease_owner' => 'is.null',
+            ];
+            if ($existing['state'] === 'ready_to_submit') {
+                $filters['submission_authorized_at'] = 'is.null';
+            }
+            sb_update('jm_jupiter_applications', $filters, [
+                'state' => 'queued', 'submission_authorized_at' => now_iso(),
+                'reason_code' => null, 'not_before' => null, 'updated_at' => now_iso(),
+            ]);
+            $data = sb_single('jm_jupiter_applications', [
+                'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
+            ]);
+            if (!$data || empty($data['submission_authorized_at'])) {
+                jt_respond(['error' => 'Не удалось поставить заявку в очередь'], 409); exit;
+            }
+            break;
+        }
+
         // Поставить вакансию в очередь. Повтор не ошибка: человек мог нажать
         // дважды, и правильный ответ — отдать ту же заявку, а не завести
         // вторую. От гонки двух запросов защищает уникальный индекс в базе,
@@ -6033,11 +6176,21 @@ try {
             if ($canonical === '') {
                 jt_respond(['error' => 'Адрес вакансии не похож на ссылку'], 400); exit;
             }
+            $selectedResume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $uidArg, 'selected' => 'eq.true',
+            ], 'id,storage_path');
+            if (empty($selectedResume['storage_path'])) {
+                jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit;
+            }
+            if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
+                jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
+            }
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) { $data = $existing; break; }
+            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
             $row = [
                 'id' => uid(),
                 'user_id' => $uidArg,
@@ -6045,6 +6198,7 @@ try {
                 'canonical_url' => $canonical,
                 'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
                 'state' => 'queued',
+                'submission_authorized_at' => !empty($user['jupiter_live_enabled_at']) ? now_iso() : null,
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
@@ -6068,7 +6222,8 @@ try {
                 'jm_jupiter_applications',
                 ['user_id' => 'eq.' . (string)($args[0] ?? '')],
                 'id,vacancy_url,company,state,reason_code,resume_token,'
-                . 'external_application_id,created_at,updated_at,submitted_at,verified_at',
+                . 'external_application_id,created_at,updated_at,submitted_at,verified_at,'
+                . 'submission_authorized_at',
                 'created_at.desc'
             ); break;
         }
@@ -6103,6 +6258,34 @@ try {
                 'lease_until' => gmdate('c', time() + $leaseSeconds),
                 'updated_at' => now_iso(),
             ]);
+            jt_respond(['ok' => true]); exit;
+        }
+
+        case 'jupiterSubmitGuard': {
+            $id = (string)($args[0] ?? '');
+            $worker = (string)($args[1] ?? '');
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
+                'user_id,lease_owner,lease_until,submission_authorized_at,state');
+            $user = $task ? sb_single('jm_users', ['id' => 'eq.' . $task['user_id']],
+                'jupiter_live_enabled_at,is_blocked') : null;
+            $resume = $task ? sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $task['user_id'], 'selected' => 'eq.true',
+            ], 'storage_path') : null;
+            $mailbox = $task ? sb_single('jm_jupiter_mailboxes', [
+                'user_id' => 'eq.' . $task['user_id'],
+            ], 'address') : null;
+            if (!$task || !$user || $worker === ''
+                || jt_secret('JUPITER_MAIL_VERIFIED') !== '1'
+                || empty($resume['storage_path']) || empty($mailbox['address'])
+                || (string)($task['lease_owner'] ?? '') !== $worker
+                || (int)strtotime((string)($task['lease_until'] ?? '')) <= time()
+                || empty($task['submission_authorized_at'])
+                || empty($user['jupiter_live_enabled_at']) || !empty($user['is_blocked'])
+                || new DateTimeImmutable((string)$task['submission_authorized_at'])
+                   < new DateTimeImmutable((string)$user['jupiter_live_enabled_at'])
+                || in_array($task['state'], ['submitted', 'submission_unknown', 'duplicate', 'failed'], true)) {
+                jt_respond(['error' => 'Submission is not authorized'], 409); exit;
+            }
             jt_respond(['ok' => true]); exit;
         }
 
@@ -6174,10 +6357,20 @@ try {
                 'user_id' => 'eq.' . $uid,
                 'selected' => 'eq.true',
             ], 'id,storage_path,resume_data,resume_email');
+            if (!$resume || empty($resume['storage_path'])) {
+                jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit;
+            }
             $resumeUrl = null;
             if ($resume && !empty($resume['storage_path'])) {
                 try { $resumeUrl = jt_resume_signed_url($resume['storage_path']); }
-                catch (Throwable $e) { /* PDF недоступен — не фатально */ }
+                catch (Throwable $e) { /* Недоступное PDF остановит отправку ниже. */ }
+            }
+            if (!$resumeUrl) {
+                jt_respond(['error' => 'Выбранное резюме временно недоступно'], 503); exit;
+            }
+            $mailbox = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uid], 'address');
+            if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1' || empty($mailbox['address'])) {
+                jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
             $personalData = null;
             if (!empty($user['personal_data'])) {
@@ -6209,7 +6402,7 @@ try {
                 'last_name' => $user['last_name'] ?? null,
                 'age' => $user['age'] ?? null,
                 'phone' => $user['phone'] ?? null,
-                'email' => $resume['resume_email'] ?? $user['resume_email'] ?? null,
+                'email' => $mailbox['address'],
                 'personal_data' => $personalData,
                 'resume_data' => $resumeData,
                 'resume_url' => $resumeUrl,

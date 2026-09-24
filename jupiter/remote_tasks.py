@@ -18,7 +18,7 @@ import urllib.error
 from typing import Any
 
 from agent import CandidateProfile
-from tasks import ApplicationTask, TaskState, BACKOFF_BASE_SECONDS, MAX_ATTEMPTS
+from tasks import ApplicationTask, TaskState, BACKOFF_BASE_SECONDS, MAX_ATTEMPTS, SubmissionAuthorizationRevoked
 
 DEFAULT_LEASE_SECONDS = 300
 
@@ -81,6 +81,7 @@ class RemoteTaskQueue:
             last_error=row.get("last_error"),
             resume_token=row.get("resume_token"),
             receipt_key=row.get("receipt_key"),
+            submission_authorized_at=row.get("submission_authorized_at"),
         )
 
     # ── публичный интерфейс ────────────────────────────────────────────────
@@ -106,6 +107,18 @@ class RemoteTaskQueue:
             if exc.status == 409:
                 return False
             raise
+
+    def authorize_submit(self, task_id: str) -> None:
+        if self._worker is None:
+            raise RuntimeError("No worker lease for submission")
+        try:
+            result = self._call("jupiterSubmitGuard", [task_id, self._worker])
+        except RemoteError as exc:
+            if exc.status == 409:
+                raise SubmissionAuthorizationRevoked("Candidate disabled live submissions") from None
+            raise
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise RuntimeError("Submission authorization could not be verified")
 
     def checkpoint(self, task_id: str, state: str, data: dict[str, Any]) -> None:
         if self._worker is None:
@@ -183,7 +196,12 @@ class RemoteTaskQueue:
             for key, val in rd.items():
                 if key not in values and val not in (None, ""):
                     values[key] = val
+        # JobToo's own consent does not accept a third party's legal terms.
+        for key in ("consent", "personal_data_consent", "privacy_consent", "terms_consent"):
+            values.pop(key, None)
         resume_path = self._download_resume(raw.get("resume_url"))
+        if not resume_path:
+            raise RemoteError(503, "Selected resume PDF is unavailable")
         return CandidateProfile(values=values, resume_path=resume_path)
 
     @staticmethod

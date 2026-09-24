@@ -8,7 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as WebBrowser from 'expo-web-browser';
@@ -734,10 +734,12 @@ function ResumeVaultTab({
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
   const tabBarHeight = useBottomTabBarHeight();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
   const [editSection, setEditSection] = useState<EditSection>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
+  useEffect(() => { if (tab === 'files') setProfileTab('files'); }, [tab]);
   const [importingResume, setImportingResume] = useState(false);
   const [resumeFiles, setResumeFiles] = useState<ResumeVaultItem[]>([]);
   const [resumeFilesLoading, setResumeFilesLoading] = useState(false);

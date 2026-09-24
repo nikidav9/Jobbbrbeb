@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking,
+  TextInput, ActivityIndicator, Share, Platform, Linking, Alert,
 } from 'react-native';
 import {
   GestureDetector,
@@ -17,6 +17,7 @@ import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
+import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy, WorkType } from '@/constants/types';
 import { getInitials, nameColorFromString } from '@/services/storage';
@@ -39,6 +40,7 @@ import {
   dbStartGuestRegistration,
   dbGetExtVacancies,
   jupiterEnqueue,
+  dbGetResumeFiles,
 } from '@/services/db';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
@@ -1326,9 +1328,22 @@ function WorkerPermMode() {
     if (!currentUser || currentUser.isGuest) return false;
     setApplying(ev.id);
     try {
+      const selectedResume = (await dbGetResumeFiles()).some(file => file.selected && !!file.storagePath);
+      if (!selectedResume) {
+        const prompt = 'Для отклика на внешнюю вакансию сначала загрузите PDF-резюме в профиль. Перейти к загрузке?';
+        const openFiles = Platform.OS === 'web'
+          ? typeof window !== 'undefined' && window.confirm(prompt)
+          : await new Promise<boolean>(resolve => Alert.alert('Нужно резюме', prompt, [
+              { text: 'Позже', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Загрузить', onPress: () => resolve(true) },
+            ], { cancelable: true, onDismiss: () => resolve(false) }));
+        if (openFiles) router.push({ pathname: '/(tabs)/profile', params: { tab: 'files' } });
+        return false;
+      }
+      if (!await requestJupiterLive(currentUser.id)) return false;
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
       showToast(application.state === 'queued'
-        ? 'Юпитер получил заявку. Статус — в «Откликах».'
+        ? 'Юпитер готовит и отправляет отклик. Статус — в «Откликах».'
         : 'Заявка уже есть. Статус — в «Откликах».', 'success');
       return true;
     } catch (e: any) {

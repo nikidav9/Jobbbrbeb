@@ -338,6 +338,7 @@ export interface JupiterApplication {
   updatedAt: string;
   submittedAt?: string | null;
   verifiedAt?: string | null;
+  submissionAuthorizedAt?: string | null;
 }
 
 export interface ExtVacancy {

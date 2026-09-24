@@ -152,6 +152,38 @@ class TestWorkerLoop(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
+    def test_only_authorized_task_runs_in_live_mode(self):
+        from run_worker import main
+        import run_worker
+        import worker as worker_mod
+
+        old_run = worker_mod.run_once
+        old_stop = run_worker._stop
+        keys = ("JOBTOO_URL", "JOBTOO_ADMIN_TOKEN", "EXPO_PUBLIC_APP_SECRET", "JUPITER_POLL_INTERVAL")
+        old_env = {key: os.environ.get(key) for key in keys}
+        def check(queue, profile_factory, factory, wid):
+            old = ApplicationTask(id="old", candidate_id="u", vacancy_url="https://example.com/job")
+            fresh = ApplicationTask(id="new", candidate_id="u", vacancy_url="https://example.com/job",
+                                    submission_authorized_at="2026-09-24T11:00:00Z")
+            self.assertTrue(factory(old).dry_run)
+            self.assertFalse(factory(fresh).dry_run)
+            run_worker._stop = True
+            return None
+        try:
+            os.environ.update({"JOBTOO_URL": "https://example.com", "JOBTOO_ADMIN_TOKEN": "tok",
+                               "EXPO_PUBLIC_APP_SECRET": "app", "JUPITER_POLL_INTERVAL": "0"})
+            worker_mod.run_once = check
+            run_worker._stop = False
+            self.assertEqual(main(), 0)
+        finally:
+            worker_mod.run_once = old_run
+            run_worker._stop = old_stop
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
 
 class TestProfileFactory(unittest.TestCase):
     """Проверяем, что worker.run_once вызывает фабрику профиля с задачей."""
@@ -184,6 +216,24 @@ class TestProfileFactory(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(factory_calls, ["user-42"])
         self.assertEqual(result[1], TaskState.SUBMITTED)
+
+    def test_failure_after_form_request_never_retries(self):
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="attempted", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedAfterPost:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, False)
+                return AgentResult("failed", "HTTP failed", reason_code=Reason.SUBMIT_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedAfterPost())
+        self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
+        self.assertEqual(queue.finished, [(task.id, TaskState.SUBMISSION_UNKNOWN)])
 
     def test_profile_failure_releases_task_as_failed(self):
         import worker as worker_mod
@@ -257,11 +307,11 @@ class TestFetchProfileBuildsValues(unittest.TestCase):
                 "desired_role": "Менеджер",
                 "experience": "3 года",
             },
-            "resume_url": None,
+            "resume_url": "https://example.com/resume.pdf",
         }
 
-        original_call = getattr(q, '_call', None)
         q._call = lambda fn, args: server_response
+        q._download_resume = lambda url: "/tmp/test-resume.pdf" if url == server_response["resume_url"] else None
 
         profile = q.fetch_profile("u1")
         self.assertEqual(profile.values["first_name"], "Мария")
@@ -271,8 +321,17 @@ class TestFetchProfileBuildsValues(unittest.TestCase):
         self.assertEqual(profile.values["city"], "Москва")
         self.assertEqual(profile.values["desired_role"], "Менеджер")
         self.assertEqual(profile.values["experience"], "3 года")
-        self.assertEqual(profile.values["consent"], True)
-        self.assertIsNone(profile.resume_path)
+        self.assertNotIn("consent", profile.values)
+        self.assertEqual(profile.resume_path, "/tmp/test-resume.pdf")
+
+    def test_missing_resume_blocks_profile(self):
+        from remote_tasks import RemoteError, RemoteTaskQueue
+
+        q = RemoteTaskQueue.__new__(RemoteTaskQueue)
+        q._call = lambda fn, args: {"first_name": "Мария", "resume_url": None}
+        with self.assertRaises(RemoteError) as raised:
+            q.fetch_profile("u1")
+        self.assertEqual(raised.exception.status, 503)
 
     def test_empty_candidate_id_raises(self):
         from remote_tasks import RemoteTaskQueue

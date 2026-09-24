@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from remote_tasks import RemoteError, RemoteTaskQueue
-from tasks import TaskState
+from tasks import TaskState, SubmissionAuthorizationRevoked
 
 ADMIN_TOKEN = "test-admin-token"
 APP_SECRET = "test-app-secret"
@@ -35,6 +35,7 @@ class FakeTask:
             "last_error": None,
             "resume_token": None,
             "receipt_key": None,
+            "submission_authorized_at": None,
             "not_before": None,
         }
 
@@ -69,6 +70,13 @@ class FakeDbHandler(BaseHTTPRequestHandler):
             self._handle_checkpoint(args)
         elif fn == "jupiterFinish":
             self._handle_finish(args)
+        elif fn == "jupiterSubmitGuard":
+            tid, worker = args
+            task = FakeDbHandler.tasks.get(tid)
+            allowed = (task is not None and task.data["lease_owner"] == worker
+                       and bool(task.data["submission_authorized_at"]))
+            self._json({"ok": True} if allowed else {"error": "Submission is not authorized"},
+                       200 if allowed else 409)
         else:
             self._json({"error": f"Unknown fn: {fn}"}, 400)
 
@@ -199,6 +207,15 @@ class RemoteTaskQueueTest(unittest.TestCase):
         q2 = self._queue()
         q2._worker = "w2"
         self.assertFalse(q2.heartbeat(task.id))
+
+    def test_submit_guard_rejects_legacy_task_and_accepts_opted_in_task(self) -> None:
+        tid = self._seed()
+        q = self._queue()
+        q.lease("w1")
+        with self.assertRaises(SubmissionAuthorizationRevoked):
+            q.authorize_submit(tid)
+        FakeDbHandler.tasks[tid].data["submission_authorized_at"] = "2026-09-24T11:00:00Z"
+        q.authorize_submit(tid)
 
     # ── checkpoint ─────────────────────────────────────────────────────────
 
