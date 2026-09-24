@@ -86,7 +86,7 @@ class TestWorkerLoop(unittest.TestCase):
         calls = []
         original_run_once = worker_mod.run_once
 
-        def fake_run_once(queue, profile_factory, factory, wid):
+        def fake_run_once(queue, profile_factory, factory, wid, site_gate=None):
             calls.append(wid)
             run_worker._stop = True
             return None
@@ -128,7 +128,7 @@ class TestWorkerLoop(unittest.TestCase):
             "JUPITER_DRY_RUN", "JUPITER_POLL_INTERVAL",
         )}
 
-        def fake_run_once(queue, profile_factory, agent_factory, wid):
+        def fake_run_once(queue, profile_factory, agent_factory, wid, site_gate=None):
             task = ApplicationTask(id="t1", candidate_id="u1", vacancy_url="https://example.com/job")
             self.assertTrue(agent_factory(task).dry_run)
             self.assertEqual(queue._app_secret, "test-app-secret")
@@ -161,7 +161,10 @@ class TestWorkerLoop(unittest.TestCase):
         old_stop = run_worker._stop
         keys = ("JOBTOO_URL", "JOBTOO_ADMIN_TOKEN", "EXPO_PUBLIC_APP_SECRET", "JUPITER_POLL_INTERVAL")
         old_env = {key: os.environ.get(key) for key in keys}
-        def check(queue, profile_factory, factory, wid):
+        def check(queue, profile_factory, factory, wid, site_gate=None):
+            # Боевой воркер обязан ограничивать сайты реестром site_compat.
+            from site_compat import live_ready
+            self.assertIs(site_gate, live_ready)
             old = ApplicationTask(id="old", candidate_id="u", vacancy_url="https://example.com/job")
             fresh = ApplicationTask(id="new", candidate_id="u", vacancy_url="https://example.com/job",
                                     submission_authorized_at="2026-09-24T11:00:00Z")
@@ -234,6 +237,43 @@ class TestProfileFactory(unittest.TestCase):
                                            lambda _: FailedAfterPost())
         self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
         self.assertEqual(queue.finished, [(task.id, TaskState.SUBMISSION_UNKNOWN)])
+
+    def test_live_task_on_unverified_site_is_parked_without_agent(self):
+        import worker as worker_mod
+
+        task = ApplicationTask(id="live", candidate_id="u1", vacancy_url="https://unknown.example/job",
+                               submission_authorized_at="2026-09-24T11:00:00Z")
+        queue = FakeQueue([task])
+        touched: list[str] = []
+
+        def profile(_task):
+            touched.append("profile")
+            return CandidateProfile({"first_name": "Иван"})
+
+        def factory(_task):
+            touched.append("agent")
+            raise AssertionError("агент не должен открывать непроверенный сайт")
+
+        _task, state = worker_mod.run_once(queue, profile, factory, "w1", site_gate=lambda url: False)
+        self.assertEqual(state, TaskState.ACTION_REQUIRED)
+        self.assertEqual(queue.finished, [(task.id, TaskState.ACTION_REQUIRED)])
+        self.assertEqual(touched, [])
+
+    def test_dry_run_task_is_not_gated_by_site(self):
+        import worker as worker_mod
+        from agent import AgentResult
+
+        task = ApplicationTask(id="dry", candidate_id="u1", vacancy_url="https://unknown.example/job")
+        queue = FakeQueue([task])
+
+        class DryAgent:
+            dry_run = True
+            def run(self, url, profile):
+                return AgentResult("ready_to_submit")
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _t: DryAgent(), "w1", site_gate=lambda url: False)
+        self.assertEqual(state, TaskState.READY_TO_SUBMIT)
 
     def test_profile_failure_releases_task_as_failed(self):
         import worker as worker_mod

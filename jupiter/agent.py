@@ -75,6 +75,14 @@ CONSENT_MARKERS = (
     "политик конфиденциальност",
 )
 
+# Метки для is_application_form: отличить анкету кандидата от соседних форм
+# на той же странице (фильтр вакансий, подписка, форма для клиентов, форма
+# «порекомендуй знакомого»).
+_CONTACT_FIELD_MARKERS = ("phone", "tel", "mail", "телефон", "почт", "e-mail")
+_COMPANY_FIELD_MARKERS = ("company", "organization", "organisation", "компани", "организац")
+_REFERRER_LABEL_MARKERS = ("рекомендател", "порекомендуй", "рекомендую друга", "friend")
+_STRUCTURAL_CONTROL_TYPES = {"checkbox", "radio", "hidden", "submit", "button", "file"}
+
 ALIASES = {
     "first_name": ("first name", "given name", "firstname", "имя"),
     "last_name": ("last name", "surname", "family name", "lastname", "фамилия"),
@@ -375,6 +383,77 @@ def choose_key(
             if score > best[0]:
                 best = (score, key)
     return best[1] if best[0] >= 30 else None
+
+
+def is_application_form(
+    page: PageState,
+    form_index: int,
+    *,
+    require_contact: bool = True,
+) -> bool:
+    """Проверяет, что форма — анкета кандидата, а не соседняя форма сайта.
+
+    Скоринг форм (`_form_score`) сравнивает очки, но не спрашивает, ту ли
+    форму вообще сравнивает: разведка живых сайтов показала, что фильтр
+    вакансий (чекбоксы городов + «Найти»), подписка на рассылку, cookie-
+    баннер, одиночная галочка согласия и форма «порекомендуй знакомого»
+    формально набирают очки не хуже анкеты — в них тоже несколько полей и
+    кнопка. Заполнить такую форму данными кандидата и отправить её — значит
+    подать чужую форму от имени живого человека (запись в «порекомендуй
+    знакомого» у IBS, подписка чужой почтой и т.д.). Поэтому до скоринга
+    форма обязана пройти этот фильтр.
+
+    `require_contact=False` — для шага уже распознанной анкеты: контакт
+    кандидата настоящие визарды часто спрашивают один раз на первом экране,
+    а не на каждом шаге. Дисквалификаторы (компания/ИНН, подписка,
+    рекомендатель) при этом действуют всегда — они не про отсутствие
+    контакта, а про то, что форма — чужая.
+    """
+    if form_index >= len(page.forms):
+        return False
+
+    has_contact = False
+    for control in page.controls:
+        if control.form_index != form_index:
+            continue
+
+        name = (control.name or "").strip().lower()
+        control_id = (control.id or "").strip().lower()
+
+        # Форма «порекомендуй знакомого»: поля рекомендателя рядом с полями
+        # кандидата — подать её значит вписать кандидата в чужую заявку.
+        if "referrer" in name or "referral" in name or "referrer" in control_id or "referral" in control_id:
+            return False
+        if any(marker in normalize(control.label) for marker in _REFERRER_LABEL_MARKERS):
+            return False
+
+        if control.type in _STRUCTURAL_CONTROL_TYPES:
+            continue
+
+        # Подписка на рассылку — не анкета, даже если в ней ровно одно поле
+        # email: у настоящей анкеты бывает такая же галочка, но не текстовое
+        # поле подписки.
+        if name.startswith("subscri"):
+            return False
+
+        haystack = normalize(" ".join(
+            str(value) for value in (
+                control.name, control.id, control.label, control.placeholder,
+                control.autocomplete, control.type,
+            ) if value
+        ))
+
+        # Форма для клиентов (заявка от компании), а не для кандидата.
+        if control.required:
+            tokens = set(haystack.split())
+            is_inn = "inn" in tokens or "инн" in tokens
+            if is_inn or any(marker in haystack for marker in _COMPANY_FIELD_MARKERS):
+                return False
+
+        if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
+            has_contact = True
+
+    return has_contact if require_contact else True
 
 
 class JupiterAgent:
@@ -861,6 +940,8 @@ class JupiterAgent:
         cls,
         page: PageState,
         target_form_index: int | None,
+        *,
+        require_contact: bool = True,
     ) -> ControlState | None:
         candidates = [
             control
@@ -869,8 +950,17 @@ class JupiterAgent:
             and not control.disabled
             and control.form_index is not None
             and (
-                target_form_index is None
-                or control.form_index == target_form_index
+                control.form_index == target_form_index
+                if target_form_index is not None
+                # Без выбранной анкеты кнопку всё ещё можно нажать — но
+                # только у формы, которая сама похожа на анкету. Иначе
+                # страница без анкеты, но с подпиской/фильтром вакансий,
+                # подсунет их кнопку вместо честного «анкета не найдена».
+                # require_contact — тот же признак «уже внутри анкеты», что
+                # и в _target_form_index: контакт не требуем повторно.
+                else is_application_form(
+                    page, control.form_index, require_contact=require_contact
+                )
             )
         ]
         if not candidates:
@@ -1045,12 +1135,22 @@ class JupiterAgent:
         self,
         page: PageState,
         profile: CandidateProfile,
+        *,
+        require_contact: bool = True,
     ) -> int | None:
         if not page.forms:
             return None
+        # Форма, не похожая на анкету кандидата (фильтр вакансий, подписка,
+        # форма для клиентов, «порекомендуй знакомого»), из сравнения очков
+        # исключается ДО скоринга — иначе она может набрать больше баллов,
+        # чем настоящая анкета, и агент заполнит и отправит чужую форму.
+        # require_contact=False — шаг уже распознанной анкеты (in_flow):
+        # контакт кандидата настоящие визарды спрашивают один раз на первом
+        # экране, а не на каждом шаге. Дисквалификаторы действуют всегда.
         scored = [
             (self._form_score(page, form.index, profile), form.index)
             for form in page.forms
+            if is_application_form(page, form.index, require_contact=require_contact)
         ]
         scored.sort(reverse=True)
         if not scored or scored[0][0] < 40:
@@ -1349,7 +1449,15 @@ class JupiterAgent:
 
         for _ in range(self.max_steps):
             captcha = self.detect_captcha(page)
-            target_form_index = self._target_form_index(page, profile)
+            # Контакт кандидата спрашиваем только на входе в анкету: раз
+            # предыдущий шаг этого прогона уже был распознан как анкета,
+            # дальше визард ведёт по своей же анкете, и требовать телефон
+            # или почту заново на каждом шаге — не про эту форму, а про
+            # то, что реальные визарды так не устроены.
+            in_flow = bool(flow.signatures)
+            target_form_index = self._target_form_index(
+                page, profile, require_contact=not in_flow
+            )
             filled_before = len(trajectory)
             if target_form_index is not None:
                 signature = self._step_signature(page, target_form_index)
@@ -1400,7 +1508,9 @@ class JupiterAgent:
 
             missing = self._required_missing(page, target_form_index)
             has_application_form = target_form_index is not None
-            submit = self._submit_control(page, target_form_index)
+            submit = self._submit_control(
+                page, target_form_index, require_contact=not in_flow
+            )
             # Кнопка перехода — не кнопка отправки. Держим её отдельно:
             # от этого зависит и отчёт dry-run, и то, чем мы назовём клик.
             pending_next = (

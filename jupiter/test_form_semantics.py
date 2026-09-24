@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent import JupiterAgent
+from agent import CandidateProfile, JupiterAgent, is_application_form
 from engine import JupiterWebEngine
 from validation import validate_form
 
@@ -323,6 +323,133 @@ class Constraints(unittest.TestCase):
     def test_empty_optional_field_is_not_an_issue(self):
         html = '<form action="/s" method="post"><input type="email" name="mail"></form>'
         self.assertEqual(self.issues(html), [])
+
+
+class ApplicationFormSelection(unittest.TestCase):
+    """is_application_form: анкета кандидата против соседних форм сайта.
+
+    Разведка живых сайтов (19 разделов) показала, что агент путал с анкетой
+    фильтр вакансий, подписку на рассылку и форму «порекомендуй знакомого» —
+    все они формально набирают очки скоринга не хуже настоящей анкеты.
+    """
+
+    def test_name_and_phone_is_an_application_form(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input name="full_name" required>'
+            '<input name="phone" type="tel" required>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_phone_and_birth_date_is_an_application_form(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input name="phone" type="tel">'
+            '<input name="birth_date" type="date">'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_vacancy_filter_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/search" method="get">'
+            '<select name="city"><option value="msk">Москва</option></select>'
+            '<input type="checkbox" name="remote" value="1">'
+            '<button type="submit">Найти</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_newsletter_subscription_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/subscribe" method="post">'
+            '<input name="subscribe" type="text">'
+            '<input name="email" type="email">'
+            '<button type="submit">Подписаться</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_client_lead_form_with_required_company_and_inn_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/lead" method="post">'
+            '<input name="company" required placeholder="Компания">'
+            '<input name="inn" required placeholder="ИНН">'
+            '<input name="phone" type="tel" required>'
+            '<button type="submit">Отправить</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_refer_a_friend_form_is_not_an_application_form(self):
+        page = parse(
+            '<form action="/refer" method="post">'
+            '<input name="referrer_name">'
+            '<input name="referrer_phone" type="tel">'
+            '<input name="name">'
+            '<input name="phone" type="tel">'
+            '<button type="submit">Порекомендовать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_subscribe_checkbox_does_not_disqualify_a_real_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input name="phone" type="tel">'
+            '<label><input type="checkbox" name="subscribe" value="1"> '
+            "Подписаться на новости</label>"
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_require_contact_false_accepts_a_step_without_contact_fields(self):
+        # Поздний шаг уже распознанной анкеты: контакт был на первом экране
+        # визарда, здесь его по делу нет.
+        page = parse(
+            '<form action="/wizard-submit" method="post">'
+            '<textarea name="motivation" required></textarea>'
+            '<button type="submit">Отправить заявку</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+        self.assertTrue(is_application_form(page, 0, require_contact=False))
+
+    def test_require_contact_false_still_rejects_a_refer_a_friend_form(self):
+        # Дисквалификаторы действуют независимо от require_contact: это не
+        # про отсутствие контакта, а про то, что форма — чужая.
+        page = parse(
+            '<form action="/refer" method="post">'
+            '<input name="referrer_name">'
+            '<input name="referrer_phone" type="tel">'
+            '<input name="name">'
+            '<input name="phone" type="tel">'
+            '<button type="submit">Порекомендовать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0, require_contact=False))
+
+    def test_dry_run_does_not_report_ready_to_submit_for_a_subscription_only_page(self):
+        # Тот самый случай из разведки: единственная форма на странице —
+        # подписка с полем email name=subscribe. Анкеты нет вовсе, и агент
+        # обязан пойти по пути «анкета не найдена», а не подать чужую форму.
+        html = (
+            '<form action="/subscribe" method="post">'
+            '<input name="subscribe" type="email" placeholder="Ваша почта">'
+            '<button type="submit">Подписаться</button>'
+            "</form>"
+        )
+        profile = CandidateProfile(values={
+            "email": "candidate@example.com",
+            "phone": "+79990000000",
+        })
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        result = agent.run_loaded_html(html, "http://127.0.0.1/careers", profile)
+        self.assertNotEqual(result.status, "ready_to_submit")
+        self.assertNotEqual(result.status, "submitted")
 
 
 if __name__ == "__main__":

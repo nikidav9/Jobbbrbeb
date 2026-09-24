@@ -15,7 +15,7 @@ from handoff import HandoffStore
 from tasks import TaskQueue, TaskState
 from worker import run_once
 from submission import ReceiptStore
-from site_compat import AUDITED_SITES, AUDITED_SOURCE_URLS, field_override, trusted_hosts_for
+from site_compat import AUDITED_SITES, AUDITED_SOURCE_URLS, field_override, live_ready, trusted_hosts_for
 
 
 APPLICATION_HTML = """<!doctype html>
@@ -1673,6 +1673,13 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertEqual(len(AUDITED_SOURCE_URLS), 62)
         self.assertLessEqual(set(AUDITED_SOURCE_URLS), names)
         self.assertEqual(len(names), len(AUDITED_SITES))
+        # Боевая подача — только туда, где разведка прошла dry-run без капчи.
+        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 26)
+        self.assertTrue(live_ready("https://rabota.sber.ru/search/123"))
+        self.assertTrue(live_ready("https://www.x5.tech/vacancy/1"))
+        self.assertFalse(live_ready("https://www.slata.ru/vacancy/"))  # заполнял фильтр
+        self.assertFalse(live_ready("https://vkusvill.ru/job/"))  # капча
+        self.assertFalse(live_ready("https://unknown.example/job"))
         self.assertIn("job.wb.ru", trusted_hosts_for("https://career.rwb.ru/vacancies/34863"))
         self.assertIn("hh.ru", trusted_hosts_for("https://career.lenta.com/"))
         self.assertEqual(

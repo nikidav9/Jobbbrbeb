@@ -520,7 +520,9 @@ function WorkerMatches() {
         ? { label: 'Нужно согласие Сбера · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
         : a.reasonCode === 'UNSUPPORTED_SCRIPT'
           ? { label: 'Нужен браузер · отклик не отправлен', fg: '#B45309', bg: '#FEF3C7' }
-          : jupiterAppStatus(a.state);
+          : a.reasonCode === 'SITE_NOT_VERIFIED'
+            ? { label: 'Сайт ещё подключаем · отклик сохранён', fg: '#1D4ED8', bg: '#DBEAFE' }
+            : jupiterAppStatus(a.state);
     const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
     return (
       <React.Fragment key={a.id}>
