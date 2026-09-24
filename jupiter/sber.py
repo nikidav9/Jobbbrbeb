@@ -49,10 +49,17 @@ def extract_vacancy(page: Any) -> SberVacancy | None:
     match = _NEXT_DATA.search(source)
     if not match:
         return None
+    raw = match.group(1)
     try:
-        data = json.loads(html.unescape(match.group(1)))
+        data = json.loads(raw)
     except (ValueError, TypeError):
-        return None
+        # Some proxies HTML-escape inline JSON; only unescape as a fallback.
+        # Doing it before the first parse can turn &quot; inside a JSON string
+        # into an unescaped quote and corrupt otherwise valid __NEXT_DATA__.
+        try:
+            data = json.loads(html.unescape(raw))
+        except (ValueError, TypeError):
+            return None
     vacancy = (
         data.get("props", {})
         .get("pageProps", {})
