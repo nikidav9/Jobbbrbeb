@@ -195,6 +195,82 @@ class TestFetchProfileBuildsValues(unittest.TestCase):
         self.assertEqual(profile.values["consent"], True)
         self.assertIsNone(profile.resume_path)
 
+    def test_empty_candidate_id_raises(self):
+        from remote_tasks import RemoteTaskQueue
+
+        q = RemoteTaskQueue.__new__(RemoteTaskQueue)
+        q._url = "http://test"
+        q._token = "tok"
+
+        with self.assertRaises(ValueError):
+            q.fetch_profile("")
+        with self.assertRaises(ValueError):
+            q.fetch_profile("   ")
+
+
+class TestResumeCleanup(unittest.TestCase):
+    """Проверяем, что временный PDF удаляется после прогона."""
+
+    def test_temp_resume_deleted_after_run(self):
+        import tempfile
+        import worker as worker_mod
+
+        fd, path = tempfile.mkstemp(suffix=".pdf", prefix="jupiter_resume_")
+        os.write(fd, b"%PDF-fake")
+        os.close(fd)
+        self.assertTrue(os.path.isfile(path))
+
+        task = ApplicationTask(
+            id="t-cleanup", candidate_id="user-99",
+            vacancy_url="https://example.com/job",
+            state=TaskState.QUEUED,
+        )
+        queue = FakeQueue([task])
+        profile = CandidateProfile(
+            values={"first_name": "Тест"},
+            resume_path=path,
+        )
+
+        class FakeAgent:
+            def run(self, url, prof):
+                from agent import AgentResult
+                return AgentResult(status="submitted")
+
+        result = worker_mod.run_once(
+            queue, profile,
+            lambda t: FakeAgent(), "w1",
+        )
+        self.assertIsNotNone(result)
+        self.assertFalse(os.path.isfile(path))
+
+    def test_non_temp_resume_not_deleted(self):
+        import tempfile
+        import worker as worker_mod
+
+        fd, path = tempfile.mkstemp(suffix=".pdf", prefix="user_own_")
+        os.write(fd, b"%PDF-fake")
+        os.close(fd)
+
+        task = ApplicationTask(
+            id="t-keep", candidate_id="user-99",
+            vacancy_url="https://example.com/job",
+            state=TaskState.QUEUED,
+        )
+        queue = FakeQueue([task])
+        profile = CandidateProfile(
+            values={"first_name": "Тест"},
+            resume_path=path,
+        )
+
+        class FakeAgent:
+            def run(self, url, prof):
+                from agent import AgentResult
+                return AgentResult(status="submitted")
+
+        worker_mod.run_once(queue, profile, lambda t: FakeAgent(), "w1")
+        self.assertTrue(os.path.isfile(path))
+        os.unlink(path)
+
 
 if __name__ == "__main__":
     unittest.main()

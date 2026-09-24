@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
@@ -56,6 +57,16 @@ def apply_result(queue: TaskQueueProto, task: ApplicationTask, result: AgentResu
     return state
 
 
+def _cleanup_resume(profile: CandidateProfile) -> None:
+    """Удалить временный PDF, скачанный для этого прогона."""
+    path = profile.resume_path
+    if path and os.path.isfile(path) and "/jupiter_resume_" in path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def run_once(
     queue: TaskQueueProto,
     profile: CandidateProfile | Callable[[ApplicationTask], CandidateProfile],
@@ -72,8 +83,11 @@ def run_once(
     queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
         "url": task.vacancy_url,
     })
-    if task.resume_token:
-        result = agent.resume(task.resume_token, resolved)
-    else:
-        result = agent.run(task.vacancy_url, resolved)
-    return task, apply_result(queue, task, result)
+    try:
+        if task.resume_token:
+            result = agent.resume(task.resume_token, resolved)
+        else:
+            result = agent.run(task.vacancy_url, resolved)
+        return task, apply_result(queue, task, result)
+    finally:
+        _cleanup_resume(resolved)

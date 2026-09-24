@@ -6169,6 +6169,7 @@ try {
                     ? json_decode($user['personal_data'], true)
                     : $user['personal_data'];
             }
+            if (!is_array($personalData)) $personalData = [];
             $resumeData = null;
             if ($resume && !empty($resume['resume_data'])) {
                 $resumeData = is_string($resume['resume_data'])
@@ -6178,6 +6179,13 @@ try {
                 $resumeData = is_string($user['resume_data'])
                     ? json_decode($user['resume_data'], true)
                     : $user['resume_data'];
+            }
+            $consentRow = sb_single('jm_consents', [
+                'user_id' => 'eq.' . $uid,
+                'source'  => 'not.like.crossborder:%',
+            ], 'stamp,accepted_at');
+            if ($consentRow && !empty($consentRow['stamp'])) {
+                $personalData['consent'] = true;
             }
             jt_respond([
                 'user_id' => $uid,

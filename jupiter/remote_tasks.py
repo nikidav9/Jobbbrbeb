@@ -146,6 +146,8 @@ class RemoteTaskQueue:
 
     def fetch_profile(self, user_id: str) -> CandidateProfile:
         """Собрать профиль кандидата из данных в базе."""
+        if not user_id or not user_id.strip():
+            raise ValueError("candidate_id пуст — задача без привязки к пользователю")
         raw = self._call("jupiterGetCandidateProfile", [user_id])
         if not isinstance(raw, dict) or raw.get("error"):
             raise RemoteError(0, raw.get("error", "empty profile") if isinstance(raw, dict) else "bad response")
