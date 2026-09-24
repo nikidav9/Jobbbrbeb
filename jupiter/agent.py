@@ -5,6 +5,8 @@ import argparse
 import json
 import re
 import urllib.parse
+
+import sber
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -1496,6 +1498,130 @@ class JupiterAgent:
                 if self.dry_run and (has_application_form or filled_any):
                     return self._dry_run_complete(
                         page, trajectory, captcha, flow, pending_next
+                    )
+
+                sber_vacancy = sber.extract_vacancy(page)
+                if sber_vacancy is not None:
+                    missing_profile = sber.missing_profile_fields(profile)
+                    if missing_profile:
+                        reason = (
+                            "Sber application requires candidate field(s): "
+                            + ", ".join(missing_profile)
+                        )
+                        trajectory.append({
+                            "action": "action_required",
+                            "reason": reason,
+                            "reason_code": Reason.MISSING_PROFILE_FIELD,
+                            "site_adapter": "sber_public_api",
+                        })
+                        return AgentResult(
+                            "action_required", reason, trajectory,
+                            Reason.MISSING_PROFILE_FIELD,
+                        )
+
+                    try:
+                        sber_payload = sber.build_payload(
+                            page, profile, sber_vacancy
+                        )
+                    except (OSError, ValueError) as exc:
+                        reason = f"Sber application cannot use the selected resume: {exc}"
+                        trajectory.append({
+                            "action": "action_required",
+                            "reason": reason,
+                            "reason_code": Reason.MISSING_PROFILE_FIELD,
+                            "site_adapter": "sber_public_api",
+                        })
+                        return AgentResult(
+                            "action_required", reason, trajectory,
+                            Reason.MISSING_PROFILE_FIELD,
+                        )
+
+                    if self.dry_run:
+                        trajectory.append({
+                            "action": "ready_to_submit",
+                            "site_adapter": "sber_public_api",
+                            "terms_url": sber.SBER_TERMS_URL,
+                        })
+                        return AgentResult("ready_to_submit", trajectory=trajectory)
+
+                    # Live authorization is permission to submit the application,
+                    # not acceptance of Sber's separate personal-data terms.
+                    if not sber.has_personal_data_consent(profile):
+                        reason = (
+                            "Sber requires explicit consent to personal-data "
+                            "processing before the application can be sent"
+                        )
+                        trajectory.append({
+                            "action": "action_required",
+                            "reason": reason,
+                            "reason_code": Reason.CONSENT_REQUIRED,
+                            "site_adapter": "sber_public_api",
+                            "terms_url": sber.SBER_TERMS_URL,
+                        })
+                        return AgentResult(
+                            "action_required", reason, trajectory,
+                            Reason.CONSENT_REQUIRED,
+                        )
+
+                    if self.before_submit is not None:
+                        self.before_submit(page.url, False)
+                    trajectory.append({
+                        "action": "click_submit",
+                        "site_adapter": "sber_public_api",
+                        "endpoint": sber.SBER_APPLICATION_URL,
+                    })
+                    try:
+                        outcome, message, _body = sber.submit_payload(
+                            self.engine, page, sber_payload
+                        )
+                    except (EngineTransportError, EngineError) as exc:
+                        reason = (
+                            "Sber application POST outcome is unknown: "
+                            + str(exc)
+                        )
+                        trajectory.append({
+                            "action": "submission_unknown",
+                            "reason": reason,
+                            "reason_code": Reason.SUBMISSION_UNKNOWN,
+                            "site_adapter": "sber_public_api",
+                        })
+                        return AgentResult(
+                            "submission_unknown", reason, trajectory,
+                            Reason.SUBMISSION_UNKNOWN,
+                        )
+
+                    if outcome == "submitted":
+                        trajectory.append({
+                            "action": "verify_submission",
+                            "confirmed": True,
+                            "site_adapter": "sber_public_api",
+                            "evidence": ["api_success=true"],
+                        })
+                        return AgentResult("submitted", trajectory=trajectory)
+
+                    if outcome == "duplicate":
+                        reason = message or "Sber reports that this vacancy was already applied to"
+                        trajectory.append({
+                            "action": "duplicate",
+                            "reason": reason,
+                            "reason_code": Reason.DUPLICATE_BLOCKED,
+                            "site_adapter": "sber_public_api",
+                        })
+                        return AgentResult(
+                            "duplicate", reason, trajectory,
+                            Reason.DUPLICATE_BLOCKED,
+                        )
+
+                    reason = message or "Sber rejected the application"
+                    trajectory.append({
+                        "action": "action_required",
+                        "reason": reason,
+                        "reason_code": Reason.SUBMIT_FAILED,
+                        "site_adapter": "sber_public_api",
+                    })
+                    return AgentResult(
+                        "action_required", reason, trajectory,
+                        Reason.SUBMIT_FAILED,
                     )
 
                 if page.has_script:
