@@ -498,7 +498,9 @@ function WorkerMatches() {
     const company = a.company?.trim() || 'Карьерный сайт';
     const status = a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED'
       ? { label: 'Автоотклик выключен · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
-      : jupiterAppStatus(a.state);
+      : a.reasonCode === 'UNSUPPORTED_SCRIPT'
+        ? { label: 'Нужен браузер · отклик не отправлен', fg: '#B45309', bg: '#FEF3C7' }
+        : jupiterAppStatus(a.state);
     const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
     return (
       <React.Fragment key={a.id}>
