@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TextInput,
-  TouchableOpacity, ActivityIndicator, RefreshControl, Linking,
+  TouchableOpacity, ActivityIndicator, RefreshControl, Linking, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -15,7 +15,8 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterLiveStatus, jupiterSetLive, jupiterRequeueLive, dbGetResumeFiles,
+  jupiterLiveStatus, jupiterSetLive, jupiterRequeueLive, jupiterGrantThirdPartyConsent,
+  dbGetResumeFiles,
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { plural } from '@/services/time';
@@ -496,11 +497,17 @@ function WorkerMatches() {
 
   const renderJupiterApp = (a: JupiterApplication, last: boolean) => {
     const company = a.company?.trim() || 'Карьерный сайт';
+    const isSber = /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
+    const needsSberConsent = isSber
+      && a.state === 'action_required'
+      && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
     const status = a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED'
       ? { label: 'Автоотклик выключен · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
-      : a.reasonCode === 'UNSUPPORTED_SCRIPT'
-        ? { label: 'Нужен браузер · отклик не отправлен', fg: '#B45309', bg: '#FEF3C7' }
-        : jupiterAppStatus(a.state);
+      : needsSberConsent
+        ? { label: 'Нужно согласие Сбера · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
+        : a.reasonCode === 'UNSUPPORTED_SCRIPT'
+          ? { label: 'Нужен браузер · отклик не отправлен', fg: '#B45309', bg: '#FEF3C7' }
+          : jupiterAppStatus(a.state);
     const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
     return (
       <React.Fragment key={a.id}>
@@ -547,6 +554,50 @@ function WorkerMatches() {
         >
           <Text style={{ color: Colors.primary, fontWeight: '700' }}>Отправить через Юпитер</Text>
         </TouchableOpacity>
+      ) : null}
+      {needsSberConsent ? (
+        <View style={{ paddingHorizontal: rs(20), paddingBottom: rs(12), gap: rs(8) }}>
+          <TouchableOpacity
+            onPress={() => Linking.openURL('https://rabota.sber.ru/terms')
+              .catch(() => showToast('Не удалось открыть условия Сбера', 'error'))}
+          >
+            <Text style={{ color: Colors.primary, fontWeight: '600' }}>
+              Открыть условия обработки данных Сбера
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ paddingVertical: rs(10), alignSelf: 'flex-start' }}
+            onPress={() => {
+              Alert.alert(
+                'Согласие для отклика в Сбер',
+                'Сбер просит согласие на обработку персональных данных. Если продолжить, JobToo передаст Сберу имя, фамилию, телефон, ваш адрес JobToo и выбранное PDF-резюме только для этой вакансии.',
+                [
+                  { text: 'Отмена', style: 'cancel' },
+                  {
+                    text: 'Согласен и отправить',
+                    onPress: () => { void (async () => {
+                      try {
+                        await jupiterGrantThirdPartyConsent(
+                          currentUserId,
+                          a.id,
+                          'https://rabota.sber.ru/terms',
+                        );
+                        showToast('Согласие сохранено. Юпитер отправляет отклик в Сбер', 'success');
+                        await loadJupiter();
+                      } catch (error: any) {
+                        showToast(error?.message || 'Не удалось запустить отклик в Сбер', 'error');
+                      }
+                    })(); },
+                  },
+                ],
+              );
+            }}
+          >
+            <Text style={{ color: Colors.primary, fontWeight: '700' }}>
+              Согласиться и отправить в Сбер
+            </Text>
+          </TouchableOpacity>
+        </View>
       ) : null}
       </React.Fragment>
     );
