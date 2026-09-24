@@ -148,6 +148,11 @@ check('снятие разрешения блокирует будущие от�
     str_contains($db, "case 'jupiterSubmitGuard':")
     && str_contains($db, "'jupiter_live_enabled_at,is_blocked'")
     && str_contains($db, "'submission_authorized_at' => null"));
+check('серверный submit guard повторно требует согласие Сберу',
+    str_contains($db, "\$missingSberConsent")
+    && str_contains($db, "'third_party_consent_at'")
+    && str_contains($db, "'third_party_terms_url'")
+    && str_contains($db, "https://rabota.sber.ru/terms"));
 check('срок аренды ограничен сверху и снизу',
     (bool)preg_match('~max\(30, min\(3600~', $db));
 
