@@ -293,12 +293,54 @@ SVCEOF
   systemctl enable jt-jupiter.service 2>/dev/null || true
   say "jupiter" "юнит создан и включён"
 fi
-if systemctl is-active --quiet jt-jupiter.service 2>/dev/null; then
-  if ! cmp -s "$REPO/jupiter/run_worker.py" /var/lib/jupiter/.deployed 2>/dev/null; then
-    cp -f "$REPO/jupiter/run_worker.py" /var/lib/jupiter/.deployed
-    systemctl restart jt-jupiter.service 2>/dev/null || true
-    say "jupiter" "перезапущен на новой версии"
+if [ -f "$REPO/jupiter/run_worker.py" ]; then
+  JUPITER_SHA=$(find "$REPO/jupiter" -maxdepth 1 -name '*.py' -type f -print0 \
+    | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
+  if systemctl is-active --quiet jt-jupiter.service 2>/dev/null; then
+    if [ "$JUPITER_SHA" != "$(cat /var/lib/jupiter/.deployed.sha256 2>/dev/null || true)" ]; then
+      if systemctl restart jt-jupiter.service 2>/dev/null; then
+        echo "$JUPITER_SHA" > /var/lib/jupiter/.deployed.sha256
+        say "jupiter" "перезапущен на новой версии"
+      else
+        say "jupiter" "ошибка перезапуска"
+      fi
+    fi
+  elif systemctl start jt-jupiter.service 2>/dev/null; then
+    echo "$JUPITER_SHA" > /var/lib/jupiter/.deployed.sha256
+    say "jupiter" "воркер запущен"
+  else
+    say "jupiter" "воркер не запустился"
   fi
+fi
+
+# Dedicated catch-all mailbox. Credentials are supplied in the server-only
+# secrets file after its Timeweb routing has been verified with a test email.
+if [ -f "$REPO/jupiter/mail_sync.py" ] && [ ! -f /etc/systemd/system/jt-jupiter-mail.service ]; then
+  cat > /etc/systemd/system/jt-jupiter-mail.service <<SVCEOF
+[Unit]
+Description=JobToo: Jupiter inbound mail
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=$REPO/jupiter
+EnvironmentFile=$SECRETS
+Environment=JOBTOO_URL=https://jobtoo.ru
+ExecStart=/usr/bin/python3 $REPO/jupiter/mail_sync.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/var/log/jt-jupiter-mail.log
+StandardError=append:/var/log/jt-jupiter-mail.log
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+  systemctl daemon-reload
+fi
+if grep -q '^JUPITER_MAIL_IMAP_USER=.' "$SECRETS" 2>/dev/null \
+   && grep -q '^JUPITER_MAIL_IMAP_PASSWORD=.' "$SECRETS" 2>/dev/null; then
+  systemctl enable jt-jupiter-mail.service 2>/dev/null || true
+  systemctl restart jt-jupiter-mail.service 2>/dev/null || true
 fi
 
 # Сторож — теперь запасной выход, а не основной путь.

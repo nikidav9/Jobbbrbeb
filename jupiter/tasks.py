@@ -47,6 +47,10 @@ class TaskState:
     FAILED = "failed"
 
 
+class SubmissionAuthorizationRevoked(Exception):
+    pass
+
+
 # Состояния, из которых задача больше не берётся в работу.
 TERMINAL = {
     TaskState.SUBMITTED,
@@ -79,6 +83,7 @@ class ApplicationTask:
     last_error: str | None = None
     resume_token: str | None = None
     receipt_key: str | None = None
+    submission_authorized_at: str | None = None
     transitions: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -103,6 +108,7 @@ class ApplicationTask:
             "last_error": self.last_error,
             "resume_token": self.resume_token,
             "receipt_key": self.receipt_key,
+            "submission_authorized_at": self.submission_authorized_at,
             "transitions": list(self.transitions),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -125,6 +131,7 @@ class ApplicationTask:
             last_error=raw.get("last_error"),
             resume_token=raw.get("resume_token"),
             receipt_key=raw.get("receipt_key"),
+            submission_authorized_at=raw.get("submission_authorized_at"),
             transitions=list(raw.get("transitions") or []),
         )
         task.created_at = float(raw.get("created_at", 0) or time.time())

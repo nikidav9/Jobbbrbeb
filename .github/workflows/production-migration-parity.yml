@@ -62,13 +62,14 @@ jobs:
               expected = os.environ['EXPECTED']
               applied = value.get('latest_migration')
               guard = value.get('rls_guard') is True
+              jupiter = value.get('jupiter_worker_active') is True
               raw = value.get('generated_at', '')
               stamp = dt.datetime.fromisoformat(raw.replace('Z', '+00:00'))
               age = (dt.datetime.now(dt.timezone.utc) - stamp).total_seconds()
-              ok = applied == expected and guard and 0 <= age <= 300
+              ok = applied == expected and guard and jupiter and 0 <= age <= 300
               print(
                   f"applied={applied or 'нет'} expected={expected} "
-                  f"rls_guard={guard} status_age={int(age)}s"
+                  f"rls_guard={guard} jupiter_worker_active={jupiter} status_age={int(age)}s"
               )
               raise SystemExit(0 if ok else 1)
           except Exception as exc:

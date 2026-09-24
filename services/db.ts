@@ -1643,6 +1643,7 @@ function toJupiterApplication(row: any): JupiterApplication {
     updatedAt: String(row.updated_at ?? ''),
     submittedAt: row.submitted_at ?? null,
     verifiedAt: row.verified_at ?? null,
+    submissionAuthorizedAt: row.submission_authorized_at ?? null,
   };
 }
 
@@ -1670,6 +1671,36 @@ export async function jupiterMyApplications(
     throw new Error('Сервер не вернул список заявок Jupiter. Попробуйте обновить экран.');
   }
   return rows.map(toJupiterApplication);
+}
+
+export async function jupiterLiveStatus(userId: string): Promise<boolean> {
+  const result = await proxy<{ enabled: boolean }>('jupiterLiveStatus', [userId]);
+  return result?.enabled === true;
+}
+
+export type JupiterEmail = {
+  id: string; sender: string; subject: string; body: string;
+  received_at: string; read_at: string | null;
+};
+
+export async function jupiterMailbox(userId: string): Promise<{ address: string | null; ready: boolean }> {
+  return proxy('jupiterMailbox', [userId]);
+}
+
+export async function jupiterMailList(userId: string): Promise<JupiterEmail[]> {
+  return proxy('jupiterMailList', [userId]);
+}
+
+export async function jupiterMailRead(userId: string, id: string): Promise<void> {
+  await proxy('jupiterMailRead', [userId, id]);
+}
+
+export async function jupiterSetLive(userId: string, enabled: boolean): Promise<void> {
+  await proxy('jupiterSetLive', [userId, enabled]);
+}
+
+export async function jupiterRequeueLive(userId: string, applicationId: string): Promise<JupiterApplication> {
+  return toJupiterApplication(await proxy('jupiterRequeueLive', [userId, applicationId]));
 }
 
 function toExtVacancy(row: any): ExtVacancy {

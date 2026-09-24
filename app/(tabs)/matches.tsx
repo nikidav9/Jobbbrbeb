@@ -15,7 +15,9 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
+  jupiterLiveStatus, jupiterSetLive, jupiterRequeueLive, dbGetResumeFiles,
 } from '@/services/db';
+import { requestJupiterLive } from '@/services/jupiterLive';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -359,13 +361,18 @@ function WorkerMatches() {
   const [search, setSearch] = useState('');
   const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
   const [jupiterError, setJupiterError] = useState(false);
+  const [jupiterLive, setJupiterLive] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
 
   const currentUserId = currentUser?.id ?? '';
   const loadJupiter = useCallback(async () => {
     if (!currentUserId || currentUser?.isGuest) return;
     try {
-      setJupiterApps(await jupiterMyApplications(currentUserId));
+      const [apps, live] = await Promise.all([
+        jupiterMyApplications(currentUserId), jupiterLiveStatus(currentUserId),
+      ]);
+      setJupiterApps(apps);
+      setJupiterLive(live);
       setJupiterError(false);
     } catch (error) {
       console.warn('[jupiterMyApplications]', error);
@@ -489,11 +496,13 @@ function WorkerMatches() {
 
   const renderJupiterApp = (a: JupiterApplication, last: boolean) => {
     const company = a.company?.trim() || 'Карьерный сайт';
-    const status = jupiterAppStatus(a.state);
+    const status = a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED'
+      ? { label: 'Автоотклик выключен · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
+      : jupiterAppStatus(a.state);
     const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
     return (
+      <React.Fragment key={a.id}>
       <TouchableOpacity
-        key={a.id}
         style={[wm.row, !last && wm.rowDivider]}
         activeOpacity={canApplyManually ? 0.85 : 1}
         disabled={!canApplyManually}
@@ -512,6 +521,32 @@ function WorkerMatches() {
         </View>
         {canApplyManually ? <Ionicons name="open-outline" size={18} color={Colors.primary} /> : null}
       </TouchableOpacity>
+      {((a.state === 'ready_to_submit' && !a.submissionAuthorizedAt)
+        || (a.state === 'action_required' && a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED')) ? (
+        <TouchableOpacity
+          style={{ paddingVertical: rs(10), paddingHorizontal: rs(20), alignSelf: 'flex-start' }}
+          onPress={() => { void (async () => {
+            try {
+              const resumes = await dbGetResumeFiles();
+              if (!resumes.some(file => file.selected && file.storagePath)) {
+                showToast('Сначала загрузите PDF-резюме в профиле', 'error');
+                router.push({ pathname: '/(tabs)/profile', params: { tab: 'files' } });
+                return;
+              }
+              if (!await requestJupiterLive(currentUserId)) return;
+              setJupiterLive(true);
+              await jupiterRequeueLive(currentUserId, a.id);
+              showToast('Юпитер повторно откроет анкету и отправит отклик', 'success');
+              await loadJupiter();
+            } catch (error: any) {
+              showToast(error?.message || 'Не удалось поставить отклик в очередь', 'error');
+            }
+          })(); }}
+        >
+          <Text style={{ color: Colors.primary, fontWeight: '700' }}>Отправить через Юпитер</Text>
+        </TouchableOpacity>
+      ) : null}
+      </React.Fragment>
     );
   };
 
@@ -542,9 +577,9 @@ function WorkerMatches() {
           <OnboardingTarget targetKey="matches.chats">
             <TouchableOpacity
               style={wm.headerBtn}
-              onPress={() => router.push('/(tabs)/chats')}
+              onPress={() => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats')}
               activeOpacity={0.8}
-              accessibilityLabel="Переписки"
+              accessibilityLabel={currentUser?.role === 'worker' ? 'Почта JobToo' : 'Переписки'}
             >
               <Ionicons name="mail-outline" size={20} color={Colors.textPrimary} />
               {unreadChats.length > 0 ? (
@@ -632,14 +667,27 @@ function WorkerMatches() {
           }
         >
           <>
-            {filter === 'all' && (shownJupiterApps.length > 0 || jupiterError) ? (
+            {filter === 'all' && (shownJupiterApps.length > 0 || jupiterError || jupiterLive) ? (
               <>
                 <View style={wm.sectionHead}>
                   <Text style={wm.sectionTitle}>Юпитер · внешние вакансии</Text>
                 </View>
                 <Text style={[s.emptySub, { textAlign: 'left', marginBottom: rs(12) }]}>
-                  Новые заявки Юпитер заполняет в тестовом режиме без отправки.
+                  {jupiterLive
+                    ? 'Новые отклики Юпитер отправляет работодателям. Неясные вопросы, капча и коды требуют вашего участия.'
+                    : 'Автоотклик выключен. Старые заявки остаются в режиме заполнения без отправки.'}
                 </Text>
+                {jupiterLive ? (
+                  <TouchableOpacity onPress={() => { void (async () => {
+                    try {
+                      await jupiterSetLive(currentUserId, false);
+                      setJupiterLive(false);
+                      showToast('Будущие отправки остановлены. Уже начатый запрос мог уйти.', 'info');
+                    } catch { showToast('Не удалось выключить автоотклик', 'error'); }
+                  })(); }} style={{ marginBottom: rs(12) }}>
+                    <Text style={{ color: Colors.primary, fontWeight: '600' }}>Выключить автоотклик</Text>
+                  </TouchableOpacity>
+                ) : null}
                 {jupiterError ? <Text style={s.emptySub}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
                 {shownJupiterApps.length > 0 ? (
                   <View style={wm.group}>

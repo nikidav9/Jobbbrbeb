@@ -19,6 +19,12 @@ $sql = (string)file_get_contents(
 $recovery = (string)file_get_contents(
     __DIR__ . '/../supabase/migrations/105_jupiter_lease_recovery.sql'
 );
+$live = (string)file_get_contents(
+    __DIR__ . '/../supabase/migrations/106_jupiter_live_authorization.sql'
+);
+$mail = (string)file_get_contents(
+    __DIR__ . '/../supabase/migrations/107_jupiter_mail.sql'
+);
 $guard = (string)file_get_contents(__DIR__ . '/../infra/verify-rls.sh');
 
 // Комментарии выброшены намеренно. Первая версия теста ловила «for update skip
@@ -41,6 +47,25 @@ foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinis
 }
 $selfBlock = substr($db, strpos($db, '$selfArgFns = ['),
     strpos($db, '];', strpos($db, '$selfArgFns = [')) - strpos($db, '$selfArgFns = ['));
+check('проверка разрешения перед отправкой доступна только воркеру',
+    str_contains($adminBlock, "'jupiterSubmitGuard'")
+    && !str_contains($selfBlock, "'jupiterSubmitGuard'"));
+foreach (['jupiterLiveStatus', 'jupiterSetLive', 'jupiterRequeueLive'] as $fn) {
+    check("$fn привязан к владельцу", str_contains($selfBlock, "'$fn' => 0"));
+}
+foreach (['jupiterMailbox', 'jupiterMailList', 'jupiterMailRead'] as $fn) {
+    check("$fn привязан к владельцу", str_contains($selfBlock, "'$fn' => 0"));
+}
+check('импорт писем доступен только воркеру',
+    str_contains($adminBlock, "'jupiterMailIngest'")
+    && !str_contains($selfBlock, "'jupiterMailIngest'"));
+check('почтовые данные закрыты от клиентских ролей',
+    str_contains($mail, 'jm_jupiter_mailboxes enable row level security')
+    && str_contains($mail, 'jm_jupiter_emails enable row level security')
+    && str_contains($mail, 'on delete cascade'));
+check('отклик заблокирован до подключения почты и резюме',
+    str_contains($db, "jt_secret('JUPITER_MAIL_VERIFIED') !== '1'")
+    && str_contains($db, 'Сначала загрузите и выберите резюме PDF'));
 foreach (['jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish'] as $fn) {
     check("$fn НЕ выдаётся по пользовательской сессии",
         !str_contains($selfBlock, "'$fn'"));
@@ -101,6 +126,12 @@ check('прерванное заполнение возвращается в о�
 check('неизвестную отправку не повторяем автоматически',
     str_contains($recovery, "state = 'submission_unknown'")
     && str_contains($recovery, "state in ('submitting', 'verifying')"));
+check('старые заявки остаются без разрешения на отправку',
+    str_contains($live, 'add column if not exists submission_authorized_at timestamptz;'));
+check('снятие разрешения блокирует будущие отправки',
+    str_contains($db, "case 'jupiterSubmitGuard':")
+    && str_contains($db, "'jupiter_live_enabled_at,is_blocked'")
+    && str_contains($db, "'submission_authorized_at' => null"));
 check('срок аренды ограничен сверху и снизу',
     (bool)preg_match('~max\(30, min\(3600~', $db));
 

@@ -7,7 +7,7 @@ import re
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from engine import (
     ControlState,
@@ -385,6 +385,7 @@ class JupiterAgent:
         dry_run: bool = False,
         receipts: ReceiptStore | None = None,
         handoffs: HandoffStore | None = None,
+        before_submit: Callable[[str, bool], None] | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -397,6 +398,7 @@ class JupiterAgent:
         # сначала», а начинать сначала после решённой капчи бессмысленно —
         # капча была привязана к нашей прежней сессии.
         self.handoffs = handoffs if handoffs is not None else HandoffStore()
+        self.before_submit = before_submit
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -1583,6 +1585,8 @@ class JupiterAgent:
 
             before = page
             before_form_index = form.index
+            if self.before_submit is not None:
+                self.before_submit(page.url, clicked_next)
             try:
                 page = self.engine.submit(before, form, submit)
             except EngineSecurityError as exc:

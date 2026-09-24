@@ -139,7 +139,7 @@ python3 run_worker.py
 | `JUPITER_WORKER_ID` | no | `jupiter-<hostname>` | Worker identifier |
 | `JUPITER_POLL_INTERVAL` | no | 30 | Seconds between polls when queue is empty |
 | `JUPITER_MAX_STEPS` | no | 30 | Max agent steps per task |
-| `JUPITER_DRY_RUN` | — | — | Public worker always runs dry-run; live submission needs a separate release |
+| `JUPITER_DRY_RUN` | — | — | Ignored: authorization belongs to each task, never to a server-wide flag |
 | `JUPITER_RECEIPTS` | no | — | Path to receipts journal file |
 | `JUPITER_HANDOFFS` | no | — | Path to handoff state file |
 | `JUPITER_LEASE_SECONDS` | no | 300 | Lease duration in seconds |
@@ -148,6 +148,15 @@ The process stops gracefully on SIGTERM/SIGINT — the current task is completed
 before exit.
 
 On the server, `bootstrap.sh` creates and enables `jt-jupiter.service`.
+Candidates opt in once at the first external swipe. Only applications created
+after that opt-in have `submission_authorized_at`; older tasks remain dry-run.
+They can deliberately requeue an older `ready_to_submit` application from
+the Applications tab. Turning live submission off blocks new submissions at
+the server guard, including tasks already running. Before any form POST,
+the worker checks this guard and records `submitting` in the queue. If the
+lease expires during submission, the outcome becomes `submission_unknown`
+and the employer does not receive an automatic retry. Consent to JobToo's
+own terms never accepts an employer's separate terms or privacy agreement.
 
 ## Human handoff that can be resumed
 

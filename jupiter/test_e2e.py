@@ -1208,6 +1208,40 @@ class JupiterNativeE2E(unittest.TestCase):
         # стороне и выглядит как спам.
         self.assertEqual(self.server.state["dup_posts"], 1)
 
+    def test_revoked_authorization_stops_before_employer_post(self):
+        from tasks import SubmissionAuthorizationRevoked
+        self.server.state["dup_posts"] = 0
+
+        class RevokedQueue(TaskQueue):
+            def authorize_submit(self, task_id):
+                raise SubmissionAuthorizationRevoked()
+
+        queue = RevokedQueue()
+        queue.push("u1", f"http://127.0.0.1:{self.port}/dup-apply")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            _task, state = run_once(queue, profile, lambda t: JupiterAgent({"127.0.0.1"}))
+        self.assertEqual(state, "action_required")
+        self.assertEqual(self.server.state["dup_posts"], 0)
+
+    def test_worker_checkpoints_before_employer_post(self):
+        self.server.state["dup_posts"] = 0
+
+        class CheckedQueue(TaskQueue):
+            def checkpoint(self, task_id, state, data):
+                super().checkpoint(task_id, state, data)
+                if state == "submitting":
+                    assert self_test.server.state["dup_posts"] == 0
+
+        self_test = self
+        queue = CheckedQueue()
+        queue.push("u1", f"http://127.0.0.1:{self.port}/dup-apply")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile = self.profile(Path(tmp_dir))
+            _task, state = run_once(queue, profile, lambda t: JupiterAgent({"127.0.0.1"}))
+        self.assertEqual(state, "submitted")
+        self.assertEqual(self.server.state["dup_posts"], 1)
+
     def test_campaign_link_does_not_defeat_the_duplicate_guard(self):
         store = ReceiptStore()
         self.server.state["dup_posts"] = 0

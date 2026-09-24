@@ -66,9 +66,6 @@ def main() -> int:
 
     poll_interval = int(os.environ.get("JUPITER_POLL_INTERVAL", "30"))
     max_steps = int(os.environ.get("JUPITER_MAX_STEPS", "30"))
-    # Публичная очередь пока предназначена только для заполнения анкет.
-    # Флаг из окружения не должен случайно включить реальные отправки.
-    dry_run = True
     receipts_path = os.environ.get("JUPITER_RECEIPTS", "").strip() or None
     handoffs_path = os.environ.get("JUPITER_HANDOFFS", "").strip() or None
     lease_seconds = int(os.environ.get("JUPITER_LEASE_SECONDS", "300"))
@@ -88,7 +85,7 @@ def main() -> int:
         return JupiterAgent(
             allowed_hosts=set(),
             max_steps=max_steps,
-            dry_run=dry_run,
+            dry_run=not bool(task.submission_authorized_at),
             receipts=receipts,
             handoffs=handoffs,
         )
@@ -97,8 +94,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, _on_signal)
 
     log.info(
-        "воркер %s запущен, сервер %s, dry_run=%s",
-        worker_id, base_url, dry_run,
+        "воркер %s запущен, сервер %s, режим по согласию заявки",
+        worker_id, base_url,
     )
 
     while not _stop:
