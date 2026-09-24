@@ -7,7 +7,7 @@ import re
 import urllib.parse
 
 import sber
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -299,6 +299,15 @@ def _looks_like_captcha(control: ControlState) -> bool:
     return any(marker in descriptor for marker in CAPTCHA_MARKERS)
 
 
+# Поле внутри раздела анкеты: WORK[POSITION], EDUCATION[YEAR][], VACANCY[NAME].
+_SECTION_FIELD_RE = re.compile(r"([a-z_]+)\[([a-z_]+)\](?:\[\d*\])*")
+# Разделы биографии: прошлые места работы и учёбы. Этих фактов в профиле нет,
+# а совпадение по слову давало выдумку — «должность на прошлой работе» из
+# желаемой должности, «год окончания» из уровня образования.
+_HISTORY_SECTIONS = ("work", "experience", "job", "career", "employment", "educat", "study", "course")
+_NAME_PARTS = (("фамил",), ("имя", "имени"), ("отчеств",))
+
+
 def choose_key(
     control: ControlState,
     profile: CandidateProfile,
@@ -309,6 +318,26 @@ def choose_key(
         if override == "resume":
             return override
         return override if override in profile.values else None
+
+    section = _SECTION_FIELD_RE.fullmatch((control.name or "").strip().lower())
+    if section:
+        outer, inner = section.groups()
+        if outer.startswith(_HISTORY_SECTIONS):
+            # Уровень образования — факт профиля; остальное в разделе — нет.
+            if outer.startswith("educat") and inner == "level" and "education" in profile.values:
+                return "education"
+            return None
+        # Смысл поля — во внутреннем имени: VACANCY[NAME] — это имя, а не
+        # вакансия. Внешнее слово в описании поля сбивало сопоставление.
+        control = replace(control, name=inner, id="" if control.id == control.name else control.id)
+
+    # «Фамилия и имя», «Фамилия имя отчество», «Имя, фамилия», «ФИО» — одно
+    # поле на всё имя. По отдельному слову агент вписывал сюда только фамилию
+    # или только отчество.
+    text = normalize(" ".join((control.label, control.placeholder, control.aria, control.title_attr)))
+    parts = sum(1 for markers in _NAME_PARTS if any(marker in text for marker in markers))
+    if (parts >= 2 or re.search(r"\bфио\b", text)) and "full_name" in profile.values:
+        return "full_name"
 
     name = normalize(control.name)
     cid = normalize(control.id)

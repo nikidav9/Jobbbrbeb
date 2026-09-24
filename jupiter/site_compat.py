@@ -258,6 +258,12 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Траектория технологий", ("trctech.ru",), live_ready=True),
     SiteProfile("РДВ Технолоджи", ("rdwcomp.ru",), live_ready=True),
     SiteProfile("ITG", ("itglobal.com",), live_ready=True),
+    SiteProfile("КРОК", ("careers.croc.ru",), live_ready=True),
+    # Раздел переехал на другой хост: без него политика верно режет редирект.
+    # trusted_apply_hosts сравниваются как есть, поэтому www — отдельной строкой.
+    SiteProfile("Reksoft", ("career.reksoft.com",), ("www.career.reksoft.com",)),
+    SiteProfile("iFellow", ("ifellow.ru",), ("ifellowgroup.ru", "www.ifellowgroup.ru")),
+    SiteProfile("Arenadata", ("career.arenadata.tech",), ("arenadata.tech", "www.arenadata.tech")),
 )
 
 
@@ -285,7 +291,11 @@ def trusted_hosts_for(url: str) -> set[str]:
     profile = profile_for_url(url)
     if profile is None:
         return set()
-    return {normalize_host(item) for item in (*profile.hosts, *profile.trusted_apply_hosts)}
+    items = (*profile.hosts, *profile.trusted_apply_hosts)
+    # Политика сверяет хосты буквально, поэтому нужен и вид «как записан»:
+    # без него www.career.reksoft.com из списка тихо превращался в
+    # career.reksoft.com, и редирект на www резался как чужой.
+    return {normalize_host(item) for item in items} | {item.lower() for item in items}
 
 
 def field_override(url: str, *candidates: str) -> str | None:

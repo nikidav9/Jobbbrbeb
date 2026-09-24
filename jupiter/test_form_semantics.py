@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent import CandidateProfile, JupiterAgent, is_application_form
+from agent import CandidateProfile, JupiterAgent, choose_key, is_application_form
 from engine import JupiterWebEngine
 from validation import validate_form
 
@@ -450,6 +450,43 @@ class ApplicationFormSelection(unittest.TestCase):
         result = agent.run_loaded_html(html, "http://127.0.0.1/careers", profile)
         self.assertNotEqual(result.status, "ready_to_submit")
         self.assertNotEqual(result.status, "submitted")
+
+
+
+class FieldMeaning(unittest.TestCase):
+    """Что вписать в поле. Ошибки отсюда нашла разведка живых сайтов 24.09."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров", "patronymic": "Сергеевич",
+        "email": "i@example.com", "phone": "+79990000000", "city": "Москва",
+        "education": "Высшее", "desired_role": "Продавец-кассир",
+    })
+
+    def key_for(self, field_html: str) -> str | None:
+        page = parse(f"<form method=post>{field_html}<button>Отправить</button></form>")
+        control = next(c for c in page.controls if c.type not in {"submit"} and c.tag != "button")
+        return choose_key(control, self.PROFILE, "https://employer.example/job")
+
+    def test_label_with_several_name_parts_means_full_name(self):
+        # 1С, Cloud.ru, ITG: раньше уходили только отчество или только фамилия.
+        self.assertEqual(self.key_for('<label>Фамилия имя и отчество * <input name="fio"></label>'), "full_name")
+        self.assertEqual(self.key_for('<label>Фамилия и Имя <input name="text"></label>'), "full_name")
+        self.assertEqual(self.key_for('<label>Имя, фамилия* <input name="name"></label>'), "full_name")
+        self.assertEqual(self.key_for('<label>Фамилия <input name="surname"></label>'), "last_name")
+
+    def test_inner_field_name_wins_over_section(self):
+        # Agima: VACANCY[NAME] получал желаемую должность вместо имени.
+        self.assertEqual(self.key_for('<label>Имя <input name="VACANCY[NAME]"></label>'), "first_name")
+        self.assertEqual(self.key_for('<label>Телефон <input name="VACANCY[PHONE]"></label>'), "phone")
+
+    def test_work_and_education_history_is_never_invented(self):
+        # Петрович: «Высшее» уходило в год окончания и учебное заведение,
+        # желаемая должность — в должность на прошлом месте работы.
+        self.assertIsNone(self.key_for('<label>ваш ответ <input name="EDUCATION[YEAR][]"></label>'))
+        self.assertIsNone(self.key_for('<label>ваш ответ <input name="EDUCATION[BUILDING][]"></label>'))
+        self.assertIsNone(self.key_for('<label>Должность <input name="WORK[POSITION][]"></label>'))
+        self.assertIsNone(self.key_for('<label>Город <input name="WORK[CITY][]"></label>'))
+        self.assertEqual(self.key_for('<label>Уровень <input name="EDUCATION[LEVEL][]"></label>'), "education")
 
 
 if __name__ == "__main__":

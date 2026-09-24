@@ -1674,12 +1674,14 @@ class JupiterNativeE2E(unittest.TestCase):
         self.assertLessEqual(set(AUDITED_SOURCE_URLS), names)
         self.assertEqual(len(names), len(AUDITED_SITES))
         # Боевая подача — только туда, где разведка прошла dry-run без капчи.
-        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 26)
+        self.assertEqual(sum(site.live_ready for site in AUDITED_SITES), 27)
         self.assertTrue(live_ready("https://rabota.sber.ru/search/123"))
         self.assertTrue(live_ready("https://www.x5.tech/vacancy/1"))
         self.assertFalse(live_ready("https://www.slata.ru/vacancy/"))  # заполнял фильтр
         self.assertFalse(live_ready("https://vkusvill.ru/job/"))  # капча
         self.assertFalse(live_ready("https://unknown.example/job"))
+        # Доверенный хост с www остаётся с www: политика сравнивает буквально.
+        self.assertIn("www.career.reksoft.com", trusted_hosts_for("https://career.reksoft.com/vacancies"))
         self.assertIn("job.wb.ru", trusted_hosts_for("https://career.rwb.ru/vacancies/34863"))
         self.assertIn("hh.ru", trusted_hosts_for("https://career.lenta.com/"))
         self.assertEqual(
