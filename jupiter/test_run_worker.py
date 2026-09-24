@@ -364,6 +364,26 @@ class TestFetchProfileBuildsValues(unittest.TestCase):
         self.assertNotIn("consent", profile.values)
         self.assertEqual(profile.resume_path, "/tmp/test-resume.pdf")
 
+    def test_maps_real_schema_field_names(self):
+        # Имена как в базе: PersonalDetails.middleName, ResumeProfile.desiredPosition.
+        from remote_tasks import RemoteTaskQueue
+
+        q = RemoteTaskQueue.__new__(RemoteTaskQueue)
+        q._call = lambda fn, args: {
+            "first_name": "Мария", "last_name": "Петрова", "phone": "+79001234567",
+            "personal_data": {"middleName": "Ивановна", "location": "Химки"},
+            "resume_data": {"desiredPosition": "Кассир", "employmentType": "Полная",
+                            "city": "Москва", "citizenship": "Россия"},
+            "resume_url": "https://example.com/r.pdf",
+        }
+        q._download_resume = lambda url: "/tmp/r.pdf"
+        values = q.fetch_profile("u1").values
+        self.assertEqual(values["patronymic"], "Ивановна")
+        self.assertEqual(values["desired_role"], "Кассир")
+        self.assertEqual(values["employment"], "Полная")
+        self.assertEqual(values["city"], "Москва")  # город из резюме важнее «где живу»
+        self.assertEqual(values["citizenship"], "Россия")
+
     def test_missing_resume_blocks_profile(self):
         from remote_tasks import RemoteError, RemoteTaskQueue
 
