@@ -23,9 +23,9 @@ DOMAIN = "jobtoo.ru"
 # message to the catch-all mailbox. Sender-supplied headers appear *below*
 # that hop, so only the first Received line whose "by" host is Timeweb's
 # public MX is authoritative for the original envelope recipient.
-_TIMEWEB_INGRESS = re.compile(r"\\bby\\s+mx\\d+\\.timeweb\\.ru\\b", re.IGNORECASE)
+_TIMEWEB_INGRESS = re.compile(r"\bby\s+mx\d+\.timeweb\.ru\b", re.IGNORECASE)
 _TIMEWEB_FOR = re.compile(
-    r"\\bfor\\s+<?\\s*(u-[a-z0-9-]+@jobtoo\\.ru)\\s*>?\\s*;",
+    r"\bfor\s+<?\s*(u-[a-z0-9-]+@jobtoo\.ru)\s*>?\s*;",
     re.IGNORECASE,
 )
 
