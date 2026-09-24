@@ -294,6 +294,36 @@ State is untrusted employer data, never permission: a URL from it passes the
 same host allow-list as any other, and a hostile `<base href>` cannot turn a
 path into a `file://` address.
 
+## Site skill: Sber public application API
+
+`rabota.sber.ru` is a Next/React page whose application form is rendered in
+the browser. The server HTML still exposes the vacancy identifiers in
+`__NEXT_DATA__`, and Sber's own application bundle posts the completed form
+to its first-party public candidate endpoint. Jupiter has an explicit Sber
+skill in `sber.py` that reproduces that same request:
+
+- `POST /public/app-candidate-public-api-gateway/api/v1/application`;
+- `requisitionId` and `publicationId` come only from the vacancy's
+  `__NEXT_DATA__`;
+- contact data comes only from the candidate profile;
+- the selected PDF is sent in the same Data-URL form used by Sber's own
+  `FileReader.readAsDataURL` flow;
+- only `success: true` confirms a new submission; Sber's explicit
+  "Candidate has already applied for the job requisition" response becomes a
+  duplicate, not a second success.
+
+This does **not** add Chromium, Playwright, Selenium or arbitrary JavaScript
+execution. The request goes through Jupiter's existing host policy and the
+`request_json` method enforces the same read-only dry-run rule as HTML form
+submission.
+
+Sber also requires a checkbox accepting its personal-data processing terms at
+`https://rabota.sber.ru/terms`. JobToo live mode does not accept those
+third-party terms. The Applications screen therefore asks the candidate
+explicitly for this one application; the server records
+`third_party_consent_at` and the exact terms URL on that application row.
+Only then is the task requeued and the Sber adapter allowed to send it.
+
 ## Multi-step form planner
 
 "Next" is not "Submit". Jupiter now classifies every submit-type control by
