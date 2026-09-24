@@ -1309,16 +1309,16 @@ function WorkerPermMode() {
 
   // «Показать N» в шторке фильтров под выбранный черновик.
   const countPermLocal = (f: PermFilters) =>
-    permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id)
-      && permMatchesCompany(v.company, f)
-      && permMatchesQuery(v.title, v.company, v.description ?? '', f)
-      && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
+    f.showCareer
+      ? careerVacancies.length
+      : permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id)
+          && permMatchesCompany(v.company, f)
+          && permMatchesQuery(v.title, v.company, v.description ?? '', f)
+          && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)).length;
 
   const feedCards: FeedCard[] = (() => {
-    const own: FeedCard[] = openVacancies.map(v => ({ _ext: false as const, v }));
-    if (!showCareer) return own;
-    const ext: FeedCard[] = careerVacancies.map(v => ({ _ext: true as const, v }));
-    return [...own, ...ext];
+    if (showCareer) return careerVacancies.map(v => ({ _ext: true as const, v }));
+    return openVacancies.map(v => ({ _ext: false as const, v }));
   })();
 
   const applyToExt = async (ev: ExtVacancy) => {
@@ -2061,9 +2061,9 @@ function WorkerPermMode() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
-          <Ionicons name={backendOffline ? 'cloud-offline-outline' : 'search-outline'} size={48} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : 'Нет открытых вакансий'}</Text>
-          <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : 'Попробуйте изменить фильтры'}</Text>
+          <Ionicons name={backendOffline ? 'cloud-offline-outline' : careerLoading ? 'hourglass-outline' : 'search-outline'} size={48} color={Colors.textMuted} />
+          <Text style={styles.emptyTitle}>{backendOffline ? 'Нет связи с сервером' : careerLoading ? 'Загрузка карьерных вакансий…' : 'Нет открытых вакансий'}</Text>
+          <Text style={styles.emptySubtitle}>{backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.' : careerLoading ? '' : 'Попробуйте изменить фильтры'}</Text>
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
               <Ionicons name="refresh" size={16} color="#fff" />
