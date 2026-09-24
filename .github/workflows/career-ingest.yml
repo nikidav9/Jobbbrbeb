@@ -54,20 +54,34 @@ jobs:
             URL="${URL}&force=1"
           fi
 
-          for attempt in 1 2 3; do
+          # ingest.php работает инкрементально: каждый вызов обходит
+          # страницы до deadline, сохраняет checkpoint и возвращает
+          # «продолжение». Зовём повторно, пока не получим финальный
+          # ответ (без «продолжение») или не упрёмся в предел попыток.
+          MAX=20
+          for attempt in $(seq 1 $MAX); do
             RESP=$(curl -fsS -X GET "$URL" \
               -H "X-Admin-Token: $ADMIN_TOKEN" \
               --max-time 600) || RESP=''
-            echo "Попытка $attempt: $RESP"
+            echo "Вызов $attempt/$MAX: $RESP"
 
-            # Успех: в ответе есть received (число принятых вакансий).
-            echo "$RESP" | grep -q '"received"' && {
-              echo "Забор завершён"
-              echo "$RESP" | python3 -m json.tool 2>/dev/null || true
-              exit 0
-            }
+            if [ -z "$RESP" ]; then
+              echo "Пустой ответ, повтор через 15 секунд"
+              sleep 15
+              continue
+            fi
 
-            [ "$attempt" -lt 3 ] && sleep 30
+            # «продолжение» = ещё не всё, зовём снова.
+            if echo "$RESP" | grep -q '"продолжение'; then
+              echo "Инкрементальный обход, продолжаем..."
+              sleep 5
+              continue
+            fi
+
+            # Финальный ответ — обход завершён.
+            echo "Забор завершён"
+            echo "$RESP" | python3 -m json.tool 2>/dev/null || true
+            exit 0
           done
 
-          echo "ingest.php не отработал за три попытки"; exit 1
+          echo "ingest.php не завершился за $MAX вызовов"; exit 1
