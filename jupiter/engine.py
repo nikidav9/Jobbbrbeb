@@ -612,6 +612,10 @@ class JupiterWebEngine:
     surfaced to the agent as action_required instead of pretending success.
     """
 
+    # Атрибут, а не литерал в запросе: разведка сверяет, режет ли сайт именно
+    # нашу подпись. Боевой воркер её не меняет.
+    user_agent = "JupiterWebEngine/1.0 (+JobToo)"
+
     def __init__(
         self,
         allowed_hosts: set[str],
@@ -722,7 +726,7 @@ class JupiterWebEngine:
             target,
             method="GET",
             headers={
-                "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+                "User-Agent": self.user_agent,
                 "Accept": "application/javascript,text/javascript;q=0.9,text/plain;q=0.5",
             },
         )
@@ -848,7 +852,7 @@ class JupiterWebEngine:
                 f"Read-only Jupiter engine blocked mutating request: {method}"
             )
         request_headers = {
-            "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+            "User-Agent": self.user_agent,
             "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
         }
         request_headers.update(headers or {})
@@ -912,7 +916,7 @@ class JupiterWebEngine:
                 f"Read-only Jupiter engine blocked mutating request: {method}"
             )
         request_headers = {
-            "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+            "User-Agent": self.user_agent,
             "Accept": "application/json",
         }
         data = None
@@ -1064,7 +1068,7 @@ class JupiterWebEngine:
 
         fields, files = self._successful_controls(page, form, None)
         headers = {
-            "User-Agent": "JupiterWebEngine/1.0 (+JobToo)",
+            "User-Agent": self.user_agent,
             "Accept": "application/json,text/plain,text/html;q=0.8,*/*;q=0.1",
         }
         safe_headers = {

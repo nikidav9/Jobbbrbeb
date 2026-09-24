@@ -15,7 +15,12 @@ class SiteProfile:
 
 AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Пятёрочка", ("rabota5ka.ru",)),
-    SiteProfile("Перекрёсток", ("rabota.perekrestok.ru",)),
+    SiteProfile(
+        "Перекрёсток",
+        ("rabota.perekrestok.ru",),
+        # Быстрый отклик: ФИО, телефон, дата рождения. Разведка 2026-09-24.
+        field_overrides={"fullname": "full_name", "birthdate": "birth_date"},
+    ),
     SiteProfile("Магнит", ("rabota.magnit.ru",)),
     SiteProfile("Лента", ("career.lenta.com",), ("hh.ru", "spb.hh.ru", "superjob.ru", "avito.ru")),
     SiteProfile(
@@ -93,7 +98,11 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Подружка", ("rabotavpodrygke.ru",)),
     SiteProfile("kari", ("kari.com",)),
     SiteProfile("Gloria Jeans", ("lookbook.gloria-jeans.ru",)),
-    SiteProfile("Befree", ("befree.ru",)),
+    SiteProfile(
+        "Befree",
+        ("befree.ru",),
+        field_overrides={"title": "desired_role", "name": "full_name"},
+    ),
     SiteProfile("HENDERSON", ("henderson.ru",)),
     SiteProfile(
         "CDEK",
@@ -116,7 +125,17 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Аэрофлот", ("vacancy.aeroflot.ru",)),
     SiteProfile("Шереметьево", ("job.svo.su",)),
     SiteProfile("Черкизово", ("vacancies.cherkizovo.com",)),
-    SiteProfile("Северсталь", ("career.severstal.com",)),
+    SiteProfile(
+        "Северсталь",
+        ("career.severstal.com",),
+        # name стоит рядом с lastname — это имя, а не ФИО.
+        field_overrides={
+            "name": "first_name",
+            "lastname": "last_name",
+            "about": "cover_letter",
+            "link": "resume_url",
+        },
+    ),
     SiteProfile("СИБУР", ("career.sibur.ru",)),
     SiteProfile("Балтика", ("career.baltika.ru",)),
     SiteProfile("Норникель", ("career.nornickel.ru",)),
@@ -175,6 +194,41 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
         },
     ),
     SiteProfile("Яндекс", ("yandex.ru",), ("forms.yandex.ru",)),
+    # Ниже — каталог cofinder, не исходный список владельца. Карты сняты
+    # разведкой (recon.py) по подписям полей на живой странице; поле без
+    # подписи не угадываем.
+    SiteProfile(
+        "Yadro",
+        ("careers.yadro.com",),
+        field_overrides={"name": "first_name", "last_name": "last_name", "message": "cover_letter"},
+    ),
+    SiteProfile("Солар", ("team.rt-solar.ru",), field_overrides={"form_text_20": "resume_url"}),
+    SiteProfile(
+        "Centicore Group",
+        ("centicore.ru",),
+        field_overrides={
+            "name2": "first_name",
+            "lastname2": "last_name",
+            "message2": "cover_letter",
+            "link": "resume_url",
+            "position": "desired_role",
+        },
+    ),
+    SiteProfile(
+        "Effective Technologies",
+        ("career.effective-group.ru",),
+        field_overrides={"name": "first_name", "subname": "last_name", "rezum": "resume_url"},
+    ),
+    SiteProfile(
+        "PIX Robotics",
+        ("pix.ru",),
+        field_overrides={"order_name": "full_name", "order_post": "desired_role"},
+    ),
+    SiteProfile(
+        "Дельта Компьютерс",
+        ("deltacomputers.ru",),
+        field_overrides={"f_name": "full_name", "f_post": "desired_role"},
+    ),
 )
 
 
