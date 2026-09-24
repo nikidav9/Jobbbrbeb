@@ -91,6 +91,12 @@ class RemoteTaskQueue:
         result = self._call("jupiterLease", [worker, self._lease_seconds])
         if result is None:
             return None
+        # PostgreSQL functions returning a composite row can be serialized by
+        # PostgREST as an object whose every field is null when the function
+        # returns NULL. Treat that shape as an empty queue instead of inventing
+        # a task with id == "None".
+        if not isinstance(result, dict) or result.get("id") in (None, ""):
+            return None
         task = self._row_to_task(result)
         self._attempts[task.id] = task.attempt_count
         return task
