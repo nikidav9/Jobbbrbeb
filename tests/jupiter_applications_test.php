@@ -16,6 +16,9 @@ $db = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
 $sql = (string)file_get_contents(
     __DIR__ . '/../supabase/migrations/104_jupiter_applications.sql'
 );
+$recovery = (string)file_get_contents(
+    __DIR__ . '/../supabase/migrations/105_jupiter_lease_recovery.sql'
+);
 $guard = (string)file_get_contents(__DIR__ . '/../infra/verify-rls.sh');
 
 // Комментарии выброшены намеренно. Первая версия теста ловила «for update skip
@@ -68,7 +71,18 @@ check('jupiterFinish принимает только известные сост
 check('уникальность заявки закреплена индексом',
     (bool)preg_match('~create unique index[^;]*jm_jupiter_applications\s*\(user_id, canonical_url\)~s', $sqlCode));
 check('повторная постановка возвращает прежнюю заявку',
-    str_contains($db, "if (\$existing) { jt_respond(\$existing); exit; }"));
+    str_contains($db, "if (\$existing) { \$data = \$existing; break; }"));
+check('публичные методы Jupiter возвращают data как другие методы db.php',
+    str_contains($db, "\$data = \$inserted[0] ?? sb_single('jm_jupiter_applications'")
+    && str_contains($db, "case 'jupiterMyApplications': {\n            \$data = sb_select(")
+    && str_contains($db, "jt_respond(['data' => \$data]);"));
+check('гонка двух свайпов не возвращает отправленную заявку в очередь',
+    str_contains($db, 'resolution=ignore-duplicates,return=representation')
+    && !str_contains(substr($db, strpos($db, "case 'jupiterEnqueue':"), 2000),
+        "sb_upsert('jm_jupiter_applications'"));
+check('пустая очередь отвечает JSON null, не ошибкой типа',
+    str_contains($db, 'function jt_respond(mixed $payload')
+    && str_contains($db, 'jt_respond($task ?: null)'));
 check('адрес канонизируется перед сравнением',
     str_contains($db, 'jupiter_canonical_url($url)'));
 check('канонизация выбрасывает рекламные метки',
@@ -81,6 +95,12 @@ check('канонизация пускает только http и https',
 // задачу, и работодатель получает два отклика.
 check('задача берётся атомарно', str_contains($sqlCode, 'for update skip locked'));
 check('аренда имеет срок', str_contains($sqlCode, 'lease_until'));
+check('прерванное заполнение возвращается в очередь после аренды',
+    str_contains($recovery, "'opening_application'")
+    && str_contains($recovery, 'lease_until <= now()'));
+check('неизвестную отправку не повторяем автоматически',
+    str_contains($recovery, "state = 'submission_unknown'")
+    && str_contains($recovery, "state in ('submitting', 'verifying')"));
 check('срок аренды ограничен сверху и снизу',
     (bool)preg_match('~max\(30, min\(3600~', $db));
 

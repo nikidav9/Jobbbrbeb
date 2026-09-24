@@ -1,20 +1,20 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TextInput,
-  TouchableOpacity, ActivityIndicator, RefreshControl,
+  TouchableOpacity, ActivityIndicator, RefreshControl, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacancy, Chat, ReportableOutcome } from '@/constants/types';
+import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacancy, Chat, ReportableOutcome, JupiterApplication, JupiterApplicationState } from '@/constants/types';
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
-  dbApprovePermApplication, dbSetPermApplicationStatus,
+  dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
 } from '@/services/db';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
@@ -314,6 +314,27 @@ function permAppStatus(status: PermApplicationStatus): {
   }
 }
 
+function jupiterAppStatus(state: JupiterApplicationState): { label: string; fg: string; bg: string } {
+  switch (state) {
+    case 'ready_to_submit':
+      return { label: 'Анкета заполнена · не отправлена', fg: '#B45309', bg: '#FEF3C7' };
+    case 'submitted':
+      return { label: 'Отправлено', fg: '#047857', bg: '#D1FAE5' };
+    case 'action_required':
+      return { label: 'Нужно ваше участие', fg: '#B45309', bg: '#FEF3C7' };
+    case 'submission_unknown':
+      return { label: 'Отправка не подтверждена', fg: '#B45309', bg: '#FEF3C7' };
+    case 'failed':
+      return { label: 'Не удалось заполнить', fg: Colors.red, bg: '#FEE2E2' };
+    case 'retryable_failed':
+      return { label: 'Повторит позже', fg: '#B45309', bg: '#FEF3C7' };
+    case 'duplicate':
+      return { label: 'Повтор не отправлен', fg: '#047857', bg: '#D1FAE5' };
+    default:
+      return { label: 'Юпитер обрабатывает', fg: '#1D4ED8', bg: '#DBEAFE' };
+  }
+}
+
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
 
 const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
@@ -336,14 +357,28 @@ function WorkerMatches() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
+  const [jupiterError, setJupiterError] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
 
   const currentUserId = currentUser?.id ?? '';
+  const loadJupiter = useCallback(async () => {
+    if (!currentUserId || currentUser?.isGuest) return;
+    try {
+      setJupiterApps(await jupiterMyApplications(currentUserId));
+      setJupiterError(false);
+    } catch (error) {
+      console.warn('[jupiterMyApplications]', error);
+      setJupiterError(true);
+    }
+  }, [currentUserId, currentUser?.isGuest]);
+
+  useFocusEffect(useCallback(() => { void loadJupiter(); }, [loadJupiter]));
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await refreshAll();
+      await Promise.all([refreshAll(), loadJupiter()]);
     } catch {
       showToast('Не удалось обновить отклики. Проверьте связь.', 'error');
     } finally {
@@ -384,6 +419,9 @@ function WorkerMatches() {
   // Поиск и фильтр по статусу — над одним и тем же списком, поэтому считаются
   // подряд, а не двумя независимыми выборками.
   const q = search.trim().toLowerCase();
+  const shownJupiterApps = filter === 'all'
+    ? jupiterApps.filter(a => !q || `${a.company ?? ''} ${a.vacancyUrl}`.toLowerCase().includes(q))
+    : [];
   const shownApps = myApps.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
     if (!q) return true;
@@ -394,11 +432,13 @@ function WorkerMatches() {
   // Группировка по дням: заголовок с числом, как «ВЧЕРА · 15 откликов».
   const byDay = groupByDay(shownApps, a => a.createdAt);
 
-  const todayCount = myApps.filter(a => dayKey(a.createdAt) === dayKey(new Date().toISOString())).length;
+  const today = dayKey(new Date().toISOString());
+  const todayCount = myApps.filter(a => dayKey(a.createdAt) === today).length
+    + jupiterApps.filter(a => a.state === 'submitted' && a.submittedAt && dayKey(a.submittedAt) === today).length;
 
   // Обрыв связи и пустой список — разные вещи: «нет откликов» человек,
   // только что откликнувшийся, читает как «мой отклик пропал».
-  const offlineHere = offline.permApplications && myApps.length === 0;
+  const offlineHere = offline.permApplications && myApps.length === 0 && jupiterApps.length === 0;
 
   const openApp = (a: PermApplication) =>
     router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } });
@@ -443,6 +483,34 @@ function WorkerMatches() {
             <Text style={[wm.statusTxt, { color: st.fg }]}>{st.label.toUpperCase()}</Text>
           </View>
         )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderJupiterApp = (a: JupiterApplication, last: boolean) => {
+    const company = a.company?.trim() || 'Карьерный сайт';
+    const status = jupiterAppStatus(a.state);
+    const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
+    return (
+      <TouchableOpacity
+        key={a.id}
+        style={[wm.row, !last && wm.rowDivider]}
+        activeOpacity={canApplyManually ? 0.85 : 1}
+        disabled={!canApplyManually}
+        onPress={() => Linking.openURL(a.vacancyUrl).catch(() => showToast('Не удалось открыть сайт компании', 'error'))}
+        accessibilityLabel={`${company}. ${status.label}${canApplyManually ? '. Открыть вакансию на сайте' : ''}`}
+      >
+        <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
+          <Text style={wm.logoTxt}>{getInitials(company)}</Text>
+        </View>
+        <View style={wm.rowBody}>
+          <Text style={wm.rowTitle} numberOfLines={2}>{company}</Text>
+          <Text style={wm.rowCompany} numberOfLines={1}>Вакансия на карьерном сайте</Text>
+          <View style={[wm.statusPill, { alignSelf: 'flex-start', backgroundColor: status.bg, marginTop: rs(6) }]}>
+            <Text style={[wm.statusTxt, { color: status.fg }]}>{status.label}</Text>
+          </View>
+        </View>
+        {canApplyManually ? <Ionicons name="open-outline" size={18} color={Colors.primary} /> : null}
       </TouchableOpacity>
     );
   };
@@ -564,9 +632,24 @@ function WorkerMatches() {
           }
         >
           <>
-            {/* «Ждут вашего ответа» — наша замена «Needs you». У них там анкеты,
-                которые агент не смог дозаполнить; у нас действие, которого
-                реально ждут от человека, ровно одно — ответить работодателю. */}
+            {filter === 'all' && (shownJupiterApps.length > 0 || jupiterError) ? (
+              <>
+                <View style={wm.sectionHead}>
+                  <Text style={wm.sectionTitle}>Юпитер · внешние вакансии</Text>
+                </View>
+                <Text style={[s.emptySub, { textAlign: 'left', marginBottom: rs(12) }]}>
+                  Новые заявки Юпитер заполняет в тестовом режиме без отправки.
+                </Text>
+                {jupiterError ? <Text style={s.emptySub}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
+                {shownJupiterApps.length > 0 ? (
+                  <View style={wm.group}>
+                    {shownJupiterApps.map((a, i) => renderJupiterApp(a, i === shownJupiterApps.length - 1))}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            {/* Переписки внутри JobToo остаются отдельными от заявок Jupiter:
+                ответ работодателю и незаполненная внешняя анкета — разные шаги. */}
             {unreadChats.length > 0 ? (
               <>
                 <View style={wm.sectionHead}>
@@ -595,7 +678,7 @@ function WorkerMatches() {
               </>
             ) : null}
 
-            {shownApps.length === 0 ? (
+            {shownApps.length === 0 && shownJupiterApps.length === 0 ? (
               <View style={s.empty}>
                 <Ionicons
                   name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'}

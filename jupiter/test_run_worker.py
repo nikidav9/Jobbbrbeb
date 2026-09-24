@@ -99,6 +99,7 @@ class TestWorkerLoop(unittest.TestCase):
             "JOBTOO_ADMIN_TOKEN": "tok",
             "JUPITER_POLL_INTERVAL": "0",
             "JUPITER_WORKER_ID": "test-w",
+            "EXPO_PUBLIC_APP_SECRET": "test-app-secret",
         }
         old = {}
         for k, v in env.items():
@@ -116,6 +117,40 @@ class TestWorkerLoop(unittest.TestCase):
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+    def test_public_worker_cannot_enable_submissions_with_env_flag(self):
+        import run_worker
+        import worker as worker_mod
+
+        original_run_once = worker_mod.run_once
+        original_env = {key: os.environ.get(key) for key in (
+            "JOBTOO_URL", "JOBTOO_ADMIN_TOKEN", "EXPO_PUBLIC_APP_SECRET",
+            "JUPITER_DRY_RUN", "JUPITER_POLL_INTERVAL",
+        )}
+
+        def fake_run_once(queue, profile_factory, agent_factory, wid):
+            task = ApplicationTask(id="t1", candidate_id="u1", vacancy_url="https://example.com/job")
+            self.assertTrue(agent_factory(task).dry_run)
+            self.assertEqual(queue._app_secret, "test-app-secret")
+            run_worker._stop = True
+            return None
+
+        worker_mod.run_once = fake_run_once
+        os.environ.update({
+            "JOBTOO_URL": "https://example.com", "JOBTOO_ADMIN_TOKEN": "token",
+            "EXPO_PUBLIC_APP_SECRET": "test-app-secret",
+            "JUPITER_DRY_RUN": "false", "JUPITER_POLL_INTERVAL": "0",
+        })
+        run_worker._stop = False
+        try:
+            self.assertEqual(run_worker.main(), 0)
+        finally:
+            worker_mod.run_once = original_run_once
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
 
 class TestProfileFactory(unittest.TestCase):
@@ -149,6 +184,50 @@ class TestProfileFactory(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(factory_calls, ["user-42"])
         self.assertEqual(result[1], TaskState.SUBMITTED)
+
+    def test_profile_failure_releases_task_as_failed(self):
+        import worker as worker_mod
+
+        task = ApplicationTask(id="t-profile", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        def missing_profile(_task):
+            raise ValueError("profile unavailable")
+
+        result = worker_mod.run_once(queue, missing_profile, lambda _task: None, "w1")
+        self.assertEqual(result[1], TaskState.FAILED)
+        self.assertEqual(queue.finished, [(task.id, TaskState.FAILED)])
+
+    def test_long_running_agent_renews_lease(self):
+        import threading
+        import worker as worker_mod
+        from agent import AgentResult
+
+        task = ApplicationTask(id="t-long", candidate_id="u1", vacancy_url="https://example.com/job")
+
+        class HeartbeatQueue(FakeQueue):
+            heartbeat_interval = 0.01
+
+            def __init__(self):
+                super().__init__([task])
+                self.beat = threading.Event()
+
+            def heartbeat(self, task_id):
+                self.assert_task_id = task_id
+                self.beat.set()
+                return True
+
+        queue = HeartbeatQueue()
+
+        class SlowAgent:
+            def run(self, url, prof):
+                self_test.assertTrue(queue.beat.wait(0.5))
+                return AgentResult(status="ready_to_submit")
+
+        self_test = self
+        result = worker_mod.run_once(queue, CandidateProfile(values={}), lambda _task: SlowAgent(), "w1")
+        self.assertEqual(queue.assert_task_id, task.id)
+        self.assertEqual(result[1], TaskState.READY_TO_SUBMIT)
 
 
 class TestFetchProfileBuildsValues(unittest.TestCase):

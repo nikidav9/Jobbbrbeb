@@ -66,7 +66,9 @@ def main() -> int:
 
     poll_interval = int(os.environ.get("JUPITER_POLL_INTERVAL", "30"))
     max_steps = int(os.environ.get("JUPITER_MAX_STEPS", "30"))
-    dry_run = os.environ.get("JUPITER_DRY_RUN", "").lower() in ("1", "true", "yes")
+    # Публичная очередь пока предназначена только для заполнения анкет.
+    # Флаг из окружения не должен случайно включить реальные отправки.
+    dry_run = True
     receipts_path = os.environ.get("JUPITER_RECEIPTS", "").strip() or None
     handoffs_path = os.environ.get("JUPITER_HANDOFFS", "").strip() or None
     lease_seconds = int(os.environ.get("JUPITER_LEASE_SECONDS", "300"))
@@ -75,7 +77,8 @@ def main() -> int:
     handoffs = HandoffStore(handoffs_path)
 
     queue = RemoteTaskQueue(
-        base_url, admin_token, lease_seconds=lease_seconds,
+        base_url, admin_token, _require_env("EXPO_PUBLIC_APP_SECRET"),
+        lease_seconds=lease_seconds,
     )
 
     def profile_factory(task: ApplicationTask) -> CandidateProfile:

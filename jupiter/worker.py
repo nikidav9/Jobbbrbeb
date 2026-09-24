@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import threading
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
@@ -20,6 +22,7 @@ RETRYABLE_CODES = {
     Reason.NAVIGATION_FAILED,
     Reason.SUBMIT_FAILED,
 }
+log = logging.getLogger("jupiter")
 
 RESULT_TO_STATE = {
     "submitted": TaskState.SUBMITTED,
@@ -78,16 +81,42 @@ def run_once(
     if task is None:
         return None
 
-    resolved = profile(task) if callable(profile) else profile
-    agent = agent_factory(task)
-    queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
-        "url": task.vacancy_url,
-    })
     try:
+        resolved = profile(task) if callable(profile) else profile
+    except Exception as exc:
+        state = queue.fail(task.id, f"Candidate profile unavailable: {exc}", retryable=False)
+        return task, state
+
+    heartbeat = getattr(queue, "heartbeat", None)
+    stop_heartbeat = threading.Event()
+    thread = None
+    if callable(heartbeat):
+        interval = getattr(queue, "heartbeat_interval", 60)
+
+        def keep_lease() -> None:
+            while not stop_heartbeat.wait(interval):
+                try:
+                    if not heartbeat(task.id):
+                        log.error("lease lost while processing task %s", task.id)
+                        break
+                except Exception:
+                    log.exception("could not renew lease for task %s", task.id)
+
+        thread = threading.Thread(target=keep_lease, daemon=True)
+        thread.start()
+
+    try:
+        agent = agent_factory(task)
+        queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
+            "url": task.vacancy_url,
+        })
         if task.resume_token:
             result = agent.resume(task.resume_token, resolved)
         else:
             result = agent.run(task.vacancy_url, resolved)
         return task, apply_result(queue, task, result)
     finally:
+        stop_heartbeat.set()
+        if thread is not None:
+            thread.join(timeout=2)
         _cleanup_resume(resolved)

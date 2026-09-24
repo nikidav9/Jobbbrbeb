@@ -90,7 +90,10 @@ enqueues a task and a worker picks it up. `tasks.py` holds the model and the
 queue, `worker.py` is the thin bridge to the agent.
 
 - **Lease and heartbeat.** A worker that dies must not take the task with it,
-  and must not have it stolen while it is still alive.
+  and must not have it stolen while it is still alive. A periodic heartbeat
+  renews the lease during slow career forms. Expired pre-submit tasks return to
+  the queue; tasks interrupted during submission become `submission_unknown`
+  and are not sent again automatically.
 - **Checkpoints.** Opening the site, finding the vacancy and filling the form
   is expensive. A restart resumes from the last checkpoint instead of touching
   the employer's site again.
@@ -124,6 +127,7 @@ The resume PDF is downloaded via a signed URL and written to a temporary file.
 ```bash
 JOBTOO_URL=https://jobtoo.ru \
 JOBTOO_ADMIN_TOKEN=secret \
+EXPO_PUBLIC_APP_SECRET=public-app-key \
 python3 run_worker.py
 ```
 
@@ -131,10 +135,11 @@ python3 run_worker.py
 |---|---|---|---|
 | `JOBTOO_URL` | yes | — | Server base URL |
 | `JOBTOO_ADMIN_TOKEN` or `ADMIN_API_TOKEN` | yes | — | Admin token for RPC |
+| `EXPO_PUBLIC_APP_SECRET` | yes | — | App API header required by db.php |
 | `JUPITER_WORKER_ID` | no | `jupiter-<hostname>` | Worker identifier |
 | `JUPITER_POLL_INTERVAL` | no | 30 | Seconds between polls when queue is empty |
 | `JUPITER_MAX_STEPS` | no | 30 | Max agent steps per task |
-| `JUPITER_DRY_RUN` | no | false | Fill forms but never submit |
+| `JUPITER_DRY_RUN` | — | — | Public worker always runs dry-run; live submission needs a separate release |
 | `JUPITER_RECEIPTS` | no | — | Path to receipts journal file |
 | `JUPITER_HANDOFFS` | no | — | Path to handoff state file |
 | `JUPITER_LEASE_SECONDS` | no | 300 | Lease duration in seconds |

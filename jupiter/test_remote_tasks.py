@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import uuid
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
@@ -14,6 +15,7 @@ from remote_tasks import RemoteError, RemoteTaskQueue
 from tasks import TaskState
 
 ADMIN_TOKEN = "test-admin-token"
+APP_SECRET = "test-app-secret"
 
 
 class FakeTask:
@@ -33,6 +35,7 @@ class FakeTask:
             "last_error": None,
             "resume_token": None,
             "receipt_key": None,
+            "not_before": None,
         }
 
 
@@ -44,6 +47,9 @@ class FakeDbHandler(BaseHTTPRequestHandler):
         pass
 
     def do_POST(self) -> None:
+        if self.headers.get("X-App-Secret") != APP_SECRET:
+            self._json({"error": "Forbidden"}, 403)
+            return
         token = self.headers.get("X-Admin-Token", "")
         if token != ADMIN_TOKEN:
             self._json({"error": "Admin authorization required"}, 403)
@@ -117,7 +123,7 @@ class FakeDbHandler(BaseHTTPRequestHandler):
         task.data["lease_owner"] = None
         task.data["lease_until"] = None
         for key in ("reason_code", "resume_token", "receipt_key", "last_error",
-                     "checkpoint", "attempt_count"):
+                     "checkpoint", "attempt_count", "not_before"):
             if key in extra:
                 task.data[key] = extra[key]
         self._json({"ok": True})
@@ -155,6 +161,7 @@ class RemoteTaskQueueTest(unittest.TestCase):
         return RemoteTaskQueue(
             f"http://127.0.0.1:{self.port}",
             ADMIN_TOKEN,
+            APP_SECRET,
             **kw,
         )
 
@@ -238,6 +245,15 @@ class RemoteTaskQueueTest(unittest.TestCase):
         q.lease("w1")
         state = q.fail(tid, "timeout", retryable=True)
         self.assertEqual(state, TaskState.RETRYABLE_FAILED)
+        due = datetime.fromisoformat(FakeDbHandler.tasks[tid].data["not_before"])
+        self.assertGreater(due, datetime.now(timezone.utc))
+
+    def test_retry_limit_stops_after_third_failure(self) -> None:
+        tid = self._seed()
+        q = self._queue()
+        q.lease("w1")
+        q._attempts[tid] = 3
+        self.assertEqual(q.fail(tid, "timeout", retryable=True), TaskState.FAILED)
 
     def test_fail_non_retryable_sets_failed(self) -> None:
         tid = self._seed()
@@ -251,8 +267,15 @@ class RemoteTaskQueueTest(unittest.TestCase):
     def test_wrong_token_raises_remote_error(self) -> None:
         self._seed()
         q = RemoteTaskQueue(
-            f"http://127.0.0.1:{self.port}", "wrong-token",
+            f"http://127.0.0.1:{self.port}", "wrong-token", APP_SECRET,
         )
+        with self.assertRaises(RemoteError) as ctx:
+            q.lease("w1")
+        self.assertEqual(ctx.exception.status, 403)
+
+    def test_missing_app_secret_is_rejected_before_lease(self) -> None:
+        self._seed()
+        q = RemoteTaskQueue(f"http://127.0.0.1:{self.port}", ADMIN_TOKEN, "")
         with self.assertRaises(RemoteError) as ctx:
             q.lease("w1")
         self.assertEqual(ctx.exception.status, 403)

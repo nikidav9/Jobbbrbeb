@@ -22,7 +22,7 @@ require_once __DIR__ . '/sitemap_cache.php';
 require_once __DIR__ . '/push_privacy.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
-function jt_respond(array $payload, int $code = 200): void {
+function jt_respond(mixed $payload, int $code = 200): void {
     if (ob_get_level() > 0) ob_end_clean();
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -827,7 +827,12 @@ function sb_rpc(string $fn, array $params = []): mixed {
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_HTTPHEADER => $hdrs, CURLOPT_TIMEOUT => 10, CURLOPT_SSL_VERIFYPEER => true]);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
-    $resp = curl_exec($ch); curl_close($ch);
+    $resp = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($resp === false || $status >= 400 || $status === 0) {
+        throw new RuntimeException('Не удалось выполнить запрос к базе: ' . $fn);
+    }
     return json_decode($resp ?: 'null', true);
 }
 
@@ -6032,7 +6037,7 @@ try {
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
-            if ($existing) { jt_respond($existing); exit; }
+            if ($existing) { $data = $existing; break; }
             $row = [
                 'id' => uid(),
                 'user_id' => $uidArg,
@@ -6043,18 +6048,29 @@ try {
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
-            sb_upsert('jm_jupiter_applications', $row, 'user_id,canonical_url');
-            jt_respond($row); exit;
+            // При одновременных нажатиях merge-duplicates перезаписал бы
+            // состояние чужого воркера обратно в queued. Вставляем только
+            // отсутствующую строку, а при конфликте читаем уже существующую.
+            $inserted = sb('POST', 'jm_jupiter_applications',
+                ['on_conflict' => 'user_id,canonical_url'], $row,
+                ['Prefer: resolution=ignore-duplicates,return=representation']);
+            if ($inserted) rt_touch('jm_jupiter_applications');
+            $data = $inserted[0] ?? sb_single('jm_jupiter_applications', [
+                'user_id' => 'eq.' . $uidArg,
+                'canonical_url' => 'eq.' . $canonical,
+            ]);
+            if (!$data) throw new RuntimeException('Не удалось сохранить заявку Jupiter');
+            break;
         }
 
         case 'jupiterMyApplications': {
-            jt_respond(sb_select(
+            $data = sb_select(
                 'jm_jupiter_applications',
                 ['user_id' => 'eq.' . (string)($args[0] ?? '')],
                 'id,vacancy_url,company,state,reason_code,resume_token,'
                 . 'external_application_id,created_at,updated_at,submitted_at,verified_at',
                 'created_at.desc'
-            )); exit;
+            ); break;
         }
 
         // Воркер берёт задачу. Аренда, а не «пометил и забыл»: воркер может
