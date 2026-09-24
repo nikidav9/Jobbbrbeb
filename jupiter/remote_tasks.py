@@ -82,6 +82,8 @@ class RemoteTaskQueue:
             resume_token=row.get("resume_token"),
             receipt_key=row.get("receipt_key"),
             submission_authorized_at=row.get("submission_authorized_at"),
+            third_party_consent_at=row.get("third_party_consent_at"),
+            third_party_terms_url=row.get("third_party_terms_url"),
         )
 
     # ── публичный интерфейс ────────────────────────────────────────────────
