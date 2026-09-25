@@ -533,21 +533,25 @@ function WorkerMatches() {
             <Text style={wm.logoTxt}>{getInitials(company)}</Text>
           </View>
         )}
+        {/* Метка — в первой строке рядом с названием, как у Sorce: так
+            компания и итог идут на всю ширину и не обрезаются на полуслове. */}
         <View style={wm.rowBody}>
-          <Text style={wm.rowTitle} numberOfLines={2}>{title}</Text>
+          <View style={wm.jupiterTop}>
+            <Text style={[wm.rowTitle, { flex: 1 }]} numberOfLines={2}>{title}</Text>
+            {needsYou ? (
+              <View style={wm.action}>
+                <Text style={wm.actionTxt}>{badge.label}</Text>
+                <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
+              </View>
+            ) : (
+              <View style={[wm.statusPill, { backgroundColor: JUPITER_BADGE_COLORS[badge.tone].bg }]}>
+                <Text style={[wm.statusTxt, { color: JUPITER_BADGE_COLORS[badge.tone].fg }]}>{badge.label}</Text>
+              </View>
+            )}
+          </View>
           <Text style={wm.rowCompany} numberOfLines={1}>{company}</Text>
-          <Text style={wm.rowHint} numberOfLines={1}>{summary}</Text>
+          <Text style={wm.rowHint} numberOfLines={2}>{summary}</Text>
         </View>
-        {needsYou ? (
-          <View style={wm.action}>
-            <Text style={wm.actionTxt}>{badge.label}</Text>
-            <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
-          </View>
-        ) : (
-          <View style={[wm.statusPill, { backgroundColor: JUPITER_BADGE_COLORS[badge.tone].bg }]}>
-            <Text style={[wm.statusTxt, { color: JUPITER_BADGE_COLORS[badge.tone].fg }]}>{badge.label}</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -856,6 +860,7 @@ function WorkerMatches() {
 }
 
 const wm = StyleSheet.create({
+  jupiterTop: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(8) },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(4),
