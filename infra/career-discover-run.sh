@@ -86,7 +86,10 @@ save_partial() {
         chmod 0644 "$OUT.partial"
         say "частичный результат сохранён: $OUT.partial"
     else
-        rm -f "$tmp"
+        # Пустой (или отсутствующий) $tmp — сохранять нечего. Заодно убираем
+        # устаревший $OUT.partial от прошлого падения: раз этот прогон не
+        # оставил даже частичного результата, старый кусок вводит в заблуждение.
+        rm -f "$tmp" "$OUT.partial"
     fi
 }
 
@@ -96,11 +99,11 @@ save_partial() {
 # career-discovery.json.
 final_status() {
     python3 - "$STATUS" "$1" "$targets" "$ready" "$closed" "$accepted" "$rejected" \
-        "$live_companies" "$live_vacancies" <<'PY' || true
+        "$removed" "$live_companies" "$live_vacancies" <<'PY' || true
 import json, os, sys
 from datetime import datetime, timezone
 
-status_path, message, targets, ready, closed, accepted, rejected, live_companies, live_vacancies = sys.argv[1:10]
+status_path, message, targets, ready, closed, accepted, rejected, removed, live_companies, live_vacancies = sys.argv[1:11]
 payload = {
     'state': 'done',
     'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -110,6 +113,7 @@ payload = {
     'closed': int(closed),
     'accepted': int(accepted),
     'rejected': int(rejected),
+    'removed': int(removed),
     'live_companies': int(live_companies),
     'live_vacancies': int(live_vacancies),
 }
@@ -204,6 +208,8 @@ docker run --rm \
 # Готовый файл появляется одним движением: недочитанный JSON хуже старого.
 mv -f "$tmp" "$OUT"
 chmod 0644 "$OUT"
+# Успешный прогон обесценивает любой прежний частичный результат.
+rm -f "$OUT.partial"
 say "готово: $(wc -c <"$OUT") байт → $OUT"
 
 # ── Разбор результата: сколько целей, сколько готово, сколько закрыто ──────
@@ -292,6 +298,8 @@ chmod 700 "$STATE_DIR" 2>/dev/null || true
 {
   read -r accepted
   read -r rejected
+  read -r removed
+  read -r verify_guard
 } < <(python3 - "$DISCOVERED" "$candidates_file" "$verify_file" <<'PY'
 import json, os, shutil, sys
 from datetime import datetime, timezone
@@ -318,13 +326,37 @@ def merge_discovered(existing, candidates, verify_rows, now_iso):
     с fails>=2 подряд удаляется (гнилой источник не должен жить в каталоге
     годами); ok==false у новой находки — она просто не добавляется, как и
     раньше.
+
+    Предохранитель: career_verify.php ходит внутри php-контейнера, и у него
+    самого может пропасть сеть — тогда он честно ответит ok=false на всё, что
+    ему прислали, и это будет выглядеть как повальный отказ источников, а не
+    как их реальная смерть. Отличаем: если среди перепроверенных СТАРЫХ
+    записей (были в existing) набралось ≥3 и НИ ОДНА не ok — считаем это
+    сбоем проверки целиком, а не сбоем источников: fails не растут, старые
+    записи остаются как были. Новые находки этого прогона предохранитель не
+    трогает — они как отклонялись при ok=false, так и отклоняются.
+
+    Возвращает (merged, guard_message, removed): guard_message — '' в обычном
+    случае, иначе текст предохранителя для лога и статуса; removed — сколько
+    записей реально удалено из-за fails>=2 (не считая случаев, когда
+    предохранитель не дал засчитать провал).
     """
     existing_by_key = {(e.get('company'), e.get('url')): e
                         for e in existing if isinstance(e, dict)}
     candidate_endpoint_by_key = {(c['company'], c['endpoint'].get('url')): c['endpoint']
                                   for c in candidates}
 
+    old_checked = [row for row in verify_rows
+                   if (row.get('company'), row.get('url')) in existing_by_key]
+    old_ok = sum(1 for row in old_checked if row.get('ok'))
+    verify_failed = len(old_checked) >= 3 and old_ok == 0
+    guard_message = (
+        f'перепроверка не засчитана: {old_ok} из {len(old_checked)} ok'
+        if verify_failed else ''
+    )
+
     merged = []
+    removed = 0
     seen_keys = set()
     for row in verify_rows:
         key = (row.get('company'), row.get('url'))
@@ -341,11 +373,17 @@ def merge_discovered(existing, candidates, verify_rows, now_iso):
             entry['verified_at'] = now_iso
             merged.append(entry)
         elif prev is not None:
+            if verify_failed:
+                # Сбой проверки целиком — запись остаётся как была.
+                merged.append(dict(prev))
+                continue
             fails = int(prev.get('fails') or 0) + 1
             if fails < 2:
                 entry = dict(prev)
                 entry['fails'] = fails
                 merged.append(entry)
+            else:
+                removed += 1
             # fails >= 2: запись гнилая, удаляется
         # иначе — отклонённая новая находка, добавлять нечего
 
@@ -354,7 +392,7 @@ def merge_discovered(existing, candidates, verify_rows, now_iso):
     for key, e in existing_by_key.items():
         if key not in seen_keys:
             merged.append(e)
-    return merged
+    return merged, guard_message, removed
 # ── career-discover-merge:end ───────────────────────────────────────────────
 
 try:
@@ -372,7 +410,9 @@ except (OSError, ValueError) as exc:
     existing = []
 
 now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-merged = merge_discovered(existing, candidates, verify_rows, now)
+merged, guard_message, removed = merge_discovered(existing, candidates, verify_rows, now)
+if guard_message:
+    print(guard_message, file=sys.stderr)
 
 os.makedirs(os.path.dirname(discovered_path), exist_ok=True)
 if os.path.exists(discovered_path):
@@ -389,17 +429,20 @@ existing_keys = {(e.get('company'), e.get('url')) for e in existing if isinstanc
 new_rows = [r for r in verify_rows if (r.get('company'), r.get('url')) not in existing_keys]
 print(sum(1 for r in new_rows if r.get('ok')))
 print(sum(1 for r in new_rows if not r.get('ok')))
+print(removed)
+print(guard_message)
 print(f'career discovered: было {len(existing)} записей, стало {len(merged)} '
       f'(перепроверено {len(verify_rows) - len(new_rows)})', file=sys.stderr)
 PY
 ) || fail "не смог слить найденные endpoints"
 
-say "проверка: принято $accepted, отклонено $rejected"
+say "проверка: принято $accepted, отклонено $rejected, удалено $removed"
+[ -n "$verify_guard" ] && say "предохранитель: $verify_guard"
 
 # ── Включаем найденное само: та же публикация, что и у ручного master-list ──
 sync_ok=1
-if [ "$accepted" -gt 0 ]; then
-  say "accepted=$accepted, запускаю sync-career-catalog.sh"
+if [ "$accepted" -gt 0 ] || [ "$removed" -gt 0 ]; then
+  say "accepted=$accepted removed=$removed, запускаю sync-career-catalog.sh"
   if ! bash "$REPO/infra/sync-career-catalog.sh" >>"$LOG" 2>&1; then
     sync_ok=0
     say "sync-career-catalog.sh упал, результат разведки сохранён — смотри лог"
@@ -415,7 +458,10 @@ live_line=$(q -tA -F'|' -c "select count(distinct company), count(*) from jm_ext
   && live_companies=$(printf '%s' "$live_line" | cut -d'|' -f1) \
   && live_vacancies=$(printf '%s' "$live_line" | cut -d'|' -f2) || true
 
-message="targets=$targets ready=$ready closed=$closed accepted=$accepted rejected=$rejected"
+message="targets=$targets ready=$ready closed=$closed accepted=$accepted rejected=$rejected removed=$removed"
+if [ -n "$verify_guard" ]; then
+  message="$message; $verify_guard"
+fi
 if [ "$sync_ok" -ne 1 ]; then
   message="$message; sync-career-catalog.sh упал, результат разведки сохранён"
 fi

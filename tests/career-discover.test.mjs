@@ -646,6 +646,22 @@ test('Server: ddos-guard на обычном ответе 200 не считае�
   assert.equal(reason, '');
 });
 
+test('«я не робот» на длинной обычной странице не считается закрытой', () => {
+  // На длинной карьерной странице такая подпись — это капча в форме отклика,
+  // а не заглушка антибот-защиты: заглушки короткие.
+  const body = 'Вакансии. '.repeat(400) + 'Подтвердите, что вы не робот';
+  assert.ok(body.length > 3000);
+  const reason = blockKind({ status: 200, headers: { server: 'nginx' }, text: body });
+  assert.equal(reason, '');
+});
+
+test('«я не робот» на короткой заглушке распознаётся', () => {
+  const body = 'Подтвердите, что вы не робот';
+  assert.ok(body.length < 3000);
+  const reason = blockKind({ status: 200, headers: {}, text: body });
+  assert.ok(reason, 'заглушка не замечена');
+});
+
 test('короткий путь выигрывает у узкого раздела', () => {
   // У Магнита рядом лежат /moskva/vacancies и /detskii-sanatorii/vacancies.
   // Второй — вакансии одного санатория, то есть кусок вместо каталога.

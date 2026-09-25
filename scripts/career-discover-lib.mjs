@@ -403,7 +403,16 @@ export function skipTargets(targets, skipNames) {
 // Голые «captcha/recaptcha/...» сюда нарочно не входят: это слова из формы
 // отклика на обычных карьерных страницах, а не признак страницы-заглушки.
 // Оставлены только фразы, которые пишут сами заглушки антибот-защиты.
-const CAPTCHA_TEXT = /я не робот|не робот|проверка браузера|checking your browser/i;
+//
+// «Не робот»/«я не робот» — отдельно от «проверка браузера»/«checking your
+// browser»: у заглушек антибота видимого текста мало, а на обычной карьерной
+// странице такая подпись бывает у капчи прямо в форме отклика. Поэтому её
+// считаем признаком заглушки только на коротких страницах (см. NOT_ROBOT_TEXT
+// ниже); «проверка браузера» такой неоднозначности не создаёт — она нужна
+// без ограничения длины.
+const NOT_ROBOT_TEXT = /я не робот|не робот/i;
+const CAPTCHA_TEXT = /проверка браузера|checking your browser/i;
+const SHORT_PAGE_LIMIT = 3000;
 
 export function blockKind({ status, headers, text }) {
   const code = Number(status);
@@ -419,7 +428,9 @@ export function blockKind({ status, headers, text }) {
     if (server.includes('ddos-guard')) return 'DDoS-Guard';
     if (h['cf-mitigated'] ?? h['Cf-Mitigated']) return 'cf-mitigated';
   }
-  if (CAPTCHA_TEXT.test(String(text ?? ''))) return 'captcha';
+  const body = String(text ?? '');
+  if (CAPTCHA_TEXT.test(body)) return 'captcha';
+  if (body.length < SHORT_PAGE_LIMIT && NOT_ROBOT_TEXT.test(body)) return 'captcha';
   return '';
 }
 

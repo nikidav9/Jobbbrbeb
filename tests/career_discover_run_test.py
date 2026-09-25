@@ -52,6 +52,19 @@ check("в discovered.json проставляются company и discovered_at",
 check("перепроверка ведёт счётчик fails и роняет источник после двух подряд провалов",
       "entry['fails'] = 0" in run and "fails = int(prev.get('fails') or 0) + 1" in run
       and "if fails < 2:" in run)
+check("предохранитель от сбоя проверки целиком считает старые записи",
+      "verify_failed = len(old_checked) >= 3 and old_ok == 0" in run)
+check("removed доходит до каталога: читается третьей строкой",
+      "read -r removed" in run and "read -r verify_guard" in run)
+check("removed печатается сервером и виден в say",
+      "print(removed)" in run and 'удалено $removed' in run)
+check("sync-career-catalog.sh запускается и при removed>0",
+      '[ "$accepted" -gt 0 ] || [ "$removed" -gt 0 ]' in run)
+check("removed попадает в статус-файл", "'removed': int(removed)" in run)
+check("устаревший $OUT.partial убирается при пустом частичном результате",
+      'rm -f "$tmp" "$OUT.partial"' in run)
+check("устаревший $OUT.partial убирается после успешного прогона",
+      'rm -f "$OUT.partial"' in run and 'mv -f "$tmp" "$OUT"' in run)
 
 check("при найденных endpoints запускается sync-career-catalog.sh",
       'bash "$REPO/infra/sync-career-catalog.sh"' in run)
@@ -114,14 +127,16 @@ LATER = "2026-10-02T00:00:00Z"
 # Запись, которую в этот прогон вообще не присылали на проверку (не попала ни
 # в candidates, ни в verify_rows), остаётся нетронутой — её просто не трогали.
 existing = [{"company": "Ростелеком", "url": "https://old.example/a", "discovered_at": "2026-01-01T00:00:00Z"}]
-merged = merge_discovered(existing, [], [], NOW)
+merged, guard, removed = merge_discovered(existing, [], [], NOW)
 check("непроверенная запись не тронута", any(e.get("company") == "Ростелеком" and e.get("url") == "https://old.example/a" for e in merged))
+check("без перепроверки предохранитель молчит", guard == "")
+check("без перепроверки removed=0", removed == 0)
 
 # Новая принятая находка добавляется с company/discovered_at/verified_at/fails=0,
 # поля самого endpoint (mode и т.п.) сохраняются.
 candidates_new = [{"company": "МТС", "endpoint": {"url": "https://mts.example/api", "mode": "json"}}]
 verify_new = [{"company": "МТС", "url": "https://mts.example/api", "ok": True}]
-merged_new = merge_discovered([], candidates_new, verify_new, NOW)
+merged_new, _, _ = merge_discovered([], candidates_new, verify_new, NOW)
 mts_rows = [e for e in merged_new if e.get("company") == "МТС"]
 check("новая находка добавлена", len(mts_rows) == 1)
 check("company проставлен", mts_rows and mts_rows[0].get("company") == "МТС")
@@ -133,7 +148,7 @@ check("поля endpoint (mode) не потеряны при слиянии", mt
 # Новая находка, которую career_verify.php отклонил, вообще не добавляется.
 candidates_bad = [{"company": "Плохие", "endpoint": {"url": "https://bad.example/api", "mode": "json"}}]
 verify_bad = [{"company": "Плохие", "url": "https://bad.example/api", "ok": False}]
-merged_bad = merge_discovered([], candidates_bad, verify_bad, NOW)
+merged_bad, _, _ = merge_discovered([], candidates_bad, verify_bad, NOW)
 check("отклонённая новая находка не добавлена", not any(e.get("company") == "Плохие" for e in merged_bad))
 
 # ── Перепроверка уже накопленных записей: счётчик fails ─────────────────────
@@ -142,7 +157,8 @@ def rerun(existing_rows, ok):
     url = existing_rows[0]["url"]
     candidates = [{"company": company, "endpoint": {"url": url}}]
     verify = [{"company": company, "url": url, "ok": ok}]
-    return merge_discovered(existing_rows, candidates, verify, LATER)
+    merged, _, _ = merge_discovered(existing_rows, candidates, verify, LATER)
+    return merged
 
 base = [{"company": "Магнит", "url": "https://magnit.example/api", "mode": "json",
          "discovered_at": "2026-01-01T00:00:00Z", "verified_at": "2026-01-01T00:00:00Z", "fails": 0}]
@@ -160,9 +176,56 @@ check("провал 1 раз: запись осталась", any(e.get("company
 once_row = next(e for e in once_failed if e.get("company") == "Магнит")
 check("провал 1 раз: fails=1", once_row.get("fails") == 1)
 
-# Второй подряд провал — запись удаляется.
-twice_failed = rerun(once_failed, False)
-check("провал 2 раза подряд: запись удалена", not any(e.get("company") == "Магнит" for e in twice_failed))
+# Второй подряд провал — запись удаляется, и это учтено в removed.
+twice_failed_merged, twice_guard, twice_removed = merge_discovered(
+    once_failed,
+    [{"company": "Магнит", "endpoint": {"url": "https://magnit.example/api"}}],
+    [{"company": "Магнит", "url": "https://magnit.example/api", "ok": False}],
+    LATER,
+)
+check("провал 2 раза подряд: запись удалена", not any(e.get("company") == "Магнит" for e in twice_failed_merged))
+check("провал 2 раза подряд: removed=1", twice_removed == 1)
+check("провал 2 раза подряд: предохранитель не сработал (одна запись)", twice_guard == "")
+
+# ── Предохранитель: сбой career_verify.php целиком, а не смерть источников ──
+# Три СТАРЫЕ записи, все три ok=false: это не «все три источника сдохли
+# разом», а похоже на сбой самой проверки (например, у php-контейнера
+# пропала сеть). fails не должны расти, записи должны остаться как были.
+guard_existing = [
+    {"company": "А", "url": "https://a.example/api", "fails": 0},
+    {"company": "Б", "url": "https://b.example/api", "fails": 1},
+    {"company": "В", "url": "https://v.example/api", "fails": 0},
+]
+guard_candidates = [{"company": e["company"], "endpoint": {"url": e["url"]}} for e in guard_existing]
+guard_verify_all_fail = [{"company": e["company"], "url": e["url"], "ok": False} for e in guard_existing]
+guard_merged, guard_msg, guard_removed = merge_discovered(
+    guard_existing, guard_candidates, guard_verify_all_fail, LATER
+)
+check("предохранитель: ни одна запись не удалена", len(guard_merged) == len(guard_existing))
+check("предохранитель: fails не выросли",
+      all(next(e for e in guard_merged if e["company"] == g["company"]).get("fails") == g["fails"]
+          for g in guard_existing))
+check("предохранитель: флаг сбоя поднят", bool(guard_msg))
+check("предохранитель: текст про 0 из N ok", guard_msg == "перепроверка не засчитана: 0 из 3 ok")
+check("предохранитель: removed=0", guard_removed == 0)
+
+# Контрольный случай: три старые записи, одна ok, две нет — предохранитель НЕ
+# срабатывает (проверка явно работает, раз хоть один источник прошёл), у двух
+# fails растёт как обычно.
+guard_verify_one_ok = [
+    {"company": "А", "url": "https://a.example/api", "ok": True},
+    {"company": "Б", "url": "https://b.example/api", "ok": False},
+    {"company": "В", "url": "https://v.example/api", "ok": False},
+]
+mixed_merged, mixed_msg, mixed_removed = merge_discovered(
+    guard_existing, guard_candidates, guard_verify_one_ok, LATER
+)
+check("предохранитель не срабатывает при частичном успехе", mixed_msg == "")
+mixed_v = next(e for e in mixed_merged if e["company"] == "В")
+check("частичный успех: у Б fails+1 (было 1 → 2, удалена)",
+      not any(e["company"] == "Б" for e in mixed_merged))
+check("частичный успех: у В fails+1 (было 0 → 1, осталась)", mixed_v.get("fails") == 1)
+check("частичный успех: removed=1 (Б удалена)", mixed_removed == 1)
 
 if failures:
     print("career discover run: ПРОВАЛЫ")
