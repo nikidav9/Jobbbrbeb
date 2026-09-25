@@ -104,4 +104,12 @@ assert 'JUPITER_SESSION_SECRET' in bootstrap
 assert 'career-test' in server and 'career-script' in server and 'career-network' in server and 'career-modern' in server and 'career-unknown' in server
 assert 'action="/career-submit"' in server
 
+# Ежедневная разведка анкет с московского адреса: только чтение, честная
+# подпись (с боевого адреса браузером не притворяемся), итог — открытым файлом.
+recon_run = (ROOT / "infra" / "recon-run.sh").read_text(encoding="utf-8")
+assert "jt-recon.timer" in bootstrap and "/usr/local/bin/jt-recon" in bootstrap
+assert "recon.py" in recon_run and "--ua-retry" not in recon_run.replace("(--ua-retry)", "")
+assert "--via-proxy" not in recon_run
+assert "location = /jupiter-recon.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+
 print("jupiter native engine infra: ok")

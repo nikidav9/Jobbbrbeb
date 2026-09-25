@@ -954,5 +954,41 @@
       "limit_param": "take"
     },
     "company_hint": "Сбер"
+  },
+  {
+    "map": {
+      "link_path": "/about/vacancies/",
+      "min_title": 8,
+      "company_const": "Авиасейлс"
+    },
+    "url": "https://www.aviasales.ru/about/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "КРОК"
+    },
+    "url": "https://careers.croc.ru/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/ru-ru/company/vacancies/",
+      "min_title": 8,
+      "company_const": "ITG"
+    },
+    "url": "https://itglobal.com/ru-ru/company/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Centicore Group"
+    },
+    "url": "https://centicore.ru/vacancies",
+    "mode": "html_links"
   }
 ]

@@ -209,6 +209,39 @@ EOF
   systemctl enable --now jt-health-sample.timer >/dev/null 2>&1 || true
 fi
 
+# Разведка анкет отклика с московского адреса, раз в сутки. Только чтение:
+# Jupiter в dry-run, синтетический кандидат, заявки не уходят. Итог —
+# /jupiter-recon.json (адреса работодателей и устройство анкет, без людей).
+# Первый прогон — через 10 минут после установки таймера, дальше в 04:40.
+if [ -f "$REPO/infra/recon-run.sh" ]; then
+  install -m 755 "$REPO/infra/recon-run.sh" /usr/local/bin/jt-recon
+  cat > /etc/systemd/system/jt-recon.service <<'EOF'
+[Unit]
+Description=JobToo Jupiter read-only recon of employer career sites
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jt-recon
+TimeoutStartSec=4h
+Nice=10
+EOF
+  cat > /etc/systemd/system/jt-recon.timer <<'EOF'
+[Unit]
+Description=Daily read-only recon of employer career sites
+
+[Timer]
+OnActiveSec=10min
+OnCalendar=*-*-* 04:40
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now jt-recon.timer >/dev/null 2>&1 || true
+fi
+
 # Разовый опыт: дозванивается ли Телеграм до этой машины напрямую.
 # Подробности и сетка безопасности — в самом скрипте. Отметкой, а не
 # каждую минуту: переключать вебхук по кругу нельзя.
