@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
 import type { JupiterEvent } from '@/services/jupiterTimeline';
 import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
+import type { JobSection } from '@/constants/jobSections';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 
@@ -1780,8 +1781,8 @@ function toExtVacancy(row: any): ExtVacancy {
  * чередованием компаний и учётом вкуса (php-proxy/ext_feed.php). Вместо
  * всего каталога — ~60 карточек за раз.
  */
-export async function dbGetExtFeed(limit = 60): Promise<ExtVacancy[]> {
-  const rows = (await proxy('dbGetExtFeed', [limit])) as any[];
+export async function dbGetExtFeed(limit = 60, sections: JobSection[] = []): Promise<ExtVacancy[]> {
+  const rows = (await proxy('dbGetExtFeed', [limit, sections])) as any[];
   return (Array.isArray(rows) ? rows : []).map(toExtVacancy);
 }
 
@@ -1792,6 +1793,23 @@ export async function dbExtSwipe(userId: string, vacancyId: string, dir: 1 | -1)
 
 export async function dbExtUnswipe(userId: string, vacancyId: string): Promise<void> {
   await proxy('dbExtUnswipe', [userId, vacancyId]);
+}
+
+/** Свайп по своей вакансии JobToo: близнец dbExtSwipe для jm_perm_vacancies. */
+export async function dbPermSwipe(userId: string, vacancyId: string, dir: 1 | -1): Promise<void> {
+  await proxy('dbPermSwipe', [userId, vacancyId, dir]);
+}
+
+export async function dbPermUnswipe(userId: string, vacancyId: string): Promise<void> {
+  await proxy('dbPermUnswipe', [userId, vacancyId]);
+}
+
+export async function dbGetPermSwipes(userId: string): Promise<{ vacancyId: string; dir: 1 | -1 }[]> {
+  const rows = (await proxy('dbGetPermSwipes', [userId])) as any[];
+  return (Array.isArray(rows) ? rows : []).map((r) => ({
+    vacancyId: String(r.vacancy_id),
+    dir: (Number(r.dir) > 0 ? 1 : -1) as 1 | -1,
+  }));
 }
 
 export async function dbGetExtVacancies(company?: string): Promise<ExtVacancy[]> {
