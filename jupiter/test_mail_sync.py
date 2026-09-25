@@ -1,7 +1,7 @@
 """Incoming mail routing must use Timeweb's trusted envelope recipient."""
 import unittest
 
-from mail_sync import parse_message
+from mail_sync import check_ingest_response, parse_message
 
 
 class MailRoutingTests(unittest.TestCase):
@@ -42,6 +42,18 @@ class MailRoutingTests(unittest.TestCase):
                b"\tfor <u-victim@jobtoo.ru>; Thu, 24 Sep 2026 13:40:00 +0300\r\n"
                b"To: u-victim@jobtoo.ru\r\n\r\nHello")
         self.assertIsNone(parse_message(raw, "8", "2"))
+
+
+class IngestResponseTests(unittest.TestCase):
+    def test_db_php_envelope_is_accepted(self):
+        # Ровно так отвечает php-proxy/db.php: jt_respond(['data' => $data]).
+        self.assertTrue(check_ingest_response({"data": {"stored": True}}))
+        self.assertFalse(check_ingest_response({"data": {"stored": False}}))
+
+    def test_error_or_bare_answer_is_rejected(self):
+        for bad in ({"error": "boom"}, {"stored": True}, {"data": {}}, [], None):
+            with self.assertRaises(RuntimeError):
+                check_ingest_response(bad)
 
 
 if __name__ == "__main__":
