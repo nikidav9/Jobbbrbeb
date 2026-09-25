@@ -155,18 +155,20 @@ ALLOWED_MODES = ('json', 'html_links', 'embedded')
 FIELDS = ('url', 'mode', 'map', 'paging', 'method', 'body')
 
 def load_discovered(path):
+    # Файл пишет автомат, не человек: любая порча (пустой диск, обрыв записи,
+    # чужие права, битые байты) не должна останавливать выкладку — это не
+    # источник истины, а необязательная надстройка над репозиторием.
     try:
         with open(path, encoding='utf-8') as fh:
             raw = fh.read()
+        rows = json.loads(raw) if raw.strip() else []
     except FileNotFoundError:
-        return []
-    if not raw.strip():
-        return []
-    try:
-        rows = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        print(f'{path}: битый JSON, считаю пустым ({exc})', file=sys.stderr)
-        return []
+        rows = []
+    except (OSError, ValueError) as exc:
+        # ValueError покрывает и json.JSONDecodeError, и UnicodeDecodeError;
+        # OSError — IsADirectoryError, PermissionError и подобные.
+        print(f'{path}: не удалось прочитать, считаю пустым ({exc})', file=sys.stderr)
+        rows = []
     if not isinstance(rows, list):
         print(f'{path}: ожидается JSON-массив, считаю пустым', file=sys.stderr)
         return []

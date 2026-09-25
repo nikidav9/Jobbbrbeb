@@ -605,7 +605,7 @@ test('пустой список пропуска ничего не меняет'
  * обойти — только честно записать «закрыт» и причину.
  */
 test('HTTP 401 от Qrator распознаётся как закрытый сайт', () => {
-  const reason = blockKind({ status: 401, headers: { server: 'nginx/qrator' }, html: '<html></html>' });
+  const reason = blockKind({ status: 401, headers: { server: 'nginx/qrator' }, text: '' });
   assert.ok(reason, 'причина не найдена');
   assert.match(reason, /401/);
 });
@@ -614,13 +614,36 @@ test('капча на обычной странице 200 распознаётс
   const reason = blockKind({
     status: 200,
     headers: {},
-    html: '<div class="smartcaptcha-container">Подтвердите, что вы не робот</div>',
+    text: 'Подтвердите, что вы не робот',
   });
   assert.ok(reason, 'капча не замечена');
 });
 
 test('обычная страница 200 не считается закрытой', () => {
-  assert.equal(blockKind({ status: 200, headers: { server: 'nginx' }, html: '<html><body>Вакансии</body></html>' }), '');
+  assert.equal(blockKind({ status: 200, headers: { server: 'nginx' }, text: 'Вакансии' }), '');
+});
+
+test('форма отклика со словом recaptcha на обычной странице не считается закрытой', () => {
+  // Форма отклика на карьерных страницах сплошь и рядом содержит виджет
+  // recaptcha — это не заглушка антибот-защиты, страницу открывать можно.
+  const reason = blockKind({
+    status: 200,
+    headers: { server: 'nginx' },
+    text: 'Вакансии. Откликнуться. <script src="https://www.google.com/recaptcha/api.js"></script>',
+  });
+  assert.equal(reason, '');
+});
+
+test('Server: QRATOR на обычном ответе 200 не считается закрытой', () => {
+  // Qrator и DDoS-Guard ставят свой Server-заголовок на все ответы сайтов,
+  // которые они просто защищают от DDoS, — не только на страницы-заглушки.
+  const reason = blockKind({ status: 200, headers: { server: 'nginx/qrator' }, text: 'Вакансии' });
+  assert.equal(reason, '');
+});
+
+test('Server: ddos-guard на обычном ответе 200 не считается закрытой', () => {
+  const reason = blockKind({ status: 200, headers: { server: 'ddos-guard' }, text: 'Вакансии' });
+  assert.equal(reason, '');
 });
 
 test('короткий путь выигрывает у узкого раздела', () => {

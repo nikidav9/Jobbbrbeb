@@ -400,18 +400,26 @@ export function skipTargets(targets, skipNames) {
  * и выглядело бы как обход защиты, если бы что-то из этого случайно сработало.
  * Возвращает причину строкой или '' — сайт открылся как обычно.
  */
-const CAPTCHA_TEXT = /captcha|recaptcha|hcaptcha|smartcaptcha|smart-captcha|я не робот|проверка браузера|checking your browser/i;
+// Голые «captcha/recaptcha/...» сюда нарочно не входят: это слова из формы
+// отклика на обычных карьерных страницах, а не признак страницы-заглушки.
+// Оставлены только фразы, которые пишут сами заглушки антибот-защиты.
+const CAPTCHA_TEXT = /я не робот|не робот|проверка браузера|checking your browser/i;
 
-export function blockKind({ status, headers, html }) {
+export function blockKind({ status, headers, text }) {
   const code = Number(status);
   if ([401, 403, 429, 450, 451].includes(code)) return `HTTP ${code}`;
   const h = headers || {};
-  // Playwright отдаёт заголовки уже строчными именами, но перестрахуемся.
-  const server = String(h.server ?? h.Server ?? '').toLowerCase();
-  if (server.includes('qrator')) return 'Qrator';
-  if (server.includes('ddos-guard')) return 'DDoS-Guard';
-  if (h['cf-mitigated'] ?? h['Cf-Mitigated']) return 'cf-mitigated';
-  if (CAPTCHA_TEXT.test(String(html ?? ''))) return 'captcha';
+  // Server: QRATOR / ddos-guard и cf-mitigated значат «закрыт» только вместе
+  // с не-2xx статусом: Qrator и DDoS-Guard ставят свой Server на все ответы,
+  // включая обычные 200 у сайтов, которые ими просто защищены от DDoS.
+  if (code < 200 || code >= 300) {
+    // Playwright отдаёт заголовки уже строчными именами, но перестрахуемся.
+    const server = String(h.server ?? h.Server ?? '').toLowerCase();
+    if (server.includes('qrator')) return 'Qrator';
+    if (server.includes('ddos-guard')) return 'DDoS-Guard';
+    if (h['cf-mitigated'] ?? h['Cf-Mitigated']) return 'cf-mitigated';
+  }
+  if (CAPTCHA_TEXT.test(String(text ?? ''))) return 'captcha';
   return '';
 }
 

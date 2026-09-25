@@ -165,5 +165,23 @@ test('DISCOVERED: файл, который не парсится как JSON-м�
   const { endpoints: merged, discoveredCount, stderr } = runMerge(repo, '{not json');
   assert.deepEqual(merged, repo);
   assert.equal(discoveredCount, 0);
-  assert.match(stderr, /битый JSON/);
+  assert.match(stderr, /не удалось прочитать/);
+});
+
+test('DISCOVERED: файл с невалидными UTF-8 байтами не валит синк', () => {
+  // UnicodeDecodeError — подкласс ValueError, ловится тем же except, что и
+  // битый JSON: запись пропускается, результат как без файла вовсе.
+  const repo = [{ url: 'https://a.example.com/api', mode: 'json' }];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'career-discovered-'));
+  const discoveredPath = path.join(dir, 'discovered.json');
+  fs.writeFileSync(discoveredPath, Buffer.from([0xff, 0xfe, 0x5b]));
+  const script = extractMergePython();
+  const result = spawnSync('python3', ['-c', script, JSON.stringify(repo), discoveredPath], {
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const lines = result.stdout.split('\n');
+  assert.deepEqual(JSON.parse(lines[0]), repo);
+  assert.equal(Number(lines[1]), 0);
+  assert.match(result.stderr, /не удалось прочитать/);
 });

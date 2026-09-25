@@ -18,17 +18,22 @@
 # Chromium прямо на сервер не хочется — тянет пол-иксов; берём официальный
 # образ Playwright и запускаем разово, как импорт SuperJob.
 #
-# Недельный прогон (infra/bootstrap.sh, jt-career-discover) делает три вещи
+# Недельный прогон (infra/bootstrap.sh, jt-career-discover) делает четыре вещи
 # сверх самого обхода — раньше их не было, и разведка заново лезла к уже
 # подключённым компаниям и находила «источники», которые сама же не проверяла:
 #
 #   1. Компании с уже активными вакансиями узнаём из базы и передаём разведке
 #      как DISCOVER_SKIP_FILE — повторно их не трогаем.
 #   2. Найденное с status=='готов' проверяем тем же кодом, что потом собирает
-#      вакансии, — php-proxy/career_verify.php внутри контейнера php.
+#      вакансии, — php-proxy/career_verify.php внутри контейнера php. Заодно
+#      той же проверкой прогоняем все уже накопленные записи
+#      discovered.json: источник, переставший отдавать вакансии, не должен
+#      молча жить в каталоге годами.
 #   3. Принятое (ok==true) сливаем в /opt/jobtoo-state/career-endpoints.discovered.json
 #      и запускаем sync-career-catalog.sh, чтобы новые источники включились
 #      сами, без ручного шага.
+#   4. У каждой записи считаем fails — подряд идущие провалы перепроверки;
+#      два подряд убирают запись из discovered.json, один — просто отметка.
 set -Eeuo pipefail
 
 REPO=${REPO:-/opt/jobtoo}
@@ -36,6 +41,12 @@ OUT=${OUT:-/var/www/html/career-discovery.json}
 LOG=${LOG:-/var/log/jt-career-discover.log}
 STATUS=${STATUS:-/var/www/html/career-discovery-status.json}
 LOCK=/run/jt-career-discover.lock
+# Кандидаты и ответ career_verify.php могут разрастись за 128 КБ — предел
+# ядра на один аргумент командной строки (ARG_MAX). Поэтому между шагами их
+# гоняем файлами, а не через переменные окружения командной строки.
+candidates_file=$(mktemp)
+verify_file=$(mktemp)
+trap 'rm -f "$candidates_file" "$verify_file"' EXIT
 SECRETS=${SECRETS:-/opt/jobtoo-secrets/env}
 STATE_DIR=${STATE_DIR:-/opt/jobtoo-state}
 DISCOVERED=${DISCOVERED:-$STATE_DIR/career-endpoints.discovered.json}
@@ -64,6 +75,20 @@ state() {
     chmod 0644 "$STATUS" 2>/dev/null || true
 }
 fail() { say "$1"; state error "$1"; exit 1; }
+
+# Контейнер может упасть уже дописав часть результата (например память
+# кончилась на середине обхода). Раньше такой кусок просто удалялся вместе с
+# ошибкой — тихо, без следа. Сохраняем его рядом как $OUT.partial: не
+# перезаписываем прошлый годный $OUT, но и не теряем то, что успели обойти.
+save_partial() {
+    if [ -s "$tmp" ]; then
+        mv -f "$tmp" "$OUT.partial"
+        chmod 0644 "$OUT.partial"
+        say "частичный результат сохранён: $OUT.partial"
+    else
+        rm -f "$tmp"
+    fi
+}
 
 # Итоговый статус, богаче промежуточных «state»: числа нужны, чтобы судить о
 # прогоне не заглядывая в лог. Персональных данных тут нет — только адреса
@@ -142,7 +167,6 @@ rm -f "$tmp"
 # остальными службами, свалить их себе не должен.
 state running "обход сайтов"
 docker run --rm \
-  --network host \
   --memory 1g --cpus 1 \
   -v "$REPO:/repo:ro" \
   -v "$(dirname "$MODULES"):/deps" \
@@ -169,7 +193,12 @@ docker run --rm \
     cp /repo/scripts/career-discover.mjs /repo/scripts/career-discover-lib.mjs \
        /repo/scripts/career-sites.tsv /deps/run/
     cd /deps/run && node career-discover.mjs
-  " >>"$LOG" 2>&1 || { rm -f "$tmp"; fail "разведка упала, подробности в $LOG"; }
+  " >>"$LOG" 2>&1 || {
+    save_partial
+    msg="разведка упала, подробности в $LOG"
+    [ -s "$OUT.partial" ] && msg="$msg; частичный результат сохранён в $OUT.partial"
+    fail "$msg"
+  }
 
 [ -s "$tmp" ] || { rm -f "$tmp"; fail "пустой результат"; }
 # Готовый файл появляется одним движением: недочитанный JSON хуже старого.
@@ -178,13 +207,21 @@ chmod 0644 "$OUT"
 say "готово: $(wc -c <"$OUT") байт → $OUT"
 
 # ── Разбор результата: сколько целей, сколько готово, сколько закрыто ──────
+# Кандидатов пишем сразу в $candidates_file, а не в переменную: их может
+# набраться больше 128 КБ (ARG_MAX), а дальше файл идёт аргументом, не текстом.
+#
+# В candidates идут не только новые находки этого обхода, но и все уже
+# накопленные записи discovered.json — раз в неделю career_verify.php
+# перепроверяет их заново тем же кодом, что и сбор: источник, переставший
+# отдавать вакансии, не должен молча жить в каталоге годами.
 {
   read -r targets
   read -r ready
   read -r closed
-  read -r candidates
-} < <(python3 - "$OUT" <<'PY'
+} < <(python3 - "$OUT" "$candidates_file" "$DISCOVERED" <<'PY'
 import json, sys
+
+ENDPOINT_FIELDS = ('url', 'mode', 'map', 'paging', 'method', 'body')
 
 with open(sys.argv[1], encoding='utf-8') as fh:
     results = json.load(fh)
@@ -194,30 +231,58 @@ ready = sum(1 for r in results if isinstance(r, dict) and r.get('status') == 'г
 closed = sum(1 for r in results if isinstance(r, dict) and r.get('status') == 'закрыт')
 
 candidates = []
+seen_keys = set()
 for r in results:
     if not isinstance(r, dict) or r.get('status') != 'готов':
         continue
     cfg = r.get('connector_config') or {}
     for ep in (cfg.get('endpoints') or []):
-        candidates.append({'company': str(r.get('name', '')).split(' · ', 1)[0].strip(), 'endpoint': ep})
+        company = str(r.get('name', '')).split(' · ', 1)[0].strip()
+        candidates.append({'company': company, 'endpoint': ep})
+        seen_keys.add((company, ep.get('url')))
+
+# Плюс все уже накопленные записи — перепроверяем их тем же заходом.
+try:
+    with open(sys.argv[3], encoding='utf-8') as fh:
+        existing = json.load(fh)
+    if not isinstance(existing, list):
+        existing = []
+except FileNotFoundError:
+    existing = []
+except (OSError, ValueError) as exc:
+    print(f'{sys.argv[3]}: не удалось прочитать, считаю пустым ({exc})', file=sys.stderr)
+    existing = []
+
+for e in existing:
+    if not isinstance(e, dict):
+        continue
+    key = (e.get('company'), e.get('url'))
+    if key in seen_keys:
+        continue
+    seen_keys.add(key)
+    endpoint = {k: e[k] for k in ENDPOINT_FIELDS if k in e}
+    candidates.append({'company': e.get('company'), 'endpoint': endpoint})
+
+with open(sys.argv[2], 'w', encoding='utf-8') as fh:
+    json.dump(candidates, fh, ensure_ascii=False)
 
 print(targets)
 print(ready)
 print(closed)
-print(json.dumps(candidates, ensure_ascii=False))
 PY
 ) || fail "не разобрал результат разведки"
 
 # ── Проверка найденного тем же кодом, что потом собирает вакансии ──────────
 accepted=0
 rejected=0
-verify_out='[]'
-if [ "$candidates" != "[]" ]; then
+printf '[]' >"$verify_file"
+if [ "$(cat "$candidates_file")" != "[]" ]; then
   (cd "$REPO/infra" && docker compose exec -T php test -f /var/www/api/career_verify.php) \
     || fail "career_verify.php не развёрнут в контейнере php"
-  say "проверяю найденные endpoints: кандидатов $(printf '%s' "$candidates" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  verify_out=$(cd "$REPO/infra" && printf '%s' "$candidates" | docker compose exec -T php php /var/www/api/career_verify.php) \
+  say "проверяю найденные endpoints: кандидатов $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))))' "$candidates_file")"
+  (cd "$REPO/infra" && docker compose exec -T php php /var/www/api/career_verify.php <"$candidates_file" >"$verify_file") \
     || fail "career_verify.php упал"
+  say "ответ career_verify.php: $(cat "$verify_file")"
 fi
 
 # ── Слияние принятого в discovered.json ─────────────────────────────────────
@@ -227,48 +292,87 @@ chmod 700 "$STATE_DIR" 2>/dev/null || true
 {
   read -r accepted
   read -r rejected
-} < <(python3 - "$DISCOVERED" "$candidates" "$verify_out" <<'PY'
+} < <(python3 - "$DISCOVERED" "$candidates_file" "$verify_file" <<'PY'
 import json, os, shutil, sys
 from datetime import datetime, timezone
 
-discovered_path, candidates_raw, verify_raw = sys.argv[1], sys.argv[2], sys.argv[3]
-candidates = json.loads(candidates_raw)
-verify_rows = json.loads(verify_raw)
+discovered_path, candidates_path, verify_path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(candidates_path, encoding='utf-8') as fh:
+    candidates = json.load(fh)
+with open(verify_path, encoding='utf-8') as fh:
+    verify_rows = json.load(fh)
 
 # ── career-discover-merge:begin ─────────────────────────────────────────────
-def merge_discovered(existing, accepted_rows, now_iso):
-    """Слить принятые endpoints в discovered.json.
+def merge_discovered(existing, candidates, verify_rows, now_iso):
+    """Слить результат проверки в discovered.json.
 
-    accepted_rows — [{'company': str, 'endpoint': {...}}], уже отфильтрованные
-    проверкой career_verify.php (ok==true). Компания, у которой в этом прогоне
-    появился принятый endpoint, целиком заменяет свои прежние записи; записи
-    остальных компаний остаются как были.
+    candidates — [{'company': str, 'endpoint': {...}}], всё, что ушло на
+    проверку career_verify.php за этот прогон: и новые находки разведки, и уже
+    накопленные записи discovered.json (перепроверяем их заново каждую неделю,
+    источник может перестать отдавать вакансии молча). verify_rows — ответ
+    career_verify.php, по одной строке {'company','url','ok',...} на каждый
+    candidates-элемент, сматченный по паре (company, url).
+
+    ok==true — запись остаётся (или добавляется, если новая) с fails=0 и
+    свежим verified_at. ok==false у уже известной записи — fails+1, а запись
+    с fails>=2 подряд удаляется (гнилой источник не должен жить в каталоге
+    годами); ok==false у новой находки — она просто не добавляется, как и
+    раньше.
     """
-    accepted_companies = {row['company'] for row in accepted_rows}
-    kept = [e for e in existing
-            if isinstance(e, dict) and e.get('company') not in accepted_companies]
-    fresh = []
-    for row in accepted_rows:
-        entry = dict(row['endpoint'])
-        entry['company'] = row['company']
-        entry['discovered_at'] = now_iso
-        fresh.append(entry)
-    return kept + fresh
-# ── career-discover-merge:end ───────────────────────────────────────────────
+    existing_by_key = {(e.get('company'), e.get('url')): e
+                        for e in existing if isinstance(e, dict)}
+    candidate_endpoint_by_key = {(c['company'], c['endpoint'].get('url')): c['endpoint']
+                                  for c in candidates}
 
-accepted_urls = {(r.get('company'), r.get('url')) for r in verify_rows if r.get('ok')}
-accepted_rows = [c for c in candidates if (c['company'], c['endpoint'].get('url')) in accepted_urls]
+    merged = []
+    seen_keys = set()
+    for row in verify_rows:
+        key = (row.get('company'), row.get('url'))
+        seen_keys.add(key)
+        prev = existing_by_key.get(key)
+        if row.get('ok'):
+            if prev is not None:
+                entry = dict(prev)
+            else:
+                entry = dict(candidate_endpoint_by_key.get(key) or {})
+                entry['company'] = key[0]
+                entry['discovered_at'] = now_iso
+            entry['fails'] = 0
+            entry['verified_at'] = now_iso
+            merged.append(entry)
+        elif prev is not None:
+            fails = int(prev.get('fails') or 0) + 1
+            if fails < 2:
+                entry = dict(prev)
+                entry['fails'] = fails
+                merged.append(entry)
+            # fails >= 2: запись гнилая, удаляется
+        # иначе — отклонённая новая находка, добавлять нечего
+
+    # Записи, которых почему-то не было среди verify_rows (например, разведка
+    # прервалась до отправки на проверку), оставляем как были — их не трогали.
+    for key, e in existing_by_key.items():
+        if key not in seen_keys:
+            merged.append(e)
+    return merged
+# ── career-discover-merge:end ───────────────────────────────────────────────
 
 try:
     with open(discovered_path, encoding='utf-8') as fh:
         existing = json.load(fh)
     if not isinstance(existing, list):
         existing = []
-except (FileNotFoundError, json.JSONDecodeError):
+except FileNotFoundError:
+    existing = []
+except (OSError, ValueError) as exc:
+    # ValueError покрывает json.JSONDecodeError и UnicodeDecodeError, OSError —
+    # IsADirectoryError/PermissionError. Файл пишет автомат, порча не должна
+    # ронять недельный прогон.
+    print(f'{discovered_path}: не удалось прочитать, считаю пустым ({exc})', file=sys.stderr)
     existing = []
 
 now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-merged = merge_discovered(existing, accepted_rows, now)
+merged = merge_discovered(existing, candidates, verify_rows, now)
 
 os.makedirs(os.path.dirname(discovered_path), exist_ok=True)
 if os.path.exists(discovered_path):
@@ -278,8 +382,15 @@ with open(tmp, 'w', encoding='utf-8') as fh:
     json.dump(merged, fh, ensure_ascii=False, separators=(',', ':'))
 os.replace(tmp, discovered_path)
 
-print(len(accepted_rows))
-print(len(candidates) - len(accepted_rows))
+# accepted/rejected считают только НОВЫЕ находки этого обхода — записи,
+# перепроверенные повторно (уже были в discovered.json), в этот счёт не
+# идут: их судьба видна по числу записей до/после слияния.
+existing_keys = {(e.get('company'), e.get('url')) for e in existing if isinstance(e, dict)}
+new_rows = [r for r in verify_rows if (r.get('company'), r.get('url')) not in existing_keys]
+print(sum(1 for r in new_rows if r.get('ok')))
+print(sum(1 for r in new_rows if not r.get('ok')))
+print(f'career discovered: было {len(existing)} записей, стало {len(merged)} '
+      f'(перепроверено {len(verify_rows) - len(new_rows)})', file=sys.stderr)
 PY
 ) || fail "не смог слить найденные endpoints"
 

@@ -292,7 +292,7 @@ async function inspect(target, i) {
     const block = blockKind({
       status: response?.status(),
       headers: response?.headers() || {},
-      html: await page.content().catch(() => ''),
+      text: await page.evaluate(() => document.body?.innerText || '').catch(() => ''),
     });
     if (block) {
       entry = { name: target.name, url: target.url, status: 'закрыт', block };

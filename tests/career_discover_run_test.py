@@ -48,7 +48,10 @@ check("discovered.json пишется атомарно (tmp + переимено
 check("перед перезаписью снимается резервная копия",
       "shutil.copy2(discovered_path, discovered_path + '.bak')" in run)
 check("в discovered.json проставляются company и discovered_at",
-      "entry['company'] = row['company']" in run and "entry['discovered_at'] = now_iso" in run)
+      "entry['company'] = key[0]" in run and "entry['discovered_at'] = now_iso" in run)
+check("перепроверка ведёт счётчик fails и роняет источник после двух подряд провалов",
+      "entry['fails'] = 0" in run and "fails = int(prev.get('fails') or 0) + 1" in run
+      and "if fails < 2:" in run)
 
 check("при найденных endpoints запускается sync-career-catalog.sh",
       'bash "$REPO/infra/sync-career-catalog.sh"' in run)
@@ -106,27 +109,60 @@ exec(merge_src, namespace)  # noqa: S102 — доверенный код из с
 merge_discovered = namespace["merge_discovered"]
 
 NOW = "2026-09-25T00:00:00Z"
+LATER = "2026-10-02T00:00:00Z"
 
-# Старая запись другой компании сохраняется нетронутой.
+# Запись, которую в этот прогон вообще не присылали на проверку (не попала ни
+# в candidates, ни в verify_rows), остаётся нетронутой — её просто не трогали.
 existing = [{"company": "Ростелеком", "url": "https://old.example/a", "discovered_at": "2026-01-01T00:00:00Z"}]
-accepted_rows = [{"company": "МТС", "endpoint": {"url": "https://mts.example/api", "mode": "json"}}]
-merged = merge_discovered(existing, accepted_rows, NOW)
-check("запись другой компании не тронута", any(e.get("company") == "Ростелеком" and e.get("url") == "https://old.example/a" for e in merged))
-check("новая компания добавлена", any(e.get("company") == "МТС" and e.get("url") == "https://mts.example/api" for e in merged))
+merged = merge_discovered(existing, [], [], NOW)
+check("непроверенная запись не тронута", any(e.get("company") == "Ростелеком" and e.get("url") == "https://old.example/a" for e in merged))
 
-# Запись той же компании заменяется, а не копится рядом со старой.
-existing2 = [{"company": "МТС", "url": "https://mts.example/old", "discovered_at": "2025-01-01T00:00:00Z"}]
-accepted_rows2 = [{"company": "МТС", "endpoint": {"url": "https://mts.example/new", "mode": "json"}}]
-merged2 = merge_discovered(existing2, accepted_rows2, NOW)
-mts_rows = [e for e in merged2 if e.get("company") == "МТС"]
-check("старый endpoint той же компании не остаётся рядом с новым", len(mts_rows) == 1)
-check("заменённая запись — это новый endpoint", mts_rows and mts_rows[0].get("url") == "https://mts.example/new")
-
-# company и discovered_at проставлены в каждой новой записи.
+# Новая принятая находка добавляется с company/discovered_at/verified_at/fails=0,
+# поля самого endpoint (mode и т.п.) сохраняются.
+candidates_new = [{"company": "МТС", "endpoint": {"url": "https://mts.example/api", "mode": "json"}}]
+verify_new = [{"company": "МТС", "url": "https://mts.example/api", "ok": True}]
+merged_new = merge_discovered([], candidates_new, verify_new, NOW)
+mts_rows = [e for e in merged_new if e.get("company") == "МТС"]
+check("новая находка добавлена", len(mts_rows) == 1)
 check("company проставлен", mts_rows and mts_rows[0].get("company") == "МТС")
 check("discovered_at проставлен", mts_rows and mts_rows[0].get("discovered_at") == NOW)
-# Поля самого endpoint (mode и т.п.) должны сохраниться внутри записи.
+check("verified_at проставлен", mts_rows and mts_rows[0].get("verified_at") == NOW)
+check("fails=0 у новой записи", mts_rows and mts_rows[0].get("fails") == 0)
 check("поля endpoint (mode) не потеряны при слиянии", mts_rows and mts_rows[0].get("mode") == "json")
+
+# Новая находка, которую career_verify.php отклонил, вообще не добавляется.
+candidates_bad = [{"company": "Плохие", "endpoint": {"url": "https://bad.example/api", "mode": "json"}}]
+verify_bad = [{"company": "Плохие", "url": "https://bad.example/api", "ok": False}]
+merged_bad = merge_discovered([], candidates_bad, verify_bad, NOW)
+check("отклонённая новая находка не добавлена", not any(e.get("company") == "Плохие" for e in merged_bad))
+
+# ── Перепроверка уже накопленных записей: счётчик fails ─────────────────────
+def rerun(existing_rows, ok):
+    company = existing_rows[0]["company"]
+    url = existing_rows[0]["url"]
+    candidates = [{"company": company, "endpoint": {"url": url}}]
+    verify = [{"company": company, "url": url, "ok": ok}]
+    return merge_discovered(existing_rows, candidates, verify, LATER)
+
+base = [{"company": "Магнит", "url": "https://magnit.example/api", "mode": "json",
+         "discovered_at": "2026-01-01T00:00:00Z", "verified_at": "2026-01-01T00:00:00Z", "fails": 0}]
+
+# Успех сбрасывает fails и обновляет verified_at, discovered_at не трогает.
+ok_merged = rerun(base, True)
+ok_row = next(e for e in ok_merged if e.get("company") == "Магнит")
+check("успех: fails сброшен", ok_row.get("fails") == 0)
+check("успех: verified_at обновлён", ok_row.get("verified_at") == LATER)
+check("успех: discovered_at не тронут", ok_row.get("discovered_at") == "2026-01-01T00:00:00Z")
+
+# Один провал — запись остаётся, fails=1.
+once_failed = rerun(base, False)
+check("провал 1 раз: запись осталась", any(e.get("company") == "Магнит" for e in once_failed))
+once_row = next(e for e in once_failed if e.get("company") == "Магнит")
+check("провал 1 раз: fails=1", once_row.get("fails") == 1)
+
+# Второй подряд провал — запись удаляется.
+twice_failed = rerun(once_failed, False)
+check("провал 2 раза подряд: запись удалена", not any(e.get("company") == "Магнит" for e in twice_failed))
 
 if failures:
     print("career discover run: ПРОВАЛЫ")
