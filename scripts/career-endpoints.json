@@ -923,7 +923,14 @@
       "schedule": "schedule_title",
       "description": "responsibilities",
       "url_template": "https://rabota.magnit.ru/vacancy/{id}",
-      "company_const": "Магнит"
+      "company_const": "Магнит",
+      "detail_url_template": "https://rabota.magnit.ru/api/v1/vacancy/{id}",
+      "detail_list": "results",
+      "detail_sections": {
+        "Обязанности": "responsibilities",
+        "Требования": "requirements",
+        "Условия": "motivation"
+      }
     },
     "url": "https://rabota.magnit.ru/api/v1/vacancy?overview=list&page=1&per_page=100&locality_id%5B%5D=3047&locality_id%5B%5D=3078&locality_id%5B%5D=2562&locality_id%5B%5D=1949&locality_id%5B%5D=506&locality_id%5B%5D=313&locality_id%5B%5D=2269&locality_id%5B%5D=2431&locality_id%5B%5D=20&locality_id%5B%5D=687&locality_id%5B%5D=2173&locality_id%5B%5D=1002",
     "paging": {
@@ -942,7 +949,13 @@
       "address": "city",
       "description": "introduction",
       "url_template": "https://rabota.sber.ru/search/vacancy-{internalId}/",
-      "company_const": "Сбер"
+      "company_const": "Сбер",
+      "description_sections": {
+        "": "introduction",
+        "Обязанности": "duties",
+        "Требования": "requirements",
+        "Условия": "conditions"
+      }
     },
     "url": "https://rabota.sber.ru/public/app-candidate-public-api-gateway/api/v1/publications",
     "mode": "json",
@@ -990,5 +1003,37 @@
     },
     "url": "https://centicore.ru/vacancies",
     "mode": "html_links"
+  },
+  {
+    "company_hint": "Яндекс",
+    "url": "https://yandex.ru/jobs/api/publications?cities=moscow&page_size=20",
+    "mode": "json",
+    "paging": {
+      "type": "cursor_b64",
+      "param": "cursor",
+      "template": "o={offset}&p={page}",
+      "limit": 20,
+      "limit_param": "page_size",
+      "max_pages": 80
+    },
+    "map": {
+      "list": "results",
+      "id": "id",
+      "title": "title",
+      "description": "short_summary",
+      "schedule": "vacancy.work_modes",
+      "url_template": "https://yandex.ru/jobs/vacancies/{publication_slug_url}",
+      "company_const": "Яндекс",
+      "detail_url_template": "https://yandex.ru/jobs/api/publications/{id}",
+      "detail_sections": {
+        "": "description",
+        "Чем предстоит заниматься": "duties",
+        "Мы ждём, что вы": "key_qualifications",
+        "Будет плюсом": "additional_requirements",
+        "Что мы предлагаем": "conditions",
+        "О команде": "our_team",
+        "Стек технологий": "tech_stack"
+      }
+    }
   }
 ]

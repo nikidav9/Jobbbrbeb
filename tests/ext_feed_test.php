@@ -75,6 +75,7 @@ check('полное описание занимает место коротко�
 check('пустое description_full не перекрывает короткое описание',
     ext_feed_public_row(['description' => 'коротко', 'description_full' => ''])['description'] === 'коротко');
 check('description_full не долетает до клиента', !array_key_exists('description_full', ext_feed_public_row(['description_full' => 'x'])));
+check('detail_spec не долетает до клиента', !array_key_exists('detail_spec', ext_feed_public_row(['detail_spec' => ['url' => 'https://a.ru/1']])));
 check('described_at не долетает до клиента', !array_key_exists('described_at', ext_feed_public_row(['described_at' => 'x'])));
 
 check('старый вызов ext_feed_score без section/metro в $taste не падает',

@@ -227,7 +227,12 @@ function vt_markdown_normalize(string $md): string
 /** Похоже на HTML: строку с тегами разбираем как HTML, остальное — как markdown. */
 function vt_to_text(string $value): string
 {
-    return preg_match('~<[a-z][\s\S]*>~i', $value) ? vt_html_to_text($value) : vt_markdown_normalize($value);
+    // HTML — только если есть блочная разметка. Markdown со вставками вроде
+    // <b>Вот как это выглядит:</b> (Яндекс) держит структуру на переносах
+    // строк, а разбор как HTML склеил бы его в один абзац.
+    if (preg_match('~<(p|div|ul|ol|li|br|h[1-6]|table|tr)\b~i', $value)) return vt_html_to_text($value);
+    $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    return vt_markdown_normalize($value);
 }
 
 /** Раздел с заголовком, если текст сам ещё не начинается со своего заголовка. */
@@ -423,6 +428,41 @@ function vt_dedupe_blocks(string $text): string
     }
     $result = preg_replace('/\n{3,}/', "\n\n", implode("\n\n", $out)) ?? implode("\n\n", $out);
     return trim($result);
+}
+
+/**
+ * Описание разделами из полей JSON-вакансии: {"Обязанности": "duties", ...}.
+ *
+ * Для источников, которые отдают описание по полям прямо в API (Сбер в
+ * списке, Яндекс и Магнит в карточке вакансии): страница у них — пустая
+ * оболочка SPA, и разбор HTML на ней ничего не находит. Поле бывает строкой
+ * (markdown или HTML) или списком строк — список становится пунктами.
+ * Пустой заголовок "" — текст без заголовка (вступление).
+ */
+function vt_sections_from_fields(array $row, array $sections): string
+{
+    $parts = [];
+    foreach ($sections as $heading => $path) {
+        $value = cf_dig($row, (string)$path);
+        if (is_array($value)) {
+            $items = [];
+            foreach ($value as $one) {
+                $one = is_array($one) ? cf_text($one) : trim(strip_tags((string)$one));
+                if ($one !== '') $items[] = '• ' . preg_replace('~\s+~u', ' ', $one);
+            }
+            $text = implode("\n", $items);
+        } else {
+            $text = is_scalar($value) ? vt_to_text((string)$value) : '';
+        }
+        $text = trim($text);
+        if ($text === '') continue;
+        if ((string)$heading === '') {
+            if (!str_contains(implode("\n\n", $parts), $text)) $parts[] = $text;
+        } else {
+            vt_add_section($parts, (string)$heading, $text);
+        }
+    }
+    return vt_cap(vt_dedupe_blocks(implode("\n\n", $parts)));
 }
 
 /** Ограничить текст 12000 символами по границе строки, без обрыва слова. */
