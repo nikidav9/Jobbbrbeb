@@ -1,0 +1,32 @@
+#!/bin/bash
+# Разведка анкет отклика с московского адреса — раз в сутки.
+#
+# Зачем на сервере, а не в облаке разработчика: из облака 45 разделов
+# каталога отвечали 403/401/451 или рвали соединение — похоже на отсечение
+# иностранных адресов. Боевой Jupiter ходит отсюда, и честная картина —
+# отсюда же.
+#
+# Что делает: jupiter/recon.py в dry-run (движок read_only, только GET и
+# HEAD, синтетический кандидат, заявки не уходят) и кладёт итог файлом,
+# который nginx отдаёт как /jupiter-recon.json. В файле только адреса
+# работодателей и устройство их анкет — ничего о людях.
+#
+# Подпись — честная, Jupiter: браузерную (--ua-retry) отсюда не шлём, этот
+# адрес подаёт настоящие отклики. Четыре потока: сайты работодателей не
+# должны видеть от нас всплеск.
+set -u
+
+REPO=/opt/jobtoo
+OUT=/var/www/html/jupiter-recon.json
+LOG=/var/log/jt-recon.log
+
+cd "$REPO/jupiter" || exit 0
+tmp=$(mktemp /var/www/html/jupiter-recon.json.XXXXXX)
+if timeout 3h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$OUT"
+  echo "$(date -Is) ok" >>"$LOG"
+else
+  rm -f "$tmp"
+  echo "$(date -Is) failed" >>"$LOG"
+fi
