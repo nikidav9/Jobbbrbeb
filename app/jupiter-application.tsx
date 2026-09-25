@@ -18,6 +18,8 @@ import { jupiterApplicationEvents, jupiterMyApplications } from '@/services/db';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { buildTimeline, jupiterStatus, TimelineStep } from '@/services/jupiterTimeline';
 import { getInitials, nameColorFromString } from '@/services/storage';
+import { CompanyMark } from '@/components/ui/CompanyMark';
+import { companyLogo } from '@/constants/companyLogos';
 import { rf, rs } from '@/constants/scale';
 
 const TONE: Record<TimelineStep['tone'], { icon: React.ComponentProps<typeof Ionicons>['name']; fg: string; bg: string }> = {
@@ -100,9 +102,11 @@ export default function JupiterApplicationScreen() {
       ) : (
         <ScrollView contentContainerStyle={s.content}>
           <View style={s.hero}>
-            <View style={[s.logo, { backgroundColor: nameColorFromString(company) }]}>
-              <Text style={s.logoTxt}>{getInitials(company)}</Text>
-            </View>
+            {companyLogo(company) ? <CompanyMark company={company} size={rs(56)} /> : (
+              <View style={[s.logo, { backgroundColor: nameColorFromString(company) }]}>
+                <Text style={s.logoTxt}>{getInitials(company)}</Text>
+              </View>
+            )}
             <Text style={s.company} numberOfLines={2}>{company}</Text>
             <TouchableOpacity onPress={openSite} accessibilityLabel="Открыть сайт вакансии">
               <Text style={s.host} numberOfLines={1}>{hostOf(app.vacancyUrl)} ↗</Text>

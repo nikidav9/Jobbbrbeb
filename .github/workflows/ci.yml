@@ -73,6 +73,9 @@ jobs:
       - name: Почта JobToo — читаемый адрес, повтор получает цифру
         run: php tests/jupiter_mail_address_test.php
 
+      - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
+        run: php tests/ext_feed_test.php
+
       - name: Карьерная страница превращается в вакансии, а не в мусор
         run: php tests/career_feed_test.php
 

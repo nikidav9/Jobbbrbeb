@@ -38,7 +38,9 @@ import {
   dbRemovePermSaved,
   dbRecordGuestEvent,
   dbStartGuestRegistration,
-  dbGetExtVacancies,
+  dbGetExtFeed,
+  dbExtSwipe,
+  dbExtUnswipe,
   jupiterEnqueue,
   dbGetResumeFiles,
 } from '@/services/db';
@@ -1226,7 +1228,7 @@ function WorkerPermMode() {
     if (!showCareer) return;
     let cancelled = false;
     setCareerLoading(true);
-    dbGetExtVacancies().then(data => {
+    dbGetExtFeed().then(data => {
       if (!cancelled) setCareerVacancies(data);
     }).catch(() => {}).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
@@ -1237,7 +1239,10 @@ function WorkerPermMode() {
     setRefreshing(true);
     try {
       const promises: Promise<void>[] = [refreshPermVacancies(), refreshPermApplications()];
-      if (showCareer) promises.push(dbGetExtVacancies().then(setCareerVacancies));
+      if (showCareer) promises.push(dbGetExtFeed().then(data => {
+        setCareerVacancies(data);
+        setSwSkipped(new Set());
+      }));
       await Promise.all(promises);
       await energy.sync();
     } catch {
@@ -1262,17 +1267,44 @@ function WorkerPermMode() {
 
   // «Назад»: вернуть последнюю пролистанную карточку наверх колоды. Отклик,
   // если он уже ушёл, не отзываем — как в сменах кнопка просто возвращает вид.
+  // Свайпы влево по карьерным вакансиям сервер запоминает навсегда, поэтому
+  // «вернуть» снимает и запись. Вправо — это отклик: он уже в очереди Юпитера
+  // и не отзывается, как и в сменах.
+  const extLeftSwipes = useRef<Set<string>>(new Set());
   const swUndo = useCallback(() => {
     setSwHistory(h => {
       if (!h.length) return h;
       const last = h[h.length - 1];
+      if (extLeftSwipes.current.has(last) && currentUser?.id) {
+        extLeftSwipes.current.delete(last);
+        dbExtUnswipe(currentUser.id, last).catch(() => {});
+      }
       setSwSkipped(s => { const n = new Set(s); n.delete(last); return n; });
       // Свайп вернули — возвращаем и его стоимость. Иначе промах наказан
       // дважды: и карточку верни, и энергию потерял.
       energy.refundOne();
       return h.slice(0, -1);
     });
-  }, [energy]);
+  }, [energy, currentUser?.id]);
+
+  // Карьерная лента приходит порциями: когда в колоде остаётся пять карт,
+  // тихо берём следующую. Сервер уже не отдаёт свайпнутое, а на случай
+  // гонки (свайп ещё не записан) повторы отсекаются по id.
+  const careerRefilling = useRef(false);
+  useEffect(() => {
+    if (!showCareer || careerRefilling.current || careerVacancies.length === 0) return;
+    const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
+    if (left > 5) return;
+    careerRefilling.current = true;
+    dbGetExtFeed()
+      .then(more => setCareerVacancies(cur => {
+        const seen = new Set(cur.map(v => v.id));
+        const add = more.filter(v => !seen.has(v.id));
+        return add.length ? [...cur, ...add] : cur;
+      }))
+      .catch(() => {})
+      .finally(() => { careerRefilling.current = false; });
+  }, [showCareer, careerVacancies, swSkipped]);
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
@@ -1484,6 +1516,7 @@ function WorkerPermMode() {
             resetCardScroll();
             setSwSkipped(s => new Set(s).add(c.v.id));
             setSwHistory(h => [...h, c.v.id]);
+            dbExtSwipe(currentUser.id, c.v.id, 1).catch(() => {});
           } else {
             energy.refundOne();
             swDeck.snapBack();
@@ -1515,6 +1548,12 @@ function WorkerPermMode() {
       resetCardScroll();
       setSwSkipped(s => new Set(s).add(c.v.id));
       setSwHistory(h => [...h, c.v.id]);
+      // Карьерную вакансию, смахнутую влево, больше не показываем (решение
+      // владельца 25.09): сервер запоминает свайп и опускает похожие.
+      if (c._ext && !isGuest && currentUser) {
+        extLeftSwipes.current.add(c.v.id);
+        dbExtSwipe(currentUser.id, c.v.id, -1).catch(() => {});
+      }
       swDecisionPending.current = false;
     });
   };
