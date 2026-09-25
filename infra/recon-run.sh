@@ -23,7 +23,10 @@ LOG=/var/log/jt-recon.log
 cd "$REPO/jupiter" || exit 0
 echo "$(date -Is) start" >>"$LOG"
 tmp=$(mktemp /var/www/html/jupiter-recon.json.XXXXXX)
-if timeout 3h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
+# Предел 5 часов: с 25.09.2026 в каталоге 415 разделов, а не 170, и прежних
+# трёх часов на четыре потока могло не хватить — оборванный прогон не пишет
+# ничего.
+if timeout 5h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
   chmod 644 "$tmp"
   mv -f "$tmp" "$OUT"
   echo "$(date -Is) ok" >>"$LOG"

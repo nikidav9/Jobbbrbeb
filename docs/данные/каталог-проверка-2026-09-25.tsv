@@ -1,0 +1,247 @@
+# Проверка новых адресов каталога (scripts/career-catalog-check.py), 25.09.2026
+# сектор	компания	адрес	что проверено
+retail	Азбука вкуса	https://av.ru/	главная, защита от ботов (450)
+retail	Бристоль	https://bristol.ru/	главная, защита от ботов (401)
+retail	Верный	https://www.verno-info.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Ашан	https://www.auchan.ru/	главная, защита от ботов (401)
+retail	Магнолия	https://mgnl.ru/	главная, защита от ботов (403)
+retail	Купер	https://kuper.ru/	главная, защита от ботов (403)
+retail	Утконос	https://www.utkonos.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Твой Дом	https://www.tvoydom.ru/	главная: найденная ссылка вела не туда, исправлено вручную
+retail	Много Мебели	https://mnogomebeli.com/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Askona	https://www.askona.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Орматек	https://ormatek.com/	главная, геоблок зарубежных адресов
+retail	Л'Этуаль	https://www.letu.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Читай-город	https://rabota.chitai-gorod.ru/	раздел найден по ссылке с главной
+retail	Ситилинк	https://job.citilink.ru/vacs/	раздел найден по ссылке с главной
+retail	re:Store	https://re-store.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	t2	https://msk.t2.ru/about/career	раздел найден по ссылке с главной
+retail	Desport	https://desport.ru/rabota	раздел найден по ссылке с главной
+retail	Melon Fashion Group	https://melonfashion.ru/	главная, геоблок зарубежных адресов
+retail	Sela	https://www.sela.ru/company/job/	раздел найден по ссылке с главной
+retail	O'STIN	https://job.ostin.com/	главная, защита от ботов (401)
+retail	Снежная Королева	https://snowqueen.ru/job/view	раздел найден по ссылке с главной
+retail	Rendez-Vous	https://www.rendez-vous.ru/vacancy/	раздел вакансий проверен
+retail	Твоё	https://tvoe.ru/company/vacancy/	раздел найден по ссылке с главной
+retail	Concept Club	https://www.concept-club.ru/	главная, геоблок зарубежных адресов
+retail	Familia	https://famil.ru/	раздел вакансий проверен
+retail	SUNLIGHT	https://job.sunlight.net/	главная, защита от ботов (401)
+retail	585 Золотой	https://rabota.585zolotoy.ru/	раздел найден по ссылке с главной
+retail	Столички	https://stolichki.ru/	главная, защита от ботов (403)
+retail	Ригла	https://www.rigla.ru/job/stores	раздел найден по ссылке с главной
+retail	Горздрав	https://gorzdrav.org/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Аптека Апрель	https://apteka-april.ru/	главная, геоблок зарубежных адресов
+retail	Планета Здоровья	https://planetazdorovo.ru/	главная, защита от ботов (401)
+retail	Неофарм	https://neopharm.ru/	главная, защита от ботов (403)
+retail	ЕАПТЕКА	https://www.eapteka.ru/	главная, защита от ботов (403)
+retail	Винлаб	https://winelab.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	АМ Винотеки	https://amwine.ru/about/job/	раздел найден по ссылке с главной
+retail	Галамарт	https://galamart.ru/faq/vakansii/	раздел найден по ссылке с главной
+retail	ЦУМ	https://www.tsum.ru/career/vacancies/	раздел вакансий проверен
+retail	ГУМ	https://gum.ru/vacancies/	раздел найден по ссылке с главной
+retail	Кант	https://www.kant.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Мегамаркет	https://megamarket.ru/	главная, защита от ботов (403)
+retail	ВсеИнструменты.ру	https://www.vseinstrumenti.ru/	главная, защита от ботов (403)
+retail	Лабиринт	https://www.labirint.org/vakansii	раздел найден по ссылке с главной
+retail	X5 Group	https://rabota.x5.ru/	раздел вакансий проверен
+retail	Exist	https://www.exist.ru/Job/	раздел найден по ссылке с главной
+retail	Emex	https://emex.ru/	главная, защита от ботов (403)
+retail	Автодок	https://www.autodoc.ru/	главная, ссылки на раздел нет в HTML (SPA)
+retail	Шинсервис	https://www.shinservice.ru/	главная, ссылки на раздел нет в HTML (SPA)
+food	Cofix	https://cofix.global/	главная, ссылки на раздел нет в HTML (SPA)
+food	Stars Coffee	https://starscoffee.ru/	главная, геоблок зарубежных адресов
+food	Coffee Like	https://coffee-like.com/	главная, ссылки на раздел нет в HTML (SPA)
+food	Тануки	https://job.tanuki.ru/	главная, защита от ботов (401)
+food	Якитория	https://www.yakitoria.ru/	главная, геоблок зарубежных адресов
+food	Грабли	https://grably.ru/	главная, защита от ботов (403)
+food	Му-Му	https://www.cafemumu.ru/career/	раздел вакансий проверен
+food	Prime	https://promo.prime-star.ru/job	раздел найден по ссылке с главной
+food	Novikov Group	https://www.novikovgroup.ru/vacancies/	раздел найден по ссылке с главной
+food	Ginza Project	https://job.ginza.ru/	раздел найден по ссылке с главной
+food	White Rabbit Family	https://whiterabbitfamily.ru/	главная, ссылки на раздел нет в HTML (SPA)
+food	Братья Караваевы	https://karavaevi.ru/vakansii/	раздел найден по ссылке с главной
+food	Хлеб Насущный	https://hlebnasushny.ru/	главная, ссылки на раздел нет в HTML (SPA)
+food	Волконский	https://wolkonsky.com/	главная, ссылки на раздел нет в HTML (SPA)
+food	Чайхона №1	https://chaihona.ru/	главная, ссылки на раздел нет в HTML (SPA)
+food	Суши Wok	https://sushiwok.ru/	главная, ссылки на раздел нет в HTML (SPA)
+logistics	Boxberry	https://boxberry.ru/	главная: найденная ссылка вела не туда, исправлено вручную
+logistics	Байкал Сервис	https://www.baikalsr.ru/company/vacancies/	раздел найден по ссылке с главной
+logistics	ТК КИТ	https://tk-kit.ru/vacancy	раздел вакансий проверен
+logistics	ТК Энергия	https://nrg-tk.pro/jobs/	раздел найден по ссылке с главной
+logistics	Major Express	https://www.major-express.ru/about/vacancies/	раздел найден по ссылке с главной
+logistics	FM Logistic	https://www.fmlogistic.ru/career/why-join-fm-logistic/	раздел найден по ссылке с главной
+logistics	Монополия	https://monopoly.online/	главная, защита от ботов (403)
+logistics	ПГК	https://pgk.ru/	главная, ссылки на раздел нет в HTML (SPA)
+logistics	ТрансКонтейнер	https://trcont.com/	главная, геоблок зарубежных адресов
+logistics	Мосгортранс	https://mosgortrans.ru/	главная, геоблок зарубежных адресов
+logistics	Московский метрополитен	https://mosmetro.ru/	главная, геоблок зарубежных адресов
+logistics	ЦППК	https://central-ppk.ru/	главная, защита от ботов (403)
+logistics	Внуково	https://www.vnukovo.ru/	главная, ссылки на раздел нет в HTML (SPA)
+logistics	Домодедово	https://business.dme.ru/company/carreer/job/	раздел найден по ссылке с главной
+logistics	S7 Airlines	https://www.s7.ru/	главная, защита от ботов (403)
+logistics	Победа	https://www.flypobeda.ru/information/jobs	раздел найден по ссылке с главной
+logistics	ЮТэйр	https://www.utair.ru/	главная, геоблок зарубежных адресов
+logistics	Делимобиль	https://delimobil.ru/	главная, ссылки на раздел нет в HTML (SPA)
+logistics	Whoosh	https://whoosh-bike.ru/job	раздел найден по ссылке с главной
+logistics	Аэроэкспресс	https://aeroexpress.ru/	главная, ссылки на раздел нет в HTML (SPA)
+logistics	Мострансавто	https://mostransavto.ru/	главная, геоблок зарубежных адресов
+bank	Газпромбанк	https://www.gazprombank.tech/	раздел найден по ссылке с главной
+bank	Райффайзенбанк	https://career.raiffeisen.ru/dgtl	раздел найден по ссылке с главной
+bank	Росбанк	https://www.rosbank.ru/	главная, геоблок зарубежных адресов
+bank	Совкомбанк	https://sovcombank.ru/	главная, геоблок зарубежных адресов
+bank	ПСБ	https://www.psbank.ru/	главная, геоблок зарубежных адресов
+bank	Россельхозбанк	https://www.rshb.ru/	главная, геоблок зарубежных адресов
+bank	МКБ	https://mkb.ru/	главная, геоблок зарубежных адресов
+bank	Уралсиб	https://www.uralsib.ru/	главная, геоблок зарубежных адресов
+bank	Почта Банк	https://www.pochtabank.ru/	главная, геоблок зарубежных адресов
+bank	ОТП Банк	https://www.otpbank.ru/	главная, ссылки на раздел нет в HTML (SPA)
+bank	Ренессанс Кредит	https://rencredit.ru/	главная, защита от ботов (403)
+bank	Банк Русский Стандарт	https://www.rsb.ru/about/career/	раздел найден по ссылке с главной
+bank	Абсолют Банк	https://absolutbank.ru/	главная, геоблок зарубежных адресов
+bank	МТС Банк	https://www.mtsbank.ru/	главная, геоблок зарубежных адресов
+bank	Банк ДОМ.РФ	https://domrfbank.ru/	главная, геоблок зарубежных адресов
+bank	Московская биржа	https://www.moex.com/s1300	раздел вакансий проверен
+bank	Ингосстрах	https://www.ingos.ru/	главная, геоблок зарубежных адресов
+bank	РЕСО-Гарантия	https://reso.ru/about/career/	раздел найден по ссылке с главной
+bank	АльфаСтрахование	https://www.alfastrah.ru/	главная, геоблок зарубежных адресов
+bank	Росгосстрах	https://www.rgs.ru/about/career/	раздел найден по ссылке с главной
+bank	СОГАЗ	https://www.sogaz.ru/	главная, геоблок зарубежных адресов
+bank	Согласие	https://www.soglasie.ru/	главная, защита от ботов (403)
+bank	Ренессанс страхование	https://www.renins.ru/	главная: найденная ссылка вела не туда, исправлено вручную
+bank	ВСК	https://www.vsk.ru/	главная, геоблок зарубежных адресов
+bank	ЮниКредит Банк	https://www.unicreditbank.ru/	главная, ссылки на раздел нет в HTML (SPA)
+bank	Экспобанк	https://expobank.ru/	главная, геоблок зарубежных адресов
+bank	Банк Зенит	https://www.zenit.ru/	главная, геоблок зарубежных адресов
+bank	Локо-Банк	https://www.lockobank.ru/	главная, геоблок зарубежных адресов
+bank	Новикомбанк	https://www.novikom.ru/	главная, геоблок зарубежных адресов
+bank	СМП Банк	https://smpbank.ru/	главная, геоблок зарубежных адресов
+bank	Модульбанк	https://modulbank.ru/	главная, геоблок зарубежных адресов
+bank	Банки.ру	https://www.banki.ru/	главная, ссылки на раздел нет в HTML (SPA)
+bank	Сравни	https://career.sravni.ru/career/	раздел найден по ссылке с главной
+telecom	ЭР-Телеком	https://job.ertelecom.ru/vacancies	раздел найден по ссылке с главной
+telecom	МГТС	https://mgts.ru/	главная, геоблок зарубежных адресов
+energy	Газпром нефть	https://career.gazprom-neft.ru/	главная, геоблок зарубежных адресов
+energy	Газпром	https://www.gazprom.ru/	главная, геоблок зарубежных адресов
+energy	Лукойл	https://lukoil.ru/Company/Career/Vacancies	раздел найден по ссылке с главной
+energy	Роснефть	https://www.rosneft.ru/	главная, геоблок зарубежных адресов
+energy	Новатэк	https://www.novatek.ru/ru/about/career/	раздел вакансий проверен
+energy	Транснефть	https://www.transneft.ru/	главная, геоблок зарубежных адресов
+energy	Мосэнерго	https://mosenergo.gazprom.ru/	главная, геоблок зарубежных адресов
+energy	Россети Московский регион	https://rossetimr.ru/	главная, защита от ботов (403)
+energy	Мосводоканал	https://www.mosvodokanal.ru/	главная, геоблок зарубежных адресов
+energy	Мосгаз	https://www.mosgaz.ru/	главная, геоблок зарубежных адресов
+energy	МОЭК	https://www.moek.ru/career/	раздел вакансий проверен
+energy	Интер РАО	https://www.interrao.ru/	главная, геоблок зарубежных адресов
+energy	РусГидро	https://www.rushydro.ru/	главная, геоблок зарубежных адресов
+industry	Ростех	https://rostec.ru/	главная, геоблок зарубежных адресов
+industry	ОАК	https://www.uacrussia.ru/	главная, геоблок зарубежных адресов
+industry	Алмаз-Антей	https://www.almaz-antey.ru/	главная, геоблок зарубежных адресов
+industry	Роскосмос	https://www.roscosmos.ru/	главная, защита от ботов (403)
+industry	НЛМК	https://nlmk.com/ru/career/	раздел вакансий проверен
+industry	ММК	https://mmk.ru/	главная, геоблок зарубежных адресов
+industry	ТМК	https://www.tmk-group.ru/	главная, ссылки на раздел нет в HTML (SPA)
+industry	Металлоинвест	https://www.metalloinvest.com/	главная, геоблок зарубежных адресов
+industry	Полюс	https://career.polyus.com/	раздел вакансий проверен
+industry	Уралкалий	https://www.uralkali.com/ru/career/	раздел вакансий проверен
+industry	Москвич	https://recruitment.moskvich.ru/	раздел найден по ссылке с главной
+industry	Мираторг	https://miratorg.ru/career/vacancies/	раздел вакансий проверен
+industry	Русагро	https://www.rusagrogroup.ru/	главная, ссылки на раздел нет в HTML (SPA)
+industry	ЭФКО	https://www.efko.ru/career/	раздел вакансий проверен
+industry	Останкинский мясоперерабатывающий комбинат	https://ompk.ru/	главная, ссылки на раздел нет в HTML (SPA)
+industry	Коломенский	https://kolomenskiy.ru/	главная, геоблок зарубежных адресов
+industry	Черноголовка	https://chernogolovka.com/	главная, ссылки на раздел нет в HTML (SPA)
+industry	Московская пивоваренная компания	https://mpbc.ru/	главная, геоблок зарубежных адресов
+industry	Объединённые кондитеры	https://www.uniconf.ru/career/	раздел вакансий проверен
+industry	Эксмо	https://eksmo.ru/job/	раздел найден по ссылке с главной
+industry	Р-Фарм	https://r-pharm.com/ru/career	раздел вакансий проверен
+industry	БИОКАД	https://career.biocad.ru/	раздел найден по ссылке с главной
+industry	Герофарм	https://geropharm.ru/career	раздел вакансий проверен
+industry	Протек	https://www.protek.ru/	главная, геоблок зарубежных адресов
+industry	Пульс	https://www.puls.ru/	главная, геоблок зарубежных адресов
+industry	Мултон Партнерс	https://multonpartners.ru/career/	раздел вакансий проверен
+build	ПИК	https://pik.ru/	главная, защита от ботов (401)
+build	Самолет	https://samolet.ru/	главная, защита от ботов (401)
+build	Группа ЛСР	https://www.lsr.ru/	главная, защита от ботов (403)
+build	Эталон	https://etalongroup.ru/	главная, ссылки на раздел нет в HTML (SPA)
+build	ФСК	https://fsk.ru/	главная, ссылки на раздел нет в HTML (SPA)
+build	Донстрой	https://donstroy.moscow/about/staff/	раздел найден по ссылке с главной
+build	MR Group	https://www.mr-group.ru/	главная, ссылки на раздел нет в HTML (SPA)
+build	Level Group	https://job.level.ru/	раздел найден по ссылке с главной
+build	Инград	https://ingrad.ru/	главная, ссылки на раздел нет в HTML (SPA)
+build	Гранель	https://granelle.ru/career/	раздел вакансий проверен
+build	А101	https://a101.ru/	главная, ссылки на раздел нет в HTML (SPA)
+build	Мосинжпроект	https://mosinzhproekt.ru/	главная, геоблок зарубежных адресов
+build	Мостотрест	https://www.mostotrest.ru/	главная, геоблок зарубежных адресов
+build	ДОМ.РФ	https://xn--d1aqf.xn--p1ai/career/	раздел вакансий проверен
+health	Медси	https://medsi.ru/about/jobs/	раздел найден по ссылке с главной
+health	EMC	https://www.emcmos.ru/karera-v-emc/	раздел найден по ссылке с главной
+health	Инвитро	https://www.invitro.ru/	главная, ссылки на раздел нет в HTML (SPA)
+health	Гемотест	https://gemotest.ru/hr/	раздел найден по ссылке с главной
+health	Хеликс	https://helix.ru/job	раздел найден по ссылке с главной
+health	СМ-Клиника	https://www.smclinic.ru/	главная, защита от ботов (401)
+health	Мать и дитя	https://mamadeti.ru/about/vacancies-about-us/	раздел найден по ссылке с главной
+health	Будь Здоров	https://www.bud-zdorov.ru/	главная, геоблок зарубежных адресов
+health	KDL	https://kdl.ru/	главная, защита от ботов (403)
+health	CMD	https://www.cmd-online.ru/o-cmd/vakansii/	раздел найден по ссылке с главной
+health	Семейный доктор	https://www.fdoctor.ru/career/	раздел найден по ссылке с главной
+edu	Skyeng	https://vacancies.skyeng.ru/	раздел найден по ссылке с главной
+edu	Нетология	https://netology.ru/career	раздел вакансий проверен
+edu	Фоксфорд	https://foxford.ru/	главная, защита от ботов (401)
+edu	Учи.ру	https://uchi.ru/	главная, ссылки на раздел нет в HTML (SPA)
+edu	Умскул	https://umschool.net/	главная, ссылки на раздел нет в HTML (SPA)
+edu	Skillbox	https://skillbox.ru/career/	раздел вакансий проверен
+edu	Синергия	https://synergy.ru/career/	раздел вакансий проверен
+media	Rambler&Co	https://rambler-co.ru/	главная, ссылки на раздел нет в HTML (SPA)
+media	РБК	https://www.rbc.ru/	главная, ссылки на раздел нет в HTML (SPA)
+media	Газпром-Медиа	https://www.gazprom-media.com/ru/	раздел вакансий проверен
+media	Национальная Медиа Группа	https://nmg.ru/	главная, ссылки на раздел нет в HTML (SPA)
+media	Литрес	https://www.litres.ru/company/vacancies/	раздел найден по ссылке с главной
+media	Okko	https://okko.tv/	главная, ссылки на раздел нет в HTML (SPA)
+media	START	https://start.ru/	главная, ссылки на раздел нет в HTML (SPA)
+media	Дзен	https://dzen.ru/	главная, ссылки на раздел нет в HTML (SPA)
+media	RUTUBE	https://rutube.ru/	главная, ссылки на раздел нет в HTML (SPA)
+media	Профи.ру	https://profi.ru/	главная: найденная ссылка вела не туда, исправлено вручную
+it	Ланит	https://www.lanit.ru/	главная: найденная ссылка вела не туда, исправлено вручную
+it	ИнфоТеКС	https://career.infotecs.ru/vacancies/	раздел найден по ссылке с главной
+it	Код Безопасности	https://www.securitycode.ru/	главная, защита от ботов (403)
+it	ЦФТ	https://job.cft.ru/	раздел найден по ссылке с главной
+it	Диасофт	https://www.diasoft.ru/	главная, ссылки на раздел нет в HTML (SPA)
+it	Ай-Теко	https://www.i-teco.ru/career/	раздел вакансий проверен
+it	Timeweb	https://timeweb.com/	раздел вакансий проверен
+it	REG.RU	https://www.reg.ru/	главная, ссылки на раздел нет в HTML (SPA)
+it	BI.ZONE	https://bi.zone/	главная: найденная ссылка вела не туда, исправлено вручную
+it	F.A.C.C.T.	https://www.f6.ru/careers/	раздел найден по ссылке с главной
+it	UserGate	https://usergate.com/	раздел вакансий проверен
+it	Angara Security	https://www.angarasecurity.ru/career/	раздел вакансий проверен
+it	МойСклад	https://www.moysklad.ru/company/careers/	раздел найден по ссылке с главной
+it	1С-Битрикс	https://careers.bitrix24.ru/	раздел найден по ссылке с главной
+it	Эвотор	https://evotor.ru/	главная: найденная ссылка вела не туда, исправлено вручную
+it	АТОЛ	https://career.atol.ru/	раздел найден по ссылке с главной
+it	Surf	https://career.surf.ru/	раздел найден по ссылке с главной
+it	Redmadrobot	https://redmadrobot.com/	главная, ссылки на раздел нет в HTML (SPA)
+it	Неофлекс	https://neoflex.ru/about/career	раздел найден по ссылке с главной
+it	Digital Design	https://digdes.ru/career	раздел вакансий проверен
+it	Artezio	https://www.artezio.ru/	главная, ссылки на раздел нет в HTML (SPA)
+it	Т1	https://career.t1.ru/	раздел вакансий проверен
+it	Норбит	https://www.norbit.ru/karera/	раздел найден по ссылке с главной
+consult	Kept	https://kept.ru/	главная, ссылки на раздел нет в HTML (SPA)
+consult	Технологии Доверия	https://tedo.ru/career	раздел найден по ссылке с главной
+consult	Яков и Партнёры	https://yakov.partners/	главная, геоблок зарубежных адресов
+consult	Б1	https://www.b1.ru/career/	раздел найден по ссылке с главной
+auto	Рольф	https://www.rolf.ru/	главная, геоблок зарубежных адресов
+auto	Автомир	https://avtomir.ru/jobs/	раздел найден по ссылке с главной
+auto	Major Auto	https://www.major-auto.ru/company/job_link/	раздел найден по ссылке с главной
+auto	Авилон	https://rabota.avilon.ru/	раздел найден по ссылке с главной
+auto	Автодом	https://www.avtodom.ru/	главная, защита от ботов (403)
+leisure	Cosmos Hotel Group	https://cosmosgroup.ru/about/vacancies	раздел найден по ссылке с главной
+leisure	World Class	https://worldclass.ru/	главная, ссылки на раздел нет в HTML (SPA)
+leisure	X-Fit	https://www.xfit.ru/vacancies/	раздел найден по ссылке с главной
+leisure	DDX Fitness	https://www.ddxfitness.ru/career/	раздел вакансий проверен
+leisure	Spirit. Fitness	https://career.spiritfit.ru/	раздел найден по ссылке с главной
+leisure	КАРО	https://karofilm.ru/	главная, ссылки на раздел нет в HTML (SPA)
+leisure	Формула Кино	https://formulakino.ru/	главная, геоблок зарубежных адресов
+leisure	ВДНХ	https://vdnh.ru/	главная, ссылки на раздел нет в HTML (SPA)
+leisure	Лужники	https://www.luzhniki.ru/	главная, геоблок зарубежных адресов
+leisure	Крокус	https://crocus-group.ru/	главная, геоблок зарубежных адресов
+industry	ЕВРАЗ	https://www.evraz.com/ru/	главная, защита от ботов (403)
+industry	ЕвроХим	https://www.eurochemgroup.com/	главная, ссылки на раздел нет в HTML (SPA)
