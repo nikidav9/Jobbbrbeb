@@ -2,7 +2,7 @@
  * Permanent vacancy detail screen
  * Shows full info, employer contact (phone only after match), apply/save actions
  */
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, Modal, Platform, Linking, Animated, Share,
@@ -30,6 +30,7 @@ import {
   dbRecordGuestEvent,
   dbStartGuestRegistration,
 } from '@/services/db';
+import { ensureResumeForApply } from '@/services/resumeGate';
 import { METRO_LINES } from '@/constants/metro';
 
 import { rs, rf } from '@/constants/scale';
@@ -65,6 +66,8 @@ export default function PermVacancyDetailScreen() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
+  // Двойной тап по «Откликнуться» не должен открыть два диалога о резюме.
+  const checkingResume = useRef(false);
   const isGuest = !currentUser && !loading;
   const showAuthModal = isGuest && !authModalDismissed;
 
@@ -258,8 +261,22 @@ export default function PermVacancyDetailScreen() {
   // Сначала спрашиваем пару слов о себе — отклик уходит первым сообщением от
   // имени человека и открывает переписку. Молчаливый отклик работодатель
   // видел строкой в списке и решал вслепую.
-  const applyTo = () => {
-    if (!currentUser || isApplied || applying) return;
+  const applyTo = async () => {
+    if (!currentUser || isApplied || applying || checkingResume.current) return;
+    // Гость из ленты: резюме у него нет и быть не может — сразу на регистрацию.
+    if (currentUser.isGuest) { startWorkerRegistration(); return; }
+    // Решение владельца 25.09: без резюме отклика нет — проверяем до того,
+    // как откроется окно, а не после того, как человек напишет сообщение.
+    checkingResume.current = true;
+    try {
+      if (!await ensureResumeForApply()) return;
+    } catch (e: any) {
+      console.warn('[applyTo]', e);
+      showToast(e?.message || 'Не удалось проверить резюме. Проверьте связь и попробуйте ещё раз.', 'error');
+      return;
+    } finally {
+      checkingResume.current = false;
+    }
     setApplyOpen(true);
   };
 
@@ -288,8 +305,8 @@ export default function PermVacancyDetailScreen() {
       // уже после записи: старая версия или обрыв связи — и директор не
       // узнавал ничего, а ошибка глоталась молча.
       showToast('Отклик отправлен! 📨', 'success');
-    } catch {
-      showToast('Не удалось отправить отклик', 'error');
+    } catch (e: any) {
+      showToast(e?.message || 'Не удалось отправить отклик', 'error');
     } finally {
       setApplying(false);
     }
@@ -473,7 +490,7 @@ export default function PermVacancyDetailScreen() {
               actionLabel: isApproved ? 'Написать в чате' : 'Чат откроется после одобрения отклика',
               onOpen: () => {
                 if (isApproved) router.push('/chats');
-                else if (!isApplied) setApplyOpen(true);
+                else if (!isApplied) void applyTo();
               },
             }}
             locked={isGuest}
