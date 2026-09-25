@@ -546,7 +546,8 @@ check('страница на одних div описание всё равно �
 // ── Сборщик: добор описаний ───────────────────────────────────────────────
 $ingest = file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
 check('описания добираются только у карьерных источников',
-    str_contains($ingest, "if ((\$src['connector_kind'] ?? '') === 'career') {")
+    // Ежечасный заход по API (scope=api) описаний не дочитывает вовсе.
+    str_contains($ingest, "if ((\$src['connector_kind'] ?? '') === 'career' && \$scope !== 'api') {")
     && str_contains($ingest, '$described += ing_fill_descriptions($rows, $deadline);'));
 check('добор укладывается в общий бюджет захода',
     str_contains($ingest, 'if (microtime(true) >= $deadline) break;'));

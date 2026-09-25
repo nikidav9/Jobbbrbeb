@@ -15,6 +15,9 @@
 //
 // Здесь только чистые функции — ни сети, ни базы. Сеть в career.php.
 
+// Что считать вакансией, а что мусором — общее для всех видов разбора.
+require_once __DIR__ . '/career_quality.php';
+
 // Описание разделами из полей API (vt_sections_from_fields). Взаимное
 // подключение безопасно: require_once не заходит в файл второй раз.
 require_once __DIR__ . '/vacancy_text.php';
@@ -603,19 +606,30 @@ function cf_link_title(DOMElement $a): string
 {
     $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
 
+    // Кандидатов берём по порядку и возвращаем первого, кто похож на должность.
+    // Раньше брался просто первый: у С-Терры блок «…item__subtitle» с городом
+    // стоит перед «…item__title», и все шесть вакансий назывались «Зеленоград».
+    // Подзаголовок поэтому вообще не кандидат, а город или раздел сайта
+    // пропускаем в пользу следующего.
+    $candidates = [];
     foreach (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as $tag) {
         foreach ($a->getElementsByTagName($tag) as $h) {
             $text = $clean($h->textContent ?? '');
-            if ($text !== '') return $text;
+            if ($text !== '') $candidates[] = $text;
         }
     }
     foreach ($a->getElementsByTagName('*') as $el) {
         $class = strtolower($el->getAttribute('class'));
-        if ($class !== '' && (str_contains($class, 'title') || str_contains($class, 'name'))) {
+        if ($class === '' || str_contains($class, 'subtitle')) continue;
+        if (str_contains($class, 'title') || str_contains($class, 'name')) {
             $text = $clean($el->textContent ?? '');
-            if ($text !== '') return $text;
+            if ($text !== '') $candidates[] = $text;
         }
     }
+    foreach ($candidates as $text) {
+        if (cq_title_problem($text) === null) return $text;
+    }
+    if ($candidates) return $candidates[0];
     // Запасной ход: весь текст ссылки, но с пробелом на каждой границе узла.
     $parts = [];
     $walk = function (DOMNode $node) use (&$walk, &$parts): void {

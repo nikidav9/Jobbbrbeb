@@ -481,8 +481,55 @@ function ing_next_page(array $dec, string $baseUrl): ?string
     return $baseUrl . $sep . 'cursor=' . rawurlencode($cursor);
 }
 
-/** Сходить в один источник, включая все страницы полного фида. */
-function ing_run_source(array $src): array
+/**
+ * Хосты, чьи адреса прошли целиком. Хост, который встретился у адреса со
+ * сбоем, не берём: адрес успел отдать первую порцию и споткнулся на второй —
+ * значит, его список мы видели не весь, и «не увидели» ещё не «закрыта».
+ */
+function ing_complete_hosts(array $unitHosts, array $unitFailed): array
+{
+    $ok = [];
+    $bad = [];
+    foreach ($unitHosts as $unit => $hosts) {
+        foreach (array_keys(is_array($hosts) ? $hosts : []) as $h) {
+            if (isset($unitFailed[(string)$unit])) $bad[$h] = true;
+            else $ok[$h] = true;
+        }
+    }
+    return array_values(array_diff(array_keys($ok), array_keys($bad)));
+}
+
+/**
+ * Погасить активные вакансии источника, не виденные с $cut. $host сужает
+ * гашение до вакансий одного сайта (по адресу вакансии).
+ */
+function ing_deactivate_stale(string $sourceId, string $cut, ?string $host): int
+{
+    $filter = [
+        'source_id' => 'eq.' . $sourceId,
+        'active' => 'is.true',
+        'last_seen_at' => 'lt.' . $cut,
+    ];
+    if ($host !== null) {
+        if (!preg_match('~^[a-z0-9.-]+$~', $host)) return 0;
+        $filter['url'] = 'like.https://' . $host . '/*';
+    }
+    $stale = sb_select_all('jm_ext_vacancies', $filter, 'id');
+    foreach (array_chunk(array_column($stale, 'id'), 100) as $chunk) {
+        sb_update('jm_ext_vacancies', ['id' => 'in.(' . implode(',', $chunk) . ')'], ['active' => false]);
+    }
+    return count($stale);
+}
+
+/**
+ * Сходить в один источник, включая все страницы полного фида.
+ *
+ * $scope = 'api' — ежечасный заход по карьерным адресам с настоящим API
+ * (career.php?modes=api). Он добавляет и обновляет вакансии, но ничего не
+ * гасит: сайты со ссылками в нём не обходятся, и их вакансии он бы «не
+ * увидел». Гашение — дело полного круга раз в шесть часов.
+ */
+function ing_run_source(array $src, string $scope = ''): array
 {
     $hdrs = ['Accept: application/json'];
     if (!empty($src['auth_header']) && !empty($src['auth_value'])) {
@@ -494,8 +541,12 @@ function ing_run_source(array $src): array
         return ['status' => 'запрещённый или непубличный HTTPS-адрес', 'count' => 0];
     }
     $originHost = strtolower((string)(parse_url($baseUrl, PHP_URL_HOST) ?? ''));
+    $mayDeactivate = $scope !== 'api';
+    if ($scope === 'api') $baseUrl .= (str_contains($baseUrl, '?') ? '&' : '?') . 'modes=api';
     // One worker per source; persist only after successful page writes.
-    $stateFile = sys_get_temp_dir() . '/jt-ingest-' . hash('sha256', (string)$src['id']) . '.json';
+    // У ежечасного захода по API своя контрольная точка: иначе он, попав
+    // между вызовами полного круга, сбросил бы тому его checkpoint.
+    $stateFile = sys_get_temp_dir() . '/jt-ingest-' . hash('sha256', (string)$src['id'] . ($scope !== '' ? '|' . $scope : '')) . '.json';
     $lock = fopen($stateFile . '.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
         return ['status' => 'продолжение: источник уже обрабатывается', 'count' => 0, 'pending' => true];
@@ -515,6 +566,14 @@ function ing_run_source(array $src): array
     // его вакансии из ленты до следующего круга. Источник сообщает это полем
     // partial; кто его не шлёт, ничего не теряет.
     $partial = !empty($saved['partial']);
+    // Какие сайты ответили целиком. Карьерный источник — это десятки
+    // работодателей в одном обходе, и раньше хватало одного 403, чтобы круг
+    // стал «не весь» и не гасилось НИЧЕГО: закрытая вакансия висела до недели.
+    // Теперь по каждому адресу (порядковый номер page в ответе career.php)
+    // копим его собственные хосты (hosts в ответе) и отметку о сбое; гасим по
+    // хостам, чьи адреса прошли целиком. Значения — множества: хост => true.
+    $unitHosts = is_array($saved['unit_hosts'] ?? null) ? $saved['unit_hosts'] : [];
+    $unitFailed = is_array($saved['unit_failed'] ?? null) ? $saved['unit_failed'] : [];
     // Сколько описаний дочитали за этот заход — видно в статусе источника.
     $described = 0;
 
@@ -538,6 +597,13 @@ function ing_run_source(array $src): array
 
         $dec = $page['data'];
         if (!empty($dec['partial'])) $partial = true;
+        $unitNo = isset($dec['page']) && is_int($dec['page']) ? (string)$dec['page'] : null;
+        if ($unitNo !== null) {
+            if (!empty($dec['failed'])) $unitFailed[$unitNo] = true;
+            foreach ((array)($dec['hosts'] ?? []) as $h) {
+                if (is_string($h) && $h !== '') $unitHosts[$unitNo][strtolower($h)] = true;
+            }
+        }
         $items = is_array($dec['items'] ?? null) ? $dec['items']
             : (array_is_list($dec) ? $dec : null);
         if (!is_array($items)) {
@@ -555,9 +621,20 @@ function ing_run_source(array $src): array
         // увидел бы «Источник не прислал описания» до следующего круга.
         // Только карьерные источники: партнёрское API обязано прислать описание
         // фидом, ходить за ним по страницам — не наше дело.
-        if (($src['connector_kind'] ?? '') === 'career') {
+        // Ежечасный заход по API за описаниями не ходит: это обход страниц
+        // вакансий у чужих сайтов каждый час — его делает полный круг.
+        if (($src['connector_kind'] ?? '') === 'career' && $scope !== 'api') {
             $described += ing_fill_descriptions($rows, $deadline);
         }
+        // Пустое описание — «не прислали», а не «стёрли». Раньше строка
+        // уходила в upsert с description = null и затирала текст, который
+        // describe.php уже дочитал со страницы вакансии; с ежечасным заходом
+        // это случалось бы каждый час. Без ключа upsert поле не трогает
+        // (пачки режутся по набору колонок, см. ing_chunks_by_columns).
+        foreach ($rows as &$row) {
+            if (trim((string)($row['description'] ?? '')) === '') unset($row['description']);
+        }
+        unset($row);
         foreach (ing_chunks_by_columns($rows) as $chunk) {
             sb_upsert_rows('jm_ext_vacancies', $chunk, 'source_id,external_id');
             sm_cache_invalidate();
@@ -594,6 +671,7 @@ function ing_run_source(array $src): array
                 'base' => $baseUrl, 'started' => $startedAt, 'next' => $nextUrl,
                 'received' => $received, 'skipped' => $skipped, 'pages' => $pages,
                 'partial' => $partial,
+                'unit_hosts' => $unitHosts, 'unit_failed' => $unitFailed,
             ]);
             if (file_put_contents($stateFile . '.tmp', $checkpoint) === false
                 || !rename($stateFile . '.tmp', $stateFile)) {
@@ -620,19 +698,18 @@ function ing_run_source(array $src): array
     // неполном круге: неделя — это семь заходов подряд, за которые её не отдал
     // ни сайт, ни кэш. Свежие при этом не страдают: у них отметка сегодняшняя.
     $gone = 0;
-    if ($complete) {
+    if ($complete && $mayDeactivate) {
         // На полном круге граница — начало этого круга: не увидели сейчас,
         // значит вакансии больше нет. На неполном — неделя назад.
         $cut = $partial ? gmdate('Y-m-d\TH:i:s\Z', time() - STALE_MAX_DAYS * 86400) : $startedAt;
-        $stale = sb_select_all('jm_ext_vacancies', [
-            'source_id' => 'eq.' . $src['id'],
-            'active' => 'is.true',
-            'last_seen_at' => 'lt.' . $cut,
-        ], 'id');
-        foreach (array_chunk(array_column($stale, 'id'), 100) as $chunk) {
-            sb_update('jm_ext_vacancies', ['id' => 'in.(' . implode(',', $chunk) . ')'], ['active' => false]);
+        $gone += ing_deactivate_stale((string)$src['id'], $cut, null);
+        // Неполный круг, но часть сайтов ответила целиком: их пропавшие
+        // вакансии гасим сейчас, не дожидаясь недели.
+        if ($partial) {
+            foreach (ing_complete_hosts($unitHosts, $unitFailed) as $host) {
+                $gone += ing_deactivate_stale((string)$src['id'], $startedAt, $host);
+            }
         }
-        $gone = count($stale);
         if ($gone > 0) sm_cache_invalidate();
     }
 
@@ -655,6 +732,10 @@ function ing_run_source(array $src): array
 if (!defined('INGEST_LIBRARY_ONLY')) {
 $only = trim((string)($_GET['source'] ?? ''));   // для кнопки «проверить сейчас»
 $force = ($_GET['force'] ?? '') !== '';
+// scope=api — ежечасный заход по карьерным адресам с API (см. ing_run_source).
+// Он не подменяет полный круг: расписание источника не проверяет и не
+// сдвигает, статус источника в панели не трогает, только пишет журнал.
+$scope = ($_GET['scope'] ?? '') === 'api' ? 'api' : '';
 
 $f = ['enabled' => 'is.true'];
 if ($only !== '') $f['id'] = 'eq.' . $only;
@@ -664,15 +745,21 @@ $done = [];
 foreach ($sources as $src) {
     // Расписание проверяем здесь, а не таймером: у каждого источника оно своё,
     // а таймер один.
-    if (!$force && !empty($src['last_run_at'])) {
+    if ($scope === 'api' && ($src['connector_kind'] ?? '') !== 'career') continue;
+    if ($scope === '' && !$force && !empty($src['last_run_at'])) {
         $age = time() - strtotime((string)$src['last_run_at']);
         if ($age < (int)$src['period_min'] * 60) continue;
     }
     $started = microtime(true);
-    $res = ing_run_source($src);
+    $res = ing_run_source($src, $scope);
     $durationMs = (int)round((microtime(true) - $started) * 1000);
     $ranAt = now_iso();
     $success = str_starts_with((string)$res['status'], 'ок');
+    // Пометка после проверки успеха: журнал должен отличать ежечасный заход
+    // от полного круга, а успех считается по исходному статусу.
+    // В конце, а не в начале: workflow ищет в ответе «"продолжение» сразу
+    // после кавычки и по нему решает, звать ли ingest ещё раз.
+    if ($scope === 'api') $res['status'] .= ' (API ежечасно)';
     $pages = isset($res['pages']) ? (int)$res['pages'] : null;
     $skipped = isset($res['skipped']) ? (int)$res['skipped'] : null;
     $deactivated = isset($res['deactivated']) ? (int)$res['deactivated'] : null;
@@ -689,7 +776,7 @@ foreach ($sources as $src) {
             ? 0 : ((int)($src['consecutive_failures'] ?? 0) + 1),
     ];
     if ($success) $sourceUpdate['last_success_at'] = $ranAt;
-    sb_update('jm_ext_sources', ['id' => 'eq.' . $src['id']], $sourceUpdate);
+    if ($scope === '') sb_update('jm_ext_sources', ['id' => 'eq.' . $src['id']], $sourceUpdate);
 
     if (empty($res['pending'])) sb_insert('jm_ext_ingest_runs', [
         'id' => bin2hex(random_bytes(12)),
