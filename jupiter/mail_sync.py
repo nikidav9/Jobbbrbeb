@@ -24,10 +24,19 @@ DOMAIN = "jobtoo.ru"
 # that hop, so only the first Received line whose "by" host is Timeweb's
 # public MX is authoritative for the original envelope recipient.
 _TIMEWEB_INGRESS = re.compile(r"\bby\s+mx\d+\.timeweb\.ru\b", re.IGNORECASE)
+# Personal addresses: legacy u-<token> and readable ivan.petrov2 (see
+# php-proxy/jupiter_mail_address.php). Service names of the domain are never a
+# person's mailbox — the catch-all box itself is support@.
 _TIMEWEB_FOR = re.compile(
-    r"\bfor\s+<?\s*(u-[a-z0-9-]+@jobtoo\.ru)\s*>?\s*;",
+    r"\bfor\s+<?\s*([a-z0-9][a-z0-9.-]{0,63}@jobtoo\.ru)\s*>?\s*;",
     re.IGNORECASE,
 )
+_RESERVED_LOCAL = frozenset({
+    "abuse", "admin", "administrator", "billing", "contact", "help",
+    "hostmaster", "hr", "info", "jobtoo", "mail", "mailer-daemon",
+    "no-reply", "noreply", "postmaster", "privacy", "root", "security",
+    "support", "team", "test", "user", "webmaster",
+})
 
 
 def _timeweb_envelope_recipient(message: email.message.Message) -> str | None:
@@ -38,7 +47,10 @@ def _timeweb_envelope_recipient(message: email.message.Message) -> str | None:
         # personal alias. Looking lower would allow a forged Received header
         # supplied by the sender to win.
         match = _TIMEWEB_FOR.search(received)
-        return match.group(1).lower() if match else None
+        if not match:
+            return None
+        address = match.group(1).lower()
+        return None if address.split("@", 1)[0] in _RESERVED_LOCAL else address
     return None
 
 

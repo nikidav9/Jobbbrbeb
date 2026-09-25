@@ -20,6 +20,7 @@ require_once __DIR__ . '/shift_funnel.php';
 require_once __DIR__ . '/feed_funnel.php';
 require_once __DIR__ . '/sitemap_cache.php';
 require_once __DIR__ . '/push_privacy.php';
+require_once __DIR__ . '/jupiter_mail_address.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -476,6 +477,40 @@ function tg_pending_write(array $all): void {
 
 function uid(): string {
     return base_convert(time(), 10, 36) . substr(base_convert(mt_rand(), 10, 36), 2, 5);
+}
+
+/**
+ * Адрес «Почты JobToo» человека; нет — выдаём читаемый (имя.фамилия).
+ *
+ * Занятым считается и адрес удалённого аккаунта (jm_jupiter_retired_addresses):
+ * иначе новый тёзка получал бы чужие ответы работодателей. Гонку двух
+ * одновременных выдач решает уникальный индекс: проигравший кандидат
+ * отбрасывается, и берётся следующий.
+ */
+function jt_jupiter_mailbox(string $userId): ?string {
+    $box = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $userId], 'address');
+    if (!empty($box['address'])) return $box['address'];
+    $user = sb_single('jm_users', ['id' => 'eq.' . $userId], 'first_name,last_name,is_blocked');
+    if (!$user || !empty($user['is_blocked'])) return null;
+    $base = jt_mail_base((string)($user['first_name'] ?? ''), (string)($user['last_name'] ?? ''));
+    foreach (jt_mail_candidates($base) as $local) {
+        $address = $local . '@' . JT_MAIL_DOMAIN;
+        if (sb_single('jm_jupiter_mailboxes', ['address' => 'eq.' . $address], 'user_id')
+            || sb_single('jm_jupiter_retired_addresses', ['address' => 'eq.' . $address], 'address')) {
+            continue;
+        }
+        try {
+            sb('POST', 'jm_jupiter_mailboxes', ['on_conflict' => 'user_id'], [
+                'user_id' => $userId, 'address' => $address,
+            ], ['Prefer: resolution=ignore-duplicates,return=representation']);
+        } catch (RuntimeException $e) {
+            continue;   // адрес успел занять другой — пробуем следующий
+        }
+        // Своя строка или строка параллельного запроса того же человека.
+        $box = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $userId], 'address');
+        if (!empty($box['address'])) return $box['address'];
+    }
+    return null;
 }
 
 function jt_new_user_id_is_valid(string $id): bool {
@@ -6026,15 +6061,7 @@ try {
 
         case 'jupiterMailbox': {
             $uidArg = (string)$args[0];
-            $box = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address');
-            if (!$box) {
-                $address = 'u-' . bin2hex(random_bytes(12)) . '@jobtoo.ru';
-                $rows = sb('POST', 'jm_jupiter_mailboxes', ['on_conflict' => 'user_id'], [
-                    'user_id' => $uidArg, 'address' => $address,
-                ], ['Prefer: resolution=ignore-duplicates,return=representation']);
-                $box = $rows[0] ?? sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address');
-            }
-            $data = ['address' => $box['address'] ?? null,
+            $data = ['address' => jt_jupiter_mailbox($uidArg),
                 'ready' => jt_secret('JUPITER_MAIL_VERIFIED') === '1'];
             break;
         }
@@ -6093,7 +6120,7 @@ try {
             ], 'id')) {
                 jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit;
             }
-            if ($enabled && !sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address')) {
+            if ($enabled && !jt_jupiter_mailbox($uidArg)) {
                 jt_respond(['error' => 'Сначала откройте почту JobToo для создания адреса'], 409); exit;
             }
             sb_update('jm_users', ['id' => 'eq.' . $uidArg], [
@@ -6147,9 +6174,7 @@ try {
                 'user_id' => 'eq.' . $uidArg,
                 'selected' => 'eq.true',
             ], 'storage_path');
-            $mailbox = sb_single('jm_jupiter_mailboxes', [
-                'user_id' => 'eq.' . $uidArg,
-            ], 'address');
+            $mailbox = ['address' => jt_jupiter_mailbox($uidArg)];
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1'
                 || empty($resume['storage_path']) || empty($mailbox['address'])) {
                 jt_respond(['error' => 'Почта или выбранное PDF-резюме недоступны'], 409); exit;
@@ -6256,7 +6281,7 @@ try {
                     : $user['resume_data'];
             }
             if (!is_array($resumeData)) $resumeData = [];
-            $mailbox = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uidArg], 'address');
+            $mailbox = ['address' => jt_jupiter_mailbox($uidArg)];
             $firstName = trim((string)($user['first_name'] ?? ''));
             $lastName = trim((string)($user['last_name'] ?? ''));
             $patronymic = trim((string)($personalData['middleName'] ?? ''));
@@ -6459,9 +6484,7 @@ try {
             $resume = $task ? sb_single('jm_resume_files', [
                 'user_id' => 'eq.' . $task['user_id'], 'selected' => 'eq.true',
             ], 'storage_path') : null;
-            $mailbox = $task ? sb_single('jm_jupiter_mailboxes', [
-                'user_id' => 'eq.' . $task['user_id'],
-            ], 'address') : null;
+            $mailbox = $task ? ['address' => jt_jupiter_mailbox((string)$task['user_id'])] : null;
             if (!$task || !$user || $worker === ''
                 || jt_secret('JUPITER_MAIL_VERIFIED') !== '1'
                 || empty($resume['storage_path']) || empty($mailbox['address'])
@@ -6557,7 +6580,7 @@ try {
             if (!$resumeUrl) {
                 jt_respond(['error' => 'Выбранное резюме временно недоступно'], 503); exit;
             }
-            $mailbox = sb_single('jm_jupiter_mailboxes', ['user_id' => 'eq.' . $uid], 'address');
+            $mailbox = ['address' => jt_jupiter_mailbox($uid)];
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1' || empty($mailbox['address'])) {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }

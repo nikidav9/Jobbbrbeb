@@ -24,6 +24,21 @@ class MailRoutingTests(unittest.TestCase):
         self.assertEqual(letter["imap_uid"], "2:8")
         self.assertEqual(letter["body"], "Hello")
 
+    def test_routes_readable_address(self):
+        raw = (b"Received: from sender.example [203.0.113.8]\r\n"
+               b"\tby mx2.timeweb.ru with esmtps id abc123\r\n"
+               b"\tfor <Ivan.Petrov2@jobtoo.ru>; Thu, 25 Sep 2026 13:41:30 +0300\r\n"
+               b"Subject: Interview\r\n\r\nHello")
+        address, _ = parse_message(raw, "9", "2")
+        self.assertEqual(address, "ivan.petrov2@jobtoo.ru")
+
+    def test_service_address_is_not_a_person(self):
+        raw = (b"Received: from sender.example [203.0.113.8]\r\n"
+               b"\tby mx1.timeweb.ru with esmtps id abc123\r\n"
+               b"\tfor <support@jobtoo.ru>; Thu, 25 Sep 2026 13:41:30 +0300\r\n"
+               b"Subject: Hi\r\n\r\nHello")
+        self.assertIsNone(parse_message(raw, "9", "2"))
+
     def test_sender_controlled_original_headers_are_ignored(self):
         raw = (b"Received: from sender.example [203.0.113.8]\r\n"
                b"\tby mx1.timeweb.ru with esmtps id abc123\r\n"

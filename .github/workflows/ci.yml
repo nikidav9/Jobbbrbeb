@@ -70,6 +70,9 @@ jobs:
       - name: Заявки Jupiter — свои свои, воркер не подменяет чужое
         run: php tests/jupiter_applications_test.php
 
+      - name: Почта JobToo — читаемый адрес, повтор получает цифру
+        run: php tests/jupiter_mail_address_test.php
+
       - name: Карьерная страница превращается в вакансии, а не в мусор
         run: php tests/career_feed_test.php
 
