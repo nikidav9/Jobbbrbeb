@@ -1774,6 +1774,25 @@ function toExtVacancy(row: any): ExtVacancy {
   };
 }
 
+/**
+ * Порция ленты карьерных вакансий под человека: без уже свайпнутых, с
+ * чередованием компаний и учётом вкуса (php-proxy/ext_feed.php). Вместо
+ * всего каталога — ~60 карточек за раз.
+ */
+export async function dbGetExtFeed(limit = 60): Promise<ExtVacancy[]> {
+  const rows = (await proxy('dbGetExtFeed', [limit])) as any[];
+  return (Array.isArray(rows) ? rows : []).map(toExtVacancy);
+}
+
+/** Свайп по карьерной вакансии: 1 — вправо, -1 — влево. */
+export async function dbExtSwipe(userId: string, vacancyId: string, dir: 1 | -1): Promise<void> {
+  await proxy('dbExtSwipe', [userId, vacancyId, dir]);
+}
+
+export async function dbExtUnswipe(userId: string, vacancyId: string): Promise<void> {
+  await proxy('dbExtUnswipe', [userId, vacancyId]);
+}
+
 export async function dbGetExtVacancies(company?: string): Promise<ExtVacancy[]> {
   const rows = (await proxy('dbGetExtVacancies', company ? [company] : [])) as any[];
   return (rows ?? []).map(toExtVacancy);

@@ -55,7 +55,9 @@ check('гостю после стены регистрации карточка 
 // ── Возврат вакансии возвращает и списанный свайп ───────────────────────────
 // Иначе промах наказан дважды: и карточку верни, и энергию потерял.
 $undo = strpos($feed, 'const swUndo = useCallback');
-$undoEnd = $undo !== false ? strpos($feed, "\n  }, [energy]);", $undo) : false;
+// Конец — список зависимостей, начинающийся с energy: в нём может быть и
+// ещё что-то (с 25.09 — currentUser?.id, чтобы снять свайп на сервере).
+$undoEnd = $undo !== false ? strpos($feed, "\n  }, [energy", $undo) : false;
 $undoBody = ($undo !== false && $undoEnd !== false) ? substr($feed, $undo, $undoEnd - $undo) : '';
 check('возврат вакансии найден', $undoBody !== '');
 check('возврат вакансии возвращает свайп', str_contains($undoBody, 'energy.refundOne()'));

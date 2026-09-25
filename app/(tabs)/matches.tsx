@@ -20,6 +20,8 @@ import {
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { jupiterManualEligible } from '@/services/jupiterFill';
+import { CompanyMark } from '@/components/ui/CompanyMark';
+import { companyLogo } from '@/constants/companyLogos';
 import { jupiterNeedsSberConsent, jupiterStatus } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
@@ -509,9 +511,13 @@ function WorkerMatches() {
         onPress={onRowPress}
         accessibilityLabel={`${company}. ${status.label}. Открыть карточку отклика`}
       >
-        <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
-          <Text style={wm.logoTxt}>{getInitials(company)}</Text>
-        </View>
+        {companyLogo(company) ? (
+          <View style={wm.logoImg}><CompanyMark company={company} size={rs(44)} /></View>
+        ) : (
+          <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
+            <Text style={wm.logoTxt}>{getInitials(company)}</Text>
+          </View>
+        )}
         <View style={wm.rowBody}>
           <Text style={wm.rowTitle} numberOfLines={2}>{company}</Text>
           <Text style={wm.rowCompany} numberOfLines={1}>Вакансия на карьерном сайте</Text>
@@ -963,6 +969,7 @@ const wm = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14) },
   rowNeedsYou: { backgroundColor: '#FEF6ED' },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
+  logoImg: {},
   logo: {
     width: rs(44), height: rs(44), borderRadius: rs(12),
     alignItems: 'center', justifyContent: 'center',

@@ -21,6 +21,7 @@ require_once __DIR__ . '/feed_funnel.php';
 require_once __DIR__ . '/sitemap_cache.php';
 require_once __DIR__ . '/push_privacy.php';
 require_once __DIR__ . '/jupiter_mail_address.php';
+require_once __DIR__ . '/ext_feed.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -238,7 +239,7 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
-    'dbResponsivenessMap', 'dbGetExtVacancies',
+    'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
     jt_respond(['error' => 'Authentication required'], 401); exit;
@@ -276,6 +277,8 @@ $selfArgFns = [
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
     'jupiterApplicationEvents' => 0,
+    // Свайпы по карьерным вакансиям: только свои.
+    'dbExtSwipe' => 0, 'dbExtUnswipe' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -6020,6 +6023,49 @@ try {
         // ── Permanent vacancies ────────────────────────────────────────────────
         case 'dbGetPermVacancies':
             $data = sb_select('jm_perm_vacancies', ['status' => 'eq.open'], '*', 'created_at.desc'); break;
+
+        // Лента карьерных вакансий: порция под человека (php-proxy/ext_feed.php).
+        // Гость получает общую ленту с чередованием компаний, вошедший — без
+        // уже свайпнутых и с учётом вкуса. Кто вошёл — из подписанной сессии,
+        // не из аргументов: чужие свайпы так не подсмотреть.
+        case 'dbGetExtFeed': {
+            $limit = max(10, min(100, (int)($args[0] ?? 60)));
+            $pool = sb_rpc('jm_ext_feed_pool', ['p_user' => $authUid, 'p_per_company' => 30]);
+            $history = [];
+            if ($authUid !== null) {
+                foreach (sb_select('jm_ext_swipes', [
+                    'user_id' => 'eq.' . $authUid, 'limit' => '300',
+                ], 'dir,jm_ext_vacancies(company,title)', 'created_at.desc') as $h) {
+                    $v = $h['jm_ext_vacancies'] ?? [];
+                    $history[] = ['dir' => $h['dir'] ?? 0, 'company' => $v['company'] ?? '', 'title' => $v['title'] ?? ''];
+                }
+            }
+            $data = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history), $limit,
+                ($authUid ?? 'guest') . '|' . gmdate('Y-m-d'));
+            break;
+        }
+
+        case 'dbExtSwipe': {
+            $dir = (int)($args[2] ?? 0);
+            $vacancyId = (string)($args[1] ?? '');
+            if (!in_array($dir, [-1, 1], true) || $vacancyId === '') {
+                jt_respond(['error' => 'Bad swipe'], 400); exit;
+            }
+            sb('POST', 'jm_ext_swipes', ['on_conflict' => 'user_id,vacancy_id'], [
+                'user_id' => (string)$args[0], 'vacancy_id' => $vacancyId, 'dir' => $dir,
+            ], ['Prefer: resolution=merge-duplicates,return=minimal']);
+            $data = ['ok' => true];
+            break;
+        }
+
+        // Кнопка «вернуть» в шапке ленты: свайп отменяется целиком.
+        case 'dbExtUnswipe': {
+            sb('DELETE', 'jm_ext_swipes', [
+                'user_id' => 'eq.' . (string)$args[0], 'vacancy_id' => 'eq.' . (string)($args[1] ?? ''),
+            ]);
+            $data = ['ok' => true];
+            break;
+        }
 
         case 'dbGetExtVacancies': {
             $f = ['active' => 'eq.true'];
