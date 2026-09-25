@@ -195,6 +195,24 @@ check('воркеру разрешено брать задачи через serv
 check('сторож RLS видит новую таблицу',
     str_contains($guard, "('jm_jupiter_applications')"));
 
+// ── История отклика ─────────────────────────────────────────────────────────
+// Чужую историю не отдаём: владелец сверяется по позиции 0, а выборка идёт
+// ещё и по user_id — чужой id заявки даст пустоту, а не чужие шаги.
+$events = (string)file_get_contents(
+    __DIR__ . '/../supabase/migrations/111_jupiter_application_events.sql'
+);
+check('jupiterApplicationEvents проверяет владельца',
+    (bool)preg_match("~'jupiterApplicationEvents' => 0~", $db));
+check('история выбирается по user_id владельца',
+    (bool)preg_match("~case 'jupiterApplicationEvents'.{0,200}'user_id' => 'eq\\.'~s", $db));
+check('историю пишет триггер на заявках',
+    str_contains($events, 'after insert or update on public.jm_jupiter_applications'));
+check('история закрыта RLS и сторожем',
+    str_contains($events, 'alter table public.jm_jupiter_events enable row level security')
+    && str_contains($guard, "('jm_jupiter_events')"));
+check('история не хранит значения полей — только сводку',
+    !preg_match('~"value"~', $events));
+
 if ($failures) {
     echo "jupiter applications: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

@@ -156,6 +156,7 @@ class TaskQueueProto(Protocol):
         reason_code: str | None = ...,
         resume_token: str | None = ...,
         receipt_key: str | None = ...,
+        summary: dict | None = ...,
     ) -> None: ...
     def fail(self, task_id: str, error: str, *, retryable: bool = ...) -> str: ...
 
@@ -265,10 +266,13 @@ class TaskQueue:
         reason_code: str | None = None,
         resume_token: str | None = None,
         receipt_key: str | None = None,
+        summary: dict | None = None,
     ) -> None:
         task = self._items.get(task_id)
         if task is None:
             return
+        if summary is not None:
+            task.checkpoint = {"summary": dict(summary)}
         task.lease_owner = None
         task.lease_until = 0.0
         task.reason_code = reason_code

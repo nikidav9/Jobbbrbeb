@@ -253,6 +253,15 @@ class RemoteTaskQueueTest(unittest.TestCase):
         self.assertEqual(finish_call[0], "jupiterFinish")
         self.assertTrue(finish_call[1][3]["verified"])
 
+    def test_finish_passes_fill_summary_as_checkpoint(self) -> None:
+        self._seed()
+        q = self._queue()
+        task = q.lease("w1")
+        summary = {"fields": 3, "keys": ["first_name", "phone"], "resume": True}
+        q.finish(task.id, TaskState.SUBMITTED, summary=summary)
+        extra = FakeDbHandler.calls[-1][1][3]
+        self.assertEqual(extra["checkpoint"], {"summary": summary})
+
     def test_finish_with_action_required_stores_resume_token(self) -> None:
         tid = self._seed()
         q = self._queue()

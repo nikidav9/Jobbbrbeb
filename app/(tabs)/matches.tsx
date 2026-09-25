@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
-import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacancy, Chat, ReportableOutcome, JupiterApplication, JupiterApplicationState } from '@/constants/types';
+import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacancy, Chat, ReportableOutcome, JupiterApplication } from '@/constants/types';
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
@@ -20,6 +20,7 @@ import {
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { jupiterManualEligible } from '@/services/jupiterFill';
+import { jupiterNeedsSberConsent, jupiterStatus } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -318,27 +319,6 @@ function permAppStatus(status: PermApplicationStatus): {
   }
 }
 
-function jupiterAppStatus(state: JupiterApplicationState): { label: string; fg: string; bg: string } {
-  switch (state) {
-    case 'ready_to_submit':
-      return { label: 'Анкета заполнена · не отправлена', fg: '#B45309', bg: '#FEF3C7' };
-    case 'submitted':
-      return { label: 'Отправлено', fg: '#047857', bg: '#D1FAE5' };
-    case 'action_required':
-      return { label: 'Нужно ваше участие', fg: '#B45309', bg: '#FEF3C7' };
-    case 'submission_unknown':
-      return { label: 'Отправка не подтверждена', fg: '#B45309', bg: '#FEF3C7' };
-    case 'failed':
-      return { label: 'Не удалось заполнить', fg: Colors.red, bg: '#FEE2E2' };
-    case 'retryable_failed':
-      return { label: 'Повторит позже', fg: '#B45309', bg: '#FEF3C7' };
-    case 'duplicate':
-      return { label: 'Повтор не отправлен', fg: '#047857', bg: '#D1FAE5' };
-    default:
-      return { label: 'Юпитер обрабатывает', fg: '#1D4ED8', bg: '#DBEAFE' };
-  }
-}
-
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
 
 const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
@@ -515,42 +495,19 @@ function WorkerMatches() {
 
   const renderJupiterApp = (a: JupiterApplication, last: boolean) => {
     const company = a.company?.trim() || 'Карьерный сайт';
-    const isSber = /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
-    const needsSberConsent = isSber
-      && a.state === 'action_required'
-      && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
-    const status = a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED'
-      ? { label: 'Автоотклик выключен · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
-      : needsSberConsent
-        ? { label: 'Нужно согласие Сбера · не отправлено', fg: '#B45309', bg: '#FEF3C7' }
-        : a.reasonCode === 'UNSUPPORTED_SCRIPT'
-          ? { label: 'Нужен браузер · отклик не отправлен', fg: '#B45309', bg: '#FEF3C7' }
-          : a.reasonCode === 'SITE_NOT_VERIFIED'
-            ? { label: 'Сайт ещё подключаем · отклик сохранён', fg: '#1D4ED8', bg: '#DBEAFE' }
-            : a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW'
-              ? { label: 'Отправлено вами', fg: '#047857', bg: '#D1FAE5' }
-              : jupiterAppStatus(a.state);
-    const canApplyManually = ['ready_to_submit', 'action_required', 'failed'].includes(a.state);
-    // Ручной путь через встроенный браузер — своё, более широкое условие
-    // (доступен и для retryable_failed), кроме особых путей Сбера и
-    // повторной авторизации: у тех остаётся прежняя кнопка ниже.
-    const canApplyManuallyWebview = jupiterManualEligible(a);
-    const canOpen = canApplyManuallyWebview || canApplyManually;
-    const onRowPress = () => {
-      if (canApplyManuallyWebview && Platform.OS !== 'web') {
-        router.push({ pathname: '/jupiter-fill', params: { id: a.id, company } });
-        return;
-      }
-      Linking.openURL(a.vacancyUrl).catch(() => showToast('Не удалось открыть сайт компании', 'error'));
-    };
+    const needsSberConsent = jupiterNeedsSberConsent(a);
+    const status = jupiterStatus(a);
+    // Строка ведёт в карточку отклика: статус, действие и история шагов
+    // (app/jupiter-application.tsx). Анкета «Ждут вас» открывается оттуда
+    // или пачкой — кнопкой «По очереди ›».
+    const onRowPress = () => router.push({ pathname: '/jupiter-application', params: { id: a.id } });
     return (
       <React.Fragment key={a.id}>
       <TouchableOpacity
         style={[wm.row, !last && wm.rowDivider]}
-        activeOpacity={canOpen ? 0.85 : 1}
-        disabled={!canOpen}
+        activeOpacity={0.85}
         onPress={onRowPress}
-        accessibilityLabel={`${company}. ${status.label}${canOpen ? '. Открыть вакансию на сайте' : ''}`}
+        accessibilityLabel={`${company}. ${status.label}. Открыть карточку отклика`}
       >
         <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
           <Text style={wm.logoTxt}>{getInitials(company)}</Text>
@@ -562,7 +519,7 @@ function WorkerMatches() {
             <Text style={[wm.statusTxt, { color: status.fg }]}>{status.label}</Text>
           </View>
         </View>
-        {canOpen ? <Ionicons name="open-outline" size={18} color={Colors.primary} /> : null}
+        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
       </TouchableOpacity>
       {((a.state === 'ready_to_submit' && !a.submissionAuthorizedAt)
         || (a.state === 'action_required' && a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED')) ? (

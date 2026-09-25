@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
+import type { JupiterEvent } from '@/services/jupiterTimeline';
 import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
@@ -1673,6 +1674,15 @@ export async function jupiterMyApplications(
     throw new Error('Сервер не вернул список заявок Jupiter. Попробуйте обновить экран.');
   }
   return rows.map(toJupiterApplication);
+}
+
+/** История своего отклика для карточки (шаги пишет триггер базы). */
+export async function jupiterApplicationEvents(
+  userId: string,
+  applicationId: string,
+): Promise<JupiterEvent[]> {
+  const rows = await proxy('jupiterApplicationEvents', [userId, applicationId]);
+  return Array.isArray(rows) ? (rows as JupiterEvent[]) : [];
 }
 
 export async function jupiterLiveStatus(userId: string): Promise<boolean> {

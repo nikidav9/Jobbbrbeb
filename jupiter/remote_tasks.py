@@ -144,10 +144,15 @@ class RemoteTaskQueue:
         reason_code: str | None = None,
         resume_token: str | None = None,
         receipt_key: str | None = None,
+        summary: dict | None = None,
     ) -> None:
         if self._worker is None:
             return
         extra: dict[str, Any] = {}
+        # Сводка заполнения ложится в checkpoint: триггер базы переносит её в
+        # историю отклика (jm_jupiter_events), когда меняется состояние.
+        if summary is not None:
+            extra["checkpoint"] = {"summary": summary}
         # The worker only emits SUBMITTED after its success-verification path
         # has confirmed the employer response. Preserve that fact server-side
         # so the UI can distinguish "POST attempted" from "accepted".
