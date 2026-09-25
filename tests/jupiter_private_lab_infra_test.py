@@ -119,3 +119,10 @@ assert '"recon_state"' in (ROOT / "infra" / "migrate.sh").read_text(encoding="ut
 assert "location = /jupiter-recon.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
 
 print("jupiter native engine infra: ok")
+
+# SSH-ключи владельца едут кодом: только публичные и только дописываются.
+keys = (ROOT / "infra" / "ssh-authorized-keys").read_text(encoding="utf-8")
+assert "PRIVATE KEY" not in keys
+assert all(line.startswith(("#", "ssh-ed25519 ", "ssh-rsa ", "ecdsa-sha2-")) for line in keys.splitlines() if line.strip())
+assert "infra/ssh-authorized-keys" in bootstrap and ">> /root/.ssh/authorized_keys" in bootstrap
+assert "> /root/.ssh/authorized_keys" not in bootstrap.replace(">> /root/.ssh/authorized_keys", "")

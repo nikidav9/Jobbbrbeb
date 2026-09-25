@@ -209,6 +209,23 @@ EOF
   systemctl enable --now jt-health-sample.timer >/dev/null 2>&1 || true
 fi
 
+# Вход по SSH: ключи владельца из infra/ssh-authorized-keys. Пароли сервер не
+# принимает, а вставить ключ в веб-консоль Timeweb с телефона нельзя, поэтому
+# ключ едет сюда кодом. Только дописываем недостающие строки, чужие не трогаем;
+# берём лишь строки, похожие на публичный ключ.
+if [ -f "$REPO/infra/ssh-authorized-keys" ]; then
+  install -d -m 700 /root/.ssh
+  touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+  # Без перевода строки в конце новый ключ склеился бы с последним.
+  if [ -s /root/.ssh/authorized_keys ] && [ -n "$(tail -c1 /root/.ssh/authorized_keys)" ]; then
+    echo >> /root/.ssh/authorized_keys
+  fi
+  grep -E '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+) [A-Za-z0-9+/=]+( .*)?$' \
+    "$REPO/infra/ssh-authorized-keys" | while IFS= read -r key; do
+    grep -qxF "$key" /root/.ssh/authorized_keys || echo "$key" >> /root/.ssh/authorized_keys
+  done
+fi
+
 # Разведка анкет отклика с московского адреса, раз в сутки. Только чтение:
 # Jupiter в dry-run, синтетический кандидат, заявки не уходят. Итог —
 # /jupiter-recon.json (адреса работодателей и устройство анкет, без людей).
