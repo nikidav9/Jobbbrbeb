@@ -314,6 +314,14 @@
 показывает их `components/ui/CompanyMark.tsx`. `dbGetExtVacancies` оставлен
 для старых сборок.
 
+**Разделы ленты** (с 25.09.2026). У каждой карьерной вакансии есть `section`
+(миграция 114): «it», «warehouse», «delivery» и ещё 12, «other» — не узнали.
+Выводит его из названия `php-proxy/job_sections.php` при приёме (ingest.php);
+порядок правил важен, ловушки вроде «руководитель» ⊃ «водитель» собраны в
+`tests/job_sections_test.php`. Подписи для экрана — `constants/jobSections.ts`,
+идентификаторы сверяет тот же тест. Свои вакансии JobToo раскладываются по
+виду работ (`SECTION_BY_WORK_TYPE`).
+
 **Расписание забора.** `.github/workflows/career-ingest.yml` зовёт `ingest.php`
 каждые 6 часов (02:30, 08:30, 14:30, 20:30 UTC). Без него таблица
 `jm_ext_vacancies` остаётся пустой. Можно запустить руками через

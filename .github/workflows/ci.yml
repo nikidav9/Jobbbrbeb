@@ -76,6 +76,9 @@ jobs:
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
 
+      - name: Разделы ленты — название вакансии ведёт в свой раздел
+        run: php tests/job_sections_test.php
+
       - name: Карьерная страница превращается в вакансии, а не в мусор
         run: php tests/career_feed_test.php
 
