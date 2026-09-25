@@ -1,5 +1,7 @@
 <?php
-$career = file_get_contents(__DIR__ . '/../php-proxy/career.php');
+// Сеть переехала в career_unit.php (career.php её больше не определяет) —
+// разведка перед включением endpoint'а проверяет его ровно тем же кодом.
+$career = file_get_contents(__DIR__ . '/../php-proxy/career_unit.php');
 $failures = [];
 function check_http_method(string $name, bool $ok): void
 {

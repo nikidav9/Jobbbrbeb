@@ -7,6 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sync = (ROOT / 'infra/sync-career-catalog.sh').read_text(encoding='utf-8')
 migration = (ROOT / 'supabase/migrations/089_consolidate_career_catalog.sql').read_text(encoding='utf-8')
 career = (ROOT / 'php-proxy/career.php').read_text(encoding='utf-8')
+# Поход за порцией и разбор JSON с картой полей переехали в career_unit.php:
+# career.php теперь его подключает и зовёт cf_fetch_unit, а не разбирает ответ
+# сам — этим же кодом разведка проверяет endpoint перед включением.
+career_unit = (ROOT / 'php-proxy/career_unit.php').read_text(encoding='utf-8')
 
 failures = []
 
@@ -45,7 +49,8 @@ check('варианты Яндекс Лавки нормализуются',
 
 # Сам карьерный endpoint по-прежнему умеет обрабатывать endpoints из config.
 check('career.php читает endpoints', "config['endpoints']" in career)
-check('career.php поддерживает JSON mapping', "cf_json_items($data, $unit['map']" in career)
+check('career.php подключает career_unit.php', "require_once __DIR__ . '/career_unit.php'" in career)
+check('career_unit.php поддерживает JSON mapping', "cf_json_items($data, $unit['map']" in career_unit)
 
 if failures:
     print('career full catalog: ПРОВАЛЫ')

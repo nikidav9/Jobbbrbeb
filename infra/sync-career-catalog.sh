@@ -1,7 +1,9 @@
 #!/bin/bash
 # Синхронизирует scripts/career-sites.tsv с production-источником career_owner.
-# Файл — единый master-list целей: сейчас 408 компаний. Разведка (browser-
-# discovery) пока не возвращена, поэтому каталог заморожен на найденном.
+# Файл — единый master-list целей: сейчас 408 компаний. Еженедельная разведка
+# на сервере (infra/career-discover-run.sh) находит и проверяет новые endpoints
+# сама и складывает их в DISCOVERED вне репозитория и вне базы — этот скрипт их
+# подхватывает и добавляет к списку из репозитория (репозиторий главнее).
 # В runtime не скармливаем все страницы напрямую как основной источник: у
 # большинства нет JobPosting, поэтому «полный каталог» показывал одну вакансию.
 # Вместо этого берём проверенные endpoints из scripts/career-endpoints.json, а
@@ -24,6 +26,7 @@ LIST="$REPO/scripts/career-sites.tsv"
 QUARANTINE="$REPO/scripts/career-runtime-quarantine.json"
 ENDPOINTS="$REPO/scripts/career-endpoints.json"
 SECRETS=${SECRETS:-/opt/jobtoo-secrets/env}
+DISCOVERED=${DISCOVERED:-/opt/jobtoo-state/career-endpoints.discovered.json}
 
 [ -s "$LIST" ] || { echo "нет $LIST" >&2; exit 1; }
 [ -s "$QUARANTINE" ] || { echo "нет $QUARANTINE" >&2; exit 1; }
@@ -135,6 +138,73 @@ print(f'career endpoints: {len(rows)} адресов', file=sys.stderr)
 PY
 )
 
+# DISCOVERED пишет автомат (еженедельная разведка на сервере), а не человек:
+# файл необязателен, и одна битая запись в нём не должна останавливать выкладку
+# — такую запись просто пропускаем с сообщением в stderr. При совпадении URL
+# репозиторий главнее: найденное разведкой его не переопределяет. Служебные
+# поля company/discovered_at в connector_config не передаём.
+merged_out=$(python3 - "$endpoints" "$DISCOVERED" <<'PY'
+import json
+import sys
+from urllib.parse import urlsplit
+
+repo_json, discovered_path = sys.argv[1], sys.argv[2]
+repo_rows = json.loads(repo_json)
+
+ALLOWED_MODES = ('json', 'html_links', 'embedded')
+FIELDS = ('url', 'mode', 'map', 'paging', 'method', 'body')
+
+def load_discovered(path):
+    # Файл пишет автомат, не человек: любая порча (пустой диск, обрыв записи,
+    # чужие права, битые байты) не должна останавливать выкладку — это не
+    # источник истины, а необязательная надстройка над репозиторием.
+    try:
+        with open(path, encoding='utf-8') as fh:
+            raw = fh.read()
+        rows = json.loads(raw) if raw.strip() else []
+    except FileNotFoundError:
+        rows = []
+    except (OSError, ValueError) as exc:
+        # ValueError покрывает и json.JSONDecodeError, и UnicodeDecodeError;
+        # OSError — IsADirectoryError, PermissionError и подобные.
+        print(f'{path}: не удалось прочитать, считаю пустым ({exc})', file=sys.stderr)
+        rows = []
+    if not isinstance(rows, list):
+        print(f'{path}: ожидается JSON-массив, считаю пустым', file=sys.stderr)
+        return []
+    seen = {row['url'] for row in repo_rows}
+    good = []
+    for idx, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            print(f'{path}:{idx}: не объект, пропускаю', file=sys.stderr)
+            continue
+        url = str(row.get('url') or '').strip()
+        u = urlsplit(url)
+        if u.scheme.lower() != 'https' or not u.hostname or u.username or u.password:
+            print(f'{path}:{idx}: не https-URL без credentials, пропускаю: {url}', file=sys.stderr)
+            continue
+        mode = str(row.get('mode') or 'json')
+        if mode not in ALLOWED_MODES:
+            print(f'{path}:{idx}: неизвестный mode {mode}, пропускаю: {url}', file=sys.stderr)
+            continue
+        if url in seen:
+            # уже есть в репозитории (тот главнее) или повтор внутри файла
+            continue
+        seen.add(url)
+        good.append({k: row[k] for k in FIELDS if k in row})
+    return good
+
+discovered_rows = load_discovered(discovered_path)
+print(json.dumps(repo_rows + discovered_rows, ensure_ascii=False, separators=(',', ':')))
+print(len(discovered_rows))
+print(f'career discovered: {len(discovered_rows)} новых адресов добавлено к {len(repo_rows)} из репозитория', file=sys.stderr)
+PY
+)
+endpoints=$(printf '%s\n' "$merged_out" | sed -n '1p')
+# Сколько найденных разведкой endpoints вошло в объединённый список до
+# применения production-quarantine (дубликаты URL с репозиторием уже отсеяны).
+discovered_count=$(printf '%s\n' "$merged_out" | sed -n '2p')
+
 set -a
 . "$SECRETS"
 set +a
@@ -147,7 +217,8 @@ q() { docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
 # проход ИМЕННО с production-сервера подтвердил как 4xx/TLS/unsafe-DNS.
 # Список не теряется: он записан в runtime_quarantine, а сама компания остаётся
 # в catalog_pages и продолжает участвовать в browser-discovery.
-q -v catalog_pages="$catalog_pages" -v quarantine="$quarantine" -v endpoints="$endpoints" <<'SQL'
+q -v catalog_pages="$catalog_pages" -v quarantine="$quarantine" -v endpoints="$endpoints" \
+  -v discovered_count="$discovered_count" <<'SQL'
 create temp table jt_career_sync as
 with raw as (
   select :'endpoints'::jsonb as endpoints
@@ -177,7 +248,8 @@ with desired as (
     'endpoints', endpoints,
     'catalog_pages', :'catalog_pages'::jsonb,
     'catalog_file', 'scripts/career-sites.tsv',
-    'runtime_quarantine', :'quarantine'::jsonb
+    'runtime_quarantine', :'quarantine'::jsonb,
+    'discovered_count', :'discovered_count'::int
   ) as cfg
   from jt_career_sync
 )

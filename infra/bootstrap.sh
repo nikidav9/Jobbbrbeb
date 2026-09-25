@@ -263,6 +263,44 @@ EOF
   fi
 fi
 
+# Разведка карьерных сайтов браузером — раз в неделю, тем же московским
+# адресом, что и остальной сбор. Найденные источники проверяются тем же
+# PHP-кодом, что и обычный сбор (career_verify.php), и включаются сами через
+# sync-career-catalog.sh; защиту от ботов и CAPTCHA не обходим — заблокированные
+# сайты просто остаются status=='закрыт'. Запуск по воскресеньям в 03:10 —
+# минимум нагрузки на остальные ночные задачи этого же сервера.
+if [ -f "$REPO/infra/career-discover-run.sh" ]; then
+  install -m 755 "$REPO/infra/career-discover-run.sh" /usr/local/bin/jt-career-discover
+  cat > /etc/systemd/system/jt-career-discover.service <<'EOF'
+[Unit]
+Description=JobToo weekly browser discovery of employer career sites
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jt-career-discover
+TimeoutStartSec=6h
+Nice=15
+EOF
+  cat > /etc/systemd/system/jt-career-discover.timer <<'EOF'
+[Unit]
+Description=Weekly browser discovery of employer career sites
+
+[Timer]
+OnCalendar=Sun *-*-* 03:10
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now jt-career-discover.timer >/dev/null 2>&1 || true
+  if [ ! -s /var/log/jt-career-discover.log ]; then
+    systemctl start --no-block jt-career-discover.service >/dev/null 2>&1 || true
+  fi
+fi
+
 # Разовый опыт: дозванивается ли Телеграм до этой машины напрямую.
 # Подробности и сетка безопасности — в самом скрипте. Отметкой, а не
 # каждую минуту: переключать вебхук по кругу нельзя.

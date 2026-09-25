@@ -18,6 +18,9 @@ require_once __DIR__ . '/sb_lite.php';
 require_once __DIR__ . '/career_feed.php';
 // Правило адреса берём общее с приёмником, а не пишем своё: см. safe_url.php.
 require_once __DIR__ . '/safe_url.php';
+// Поход за одной порцией и построение юнита из записи endpoint — общий код с
+// career_verify.php: разведка проверяет адрес ровно тем, чем потом идёт сбор.
+require_once __DIR__ . '/career_unit.php';
 
 // Точка входа открыта, как открыты headhunter.php и arbihunter.php: пишет в базу
 // не она, а ingest.php, и он закрыт админским токеном. Отдаём мы отсюда только
@@ -29,89 +32,6 @@ function cf_fail(int $code, string $message): void
     http_response_code($code);
     echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
     exit;
-}
-
-/**
- * Один HTTP-запрос, жёстко закреплённый на уже проверенном публичном DNS-IP.
- * Сеть здесь одна на все режимы (HTML/JSON/embedded), чтобы сторожа SSRF,
- * размера ответа, TLS и таймаутов не расходились между адаптерами.
- */
-function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): array
-{
-    $body = '';
-    $tooLarge = false;
-    $ch = curl_init($pageUrl);
-    $curlOptions = [
-        CURLOPT_RETURNTRANSFER => false,
-        CURLOPT_HTTPHEADER => array_merge(
-            [$unit['kind'] === 'json'
-                ? 'Accept: application/json'
-                : 'Accept: text/html,application/xhtml+xml'],
-            empty($unit['post']) ? [] : ['Content-Type: application/json']
-        ),
-        // Пустая строка включает все сжатия, которые умеет curl: карьерные страницы
-        // бывают по несколько мегабайт.
-        CURLOPT_ENCODING => '',
-        CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 45,
-        // Переход по редиректу увёл бы нас на адрес, который проверку не проходил:
-        // так обходят запрет на служебные сети.
-        CURLOPT_FOLLOWLOCATION => false,
-        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-        CURLOPT_RESOLVE => $resolveEntries,
-        CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_SSL_VERIFYHOST => 2,
-        CURLOPT_WRITEFUNCTION => function ($ch, string $chunk) use (&$body, &$tooLarge): int {
-            // Карьерная страница — это текст. Четыре мегабайта её с запасом
-            // покрывают, а без предела чужой сервер кормил бы нас, пока не кончится
-            // память.
-            if (strlen($body) + strlen($chunk) > 4 * 1024 * 1024) {
-                $tooLarge = true;
-                return 0;
-            }
-            $body .= $chunk;
-            return strlen($chunk);
-        },
-    ];
-    // CURLOPT_POSTFIELDS сам переключает libcurl на POST даже после
-    // CURLOPT_POST=false. Поэтому для GET его нельзя задавать вообще — даже null.
-    if (!empty($unit['post'])) {
-        $curlOptions[CURLOPT_POST] = true;
-        $curlOptions[CURLOPT_POSTFIELDS] = (string)$unit['body'];
-    } else {
-        $curlOptions[CURLOPT_HTTPGET] = true;
-    }
-    curl_setopt_array($ch, $curlOptions);
-    $ok = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    return [
-        'body' => $body,
-        'too_large' => $tooLarge,
-        'ok' => $ok,
-        'code' => $code,
-        'served_by' => $servedBy,
-        'error' => $error,
-    ];
-}
-
-/**
- * Когда имеет смысл попробовать соседний DNS edge.
- *
- * 401/403 — запрет доступа, 429 — rate limit: искать другой IP в этих случаях
- * было бы обходом политики удалённого сайта. Ретраим только сетевой отказ,
- * 404 на CDN edge (наблюдалось у Сбера) и серверные 5xx.
- */
-function cf_retryable_edge_fetch(array $fetch): bool
-{
-    if (!empty($fetch['too_large'])) return false;
-    if (($fetch['ok'] ?? false) === false) return true;
-    $code = (int)($fetch['code'] ?? 0);
-    return $code === 404 || $code >= 500;
 }
 
 /**
@@ -182,27 +102,9 @@ foreach (is_array($config['pages'] ?? null) ? $config['pages'] : [] as $u) {
     if (is_string($u)) $units[] = ['url' => $u, 'kind' => 'html', 'map' => [], 'paging' => [], 'post' => false, 'body' => null];
 }
 foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $e) {
-    if (!is_array($e) || !is_string($e['url'] ?? null)) continue;
-    // `mode` различает JSON API и страницу со ссылками на вакансии. Третий вид
-    // появился потому, что замер по 111 карьерным сайтам показал: разметку
-    // JobPosting держат двое, JSON отдают немногие, а список обычных ссылок
-    // лежит у двух десятков.
-    $mode = (string)($e['mode'] ?? 'json');
-    // Часть карьерных API отвечает только на POST: METRO на GET даёт 405.
-    // Тело запроса задаёт администратор вместе с адресом, произвольного тела
-    // из запроса сюда не попадает — как и произвольного адреса.
-    $post = strtoupper((string)($e['method'] ?? 'GET')) === 'POST';
-    $kind = 'json';
-    if ($mode === 'html_links') $kind = 'html_links';
-    if ($mode === 'embedded')   $kind = 'embedded';
-    $units[] = [
-        'url'    => $e['url'],
-        'kind'   => $kind,
-        'map'    => is_array($e['map'] ?? null) ? $e['map'] : [],
-        'paging' => is_array($e['paging'] ?? null) ? $e['paging'] : [],
-        'post'   => $post,
-        'body'   => $post ? json_encode(is_array($e['body'] ?? null) ? $e['body'] : [], JSON_UNESCAPED_UNICODE) : null,
-    ];
+    if (!is_array($e)) continue;
+    $unitFromEndpoint = cf_unit_from_endpoint($e);
+    if ($unitFromEndpoint !== null) $units[] = $unitFromEndpoint;
 }
 // Список задаёт администратор в панели. Это не повод пускать сборщик куда
 // угодно: адрес всё равно проходит ту же проверку, что и адрес источника —
@@ -229,77 +131,12 @@ $skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $to
         $skipped, ['url' => $unit['url'], 'reason' => $reason]);
 };
 
-// Адрес порции строим до похода, но проверяем заново: подставляются только
-// числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
-$pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub);
-if (!ing_safe_https_url($pageUrl)) $skipUnit('адрес порции не проходит проверку');
-// Сохраняем общий предварительный guard: он является контрактом с ingest и
-// старым security regression. Ниже для фактического похода адреса разделяются
-// по одному, но исходный URL обязан пройти то же правило целиком.
-$resolveEntries = ing_safe_https_resolve($pageUrl);
-if ($resolveEntries === null) $skipUnit('адрес страницы больше не разрешается безопасно');
-$resolveCandidates = ing_safe_https_resolve_candidates($pageUrl);
-if ($resolveCandidates === null) $skipUnit('адрес страницы больше не разрешается безопасно');
-
-// Один DNS-ответ может содержать несколько CDN edge. curl умеет принять их
-// списком, но HTTP 404/5xx для него считается успешным соединением и на
-// соседний edge он не переключается. Поэтому пробуем проверенные IP по одному.
-// Четырёх достаточно для failover и это не превращает один заход в шторм.
-$fetch = null;
-$unsafeEdge = false;
-foreach (array_slice($resolveCandidates, 0, 4) as $resolveEntries) {
-    $fetch = cf_fetch_pinned($pageUrl, $unit, $resolveEntries);
-    $servedBy = (string)($fetch['served_by'] ?? '');
-    if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
-            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-        $unsafeEdge = true;
-        break;
-    }
-    if (!cf_retryable_edge_fetch($fetch)) break;
-}
-if ($fetch === null) $skipUnit('у адреса нет проверенного DNS edge');
-
-$body = (string)$fetch['body'];
-$tooLarge = !empty($fetch['too_large']);
-$ok = $fetch['ok'];
-$code = (int)$fetch['code'];
-$servedBy = (string)$fetch['served_by'];
-$error = (string)$fetch['error'];
-
-// CURLOPT_RESOLVE выше не даёт повторно разрешить имя, а эта проверка остаётся
-// вторым рубежом: если curl всё же пришёл не к закреплённому публичному адресу,
-// ответ не разбираем.
-if ($unsafeEdge || ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
-        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))) {
-    $skipUnit('страница увела на непубличный адрес');
-}
-
-if ($tooLarge) $skipUnit('страница больше 4 МБ');
-if ($ok === false || $code < 200 || $code >= 300) {
-    $skipUnit("страница недоступна ($code $error)");
-}
-
-if ($unit['kind'] === 'embedded') {
-    // Данные приехали внутри страницы, отдельного запроса за ними нет.
-    $data = cf_embedded_state($body);
-    if ($data === null) $skipUnit('в странице нет встроенного состояния');
-    $items = cf_json_items($data, $unit['map'], $pageUrl, time());
-    $more = false;
-} elseif ($unit['kind'] === 'html_links') {
-    $items = cf_html_links($body, $pageUrl, $unit['map'], time());
-    $more = cf_has_next_sub(count($items), $unit['paging'], $sub);
-} elseif ($unit['kind'] === 'json') {
-    $data = json_decode($body, true);
-    if (!is_array($data)) $skipUnit('источник ответил не JSON');
-    $items = cf_json_items($data, $unit['map'], $pageUrl, time());
-    // Считаем сырые записи, а не принятые: см. cf_has_next_sub.
-    $rawRows = cf_dig($data, (string)($unit['map']['list'] ?? ''));
-    $raw = is_array($rawRows) ? count($rawRows) : count($items);
-    $more = cf_has_next_sub($raw, $unit['paging'], $sub);
-} else {
-    $items = cf_items($body, $pageUrl, time());
-    $more = false;
-}
+// Поход за порцией и её разбор — тот же код, которым разведка на сервере
+// заранее проверяет endpoint, прежде чем его включить: см. career_unit.php.
+$fetched = cf_fetch_unit($unit, $sub);
+if ($fetched['error'] !== null) $skipUnit($fetched['error']);
+$items = $fetched['items'];
+$more = $fetched['more'];
 
 // Сначала дочитываем порции текущего источника, потом переходим к следующему.
 cf_emit($items, cf_next_step($page, $sub, $total, $more, false), $sourceId, $page, $sub,
