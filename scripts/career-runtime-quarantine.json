@@ -100,5 +100,11 @@
     "company": "М.Видео-Эльдорадо",
     "reason": "production 403",
     "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://rabota-vtb.ru/career",
+    "company": "ВТБ",
+    "reason": "вакансии идут через api.hh.ru — решение владельца не работать с hh",
+    "observed_at": "2026-09-25"
   }
 ]
