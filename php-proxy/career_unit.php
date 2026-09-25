@@ -205,5 +205,11 @@ function cf_fetch_unit(array $unit, int $sub): array
         $more = false;
     }
 
-    return ['items' => $items, 'more' => $more, 'error' => null];
+    // Мусор отсеиваем здесь, а не в career.php: этим же кодом разведка
+    // проверяет адрес до включения (career_verify.php), и «три настоящих
+    // вакансии» у неё должны значить то же, что в бою. $more считан по сырой
+    // выдаче выше — страницы листаются по тому, что прислал сайт.
+    $q = cf_quality_filter($items);
+    return ['items' => $q['kept'], 'more' => $more, 'error' => null,
+        'raw' => count($items), 'rejected' => $q['rejected']];
 }

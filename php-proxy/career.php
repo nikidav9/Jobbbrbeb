@@ -65,6 +65,7 @@ function cf_emit(array $items, ?array $step, string $sourceId, int $page, int $s
     }
     if ($step !== null) {
         $out['next_url'] = 'https://jobtoo.ru/api/career.php?source=' . rawurlencode($sourceId)
+            . (CF_ONLY_API ? '&modes=api' : '')
             . '&page=' . $step['page'] . '&sub=' . $step['sub'];
     }
     echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -75,6 +76,10 @@ $sourceId = trim((string)($_GET['source'] ?? ''));
 if ($sourceId === '' || !preg_match('~^[A-Za-z0-9._-]{1,64}$~', $sourceId)) {
     cf_fail(400, 'нет источника');
 }
+// modes=api — только адреса с настоящим API (JSON и встроенное состояние),
+// без страниц со ссылками. Так ingest.php раз в час обновляет то, что
+// обновлять дёшево, не трогая чужие сайты-витрины чаще раза в шесть часов.
+define('CF_ONLY_API', ($_GET['modes'] ?? '') === 'api');
 $page = max(0, (int)($_GET['page'] ?? 0));
 // Порция внутри одного источника. Карьерные API отдают вакансии по частям, и
 // без этого мы брали бы только первую: у Сбера 50 из 1795.
@@ -106,6 +111,9 @@ foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $
     $unitFromEndpoint = cf_unit_from_endpoint($e);
     if ($unitFromEndpoint !== null) $units[] = $unitFromEndpoint;
 }
+if (CF_ONLY_API) {
+    $units = array_values(array_filter($units, fn($u) => in_array($u['kind'], ['json', 'embedded'], true)));
+}
 // Список задаёт администратор в панели. Это не повод пускать сборщик куда
 // угодно: адрес всё равно проходит ту же проверку, что и адрес источника —
 // только публичный HTTPS, без localhost, служебных сетей и метаданных облака.
@@ -126,9 +134,17 @@ $total = count($units);
 // Споткнулись на этом работодателе — идём к следующему, а не рушим обход.
 // Порции текущего не дочитываем: не ответил адрес — не ответит и его вторая
 // страница.
+// В отказ кладём и хосты, на которых живут вакансии этого адреса: ingest.php
+// гасит пропавшие вакансии по сайтам, и сайт споткнувшегося адреса гасить
+// нельзя, даже если до сбоя он не прислал ни одной вакансии.
 $skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $total, $unit): void {
+    $hosts = [];
+    foreach ([$unit['url'], (string)($unit['map']['url_template'] ?? '')] as $u) {
+        $h = strtolower((string)(parse_url($u, PHP_URL_HOST) ?? ''));
+        if ($h !== '') $hosts[$h] = true;
+    }
     cf_emit([], cf_next_step($page, $sub, $total, false, true), $sourceId, $page, $sub,
-        $skipped, ['url' => $unit['url'], 'reason' => $reason]);
+        $skipped, ['url' => $unit['url'], 'reason' => $reason, 'hosts' => array_keys($hosts)]);
 };
 
 // Поход за порцией и её разбор — тот же код, которым разведка на сервере
@@ -137,6 +153,17 @@ $fetched = cf_fetch_unit($unit, $sub);
 if ($fetched['error'] !== null) $skipUnit($fetched['error']);
 $items = $fetched['items'];
 $more = $fetched['more'];
+// Сайт ответил, но настоящих вакансий почти нет, а мусор есть (или нет
+// ничего) — это перевёрстка, а не пустой список. Выдачу не принимаем и идём
+// дальше как по недоступному адресу: прежние вакансии этого работодателя на
+// круге не гаснут, причина видна в журнале. Решаем по первой порции: у
+// последней страницы честно бывает одна-две вакансии.
+if ($sub === 0 && cf_quality_rejects((int)($fetched['raw'] ?? count($items)), count($items))) {
+    $why = array_count_values(array_column($fetched['rejected'] ?? [], 'why'));
+    arsort($why);
+    $skipUnit('мало настоящих вакансий: ' . count($items) . ' из ' . (int)($fetched['raw'] ?? 0)
+        . ($why ? ' (' . implode(', ', array_map(fn($k, $v) => "$k — $v", array_keys($why), $why)) . ')' : ''));
+}
 
 // Сначала дочитываем порции текущего источника, потом переходим к следующему.
 cf_emit($items, cf_next_step($page, $sub, $total, $more, false), $sourceId, $page, $sub,

@@ -106,5 +106,29 @@
     "company": "ВТБ",
     "reason": "вакансии идут через api.hh.ru — решение владельца не работать с hh",
     "observed_at": "2026-09-25"
+  },
+  {
+    "url": "https://www.rusal.ru/career/vacancies",
+    "company": "РУСАЛ",
+    "reason": "на странице только разделы сайта, вакансий нет (аудит ссылок)",
+    "observed_at": "2026-09-25"
+  },
+  {
+    "url": "https://careers.just-ai.com/vakansii",
+    "company": "Just AI",
+    "reason": "на странице только разделы сайта, вакансий нет (аудит ссылок)",
+    "observed_at": "2026-09-25"
+  },
+  {
+    "url": "https://www.amocrm.ru/jobs",
+    "company": "amoCRM",
+    "reason": "на странице только разделы сайта, вакансий нет (аудит ссылок)",
+    "observed_at": "2026-09-25"
+  },
+  {
+    "url": "https://petrovichjob.ru",
+    "company": "Петрович",
+    "reason": "на странице только разделы сайта, вакансий нет (аудит ссылок)",
+    "observed_at": "2026-09-25"
   }
 ]

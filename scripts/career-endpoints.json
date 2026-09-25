@@ -235,6 +235,16 @@
   },
   {
     "map": {
+      "link_path": "/about/vacancies/",
+      "min_title": 8,
+      "company_const": "Авиасейлс"
+    },
+    "url": "https://www.aviasales.ru/about/vacancies",
+    "mode": "html_links",
+    "company_hint": "Авиасейлс"
+  },
+  {
+    "map": {
       "id": "slug",
       "list": "vacancies",
       "title": "title",
@@ -255,7 +265,8 @@
     "map": {
       "link_path": "/vacancies/",
       "min_title": 8,
-      "company_const": "Контур"
+      "company_const": "Контур",
+      "link_regex": "~^/career/vacancies/[0-9]+/?$~"
     },
     "url": "https://kontur.ru/career/vacancies",
     "mode": "html_links",
@@ -343,16 +354,6 @@
   },
   {
     "map": {
-      "link_path": "/vacancy/",
-      "min_title": 8,
-      "company_const": "X5 Tech"
-    },
-    "url": "https://x5.tech/vacancy",
-    "mode": "html_links",
-    "company_hint": "X5 Tech"
-  },
-  {
-    "map": {
       "link_path": "/vacancies/",
       "min_title": 8,
       "company_const": "Cloud.ru"
@@ -360,16 +361,6 @@
     "url": "https://cloud.ru/career/vacancies",
     "mode": "html_links",
     "company_hint": "Cloud.ru"
-  },
-  {
-    "map": {
-      "link_path": "/jobs/",
-      "min_title": 8,
-      "company_const": "iSpring"
-    },
-    "url": "https://www.ispring.ru/company/jobs/vacancies",
-    "mode": "html_links",
-    "company_hint": "iSpring"
   },
   {
     "map": {
@@ -410,16 +401,6 @@
     "url": "https://www.performance-lab.ru/vacancy",
     "mode": "html_links",
     "company_hint": "Performance Lab"
-  },
-  {
-    "map": {
-      "link_path": "/vakansii/",
-      "min_title": 8,
-      "company_const": "Just AI"
-    },
-    "url": "https://careers.just-ai.com/vakansii",
-    "mode": "html_links",
-    "company_hint": "Just AI"
   },
   {
     "map": {
@@ -483,15 +464,6 @@
   },
   {
     "map": {
-      "link_path": "/job/",
-      "min_title": 8,
-      "company_const": "ВкусВилл"
-    },
-    "url": "https://vkusvill.ru/job/vacancys",
-    "mode": "html_links"
-  },
-  {
-    "map": {
       "id": "id",
       "list": "data",
       "title": "name",
@@ -504,38 +476,11 @@
   },
   {
     "map": {
-      "link_path": "/vakancies/",
-      "min_title": 8,
-      "company_const": "Петрович"
-    },
-    "url": "https://petrovichjob.ru",
-    "mode": "html_links"
-  },
-  {
-    "map": {
-      "link_path": "/career/",
-      "min_title": 8,
-      "company_const": "РУСАЛ"
-    },
-    "url": "https://www.rusal.ru/career/vacancies",
-    "mode": "html_links"
-  },
-  {
-    "map": {
       "link_path": "/vacancies/",
       "min_title": 8,
       "company_const": "Северсталь"
     },
     "url": "https://career.severstal.com/vacancies",
-    "mode": "html_links"
-  },
-  {
-    "map": {
-      "link_path": "/vacancy/",
-      "min_title": 8,
-      "company_const": "Норникель"
-    },
-    "url": "https://career.nornickel.ru/vacancies",
     "mode": "html_links"
   },
   {
@@ -591,15 +536,6 @@
   },
   {
     "map": {
-      "link_path": "/career/jobs/",
-      "min_title": 8,
-      "company_const": "IBS"
-    },
-    "url": "https://ibs.ru/career/jobs",
-    "mode": "html_links"
-  },
-  {
-    "map": {
       "id": "id",
       "pay": "salary",
       "url": "url",
@@ -612,15 +548,6 @@
     },
     "url": "https://rabota-vtb.ru/career",
     "mode": "embedded"
-  },
-  {
-    "map": {
-      "link_path": "/jobs/",
-      "min_title": 8,
-      "company_const": "amoCRM"
-    },
-    "url": "https://www.amocrm.ru/jobs",
-    "mode": "html_links"
   },
   {
     "map": {
@@ -647,15 +574,6 @@
       "company_const": "Инфосистемы Джет"
     },
     "url": "https://jet.su/career/vacancies",
-    "mode": "html_links"
-  },
-  {
-    "map": {
-      "link_path": "/about/jobs/",
-      "min_title": 8,
-      "company_const": "Inline Group"
-    },
-    "url": "https://inlinegroup.ru/about/jobs",
     "mode": "html_links"
   },
   {
@@ -767,14 +685,6 @@
   },
   {
     "map": {
-      "link_path": "/dm/",
-      "company_const": "Детский мир"
-    },
-    "url": "https://jobs.detmir.ru/",
-    "mode": "html_links"
-  },
-  {
-    "map": {
       "link_path": "/vakancies/",
       "min_title": 8,
       "link_regex": "~^/vakancies/[0-9]+/?$~",
@@ -813,24 +723,6 @@
   },
   {
     "map": {
-      "link_path": "/vacancy/",
-      "min_title": 8,
-      "link_regex": "~^/vacancy/[0-9]+/?(?:\\\\?.*)?$~",
-      "company_const": "Kaspersky"
-    },
-    "url": "https://careers.kaspersky.com/vacancies?page=0",
-    "mode": "html_links",
-    "paging": {
-      "type": "page",
-      "limit": 14,
-      "param": "page",
-      "start": 0,
-      "max_pages": 10
-    },
-    "company_hint": "Kaspersky"
-  },
-  {
-    "map": {
       "id": "id",
       "list": "props.pageProps.blocks.0.data.vacancies",
       "title": "attributes.title",
@@ -841,17 +733,6 @@
     "url": "https://koronatech.ru/vacancy/",
     "mode": "embedded",
     "company_hint": "Koronatech"
-  },
-  {
-    "map": {
-      "link_path": "/careers/all/vacancy/",
-      "min_title": 8,
-      "link_regex": "~^/careers/all/vacancy/[0-9]+/?$~",
-      "company_const": "Селектел"
-    },
-    "url": "https://selectel.ru/careers/all",
-    "mode": "html_links",
-    "company_hint": "Селектел"
   },
   {
     "map": {
@@ -967,15 +848,6 @@
       "limit_param": "take"
     },
     "company_hint": "Сбер"
-  },
-  {
-    "map": {
-      "link_path": "/about/vacancies/",
-      "min_title": 8,
-      "company_const": "Авиасейлс"
-    },
-    "url": "https://www.aviasales.ru/about/vacancies",
-    "mode": "html_links"
   },
   {
     "map": {

@@ -23,6 +23,11 @@ on:
     # 02:30, 08:30, 14:30, 20:30 UTC — каждые 6 часов со сдвигом,
     # чтобы не совпадать с ежечасным announce-missed.
     - cron: '30 2,8,14,20 * * *'
+    # Ежечасно в :45 — только адреса с настоящим API (scope=api): новые
+    # вакансии Сбера, Магнита, Яндекса и др. появляются в ленте в течение
+    # часа. Сайты со ссылками здесь не обходятся — их чаще раза в шесть
+    # часов не трогаем, и гашения закрытых этот заход не делает.
+    - cron: '45 * * * *'
   workflow_dispatch:
     inputs:
       source:
@@ -32,6 +37,15 @@ on:
         description: 'Перезабрать даже если period_min не прошёл'
         type: boolean
         default: false
+      scope:
+        description: 'api — только адреса с API, без гашения; пусто — полный круг'
+        default: ''
+
+# Ежечасный заход и полный круг не стоят в очереди друг за другом, но два
+# одинаковых захода подряд не наслаиваются.
+concurrency:
+  group: career-ingest-${{ (github.event.schedule == '45 * * * *' || github.event.inputs.scope == 'api') && 'api' || 'full' }}
+  cancel-in-progress: false
 
 jobs:
   ingest:
@@ -47,6 +61,7 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
           SOURCE: ${{ github.event.inputs.source || 'career_owner' }}
           FORCE: ${{ github.event.inputs.force || 'false' }}
+          SCOPE: ${{ (github.event.schedule == '45 * * * *' || github.event.inputs.scope == 'api') && 'api' || '' }}
         run: |
           if [ -z "$ADMIN_TOKEN" ]; then
             echo "DASHBOARD_PASSWORD не настроен в секретах репозитория"; exit 1
@@ -55,6 +70,9 @@ jobs:
           URL="https://jobtoo.ru/api/ingest.php?source=${SOURCE}"
           if [ "$FORCE" = "true" ]; then
             URL="${URL}&force=1"
+          fi
+          if [ "$SCOPE" = "api" ]; then
+            URL="${URL}&scope=api"
           fi
 
           # ingest.php работает инкрементально: каждый вызов обходит
@@ -95,7 +113,12 @@ jobs:
       # пачками, пока remaining не дойдёт до нуля или не кончатся попытки.
       # Неудача этого шага не должна валить весь workflow: вакансии уже
       # забраны, а короткое описание в карточке уже есть — это лишь дозагрузка.
+      # Ежечасный заход описания не дочитывает: очередь может быть длиной в
+      # часы, и такой шаг наслаивался бы на следующий час. Новые вакансии
+      # получают полное описание на ближайшем полном круге, а короткое
+      # у них есть сразу.
       - name: Дочитать описания
+        if: ${{ !(github.event.schedule == '45 * * * *' || github.event.inputs.scope == 'api') }}
         continue-on-error: true
         env:
           ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
