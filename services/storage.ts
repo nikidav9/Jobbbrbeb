@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Vacancy } from '@/constants/types';
+import { JobSection, JOB_SECTIONS } from '@/constants/jobSections';
 export { normalizeCompany } from '@/services/company';
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -57,6 +58,35 @@ export async function clearPendingReferral(): Promise<void> {
     await AsyncStorage.removeItem(KEY_PENDING_REF);
   } catch {
     // См. выше.
+  }
+}
+
+// ─── Разделы ленты (какие показывать работнику) ──────────────────────────────
+//
+// Черновик из шторки фильтров применяется сразу, но пережить перезапуск
+// приложения должен и без повторного захода в шторку — иначе выбор слетал бы
+// на каждом открытии.
+
+const KEY_FEED_SECTIONS = 'jt_feed_sections_v1';
+
+export async function getFeedSections(userId: string): Promise<JobSection[]> {
+  try {
+    const raw = await AsyncStorage.getItem(`${KEY_FEED_SECTIONS}:${userId}`);
+    if (!raw) return [];
+    const saved = JSON.parse(raw);
+    if (!Array.isArray(saved)) return [];
+    const known = new Set(JOB_SECTIONS.map(s => s.id));
+    return saved.filter((id): id is JobSection => known.has(id));
+  } catch {
+    return [];
+  }
+}
+
+export async function saveFeedSections(userId: string, sections: JobSection[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${KEY_FEED_SECTIONS}:${userId}`, JSON.stringify(sections));
+  } catch {
+    // Разделы ленты — не то, ради чего стоит ронять приложение.
   }
 }
 
