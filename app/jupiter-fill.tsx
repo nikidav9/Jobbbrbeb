@@ -2,7 +2,7 @@
 // может (капча, SPA, сайт ещё не в списке проверенных). Мы открываем страницу
 // вакансии во встроенном браузере и заполняем анкету данными профиля —
 // прикрепляет резюме, проходит капчу и жмёт «Отправить» на сайте человек сам.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator, Linking,
 } from 'react-native';
@@ -15,7 +15,10 @@ import { useApp } from '@/hooks/useApp';
 import {
   jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile,
 } from '@/services/db';
-import { buildFillScript, fillHostFor } from '@/services/jupiterFill';
+import type { JupiterApplication } from '@/constants/types';
+import {
+  buildFillScript, fillHostFor, jupiterManualEligible, nextManualApplication,
+} from '@/services/jupiterFill';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -24,8 +27,14 @@ export default function JupiterFillScreen() {
   // Адрес вакансии берём из собственной заявки человека на сервере, а не из
   // параметра маршрута: ссылку на экран можно подделать, и тогда данные
   // профиля ушли бы на чужую страницу.
-  const { id, company } = useLocalSearchParams<{ id: string; company?: string }>();
+  const { id, company, skip } = useLocalSearchParams<{ id: string; company?: string; skip?: string }>();
+  // Очередь «Ждут вас»: после отправки или пропуска сразу открываем
+  // следующую анкету, а не возвращаем человека в список. Пропущенные в этом
+  // заходе едут в параметре, чтобы «Пропустить» не ходило по кругу.
+  const skipped = useMemo(() => (skip ? skip.split(',').filter(Boolean) : []), [skip]);
   const [url, setUrl] = useState<string | null>(null);
+  const [next, setNext] = useState<JupiterApplication | null>(null);
+  const [queueLeft, setQueueLeft] = useState(0);
   const { currentUser, showToast } = useApp();
 
   const [profile, setProfile] = useState<JupiterFillProfile | null>(null);
@@ -51,6 +60,9 @@ export default function JupiterFillScreen() {
         if (!cancelled) {
           setProfile(p);
           setUrl(own.vacancyUrl);
+          setNext(nextManualApplication(apps, id, skipped));
+          setQueueLeft(apps.filter(a => a.id !== id && !skipped.includes(a.id)
+            && jupiterManualEligible(a) && fillHostFor(a.vacancyUrl) !== null).length);
         }
       } catch (e) {
         console.warn('[jupiterFillProfile]', e);
@@ -60,7 +72,7 @@ export default function JupiterFillScreen() {
       }
     })();
     return () => { cancelled = true; };
-  }, [currentUser?.id, id]);
+  }, [currentUser?.id, id, skipped]);
 
   // На вебе встроенного браузера нет: сразу открываем вакансию в новой вкладке
   // и возвращаемся назад — заполнять там нечего, а WebView react-native-web
@@ -79,13 +91,21 @@ export default function JupiterFillScreen() {
     webRef.current.injectJavaScript(fillScript);
   };
 
+  const goNext = () => {
+    if (!next || !id) { router.back(); return; }
+    router.replace({
+      pathname: '/jupiter-fill',
+      params: { id: next.id, company: next.company ?? '', skip: [...skipped, id].join(',') },
+    });
+  };
+
   const onSubmitted = async () => {
     if (!currentUser?.id || !id || submitting) return;
     setSubmitting(true);
     try {
       await jupiterMarkManualSubmitted(currentUser.id, id);
-      showToast('Отклик отмечен отправленным', 'success');
-      router.back();
+      showToast(next ? 'Отправлено. Следующая анкета' : 'Отправлено. Все анкеты разобраны', 'success');
+      goNext();
     } catch (e: any) {
       showToast(e?.message || 'Не удалось отметить отклик отправленным', 'error');
     } finally {
@@ -103,8 +123,15 @@ export default function JupiterFillScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={10} accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={s.headerTitle} numberOfLines={1}>{company || 'Отклик на вакансию'}</Text>
-        <View style={{ width: rs(24) }} />
+        <View style={s.headerMid}>
+          <Text style={s.headerTitle} numberOfLines={1}>{company || 'Отклик на вакансию'}</Text>
+          {queueLeft > 0 ? <Text style={s.headerSub}>Ещё {queueLeft} в очереди</Text> : null}
+        </View>
+        {next ? (
+          <TouchableOpacity onPress={goNext} hitSlop={10} accessibilityLabel="Пропустить вакансию">
+            <Text style={s.skipTxt}>Пропустить</Text>
+          </TouchableOpacity>
+        ) : <View style={{ width: rs(24) }} />}
       </View>
 
       <View style={s.notice}>
@@ -179,7 +206,10 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(12), paddingVertical: rs(10),
   },
   backBtn: { padding: rs(4) },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
+  headerMid: { flex: 1, alignItems: 'center' },
+  headerTitle: { textAlign: 'center', fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
+  headerSub: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2) },
+  skipTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.primary },
   notice: {
     flexDirection: 'row', gap: rs(8), alignItems: 'flex-start',
     marginHorizontal: rs(16), marginBottom: rs(10),

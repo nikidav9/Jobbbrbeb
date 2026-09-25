@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FILL_CORE, buildFillScript, fillHostFor } from '../services/jupiterFill.ts';
+import {
+  FILL_CORE, buildFillScript, fillHostFor, jupiterManualEligible, nextManualApplication,
+} from '../services/jupiterFill.ts';
 
 // jtKeyForField живёт как текст JS (Hermes не отдаёт исходник функции через
 // toString), поэтому тестируем её так же, как её соберёт инжектируемый
@@ -104,4 +106,30 @@ test('префикс анкеты — не раздел биографии', () 
   assert.equal(jtKeyForField('Телефон', 'text', 'jobform[phone]'), 'phone');
   assert.equal(jtKeyForField('Должность', 'text', 'work_history[position]'), null);
   assert.equal(jtKeyForField('Должность', 'text', 'WORK[POSITION][]'), null);
+});
+
+const app = (id: string, state: string, vacancyUrl = `https://career.example.ru/v/${id}`, reasonCode: string | null = null) =>
+  ({ id, vacancyUrl, state, reasonCode, createdAt: '', updatedAt: '' }) as any;
+
+test('очередь «Ждут вас»: следующая — первая доступная, кроме текущей и пропущенных', () => {
+  const apps = [
+    app('a', 'action_required'),
+    app('b', 'submitted'),
+    app('c', 'failed'),
+    app('d', 'retryable_failed'),
+  ];
+  assert.equal(nextManualApplication(apps, 'a', [])?.id, 'c');
+  assert.equal(nextManualApplication(apps, 'c', ['a'])?.id, 'd');
+  assert.equal(nextManualApplication(apps, 'd', ['a', 'c']), null);
+});
+
+test('очередь не предлагает Сбер на согласии, отозванную авторизацию и не-https', () => {
+  const apps = [
+    app('s', 'action_required', 'https://rabota.sber.ru/search/1', 'CONSENT_REQUIRED'),
+    app('r', 'failed', undefined, 'LIVE_AUTHORIZATION_REVOKED'),
+    app('h', 'failed', 'http://career.example.ru/v/h'),
+    app('ok', 'ready_to_submit'),
+  ];
+  assert.equal(nextManualApplication(apps, 'x', [])?.id, 'ok');
+  assert.equal(jupiterManualEligible(apps[0]), false);
 });

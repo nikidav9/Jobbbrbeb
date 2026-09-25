@@ -9,6 +9,35 @@
 // функции, поэтому нельзя собрать injectedJavaScript из обычной TS-функции —
 // текст скрипта держим как строку с самого начала.
 import type { JupiterFillProfile } from '@/services/db';
+import type { JupiterApplication } from '@/constants/types';
+
+/**
+ * Заявка, которую сервер сам отправить не может (капча, SPA, сайт ещё не в
+ * списке проверенных), — её человек отправляет сам во встроенном браузере
+ * («Ждут вас»). Особые пути Сбера (согласие) и повторная авторизация
+ * автоотклика остаются на своей прежней кнопке.
+ */
+export function jupiterManualEligible(a: JupiterApplication): boolean {
+  const isSber = /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
+  const needsSberConsent = isSber
+    && a.state === 'action_required'
+    && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
+  return ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'].includes(a.state)
+    && !needsSberConsent
+    && a.reasonCode !== 'LIVE_AUTHORIZATION_REVOKED';
+}
+
+/**
+ * Следующая анкета очереди «Ждут вас» — в том же порядке, что и в списке
+ * «Откликов». Текущую и пропущенные в этом заходе не предлагаем, чтобы
+ * «Пропустить» не возвращало по кругу к той же вакансии.
+ */
+export function nextManualApplication(
+  apps: JupiterApplication[], currentId: string, skipped: readonly string[],
+): JupiterApplication | null {
+  return apps.find(a => a.id !== currentId && !skipped.includes(a.id)
+    && jupiterManualEligible(a) && fillHostFor(a.vacancyUrl) !== null) ?? null;
+}
 
 /**
  * Правила определения смысла поля формы — зеркало серверного Jupiter
