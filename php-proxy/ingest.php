@@ -570,8 +570,8 @@ function ing_run_source(array $src, string $scope = ''): array
     // работодателей в одном обходе, и раньше хватало одного 403, чтобы круг
     // стал «не весь» и не гасилось НИЧЕГО: закрытая вакансия висела до недели.
     // Теперь по каждому адресу (порядковый номер page в ответе career.php)
-    // копим хосты его вакансий и отметку о сбое; гасим по хостам, чьи адреса
-    // прошли целиком. Значения — множества: хост => true.
+    // копим его собственные хосты (hosts в ответе) и отметку о сбое; гасим по
+    // хостам, чьи адреса прошли целиком. Значения — множества: хост => true.
     $unitHosts = is_array($saved['unit_hosts'] ?? null) ? $saved['unit_hosts'] : [];
     $unitFailed = is_array($saved['unit_failed'] ?? null) ? $saved['unit_failed'] : [];
     // Сколько описаний дочитали за этот заход — видно в статусе источника.
@@ -598,12 +598,10 @@ function ing_run_source(array $src, string $scope = ''): array
         $dec = $page['data'];
         if (!empty($dec['partial'])) $partial = true;
         $unitNo = isset($dec['page']) && is_int($dec['page']) ? (string)$dec['page'] : null;
-        if ($unitNo !== null && !empty($dec['failed'])) {
-            $unitFailed[$unitNo] = true;
-            foreach ((array)$dec['failed'] as $f) {
-                foreach ((array)($f['hosts'] ?? []) as $h) {
-                    if (is_string($h) && $h !== '') $unitHosts[$unitNo][strtolower($h)] = true;
-                }
+        if ($unitNo !== null) {
+            if (!empty($dec['failed'])) $unitFailed[$unitNo] = true;
+            foreach ((array)($dec['hosts'] ?? []) as $h) {
+                if (is_string($h) && $h !== '') $unitHosts[$unitNo][strtolower($h)] = true;
             }
         }
         $items = is_array($dec['items'] ?? null) ? $dec['items']
@@ -618,16 +616,25 @@ function ing_run_source(array $src, string $scope = ''): array
             $r = ing_normalize($it, (string)$src['id']);
             if ($r === null) { $skipped++; continue; }
             $rows[] = $r;
-            $host = strtolower((string)(parse_url((string)$r['url'], PHP_URL_HOST) ?? ''));
-            if ($unitNo !== null && $host !== '') $unitHosts[$unitNo][$host] = true;
         }
         // Описания добираем ДО записи: иначе строка легла бы пустой, а человек
         // увидел бы «Источник не прислал описания» до следующего круга.
         // Только карьерные источники: партнёрское API обязано прислать описание
         // фидом, ходить за ним по страницам — не наше дело.
-        if (($src['connector_kind'] ?? '') === 'career') {
+        // Ежечасный заход по API за описаниями не ходит: это обход страниц
+        // вакансий у чужих сайтов каждый час — его делает полный круг.
+        if (($src['connector_kind'] ?? '') === 'career' && $scope !== 'api') {
             $described += ing_fill_descriptions($rows, $deadline);
         }
+        // Пустое описание — «не прислали», а не «стёрли». Раньше строка
+        // уходила в upsert с description = null и затирала текст, который
+        // describe.php уже дочитал со страницы вакансии; с ежечасным заходом
+        // это случалось бы каждый час. Без ключа upsert поле не трогает
+        // (пачки режутся по набору колонок, см. ing_chunks_by_columns).
+        foreach ($rows as &$row) {
+            if (trim((string)($row['description'] ?? '')) === '') unset($row['description']);
+        }
+        unset($row);
         foreach (ing_chunks_by_columns($rows) as $chunk) {
             sb_upsert_rows('jm_ext_vacancies', $chunk, 'source_id,external_id');
             sm_cache_invalidate();

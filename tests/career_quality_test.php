@@ -49,6 +49,11 @@ $tails = [
     'Водитель категории C' => 'Водитель категории C',
     'Инженер 1 категории' => 'Инженер 1 категории',
     'Оператор 5 разряда' => 'Оператор 5 разряда',
+    // «з/п» внутри должности — не хвост.
+    'Бухгалтер по з/п' => 'Бухгалтер по з/п',
+    'Бухгалтер по расчёту з/п' => 'Бухгалтер по расчёту з/п',
+    'Специалист по з/п и кадрам' => 'Специалист по з/п и кадрам',
+    'Продавец з/п от 60 000' => 'Продавец',
 ];
 foreach ($tails as $in => $want) {
     $got = cq_clean_title($in);
@@ -89,6 +94,8 @@ check('честные две из двух — принимаем', !cf_quality_
 check('честная одна из одной — принимаем', !cf_quality_rejects(1, 1));
 check('три и больше — принимаем, даже с мусором', !cf_quality_rejects(57, 50));
 check('ровно три из пяти — принимаем', !cf_quality_rejects(5, 3));
+check('две настоящие и одна мусорная — принимаем (мусора не больше)', !cf_quality_rejects(3, 2));
+check('одна настоящая и две мусорные — не принимаем', cf_quality_rejects(3, 1));
 
 // ── Разбор ссылок: С-Терра — подзаголовок с городом не заголовок ─────────────
 $now = 1_757_700_000;
@@ -167,6 +174,15 @@ foreach ($catalog as $e) {
 $kontur = array_values(array_filter($catalog, fn($e) => ($e['url'] ?? '') === 'https://kontur.ru/career/vacancies'));
 check('у Контура ссылки только на вакансии с номером',
     ($kontur[0]['map']['link_regex'] ?? '') === '~^/career/vacancies/[0-9]+/?$~');
+// Выкладка (infra/sync-career-catalog.sh) гасит вакансии компании из
+// карантина, если у неё нет здорового адреса С company_hint. Без подсказки
+// рабочий API МТС, VK, Lamoda считался отсутствующим, и каждая выкладка
+// гасила их вакансии до следующего сбора.
+foreach ($catalog as $e) {
+    $c = (string)($e['map']['company_const'] ?? '');
+    if ($c === '' || in_array($e['url'], $quarantined, true)) continue;
+    check("у здорового адреса {$c} есть company_hint ({$e['url']})", ($e['company_hint'] ?? '') !== '');
+}
 check('Авиасейлс читается ссылками, пока его API в карантине',
     count(array_filter($catalog, fn($e) => ($e['url'] ?? '') === 'https://www.aviasales.ru/about/vacancies')) === 1);
 foreach (['https://www.rusal.ru/career/vacancies', 'https://www.ispring.ru/company/jobs/vacancies',

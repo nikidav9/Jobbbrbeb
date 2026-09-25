@@ -430,7 +430,8 @@
       "company_const": "Авито"
     },
     "url": "https://career.avito.com/vacancies/",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Авито"
   },
   {
     "map": {
@@ -447,7 +448,8 @@
       "storeAddress": true,
       "centralOffice": false
     },
-    "method": "POST"
+    "method": "POST",
+    "company_hint": "METRO"
   },
   {
     "map": {
@@ -460,7 +462,8 @@
       "url_template": "https://rabota.perekrestok.ru/vacancies/{id}",
       "company_const": "Перекрёсток"
     },
-    "url": "https://rabota5ka.ru/gw/api/vacancy/hire-request?page=1&limit=7&radius=30000&warehouseRadius=100&portals%5B0%5D=cross"
+    "url": "https://rabota5ka.ru/gw/api/vacancy/hire-request?page=1&limit=7&radius=30000&warehouseRadius=100&portals%5B0%5D=cross",
+    "company_hint": "Перекрёсток"
   },
   {
     "map": {
@@ -472,7 +475,8 @@
       "url_template": "https://job.lamoda.ru/vacancies/{slug}",
       "company_const": "Lamoda"
     },
-    "url": "https://job.lamoda.ru/api/hr/vacancies/compact?search=&minExperience=&pagination[start]=0&pagination[limit]=10"
+    "url": "https://job.lamoda.ru/api/hr/vacancies/compact?search=&minExperience=&pagination[start]=0&pagination[limit]=10",
+    "company_hint": "Lamoda"
   },
   {
     "map": {
@@ -481,7 +485,8 @@
       "company_const": "Северсталь"
     },
     "url": "https://career.severstal.com/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Северсталь"
   },
   {
     "map": {
@@ -493,7 +498,8 @@
       "url_template": "https://team.vk.company/vacancy/{id}",
       "company_const": "VK"
     },
-    "url": "https://team.vk.company/career/api/v2/vacancies/?limit=25&offset=25&title=&specialty=&town=&tags=&remote="
+    "url": "https://team.vk.company/career/api/v2/vacancies/?limit=25&offset=25&title=&specialty=&town=&tags=&remote=",
+    "company_hint": "VK"
   },
   {
     "map": {
@@ -502,7 +508,8 @@
       "company_const": "Иви"
     },
     "url": "https://corp.ivi.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Иви"
   },
   {
     "map": {
@@ -511,7 +518,8 @@
       "company_const": "GRASS"
     },
     "url": "https://job.thgrass.com/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "GRASS"
   },
   {
     "map": {
@@ -523,7 +531,8 @@
       "url_template": "https://x5.tech/vacancy/{id}",
       "company_const": "X5 Tech"
     },
-    "url": "https://prod-lkk-back.x5.ru/api/v2/x5-tech/vacancies/"
+    "url": "https://prod-lkk-back.x5.ru/api/v2/x5-tech/vacancies/",
+    "company_hint": "X5 Tech"
   },
   {
     "map": {
@@ -532,7 +541,8 @@
       "company_const": "Kaspersky"
     },
     "url": "https://careers.kaspersky.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Kaspersky"
   },
   {
     "map": {
@@ -556,7 +566,8 @@
       "company_const": "КОРУС Консалтинг"
     },
     "url": "https://career.korusconsulting.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "КОРУС Консалтинг"
   },
   {
     "map": {
@@ -565,7 +576,8 @@
       "company_const": "Agima"
     },
     "url": "https://www.agima.ru/careers",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Agima"
   },
   {
     "map": {
@@ -574,7 +586,8 @@
       "company_const": "Инфосистемы Джет"
     },
     "url": "https://jet.su/career/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Инфосистемы Джет"
   },
   {
     "map": {
@@ -583,7 +596,8 @@
       "company_const": "TerraLink"
     },
     "url": "https://terralink.ru/career/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "TerraLink"
   },
   {
     "map": {
@@ -592,7 +606,8 @@
       "company_const": "Reksoft"
     },
     "url": "https://career.reksoft.com/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Reksoft"
   },
   {
     "map": {
@@ -601,7 +616,8 @@
       "company_const": "Солар"
     },
     "url": "https://team.rt-solar.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Солар"
   },
   {
     "map": {
@@ -610,7 +626,8 @@
       "company_const": "С-Терра"
     },
     "url": "https://www.s-terra.ru/company/rabota-u-nas",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "С-Терра"
   },
   {
     "map": {
@@ -619,7 +636,8 @@
       "company_const": "Юзтех"
     },
     "url": "https://usetech.ru/career",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Юзтех"
   },
   {
     "map": {
@@ -628,7 +646,8 @@
       "company_const": "Baum"
     },
     "url": "https://baum.ru/job",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Baum"
   },
   {
     "map": {
@@ -637,7 +656,8 @@
       "company_const": "Crosstech"
     },
     "url": "https://crosstech.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Crosstech"
   },
   {
     "map": {
@@ -646,7 +666,8 @@
       "company_const": "Аурига"
     },
     "url": "https://hr.auriga.ru",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Аурига"
   },
   {
     "map": {
@@ -655,7 +676,8 @@
       "company_const": "Linx"
     },
     "url": "https://linx.ru/about/career",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Linx"
   },
   {
     "map": {
@@ -664,7 +686,8 @@
       "company_const": "Контакт"
     },
     "url": "https://itcontact.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Контакт"
   },
   {
     "map": {
@@ -673,7 +696,8 @@
       "company_const": "Дельта Компьютерс"
     },
     "url": "https://deltacomputers.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Дельта Компьютерс"
   },
   {
     "map": {
@@ -681,7 +705,8 @@
       "company_const": "Детский мир"
     },
     "url": "https://jobs.detmir.ru",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Детский мир"
   },
   {
     "map": {
@@ -719,7 +744,8 @@
       "limit": 100,
       "param": "pagination[page]",
       "start": 1
-    }
+    },
+    "company_hint": "МТС"
   },
   {
     "map": {
@@ -745,7 +771,8 @@
       "url_template": "https://careers.yadro.com/vacancy/{slug}",
       "company_const": "Yadro"
     },
-    "url": "https://careers.yadro.com/api/vacancies/?siteId=career"
+    "url": "https://careers.yadro.com/api/vacancies/?siteId=career",
+    "company_hint": "Yadro"
   },
   {
     "map": {
@@ -763,7 +790,8 @@
       "limit": 12,
       "param": "page",
       "start": 1
-    }
+    },
+    "company_hint": "ФосАгро"
   },
   {
     "map": {
@@ -775,7 +803,8 @@
       "url_template": "https://selectel.ru/careers/all/vacancy/{id}/",
       "company_const": "Селектел"
     },
-    "url": "https://api.selectel.ru/proxy/public/employee/api/public/vacancies?per_page=1000&page=1&brand=selectel"
+    "url": "https://api.selectel.ru/proxy/public/employee/api/public/vacancies?per_page=1000&page=1&brand=selectel",
+    "company_hint": "Селектел"
   },
   {
     "map": {
@@ -792,7 +821,8 @@
       "limit": 15,
       "param": "offset",
       "limit_param": "limit"
-    }
+    },
+    "company_hint": "Lesta Games"
   },
   {
     "map": {
@@ -819,7 +849,8 @@
       "limit": 100,
       "param": "page",
       "start": 1
-    }
+    },
+    "company_hint": "Магнит"
   },
   {
     "map": {
@@ -856,7 +887,8 @@
       "company_const": "КРОК"
     },
     "url": "https://careers.croc.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "КРОК"
   },
   {
     "map": {
@@ -865,7 +897,8 @@
       "company_const": "ITG"
     },
     "url": "https://itglobal.com/ru-ru/company/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "ITG"
   },
   {
     "map": {
@@ -874,7 +907,8 @@
       "company_const": "Centicore Group"
     },
     "url": "https://centicore.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "Centicore Group"
   },
   {
     "company_hint": "Яндекс",
@@ -907,5 +941,52 @@
         "Стек технологий": "tech_stack"
       }
     }
+  },
+  {
+    "map": {
+      "link_path": "/jobs/",
+      "min_title": 8,
+      "company_const": "iSpring"
+    },
+    "url": "https://www.ispring.ru/company/jobs/vacancies",
+    "mode": "html_links",
+    "company_hint": "iSpring"
+  },
+  {
+    "map": {
+      "link_path": "/vakansii/",
+      "min_title": 8,
+      "company_const": "Just AI"
+    },
+    "url": "https://careers.just-ai.com/vakansii",
+    "mode": "html_links",
+    "company_hint": "Just AI"
+  },
+  {
+    "map": {
+      "link_path": "/vakancies/",
+      "min_title": 8,
+      "company_const": "Петрович"
+    },
+    "url": "https://petrovichjob.ru",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/career/",
+      "min_title": 8,
+      "company_const": "РУСАЛ"
+    },
+    "url": "https://www.rusal.ru/career/vacancies",
+    "mode": "html_links"
+  },
+  {
+    "map": {
+      "link_path": "/jobs/",
+      "min_title": 8,
+      "company_const": "amoCRM"
+    },
+    "url": "https://www.amocrm.ru/jobs",
+    "mode": "html_links"
   }
 ]

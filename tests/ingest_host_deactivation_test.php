@@ -115,15 +115,22 @@ check('пометка «API ежечасно» — в конце статуса,
     preg_match("~\\\$success = str_starts_with\\(\\(string\\)\\\$res\\['status'\\], 'ок'\\);.*?\\\$res\\['status'\\] \\.= ' \\(API ежечасно\\)';~s", $ingest) === 1);
 check('на неполном круге гасим сайты, прошедшие целиком',
     str_contains($ingest, 'foreach (ing_complete_hosts($unitHosts, $unitFailed) as $host) {'));
-check('хосты отказавшего адреса считаются сбойными',
-    str_contains($ingest, "foreach ((array)(\$f['hosts'] ?? []) as \$h) {"));
+check('гасим по собственным хостам адресов из ответа career.php, а не по ссылкам вакансий',
+    str_contains($ingest, "foreach ((array)(\$dec['hosts'] ?? []) as \$h) {")
+    && !str_contains($ingest, "parse_url((string)\$r['url'], PHP_URL_HOST)"));
+check('ежечасный заход не дочитывает описания',
+    str_contains($ingest, "=== 'career' && \$scope !== 'api') {"));
+check('пустое описание не затирает прочитанное',
+    str_contains($ingest, "if (trim((string)(\$row['description'] ?? '')) === '') unset(\$row['description']);"));
 
 $career = (string)file_get_contents(__DIR__ . '/../php-proxy/career.php');
 check('career.php в режиме API берёт только JSON и встроенное состояние',
     str_contains($career, "define('CF_ONLY_API', (\$_GET['modes'] ?? '') === 'api');")
     && str_contains($career, "in_array(\$u['kind'], ['json', 'embedded'], true)"));
 check('следующая страница помнит режим API', str_contains($career, "(CF_ONLY_API ? '&modes=api' : '')"));
-check('отказ адреса называет его хосты', str_contains($career, "'hosts' => array_keys(\$hosts)"));
+check('каждый ответ career.php называет свои хосты адреса',
+    str_contains($career, "'hosts' => \$hosts,")
+    && substr_count($career, ', $ownHosts);') === 2);
 
 $wf = (string)file_get_contents(__DIR__ . '/../.github/workflows/career-ingest.yml');
 check('ежечасное расписание есть', str_contains($wf, "- cron: '45 * * * *'"));

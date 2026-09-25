@@ -48,7 +48,7 @@ function cf_fail(int $code, string $message): void
  * работодателя стирал бы его вакансии из ленты до следующего круга.
  */
 function cf_emit(array $items, ?array $step, string $sourceId, int $page, int $sub,
-                 array $skipped, ?array $failed): void
+                 array $skipped, ?array $failed, array $hosts = []): void
 {
     $out = [
         'items' => $items,
@@ -56,6 +56,11 @@ function cf_emit(array $items, ?array $step, string $sourceId, int $page, int $s
         'page' => $page,
         'sub' => $sub,
         'total' => null,
+        // Свои хосты адреса: сам адрес и шаблон ссылки на вакансию. По ним
+        // ingest.php гасит пропавшие вакансии сайта, прошедшего целиком. Не по
+        // хостам присланных ссылок: чужой хост (hh.ru, habr) мог бы оказаться
+        // общим у двух адресов, и сбой одного погасил бы живые вакансии.
+        'hosts' => $hosts,
     ];
     // Пусть о выпавших адресах знает и приёмник, и человек в панели.
     if ($skipped) $out['skipped'] = $skipped;
@@ -134,17 +139,15 @@ $total = count($units);
 // Споткнулись на этом работодателе — идём к следующему, а не рушим обход.
 // Порции текущего не дочитываем: не ответил адрес — не ответит и его вторая
 // страница.
-// В отказ кладём и хосты, на которых живут вакансии этого адреса: ingest.php
-// гасит пропавшие вакансии по сайтам, и сайт споткнувшегося адреса гасить
-// нельзя, даже если до сбоя он не прислал ни одной вакансии.
-$skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $total, $unit): void {
-    $hosts = [];
-    foreach ([$unit['url'], (string)($unit['map']['url_template'] ?? '')] as $u) {
-        $h = strtolower((string)(parse_url($u, PHP_URL_HOST) ?? ''));
-        if ($h !== '') $hosts[$h] = true;
-    }
+$ownHosts = [];
+foreach ([$unit['url'], (string)($unit['map']['url_template'] ?? '')] as $u) {
+    $h = strtolower((string)(parse_url($u, PHP_URL_HOST) ?? ''));
+    if ($h !== '') $ownHosts[$h] = true;
+}
+$ownHosts = array_keys($ownHosts);
+$skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $total, $unit, $ownHosts): void {
     cf_emit([], cf_next_step($page, $sub, $total, false, true), $sourceId, $page, $sub,
-        $skipped, ['url' => $unit['url'], 'reason' => $reason, 'hosts' => array_keys($hosts)]);
+        $skipped, ['url' => $unit['url'], 'reason' => $reason], $ownHosts);
 };
 
 // Поход за порцией и её разбор — тот же код, которым разведка на сервере
@@ -167,4 +170,4 @@ if ($sub === 0 && cf_quality_rejects((int)($fetched['raw'] ?? count($items)), co
 
 // Сначала дочитываем порции текущего источника, потом переходим к следующему.
 cf_emit($items, cf_next_step($page, $sub, $total, $more, false), $sourceId, $page, $sub,
-    $skipped, null);
+    $skipped, null, $ownHosts);
