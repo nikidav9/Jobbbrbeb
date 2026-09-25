@@ -163,6 +163,10 @@ services:
   meta:
     image: supabase/postgres-meta:v0.96.6
     restart: unless-stopped
+    # init: node — главный процесс контейнера и не подбирает завершившихся
+    # «внуков»: на сервере копились десятки зомби-процессов node (25.09 —
+    # 34 штуки у meta и next-server). Маленький init Docker их убирает.
+    init: true
     depends_on:
       db: {condition: service_healthy}
     # Некритичный (нужен только studio) — жертвуем им раньше базы. См. imgproxy.
@@ -180,6 +184,7 @@ services:
   studio:
     image: supabase/studio:2026.08.03-sha-022b374
     restart: unless-stopped
+    init: true
     depends_on: [meta]
     ports: ["127.0.0.1:3001:3000"]
     # Смотрелка базы, а не боевой путь: под давлением памяти отдаём её первой
@@ -274,6 +279,7 @@ services:
     image: node:22-alpine
     profiles: ["dashboard"]
     restart: unless-stopped
+    init: true
     # Дашборд — главный источник всплеска: при blue/green-обновлении оба слота
     # какое-то время держатся в памяти одновременно (новый проверяется, пока
     # старый ещё обслуживает). Два Node на 4 ГБ и сваливали машину в swap →
@@ -315,6 +321,7 @@ services:
     image: node:22-alpine
     profiles: ["dashboard"]
     restart: unless-stopped
+    init: true
     # Второй слот дашборда — те же меры, что и у blue (см. выше): высокий
     # приоритет на убийство и предел памяти на слот.
     oom_score_adj: 900
