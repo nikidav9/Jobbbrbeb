@@ -1760,6 +1760,7 @@ function toExtVacancy(row: any): ExtVacancy {
     metroStation: row.metro_station ?? null,
     metroLineId: row.metro_line_id ?? null,
     workType: row.work_type ?? null,
+    section: row.section ?? null,
     address: row.address ?? null,
     lat: row.lat ?? null,
     lng: row.lng ?? null,

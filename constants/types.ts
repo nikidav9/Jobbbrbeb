@@ -1,3 +1,4 @@
+import type { JobSection } from './jobSections';
 export type WorkType = 'stocker' | 'cook' | 'shift_supervisor' | 'picker';
 
 export interface ResumeExperience {
@@ -354,6 +355,8 @@ export interface ExtVacancy {
   metroStation?: string | null;
   metroLineId?: string | null;
   workType?: string | null;
+  /** Раздел ленты по названию (php-proxy/job_sections.php); null — ещё не размечена. */
+  section?: JobSection | null;
   address?: string | null;
   lat?: number | null;
   lng?: number | null;

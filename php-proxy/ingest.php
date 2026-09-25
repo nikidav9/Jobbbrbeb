@@ -28,6 +28,8 @@ require_once __DIR__ . '/safe_url.php';
 require_once __DIR__ . '/sitemap_cache.php';
 // Разбор страницы вакансии: описание берём тем же кодом, что и карьерный фид.
 require_once __DIR__ . '/career_feed.php';
+// Раздел ленты по названию («IT», «Склад», «Курьеры»): см. job_sections.php.
+require_once __DIR__ . '/job_sections.php';
 
 function ing_secret(string $name): string
 {
@@ -286,6 +288,7 @@ function ing_normalize(array $it, string $sourceId): ?array
         'metro_station_norm' => $станция,
         'metro_line_id'      => $ветка,
         'work_type'     => $workType,
+        'section'       => job_section($title, $workType),
         'kind'          => $kind,
         'date'          => ing_date($it['date'] ?? null),
         'time_start'    => ing_time($it['time_start'] ?? null),
