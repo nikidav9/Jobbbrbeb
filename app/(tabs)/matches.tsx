@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TextInput,
-  TouchableOpacity, ActivityIndicator, RefreshControl, Linking, Alert, Platform,
+  TouchableOpacity, ActivityIndicator, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -15,14 +15,12 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterLiveStatus, jupiterRequeueLive, jupiterGrantThirdPartyConsent,
-  dbGetResumeFiles,
+  jupiterLiveStatus,
 } from '@/services/db';
-import { requestJupiterLive } from '@/services/jupiterLive';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
-import { jupiterNeedsSberConsent, jupiterStatus } from '@/services/jupiterTimeline';
+import { jupiterBadge, jupiterRowSummary, JupiterBadge } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -321,6 +319,15 @@ function permAppStatus(status: PermApplicationStatus): {
   }
 }
 
+// Цвета плашек Юпитера. «Нужны вы» сюда не попадает — та рисуется как
+// wm.action, пунктирной рамкой, но ключ остаётся ради типа JupiterBadge.
+const JUPITER_BADGE_COLORS: Record<JupiterBadge['tone'], { bg: string; fg: string }> = {
+  sent: { bg: Colors.divider, fg: Colors.textSecondary },
+  failed: { bg: Colors.redLight, fg: Colors.red },
+  working: { bg: Colors.blueLight, fg: Colors.blue },
+  needs_you: { bg: Colors.primaryLight, fg: Colors.primary },
+};
+
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
 
 const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
@@ -426,10 +433,14 @@ function WorkerMatches() {
   const shownJupiterApps = filter === 'all'
     ? jupiterApps.filter(a => !q || `${a.company ?? ''} ${a.vacancyUrl}`.toLowerCase().includes(q))
     : [];
-  // Заявки, которые человек может отправить сам, — первыми и отдельным блоком:
-  // это единственное реальное действие, которого от него ждут прямо сейчас.
+  // Заявки, которые ждут человека, — карточка «Нужны вы» наверху раздела,
+  // как у Sorce. jupiterBadge уже решает это по состоянию/причине.
+  const jupiterNeedsYou = shownJupiterApps.filter(a => jupiterBadge(a).tone === 'needs_you');
+  const jupiterNeedsYouCompanies = Array.from(new Set(jupiterNeedsYou.map(a => a.company?.trim() || 'Карьерный сайт')));
+  // Из них — те, что можно отправить самому во встроенном браузере: карточка
+  // ведёт туда же, куда «По очереди ›» раньше вело первую такую заявку.
   const manualJupiterApps = shownJupiterApps.filter(jupiterManualEligible);
-  const restJupiterApps = shownJupiterApps.filter(a => !jupiterManualEligible(a));
+  const jupiterByDay = groupByDay(shownJupiterApps, a => a.createdAt);
   const shownApps = myApps.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
     if (!q) return true;
@@ -495,21 +506,25 @@ function WorkerMatches() {
     );
   };
 
+  // ── Строка отклика Юпитера ───────────────────────────────────────────────
+  // Как у Sorce: логотип, название вакансии, компания, итог одной строкой
+  // (jupiterRowSummary) и метка справа (jupiterBadge). Действия под строкой
+  // (согласие Сбера, повторная постановка в очередь) переехали в карточку
+  // отклика — вся строка ведёт туда.
   const renderJupiterApp = (a: JupiterApplication, last: boolean) => {
     const company = a.company?.trim() || 'Карьерный сайт';
-    const needsSberConsent = jupiterNeedsSberConsent(a);
-    const status = jupiterStatus(a);
-    // Строка ведёт в карточку отклика: статус, действие и история шагов
-    // (app/jupiter-application.tsx). Анкета «Ждут вас» открывается оттуда
-    // или пачкой — кнопкой «По очереди ›».
+    const title = a.vacancyTitle?.trim() || 'Вакансия на карьерном сайте';
+    const badge = jupiterBadge(a);
+    const summary = jupiterRowSummary(a);
+    const needsYou = badge.tone === 'needs_you';
     const onRowPress = () => router.push({ pathname: '/jupiter-application', params: { id: a.id } });
     return (
-      <React.Fragment key={a.id}>
       <TouchableOpacity
-        style={[wm.row, !last && wm.rowDivider]}
+        key={a.id}
+        style={[wm.row, needsYou && wm.rowNeedsYou, !last && wm.rowDivider]}
         activeOpacity={0.85}
         onPress={onRowPress}
-        accessibilityLabel={`${company}. ${status.label}. Открыть карточку отклика`}
+        accessibilityLabel={`${title}. ${company}. ${summary}`}
       >
         {companyLogo(company) ? (
           <View style={wm.logoImg}><CompanyMark company={company} size={rs(44)} /></View>
@@ -519,83 +534,21 @@ function WorkerMatches() {
           </View>
         )}
         <View style={wm.rowBody}>
-          <Text style={wm.rowTitle} numberOfLines={2}>{company}</Text>
-          <Text style={wm.rowCompany} numberOfLines={1}>Вакансия на карьерном сайте</Text>
-          <View style={[wm.statusPill, { alignSelf: 'flex-start', backgroundColor: status.bg, marginTop: rs(6) }]}>
-            <Text style={[wm.statusTxt, { color: status.fg }]}>{status.label}</Text>
+          <Text style={wm.rowTitle} numberOfLines={2}>{title}</Text>
+          <Text style={wm.rowCompany} numberOfLines={1}>{company}</Text>
+          <Text style={wm.rowHint} numberOfLines={1}>{summary}</Text>
+        </View>
+        {needsYou ? (
+          <View style={wm.action}>
+            <Text style={wm.actionTxt}>{badge.label}</Text>
+            <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
           </View>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+        ) : (
+          <View style={[wm.statusPill, { backgroundColor: JUPITER_BADGE_COLORS[badge.tone].bg }]}>
+            <Text style={[wm.statusTxt, { color: JUPITER_BADGE_COLORS[badge.tone].fg }]}>{badge.label}</Text>
+          </View>
+        )}
       </TouchableOpacity>
-      {((a.state === 'ready_to_submit' && !a.submissionAuthorizedAt)
-        || (a.state === 'action_required' && a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED')) ? (
-        <TouchableOpacity
-          style={{ paddingVertical: rs(10), paddingHorizontal: rs(20), alignSelf: 'flex-start' }}
-          onPress={() => { void (async () => {
-            try {
-              const resumes = await dbGetResumeFiles();
-              if (!resumes.some(file => file.selected && file.storagePath)) {
-                showToast('Сначала загрузите PDF-резюме в профиле', 'error');
-                router.push({ pathname: '/(tabs)/profile', params: { tab: 'files' } });
-                return;
-              }
-              if (!await requestJupiterLive(currentUserId)) return;
-              setJupiterLive(true);
-              await jupiterRequeueLive(currentUserId, a.id);
-              showToast('Юпитер повторно откроет анкету и отправит отклик', 'success');
-              await loadJupiter();
-            } catch (error: any) {
-              showToast(error?.message || 'Не удалось поставить отклик в очередь', 'error');
-            }
-          })(); }}
-        >
-          <Text style={{ color: Colors.primary, fontWeight: '700' }}>Отправить через Юпитер</Text>
-        </TouchableOpacity>
-      ) : null}
-      {needsSberConsent ? (
-        <View style={{ paddingHorizontal: rs(20), paddingBottom: rs(12), gap: rs(8) }}>
-          <TouchableOpacity
-            onPress={() => Linking.openURL('https://rabota.sber.ru/terms')
-              .catch(() => showToast('Не удалось открыть условия Сбера', 'error'))}
-          >
-            <Text style={{ color: Colors.primary, fontWeight: '600' }}>
-              Открыть условия обработки данных Сбера
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={{ paddingVertical: rs(10), alignSelf: 'flex-start' }}
-            onPress={() => { void (async () => {
-              const message = 'Сбер просит согласие на обработку персональных данных. Если продолжить, JobToo передаст Сберу имя, фамилию, телефон, ваш адрес JobToo и выбранное PDF-резюме только для этой вакансии.';
-              // Alert.alert в веб-сборке (сайт и мини-приложение в Телеграме)
-              // ничего не показывает — кнопка выглядела мёртвой. На вебе —
-              // window.confirm, как в services/jupiterLive.ts.
-              const approved = Platform.OS === 'web'
-                ? typeof window !== 'undefined' && window.confirm(message)
-                : await new Promise<boolean>(resolve => Alert.alert('Согласие для отклика в Сбер', message, [
-                    { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
-                    { text: 'Согласен и отправить', onPress: () => resolve(true) },
-                  ], { cancelable: true, onDismiss: () => resolve(false) }));
-              if (!approved) return;
-              try {
-                await jupiterGrantThirdPartyConsent(
-                  currentUserId,
-                  a.id,
-                  'https://rabota.sber.ru/terms',
-                );
-                showToast('Согласие сохранено. Юпитер отправляет отклик в Сбер', 'success');
-                await loadJupiter();
-              } catch (error: any) {
-                showToast(error?.message || 'Не удалось запустить отклик в Сбер', 'error');
-              }
-            })(); }}
-          >
-            <Text style={{ color: Colors.primary, fontWeight: '700' }}>
-              Согласиться и отправить в Сбер
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-      </React.Fragment>
     );
   };
 
@@ -729,37 +682,59 @@ function WorkerMatches() {
                   </TouchableOpacity>
                 )}
                 {jupiterError ? <Text style={s.emptySub}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
-                {manualJupiterApps.length > 0 ? (
-                  <>
-                    <View style={wm.sectionHead}>
-                      <Text style={wm.sectionTitle}>Ждут вас · {manualJupiterApps.length}</Text>
-                      {Platform.OS !== 'web' ? (
-                        <TouchableOpacity
-                          onPress={() => router.push({
-                            pathname: '/jupiter-fill',
-                            params: { id: manualJupiterApps[0].id, company: manualJupiterApps[0].company ?? '' },
-                          })}
-                          hitSlop={8}
-                          style={{ marginLeft: 'auto' }}
-                          accessibilityLabel="Отправить анкеты по очереди"
-                        >
-                          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: rf(14) }}>По очереди ›</Text>
-                        </TouchableOpacity>
+                {jupiterNeedsYou.length > 0 ? (
+                  <TouchableOpacity
+                    style={wm.needsCard}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      // Та же цель, что раньше была у «По очереди ›»: если
+                      // есть анкета, которую можно заполнить самому, — сразу
+                      // туда; иначе (нужно только согласие, или веб без
+                      // встроенного браузера) — в карточку первой заявки.
+                      if (Platform.OS !== 'web' && manualJupiterApps.length > 0) {
+                        router.push({
+                          pathname: '/jupiter-fill',
+                          params: { id: manualJupiterApps[0].id, company: manualJupiterApps[0].company ?? '' },
+                        });
+                      } else {
+                        router.push({ pathname: '/jupiter-application', params: { id: jupiterNeedsYou[0].id } });
+                      }
+                    }}
+                    accessibilityLabel={`${jupiterNeedsYou.length} ${plural(jupiterNeedsYou.length, 'отклик ждёт', 'отклика ждут', 'откликов ждут')} вас`}
+                  >
+                    <View style={wm.needsIcon}>
+                      <Ionicons name="notifications" size={22} color="#B45309" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={wm.needsTitle}>
+                        {jupiterNeedsYou.length}{' '}
+                        {plural(jupiterNeedsYou.length, 'отклик ждёт', 'отклика ждут', 'откликов ждут')} вас
+                      </Text>
+                      <Text style={wm.needsSub} numberOfLines={1}>{jupiterNeedsYouCompanies.join(', ')}</Text>
+                    </View>
+                    <View style={wm.needsMarks}>
+                      {jupiterNeedsYouCompanies.slice(0, 2).map((c, i) => (
+                        <View key={c} style={[wm.needsMark, i > 0 && wm.needsMarkOverlap]}>
+                          <CompanyMark company={c} size={rs(28)} />
+                        </View>
+                      ))}
+                      {jupiterNeedsYouCompanies.length > 2 ? (
+                        <Text style={wm.needsMore}>+{jupiterNeedsYouCompanies.length - 2}</Text>
                       ) : null}
                     </View>
-                    <Text style={[s.emptySub, { textAlign: 'left', marginBottom: rs(8) }]}>
-                      Отправьте сами — анкета заполнится за вас
+                    <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                ) : null}
+                {jupiterByDay.map(day => (
+                  <View key={`jupiter-${day.key || 'earlier'}`}>
+                    <Text style={wm.dayHead}>
+                      {day.label} · {day.items.length} {plural(day.items.length, 'отклик', 'отклика', 'откликов')}
                     </Text>
-                    <View style={[wm.group, { marginBottom: rs(16) }]}>
-                      {manualJupiterApps.map((a, i) => renderJupiterApp(a, i === manualJupiterApps.length - 1))}
+                    <View style={[wm.group, { marginBottom: rs(12) }]}>
+                      {day.items.map((a, i) => renderJupiterApp(a, i === day.items.length - 1))}
                     </View>
-                  </>
-                ) : null}
-                {restJupiterApps.length > 0 ? (
-                  <View style={wm.group}>
-                    {restJupiterApps.map((a, i) => renderJupiterApp(a, i === restJupiterApps.length - 1))}
                   </View>
-                ) : null}
+                ))}
               </>
             ) : null}
             {/* Переписки внутри JobToo остаются отдельными от заявок Jupiter:
@@ -950,6 +925,12 @@ const wm = StyleSheet.create({
   },
   needsTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
   needsSub: { fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
+  needsMarks: { flexDirection: 'row', alignItems: 'center' },
+  needsMark: {
+    borderRadius: rs(8), borderWidth: 2, borderColor: '#FFFFFF', overflow: 'hidden',
+  },
+  needsMarkOverlap: { marginLeft: -rs(10) },
+  needsMore: { fontSize: rf(12), fontWeight: '800', color: Colors.textSecondary, marginLeft: rs(4) },
 
   dayHead: {
     fontSize: rf(12), fontWeight: '700', color: Colors.textMuted,

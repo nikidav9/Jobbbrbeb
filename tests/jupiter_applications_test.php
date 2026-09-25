@@ -213,6 +213,18 @@ check('история закрыта RLS и сторожем',
 check('история не хранит значения полей — только сводку',
     !preg_match('~"value"~', $events));
 
+// ── Название вакансии в строке списка ───────────────────────────────────────
+// Строка «Откликов» у Sorce показывает название вакансии, а не только адрес.
+// jm_ext_vacancies живёт отдельно от заявок Jupiter, поэтому название
+// подтягивается вторым запросом по адресам.
+$myApps = substr($db, strpos($db, "case 'jupiterMyApplications': {"),
+    strpos($db, "case 'jupiterLease':") - strpos($db, "case 'jupiterMyApplications': {"));
+check('jupiterMyApplications подтягивает название вакансии из jm_ext_vacancies',
+    str_contains($myApps, "sb_select('jm_ext_vacancies'")
+    && str_contains($myApps, "'vacancy_title'"));
+check('список адресов для запроса названий экранирован sb_in_list',
+    str_contains($myApps, "sb_in_list(\$urls)"));
+
 if ($failures) {
     echo "jupiter applications: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

@@ -330,6 +330,8 @@ export interface JupiterApplication {
   id: string;
   vacancyUrl: string;
   company?: string | null;
+  /** Название вакансии из фида, если она там ещё есть; иначе null. */
+  vacancyTitle?: string | null;
   state: JupiterApplicationState;
   reasonCode?: string | null;
   /** Есть, когда прогон ждёт человека: капча, код из письма, вход. */
