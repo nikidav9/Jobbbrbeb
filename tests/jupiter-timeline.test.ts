@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTimeline, fillNote, jupiterStatus } from '../services/jupiterTimeline.ts';
+import { buildTimeline, fillNote, jupiterStatus, jupiterBadge, jupiterRowSummary } from '../services/jupiterTimeline.ts';
 
 const app = (over: Record<string, unknown>) => ({
   id: 'a', vacancyUrl: 'https://career.example.ru/v/1', state: 'queued', reasonCode: null,
@@ -35,6 +35,30 @@ test('ручная отправка и причины «нужны вы»', () =
   assert.match(captcha.note ?? '', /не робот/);
   const [other] = buildTimeline([{ kind: 'action_required', reason_code: 'X', detail: null, created_at: '1' }]);
   assert.equal(other.note, 'Юпитер не смог закончить сам');
+});
+
+test('метка строки списка: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ ПОЛУЧИЛОСЬ / В РАБОТЕ', () => {
+  assert.deepEqual(jupiterBadge(app({ state: 'submitted' })), { label: 'ОТПРАВЛЕНО', tone: 'sent' });
+  assert.deepEqual(jupiterBadge(app({ state: 'duplicate' })), { label: 'ОТПРАВЛЕНО', tone: 'sent' });
+  assert.deepEqual(jupiterBadge(app({ state: 'failed' })), { label: 'НЕ ПОЛУЧИЛОСЬ', tone: 'failed' });
+  assert.deepEqual(jupiterBadge(app({ state: 'action_required', reasonCode: 'CAPTCHA_REQUIRED' })),
+    { label: 'НУЖНЫ ВЫ', tone: 'needs_you' });
+  assert.deepEqual(jupiterBadge(app({ state: 'filling' })), { label: 'В РАБОТЕ', tone: 'working' });
+  assert.deepEqual(jupiterBadge(app({ state: 'ready_to_submit' })), { label: 'В РАБОТЕ', tone: 'working' });
+});
+
+test('итог строки — что сделано или чего не хватает', () => {
+  assert.equal(jupiterRowSummary(app({ state: 'submitted' })), 'Анкета заполнена и отправлена');
+  assert.equal(jupiterRowSummary(app({ state: 'submitted', reasonCode: 'MANUAL_WEBVIEW' })), 'Вы отправили отклик сами');
+  assert.equal(jupiterRowSummary(app({ state: 'failed' })), 'Не получилось заполнить анкету');
+  assert.equal(jupiterRowSummary(app({ state: 'filling' })), 'Юпитер заполняет анкету');
+  assert.equal(jupiterRowSummary(app({ state: 'action_required', reasonCode: 'CAPTCHA_REQUIRED' })),
+    'Сайт просит проверку «я не робот» — отправьте сами');
+  assert.equal(jupiterRowSummary(app({
+    vacancyUrl: 'https://rabota.sber.ru/search/1', state: 'action_required', reasonCode: 'CONSENT_REQUIRED',
+  })), 'Нужно ваше согласие для Сбера');
+  assert.equal(jupiterRowSummary(app({ state: 'action_required', reasonCode: 'LIVE_AUTHORIZATION_REVOKED' })),
+    'Автоотклик выключен — отправьте сами');
 });
 
 test('статус: особые причины важнее состояния', () => {

@@ -43,6 +43,35 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   return stateStatus(a.state);
 }
 
+export type JupiterBadge = { label: string; tone: 'sent' | 'needs_you' | 'failed' | 'working' };
+
+/** Метка строки списка — как у Sorce: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ ПОЛУЧИЛОСЬ / В РАБОТЕ. */
+export function jupiterBadge(a: JupiterApplication): JupiterBadge {
+  if (a.state === 'submitted' || a.state === 'duplicate') return { label: 'ОТПРАВЛЕНО', tone: 'sent' };
+  if (a.state === 'failed') return { label: 'НЕ ПОЛУЧИЛОСЬ', tone: 'failed' };
+  if (a.state === 'action_required') return { label: 'НУЖНЫ ВЫ', tone: 'needs_you' };
+  return { label: 'В РАБОТЕ', tone: 'working' };
+}
+
+/** Итог одной строкой: что сделано или чего не хватает, — для списка «Откликов». */
+export function jupiterRowSummary(a: JupiterApplication): string {
+  if (a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED') return 'Автоотклик выключен — отправьте сами';
+  if (jupiterNeedsSberConsent(a)) return 'Нужно ваше согласие для Сбера';
+  switch (a.state) {
+    case 'submitted':
+      return a.reasonCode === 'MANUAL_WEBVIEW' ? 'Вы отправили отклик сами' : 'Анкета заполнена и отправлена';
+    case 'duplicate': return 'Вы уже откликались на эту вакансию';
+    case 'failed': return 'Не получилось заполнить анкету';
+    case 'retryable_failed': return 'Не получилось — Юпитер попробует ещё раз';
+    case 'ready_to_submit': return a.submissionAuthorizedAt
+      ? 'Анкета заполнена, ждёт отправки'
+      : 'Анкета заполнена — включите автоотклик';
+    case 'submission_unknown': return 'Сайт не подтвердил отправку';
+    case 'action_required': return ACTION_REASONS[a.reasonCode ?? ''] ?? 'Юпитер не смог закончить сам';
+    default: return 'Юпитер заполняет анкету';
+  }
+}
+
 export type JupiterEvent = {
   kind: string;
   reason_code: string | null;

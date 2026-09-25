@@ -34,8 +34,14 @@ check("список компаний лежит в /deps/run рядом со с�
 
 check("контейнер разведки ограничен по памяти", "--memory 1g" in run)
 check("контейнер разведки ограничен по CPU", "--cpus 1" in run)
-check("DISCOVER_CONCURRENCY по умолчанию 2",
-      'DISCOVER_CONCURRENCY="${DISCOVER_CONCURRENCY:-2}"' in run)
+check("DISCOVER_CONCURRENCY по умолчанию 3",
+      'DISCOVER_CONCURRENCY="${DISCOVER_CONCURRENCY:-3}"' in run)
+# Бюджет прогона меньше TimeoutStartSec службы (6 ч): иначе systemd убьёт
+# разведку посреди обхода, и найденное не дойдёт до проверки и сбора.
+check("бюджет прогона задан и меньше 6 часов",
+      'DISCOVER_DEADLINE_MIN="${DISCOVER_DEADLINE_MIN:-270}"' in run)
+check("предел на один сайт задан",
+      'DISCOVER_SITE_BUDGET_MS="${DISCOVER_SITE_BUDGET_MS:-90000}"' in run)
 
 check("найденное проверяется career_verify.php",
       "docker compose exec -T php php /var/www/api/career_verify.php" in run)

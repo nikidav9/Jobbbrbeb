@@ -1637,6 +1637,7 @@ function toJupiterApplication(row: any): JupiterApplication {
     id: String(row.id),
     vacancyUrl: String(row.vacancy_url ?? ''),
     company: row.company ?? null,
+    vacancyTitle: row.vacancy_title ?? null,
     state: (row.state ?? 'queued') as JupiterApplication['state'],
     reasonCode: row.reason_code ?? null,
     resumeToken: row.resume_token ?? null,

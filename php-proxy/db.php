@@ -6614,7 +6614,24 @@ try {
                 . 'external_application_id,created_at,updated_at,submitted_at,verified_at,'
                 . 'submission_authorized_at,third_party_consent_at,third_party_terms_url',
                 'created_at.desc'
-            ); break;
+            );
+            // Название вакансии в строке отклика — как у Sorce. Отдельным
+            // запросом, а не джойном: jm_ext_vacancies живёт своей жизнью
+            // (фид перезаписывает её строки), и вакансия могла исчезнуть из
+            // фида, пока заявка Jupiter осталась.
+            $urls = array_values(array_unique(array_filter(array_map(
+                fn($r) => (string)($r['vacancy_url'] ?? ''), $data
+            ))));
+            if ($urls) {
+                $titles = sb_select('jm_ext_vacancies', ['url' => sb_in_list($urls)], 'url,title');
+                $titleByUrl = [];
+                foreach ($titles as $t) $titleByUrl[(string)($t['url'] ?? '')] = $t['title'] ?? null;
+                foreach ($data as &$row) {
+                    $row['vacancy_title'] = $titleByUrl[(string)($row['vacancy_url'] ?? '')] ?? null;
+                }
+                unset($row);
+            }
+            break;
         }
 
         // Воркер берёт задачу. Аренда, а не «пометил и забыл»: воркер может
