@@ -1617,6 +1617,7 @@ function WorkerPermMode() {
           }
         }).catch(e => {
           console.warn('[swWant]', e);
+          showToast(e?.message || 'Не удалось проверить резюме. Проверьте связь.', 'error');
           energy.refundOne();
           swDeck.snapBack();
         }).finally(() => { swDecisionPending.current = false; });

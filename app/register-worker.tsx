@@ -156,7 +156,10 @@ export default function RegisterWorker() {
       if (resumeFile) {
         try {
           const saved = await dbSaveResumeFile(resumeFile.fileName, resumeFile.bytes, resumeFile.resume);
-          await updateUser(mergeResumeIntoUser(user, saved.resume, resumeFile.identity));
+          // Имя, фамилию и возраст человек только что ввёл руками — они
+          // главнее того, что парсер достал из PDF. Из резюме берём отчество.
+          const middleName = resumeFile.identity?.middleName;
+          await updateUser(mergeResumeIntoUser(user, saved.resume, middleName ? { middleName } : undefined));
         } catch (e) {
           console.warn('[RegisterWorker] resume save failed', e);
           showToast('Резюме не сохранилось — загрузите его в профиле', 'error');

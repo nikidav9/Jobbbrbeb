@@ -2,7 +2,7 @@
  * Permanent vacancy detail screen
  * Shows full info, employer contact (phone only after match), apply/save actions
  */
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, Modal, Platform, Linking, Animated, Share,
@@ -66,6 +66,8 @@ export default function PermVacancyDetailScreen() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
+  // Двойной тап по «Откликнуться» не должен открыть два диалога о резюме.
+  const checkingResume = useRef(false);
   const isGuest = !currentUser && !loading;
   const showAuthModal = isGuest && !authModalDismissed;
 
@@ -260,15 +262,20 @@ export default function PermVacancyDetailScreen() {
   // имени человека и открывает переписку. Молчаливый отклик работодатель
   // видел строкой в списке и решал вслепую.
   const applyTo = async () => {
-    if (!currentUser || isApplied || applying) return;
+    if (!currentUser || isApplied || applying || checkingResume.current) return;
+    // Гость из ленты: резюме у него нет и быть не может — сразу на регистрацию.
+    if (currentUser.isGuest) { startWorkerRegistration(); return; }
     // Решение владельца 25.09: без резюме отклика нет — проверяем до того,
     // как откроется окно, а не после того, как человек напишет сообщение.
+    checkingResume.current = true;
     try {
       if (!await ensureResumeForApply()) return;
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[applyTo]', e);
-      showToast('Не удалось проверить резюме. Проверьте связь и попробуйте ещё раз.', 'error');
+      showToast(e?.message || 'Не удалось проверить резюме. Проверьте связь и попробуйте ещё раз.', 'error');
       return;
+    } finally {
+      checkingResume.current = false;
     }
     setApplyOpen(true);
   };

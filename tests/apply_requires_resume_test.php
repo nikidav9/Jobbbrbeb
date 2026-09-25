@@ -36,6 +36,18 @@ $writeAt = strpos($apply, "sb_upsert('jm_perm_applications'");
 check('проверка резюме стоит раньше записи отклика',
     $resumeAt !== false && $writeAt !== false && $resumeAt < $writeAt);
 
+// ── Смена (старая сборка): новый отклик работника — тоже с резюме ────────────
+$like = case_body($db, 'dbUpsertLike');
+check('dbUpsertLike найдена', $like !== '');
+check('dbUpsertLike проверяет резюме только на новом отклике работника',
+    str_contains($like, "if (!empty(\$upd['workerLiked']) && empty(\$existingLike['worker_liked']))")
+    && str_contains($like, "'user_id' => 'eq.' . \$wid, 'selected' => 'eq.true'")
+    && str_contains($like, "jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409)"));
+$likeResumeAt = strpos($like, "'jm_resume_files'");
+$likeWriteAt = strpos($like, "sb_upsert('jm_likes'");
+check('в dbUpsertLike проверка резюме раньше записи',
+    $likeResumeAt !== false && $likeWriteAt !== false && $likeResumeAt < $likeWriteAt);
+
 // ── Карьерная вакансия: та же проверка не пропала ─────────────────────────────
 $enqueue = case_body($db, 'jupiterEnqueue');
 check('jupiterEnqueue найдена', $enqueue !== '');

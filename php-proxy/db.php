@@ -5442,6 +5442,13 @@ try {
                 && (string)$authUid !== (string)$wid) {
                 jt_respond(['error' => 'Это не ваш отклик'], 403); exit;
             }
+            // Новый отклик работника на смену — тоже только с резюме, как и на
+            // постоянную. Старая сборка до 17.09 ещё показывает живые смены.
+            // Прочие вызовы (решение работодателя, «пропустить») не трогаем.
+            if (!empty($upd['workerLiked']) && empty($existingLike['worker_liked'])) {
+                $selectedResume = sb_single('jm_resume_files', ['user_id' => 'eq.' . $wid, 'selected' => 'eq.true'], 'id,storage_path');
+                if (empty($selectedResume['storage_path'])) { jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit; }
+            }
 
             $base = $existingLike ?? [
                 'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid, 'employer_id' => $vacEmployer,
