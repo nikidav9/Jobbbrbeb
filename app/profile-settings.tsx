@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  KeyboardAvoidingView, Platform, Linking, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Linking, ActivityIndicator, Switch, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ import { useApp } from '@/hooks/useApp';
 import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
   dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
+  jupiterLiveState, jupiterSetLive,
 } from '@/services/db';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -97,6 +98,40 @@ export default function ProfileSettingsScreen() {
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [notificationState, setNotificationState] = useState<NotificationState>('checking');
   const [notificationBusy, setNotificationBusy] = useState(false);
+
+  const [jupiterLive, setJupiterLive] = useState(false);
+  const [jupiterBusy, setJupiterBusy] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.isGuest || currentUser.role !== 'worker') return;
+    jupiterLiveState(currentUser.id)
+      .then(state => setJupiterLive(state.enabled))
+      .catch(error => console.warn('[jupiterLiveState]', error));
+  }, [currentUser]);
+
+  const toggleJupiterLive = async (next: boolean) => {
+    if (!currentUser) return;
+    if (!next) {
+      const message = 'Выключить автоотклик? Новые отклики не будут отправляться, неотправленные остановятся. Уже отправленные работодателю отозвать через JobToo нельзя.';
+      const confirmed = Platform.OS === 'web'
+        ? typeof window !== 'undefined' && window.confirm(message)
+        : await new Promise<boolean>(resolve => Alert.alert('Автоотклик Юпитера', message, [
+            { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Выключить', style: 'destructive', onPress: () => resolve(true) },
+          ], { cancelable: true, onDismiss: () => resolve(false) }));
+      if (!confirmed) return;
+    }
+    setJupiterBusy(true);
+    try {
+      await jupiterSetLive(currentUser.id, next);
+      setJupiterLive(next);
+    } catch (error) {
+      console.warn('[jupiterSetLive]', error);
+      showToast('Не удалось изменить автоотклик', 'error');
+    } finally {
+      setJupiterBusy(false);
+    }
+  };
   const [notificationMessage, setNotificationMessage] = useState('');
   const [refreshBusy, setRefreshBusy] = useState(false);
 
@@ -419,6 +454,30 @@ export default function ProfileSettingsScreen() {
           </SettingsSection>
         ) : null}
 
+        {currentUser.role === 'worker' ? (
+          <SettingsSection title="Юпитер">
+            <View style={[s.row, { alignItems: 'flex-start' }]}>
+              <View style={s.rowIcon}>
+                <Ionicons name="rocket-outline" size={rf(18)} color={Colors.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(11) }}>
+                  <Text style={[s.rowLabel, { flex: 1 }]}>Автоотклик Юпитера</Text>
+                  <Switch
+                    value={jupiterLive}
+                    onValueChange={toggleJupiterLive}
+                    disabled={jupiterBusy}
+                  />
+                </View>
+                <Text style={s.jupiterHint}>
+                  Юпитер сам отправляет отклики на вакансии с сайтов компаний. Капчу, коды и согласия,
+                  которые компания просит от своего имени, вы проходите сами.
+                </Text>
+              </View>
+            </View>
+          </SettingsSection>
+        ) : null}
+
         <SettingsSection title="Приложение">
           <SettingsRow
             label={refreshBusy ? 'Обновляем…' : 'Очистить кеш и обновить'}
@@ -672,6 +731,7 @@ const s = StyleSheet.create({
   rowIconDanger: { backgroundColor: Colors.redLight },
   rowLabel: { flex: 1, fontSize: rf(14.5), fontWeight: '600', color: Colors.textPrimary },
   rowLabelDanger: { color: Colors.red },
+  jupiterHint: { fontSize: rf(12), lineHeight: rf(16.5), color: Colors.textMuted, marginTop: rs(6) },
   footer: {
     fontSize: rf(11.5),
     lineHeight: rf(17),
