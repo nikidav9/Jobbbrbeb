@@ -114,9 +114,20 @@ def ingest(address: str, payload: dict) -> None:
                  "X-App-Secret": os.environ["EXPO_PUBLIC_APP_SECRET"]},
     )
     with urlopen(req, timeout=30) as result:
-        parsed = json.load(result)
-        if not isinstance(parsed, dict) or "stored" not in parsed:
-            raise RuntimeError("Unexpected mail ingestion response")
+        check_ingest_response(json.load(result))
+
+
+def check_ingest_response(parsed: object) -> bool:
+    """db.php отвечает конвертом {"data": {...}}; «stored» лежит внутри.
+
+    Раньше служба искала его на верхнем уровне, падала на первом же письме
+    и по кругу пробовала его же: в «Почту JobToo» не доходило ничего.
+    stored=false — законный ответ (адрес никому не выдан), это не ошибка.
+    """
+    data = parsed.get("data") if isinstance(parsed, dict) else None
+    if not isinstance(data, dict) or not isinstance(data.get("stored"), bool):
+        raise RuntimeError("Unexpected mail ingestion response")
+    return data["stored"]
 
 
 def poll() -> None:
