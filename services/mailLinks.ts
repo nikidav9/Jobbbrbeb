@@ -26,3 +26,27 @@ export function splitMailLinks(body: string): MailPart[] {
   if (last < body.length) parts.push({ text: body.slice(last) });
   return parts;
 }
+
+/** «Платформа «Пульс» <hrplatform@sberbank.ru>» → «Платформа «Пульс»». */
+export function senderName(sender: string): string {
+  const name = sender.replace(/<[^>]*>/g, '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
+  return name || sender.replace(/[<>]/g, '').trim();
+}
+
+/** Начало письма одной строкой — для списка. */
+export function mailPreview(body: string): string {
+  return body.replace(/\s+/g, ' ').trim();
+}
+
+/** Как в почте: сегодня — время, в этом году — день и месяц, раньше — дата. */
+export function mailDate(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '');
+  }
+  return d.toLocaleDateString('ru-RU');
+}

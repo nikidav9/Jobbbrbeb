@@ -6,33 +6,46 @@ import { useRouter } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
 import { JupiterEmail, jupiterMailbox, jupiterMailList, jupiterMailRead } from '@/services/db';
 import { Colors } from '@/constants/theme';
-import { splitMailLinks } from '@/services/mailLinks';
+import { mailDate, mailPreview, senderName, splitMailLinks } from '@/services/mailLinks';
 
 export default function JupiterMail() {
   const router = useRouter();
-  const { currentUser } = useApp();
+  const { currentUser, showToast } = useApp();
   const [address, setAddress] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [messages, setMessages] = useState<JupiterEmail[]>([]);
   const [selected, setSelected] = useState<JupiterEmail | null>(null);
   const [loading, setLoading] = useState(true);
+  // Отдельно от первой загрузки: кнопка и «потянуть вниз» должны показывать,
+  // что обновление идёт, а список при этом не исчезает.
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const uid = currentUser?.id;
 
-  const refresh = useCallback(async () => {
-    if (!uid || currentUser?.isGuest) { setLoading(false); return; }
+  const load = useCallback(async (): Promise<boolean> => {
+    if (!uid || currentUser?.isGuest) { setLoading(false); return false; }
     try {
       const [box, letters] = await Promise.all([jupiterMailbox(uid), jupiterMailList(uid)]);
       setAddress(box.address);
       setReady(box.ready);
       setMessages(letters);
       setError('');
+      return true;
     } catch (e: any) {
       setError(e?.message || 'Не удалось получить письма');
+      return false;
     } finally { setLoading(false); }
   }, [uid, currentUser?.isGuest]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { load(); }, [load]);
+
+  const refresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const ok = await load();
+    setRefreshing(false);
+    showToast(ok ? 'Почта обновлена' : 'Не удалось обновить почту', ok ? 'success' : 'error');
+  }, [load, refreshing, showToast]);
 
   const open = async (message: JupiterEmail) => {
     setSelected(message);
@@ -52,8 +65,10 @@ export default function JupiterMail() {
           <Ionicons name="arrow-back" size={26} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.heading}>{selected ? 'Письмо' : 'Почта JobToo'}</Text>
-        <TouchableOpacity onPress={refresh} accessibilityLabel="Обновить почту">
-          <Ionicons name="refresh" size={23} color={Colors.textPrimary} />
+        <TouchableOpacity onPress={refresh} disabled={refreshing} style={styles.refreshBtn} accessibilityLabel="Обновить почту">
+          {refreshing
+            ? <ActivityIndicator size="small" color={Colors.primary} />
+            : <Ionicons name="refresh" size={22} color={Colors.textPrimary} />}
         </TouchableOpacity>
       </View>
       {selected ? (
@@ -83,18 +98,21 @@ export default function JupiterMail() {
             <FlatList
               data={messages}
               keyExtractor={item => item.id}
-              refreshing={loading}
+              refreshing={refreshing}
               onRefresh={refresh}
               ListHeaderComponent={error ? <Text style={styles.error}>{error}</Text> : null}
               ListEmptyComponent={!error ? <Text style={styles.empty}>Пока нет писем от работодателей.</Text> : null}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.row} onPress={() => open(item)}>
-                  <View style={styles.rowHead}>
-                    <Text numberOfLines={1} style={[styles.rowSender, !item.read_at && styles.unread]}>{item.sender}</Text>
-                    <Text style={styles.date}>{new Date(item.received_at).toLocaleDateString('ru-RU')}</Text>
+                <TouchableOpacity style={styles.row} onPress={() => open(item)} activeOpacity={0.6}>
+                  <View style={[styles.dot, !item.read_at && styles.dotUnread]} />
+                  <View style={styles.rowMain}>
+                    <View style={styles.rowHead}>
+                      <Text numberOfLines={1} style={[styles.rowSender, !item.read_at && styles.unread]}>{senderName(item.sender)}</Text>
+                      <Text style={styles.date}>{mailDate(item.received_at)}</Text>
+                    </View>
+                    <Text numberOfLines={1} style={[styles.rowSubject, !item.read_at && styles.unread]}>{item.subject || '(Без темы)'}</Text>
+                    <Text numberOfLines={1} style={styles.preview}>{mailPreview(item.body)}</Text>
                   </View>
-                  <Text numberOfLines={1} style={[styles.rowSubject, !item.read_at && styles.unread]}>{item.subject || '(Без темы)'}</Text>
-                  <Text numberOfLines={2} style={styles.preview}>{item.body}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -107,26 +125,31 @@ export default function JupiterMail() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#fff' },
-  header: { paddingHorizontal: 20, paddingVertical: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heading: { fontSize: 21, fontWeight: '700', color: Colors.textPrimary },
-  banner: { margin: 18, padding: 18, backgroundColor: '#FFF3EC', borderRadius: 20 },
-  label: { color: '#6B7280', marginBottom: 5 },
-  address: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
-  notice: { marginTop: 10, color: '#8B4A2B', lineHeight: 20 },
+  header: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heading: { fontSize: 19, fontWeight: '700', color: Colors.textPrimary },
+  refreshBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  banner: { marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#FFF3EC', borderRadius: 14 },
+  label: { color: '#6B7280', fontSize: 12, marginBottom: 2 },
+  address: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  notice: { marginTop: 6, color: '#8B4A2B', fontSize: 13, lineHeight: 18 },
   loading: { marginTop: 40 },
-  error: { margin: 20, color: '#B91C1C' },
+  error: { margin: 16, color: '#B91C1C' },
   empty: { textAlign: 'center', marginTop: 50, color: '#6B7280' },
-  row: { padding: 19, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  rowHead: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
-  rowSender: { flex: 1, fontSize: 16, color: Colors.textPrimary },
+  // Строка как в почтовых приложениях: отправитель, тема и одна строка текста.
+  row: { flexDirection: 'row', paddingVertical: 10, paddingRight: 16, paddingLeft: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB' },
+  dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6, marginRight: 8, backgroundColor: 'transparent' },
+  dotUnread: { backgroundColor: Colors.primary },
+  rowMain: { flex: 1, minWidth: 0 },
+  rowHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 },
+  rowSender: { flex: 1, fontSize: 15, color: Colors.textPrimary },
   unread: { fontWeight: '700' },
-  date: { color: '#6B7280' },
-  rowSubject: { fontSize: 16, color: Colors.textPrimary, marginTop: 8 },
-  preview: { color: '#6B7280', marginTop: 5, lineHeight: 20 },
-  content: { padding: 20 },
-  subject: { fontSize: 23, fontWeight: '700', color: Colors.textPrimary, marginBottom: 20 },
-  sender: { fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
-  meta: { color: '#6B7280', marginBottom: 6 },
-  body: { fontSize: 17, lineHeight: 26, color: Colors.textPrimary, marginTop: 24 },
+  date: { fontSize: 12, color: '#6B7280' },
+  rowSubject: { fontSize: 14, color: Colors.textPrimary, marginTop: 2 },
+  preview: { fontSize: 13, color: '#6B7280', marginTop: 1 },
+  content: { padding: 16 },
+  subject: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginBottom: 12 },
+  sender: { fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
+  meta: { fontSize: 13, color: '#6B7280', marginBottom: 2 },
+  body: { fontSize: 16, lineHeight: 23, color: Colors.textPrimary, marginTop: 16 },
   link: { color: Colors.primary, textDecorationLine: 'underline' },
 });
