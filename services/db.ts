@@ -220,7 +220,9 @@ function rowToUser(r: any): User {
   return {
     id: r.id,
     role: r.role,
-    phone: r.phone,
+    phone: r.phone ?? '',
+    email: r.email ?? undefined,
+    emailVerifiedAt: r.email_verified_at ?? undefined,
     lastName: r.last_name,
     firstName: r.first_name,
     age: r.age ?? undefined,
@@ -413,8 +415,9 @@ export async function dbGetUsers(): Promise<User[]> {
  * Раньше приложение спрашивало профиль по номеру телефона и сравнивало
  * пароль у себя — то есть пароль уходил наружу всякому, кто знает номер.
  */
-export async function dbLogin(phone: string, password: string): Promise<User | null> {
-  const d = await proxy<{ user?: any; session_token?: string } | null>('dbLogin', [phone, password]);
+export async function dbLogin(identifier: string, password: string): Promise<User | null> {
+  // Почта — как есть, телефон старого аккаунта — цифрами: решает сервер.
+  const d = await proxy<{ user?: any; session_token?: string } | null>('dbLogin', [identifier, password]);
   if (!d?.user || !d.session_token) return null;
   await saveSessionToken(d.session_token);
   return rowToUser(d.user);
@@ -432,6 +435,40 @@ export async function dbRestoreSession(): Promise<User | null> {
     if (e instanceof Error && e.message === SESSION_EXPIRED_MESSAGE) return null;
     throw e;
   }
+}
+
+// ─── Вход по почте с кодом (решение владельца 25.09.2026) ────────────────────
+// register — новый аккаунт; attach — почта к старому аккаунту по телефону;
+// reset — восстановление пароля. Код приходит письмом, сверяет сервер и
+// отдаёт «квитанцию», которую предъявляют на последнем шаге.
+export type EmailCodePurpose = 'register' | 'attach' | 'reset';
+
+export async function dbAuthSendCode(email: string, purpose: EmailCodePurpose): Promise<void> {
+  await proxy<{ ok: boolean }>('dbAuthSendCode', [email, purpose]);
+}
+
+export async function dbAuthVerifyCode(email: string, purpose: EmailCodePurpose, code: string): Promise<string> {
+  const d = await proxy<{ ticket: string }>('dbAuthVerifyCode', [email, purpose, code]);
+  return d.ticket;
+}
+
+/** Новый пароль по квитанции reset: сервер гасит прежние сессии и выдаёт новую. */
+export async function dbAuthResetPassword(ticket: string, newPassword: string): Promise<User> {
+  const d = await proxy<{ user: any; session_token: string }>('dbAuthResetPassword', [ticket, newPassword]);
+  await saveSessionToken(d.session_token);
+  return rowToUser(d.user);
+}
+
+/** Почта к старому аккаунту по телефону. */
+export async function dbAuthAttachEmail(ticket: string): Promise<User> {
+  const d = await proxy<{ user: any }>('dbAuthAttachEmail', [ticket]);
+  return rowToUser(d.user);
+}
+
+/** Телефон для связи: пусто — стереть. */
+export async function dbSetContactPhone(userId: string, phone: string): Promise<string | null> {
+  const d = await proxy<{ phone: string | null }>('dbSetContactPhone', [userId, phone]);
+  return d.phone;
 }
 
 /** Смена пароля: старый сверяет сервер, новый он же и хеширует. */
@@ -468,6 +505,8 @@ export async function dbUpsertUser(
   u: User,
   referralCode?: string,
   consent?: ConsentPayload,
+  /** Квитанция dbAuthVerifyCode(…, 'register') — при регистрации по почте. */
+  emailTicket?: string,
 ): Promise<void> {
   const { avg_rating, rating_count, ...row } = userToRow(u);
   // Пустой пароль не отправляем: он означает «профиль пришёл без пароля»
@@ -477,9 +516,11 @@ export async function dbUpsertUser(
     // Согласие идёт ТЕМ ЖЕ запросом, что создаёт человека. Отдельным вызовом
     // оно терялось при любом обрыве связи, а запись согласия — доказательство,
     // а не аналитика.
-    const args: unknown[] = consent
-      ? [row, referralCode ?? '', consent]
-      : (referralCode ? [row, referralCode] : [row]);
+    const args: unknown[] = emailTicket
+      ? [row, referralCode ?? '', consent ?? null, emailTicket]
+      : consent
+        ? [row, referralCode ?? '', consent]
+        : (referralCode ? [row, referralCode] : [row]);
     const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', args);
     if (d?.session_token) await saveSessionToken(d.session_token);
     return;

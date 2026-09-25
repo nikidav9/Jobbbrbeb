@@ -145,6 +145,8 @@ let CURRENT = null;
 function respond(fn, args) {
   switch (fn) {
     case 'dbSession': return CURRENT ? { user: CURRENT } : null;
+    case 'dbAuthSendCode': return { ok: true };
+    case 'dbAuthVerifyCode': return { ticket: 'shot-ticket' };
     // Согласие принято текущей редакцией: иначе ConsentGate закрывает экран
     // окном «Примите документы», и снимок показывает его, а не приложение.
     case 'dbGetConsent':
@@ -224,9 +226,11 @@ const clickText = async (page, text) => {
 /** Регистрация работника: 6 шагов */
 async function walkRegisterWorker(page, snap) {
   await snap('register-worker-1');
-  await page.locator('input').first().fill('9990001122');
-  await page.waitForTimeout(300);
-  await clickText(page, 'Продолжить');
+  // Шаг 1 — почта и код из письма (с 25.09.2026 вместо телефона).
+  await page.locator('input').first().fill('maxim@example.ru');
+  await clickText(page, 'Получить код');
+  await page.locator('input').first().fill('123456');
+  await clickText(page, 'Подтвердить');
 
   await snap('register-worker-2');
   const pass = page.locator('input');

@@ -31,7 +31,7 @@ with required(table_name) as (
     ('jm_bot_messages'), ('jm_consents'),
     ('jm_skill_results'), ('jm_jupiter_applications'),
     ('jm_jupiter_mailboxes'), ('jm_jupiter_emails'), ('jm_jupiter_retired_addresses'), ('jm_jupiter_events'), ('jm_ext_swipes'),
-    ('jm_perm_swipes'),
+    ('jm_perm_swipes'), ('jm_auth_codes'),
     -- Карьерные источники, вернувшиеся миграцией 105. В jm_ext_sources лежат
     -- заголовки доступа к чужим API — эту таблицу нельзя показывать никому,
     -- кроме сервисной роли.

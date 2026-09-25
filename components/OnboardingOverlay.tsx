@@ -142,6 +142,9 @@ export function OnboardingOverlay() {
   const role = user?.role === 'employer' ? 'employer' : 'worker';
   const userId = user?.id ?? null;
   const isGuest = user?.isGuest ?? false;
+  // Старому аккаунту без почты сначала — обязательное окно «Укажите почту»
+  // (EmailRequiredGate): обучение поверх него перекрывало поле ввода.
+  const emailPending = !!user && !isGuest && !user.emailVerifiedAt;
   const steps = useMemo(() => onboardingSteps(role), [role]);
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const stepPath = step?.path;
@@ -157,7 +160,7 @@ export function OnboardingOverlay() {
   }, [visible, stepIndex, pathname]);
 
   useEffect(() => {
-    if (!userId || isGuest) {
+    if (!userId || isGuest || emailPending) {
       setVisible(false);
       return;
     }
@@ -183,7 +186,7 @@ export function OnboardingOverlay() {
       cancelled = true;
       replayListeners.delete(replay);
     };
-  }, [userId, isGuest, steps.length]);
+  }, [userId, isGuest, emailPending, steps.length]);
 
   useEffect(() => {
     if (!visible || !stepPath || pathname === stepPath) return;

@@ -23,6 +23,7 @@ import {
   dbGetConsent,
   dbGetResumeFiles, dbSaveResumeFile, dbSelectResumeFile, dbDeleteResumeFile,
   dbSignResumeFile, UserRating, type ResumeVaultItem,
+  dbSetContactPhone,
 } from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
@@ -427,7 +428,8 @@ function PersonalTab({
       <PersonalSection title="Контактная информация">
         <View style={personalS.card}>
           <PersonalRow label="Email" value={contactEmail} onPress={() => onEditField('contactEmail')} />
-          <PersonalRow label="Телефон" value={user.phone} onPress={onEditCore} last />
+          <PersonalRow label="Почта для входа" value={user.email} />
+          <PersonalRow label="Телефон для связи" value={user.phone || undefined} onPress={onEditCore} last />
         </View>
       </PersonalSection>
 
@@ -858,7 +860,13 @@ export default function ProfileScreen() {
         };
       }
       if (editSection === 'personal') {
-        updated.phone = editPhone; updated.lastName = editLast; updated.firstName = editFirst;
+        // Телефон для связи — отдельной операцией с проверками на сервере
+        // (формат, не занят ли, не единственный ли это вход). Обычное
+        // сохранение профиля телефон не меняет и раньше молча его терял.
+        const want = editPhone.replace(/\D/g, '');
+        const have = (currentUser.phone ?? '').replace(/\D/g, '');
+        if (want !== have) updated.phone = (await dbSetContactPhone(currentUser.id, editPhone)) ?? '';
+        updated.lastName = editLast; updated.firstName = editFirst;
         // Пустое поле — «не указан», а не ноль: иначе в карточке появилось бы «0 лет».
         updated.age = editAge.trim() === '' ? undefined : Number(editAge);
       }
@@ -869,9 +877,9 @@ export default function ProfileScreen() {
       setEditSection(null);
       setPersonalField(null);
       showToast('Сохранено', 'success');
-    } catch {
+    } catch (e) {
       // Форму не закрываем: введённые значения остаются на месте для повтора.
-      showToast('Не удалось сохранить. Проверьте связь и попробуйте ещё раз', 'error');
+      showToast(e instanceof Error && e.message ? e.message : 'Не удалось сохранить. Проверьте связь и попробуйте ещё раз', 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -1169,7 +1177,7 @@ export default function ProfileScreen() {
             <View style={styles.roleBadge}>
               <Text style={styles.roleText}>{currentUser.role === 'worker' ? 'Работник' : 'Работодатель'}</Text>
             </View>
-            <Text style={styles.phone}>{currentUser.phone}</Text>
+            <Text style={styles.phone}>{currentUser.email || currentUser.phone}</Text>
             <StarRating
               rating={currentUser.avgRating ?? 0}
               count={currentUser.ratingCount ?? 0}
@@ -1229,12 +1237,13 @@ export default function ProfileScreen() {
               iconName="person"
               iconBg={Colors.primary}
               title="Личные данные"
-              summary={currentUser.phone}
+              summary={currentUser.email || currentUser.phone}
               open={openSection === 'personal'}
               onToggle={() => toggleSection('personal')}
               onEdit={() => openEdit('personal')}
               rows={[
-                { label: 'Телефон', value: currentUser.phone },
+                { label: 'Почта для входа', value: currentUser.email || 'Не указана' },
+                { label: 'Телефон для связи', value: currentUser.phone || 'Не указан' },
                 { label: 'Фамилия', value: currentUser.lastName },
                 { label: 'Имя', value: currentUser.firstName },
                 { label: 'Возраст', value: currentUser.age ? `${currentUser.age}` : 'Не указан' },
@@ -1497,7 +1506,13 @@ export default function ProfileScreen() {
 
             {editSection === 'personal' && (
               <View style={{ gap: 12 }}>
-                <AppInput label="Телефон" value={editPhone} onChangeText={setEditPhone} keyboardType="phone-pad" />
+                <AppInput
+                  label="Телефон для связи (необязательно)"
+                  value={editPhone}
+                  onChangeText={setEditPhone}
+                  keyboardType="phone-pad"
+                  placeholder="+7 999 123-45-67"
+                />
                 <AppInput label="Фамилия" value={editLast} onChangeText={setEditLast} />
                 <AppInput label="Имя" value={editFirst} onChangeText={setEditFirst} />
                 <AppInput

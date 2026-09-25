@@ -23,6 +23,9 @@ require_once __DIR__ . '/push_privacy.php';
 require_once __DIR__ . '/jupiter_mail_address.php';
 require_once __DIR__ . '/ext_feed.php';
 require_once __DIR__ . '/job_sections.php';
+// Вход по почте: коды из писем и их отправка (решение владельца 25.09.2026).
+require_once __DIR__ . '/auth_email.php';
+require_once __DIR__ . '/mailer.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -241,6 +244,9 @@ $publicFns = [
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
     'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed',
+    // Регистрация и восстановление пароля по коду из письма — до входа.
+    // dbAuthSendCode/dbAuthVerifyCode с целью attach сами требуют сессию.
+    'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
     jt_respond(['error' => 'Authentication required'], 401); exit;
@@ -250,7 +256,7 @@ if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $auth
 // сервер не доверяет ID из тела запроса и сверяет его с подписанной сессией.
 $selfArgFns = [
     'tgPrepareLink' => 0, 'dbTouchLastSeen' => 0,
-    'dbChangePassword' => 0, 'dbDeleteAccount' => 0,
+    'dbChangePassword' => 0, 'dbDeleteAccount' => 0, 'dbSetContactPhone' => 0,
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
     'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
     'dbRevokeCrossBorderConsent' => 0,
@@ -725,7 +731,7 @@ define('USER_PUBLIC_COLS', implode(',', [
     'referral_worked',
 ]));
 
-define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,resume_email,resume_file_name,resume_imported_at,personal_data');
+define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,email,email_verified_at,resume_email,resume_file_name,resume_imported_at,personal_data');
 
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
 // Версии три — $2a$, $2b$, $2y$: приложение хеширует библиотекой bcryptjs
@@ -927,7 +933,8 @@ function jt_b64url_decode(string $raw): string|false {
 // ронять из-за счётчика нельзя. REMOTE_ADDR — настоящий адрес клиента: nginx
 // отдаёт PHP по FastCGI и стоит на краю, без второго прокси перед собой.
 const JT_TRY_WINDOW = 900;          // 15 минут
-const JT_TRY_MAX = ['login' => 10, 'phone' => 30];
+// mail — письма с кодами с одного адреса; code — неверные коды с одного адреса.
+const JT_TRY_MAX = ['login' => 10, 'phone' => 30, 'mail' => 20, 'code' => 30];
 
 function jt_try_file(string $kind): string {
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
@@ -3551,8 +3558,27 @@ try {
             if ($existing && $authUid !== $uid) {
                 jt_respond(['error' => 'Authentication required'], 401); exit;
             }
-            if (!$existing && (empty($u['phone']) || empty($u['password']))) {
-                throw new RuntimeException('Для регистрации нужны телефон и пароль');
+            // Регистрация — по почте с кодом: четвёртый довод — квитанция
+            // dbAuthVerifyCode. Телефон с паролем принимаем только от старых
+            // сборок, которым OTA ещё не пришло: иначе у них сломалась бы
+            // регистрация; почту у них тут же спросит окно в приложении.
+            $regEmail = null;
+            if (!$existing) {
+                $ticket = is_string($args[3] ?? null) ? jt_auth_ticket_check($args[3], 'register', jt_session_key()) : null;
+                if ($ticket === null && is_string($args[3] ?? null) && $args[3] !== '') {
+                    jt_respond(['error' => 'Подтверждение почты устарело. Начните регистрацию заново'], 400); exit;
+                }
+                if ($ticket !== null) {
+                    $regEmail = $ticket['email'];
+                    if (sb_single('jm_users', ['email' => 'eq.' . $regEmail], 'id')) {
+                        jt_respond(['error' => 'Аккаунт с этой почтой уже есть. Войдите'], 409); exit;
+                    }
+                    $bad = jt_password_problem((string)($u['password'] ?? ''));
+                    if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
+                    unset($u['phone']);
+                } elseif (empty($u['phone']) || empty($u['password'])) {
+                    throw new RuntimeException('Для регистрации нужны почта с кодом и пароль');
+                }
             }
             if (!$existing) {
                 // Старые сборки иногда присылали профиль без role. Postgres
@@ -3598,6 +3624,10 @@ try {
             // Клиент присылает is_blocked: false при каждом сохранении профиля.
             // Своё значение тут задаёт сервер, а не присланное.
             if (!$existing) $u['is_blocked'] = false;
+            if ($regEmail !== null) {
+                $u['email'] = $regEmail;
+                $u['email_verified_at'] = now_iso();
+            }
             // Пустой пароль — это не «сотри пароль», а «в профиле его нет».
             if (empty($u['password'])) {
                 unset($u['password']);
@@ -3652,9 +3682,16 @@ try {
             if (jt_try_blocked('login')) {
                 jt_respond(['error' => 'Слишком много попыток входа. Попробуйте через 15 минут.'], 429); exit;
             }
-            $phone = preg_replace('/\D+/', '', (string)($args[0] ?? ''));
+            // Почта или, у старых аккаунтов, телефон — одно поле на экране.
+            $ident = trim((string)($args[0] ?? ''));
             $pass  = (string)($args[1] ?? '');
-            $row = $phone === '' ? null : sb_single('jm_users', ['phone' => 'eq.' . $phone]);
+            if (str_contains($ident, '@')) {
+                $email = jt_email_norm($ident);
+                $row = $email === null ? null : sb_single('jm_users', ['email' => 'eq.' . $email]);
+            } else {
+                $phone = preg_replace('/\D+/', '', $ident);
+                $row = $phone === '' ? null : sb_single('jm_users', ['phone' => 'eq.' . $phone]);
+            }
             if (!$row || $pass === '' || empty($row['password'])) { jt_try_note('login'); $data = null; break; }
 
             $stored = (string)$row['password'];
@@ -4087,6 +4124,139 @@ try {
         // Проверка «этот номер уже занят» нужна форме регистрации, но ею же
         // перебирают базу номеров. Поэтому считаем и её: тридцати проверок за
         // четверть часа человеку при регистрации хватит с запасом.
+        // ── Коды из писем ─────────────────────────────────────────────────
+        // args: [email, purpose]. register — почта ещё не занята; reset —
+        // отвечаем одинаково, есть такой аккаунт или нет (иначе по форме
+        // восстановления можно перебирать, чья почта у нас есть); attach —
+        // только с сессией, почта не занята другим аккаунтом.
+        case 'dbAuthSendCode': {
+            $purpose = (string)($args[1] ?? '');
+            if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
+            $email = jt_email_norm((string)($args[0] ?? ''));
+            if ($email === null) { jt_respond(['error' => 'Проверьте адрес почты'], 400); exit; }
+            if (jt_try_blocked('mail')) {
+                jt_respond(['error' => 'Слишком много писем. Попробуйте через 15 минут.'], 429); exit;
+            }
+            // Считаем каждую попытку, а не только отправленное письмо: ответ
+            // «такая почта уже есть» иначе позволял бы перебирать адреса без
+            // ограничения.
+            jt_try_note('mail');
+            $owner = sb_single('jm_users', ['email' => 'eq.' . $email], 'id,is_blocked');
+            $userId = null;
+            if ($purpose === 'register' && $owner) {
+                jt_respond(['error' => 'Аккаунт с этой почтой уже есть. Войдите'], 409); exit;
+            }
+            if ($purpose === 'attach') {
+                if ($authUid === null) { jt_respond(['error' => 'Authentication required'], 401); exit; }
+                if ($owner && (string)$owner['id'] !== (string)$authUid) {
+                    jt_respond(['error' => 'Эта почта уже привязана к другому аккаунту'], 409); exit;
+                }
+                $userId = (string)$authUid;
+            }
+            if ($purpose === 'reset') {
+                if (!$owner || !empty($owner['is_blocked'])) { $data = ['ok' => true]; break; }
+                $userId = (string)$owner['id'];
+            }
+            $res = jt_auth_issue_code($email, $purpose, $userId, jt_session_key(),
+                fn(string $to, string $code, string $p) => jt_mail_code($to, $code, $p));
+            if (!$res['ok']) {
+                $status = $res['reason'] === 'mail_failed' ? 503 : 429;
+                jt_respond(['error' => jt_auth_reason_text($res['reason'], (int)($res['retry_in'] ?? 0)),
+                    'reason' => $res['reason'], 'retry_in' => $res['retry_in'] ?? null], $status); exit;
+            }
+            $data = ['ok' => true];
+            break;
+        }
+
+        // args: [email, purpose, code] → { ticket } — квитанция для последнего шага.
+        case 'dbAuthVerifyCode': {
+            $purpose = (string)($args[1] ?? '');
+            if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
+            $email = jt_email_norm((string)($args[0] ?? ''));
+            if ($email === null) { jt_respond(['error' => 'Проверьте адрес почты'], 400); exit; }
+            if ($purpose === 'attach' && $authUid === null) { jt_respond(['error' => 'Authentication required'], 401); exit; }
+            if (jt_try_blocked('code')) {
+                jt_respond(['error' => 'Слишком много попыток. Попробуйте через 15 минут.'], 429); exit;
+            }
+            $res = jt_auth_check_code($email, $purpose, (string)($args[2] ?? ''), jt_session_key());
+            if (!$res['ok']) {
+                jt_try_note('code');
+                jt_respond(['error' => jt_auth_reason_text($res['reason']), 'reason' => $res['reason'],
+                    'left' => $res['left'] ?? null], 400); exit;
+            }
+            // Код на привязку выпускался под конкретный аккаунт: предъявить
+            // его из чужой сессии нельзя.
+            if ($purpose === 'attach' && (string)($res['user_id'] ?? '') !== (string)$authUid) {
+                jt_respond(['error' => 'Код выпущен для другого аккаунта'], 403); exit;
+            }
+            jt_try_reset('code');
+            $data = ['ticket' => jt_auth_ticket_issue($email, $purpose,
+                $purpose === 'register' ? null : (string)($res['user_id'] ?? ''), jt_session_key())];
+            break;
+        }
+
+        // args: [ticket, newPassword] → { user, session_token }. Все прежние
+        // сессии гаснут: пароль сбрасывают как раз тогда, когда доступ мог
+        // оказаться не только у владельца.
+        case 'dbAuthResetPassword': {
+            $t = jt_auth_ticket_check((string)($args[0] ?? ''), 'reset', jt_session_key());
+            if ($t === null) { jt_respond(['error' => 'Код устарел. Начните заново'], 400); exit; }
+            $new = (string)($args[1] ?? '');
+            $bad = jt_password_problem($new);
+            if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
+            $row = sb_single('jm_users', ['id' => 'eq.' . (string)$t['uid'], 'email' => 'eq.' . $t['email']], 'id,is_blocked');
+            if (!$row || !empty($row['is_blocked'])) { jt_respond(['error' => 'Аккаунт не найден'], 404); exit; }
+            sb_update('jm_users', ['id' => 'eq.' . $row['id']], [
+                'password' => password_hash($new, PASSWORD_BCRYPT),
+                'sessions_valid_from' => now_iso(),
+            ]);
+            jt_try_reset('login');
+            $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+                'session_token' => jt_session_issue((string)$row['id'])];
+            break;
+        }
+
+        // args: [ticket] → { user }. Почта к старому аккаунту по телефону.
+        case 'dbAuthAttachEmail': {
+            $t = jt_auth_ticket_check((string)($args[0] ?? ''), 'attach', jt_session_key());
+            if ($t === null || (string)$t['uid'] !== (string)$authUid) {
+                jt_respond(['error' => 'Код устарел. Запросите новый'], 400); exit;
+            }
+            $taken = sb_single('jm_users', ['email' => 'eq.' . $t['email']], 'id');
+            if ($taken && (string)$taken['id'] !== (string)$authUid) {
+                jt_respond(['error' => 'Эта почта уже привязана к другому аккаунту'], 409); exit;
+            }
+            sb_update('jm_users', ['id' => 'eq.' . $authUid],
+                ['email' => $t['email'], 'email_verified_at' => now_iso()]);
+            $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS)];
+            break;
+        }
+
+        // args: [uid, phone] — телефон для связи (необязательный). Пусто —
+        // стереть. Старому аккаунту без почты телефон — единственный вход,
+        // его нельзя ни стереть, ни сменить, пока почта не подтверждена.
+        case 'dbSetContactPhone': {
+            $digits = preg_replace('/\D+/', '', (string)($args[1] ?? ''));
+            if ($digits !== '' && strlen($digits) === 11 && $digits[0] === '8') $digits = '7' . substr($digits, 1);
+            if ($digits !== '' && !preg_match('/^7\d{10}$/', $digits)) {
+                jt_respond(['error' => 'Номер в формате +7 XXX XXX-XX-XX'], 400); exit;
+            }
+            $me = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'id,phone,email_verified_at');
+            if (!$me) { jt_respond(['error' => 'Аккаунт не найден'], 404); exit; }
+            if (empty($me['email_verified_at']) && (string)($me['phone'] ?? '') !== $digits) {
+                jt_respond(['error' => 'Сначала подтвердите почту: сейчас телефон — ваш вход'], 409); exit;
+            }
+            if ($digits !== '') {
+                $taken = sb_single('jm_users', ['phone' => 'eq.' . $digits], 'id');
+                if ($taken && (string)$taken['id'] !== (string)$authUid) {
+                    jt_respond(['error' => 'Этот номер уже указан в другом аккаунте'], 409); exit;
+                }
+            }
+            sb_update('jm_users', ['id' => 'eq.' . $authUid], ['phone' => $digits === '' ? null : $digits]);
+            $data = ['ok' => true, 'phone' => $digits === '' ? null : $digits];
+            break;
+        }
+
         case 'dbCheckPhoneExists':
             if (jt_try_blocked('phone')) {
                 jt_respond(['error' => 'Слишком много проверок. Попробуйте через 15 минут.'], 429); exit;

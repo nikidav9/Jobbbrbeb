@@ -110,11 +110,21 @@ check('отклики: обрыв меряется по всему списку,
 // ── Регистрация и поддержка: сетевой сбой не выдаётся за успех/пустоту ───────
 foreach (['app/register-worker.tsx' => 'работник', 'app/register-employer.tsx' => 'работодатель'] as $file => $role) {
     $src = (string)file_get_contents(__DIR__ . '/../' . $file);
-    check("регистрация {$role}: сбой проверки номера не пропускает дальше",
-        !preg_match('~catch\s*\{[\s\S]{0,180}setStep\(2\)~', $src));
-    check("регистрация {$role}: сбой проверки номера объяснён",
-        str_contains($src, 'Не удалось проверить номер. Проверьте связь и попробуйте ещё раз.'));
+    check("регистрация {$role}: сбой сети не пропускает дальше",
+        !preg_match('~catch\s*(\(\w+\))?\s*\{[\s\S]{0,180}setStep\(2\)~', $src));
+    // С 25.09.2026 первый шаг — почта с кодом: дальше ведёт только onVerified,
+    // то есть сервер подтвердил код.
+    check("регистрация {$role}: дальше — только после подтверждённого кода",
+        str_contains($src, '<EmailCodeStep') && str_contains($src, 'onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}'));
 }
+// Шаг почты: сбой отправки или сверки остаётся на месте и объясняется.
+$step = (string)file_get_contents(__DIR__ . '/../components/feature/EmailCodeStep.tsx');
+check('шаг почты: сбой отправки объяснён, а не проглочен',
+    str_contains($step, "setError(e instanceof Error ? e.message : 'Не удалось отправить письмо');"));
+check('шаг почты: к коду переходим только после успешной отправки',
+    (bool)preg_match("~await dbAuthSendCode\(normalized, purpose\);\s*setPhase\('code'\);~", $step));
+check('шаг почты: onVerified — только после ответа сервера',
+    (bool)preg_match("~const ticket = await dbAuthVerifyCode\(normalized, purpose, digits\);\s*onVerified\(normalized, ticket\);~", $step));
 $support = (string)file_get_contents(__DIR__ . '/../app/support.tsx');
 check('поддержка: ошибка истории хранится отдельно', str_contains($support, 'loadFailed'));
 check('поддержка: ошибка истории не выглядит пустым чатом', str_contains($support, 'Не удалось загрузить чат'));

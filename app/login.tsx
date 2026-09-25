@@ -2,27 +2,28 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Radius } from '@/constants/theme';
-import { PhoneInput } from '@/components/feature/PhoneInput';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { useApp } from '@/hooks/useApp';
-import { isPhoneComplete, extractPhoneDigits } from '@/services/storage';
 import { LegalLinks } from '@/components/LegalLinks';
 
 import { rs, rf } from '@/constants/scale';
 
-const SUPPORT_EMAIL = 'support@jobtoo.ru';
+// Вход — по почте (решение владельца 25.09.2026). Старые аккаунты, заведённые
+// по телефону, входят номером в то же поле; почту у них сразу спросит окно
+// EmailRequiredGate.
+const looksLikeLogin = (v: string) => /@/.test(v) ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) : v.replace(/\D/g, '').length >= 10;
 
 export default function Login() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const { loginUser, showToast } = useApp();
 
-  const [phone, setPhone] = useState('+7 ');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
@@ -42,7 +43,7 @@ export default function Login() {
     // Regular user check first — DB is the source of truth
     let user = null;
     try {
-      user = await loginUser(phone, password);
+      user = await loginUser(login, password);
     } catch (e) {
       console.error('[Login] loginUser error', e);
       setPhoneError('Ошибка входа. Проверьте соединение и попробуйте ещё раз.');
@@ -57,12 +58,12 @@ export default function Login() {
       return;
     }
 
-    setPhoneError('Пользователь с таким номером не найден или неверный пароль');
+    setPhoneError('Неверная почта (телефон) или пароль');
     setLoading(false);
   };
 
-  const openSupport = () => {
-    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Восстановление пароля JobToo`);
+  const openReset = () => {
+    router.push(returnTo ? { pathname: '/reset-password', params: { returnTo } } : '/reset-password');
   };
 
   return (
@@ -75,11 +76,19 @@ export default function Login() {
         <View style={styles.sheet}>
 
         <Text style={styles.title}>Войти</Text>
-        <Text style={styles.subtitle}>Номер телефона и пароль</Text>
+        <Text style={styles.subtitle}>Почта и пароль. Регистрировались по номеру — введите номер</Text>
 
-        <PhoneInput
-          value={phone}
-          onChange={v => { setPhone(v); setPhoneError(''); }}
+        <AppInput
+          label="Почта или телефон"
+          value={login}
+          onChangeText={v => { setLogin(v); setPhoneError(''); }}
+          placeholder="name@mail.ru"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="username"
+          textContentType="username"
+          accessibilityLabel="Почта или телефон"
           error={phoneError}
         />
 
@@ -88,7 +97,7 @@ export default function Login() {
           value={password}
           onChangeText={v => { setPassword(v); setPassError(''); }}
           secureTextEntry
-          placeholder="Минимум 6 символов"
+          placeholder="Ваш пароль"
         />
         {passError ? <Text style={styles.errText}>{passError}</Text> : null}
 
@@ -99,18 +108,18 @@ export default function Login() {
             <PrimaryButton
               label="Войти →"
               onPress={handleLogin}
-              disabled={!isPhoneComplete(phone) || !password.trim()}
+              disabled={!looksLikeLogin(login) || !password.trim()}
             />
           )}
         </View>
 
         {/* Порядок внизу: сначала подсказка про почту, «Отмена» — последней.
             Раньше подсказка стояла над кнопкой «Войти» и перебивала её. */}
-        <TouchableOpacity style={styles.forgotRow} onPress={openSupport} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.forgotRow} onPress={openReset} activeOpacity={0.8} accessibilityRole="button">
           <View style={styles.forgotBanner}>
             <Text style={styles.forgotText}>
               Забыли пароль?{' '}
-              <Text style={styles.forgotLink}>Обращайтесь на {SUPPORT_EMAIL}</Text>
+              <Text style={styles.forgotLink}>Восстановить по почте</Text>
             </Text>
           </View>
         </TouchableOpacity>

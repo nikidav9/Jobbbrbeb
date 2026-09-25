@@ -117,8 +117,13 @@ export interface AppContextValue {
   optimisticUpdateChat: (c: Chat) => void;
   optimisticAddLike: (l: Like) => void;
   optimisticUpdateLike: (l: Like) => void;
-  registerUser: (u: User) => Promise<void>;
-  loginUser: (phone: string, password: string) => Promise<User | null>;
+  /** emailTicket — квитанция кода из письма (регистрация по почте). */
+  registerUser: (u: User, emailTicket?: string) => Promise<void>;
+  loginUser: (login: string, password: string) => Promise<User | null>;
+  /** Войти уже полученным профилем: после сброса пароля по коду. */
+  signInAs: (u: User) => Promise<void>;
+  /** Заменить свой профиль ответом сервера: после привязки почты. */
+  adoptUser: (u: User) => Promise<void>;
   logout: () => Promise<void>;
   /** Войти как гость (просмотр без регистрации) в роли соискателя. */
   enterGuest: () => void;
@@ -674,7 +679,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // ─── Auth actions ──────────────────────────────────────────────────────────
 
-  const registerUser = async (u: User) => {
+  const registerUser = async (u: User, emailTicket?: string) => {
     // Приглашение, если человек пришёл по ссылке знакомого. Забираем ДО
     // записи и стираем СРАЗУ после: чужой код, оставшийся в хранилище, был бы
     // приписан следующему, кто зарегистрируется на этом телефоне.
@@ -683,7 +688,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await dbUpsertUser(u, referralCode, {
       stamp: LEGAL_STAMP,
       docs: coreDocs,
-    });
+    }, emailTicket);
     if (referralCode) void clearPendingReferral();
     // Если человек пришёл из гостевого просмотра, замыкаем анонимную
     // воронку. user_id не связываем с anon_id и в событие не передаём.
@@ -693,8 +698,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // в базе — здесь, а не в двух экранах регистрации по отдельности:
     // забыть одно из двух мест куда проще, чем это одно.
     void dbRecordConsent(u.id, LEGAL_STAMP, coreDocs, 'registration');
-    _setCurrentUser(u);
-    await saveSessionUser(u);
+    // Пароль в кэше профиля на телефоне не храним: он нужен был только для
+    // создания аккаунта и дальше уже у сервера (хешем). Почта, если человек
+    // регистрировался по ней, подтверждена — окно EmailRequiredGate не нужно.
+    const cached: User = { ...u, password: '' };
+    _setCurrentUser(cached);
+    await saveSessionUser(cached);
     setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
     setTimeout(() => {
       Promise.all([
@@ -710,11 +719,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 300);
   };
 
-  const loginUser = async (phone: string, password: string): Promise<User | null> => {
-    const digits = extractPhoneDigits(phone);
+  const loginUser = async (login: string, password: string): Promise<User | null> => {
+    // Почта — как есть; иначе это телефон старого аккаунта — цифрами.
+    const ident = login.includes('@') ? login.trim().toLowerCase() : extractPhoneDigits(login);
     // Пароль сверяет сервер: сюда приходит либо профиль без пароля, либо null.
-    const found = await dbLogin(digits, password);
+    const found = await dbLogin(ident, password);
     if (!found) return null;
+    await signInAs(found);
+    return found;
+  };
+
+  const signInAs = async (found: User) => {
     _setCurrentUser(found);
     await saveSessionUser(found);
     registerForPushNotifications(found.id).catch(() => {});
@@ -730,7 +745,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshPermSaved(found),
       ]).catch(() => {}).finally(() => setDataReady(true));
     }, 300);
-    return found;
+  };
+
+  const adoptUser = async (u: User) => {
+    _setCurrentUser(u);
+    await saveSessionUser(u);
   };
 
   const logout = async () => {
@@ -1012,6 +1031,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         optimisticRemovePermSaved,
         registerUser,
         loginUser,
+        signInAs,
+        adoptUser,
         logout,
         enterGuest,
         exitGuest,

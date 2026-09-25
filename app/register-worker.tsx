@@ -2,20 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { Colors, Radius } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
-import { PhoneInput } from '@/components/feature/PhoneInput';
+import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
 import { MetroPicker } from '@/components/feature/MetroPicker';
 import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouStep';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { useApp } from '@/hooks/useApp';
-import { uid, nowISO, isPhoneComplete, extractPhoneDigits } from '@/services/storage';
-import { dbCheckPhoneExists, dbWarmup, dbSaveResumeFile } from '@/services/db';
+import { uid, nowISO } from '@/services/storage';
+import { dbWarmup, dbSaveResumeFile } from '@/services/db';
 import { extractResumePdf, mergeResumeIntoUser } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { PasswordRules } from '@/components/ui/PasswordRules';
@@ -25,7 +25,6 @@ import { rs, rf } from '@/constants/scale';
 
 // Steps: 1-Phone, 2-Password, 3-Name, 4-Legal, 5-Metro, 6-Резюме
 const TOTAL = 7;
-const SUPPORT_EMAIL = 'support@jobtoo.ru';
 
 export default function RegisterWorker() {
   const router = useRouter();
@@ -33,7 +32,10 @@ export default function RegisterWorker() {
   const { registerUser, updateUser, showToast } = useApp();
 
   const [step, setStep] = useState(1);
-  const [phone, setPhone] = useState('+7 ');
+  // Шаг 1 — почта с кодом из письма (решение владельца 25.09.2026, телефон
+  // из регистрации убран). Квитанцию предъявляем в самом конце, в registerUser.
+  const [email, setEmail] = useState('');
+  const [emailTicket, setEmailTicket] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [lastName, setLastName] = useState('');
@@ -47,8 +49,6 @@ export default function RegisterWorker() {
   const [bio, setBio] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [metroPicker, setMetroPicker] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [pdAgreed, setPdAgreed] = useState(false);
@@ -77,27 +77,6 @@ export default function RegisterWorker() {
       showToast(error instanceof Error ? error.message : 'Не удалось прочитать резюме', 'error');
     } finally {
       setResumeParsing(false);
-    }
-  };
-
-  // Step 1 → 2: check phone uniqueness
-  const continueFromPhone = async () => {
-    setPhoneError('');
-    setChecking(true);
-    try {
-      const digits = extractPhoneDigits(phone);
-      const exists = await dbCheckPhoneExists(digits);
-      if (exists) {
-        setPhoneError('Аккаунт с этим номером уже существует. Войдите в систему.');
-        return;
-      }
-      setStep(2);
-    } catch {
-      // Проверка уникальности — часть самой регистрации. При обрыве связи
-      // нельзя делать вид, что номер свободен: иначе создадим дубликат.
-      setPhoneError('Не удалось проверить номер. Проверьте связь и попробуйте ещё раз.');
-    } finally {
-      setChecking(false);
     }
   };
 
@@ -137,7 +116,9 @@ export default function RegisterWorker() {
       const user = {
         id,
         role: 'worker' as const,
-        phone: extractPhoneDigits(phone),
+        phone: '',
+        email,
+        emailVerifiedAt: nowISO(),
         password,
         lastName,
         firstName,
@@ -149,7 +130,7 @@ export default function RegisterWorker() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user);
+      await registerUser(user, emailTicket);
       // Сейф резюме требует сессии — её выдаёт registerUser чуть выше.
       // Сбой сохранения не откатывает уже созданный аккаунт: резюме можно
       // загрузить и позже в профиле.
@@ -169,7 +150,10 @@ export default function RegisterWorker() {
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
       console.error('[RegisterWorker] finish error', e);
-      showToast('Ошибка регистрации. Попробуйте ещё раз.', 'error');
+      const msg = e instanceof Error && e.message ? e.message : 'Ошибка регистрации. Попробуйте ещё раз.';
+      showToast(msg, 'error');
+      // Квитанция устарела или почту успели занять — вернуть на шаг почты.
+      if (/почт/i.test(msg)) { setEmailTicket(''); setStep(1); }
     } finally {
       setFinishing(false);
     }
@@ -194,20 +178,15 @@ export default function RegisterWorker() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
 
-          {/* Step 1: Phone */}
+          {/* Step 1: Email + code */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Введи номер телефона</Text>
-              <Text style={styles.subtitle}>Работодатель увидит его только после мэтча</Text>
-              <PhoneInput value={phone} onChange={v => { setPhone(v); setPhoneError(''); }} />
-              {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
-              <View style={{ marginTop: 8 }}>
-                {checking ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
-                ) : (
-                  <PrimaryButton label="Продолжить →" onPress={continueFromPhone} disabled={!isPhoneComplete(phone)} />
-                )}
-              </View>
+              <Text style={styles.title}>Твоя почта</Text>
+              <Text style={styles.subtitle}>Пришлём код — по почте будешь входить и восстанавливать пароль</Text>
+              <EmailCodeStep
+                purpose="register"
+                onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}
+              />
               <TouchableOpacity style={styles.loginHint} onPress={() => router.push('/login')}>
                 <Text style={styles.loginHintTxt}>
                   Уже есть аккаунт?{' '}
@@ -221,7 +200,7 @@ export default function RegisterWorker() {
           {step === 2 && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>Создай пароль</Text>
-              <Text style={styles.subtitle}>Запомни его — восстановления нет.</Text>
+              <Text style={styles.subtitle}>Забудешь — восстановишь кодом из письма.</Text>
               <AppInput
                 label="Пароль"
                 value={password}
@@ -246,19 +225,6 @@ export default function RegisterWorker() {
                 disabled={!password.trim() || !passwordConfirm.trim()}
               />
 
-              {/* Подсказка про почту стоит после кнопки: она нужна тем, кто
-                  сюда вернётся, и не должна перебивать главное действие */}
-              <TouchableOpacity
-                onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Восстановление пароля JobToo`)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.forgotBanner}>
-                  <Text style={styles.forgotText}>
-                    Забыли пароль? Обращайтесь на{' '}
-                    <Text style={styles.forgotLink}>{SUPPORT_EMAIL}</Text>
-                  </Text>
-                </View>
-              </TouchableOpacity>
             </View>
           )}
 
@@ -436,12 +402,6 @@ const styles = StyleSheet.create({
   fieldError: { fontSize: rf(13), color: Colors.red, lineHeight: rf(18) },
   loginHint: { marginTop: rs(8), alignItems: 'center' },
   loginHintTxt: { fontSize: rf(14), color: Colors.textMuted },
-  forgotBanner: {
-    backgroundColor: '#F0F4FF', borderRadius: rs(10), padding: rs(12),
-    borderWidth: 1, borderColor: '#BFCBF5',
-  },
-  forgotText: { fontSize: rf(12), color: Colors.textSecondary, lineHeight: rf(17) },
-  forgotLink: { color: Colors.primary, fontWeight: '600' },
   checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(14), paddingVertical: rs(8) },
   checkbox: { width: rs(24), height: rs(24), borderRadius: rs(6), borderWidth: 1.5, borderColor: Colors.inputBorder, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', marginTop: rs(2), flexShrink: 0 },
   checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
