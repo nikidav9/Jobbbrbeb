@@ -60,4 +60,25 @@ alter table public.jm_perm_swipes enable row level security;
 revoke all on public.jm_perm_swipes from anon, authenticated;
 grant all on public.jm_perm_swipes to service_role;
 
+-- Свайпы — поведение конкретного человека, то есть персональные данные.
+-- jm_delete_account (миграция 032) аккаунт не удаляет, а обезличивает, поэтому
+-- on delete cascade здесь не сработает никогда. Стираем явно, тем же условием,
+-- что почта Юпитера в миграции 107. Заодно закрываем ту же дыру у
+-- jm_ext_swipes из миграции 112.
+create or replace function public.jm_purge_swipes()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.is_blocked is true and old.is_blocked is distinct from true
+     and new.first_name = 'Удалённый' then
+    delete from jm_perm_swipes where user_id = new.id;
+    delete from jm_ext_swipes where user_id = new.id;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.jm_purge_swipes() from public, anon, authenticated;
+drop trigger if exists jm_purge_swipes_on_deletion on public.jm_users;
+create trigger jm_purge_swipes_on_deletion after update on public.jm_users
+  for each row execute function public.jm_purge_swipes();
+
 commit;

@@ -57,6 +57,19 @@ check('dbPermUnswipe чистит jm_perm_swipes', str_contains($permUnswipe, "'
 check('dbGetPermSwipes читает по своему user_id',
     str_contains($permList, "'user_id' => 'eq.' . (string)\$args[0]"));
 
+// ── Экран: смахнутая своя вакансия не возвращается после обновления ─────────
+// onRefresh обнуляет swSkipped. Если при этом не перенести свайпы сессии в
+// permSwiped, своя вакансия, смахнутая влево, вернётся в колоду — ровно то,
+// ради чего заведена jm_perm_swipes. Переносить именно здесь, а не при свайпе:
+// иначе чередование «своя, карьерная, карьерная» съезжает.
+$screen = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
+$refreshAt = strpos($screen, 'const onRefresh = async');
+$refresh = $refreshAt === false ? '' : substr($screen, $refreshAt, 1500);
+check('onRefresh переносит свайпы сессии в permSwiped',
+    str_contains($refresh, 'permLeftSwipes.current') && str_contains($refresh, 'setPermSwiped('));
+check('разделы не грузятся до чтения с телефона',
+    str_contains($screen, 'sectionsLoadedFor !== currentUser.id'));
+
 if ($failures) {
     echo "feed sections wiring: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

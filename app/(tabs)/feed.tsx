@@ -1217,9 +1217,17 @@ function WorkerPermMode() {
   const swDecisionPending = useRef(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
+  // Для кого разделы уже прочитаны с телефона. Пока не прочитаны, карьерную
+  // ленту не грузим: иначе человек с выбранными разделами сперва получал бы
+  // колоду без них, а через мгновение — другую, и верхняя карта мигала бы.
+  const [sectionsLoadedFor, setSectionsLoadedFor] = useState<string | null>(null);
   useEffect(() => {
     if (!currentUser?.id) return;
-    getFeedSections(currentUser.id).then(setSections);
+    const id = currentUser.id;
+    getFeedSections(id).then(saved => {
+      setSections(saved);
+      setSectionsLoadedFor(id);
+    });
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -1272,14 +1280,14 @@ function WorkerPermMode() {
   // эффект гонял бы запрос без остановки.
   const sectionsKey = sections.join(',');
   useEffect(() => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id || sectionsLoadedFor !== currentUser.id) return;
     let cancelled = false;
     setCareerLoading(true);
     dbGetExtFeed(60, sections).then(data => {
       if (!cancelled) setCareerVacancies(data);
     }).catch(() => {}).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
-  }, [sectionsKey, currentUser?.id]);
+  }, [sectionsKey, currentUser?.id, sectionsLoadedFor]);
 
   const onRefresh = async () => {
     if (refreshing) return;
@@ -1289,6 +1297,11 @@ function WorkerPermMode() {
         refreshPermVacancies(), refreshPermApplications(),
         dbGetExtFeed(60, sections).then(data => {
           setCareerVacancies(data);
+          // swSkipped обнуляется, поэтому смахнутые за сессию свои переносим в
+          // permSwiped — иначе они вернулись бы в колоду. Не при самом свайпе:
+          // тогда своя пропадала бы из чередования и следующая своя вставала
+          // сразу за ней, ломая порядок «своя, карьерная, карьерная».
+          setPermSwiped(p => new Set([...p, ...permLeftSwipes.current]));
           setSwSkipped(new Set());
         }),
       ];

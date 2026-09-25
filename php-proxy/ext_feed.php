@@ -60,8 +60,8 @@ function ext_feed_taste(array $history, array $profile = []): array
         if ($s !== '') $section[$s] = ($section[$s] ?? 0) + $dir;
     }
 
-    // Вид работ, который выбрал работодатель за себя же в jm_users, — то же
-    // правило, что и для своих вакансий (JOB_SECTION_BY_WORK_TYPE).
+    // Виды работ, которые работник отметил в анкете, — через то же правило,
+    // что раскладывает свои вакансии по разделам (JOB_SECTION_BY_WORK_TYPE).
     foreach ((array)($profile['work_types'] ?? []) as $wt) {
         if (!is_string($wt)) continue;
         $s = JOB_SECTION_BY_WORK_TYPE[strtolower(trim($wt))] ?? null;
