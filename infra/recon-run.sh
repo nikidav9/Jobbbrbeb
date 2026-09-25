@@ -21,6 +21,7 @@ OUT=/var/www/html/jupiter-recon.json
 LOG=/var/log/jt-recon.log
 
 cd "$REPO/jupiter" || exit 0
+echo "$(date -Is) start" >>"$LOG"
 tmp=$(mktemp /var/www/html/jupiter-recon.json.XXXXXX)
 if timeout 3h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
   chmod 644 "$tmp"

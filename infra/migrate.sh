@@ -98,9 +98,15 @@ fi
 latest_migration=$(q -tAc "select name from jm_migrations order by name desc limit 1" 2>/dev/null | tr -d '\r\n')
 jupiter_active=false
 if systemctl is-active --quiet jt-jupiter.service 2>/dev/null; then jupiter_active=true; fi
+# Разведка анкет (jt-recon): идёт ли сейчас и чем кончился последний прогон.
+# Только состояние службы и отметка времени из её журнала — по шаблону,
+# чтобы в файл не попало ничего, кроме этих слов.
+recon_state=$(systemctl is-active jt-recon.service 2>/dev/null | tr -cd 'a-z')
+recon_last=$(tail -n 1 /var/log/jt-recon.log 2>/dev/null \
+  | grep -Eo '^[0-9T:+-]+ (start|ok|failed)$' || true)
 status_tmp=$(mktemp /var/www/html/security-status.json.XXXXXX)
-printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true,"jupiter_worker_active":%s}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" "$jupiter_active" > "$status_tmp"
+printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true,"jupiter_worker_active":%s,"recon_state":"%s","recon_last":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" "$jupiter_active" "$recon_state" "$recon_last" > "$status_tmp"
 chmod 644 "$status_tmp"
 mv -f "$status_tmp" /var/www/html/security-status.json
 
