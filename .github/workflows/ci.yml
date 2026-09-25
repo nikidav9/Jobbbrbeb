@@ -79,6 +79,9 @@ jobs:
       - name: Разделы ленты — название вакансии ведёт в свой раздел
         run: php tests/job_sections_test.php
 
+      - name: Проводка разделов ленты и свайпов постоянных вакансий до db.php
+        run: php tests/feed_sections_wiring_test.php
+
       - name: Карьерная страница превращается в вакансии, а не в мусор
         run: php tests/career_feed_test.php
 

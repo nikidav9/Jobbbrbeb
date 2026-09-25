@@ -43,6 +43,34 @@ check('слова названия', ext_feed_tokens('Ведущий Java-раз
 check('одинаковый сид — одинаковая лента', ext_feed_arrange($pool, $taste, 10, 'a') === ext_feed_arrange($pool, $taste, 10, 'a'));
 check('пустой пул', ext_feed_arrange([], $taste, 10, 'a') === []);
 
+// ── Разделы и профиль ────────────────────────────────────────────────────────
+$sectionTaste = ext_feed_taste([
+    ['dir' => 1, 'company' => 'CompanyA', 'title' => 'Water', 'section' => 'delivery'],
+    ['dir' => 1, 'company' => 'CompanyB', 'title' => 'Vodka', 'section' => 'delivery'],
+]);
+$deliveryRow = ['company' => 'Z1', 'title' => 'Zebra', 'section' => 'delivery'];
+$itRow = ['company' => 'Z2', 'title' => 'Zeppelin', 'section' => 'it'];
+check('лайки раздела delivery поднимают его вакансию выше it при прочих равных',
+    ext_feed_score($deliveryRow, $sectionTaste, 0.5) > ext_feed_score($itRow, $sectionTaste, 0.5));
+
+check('вид работ stocker в профиле даёт вес складу',
+    ext_feed_taste([], ['work_types' => ['stocker']])['section']['warehouse'] === 2);
+
+$resumeTaste = ext_feed_taste([], ['resume_data' => ['experience' => [['position' => 'Курьер']]]]);
+check('должность «Курьер» из резюме поднимает раздел доставки', ($resumeTaste['section']['delivery'] ?? 0) > 0);
+check('должность «Курьер» из резюме добавляет токен', in_array('курьер', array_keys($resumeTaste['tokens']), true));
+
+$metroTaste = ext_feed_taste([], ['metro_station' => 'Тёплый Стан']);
+$metroRow = ['company' => 'M', 'title' => 'M', 'section' => '', 'metro_station_norm' => 'теплый стан'];
+check('совпадение станции метро даёт +0.5',
+    abs(ext_feed_score($metroRow, $metroTaste, 0.0) - 0.5) < 1e-9);
+
+check('вес раздела ограничен 3 при 10 лайках',
+    ext_feed_taste(array_fill(0, 10, ['dir' => 1, 'company' => 'x', 'title' => 'x', 'section' => 'delivery']))['section']['delivery'] === 3);
+
+check('старый вызов ext_feed_score без section/metro в $taste не падает',
+    is_float(ext_feed_score(['company' => 'a', 'title' => 'b'], ['company' => [], 'tokens' => []], 0.0)));
+
 if ($failures) {
     fwrite(STDERR, "FAIL:\n  " . implode("\n  ", $failures) . "\n");
     exit(1);

@@ -22,6 +22,7 @@ require_once __DIR__ . '/sitemap_cache.php';
 require_once __DIR__ . '/push_privacy.php';
 require_once __DIR__ . '/jupiter_mail_address.php';
 require_once __DIR__ . '/ext_feed.php';
+require_once __DIR__ . '/job_sections.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -279,6 +280,8 @@ $selfArgFns = [
     'jupiterApplicationEvents' => 0,
     // Свайпы по карьерным вакансиям: только свои.
     'dbExtSwipe' => 0, 'dbExtUnswipe' => 0,
+    // Свайпы по своим вакансиям JobToo: только свои.
+    'dbPermSwipe' => 0, 'dbPermUnswipe' => 0, 'dbGetPermSwipes' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -6030,17 +6033,32 @@ try {
         // не из аргументов: чужие свайпы так не подсмотреть.
         case 'dbGetExtFeed': {
             $limit = max(10, min(100, (int)($args[0] ?? 60)));
-            $pool = sb_rpc('jm_ext_feed_pool', ['p_user' => $authUid, 'p_per_company' => 30]);
+            // Раздел из шторки фильтров: только известные id, без дублей и
+            // мусора из старых сборок — иначе jm_ext_feed_pool молча отдаст
+            // пустую ленту на опечатку.
+            $sections = array_values(array_unique(array_filter((array)($args[1] ?? []),
+                fn($s) => is_string($s) && isset(JOB_SECTIONS[$s]))));
+            $sections = $sections ?: null;
+            $pool = sb_rpc('jm_ext_feed_pool', [
+                'p_user' => $authUid, 'p_per_company' => 30, 'p_sections' => $sections,
+            ]);
             $history = [];
             if ($authUid !== null) {
                 foreach (sb_select('jm_ext_swipes', [
                     'user_id' => 'eq.' . $authUid, 'limit' => '300',
-                ], 'dir,jm_ext_vacancies(company,title)', 'created_at.desc') as $h) {
+                ], 'dir,jm_ext_vacancies(company,title,section)', 'created_at.desc') as $h) {
                     $v = $h['jm_ext_vacancies'] ?? [];
-                    $history[] = ['dir' => $h['dir'] ?? 0, 'company' => $v['company'] ?? '', 'title' => $v['title'] ?? ''];
+                    $history[] = [
+                        'dir' => $h['dir'] ?? 0, 'company' => $v['company'] ?? '',
+                        'title' => $v['title'] ?? '', 'section' => $v['section'] ?? '',
+                    ];
                 }
             }
-            $data = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history), $limit,
+            // Профиль — только из сессии, не из аргументов: чужой вкус так не подсмотреть.
+            $profile = $authUid !== null
+                ? sb_single('jm_users', ['id' => 'eq.' . $authUid], 'work_types,metro_station,resume_data')
+                : null;
+            $data = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history, $profile ?: []), $limit,
                 ($authUid ?? 'guest') . '|' . gmdate('Y-m-d'));
             break;
         }
@@ -6064,6 +6082,37 @@ try {
                 'user_id' => 'eq.' . (string)$args[0], 'vacancy_id' => 'eq.' . (string)($args[1] ?? ''),
             ]);
             $data = ['ok' => true];
+            break;
+        }
+
+        // Свайпы по своим вакансиям JobToo: близнецы dbExtSwipe/dbExtUnswipe,
+        // но для jm_perm_vacancies (миграция 115) — смахнутая влево не
+        // возвращалась после перезапуска только у карьерных вакансий.
+        case 'dbPermSwipe': {
+            $dir = (int)($args[2] ?? 0);
+            $vacancyId = (string)($args[1] ?? '');
+            if (!in_array($dir, [-1, 1], true) || $vacancyId === '') {
+                jt_respond(['error' => 'Bad swipe'], 400); exit;
+            }
+            sb('POST', 'jm_perm_swipes', ['on_conflict' => 'user_id,vacancy_id'], [
+                'user_id' => (string)$args[0], 'vacancy_id' => $vacancyId, 'dir' => $dir,
+            ], ['Prefer: resolution=merge-duplicates,return=minimal']);
+            $data = ['ok' => true];
+            break;
+        }
+
+        case 'dbPermUnswipe': {
+            sb('DELETE', 'jm_perm_swipes', [
+                'user_id' => 'eq.' . (string)$args[0], 'vacancy_id' => 'eq.' . (string)($args[1] ?? ''),
+            ]);
+            $data = ['ok' => true];
+            break;
+        }
+
+        case 'dbGetPermSwipes': {
+            $data = sb_select('jm_perm_swipes', [
+                'user_id' => 'eq.' . (string)$args[0], 'limit' => '2000',
+            ], 'vacancy_id,dir', 'created_at.desc');
             break;
         }
 
