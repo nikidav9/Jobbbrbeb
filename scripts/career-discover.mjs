@@ -501,7 +501,8 @@ async function inspect(target, i) {
     }
   }
 
-  results.push(entry);
+  // Сайт уже снят по пределу времени (см. пул ниже) — запись о нём есть.
+  if (!target.timedOut) results.push(entry);
   // Пишем после каждого сайта, а не в конце. Первый прогон упал на середине, и
   // артефакт не сохранился вовсе — при том что по Сберу результат уже был.
   try { fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8'); } catch { /* допишем в конце */ }
@@ -510,14 +511,44 @@ async function inspect(target, i) {
 
 // Пул из CONCURRENCY работников разбирает общую очередь. Пауза между сайтами не
 // нужна: заходов к одному хосту всё равно один, а параллелим мы разные.
+//
+// Два предела. Первый — на сайт: без него один «тяжёлый» сайт (страница
+// висит, догрузка идёт вечно) держал работника минутами. Второй — на весь
+// прогон: служба на сервере живёт не дольше TimeoutStartSec, и если её
+// убьют посреди обхода, найденное не дойдёт до проверки и сбора. Поэтому
+// по исчерпании бюджета новые сайты не берём, а честно дописываем итог —
+// недошедшие сайты разведка возьмёт в следующий раз.
+const SITE_BUDGET_MS = Number(process.env.DISCOVER_SITE_BUDGET_MS || 90000);
+const RUN_DEADLINE = Date.now() + Number(process.env.DISCOVER_DEADLINE_MIN || 0) * 60000;
+const hasDeadline = Number(process.env.DISCOVER_DEADLINE_MIN || 0) > 0;
 let cursor = 0;
+let skippedByDeadline = 0;
 await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, async () => {
   while (cursor < targets.length) {
+    if (hasDeadline && Date.now() > RUN_DEADLINE) {
+      skippedByDeadline = targets.length - cursor;
+      cursor = targets.length;
+      break;
+    }
     const i = cursor++;
-    await inspect(targets[i], i);
+    const target = targets[i];
+    let timer;
+    const timedOut = await Promise.race([
+      inspect(target, i).then(() => false),
+      new Promise(resolve => { timer = setTimeout(() => resolve(true), SITE_BUDGET_MS); }),
+    ]);
+    clearTimeout(timer);
+    if (timedOut) {
+      // inspect() доработает сам (у его шагов свои таймауты) и допишет запись,
+      // но её мы уже не ждём и не учитываем: target.timedOut это отмечает.
+      target.timedOut = true;
+      results.push({ name: target.name, url: target.url, status: 'ошибка', error: `дольше ${SITE_BUDGET_MS / 1000} с` });
+      try { fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8'); } catch { /* допишем в конце */ }
+    }
     if (PAUSE) await sleep(PAUSE);
   }
 }));
+if (skippedByDeadline) console.log(`\nБюджет прогона исчерпан: ${skippedByDeadline} сайт(ов) — в следующий раз`);
 
 await browser.close();
 fs.writeFileSync(OUT, JSON.stringify(results, null, 1), 'utf8');

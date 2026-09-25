@@ -176,7 +176,9 @@ docker run --rm \
   -v "$(dirname "$MODULES"):/deps" \
   -v "$(dirname "$tmp"):/out" \
   -e DISCOVER_OUT="/out/$(basename "$tmp")" \
-  -e DISCOVER_CONCURRENCY="${DISCOVER_CONCURRENCY:-2}" \
+  -e DISCOVER_CONCURRENCY="${DISCOVER_CONCURRENCY:-3}" \
+  -e DISCOVER_SITE_BUDGET_MS="${DISCOVER_SITE_BUDGET_MS:-90000}" \
+  -e DISCOVER_DEADLINE_MIN="${DISCOVER_DEADLINE_MIN:-270}" \
   -e DISCOVER_SKIP_FILE=/deps/run/discover-skip.txt \
   -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
   -e HOME=/tmp \
