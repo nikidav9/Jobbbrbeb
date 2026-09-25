@@ -1,7 +1,8 @@
 # Карьерные сайты российских компаний — цель разведки.
 #
 # Один список на всё: собственный перечень владельца (62 компании под оба
-# раздела приложения) плюс 111 российских компаний из каталога cofinder.
+# раздела приложения), 111 российских компаний из каталога cofinder и 245
+# крупных работодателей с вакансиями в Москве (расширение 25.09.2026, внизу).
 #
 # Что здесь считается повтором. ОДИН И ТОТ ЖЕ АДРЕС — повтор, таких нет ни
 # одного. Разные разделы одного сайта повтором НЕ считаются: у Самоката корень
@@ -184,3 +185,288 @@ Linx	https://linx.ru/about/career
 РДВ Технолоджи	https://rdwcomp.ru/kompaniya/vakansii
 ITG	https://itglobal.com/ru-ru/company/vacancies
 Дельта Компьютерс	https://deltacomputers.ru/vacancies
+
+# ── Расширение 25.09.2026: крупные работодатели с вакансиями в Москве ──
+#
+# Решение владельца: не только IT, а все крупные российские работодатели,
+# массовый найм в первую очередь. Источники — рейтинги крупнейших
+# работодателей и сети с массовым наймом в Москве. Каждый адрес проверен
+# scripts/career-catalog-check.py: раздел вакансий отвечает 200 и не уводит
+# на hh/SuperJob. Где раздел отсюда не проверить (защита от ботов или
+# геоблок — банки и госкомпании не пускают зарубежные адреса), стоит главная
+# сайта: раздел найдёт разведка с московского сервера.
+
+# Розница, аптеки, e-commerce
+Азбука вкуса	https://av.ru/
+Бристоль	https://bristol.ru/
+Верный	https://www.verno-info.ru/
+Ашан	https://www.auchan.ru/
+Магнолия	https://mgnl.ru/
+Купер	https://kuper.ru/
+Утконос	https://www.utkonos.ru/
+Твой Дом	https://www.tvoydom.ru/
+Много Мебели	https://mnogomebeli.com/
+Askona	https://www.askona.ru/
+Орматек	https://ormatek.com/
+Л'Этуаль	https://www.letu.ru/
+Читай-город	https://rabota.chitai-gorod.ru/
+Ситилинк	https://job.citilink.ru/vacs/
+re:Store	https://re-store.ru/
+t2	https://msk.t2.ru/about/career
+Desport	https://desport.ru/rabota
+Melon Fashion Group	https://melonfashion.ru/
+Sela	https://www.sela.ru/company/job/
+O'STIN	https://job.ostin.com/
+Снежная Королева	https://snowqueen.ru/job/view
+Rendez-Vous	https://www.rendez-vous.ru/vacancy/
+Твоё	https://tvoe.ru/company/vacancy/
+Concept Club	https://www.concept-club.ru/
+Familia	https://famil.ru/
+SUNLIGHT	https://job.sunlight.net/
+585 Золотой	https://rabota.585zolotoy.ru/
+Столички	https://stolichki.ru/
+Ригла	https://www.rigla.ru/job/stores
+Горздрав	https://gorzdrav.org/
+Аптека Апрель	https://apteka-april.ru/
+Планета Здоровья	https://planetazdorovo.ru/
+Неофарм	https://neopharm.ru/
+ЕАПТЕКА	https://www.eapteka.ru/
+Винлаб	https://winelab.ru/
+АМ Винотеки	https://amwine.ru/about/job/
+Галамарт	https://galamart.ru/faq/vakansii/
+ЦУМ	https://www.tsum.ru/career/vacancies/
+ГУМ	https://gum.ru/vacancies/
+Кант	https://www.kant.ru/
+Мегамаркет	https://megamarket.ru/
+ВсеИнструменты.ру	https://www.vseinstrumenti.ru/
+Лабиринт	https://www.labirint.org/vakansii
+X5 Group	https://rabota.x5.ru/
+Exist	https://www.exist.ru/Job/
+Emex	https://emex.ru/
+Автодок	https://www.autodoc.ru/
+Шинсервис	https://www.shinservice.ru/
+
+# Общепит
+Cofix	https://cofix.global/
+Stars Coffee	https://starscoffee.ru/
+Coffee Like	https://coffee-like.com/
+Тануки	https://job.tanuki.ru/
+Якитория	https://www.yakitoria.ru/
+Грабли	https://grably.ru/
+Му-Му	https://www.cafemumu.ru/career/
+Prime	https://promo.prime-star.ru/job
+Novikov Group	https://www.novikovgroup.ru/vacancies/
+Ginza Project	https://job.ginza.ru/
+White Rabbit Family	https://whiterabbitfamily.ru/
+Братья Караваевы	https://karavaevi.ru/vakansii/
+Хлеб Насущный	https://hlebnasushny.ru/
+Волконский	https://wolkonsky.com/
+Чайхона №1	https://chaihona.ru/
+Суши Wok	https://sushiwok.ru/
+
+# Логистика и транспорт
+Boxberry	https://boxberry.ru/
+Байкал Сервис	https://www.baikalsr.ru/company/vacancies/
+ТК КИТ	https://tk-kit.ru/vacancy
+ТК Энергия	https://nrg-tk.pro/jobs/
+Major Express	https://www.major-express.ru/about/vacancies/
+FM Logistic	https://www.fmlogistic.ru/career/why-join-fm-logistic/
+Монополия	https://monopoly.online/
+ПГК	https://pgk.ru/
+ТрансКонтейнер	https://trcont.com/
+Мосгортранс	https://mosgortrans.ru/
+Московский метрополитен	https://mosmetro.ru/
+ЦППК	https://central-ppk.ru/
+Внуково	https://www.vnukovo.ru/
+Домодедово	https://business.dme.ru/company/carreer/job/
+S7 Airlines	https://www.s7.ru/
+Победа	https://www.flypobeda.ru/information/jobs
+ЮТэйр	https://www.utair.ru/
+Делимобиль	https://delimobil.ru/
+Whoosh	https://whoosh-bike.ru/job
+Аэроэкспресс	https://aeroexpress.ru/
+Мострансавто	https://mostransavto.ru/
+
+# Банки и страхование
+Газпромбанк	https://www.gazprombank.tech/
+Райффайзенбанк	https://career.raiffeisen.ru/dgtl
+Росбанк	https://www.rosbank.ru/
+Совкомбанк	https://sovcombank.ru/
+ПСБ	https://www.psbank.ru/
+Россельхозбанк	https://www.rshb.ru/
+МКБ	https://mkb.ru/
+Уралсиб	https://www.uralsib.ru/
+Почта Банк	https://www.pochtabank.ru/
+ОТП Банк	https://www.otpbank.ru/
+Ренессанс Кредит	https://rencredit.ru/
+Банк Русский Стандарт	https://www.rsb.ru/about/career/
+Абсолют Банк	https://absolutbank.ru/
+МТС Банк	https://www.mtsbank.ru/
+Банк ДОМ.РФ	https://domrfbank.ru/
+Московская биржа	https://www.moex.com/s1300
+Ингосстрах	https://www.ingos.ru/
+РЕСО-Гарантия	https://reso.ru/about/career/
+АльфаСтрахование	https://www.alfastrah.ru/
+Росгосстрах	https://www.rgs.ru/about/career/
+СОГАЗ	https://www.sogaz.ru/
+Согласие	https://www.soglasie.ru/
+Ренессанс страхование	https://www.renins.ru/
+ВСК	https://www.vsk.ru/
+ЮниКредит Банк	https://www.unicreditbank.ru/
+Экспобанк	https://expobank.ru/
+Банк Зенит	https://www.zenit.ru/
+Локо-Банк	https://www.lockobank.ru/
+Новикомбанк	https://www.novikom.ru/
+СМП Банк	https://smpbank.ru/
+Модульбанк	https://modulbank.ru/
+Банки.ру	https://www.banki.ru/
+Сравни	https://career.sravni.ru/career/
+
+# Связь
+ЭР-Телеком	https://job.ertelecom.ru/vacancies
+МГТС	https://mgts.ru/
+
+# Энергетика, нефть и газ, городское хозяйство
+Газпром нефть	https://career.gazprom-neft.ru/
+Газпром	https://www.gazprom.ru/
+Лукойл	https://lukoil.ru/Company/Career/Vacancies
+Роснефть	https://www.rosneft.ru/
+Новатэк	https://www.novatek.ru/ru/about/career/
+Транснефть	https://www.transneft.ru/
+Мосэнерго	https://mosenergo.gazprom.ru/
+Россети Московский регион	https://rossetimr.ru/
+Мосводоканал	https://www.mosvodokanal.ru/
+Мосгаз	https://www.mosgaz.ru/
+МОЭК	https://www.moek.ru/career/
+Интер РАО	https://www.interrao.ru/
+РусГидро	https://www.rushydro.ru/
+
+# Промышленность, пищевое производство, фарма
+Ростех	https://rostec.ru/
+ОАК	https://www.uacrussia.ru/
+Алмаз-Антей	https://www.almaz-antey.ru/
+Роскосмос	https://www.roscosmos.ru/
+НЛМК	https://nlmk.com/ru/career/
+ММК	https://mmk.ru/
+ТМК	https://www.tmk-group.ru/
+Металлоинвест	https://www.metalloinvest.com/
+Полюс	https://career.polyus.com/
+Уралкалий	https://www.uralkali.com/ru/career/
+Москвич	https://recruitment.moskvich.ru/
+Мираторг	https://miratorg.ru/career/vacancies/
+Русагро	https://www.rusagrogroup.ru/
+ЭФКО	https://www.efko.ru/career/
+Останкинский мясоперерабатывающий комбинат	https://ompk.ru/
+Коломенский	https://kolomenskiy.ru/
+Черноголовка	https://chernogolovka.com/
+Московская пивоваренная компания	https://mpbc.ru/
+Объединённые кондитеры	https://www.uniconf.ru/career/
+Эксмо	https://eksmo.ru/job/
+Р-Фарм	https://r-pharm.com/ru/career
+БИОКАД	https://career.biocad.ru/
+Герофарм	https://geropharm.ru/career
+Протек	https://www.protek.ru/
+Пульс	https://www.puls.ru/
+Мултон Партнерс	https://multonpartners.ru/career/
+ЕВРАЗ	https://www.evraz.com/ru/
+ЕвроХим	https://www.eurochemgroup.com/
+
+# Девелопмент и стройка
+ПИК	https://pik.ru/
+Самолет	https://samolet.ru/
+Группа ЛСР	https://www.lsr.ru/
+Эталон	https://etalongroup.ru/
+ФСК	https://fsk.ru/
+Донстрой	https://donstroy.moscow/about/staff/
+MR Group	https://www.mr-group.ru/
+Level Group	https://job.level.ru/
+Инград	https://ingrad.ru/
+Гранель	https://granelle.ru/career/
+А101	https://a101.ru/
+Мосинжпроект	https://mosinzhproekt.ru/
+Мостотрест	https://www.mostotrest.ru/
+ДОМ.РФ	https://xn--d1aqf.xn--p1ai/career/
+
+# Медицина
+Медси	https://medsi.ru/about/jobs/
+EMC	https://www.emcmos.ru/karera-v-emc/
+Инвитро	https://www.invitro.ru/
+Гемотест	https://gemotest.ru/hr/
+Хеликс	https://helix.ru/job
+СМ-Клиника	https://www.smclinic.ru/
+Мать и дитя	https://mamadeti.ru/about/vacancies-about-us/
+Будь Здоров	https://www.bud-zdorov.ru/
+KDL	https://kdl.ru/
+CMD	https://www.cmd-online.ru/o-cmd/vakansii/
+Семейный доктор	https://www.fdoctor.ru/career/
+
+# Образование
+Skyeng	https://vacancies.skyeng.ru/
+Нетология	https://netology.ru/career
+Фоксфорд	https://foxford.ru/
+Учи.ру	https://uchi.ru/
+Умскул	https://umschool.net/
+Skillbox	https://skillbox.ru/career/
+Синергия	https://synergy.ru/career/
+
+# Медиа и сервисы
+Rambler&Co	https://rambler-co.ru/
+РБК	https://www.rbc.ru/
+Газпром-Медиа	https://www.gazprom-media.com/ru/
+Национальная Медиа Группа	https://nmg.ru/
+Литрес	https://www.litres.ru/company/vacancies/
+Okko	https://okko.tv/
+START	https://start.ru/
+Дзен	https://dzen.ru/
+RUTUBE	https://rutube.ru/
+Профи.ру	https://profi.ru/
+
+# IT
+Ланит	https://www.lanit.ru/
+ИнфоТеКС	https://career.infotecs.ru/vacancies/
+Код Безопасности	https://www.securitycode.ru/
+ЦФТ	https://job.cft.ru/
+Диасофт	https://www.diasoft.ru/
+Ай-Теко	https://www.i-teco.ru/career/
+Timeweb	https://timeweb.com/
+REG.RU	https://www.reg.ru/
+BI.ZONE	https://bi.zone/
+F.A.C.C.T.	https://www.f6.ru/careers/
+UserGate	https://usergate.com/
+Angara Security	https://www.angarasecurity.ru/career/
+МойСклад	https://www.moysklad.ru/company/careers/
+1С-Битрикс	https://careers.bitrix24.ru/
+Эвотор	https://evotor.ru/
+АТОЛ	https://career.atol.ru/
+Surf	https://career.surf.ru/
+Redmadrobot	https://redmadrobot.com/
+Неофлекс	https://neoflex.ru/about/career
+Digital Design	https://digdes.ru/career
+Artezio	https://www.artezio.ru/
+Т1	https://career.t1.ru/
+Норбит	https://www.norbit.ru/karera/
+
+# Консалтинг
+Kept	https://kept.ru/
+Технологии Доверия	https://tedo.ru/career
+Яков и Партнёры	https://yakov.partners/
+Б1	https://www.b1.ru/career/
+
+# Автодилеры
+Рольф	https://www.rolf.ru/
+Автомир	https://avtomir.ru/jobs/
+Major Auto	https://www.major-auto.ru/company/job_link/
+Авилон	https://rabota.avilon.ru/
+Автодом	https://www.avtodom.ru/
+
+# Гостиницы, фитнес, досуг
+Cosmos Hotel Group	https://cosmosgroup.ru/about/vacancies
+World Class	https://worldclass.ru/
+X-Fit	https://www.xfit.ru/vacancies/
+DDX Fitness	https://www.ddxfitness.ru/career/
+Spirit. Fitness	https://career.spiritfit.ru/
+КАРО	https://karofilm.ru/
+Формула Кино	https://formulakino.ru/
+ВДНХ	https://vdnh.ru/
+Лужники	https://www.luzhniki.ru/
+Крокус	https://crocus-group.ru/
