@@ -330,6 +330,20 @@
 `ext_feed_public_row()` (`php-proxy/ext_feed.php`): `description_full`
 подменяет собой `description`, если он непустой, сама колонка и `described_at`
 в ответе не участвуют — применяется в `dbGetExtFeed` и `dbGetExtVacancies`.
+**Описание из API источника, без страницы** (с 25.09.2026, миграция 118). У
+SPA-сайтов страница вакансии пустая, поэтому запись `career-endpoints.json`
+может сказать, где описание лежит в JSON: `map.description_sections`
+(`{"Заголовок": "поле"}`, `""` — без заголовка) — разделы прямо из списка,
+`cf_json_items` кладёт их в `description_full` сразу (ingest ставит и
+`described_at`; Сбер); `map.detail_url_template` + `detail_sections` (+
+`detail_list`) — JSON-карточка одной вакансии, ingest пишет её адрес и разделы
+в `jm_ext_vacancies.detail_spec`, describe.php идёт туда вместо страницы и
+повторяет неудачу через сутки, а не через 30 дней (Яндекс, Магнит). Сборка
+разделов — `vt_sections_from_fields` в `vacancy_text.php`. Курсор Яндекса —
+`paging.type = "cursor_b64"` в `cf_page_url`. Upsert режется на пачки с
+одинаковыми колонками (`ing_chunks_by_columns`): новых ключей нет у строк
+других источников, и затирать им описание нельзя. Тест —
+`tests/career_api_description_test.php`.
 Показывает структуру `components/ui/DescriptionBlocks.tsx` в карточке ленты
 (`app/(tabs)/feed.tsx`, `renderExtDeckCard`): разбор текста на блоки —
 `services/descriptionBlocks.ts`, чистая функция, отдельно от вёрстки.

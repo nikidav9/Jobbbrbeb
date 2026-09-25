@@ -128,7 +128,8 @@ function ext_feed_public_row(array $row): array
 {
     $full = trim((string)($row['description_full'] ?? ''));
     if ($full !== '') $row['description'] = $full;
-    unset($row['description_full'], $row['described_at']);
+    // detail_spec — служебный адрес для describe.php, клиенту он не нужен.
+    unset($row['description_full'], $row['described_at'], $row['detail_spec']);
     return $row;
 }
 

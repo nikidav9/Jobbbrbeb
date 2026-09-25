@@ -42,7 +42,7 @@ $now = strtotime('2026-09-25T12:00:00Z');
 $cond = ds_queue_condition($now);
 check('очередь — только активные', $cond['active'] === 'is.true');
 check('очередь — без описания или устаревшее (30 дней)',
-    $cond['or'] === '(described_at.is.null,described_at.lt.2026-08-26T12:00:00Z)');
+    $cond['or'] === '(described_at.is.null,described_at.lt.2026-08-26T12:00:00Z,and(description_full.is.null,detail_spec.not.is.null,described_at.lt.2026-09-24T12:00:00Z))');
 
 $filter = ds_queue_filter($now);
 check('выборка пачкой сортирована по свежести', $filter['order'] === 'first_seen_at.desc');
@@ -51,7 +51,7 @@ check('размер пачки — константа DS_BATCH', $filter['limit'
 
 // Другой порог «устарелости» — свежая граница сдвигается вместе с ним.
 check('порог устарелости настраивается',
-    ds_queue_condition($now, 7)['or'] === '(described_at.is.null,described_at.lt.2026-09-18T12:00:00Z)');
+    ds_queue_condition($now, 7)['or'] === '(described_at.is.null,described_at.lt.2026-09-18T12:00:00Z,and(description_full.is.null,detail_spec.not.is.null,described_at.lt.2026-09-24T12:00:00Z))');
 
 // ── Что писать в description_full ───────────────────────────────────────────
 

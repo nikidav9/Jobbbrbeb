@@ -94,6 +94,9 @@ jobs:
       - name: Дозагрузка описаний — троттлер, очередь, что пишем в карточку
         run: php tests/describe_test.php
 
+      - name: Описание из API источника — разделы, карточка вакансии, курсор
+        run: php tests/career_api_description_test.php
+
       - name: Карьерный JSON разбирается по карте полей
         run: php tests/career_json_test.php
 

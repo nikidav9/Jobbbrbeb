@@ -51,9 +51,14 @@ const DS_MIN_GAP_SEC = 1.0;
 function ds_queue_condition(int $now, int $staleDays = DS_STALE_DAYS): array
 {
     $cutoff = gmdate('Y-m-d\TH:i:s\Z', $now - $staleDays * 86400);
+    // Неудача с JSON-карточкой повторяется через сутки, а не через месяц:
+    // карточка появляется у строки после ingest, и строка, которую до того
+    // пробовали по пустой странице SPA (Магнит), иначе ждала бы 30 дней.
+    $retry = gmdate('Y-m-d\TH:i:s\Z', $now - 86400);
     return [
         'active' => 'is.true',
-        'or' => "(described_at.is.null,described_at.lt.{$cutoff})",
+        'or' => "(described_at.is.null,described_at.lt.{$cutoff},"
+            . "and(description_full.is.null,detail_spec.not.is.null,described_at.lt.{$retry}))",
     ];
 }
 
@@ -103,6 +108,22 @@ function ds_interleave_by_host(array $rows): array
     return $out;
 }
 
+/**
+ * Описание из JSON-карточки вакансии (detail_spec: url, list, sections).
+ * null — ответа нет, он не JSON или разделы вышли слишком короткими.
+ */
+function ds_describe_detail(?string $body, array $spec, int $minLen = DS_MIN_TEXT_LEN): ?string
+{
+    if ($body === null) return null;
+    $data = json_decode($body, true);
+    if (!is_array($data)) return null;
+    $node = cf_dig($data, (string)($spec['list'] ?? ''));
+    $sections = $spec['sections'] ?? null;
+    if (!is_array($node) || !is_array($sections) || !$sections) return null;
+    $text = vt_sections_from_fields($node, $sections);
+    return mb_strlen($text) >= $minLen ? $text : null;
+}
+
 /** Что писать в description_full по содержимому страницы (или его отсутствию). */
 function ds_describe_html(?string $html, int $minLen = DS_MIN_TEXT_LEN): ?string
 {
@@ -117,24 +138,27 @@ if (!defined('DESCRIBE_LIBRARY_ONLY')) {
 ds_check_admin();
 
 $deadline = microtime(true) + DS_BUDGET_SEC;
-$rows = ds_interleave_by_host(sb_select('jm_ext_vacancies', ds_queue_filter(time()), 'id,url'));
+$rows = ds_interleave_by_host(sb_select('jm_ext_vacancies', ds_queue_filter(time()), 'id,url,detail_spec'));
 
 $described = 0;
 $attempted = 0;
 $lastAt = [];
 foreach ($rows as $row) {
     if (microtime(true) >= $deadline) break;
-    $url = (string)($row['url'] ?? '');
+    // Есть JSON-карточка вакансии — идём за ней, а не за страницей: у таких
+    // источников (Яндекс, Магнит) страница — пустая оболочка SPA.
+    $spec = is_array($row['detail_spec'] ?? null) ? $row['detail_spec'] : null;
+    $url = $spec !== null ? (string)($spec['url'] ?? '') : (string)($row['url'] ?? '');
     $host = strtolower((string)(parse_url($url, PHP_URL_HOST) ?: ''));
 
     if ($host !== '') {
         $wait = ds_throttle_wait($lastAt, $host, microtime(true));
         if ($wait > 0) usleep((int)round($wait * 1_000_000));
     }
-    $html = ing_fetch_html($url);
+    $body = $spec !== null ? ing_fetch_html($url, 'application/json') : ing_fetch_html($url);
     if ($host !== '') $lastAt[$host] = microtime(true);
     $attempted++;
-    $text = ds_describe_html($html);
+    $text = $spec !== null ? ds_describe_detail($body, $spec) : ds_describe_html($body);
 
     // described_at ставим и на неудаче: иначе одна и та же нерабочая
     // страница долбилась бы заново на каждом заходе, съедая бюджет тех, что

@@ -15,6 +15,10 @@
 //
 // Здесь только чистые функции — ни сети, ни базы. Сеть в career.php.
 
+// Описание разделами из полей API (vt_sections_from_fields). Взаимное
+// подключение безопасно: require_once не заходит в файл второй раз.
+require_once __DIR__ . '/vacancy_text.php';
+
 /** Сырые тела всех блоков <script type="application/ld+json">. */
 function cf_ld_blocks(string $html): array
 {
@@ -296,6 +300,34 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
             if ($value !== '') $item[$to] = $value;
         }
 
+        // Полное описание разделами прямо из списка (Сбер отдаёт обязанности,
+        // требования и условия отдельными полями). Коротким анонсом при этом
+        // остаётся description: его ingest режет до 2000 знаков.
+        $sections = $map['description_sections'] ?? null;
+        if (is_array($sections) && $sections) {
+            $full = vt_sections_from_fields($row, $sections);
+            if (mb_strlen($full) >= 120) {
+                $item['description_full'] = $full;
+                if (!isset($item['description'])) $item['description'] = $full;
+            }
+        }
+
+        // Описание в карточке вакансии отдельным JSON-запросом: в списке его
+        // нет, а страница — пустая оболочка SPA. Сам запрос делает
+        // describe.php, здесь только запоминаем, куда и за какими полями идти.
+        $detailTemplate = (string)($map['detail_url_template'] ?? '');
+        $detailSections = $map['detail_sections'] ?? null;
+        if ($detailTemplate !== '' && is_array($detailSections) && $detailSections) {
+            $detailUrl = cf_json_url($row, ['url_template' => $detailTemplate], $pageUrl);
+            if ($detailUrl !== '') {
+                $item['detail_spec'] = [
+                    'url' => $detailUrl,
+                    'list' => (string)($map['detail_list'] ?? ''),
+                    'sections' => $detailSections,
+                ];
+            }
+        }
+
         // Постоянное название компании — ПОСЛЕ разбора полей, иначе его
         // перебивает поле из ответа. У Ростелекома так и вышло: в карточке
         // стояло «Технический блок» — это направление, а не работодатель.
@@ -398,6 +430,15 @@ function cf_page_url(string $url, array $paging, int $sub): string
     } elseif ($type === 'page') {
         $query[(string)($paging['param'] ?? 'page')] = (int)($paging['start'] ?? 1) + $sub;
         if (!empty($paging['limit_param'])) $query[(string)$paging['limit_param']] = $limit;
+    } elseif ($type === 'cursor_b64') {
+        // Курсор — base64 от «o=смещение&p=страница» (Яндекс). Их поле next
+        // ведёт на внутренний хост, поэтому курсор собираем сами.
+        if (!empty($paging['limit_param'])) $query[(string)$paging['limit_param']] = $limit;
+        if ($sub > 0) {
+            $cursor = strtr((string)($paging['template'] ?? 'o={offset}&p={page}'),
+                ['{offset}' => (string)($sub * $limit), '{page}' => (string)($sub + 1)]);
+            $query[(string)($paging['param'] ?? 'cursor')] = base64_encode($cursor);
+        }
     } else {
         return $url;
     }

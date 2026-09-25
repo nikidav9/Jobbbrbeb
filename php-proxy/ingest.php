@@ -301,8 +301,40 @@ function ing_normalize(array $it, string $sourceId): ?array
         'active'        => ($it['active'] ?? true) ? true : false,
         'last_seen_at'  => now_iso(),
     ];
+    // Полное описание разделами из API источника (map.description_sections) —
+    // сразу в колонку describe.php, отметкой «уже описано»: ходить за ним по
+    // странице незачем. Ключи добавляются только когда есть что писать: иначе
+    // upsert затёр бы то, что describe.php уже дочитал со страницы.
+    if (isset($it['description_full']) && trim((string)$it['description_full']) !== '') {
+        $row['description_full'] = (string)$it['description_full'];
+        $row['described_at'] = now_iso();
+    }
+    // Куда describe.php пойдёт за описанием, если в списке его нет (map.detail_*).
+    if (isset($it['detail_spec']) && is_array($it['detail_spec'])) {
+        $row['detail_spec'] = $it['detail_spec'];
+    }
     $row['dedupe_key'] = ing_dedupe_key($row);
     return $row;
+}
+
+/**
+ * Пачки для upsert с одинаковым набором колонок: PostgREST требует у всех
+ * строк одного запроса одни и те же ключи, а description_full/detail_spec
+ * есть не у всех.
+ */
+function ing_chunks_by_columns(array $rows, int $size = 200): array
+{
+    $groups = [];
+    foreach ($rows as $row) {
+        $keys = array_keys($row);
+        sort($keys);
+        $groups[implode(',', $keys)][] = $row;
+    }
+    $chunks = [];
+    foreach ($groups as $group) {
+        foreach (array_chunk($group, $size) as $chunk) $chunks[] = $chunk;
+    }
+    return $chunks;
 }
 
 /**
@@ -342,7 +374,7 @@ function ing_fill_descriptions(array &$rows, float $deadline): int
 }
 
 /** Страница вакансии как текст. null — сходить не вышло или нельзя. */
-function ing_fetch_html(string $url): ?string
+function ing_fetch_html(string $url, string $accept = 'text/html,application/xhtml+xml'): ?string
 {
     if ($url === '' || !ing_safe_https_url($url)) return null;
     $resolveEntries = ing_safe_https_resolve($url);
@@ -353,7 +385,7 @@ function ing_fetch_html(string $url): ?string
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => false,
-        CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml'],
+        CURLOPT_HTTPHEADER => ['Accept: ' . $accept],
         CURLOPT_ENCODING => '',
         CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
         CURLOPT_CONNECTTIMEOUT => 5,
@@ -526,7 +558,7 @@ function ing_run_source(array $src): array
         if (($src['connector_kind'] ?? '') === 'career') {
             $described += ing_fill_descriptions($rows, $deadline);
         }
-        foreach (array_chunk($rows, 200) as $chunk) {
+        foreach (ing_chunks_by_columns($rows) as $chunk) {
             sb_upsert_rows('jm_ext_vacancies', $chunk, 'source_id,external_id');
             sm_cache_invalidate();
         }
