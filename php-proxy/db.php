@@ -6090,14 +6090,25 @@ try {
             if (!$box) { $data = ['stored' => false]; break; }
             $key = trim((string)($message['imap_uid'] ?? ''));
             if ($key === '') { jt_respond(['error' => 'Missing IMAP UID'], 400); exit; }
-            sb('POST', 'jm_jupiter_emails', ['on_conflict' => 'imap_uid'], [
-                'id' => uid(), 'user_id' => $box['user_id'], 'mailbox_address' => $recipient,
-                'imap_uid' => mb_substr($key, 0, 180),
+            $key = mb_substr($key, 0, 180);
+            $content = [
                 'sender' => mb_substr((string)($message['sender'] ?? ''), 0, 320),
                 'subject' => mb_substr((string)($message['subject'] ?? ''), 0, 998),
                 'body' => mb_substr((string)($message['body'] ?? ''), 0, 100000),
+            ];
+            $rows = sb('POST', 'jm_jupiter_emails', ['on_conflict' => 'imap_uid'], [
+                'id' => uid(), 'user_id' => $box['user_id'], 'mailbox_address' => $recipient,
+                'imap_uid' => $key,
                 'received_at' => $message['received_at'] ?? now_iso(),
-            ], ['Prefer: resolution=ignore-duplicates,return=representation']);
+            ] + $content, ['Prefer: resolution=ignore-duplicates,return=representation']);
+            if (!$rows) {
+                // Письмо уже было: служба перечитала ящик после улучшения
+                // разбора (ссылки, полная HTML-версия). Обновляем текст, но
+                // только у того же человека и не трогая id и отметку прочтения.
+                sb_update('jm_jupiter_emails', [
+                    'imap_uid' => 'eq.' . $key, 'user_id' => 'eq.' . $box['user_id'],
+                ], $content);
+            }
             $data = ['stored' => true];
             break;
         }

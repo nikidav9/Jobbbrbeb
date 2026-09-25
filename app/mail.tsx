@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
 import { JupiterEmail, jupiterMailbox, jupiterMailList, jupiterMailRead } from '@/services/db';
 import { Colors } from '@/constants/theme';
+import { splitMailLinks } from '@/services/mailLinks';
 
 export default function JupiterMail() {
   const router = useRouter();
@@ -61,7 +62,15 @@ export default function JupiterMail() {
           <Text style={styles.sender}>От: {selected.sender}</Text>
           <Text style={styles.meta}>Кому: {address}</Text>
           <Text style={styles.meta}>{new Date(selected.received_at).toLocaleString('ru-RU')}</Text>
-          <Text selectable style={styles.body}>{selected.body || 'В письме нет текстовой части.'}</Text>
+          <Text selectable style={styles.body}>
+            {selected.body
+              ? splitMailLinks(selected.body).map((part, i) => part.url ? (
+                <Text key={i} style={styles.link} onPress={() => { Linking.openURL(part.url!).catch(() => {}); }}>
+                  {part.text}
+                </Text>
+              ) : part.text)
+              : 'В письме нет текстовой части.'}
+          </Text>
         </ScrollView>
       ) : (
         <>
@@ -119,4 +128,5 @@ const styles = StyleSheet.create({
   sender: { fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
   meta: { color: '#6B7280', marginBottom: 6 },
   body: { fontSize: 17, lineHeight: 26, color: Colors.textPrimary, marginTop: 24 },
+  link: { color: Colors.primary, textDecorationLine: 'underline' },
 });

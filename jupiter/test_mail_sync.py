@@ -59,6 +59,30 @@ class MailRoutingTests(unittest.TestCase):
         self.assertIsNone(parse_message(raw, "8", "2"))
 
 
+class HtmlBodyTests(unittest.TestCase):
+    RAW = (b"Received: from s.example by mx1.timeweb.ru\r\n"
+           b"\tfor <nikita.davydov@jobtoo.ru>; Thu, 25 Sep 2026 10:18:42 +0300\r\n"
+           b"Subject: =?utf-8?b?0JDQvdC60LXRgtCw?=\r\n"
+           b"MIME-Version: 1.0\r\n"
+           b"Content-Type: multipart/alternative; boundary=b\r\n\r\n"
+           b"--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+           b"\xd0\x90\xd0\xbd\xd0\xba\xd0\xb5\xd1\x82\xd0\xb0\r\n"
+           b"--b\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+           b"<table><tr><td><p>Hello</p>"
+           b"<a href=\"https://pulse.sber.example/form?id=1\">Fill in</a>"
+           b"<a href=\"https://x.example/y\">https://x.example/y</a>"
+           b"<a href=\"javascript:alert(1)\">bad</a></td></tr></table>\r\n"
+           b"--b--\r\n")
+
+    def test_html_part_wins_and_keeps_links(self):
+        _, letter = parse_message(self.RAW, "1", "2")
+        body = letter["body"]
+        self.assertIn("Fill in (https://pulse.sber.example/form?id=1)", body)
+        self.assertEqual(body.count("https://x.example/y"), 1)
+        self.assertNotIn("javascript:", body)
+        self.assertNotIn("\u0410\u043d\u043a\u0435\u0442\u0430\n", body)
+
+
 class IngestResponseTests(unittest.TestCase):
     def test_db_php_envelope_is_accepted(self):
         # Ровно так отвечает php-proxy/db.php: jt_respond(['data' => $data]).
