@@ -1683,7 +1683,14 @@ class JupiterAgent:
                     )
 
             if submit is None:
-                next_step = self._best_navigation(page, visited)
+                # Страница вакансии Сбера — уже цель: её анкету шлёт адаптер
+                # ниже. Уходить отсюда по «Вакансии» или «Искать» нельзя —
+                # иначе живая страница уводила на /search/, агент отдавал
+                # UNSUPPORTED_SCRIPT, и согласие человека шло по кругу.
+                next_step = (
+                    None if sber.extract_vacancy(page) is not None
+                    else self._best_navigation(page, visited)
+                )
                 if next_step is not None:
                     next_url, next_origin = next_step
                     trajectory.append({

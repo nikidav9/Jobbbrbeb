@@ -159,5 +159,34 @@ class SberAdapterTest(unittest.TestCase):
             self.assertEqual(calls[0][1], "POST")
 
 
+    def test_navigation_links_on_live_page_do_not_lead_away_from_vacancy(self):
+        # Живая страница вакансии Сбера полна ссылок: «Вакансии», «Искать».
+        # Агент уходил по ним на /search/ раньше, чем узнавал вакансию, и
+        # отдавал UNSUPPORTED_SCRIPT — человек давал согласие, а заявка
+        # возвращалась к той же кнопке по кругу.
+        with tempfile.TemporaryDirectory() as td:
+            resume = Path(td) / "resume.pdf"
+            resume.write_bytes(b"%PDF-1.4\njobtoo\n")
+            engine = JupiterWebEngine(set())
+            calls = []
+
+            def fake_request_json(url, *, method="GET", payload=None, headers=None):
+                calls.append((url, method))
+                return 200, {"success": True}
+
+            engine.request_json = fake_request_json
+            agent = JupiterAgent(set(), engine=engine, dry_run=False)
+            live = page().html.replace(
+                "<html>",
+                '<html><a href="/search/">Вакансии</a> '
+                '<a href="/search/?query=">Искать вакансии</a> '
+                '<a href="/search/vacancy-1/">Откликнуться на похожую</a>',
+            )
+            result = agent.run_loaded_html(live, page().url, self.profile(str(resume), consent=True))
+            self.assertEqual(result.status, "submitted", result.reason)
+            self.assertNotIn("navigate", [item.get("action") for item in result.trajectory])
+            self.assertEqual(calls, [(sber.SBER_APPLICATION_URL, "POST")])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
