@@ -85,6 +85,9 @@ jobs:
       - name: Карьерный коннектор ходит тем же методом, что записан
         run: php tests/career_http_method_test.php
 
+      - name: Разведка проверяет карьерный endpoint тем же кодом, что идёт на сбор
+        run: php tests/career_verify_test.php
+
       - name: Один и тот же отклик не превращается в два
         run: php tests/ingest_dedupe_test.php
 
@@ -161,6 +164,7 @@ jobs:
           python3 tests/sitemap_invalidation_test.py
           python3 tests/deploy_migration_order_test.py
           python3 tests/career_full_catalog_test.py
+          python3 tests/career_discover_run_test.py
           python3 tests/deploy_webhook_order_test.py
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py

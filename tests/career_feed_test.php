@@ -464,16 +464,19 @@ check('признак неполноты переживает перерыв н�
 // Упавший адрес обязан выйти ответом-пропуском, а не ошибкой: ошибочный ответ
 // приёмник понимает как обрыв захода.
 $career = file_get_contents(__DIR__ . '/../php-proxy/career.php');
+// Сама сеть и разбор ответа переехали в career_unit.php: этим же кодом
+// разведка проверяет endpoint перед включением, см. career_verify.php.
+$careerUnit = file_get_contents(__DIR__ . '/../php-proxy/career_unit.php');
 check('недоступная страница пропускается, а не рушит обход',
-    str_contains($career, '$skipUnit("страница недоступна ($code $error)");')
-    && !str_contains($career, "cf_fail(502, \"страница недоступна"));
+    str_contains($careerUnit, 'return $fail("страница недоступна ($code $error)");')
+    && !str_contains($careerUnit, "cf_fail(502, \"страница недоступна"));
 check('ответ-пропуск помечен partial',
     str_contains($career, "\$out['partial'] = true;"));
 check('проверка безопасности адреса осталась перед походом',
-    str_contains($career, 'if (!ing_safe_https_url($pageUrl))')
-    && str_contains($career, '$resolveEntries = ing_safe_https_resolve($pageUrl);'));
+    str_contains($careerUnit, 'if (!ing_safe_https_url($pageUrl))')
+    && str_contains($careerUnit, '$resolveEntries = ing_safe_https_resolve($pageUrl);'));
 check('увод на непубличный адрес по-прежнему не разбирается',
-    str_contains($career, "\$skipUnit('страница увела на непубличный адрес');"));
+    str_contains($careerUnit, "return \$fail('страница увела на непубличный адрес');"));
 
 // ── Описание со страницы вакансии ─────────────────────────────────────────
 //
