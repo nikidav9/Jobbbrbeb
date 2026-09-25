@@ -19,6 +19,7 @@ import {
   dbGetResumeFiles,
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
+import { jupiterManualEligible } from '@/services/jupiterFill';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -336,21 +337,6 @@ function jupiterAppStatus(state: JupiterApplicationState): { label: string; fg: 
     default:
       return { label: 'Юпитер обрабатывает', fg: '#1D4ED8', bg: '#DBEAFE' };
   }
-}
-
-// Заявка, которую сервер сам отправить не может (капча, SPA, сайт ещё не в
-// списке проверенных) — человек её отправляет сам во встроенном браузере
-// (`app/jupiter-fill.tsx`). Особые пути Сбера (согласие) и повторная
-// авторизация автоотклика остаются на своей прежней кнопке — их поведение
-// не трогаем.
-function jupiterManualEligible(a: JupiterApplication): boolean {
-  const isSber = /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
-  const needsSberConsent = isSber
-    && a.state === 'action_required'
-    && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
-  return ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'].includes(a.state)
-    && !needsSberConsent
-    && a.reasonCode !== 'LIVE_AUTHORIZATION_REVOKED';
 }
 
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
@@ -793,6 +779,19 @@ function WorkerMatches() {
                   <>
                     <View style={wm.sectionHead}>
                       <Text style={wm.sectionTitle}>Ждут вас · {manualJupiterApps.length}</Text>
+                      {Platform.OS !== 'web' ? (
+                        <TouchableOpacity
+                          onPress={() => router.push({
+                            pathname: '/jupiter-fill',
+                            params: { id: manualJupiterApps[0].id, company: manualJupiterApps[0].company ?? '' },
+                          })}
+                          hitSlop={8}
+                          style={{ marginLeft: 'auto' }}
+                          accessibilityLabel="Отправить анкеты по очереди"
+                        >
+                          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: rf(14) }}>По очереди ›</Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                     <Text style={[s.emptySub, { textAlign: 'left', marginBottom: rs(8) }]}>
                       Отправьте сами — анкета заполнится за вас
