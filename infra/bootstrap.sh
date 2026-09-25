@@ -212,7 +212,9 @@ fi
 # Разведка анкет отклика с московского адреса, раз в сутки. Только чтение:
 # Jupiter в dry-run, синтетический кандидат, заявки не уходят. Итог —
 # /jupiter-recon.json (адреса работодателей и устройство анкет, без людей).
-# Первый прогон — через 10 минут после установки таймера, дальше в 04:40.
+# Прогон в 04:40; самый первый — сразу, как только скрипт появился на машине
+# (журнал пуст): OnActiveSec= тут ненадёжен, потому что этот файл
+# переустанавливает таймер и перечитывает systemd каждую минуту.
 if [ -f "$REPO/infra/recon-run.sh" ]; then
   install -m 755 "$REPO/infra/recon-run.sh" /usr/local/bin/jt-recon
   cat > /etc/systemd/system/jt-recon.service <<'EOF'
@@ -231,7 +233,6 @@ EOF
 Description=Daily read-only recon of employer career sites
 
 [Timer]
-OnActiveSec=10min
 OnCalendar=*-*-* 04:40
 Persistent=true
 
@@ -240,6 +241,9 @@ WantedBy=timers.target
 EOF
   systemctl daemon-reload
   systemctl enable --now jt-recon.timer >/dev/null 2>&1 || true
+  if [ ! -s /var/log/jt-recon.log ]; then
+    systemctl start --no-block jt-recon.service >/dev/null 2>&1 || true
+  fi
 fi
 
 # Разовый опыт: дозванивается ли Телеграм до этой машины напрямую.

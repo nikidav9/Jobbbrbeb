@@ -110,6 +110,12 @@ recon_run = (ROOT / "infra" / "recon-run.sh").read_text(encoding="utf-8")
 assert "jt-recon.timer" in bootstrap and "/usr/local/bin/jt-recon" in bootstrap
 assert "recon.py" in recon_run and "--ua-retry" not in recon_run.replace("(--ua-retry)", "")
 assert "--via-proxy" not in recon_run
+# Первый прогон не зависит от OnActiveSec: bootstrap перечитывает systemd
+# каждую минуту, поэтому стартуем службу сами, пока журнал пуст.
+assert "OnActiveSec" not in bootstrap.split("jt-recon.timer", 1)[1].split("systemctl enable --now jt-recon.timer", 1)[0]
+assert "systemctl start --no-block jt-recon.service" in bootstrap
+assert 'start" >>"$LOG"' in recon_run
+assert '"recon_state"' in (ROOT / "infra" / "migrate.sh").read_text(encoding="utf-8")
 assert "location = /jupiter-recon.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
 
 print("jupiter native engine infra: ok")
