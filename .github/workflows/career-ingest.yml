@@ -85,3 +85,43 @@ jobs:
           done
 
           echo "ingest.php не завершился за $MAX вызовов"; exit 1
+
+      # Полное описание (php-proxy/vacancy_text.php, со структурой) — отдельно
+      # от самого ingest.php: сходить за ним на каждую вакансию во время обхода
+      # значило бы не уложиться в бюджет. describe.php дозагружает очередь
+      # пачками, пока remaining не дойдёт до нуля или не кончатся попытки.
+      # Неудача этого шага не должна валить весь workflow: вакансии уже
+      # забраны, а короткое описание в карточке уже есть — это лишь дозагрузка.
+      - name: Дочитать описания
+        continue-on-error: true
+        env:
+          ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
+        run: |
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "DASHBOARD_PASSWORD не настроен в секретах репозитория"; exit 1
+          fi
+
+          MAX=20
+          for attempt in $(seq 1 $MAX); do
+            RESP=$(curl -fsS -X GET "https://jobtoo.ru/api/describe.php" \
+              -H "X-Admin-Token: $ADMIN_TOKEN" \
+              --max-time 120) || RESP=''
+            echo "Вызов $attempt/$MAX: $RESP"
+
+            if [ -z "$RESP" ]; then
+              echo "Пустой ответ, повтор через 5 секунд"
+              sleep 5
+              continue
+            fi
+
+            REMAINING=$(echo "$RESP" | grep -oE '"remaining":[0-9]+' | grep -oE '[0-9]+')
+            if [ -z "$REMAINING" ] || [ "$REMAINING" = "0" ]; then
+              echo "Очередь дочитана"
+              exit 0
+            fi
+
+            echo "Осталось в очереди: $REMAINING, продолжаем"
+            sleep 5
+          done
+
+          echo "describe.php не опустошил очередь за $MAX вызовов — доберёт в следующий заход"

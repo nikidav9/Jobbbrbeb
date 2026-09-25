@@ -117,6 +117,22 @@ function ext_feed_score(array $row, array $taste, float $jitter): float
 }
 
 /**
+ * Строка вакансии для отдачи клиенту: description_full (миграция 117, полное
+ * описание со структурой — заголовки разделов, списки) занимает место
+ * description, если он заполнен. Саму колонку description_full и described_at
+ * из ответа убираем — это внутренняя кухня дозагрузки (describe.php), а не то,
+ * что нужно карточке. Старые сборки приложения так сразу получают полный
+ * текст, ничего не зная про новую колонку.
+ */
+function ext_feed_public_row(array $row): array
+{
+    $full = trim((string)($row['description_full'] ?? ''));
+    if ($full !== '') $row['description'] = $full;
+    unset($row['description_full'], $row['described_at']);
+    return $row;
+}
+
+/**
  * Порядок ленты: лучшие вперёд, но одна компания не идёт два раза подряд
  * и не чаще раза на три карточки, пока есть из чего выбирать.
  */

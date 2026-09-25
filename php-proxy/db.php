@@ -6117,8 +6117,9 @@ try {
             $profile = $authUid !== null
                 ? sb_single('jm_users', ['id' => 'eq.' . $authUid], 'work_types,metro_station,resume_data')
                 : null;
-            $data = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history, $profile ?: []), $limit,
+            $arranged = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history, $profile ?: []), $limit,
                 ($authUid ?? 'guest') . '|' . gmdate('Y-m-d'));
+            $data = array_map('ext_feed_public_row', $arranged);
             break;
         }
 
@@ -6178,7 +6179,7 @@ try {
         case 'dbGetExtVacancies': {
             $f = ['active' => 'eq.true'];
             if (!empty($args[0])) $f['company'] = 'eq.' . $args[0];
-            $data = sb_select('jm_ext_vacancies', $f, '*', 'last_seen_at.desc');
+            $data = array_map('ext_feed_public_row', sb_select('jm_ext_vacancies', $f, '*', 'last_seen_at.desc'));
             break;
         }
 

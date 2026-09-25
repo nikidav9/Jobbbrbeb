@@ -91,6 +91,9 @@ jobs:
       - name: Полное описание вакансии со страницы сохраняет структуру
         run: php tests/vacancy_text_test.php
 
+      - name: Дозагрузка описаний — троттлер, очередь, что пишем в карточку
+        run: php tests/describe_test.php
+
       - name: Карьерный JSON разбирается по карте полей
         run: php tests/career_json_test.php
 

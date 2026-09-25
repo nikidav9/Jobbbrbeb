@@ -314,6 +314,24 @@
 `career_feed.php` пока используется отдельно (короткий анонс для ingest) — их
 объединение не входит в этот шаг.
 
+**Полное описание в карточке** (с 25.09.2026, миграция 117). Живёт в своей
+колонке `jm_ext_vacancies.description_full` — ingest.php её не трогает (upsert
+шлёт только свои поля, `resolution=merge-duplicates` не задевает остальные),
+потому что сама перезаписывает `description` коротким анонсом на каждом
+заходе. Заполняет колонку `php-proxy/describe.php`: закрыт тем же
+`X-Admin-Token`, что `ingest.php` (подключает его как библиотеку через
+`INGEST_LIBRARY_ONLY`, чтобы взять `ing_fetch_html` с его СЗЗУ-сторожами), за
+один вызов дочитывает пачку активных вакансий без описания или с устаревшим
+(`described_at` старше 30 дней, частичный индекс), не чаще раза в секунду на
+хост. Зовёт его `.github/workflows/career-ingest.yml` в цикле после самого
+`ingest.php`, пока `remaining` в ответе не дойдёт до нуля. Отдаёт клиенту —
+`ext_feed_public_row()` (`php-proxy/ext_feed.php`): `description_full`
+подменяет собой `description`, если он непустой, сама колонка и `described_at`
+в ответе не участвуют — применяется в `dbGetExtFeed` и `dbGetExtVacancies`.
+Показывает структуру `components/ui/DescriptionBlocks.tsx` в карточке ленты
+(`app/(tabs)/feed.tsx`, `renderExtDeckCard`): разбор текста на блоки —
+`services/descriptionBlocks.ts`, чистая функция, отдельно от вёрстки.
+
 `ingest.php` закрыт админским токеном (`X-Admin-Token`), `career.php` открыт —
 он ничего не пишет и ходит только по адресам, заранее записанным в
 `connector_config`. Произвольный адрес из запроса туда не попадает.
