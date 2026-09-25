@@ -20,10 +20,12 @@ for needle in [
 # Существенное расширение состава данных требует нового общего согласия.
 privacy = legal[legal.index("  privacy: {"):legal.index("  consent: {")]
 consent = legal[legal.index("  consent: {"):legal.index("  dataPolicy: {")]
-assert "version: '2026-09-21-5'" in privacy
-assert "consentVersion: '2026-09-21'" in privacy
-assert "version: '2026-09-21-4'" in consent
-assert "consentVersion: '2026-09-21'" in consent
+# Редакция 2026-09-25 (Юпитер) снова подняла consentVersion — расширение
+# состава резюме 2026-09-21 покрыто ею же, повторное согласие спросится.
+assert "version: '2026-09-25'" in privacy
+assert "consentVersion: '2026-09-25'" in privacy
+assert "version: '2026-09-25'" in consent
+assert "consentVersion: '2026-09-25'" in consent
 
 # Приватный PDF/email/личная анкета не должны внезапно стать публичными.
 public_cols = db[db.index("define('USER_PUBLIC_COLS'"):db.index("define('USER_SELF_COLS'")]

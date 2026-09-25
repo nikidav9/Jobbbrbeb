@@ -15,7 +15,7 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterLiveStatus, jupiterSetLive, jupiterRequeueLive, jupiterGrantThirdPartyConsent,
+  jupiterLiveStatus, jupiterRequeueLive, jupiterGrantThirdPartyConsent,
   dbGetResumeFiles,
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
@@ -721,22 +721,13 @@ function WorkerMatches() {
                 <View style={wm.sectionHead}>
                   <Text style={wm.sectionTitle}>Юпитер · внешние вакансии</Text>
                 </View>
-                <Text style={[s.emptySub, { textAlign: 'left', marginBottom: rs(12) }]}>
-                  {jupiterLive
-                    ? 'Новые отклики Юпитер отправляет работодателям. Неясные вопросы, капча и коды требуют вашего участия.'
-                    : 'Автоотклик выключен. Старые заявки остаются в режиме заполнения без отправки.'}
-                </Text>
-                {jupiterLive ? (
-                  <TouchableOpacity onPress={() => { void (async () => {
-                    try {
-                      await jupiterSetLive(currentUserId, false);
-                      setJupiterLive(false);
-                      showToast('Будущие отправки остановлены. Уже начатый запрос мог уйти.', 'info');
-                    } catch { showToast('Не удалось выключить автоотклик', 'error'); }
-                  })(); }} style={{ marginBottom: rs(12) }}>
-                    <Text style={{ color: Colors.primary, fontWeight: '600' }}>Выключить автоотклик</Text>
+                {jupiterLive ? null : (
+                  <TouchableOpacity onPress={() => router.push('/profile-settings')} style={{ marginBottom: rs(12) }}>
+                    <Text style={[s.emptySub, { textAlign: 'left', color: Colors.textSecondary }]}>
+                      Автоотклик выключен · включить в настройках
+                    </Text>
                   </TouchableOpacity>
-                ) : null}
+                )}
                 {jupiterError ? <Text style={s.emptySub}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
                 {manualJupiterApps.length > 0 ? (
                   <>

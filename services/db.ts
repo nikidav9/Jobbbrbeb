@@ -1691,6 +1691,18 @@ export async function jupiterLiveStatus(userId: string): Promise<boolean> {
   return result?.enabled === true;
 }
 
+/**
+ * Состояние поручения на автоотклик: включён и, отдельно, отозван ли он.
+ *
+ * `revoked` — не просто «не включён»: старые сборки сервера его не отдают
+ * (см. jupiterLiveStatus в php-proxy/db.php), поэтому здесь по умолчанию
+ * false, а не неизвестно.
+ */
+export async function jupiterLiveState(userId: string): Promise<{ enabled: boolean; revoked: boolean }> {
+  const result = await proxy<{ enabled?: boolean; revoked?: boolean }>('jupiterLiveStatus', [userId]);
+  return { enabled: result?.enabled === true, revoked: result?.revoked === true };
+}
+
 export type JupiterEmail = {
   id: string; sender: string; subject: string; body: string;
   received_at: string; read_at: string | null;

@@ -1573,6 +1573,11 @@ define('SUPPORT_NOTIFY_TELEGRAM_ID', (int)jt_secret('SUPPORT_NOTIFY_TELEGRAM_ID'
 // проверяет её сам: старый клиент не должен обходить новый экран согласия.
 define('JT_CROSSBORDER_CONSENT_VERSION', '2026-09-19');
 
+// Редакция документов (Соглашение раздел 8, Согласие), с которой поручение
+// на автоотклик Юпитера включается принятием документов, без отдельного
+// диалога. До неё поручения в текстах не было.
+define('JT_JUPITER_CONSENT_FROM', '2026-09-25');
+
 /**
  * Отметка «обращение закрыто» (null — открыто).
  *
@@ -3033,6 +3038,7 @@ function jt_consent_attach(string $uid, $payload): void
             'source'      => 'registration',
             'accepted_at' => now_iso(),
         ], 'id');
+        jt_jupiter_auto_enable($uid, $stamp);
 
         // Отдельная добровольная галочка при регистрации хранится отдельной
         // строкой. Так можно доказать самостоятельное волеизъявление, не
@@ -3050,6 +3056,58 @@ function jt_consent_attach(string $uid, $payload): void
         }
     } catch (Throwable $e) {
         // См. выше: регистрацию не роняем, но и не молчим — считается в отчёте.
+    }
+}
+
+/**
+ * Отпечаток документов несёт поручение на автоотклик Юпитера.
+ *
+ * Разбирает строку вида `terms:2026-09-25|privacy:2026-09-25|consent:2026-09-25`
+ * (см. constants/legal.ts) и сравнивает версии terms и consent с редакцией,
+ * в которой появилось поручение (раздел 8 Соглашения, раздел «Отклик через
+ * Юпитера…» Согласия). Суффиксы вида `-2` у версии не мешают сравнению дат:
+ * сравниваются первые 10 символов.
+ */
+function jt_jupiter_stamp_ok(string $stamp): bool
+{
+    $versions = [];
+    foreach (explode('|', $stamp) as $part) {
+        $pair = explode(':', $part, 2);
+        if (count($pair) === 2) {
+            $versions[$pair[0]] = $pair[1];
+        }
+    }
+    $terms = substr((string)($versions['terms'] ?? ''), 0, 10);
+    $consent = substr((string)($versions['consent'] ?? ''), 0, 10);
+    return $terms !== '' && $terms >= JT_JUPITER_CONSENT_FROM
+        && $consent !== '' && $consent >= JT_JUPITER_CONSENT_FROM;
+}
+
+/**
+ * Включить автоотклик Юпитера принятием документов — без отдельного диалога.
+ *
+ * Срабатывает только один раз: если человек уже включал (или выключил
+ * своей рукой в настройках) — jupiter_live_enabled_at или
+ * jupiter_live_revoked_at не пустые, и повторное согласие их не трогает.
+ * Иначе отзыв поручения переживал бы только до следующего окна согласия.
+ *
+ * Ошибку не пробрасываем: включение автоотклика не должно ронять
+ * регистрацию или запись согласия.
+ */
+function jt_jupiter_auto_enable(string $uid, string $stamp): void
+{
+    if ($uid === '' || !jt_jupiter_stamp_ok($stamp)) return;
+    try {
+        $user = sb_single('jm_users', ['id' => 'eq.' . $uid],
+            'jupiter_live_enabled_at,jupiter_live_revoked_at');
+        if (!$user || !empty($user['jupiter_live_enabled_at']) || !empty($user['jupiter_live_revoked_at'])) {
+            return;
+        }
+        sb_update('jm_users', ['id' => 'eq.' . $uid], [
+            'jupiter_live_enabled_at' => now_iso(),
+        ]);
+    } catch (Throwable $e) {
+        // См. выше: включение автоотклика регистрацию не роняет.
     }
 }
 
@@ -3942,6 +4000,7 @@ try {
                                  ? $source : 'registration',
                 'accepted_at' => now_iso(),
             ], 'id');
+            jt_jupiter_auto_enable($uid, $stamp);
             $data = ['записано' => true];
             break;
         }
@@ -6210,8 +6269,12 @@ try {
         }
 
         case 'jupiterLiveStatus': {
-            $user = sb_single('jm_users', ['id' => 'eq.' . (string)$args[0]], 'jupiter_live_enabled_at');
-            $data = ['enabled' => !empty($user['jupiter_live_enabled_at'])];
+            $user = sb_single('jm_users', ['id' => 'eq.' . (string)$args[0]],
+                'jupiter_live_enabled_at,jupiter_live_revoked_at');
+            $data = [
+                'enabled' => !empty($user['jupiter_live_enabled_at']),
+                'revoked' => !empty($user['jupiter_live_revoked_at']),
+            ];
             break;
         }
 
@@ -6232,6 +6295,7 @@ try {
             }
             sb_update('jm_users', ['id' => 'eq.' . $uidArg], [
                 'jupiter_live_enabled_at' => $enabled ? now_iso() : null,
+                'jupiter_live_revoked_at' => $enabled ? null : now_iso(),
             ]);
             if (!$enabled) {
                 // Unleased requests must not spring back to life after a later opt-in.
