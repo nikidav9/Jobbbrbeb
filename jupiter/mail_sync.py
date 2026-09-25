@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen
 
 LOG = logging.getLogger("jupiter.mail")
 DOMAIN = "jobtoo.ru"
+# 2 — письма со ссылками и полной HTML-версией (25.09.2026).
+STATE_VERSION = 2
 
 # Timeweb prepends a Received header at its public MX before forwarding the
 # message to the catch-all mailbox. Sender-supplied headers appear *below*
@@ -54,22 +56,47 @@ def _timeweb_envelope_recipient(message: email.message.Message) -> str | None:
     return None
 
 
+_BLOCK_TAGS = ("p", "div", "li", "tr", "table", "h1", "h2", "h3", "h4", "h5", "h6")
+
+
 class _PlainHTML(HTMLParser):
+    """HTML письма в текст. Ссылки сохраняются: «надпись (адрес)».
+
+    Кнопки в письмах работодателей («Пройти интервью», «Заполнить анкету») —
+    это ссылки. Без адреса от такого письма остаётся одна надпись, и перейти
+    некуда.
+    """
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.text: list[str] = []
         self.hidden = 0
+        self.links: list[tuple[str | None, int]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in ("script", "style"):
             self.hidden += 1
-        elif tag in ("br", "p", "div", "li"):
+        elif tag == "a":
+            href = (dict(attrs).get("href") or "").strip()
+            ok = href.lower().startswith(("https://", "http://"))
+            self.links.append((href if ok else None, len(self.text)))
+        elif tag == "br" or tag in _BLOCK_TAGS:
             self.text.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("script", "style") and self.hidden:
             self.hidden -= 1
-        elif tag in ("p", "div", "li"):
+        elif tag == "a" and self.links:
+            href, start = self.links.pop()
+            if href:
+                label = " ".join("".join(self.text[start:]).split())
+                # Надпись — сам адрес: второй раз не нужен. Надписи нет
+                # (кнопка-картинка): остаётся один адрес.
+                if not label:
+                    self.text.append(href)
+                elif label != href:
+                    self.text.append(f" ({href})")
+        elif tag in _BLOCK_TAGS:
             self.text.append("\n")
 
     def handle_data(self, data: str) -> None:
@@ -102,7 +129,9 @@ def parse_message(raw: bytes, uid: str, uidvalidity: str) -> tuple[str, dict] | 
             else:
                 parser = _PlainHTML()
                 parser.feed(content)
-                html_bodies.append("".join(parser.text).strip())
+                text = "".join(parser.text)
+                text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", text))
+                html_bodies.append(re.sub(r"\n{3,}", "\n\n", text).strip())
     try:
         dt = parsedate_to_datetime(message.get("Date", ""))
         if dt.tzinfo is None:
@@ -113,7 +142,9 @@ def parse_message(raw: bytes, uid: str, uidvalidity: str) -> tuple[str, dict] | 
     return address, {
         "imap_uid": f"{uidvalidity}:{uid}",
         "sender": sender[:320], "subject": subject[:998],
-        "body": "\n".join(bodies or html_bodies)[:100000], "received_at": received,
+        # HTML — полная версия письма со ссылками; текстовая у рассылок бывает
+        # огрызком («Анкета финалиста на вакансию» без самой анкеты).
+        "body": "\n".join(html_bodies or bodies)[:100000], "received_at": received,
     }
 
 
@@ -155,7 +186,10 @@ def poll() -> None:
         if status != "OK":
             raise RuntimeError("Could not select inbox")
         uidvalidity = str(client.response("UIDVALIDITY")[1][0], "ascii")
-        last_uid = int(state.get("uid", 0)) if state.get("uidvalidity") == uidvalidity else 0
+        # STATE_VERSION растёт, когда меняется разбор писем: служба один раз
+        # перечитывает весь ящик, и сервер обновляет текст уже сохранённых.
+        same = state.get("uidvalidity") == uidvalidity and state.get("v") == STATE_VERSION
+        last_uid = int(state.get("uid", 0)) if same else 0
         status, data = client.uid("SEARCH", None, "ALL")
         if status != "OK":
             raise RuntimeError("Could not list mail")
@@ -174,7 +208,7 @@ def poll() -> None:
             fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(state_path), prefix=".mail-uid-")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as file:
-                    json.dump({"uidvalidity": uidvalidity, "uid": int(uid)}, file)
+                    json.dump({"uidvalidity": uidvalidity, "uid": int(uid), "v": STATE_VERSION}, file)
                 os.replace(tmp_path, state_path)
             finally:
                 if os.path.exists(tmp_path):
