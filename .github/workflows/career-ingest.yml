@@ -37,7 +37,10 @@ jobs:
   ingest:
     name: Забрать карьерные вакансии
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Сбор укладывается в полчаса, но за ним идёт дозагрузка полных описаний:
+    # ~70–100 страниц за вызов describe.php, а в очереди поначалу все 6600
+    # вакансий — это полтора-два часа. Одним заходом, а не сутками по кускам.
+    timeout-minutes: 200
     steps:
       - name: Вызвать ingest.php
         env:
@@ -101,7 +104,9 @@ jobs:
             echo "DASHBOARD_PASSWORD не настроен в секретах репозитория"; exit 1
           fi
 
-          MAX=20
+          # 150 вызовов по 75 с — до трёх часов, хватает на всю очередь разом;
+          # цикл выходит раньше, как только remaining = 0.
+          MAX=150
           for attempt in $(seq 1 $MAX); do
             RESP=$(curl -fsS -X GET "https://jobtoo.ru/api/describe.php" \
               -H "X-Admin-Token: $ADMIN_TOKEN" \
