@@ -1,7 +1,8 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import type { DocumentPickerAsset } from 'expo-document-picker';
-import { parseResumeText, parseResumeIdentity } from '@/lib/resumeParser';
+import { parseResumeText, parseResumeIdentity, inferWorkTypes } from '@/lib/resumeParser';
+import { ResumeProfile, User } from '@/constants/types';
 
 type PdfTextItem = {
   str: string;
@@ -109,4 +110,46 @@ export async function extractResumePdf(asset: DocumentPickerAsset) {
     throw new Error('Не удалось распознать структуру резюме. Проверьте, что PDF содержит выделяемый текст, а не только скан.');
   }
   return { resume, identity: parseResumeIdentity(text), text, bytes };
+}
+
+/**
+ * Перенести данные распознанного резюме в профиль пользователя.
+ *
+ * Общая для импорта в профиле и для регистрации — расхождение между ними
+ * значило бы, что после регистрации профиль выглядит иначе, чем после
+ * обычного импорта тем же файлом.
+ */
+export function mergeResumeIntoUser(
+  user: User,
+  resume: ResumeProfile,
+  identity?: {
+    firstName?: string;
+    lastName?: string;
+    middleName?: string;
+    age?: number;
+  },
+): User {
+  const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
+  const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
+  const inferredWorkTypes = inferWorkTypes(resume);
+
+  return {
+    ...user,
+    resume,
+    firstName: identity?.firstName ?? user.firstName,
+    lastName: identity?.lastName ?? user.lastName,
+    age: identity?.age ?? user.age,
+    bio: resume.summary?.trim() || user.bio,
+    workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : user.workTypes,
+    personalDetails: {
+      ...(user.personalDetails ?? {}),
+      ...(identity?.middleName ? { middleName: identity.middleName } : {}),
+      ...(resume.email ? { contactEmail: resume.email } : {}),
+      ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
+      ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
+      ...(resume.city ? { location: resume.city } : {}),
+      ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
+      ...(importedRelocation ? { relocation: importedRelocation } : {}),
+    },
+  };
 }

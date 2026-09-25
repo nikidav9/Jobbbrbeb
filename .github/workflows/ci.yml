@@ -67,6 +67,9 @@ jobs:
       - name: Решение по отклику принимает владелец вакансии и оно доходит
         run: php tests/perm_app_test.php
 
+      - name: Откликнуться можно только с загруженным резюме
+        run: php tests/apply_requires_resume_test.php
+
       - name: Заявки Jupiter — свои свои, воркер не подменяет чужое
         run: php tests/jupiter_applications_test.php
 

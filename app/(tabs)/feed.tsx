@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Alert,
+  TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
 import {
   GestureDetector,
@@ -47,8 +47,8 @@ import {
   dbPermUnswipe,
   dbGetPermSwipes,
   jupiterEnqueue,
-  dbGetResumeFiles,
 } from '@/services/db';
+import { ensureResumeForApply } from '@/services/resumeGate';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1445,18 +1445,7 @@ function WorkerPermMode() {
     if (!currentUser || currentUser.isGuest) return false;
     setApplying(ev.id);
     try {
-      const selectedResume = (await dbGetResumeFiles()).some(file => file.selected && !!file.storagePath);
-      if (!selectedResume) {
-        const prompt = 'Для отклика на внешнюю вакансию сначала загрузите PDF-резюме в профиль. Перейти к загрузке?';
-        const openFiles = Platform.OS === 'web'
-          ? typeof window !== 'undefined' && window.confirm(prompt)
-          : await new Promise<boolean>(resolve => Alert.alert('Нужно резюме', prompt, [
-              { text: 'Позже', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Загрузить', onPress: () => resolve(true) },
-            ], { cancelable: true, onDismiss: () => resolve(false) }));
-        if (openFiles) router.push({ pathname: '/(tabs)/profile', params: { tab: 'files' } });
-        return false;
-      }
+      if (!await ensureResumeForApply()) return false;
       if (!await requestJupiterLive(currentUser.id)) return false;
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
       showToast(application.state === 'queued'
@@ -1499,9 +1488,9 @@ function WorkerPermMode() {
       // создании отклика («Новая заявка»). Этот вызов слал ВТОРОЕ уведомление
       // о том же событии — с другим заголовком, поэтому глушитель повторов в
       // notify_user его и не гасил.
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[applyTo]', e);
-      showToast('Не удалось отправить отклик', 'error');
+      showToast(e?.message || 'Не удалось отправить отклик', 'error');
     } finally {
       setApplying(null);
     }
@@ -1607,12 +1596,30 @@ function WorkerPermMode() {
             swDeck.snapBack();
           }
         }).finally(() => { swDecisionPending.current = false; });
-      } else {
+      } else if (currentUser.isGuest) {
+        // Гостя applyTo сам отправит на регистрацию — резюме у него ещё нет
+        // и быть не может, проверять раньше стены регистрации незачем.
         resetCardScroll();
         setSwSkipped(s => new Set(s).add(c.v.id));
         setSwHistory(h => [...h, c.v.id]);
         applyTo(c.v);
         swDecisionPending.current = false;
+      } else {
+        void ensureResumeForApply().then(hasResume => {
+          if (hasResume) {
+            resetCardScroll();
+            setSwSkipped(s => new Set(s).add(c.v.id));
+            setSwHistory(h => [...h, c.v.id]);
+            applyTo(c.v);
+          } else {
+            energy.refundOne();
+            swDeck.snapBack();
+          }
+        }).catch(e => {
+          console.warn('[swWant]', e);
+          energy.refundOne();
+          swDeck.snapBack();
+        }).finally(() => { swDecisionPending.current = false; });
       }
     });
   };

@@ -6747,6 +6747,16 @@ try {
             if ($vacEmployer === '' || (string)$eid !== $vacEmployer) {
                 jt_respond(['error' => 'Vacancy owner mismatch'], 403); exit;
             }
+            // Решение владельца 25.09: без резюме откликов нет — ни на карьерные
+            // вакансии (см. jupiterEnqueue), ни на свои. Старые сборки без
+            // диалога о резюме остановит только сервер, клиентской проверки
+            // они не знают.
+            $selectedResume = sb_single('jm_resume_files', [
+                'user_id' => 'eq.' . $wid, 'selected' => 'eq.true',
+            ], 'id,storage_path');
+            if (empty($selectedResume['storage_path'])) {
+                jt_respond(['error' => 'Сначала загрузите и выберите резюме PDF'], 409); exit;
+            }
             // Ни запись, ни чат, ни уведомление ниже больше не используют
             // клиентский employerId как источник истины.
             $eid = $vacEmployer;

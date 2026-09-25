@@ -265,9 +265,8 @@ async function walkRegisterWorker(page, snap) {
   await snap('register-worker-5-chosen');
   await clickText(page, 'Продолжить');
 
-  await snap('register-worker-6');          // специализация
-  await clickText(page, 'Кладовщик');
-  await snap('register-worker-6-selected');
+  await snap('register-worker-6');          // резюме
+  await clickText(page, 'Пропустить — выберу разделы сам');
 }
 
 /** Регистрация работодателя: 4 шага */

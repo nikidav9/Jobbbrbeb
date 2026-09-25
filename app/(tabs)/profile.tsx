@@ -32,10 +32,8 @@ import GuestGate from '@/components/GuestGate';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
-import { WorkTypeSelector } from '@/components/feature/WorkTypeSelector';
-import { PersonalDetails, ResumeProfile, User, WorkType } from '@/constants/types';
-import { inferWorkTypes } from '@/lib/resumeParser';
-import { extractResumePdf } from '@/services/resumeImport';
+import { PersonalDetails, ResumeProfile, User } from '@/constants/types';
+import { extractResumePdf, mergeResumeIntoUser } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
@@ -47,7 +45,7 @@ import { rs, rf } from '@/constants/scale';
 const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
 
-type EditSection = 'personal' | 'metro' | 'worktypes' | 'company' | 'bio' | null;
+type EditSection = 'personal' | 'metro' | 'company' | 'bio' | null;
 type ProfileTab = 'resume' | 'personal' | 'files' | 'reviews';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -525,41 +523,6 @@ function PersonalTab({
   );
 }
 
-function mergeResumeIntoUser(
-  user: User,
-  resume: ResumeProfile,
-  identity?: {
-    firstName?: string;
-    lastName?: string;
-    middleName?: string;
-    age?: number;
-  },
-): User {
-  const importedAvailability = [resume.employmentType, resume.workFormat].filter(Boolean).join(' · ');
-  const importedRelocation = resume.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
-  const inferredWorkTypes = inferWorkTypes(resume);
-
-  return {
-    ...user,
-    resume,
-    firstName: identity?.firstName ?? user.firstName,
-    lastName: identity?.lastName ?? user.lastName,
-    age: identity?.age ?? user.age,
-    bio: resume.summary?.trim() || user.bio,
-    workTypes: inferredWorkTypes.length > 0 ? inferredWorkTypes : user.workTypes,
-    personalDetails: {
-      ...(user.personalDetails ?? {}),
-      ...(identity?.middleName ? { middleName: identity.middleName } : {}),
-      ...(resume.email ? { contactEmail: resume.email } : {}),
-      ...(resume.citizenship ? { citizenship: resume.citizenship } : {}),
-      ...(resume.workPermit ? { workAuthorization: resume.workPermit } : {}),
-      ...(resume.city ? { location: resume.city } : {}),
-      ...(importedAvailability ? { workAvailability: importedAvailability } : {}),
-      ...(importedRelocation ? { relocation: importedRelocation } : {}),
-    },
-  };
-}
-
 function ResumeVaultTab({
   items,
   loading,
@@ -825,7 +788,6 @@ export default function ProfileScreen() {
   const [editMetroLineId, setEditMetroLineId] = useState('');
   const [editMetroLineName, setEditMetroLineName] = useState('');
   const [editMetroStation, setEditMetroStation] = useState('');
-  const [editWorkTypes, setEditWorkTypes] = useState<WorkType[]>([]);
   const [editCompany, setEditCompany] = useState<CompanyOption | ''>('');
   const [editBio, setEditBio] = useState('');
   const [editAge, setEditAge] = useState('');
@@ -868,7 +830,6 @@ export default function ProfileScreen() {
     setEditMetroLineId(currentUser.metroLineId ?? '');
     setEditMetroStation(currentUser.metroStation ?? '');
     setEditMetroLineName(line?.name ?? '');
-    setEditWorkTypes((currentUser.workTypes ?? []) as WorkType[]);
     const savedCompany = currentUser.company ?? '';
     setEditCompany(COMPANY_OPTIONS.includes(savedCompany as CompanyOption) ? savedCompany as CompanyOption : '');
     setEditBio(currentUser.bio ?? '');
@@ -902,7 +863,6 @@ export default function ProfileScreen() {
         updated.age = editAge.trim() === '' ? undefined : Number(editAge);
       }
       if (editSection === 'metro') { updated.metroLineId = editMetroLineId; updated.metroStation = editMetroStation; }
-      if (editSection === 'worktypes') updated.workTypes = editWorkTypes;
       if (editSection === 'company') { updated.company = editCompany; updated.bio = editBio; }
       if (editSection === 'bio') updated.bio = editBio;
       await updateUser(updated);
@@ -1573,9 +1533,6 @@ export default function ProfileScreen() {
                   selectedStation={editMetroStation}
                 />
               </View>
-            )}
-            {editSection === 'worktypes' && (
-              <WorkTypeSelector selected={editWorkTypes} onToggle={t => setEditWorkTypes([t])} />
             )}
             {editSection === 'company' && (
               <View style={{ gap: 12 }}>

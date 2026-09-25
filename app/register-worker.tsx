@@ -5,32 +5,32 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
 import { Colors, Radius } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { PhoneInput } from '@/components/feature/PhoneInput';
 import { MetroPicker } from '@/components/feature/MetroPicker';
-import { WorkTypeSelector } from '@/components/feature/WorkTypeSelector';
 import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouStep';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { useApp } from '@/hooks/useApp';
 import { uid, nowISO, isPhoneComplete, extractPhoneDigits } from '@/services/storage';
-import { dbCheckPhoneExists, dbWarmup } from '@/services/db';
-import { WorkType } from '@/constants/types';
+import { dbCheckPhoneExists, dbWarmup, dbSaveResumeFile } from '@/services/db';
+import { extractResumePdf, mergeResumeIntoUser } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { PasswordRules } from '@/components/ui/PasswordRules';
 import { firstUnmetRule } from '@/constants/passwordRules';
 
 import { rs, rf } from '@/constants/scale';
 
-// Steps: 1-Phone, 2-Password, 3-Name, 4-Legal, 5-Metro, 6-WorkType
+// Steps: 1-Phone, 2-Password, 3-Name, 4-Legal, 5-Metro, 6-Резюме
 const TOTAL = 7;
 const SUPPORT_EMAIL = 'support@jobtoo.ru';
 
 export default function RegisterWorker() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
-  const { registerUser, showToast } = useApp();
+  const { registerUser, updateUser, showToast } = useApp();
 
   const [step, setStep] = useState(1);
   const [phone, setPhone] = useState('+7 ');
@@ -41,7 +41,8 @@ export default function RegisterWorker() {
   const [metroLineId, setMetroLineId] = useState('');
   const [metroLineName, setMetroLineName] = useState('');
   const [metroStation, setMetroStation] = useState('');
-  const [workTypes, setWorkTypes] = useState<WorkType[]>([]);
+  const [resumeFile, setResumeFile] = useState<Awaited<ReturnType<typeof extractResumePdf>> & { fileName: string } | null>(null);
+  const [resumeParsing, setResumeParsing] = useState(false);
   const [age, setAge] = useState('');
   const [bio, setBio] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -55,12 +56,29 @@ export default function RegisterWorker() {
   // Warm up the Supabase connection so the first phone-check doesn't hang
   useEffect(() => { dbWarmup(); }, []);
 
-  const toggleWork = (t: WorkType) => {
-    setWorkTypes([t]);
-  };
-
   const back = () => { if (step === 1) router.back(); else setStep(s => s - 1); };
   const next = () => setStep(s => s + 1);
+
+  // Разбор PDF идёт на устройстве (services/resumeImport.ts), файл в сейф
+  // ложится только после регистрации — до неё нет сессии, которой его подписать.
+  const pickResume = async () => {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled || !picked.assets[0]) return;
+      setResumeParsing(true);
+      const asset = picked.assets[0];
+      const parsed = await extractResumePdf(asset);
+      setResumeFile({ ...parsed, fileName: asset.name || parsed.resume.sourceFileName || 'resume.pdf' });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Не удалось прочитать резюме', 'error');
+    } finally {
+      setResumeParsing(false);
+    }
+  };
 
   // Step 1 → 2: check phone uniqueness
   const continueFromPhone = async () => {
@@ -125,13 +143,25 @@ export default function RegisterWorker() {
         firstName,
         metroLineId,
         metroStation,
-        workTypes,
+        workTypes: [],
         age: Number(age),
         bio: bio.trim(),
         avatarUrl,
         createdAt: nowISO(),
       };
       await registerUser(user);
+      // Сейф резюме требует сессии — её выдаёт registerUser чуть выше.
+      // Сбой сохранения не откатывает уже созданный аккаунт: резюме можно
+      // загрузить и позже в профиле.
+      if (resumeFile) {
+        try {
+          const saved = await dbSaveResumeFile(resumeFile.fileName, resumeFile.bytes, resumeFile.resume);
+          await updateUser(mergeResumeIntoUser(user, saved.resume, resumeFile.identity));
+        } catch (e) {
+          console.warn('[RegisterWorker] resume save failed', e);
+          showToast('Резюме не сохранилось — загрузите его в профиле', 'error');
+        }
+      }
       showToast('Добро пожаловать! 👋', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
@@ -326,15 +356,37 @@ export default function RegisterWorker() {
             </View>
           )}
 
-          {/* Step 6: Work type */}
+          {/* Step 6: Резюме */}
           {step === 6 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Какую работу рассматриваешь?</Text>
-              <Text style={styles.subtitle}>Выбери специализацию</Text>
-              <WorkTypeSelector selected={workTypes} onToggle={toggleWork} />
+              <Text style={styles.title}>Загрузи резюме</Text>
+              <Text style={styles.subtitle}>По резюме подберём вакансии. Без резюме откликаться нельзя — его можно загрузить и позже в профиле.</Text>
+              {resumeParsing ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : resumeFile ? (
+                <View style={styles.metroSelected}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.metroStName}>{resumeFile.fileName}</Text>
+                    {resumeFile.resume.experience[0]?.position ? (
+                      <Text style={styles.metroLineName}>{resumeFile.resume.experience[0].position}</Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity onPress={pickResume}>
+                    <Text style={styles.changeLink}>Заменить</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.metroField} onPress={pickResume} activeOpacity={0.8}>
+                  <Text style={styles.metroFieldText}>📄 Выбрать PDF</Text>
+                  <Text style={styles.arrow}>›</Text>
+                </TouchableOpacity>
+              )}
               <View style={{ marginTop: 28 }}>
-                <PrimaryButton label="Продолжить →" onPress={next} disabled={workTypes.length === 0} />
+                <PrimaryButton label="Продолжить →" onPress={next} />
               </View>
+              <TouchableOpacity style={styles.loginHint} onPress={() => { setResumeFile(null); next(); }}>
+                <Text style={styles.loginHintTxt}>Пропустить — выберу разделы сам</Text>
+              </TouchableOpacity>
             </View>
           )}
 
