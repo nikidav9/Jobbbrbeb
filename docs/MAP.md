@@ -337,9 +337,9 @@
 Два файла, и оба — источник правды, а не справка:
 
 - `scripts/career-sites.tsv` — master-list целей: 163 компании / 170 разделов.
-- `scripts/career-endpoints.json` — 79 проверенных адресов, найденных
+- `scripts/career-endpoints.json` — 83 проверенных адреса, найденных
   разведкой, с картами полей и режимом разбора (`json`, `html_links`,
-  `embedded`). Из них 62 рабочих: остальные 17 лежат в
+  `embedded`). Из них 66 рабочих: остальные 17 лежат в
   `scripts/career-runtime-quarantine.json` с причиной и датой.
 
 Заливает их в `connector_config` источника `career_owner` сценарий
