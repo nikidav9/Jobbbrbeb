@@ -58,20 +58,14 @@ function vt_html_to_text(string $html): string
         return trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
     };
 
-    // 1. Короткий абзац из одного лишь <b>/<strong> — это подзаголовок раздела,
-    // а не акцент внутри текста: так METRO и Сбер размечают «Кого мы ищем:».
+    // 1. Голый <b>/<strong>, за которым сразу идёт <br> или список, — это
+    // заголовок раздела без обёртки в <p>/<div>: так Магнит размечает «Чем вы
+    // будете заниматься» перед <ul>. Признак заголовка тут не текст, а место —
+    // перед списком, — поэтому условие на длину и двоеточие не нужно.
+    // `\b` после имени тега обязателен: без него «<b>» ловит и «<br>» —
+    // «b» совпадает, а «[^>]*» съедает «r» как будто это атрибуты.
     $html = preg_replace_callback(
-        '~<(p|div)[^>]*>\s*<(?:strong|b)[^>]*>(.*?)</(?:strong|b)>\s*</\1>~is',
-        static function (array $m) use ($decodeInline): string {
-            $text = rtrim($decodeInline($m[2]), ": \t");
-            return ($text === '' || mb_strlen($text) > 80) ? $m[0] : "\x01H\x01{$text}\x01/H\x01";
-        },
-        $html
-    ) ?? $html;
-
-    // 2. Настоящие заголовки.
-    $html = preg_replace_callback(
-        '~<h[1-6][^>]*>(.*?)</h[1-6]>~is',
+        '~<(?:strong|b)\b[^>]*>(.*?)</(?:strong|b)>\s*(?=<br\b|<u[lo]\b)~is',
         static function (array $m) use ($decodeInline): string {
             $text = rtrim($decodeInline($m[1]), ": \t");
             return $text === '' ? '' : "\x01H\x01{$text}\x01/H\x01";
@@ -79,10 +73,41 @@ function vt_html_to_text(string $html): string
         $html
     ) ?? $html;
 
-    // 3. Пункты списка. Без закрывающей метки — следующий </li> или заголовок
+    // 2. Короткий абзац из одного лишь <b>/<strong> — тоже подзаголовок
+    // раздела, но не любой: «Такси … за счёт компании;» из списка условий
+    // METRO жирный, однако это пункт, а не заголовок. Заголовком считаем
+    // только то, что явно им выглядит: кончается двоеточием (любой длины) —
+    // или короткое (≤40 символов) и не обрывается на «;», «,», «.», как
+    // обычная фраза, а не рубленый подзаголовок.
+    $html = preg_replace_callback(
+        '~<(p|div)\b[^>]*>\s*<(?:strong|b)\b[^>]*>(.*?)</(?:strong|b)>\s*</\1>~is',
+        static function (array $m) use ($decodeInline): string {
+            $raw = $decodeInline($m[2]);
+            $isHeading = $raw !== '' && (
+                str_ends_with($raw, ':')
+                || (mb_strlen($raw) <= 40 && !preg_match('/[;,.]$/u', $raw))
+            );
+            if (!$isHeading) return $m[0];
+            $text = rtrim($raw, ": \t");
+            return "\x01H\x01{$text}\x01/H\x01";
+        },
+        $html
+    ) ?? $html;
+
+    // 3. Настоящие заголовки.
+    $html = preg_replace_callback(
+        '~<h[1-6]\b[^>]*>(.*?)</h[1-6]>~is',
+        static function (array $m) use ($decodeInline): string {
+            $text = rtrim($decodeInline($m[1]), ": \t");
+            return $text === '' ? '' : "\x01H\x01{$text}\x01/H\x01";
+        },
+        $html
+    ) ?? $html;
+
+    // 4. Пункты списка. Без закрывающей метки — следующий </li> или заголовок
     // сам поставит перенос, лишняя пустая строка между пунктами не нужна.
     $html = preg_replace_callback(
-        '~<li[^>]*>(.*?)</li>~is',
+        '~<li\b[^>]*>(.*?)</li>~is',
         static function (array $m) use ($decodeInline): string {
             $text = $decodeInline($m[1]);
             return $text === '' ? '' : "\x01B\x01{$text}";
@@ -90,16 +115,19 @@ function vt_html_to_text(string $html): string
         $html
     ) ?? $html;
 
-    // 4. Остальные переносы: <br> — одиночный, <p>/<div> — граница абзаца.
-    $html = preg_replace('~<br\s*/?>~i', "\x01L\x01", $html) ?? $html;
-    $html = preg_replace('~</?(?:p|div)[^>]*>~i', "\x01P\x01", $html) ?? $html;
+    // 5. Остальные переносы: <br> — одиночный, <p>/<div> — граница абзаца.
+    // Ровно эта метка на месте каждого /p и /div гарантирует перенос строки
+    // между соседними блоками — даже там, где после </li> сразу идёт голый
+    // текст без какого-либо тега.
+    $html = preg_replace('~<br\b\s*/?>~i', "\x01L\x01", $html) ?? $html;
+    $html = preg_replace('~</?(?:p|div)\b[^>]*>~i', "\x01P\x01", $html) ?? $html;
 
-    // 5. Остальные теги и сущности структуры не несут — долой.
+    // 6. Остальные теги и сущности структуры не несут — долой.
     $text = strip_tags($html);
     $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $text = str_replace("\xC2\xA0", ' ', $text);
 
-    // 6. Любой «сырой» пробел (включая переносы вёрстки исходника) — один
+    // 7. Любой «сырой» пробел (включая переносы вёрстки исходника) — один
     // пробел: переносы, которые нужны нам, защищены метками выше.
     $text = preg_replace('/[ \t\r\n]+/', ' ', $text) ?? $text;
 
@@ -112,8 +140,55 @@ function vt_html_to_text(string $html): string
     $text = preg_replace('/[ \t]+\n/', "\n", $text) ?? $text;
     $text = preg_replace('/\n[ \t]+/', "\n", $text) ?? $text;
     $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
+    $text = trim($text);
 
-    return trim($text);
+    // 8. Подряд идущие абзацы-пункты «…;» — это список без <ul>, как у METRO
+    // («Работа на кассе и прикассовой зоне;» и т.п.). Последний пункт может
+    // не иметь «;» вовсе.
+    return vt_group_semicolon_paragraphs($text);
+}
+
+/**
+ * Абзацы вида «…;» подряд — на деле список, просто без <ul>/<li>: некоторые
+ * карьерные сайты (METRO) кладут каждый пункт своим <p>. Берём блоки, в
+ * которых каждый, кроме последнего, кончается «;», последний может кончаться
+ * чем угодно коротким, — и сшиваем их в один список без пустых строк.
+ */
+function vt_group_semicolon_paragraphs(string $text): string
+{
+    $blocks = $text === '' ? [] : explode("\n\n", $text);
+    $isPlainShort = static function (string $b): bool {
+        return !str_contains($b, "\n") && mb_strlen($b) <= 200
+            && !str_starts_with($b, '## ') && !str_starts_with($b, '• ');
+    };
+
+    $out = [];
+    $n = count($blocks);
+    $i = 0;
+    while ($i < $n) {
+        $j = $i;
+        while ($j < $n && $isPlainShort($blocks[$j]) && str_ends_with(rtrim($blocks[$j]), ';')) {
+            $j++;
+        }
+        $chainLen = $j - $i;
+        $hasCloser = $j < $n && $isPlainShort($blocks[$j]);
+        $total = $chainLen + ($hasCloser ? 1 : 0);
+
+        if ($total >= 2) {
+            $end = $hasCloser ? $j : $j - 1;
+            $items = [];
+            for ($k = $i; $k <= $end; $k++) {
+                $items[] = '• ' . trim(rtrim(rtrim($blocks[$k]), ';'));
+            }
+            $out[] = implode("\n", $items);
+            $i = $end + 1;
+            continue;
+        }
+
+        $out[] = $blocks[$i];
+        $i++;
+    }
+    return implode("\n\n", $out);
 }
 
 /**
@@ -123,6 +198,7 @@ function vt_html_to_text(string $html): string
 function vt_markdown_normalize(string $md): string
 {
     $md = str_replace("\r\n", "\n", $md);
+    $md = str_replace("\xC2\xA0", ' ', $md); // неразрывный пробел — источники кладут его и в markdown
 
     // «### **Текст:**» → «## Текст» — уровень решётки и жирность не важны,
     // важно, что строка подана как заголовок раздела.
@@ -161,6 +237,27 @@ function vt_section(string $heading, string $text): string
     return str_starts_with(ltrim($text), '## ') ? $text : "## {$heading}\n\n{$text}";
 }
 
+/** Тело раздела без собственной строки-заголовка — для сравнения на повтор. */
+function vt_section_body(string $text): string
+{
+    return preg_replace('/^## [^\n]*\n\n?/u', '', $text) ?? $text;
+}
+
+/**
+ * Раздел, если он не повторяет то, что уже собрано. Источники размечают одно
+ * и то же описание в нескольких полях сразу (description и responsibilities
+ * дословно совпадают) — добавлять такой раздел значит показывать один и тот
+ * же текст дважды.
+ */
+function vt_add_section(array &$parts, string $heading, string $text): void
+{
+    $section = vt_section($heading, $text);
+    if ($section === '') return;
+    $body = trim(vt_section_body($section));
+    if ($body !== '' && str_contains(implode("\n\n", $parts), $body)) return;
+    $parts[] = $section;
+}
+
 /** a. Описание из JSON-LD JobPosting: основной текст плюс отдельные разделы. */
 function vt_extract_job_posting(string $html): string
 {
@@ -172,8 +269,7 @@ function vt_extract_job_posting(string $html): string
         foreach (VT_JOBPOSTING_SECTIONS as $field => $heading) {
             $value = (string)($posting[$field] ?? '');
             if (trim($value) === '') continue;
-            $section = vt_section($heading, vt_to_text($value));
-            if ($section !== '') $parts[] = $section;
+            vt_add_section($parts, $heading, vt_to_text($value));
         }
         return implode("\n\n", $parts);
     }
@@ -235,8 +331,7 @@ function vt_extract_embedded_state(string $html): string
     ] as [$names, $heading]) {
         $value = vt_first_field($vacancy, $names);
         if ($value === '') continue;
-        $section = vt_section($heading, vt_to_text($value));
-        if ($section !== '') $parts[] = $section;
+        vt_add_section($parts, $heading, vt_to_text($value));
     }
 
     $text = trim(implode("\n\n", array_filter($parts, static fn($p) => $p !== '')));
@@ -299,6 +394,37 @@ function vt_extract_plain_html(string $html): string
     return mb_strlen($text) >= 120 ? $text : '';
 }
 
+/**
+ * Убирает подряд идущие повторы одного и того же блока. Блок — заголовок и
+ * всё, что идёт до следующего заголовка (для текста до первого заголовка или
+ * вовсе без заголовков — до ближайшей пустой строки). Источники размечают
+ * вакансию криво и склеивают её описание с самим собой (Магнит — четыре раза
+ * подряд один и тот же блок «Чем вы будете заниматься» со списком).
+ */
+function vt_dedupe_blocks(string $text): string
+{
+    if ($text === '') return '';
+    $chunks = preg_split('/(?=^## )/mu', $text) ?: [$text];
+
+    $out = [];
+    $prev = null;
+    foreach ($chunks as $chunk) {
+        // Заголовочные блоки сравниваем целиком; то, что идёт до первого
+        // заголовка, дробим по пустым строкам — иначе одна общая «шапка»
+        // склеит с собой все повторы разом и ничего не уберёт.
+        $pieces = str_starts_with($chunk, '## ') ? [$chunk] : explode("\n\n", $chunk);
+        foreach ($pieces as $piece) {
+            $norm = trim($piece);
+            if ($norm === '') continue;
+            if ($norm === $prev) continue;
+            $out[] = $norm;
+            $prev = $norm;
+        }
+    }
+    $result = preg_replace('/\n{3,}/', "\n\n", implode("\n\n", $out)) ?? implode("\n\n", $out);
+    return trim($result);
+}
+
 /** Ограничить текст 12000 символами по границе строки, без обрыва слова. */
 function vt_cap(string $text, int $limit = 12000): string
 {
@@ -321,7 +447,7 @@ function vt_extract(string $html): string
         fn() => vt_extract_embedded_state($html),
         fn() => vt_extract_plain_html($html),
     ] as $attempt) {
-        $text = $attempt();
+        $text = vt_dedupe_blocks($attempt());
         if (mb_strlen($text) >= 120) return vt_cap($text);
     }
     return '';
