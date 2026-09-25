@@ -17,6 +17,14 @@ function check(string $name, bool $ok): void
 
 // ── Троттлер: не чаще раза в секунду на хост ────────────────────────────────
 
+$mixed = ds_interleave_by_host([
+    ['id' => 1, 'url' => 'https://rabota.sber.ru/a'], ['id' => 2, 'url' => 'https://rabota.sber.ru/b'],
+    ['id' => 3, 'url' => 'https://rabota.sber.ru/c'], ['id' => 4, 'url' => 'https://magnit.ru/x'],
+    ['id' => 5, 'url' => 'https://magnit.ru/y'],
+]);
+check('пачка чередует сайты, ничего не теряя',
+    array_column($mixed, 'id') === [1, 4, 2, 5, 3]);
+check('пустая пачка остаётся пустой', ds_interleave_by_host([]) === []);
 check('первый заход на хост — ждать не нужно',
     ds_throttle_wait([], 'a.ru', 1000.0) === 0.0);
 check('заход сразу после предыдущего — ждать почти секунду',

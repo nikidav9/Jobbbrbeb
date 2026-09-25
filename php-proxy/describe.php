@@ -79,6 +79,30 @@ function ds_throttle_wait(array $lastAt, string $host, float $now, float $minGap
     return $wait > 0 ? $wait : 0.0;
 }
 
+/**
+ * Переложить пачку так, чтобы сайты чередовались: Сбер, Магнит, METRO, Сбер…
+ * Очередь идёт «свежие сначала», а свежие приходят блоками одной компании, и
+ * пауза в секунду между заходами на один хост простаивала бы впустую. При
+ * чередовании, пока ждём Сбер, успеваем сходить к другим.
+ */
+function ds_interleave_by_host(array $rows): array
+{
+    $byHost = [];
+    foreach ($rows as $row) {
+        $host = strtolower((string)(parse_url((string)($row['url'] ?? ''), PHP_URL_HOST) ?: ''));
+        $byHost[$host][] = $row;
+    }
+    $out = [];
+    while ($byHost) {
+        foreach ($byHost as $host => &$list) {
+            $out[] = array_shift($list);
+            if (!$list) unset($byHost[$host]);
+        }
+        unset($list);
+    }
+    return $out;
+}
+
 /** Что писать в description_full по содержимому страницы (или его отсутствию). */
 function ds_describe_html(?string $html, int $minLen = DS_MIN_TEXT_LEN): ?string
 {
@@ -93,7 +117,7 @@ if (!defined('DESCRIBE_LIBRARY_ONLY')) {
 ds_check_admin();
 
 $deadline = microtime(true) + DS_BUDGET_SEC;
-$rows = sb_select('jm_ext_vacancies', ds_queue_filter(time()), 'id,url');
+$rows = ds_interleave_by_host(sb_select('jm_ext_vacancies', ds_queue_filter(time()), 'id,url'));
 
 $described = 0;
 $attempted = 0;
