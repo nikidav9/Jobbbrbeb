@@ -275,6 +275,7 @@ $selfArgFns = [
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
+    'jupiterApplicationEvents' => 0,
 ];
 if (isset($selfArgFns[$fn])) {
     $pos = $selfArgFns[$fn];
@@ -6431,6 +6432,17 @@ try {
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if (!$data) throw new RuntimeException('Не удалось сохранить заявку Jupiter');
+            break;
+        }
+
+        // История одного своего отклика для карточки (jm_jupiter_events пишет
+        // триггер). Отклик проверяется на владельца: чужой id даст пустоту.
+        case 'jupiterApplicationEvents': {
+            $data = sb_select('jm_jupiter_events', [
+                'user_id' => 'eq.' . (string)($args[0] ?? ''),
+                'application_id' => 'eq.' . (string)($args[1] ?? ''),
+                'limit' => '200',
+            ], 'kind,reason_code,detail,created_at', 'created_at.asc');
             break;
         }
 

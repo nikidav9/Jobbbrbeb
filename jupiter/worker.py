@@ -36,6 +36,31 @@ RESULT_TO_STATE = {
 }
 
 
+_FILLED_ACTIONS = ("fill", "select", "check")
+
+
+def fill_summary(trajectory: list[dict]) -> dict:
+    """Что Юпитер вписал в анкету — для истории отклика в приложении.
+
+    Только ключи смысла полей («first_name», «phone») и счётчики, без самих
+    значений: значения — данные человека, и в истории им делать нечего.
+    """
+    keys: list[str] = []
+    fields: set[str] = set()
+    for item in trajectory:
+        if item.get("action") not in _FILLED_ACTIONS:
+            continue
+        fields.add(str(item.get("field") or item.get("key") or len(fields)))
+        key = item.get("key")
+        if isinstance(key, str) and key and key not in keys:
+            keys.append(key)
+    return {
+        "fields": len(fields),
+        "keys": keys[:30],
+        "resume": any(item.get("action") == "upload" for item in trajectory),
+    }
+
+
 def apply_result(
     queue: TaskQueueProto, task: ApplicationTask, result: AgentResult,
     *, submission_attempted: bool = False,
@@ -65,6 +90,7 @@ def apply_result(
             ),
             None,
         ),
+        summary=fill_summary(result.trajectory),
     )
     return state
 

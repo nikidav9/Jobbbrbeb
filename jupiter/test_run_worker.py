@@ -470,5 +470,26 @@ class TestResumeCleanup(unittest.TestCase):
         os.unlink(path)
 
 
+class TestFillSummary(unittest.TestCase):
+    def test_counts_fields_keys_and_resume_without_values(self) -> None:
+        from worker import fill_summary
+        summary = fill_summary([
+            {"action": "open", "url": "https://e.ru"},
+            {"action": "fill", "field": "name", "key": "first_name", "value": "Иван"},
+            {"action": "fill", "field": "tel", "key": "phone", "value": "+7999"},
+            {"action": "select", "field": "city", "key": "city", "value": "Москва"},
+            {"action": "check", "field": "agree", "key": "personal_data_consent"},
+            {"action": "upload", "field": "cv", "source": "resume"},
+        ])
+        self.assertEqual(summary["fields"], 4)
+        self.assertEqual(summary["keys"], ["first_name", "phone", "city", "personal_data_consent"])
+        self.assertTrue(summary["resume"])
+        self.assertNotIn("Иван", str(summary))
+
+    def test_empty_trajectory(self) -> None:
+        from worker import fill_summary
+        self.assertEqual(fill_summary([]), {"fields": 0, "keys": [], "resume": False})
+
+
 if __name__ == "__main__":
     unittest.main()
