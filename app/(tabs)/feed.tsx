@@ -53,6 +53,7 @@ import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
+import { DescriptionBlocks } from '@/components/ui/DescriptionBlocks';
 import { ReplyBadge, hasReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -2020,7 +2021,7 @@ function WorkerPermMode() {
                       </View>
                     </View>
 
-                    <Text style={styles.jobTitle} numberOfLines={2}>{ev.title}</Text>
+                    <Text style={styles.jobTitle} numberOfLines={3}>{ev.title}</Text>
 
                     <View style={styles.chipsRow}>
                       {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
@@ -2066,7 +2067,7 @@ function WorkerPermMode() {
                           <Text style={pS.descTitle}>Описание вакансии</Text>
                         </View>
                       ) : null}
-                      {description ? <Text style={pS.desc}>{description}</Text> : null}
+                      {description ? <DescriptionBlocks text={description} /> : null}
                     </View>
                   </View>
                 </View>

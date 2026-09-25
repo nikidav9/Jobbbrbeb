@@ -68,6 +68,15 @@ check('совпадение станции метро даёт +0.5',
 check('вес раздела ограничен 3 при 10 лайках',
     ext_feed_taste(array_fill(0, 10, ['dir' => 1, 'company' => 'x', 'title' => 'x', 'section' => 'delivery']))['section']['delivery'] === 3);
 
+// ── Полное описание в ответе клиенту (миграция 117) ─────────────────────────
+check('полное описание занимает место короткого',
+    ext_feed_public_row(['description' => 'коротко', 'description_full' => 'длинно и со структурой'])['description']
+        === 'длинно и со структурой');
+check('пустое description_full не перекрывает короткое описание',
+    ext_feed_public_row(['description' => 'коротко', 'description_full' => ''])['description'] === 'коротко');
+check('description_full не долетает до клиента', !array_key_exists('description_full', ext_feed_public_row(['description_full' => 'x'])));
+check('described_at не долетает до клиента', !array_key_exists('described_at', ext_feed_public_row(['described_at' => 'x'])));
+
 check('старый вызов ext_feed_score без section/metro в $taste не падает',
     is_float(ext_feed_score(['company' => 'a', 'title' => 'b'], ['company' => [], 'tokens' => []], 0.0)));
 
