@@ -7,7 +7,13 @@ export default function Root({ children }: PropsWithChildren) {
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+        {/* Масштаб зафиксирован (решение владельца 25.09): ни сам браузер
+            (приближение при фокусе поля на iOS, «ужать под ширину» на Android),
+            ни человек пальцами экран не приближает. iOS Safari с 10-й версии
+            user-scalable=no игнорирует — поэтому ниже ещё CSS touch-action и
+            перехват жестов в скрипте. Карта метро живёт в своём iframe со своим
+            viewport, её приближение это не трогает. */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
 
         <title>JobToo</title>
         <meta name="description" content="Работа в Москве — свайпайте и откликайтесь" />
@@ -34,6 +40,14 @@ export default function Root({ children }: PropsWithChildren) {
             Убираем только подсветку фокуса; собственные рамки полей, заданные
             стилями, не трогаем. */}
         <style>{`
+          /* Только прокрутка: pinch-zoom и двойной тап для приближения
+             запрещены на всём дереве. text-size-adjust — чтобы iOS сам не
+             раздувал шрифт при повороте экрана. */
+          html, body {
+            touch-action: pan-x pan-y;
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+          }
           input, textarea, select, [contenteditable] {
             outline: none !important;
             -webkit-tap-highlight-color: transparent;
@@ -136,6 +150,22 @@ export default function Root({ children }: PropsWithChildren) {
         </div>
         {children}
         <script>{`
+          // Запрет масштаба для тех, кто игнорирует viewport и touch-action:
+          // жесты iOS Safari (gesture*), второй палец в touchmove и щипок на
+          // тачпаде (wheel с ctrlKey). Слушатели не пассивные — иначе
+          // preventDefault не сработает.
+          (function() {
+            var stop = function(e) { e.preventDefault(); };
+            ['gesturestart', 'gesturechange', 'gestureend'].forEach(function(t) {
+              document.addEventListener(t, stop, { passive: false });
+            });
+            document.addEventListener('touchmove', function(e) {
+              if (e.touches && e.touches.length > 1) e.preventDefault();
+            }, { passive: false });
+            window.addEventListener('wheel', function(e) {
+              if (e.ctrlKey) e.preventDefault();
+            }, { passive: false });
+          })();
           (function() {
             var splash = document.getElementById('splash');
             var pctEl = document.getElementById('splash-pct');
