@@ -615,31 +615,30 @@ function WorkerMatches() {
           </TouchableOpacity>
           <TouchableOpacity
             style={{ paddingVertical: rs(10), alignSelf: 'flex-start' }}
-            onPress={() => {
-              Alert.alert(
-                'Согласие для отклика в Сбер',
-                'Сбер просит согласие на обработку персональных данных. Если продолжить, JobToo передаст Сберу имя, фамилию, телефон, ваш адрес JobToo и выбранное PDF-резюме только для этой вакансии.',
-                [
-                  { text: 'Отмена', style: 'cancel' },
-                  {
-                    text: 'Согласен и отправить',
-                    onPress: () => { void (async () => {
-                      try {
-                        await jupiterGrantThirdPartyConsent(
-                          currentUserId,
-                          a.id,
-                          'https://rabota.sber.ru/terms',
-                        );
-                        showToast('Согласие сохранено. Юпитер отправляет отклик в Сбер', 'success');
-                        await loadJupiter();
-                      } catch (error: any) {
-                        showToast(error?.message || 'Не удалось запустить отклик в Сбер', 'error');
-                      }
-                    })(); },
-                  },
-                ],
-              );
-            }}
+            onPress={() => { void (async () => {
+              const message = 'Сбер просит согласие на обработку персональных данных. Если продолжить, JobToo передаст Сберу имя, фамилию, телефон, ваш адрес JobToo и выбранное PDF-резюме только для этой вакансии.';
+              // Alert.alert в веб-сборке (сайт и мини-приложение в Телеграме)
+              // ничего не показывает — кнопка выглядела мёртвой. На вебе —
+              // window.confirm, как в services/jupiterLive.ts.
+              const approved = Platform.OS === 'web'
+                ? typeof window !== 'undefined' && window.confirm(message)
+                : await new Promise<boolean>(resolve => Alert.alert('Согласие для отклика в Сбер', message, [
+                    { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
+                    { text: 'Согласен и отправить', onPress: () => resolve(true) },
+                  ], { cancelable: true, onDismiss: () => resolve(false) }));
+              if (!approved) return;
+              try {
+                await jupiterGrantThirdPartyConsent(
+                  currentUserId,
+                  a.id,
+                  'https://rabota.sber.ru/terms',
+                );
+                showToast('Согласие сохранено. Юпитер отправляет отклик в Сбер', 'success');
+                await loadJupiter();
+              } catch (error: any) {
+                showToast(error?.message || 'Не удалось запустить отклик в Сбер', 'error');
+              }
+            })(); }}
           >
             <Text style={{ color: Colors.primary, fontWeight: '700' }}>
               Согласиться и отправить в Сбер
