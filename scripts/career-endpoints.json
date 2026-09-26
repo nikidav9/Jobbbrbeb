@@ -988,5 +988,51 @@
     },
     "url": "https://www.amocrm.ru/jobs",
     "mode": "html_links"
+  },
+  {
+    "company_hint": "Альфа-Банк",
+    "url": "https://job.alfabank.ru/api/vacancies?city=0100",
+    "mode": "json",
+    "paging": {
+      "type": "offset",
+      "param": "skip",
+      "limit_param": "take",
+      "limit": 100,
+      "max_pages": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "name",
+      "closed": "isHidden",
+      "url_template": "https://job.alfabank.ru/vacancies{slug}",
+      "company_const": "Альфа-Банк",
+      "description": "descriptionText",
+      "description_sections": {
+        "Чем предстоит заниматься": "duties",
+        "Требования": "requirements",
+        "Условия": "conditions"
+      }
+    }
+  },
+  {
+    "company_hint": "Точка Банк",
+    "url": "https://hr.tochka.com/api/v2/hr/vacancies/",
+    "mode": "json",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20,
+      "max_pages": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "slug",
+      "title": "title",
+      "pay": "salaryFrom",
+      "url_template": "https://hr.tochka.com/vacancies/catalog/{slug}/",
+      "company_const": "Точка Банк"
+    }
   }
 ]

@@ -81,3 +81,35 @@ function ing_safe_https_url(string $url): bool
 {
     return ing_safe_https_resolve($url) !== null;
 }
+
+/**
+ * Сайты, которым сборщик разрешает сертификат Минцифры (решение владельца
+ * 26.09.2026). Только чтение открытых страниц вакансий этих трёх банков:
+ * ни вход пользователей, ни база, ни Юпитер (он шлёт персональные данные)
+ * этому центру не доверяют. Список суффиксов — точное совпадение домена
+ * или его поддомен, «evil-tbank.ru» не проходит.
+ */
+const JT_RU_CA_HOSTS = ['tbank.ru', 'alfabank.ru', 'tochka.com'];
+
+/** Нужен ли для этого адреса сертификат Минцифры. */
+function jt_needs_ru_ca(string $url): bool
+{
+    $host = strtolower((string)(parse_url($url, PHP_URL_HOST) ?: ''));
+    if ($host === '') return false;
+    foreach (JT_RU_CA_HOSTS as $suffix) {
+        if ($host === $suffix || str_ends_with($host, '.' . $suffix)) return true;
+    }
+    return false;
+}
+
+/**
+ * Для сайтов из JT_RU_CA_HOSTS доверяем ТОЛЬКО сертификату Минцифры (он
+ * заменяет системный список, а не дополняет), для остальных ничего не
+ * меняем. Проверка сертификата и имени хоста остаётся включённой.
+ */
+function jt_apply_ru_ca($ch, string $url): void
+{
+    if (!jt_needs_ru_ca($url)) return;
+    $pem = require __DIR__ . '/ru_trusted_ca.php';
+    curl_setopt($ch, CURLOPT_CAINFO_BLOB, $pem);
+}

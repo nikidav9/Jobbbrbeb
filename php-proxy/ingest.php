@@ -403,6 +403,7 @@ function ing_fetch_html(string $url, string $accept = 'text/html,application/xht
             return strlen($chunk);
         },
     ]);
+    jt_apply_ru_ca($ch, $url);
     $ok = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
