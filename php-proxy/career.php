@@ -116,6 +116,18 @@ foreach (is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [] as $
     $unitFromEndpoint = cf_unit_from_endpoint($e);
     if ($unitFromEndpoint !== null) $units[] = $unitFromEndpoint;
 }
+// Хосты адресов, которые ежечасный заход НЕ обходит (страницы со ссылками).
+// Если такой хост у работодателя общий с API-адресом, его вакансии этим
+// заходом не видны, и гасить их по «не увидели» нельзя: в режиме api такие
+// хосты из отчёта (hosts) убираются, ingest.php их не трогает.
+$nonApiHosts = [];
+foreach ($units as $u) {
+    if (in_array($u['kind'], ['json', 'embedded'], true)) continue;
+    foreach ([$u['url'], (string)($u['map']['url_template'] ?? '')] as $x) {
+        $h = strtolower((string)(parse_url($x, PHP_URL_HOST) ?? ''));
+        if ($h !== '') $nonApiHosts[$h] = true;
+    }
+}
 if (CF_ONLY_API) {
     $units = array_values(array_filter($units, fn($u) => in_array($u['kind'], ['json', 'embedded'], true)));
 }
@@ -145,6 +157,7 @@ foreach ([$unit['url'], (string)($unit['map']['url_template'] ?? '')] as $u) {
     if ($h !== '') $ownHosts[$h] = true;
 }
 $ownHosts = array_keys($ownHosts);
+if (CF_ONLY_API) $ownHosts = array_values(array_diff($ownHosts, array_keys($nonApiHosts)));
 $skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $total, $unit, $ownHosts): void {
     cf_emit([], cf_next_step($page, $sub, $total, false, true), $sourceId, $page, $sub,
         $skipped, ['url' => $unit['url'], 'reason' => $reason], $ownHosts);

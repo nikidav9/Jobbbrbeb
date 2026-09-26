@@ -18,6 +18,9 @@ import type { JupiterApplication } from '@/constants/types';
  * автоотклика остаются на своей прежней кнопке.
  */
 export function jupiterManualEligible(a: JupiterApplication): boolean {
+  // Работодатель закрыл вакансию — анкеты больше нет (jupiterVacancyClosed в
+  // jupiterTimeline; сюда попадают только неотправленные, поэтому хватает флага).
+  if (a.vacancyActive === false) return false;
   const isSber = /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
   const needsSberConsent = isSber
     && a.state === 'action_required'

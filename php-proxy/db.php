@@ -6844,11 +6844,22 @@ try {
                 fn($r) => (string)($r['vacancy_url'] ?? ''), $data
             ))));
             if ($urls) {
-                $titles = sb_select('jm_ext_vacancies', ['url' => sb_in_list($urls)], 'url,title');
+                $titles = sb_select('jm_ext_vacancies', ['url' => sb_in_list($urls)], 'url,title,active');
                 $titleByUrl = [];
-                foreach ($titles as $t) $titleByUrl[(string)($t['url'] ?? '')] = $t['title'] ?? null;
+                $activeByUrl = [];
+                foreach ($titles as $t) {
+                    $u = (string)($t['url'] ?? '');
+                    $titleByUrl[$u] = $t['title'] ?? null;
+                    $activeByUrl[$u] = isset($t['active']) ? (bool)$t['active'] : null;
+                }
+                // Закрыта ли вакансия у работодателя: сбор гасит пропавшие из
+                // списка сайта (active=false). Неизвестно (строки нет) — null,
+                // закрытой не считаем. Решение владельца 26.09: у закрытой не
+                // предлагать «Открыть анкету» — там «Мы уже закрыли вакансию».
                 foreach ($data as &$row) {
-                    $row['vacancy_title'] = $titleByUrl[(string)($row['vacancy_url'] ?? '')] ?? null;
+                    $u = (string)($row['vacancy_url'] ?? '');
+                    $row['vacancy_title'] = $titleByUrl[$u] ?? null;
+                    $row['vacancy_active'] = $activeByUrl[$u] ?? null;
                 }
                 unset($row);
             }
