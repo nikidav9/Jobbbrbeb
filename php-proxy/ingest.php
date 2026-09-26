@@ -266,7 +266,14 @@ function ing_normalize(array $it, string $sourceId): ?array
     // не смогли отнести ни к одному своему виду работ, незачем. Счётчик уже
     // есть — вызывающий считает каждый null как skipped, и тот виден в статусе
     // источника и в last_skipped, который читает дашборд.
-    $workType = ing_work_type($it['work_type'] ?? null, $title);
+    //
+    // У постоянной вакансии вид работ по названию не угадываем: «Старший
+    // разработчик» — не «Старший смены», а угадывали именно так, по «старш»,
+    // и чип «Старший смены» висел на карточках VK и Lesta. Явный код из
+    // источника (наш справочник) по-прежнему принимается.
+    $workType = $kind === 'permanent'
+        ? ing_work_type($it['work_type'] ?? null, '')
+        : ing_work_type($it['work_type'] ?? null, $title);
     if ($workType === null && $kind !== 'permanent') return null;
     $loc = is_array($it['location'] ?? null) ? $it['location'] : [];
 
