@@ -300,6 +300,13 @@ _EQUIVALENT_VALUES = (
 )
 
 
+def _is_yes(value: Any) -> bool:
+    """Явное «да» из профиля: True или «да/yes/true/1» строкой."""
+    if isinstance(value, bool):
+        return value
+    return normalize(str(value)) in {"да", "yes", "true", "1"}
+
+
 def _value_variants(value: str) -> list[str]:
     wanted = normalize(value)
     for group in _EQUIVALENT_VALUES:
@@ -425,6 +432,9 @@ def choose_key(
         "last_name": "last_name",
         "patronymic": "patronymic",
         "middlename": "patronymic",
+        # Поле ФИО без подписи: только внутреннее имя говорит, что это всё имя.
+        "fio": "full_name",
+        "fullname": "full_name",
         "email": "email",
         "phone": "phone",
         "mobile": "phone",
@@ -446,8 +456,10 @@ def choose_key(
     }
     for raw in (control.name, control.id):
         compact = (raw or "").strip().lower()
-        if compact in exact and exact[compact] in profile.values:
-            return exact[compact]
+        # «Форма.Поле» (ResumeForm.Fio у Контура): смысл — в последней части.
+        for candidate in (compact, compact.rsplit(".", 1)[-1]):
+            if candidate in exact and exact[candidate] in profile.values:
+                return exact[candidate]
         normalized = normalize(raw)
         if normalized in exact and exact[normalized] in profile.values:
             return exact[normalized]
@@ -644,6 +656,36 @@ class JupiterAgent:
             return 60
         return 0
 
+    def drop_preselected_optional_consent(
+        self,
+        control: ControlState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+    ) -> None:
+        """Снять галочку необязательного согласия, которую отметил сам сайт.
+
+        Реклама, подписка на вакансии, кадровый резерв: человек их не давал,
+        а отправка формы с отметкой сайта подписала бы его без спроса (у
+        Контура рубрика вакансии в подписке отмечена заранее и уходит вместе
+        с анкетой). Обязательные согласия и смешанные галочки не трогаем.
+        """
+        descriptor = self.descriptor(control)
+        kinds = consent_kinds(descriptor)
+        if not kinds or any(kind.required_by_law for kind in kinds):
+            return
+        decision = decide_consent(descriptor, profile.values)
+        if decision.action != "skip":
+            return
+        control.checked = False
+        trajectory.append({
+            "action": "consent_unchecked",
+            "field": descriptor,
+            "key": "consent",
+            "consent_kinds": decision.kinds,
+            "consent_reason": "preselected by the site, not granted by the candidate",
+            "provenance": {"field_class": FieldClass.CONSENT, "source": "SITE_DEFAULT"},
+        })
+
     def fill_control(
         self,
         page: PageState,
@@ -690,6 +732,11 @@ class JupiterAgent:
                 return False
 
         if control.type == "file":
+            # Резюме — одно на анкету и в своё поле. У Контура шесть полей для
+            # файлов, и Юпитер вкладывал одно и то же резюме в каждое; а в
+            # анкете «Фото» над «Резюме» оно ушло бы в фото.
+            if control is not self._resume_target(page, control):
+                return False
             if profile.resume_path and Path(profile.resume_path).is_file():
                 control.file_path = profile.resume_path
                 trajectory.append({
@@ -764,7 +811,11 @@ class JupiterAgent:
             return True
 
         if control.type == "checkbox":
-            if bool(value):
+            # Галочка — это «да» на факт о человеке, а не ответ строкой. Любое
+            # непустое значение профиля (желаемая должность «Разработчик»)
+            # раньше отмечало всё, что на неё похоже: рубрики подписки,
+            # фильтры по направлениям. Отмечаем только явное «да».
+            if _is_yes(value):
                 control.checked = True
                 trajectory.append({
                     "action": "check",
@@ -897,6 +948,26 @@ class JupiterAgent:
             for haystack in haystacks
             for marker in CAPTCHA_MARKERS
         )
+
+    def _resume_target(self, page: PageState, control: ControlState) -> ControlState:
+        """Файловое поле формы, куда идёт резюме: подписанное как резюме, иначе
+        первое обязательное, иначе первое. Уже заполненное поле формы — цель,
+        чтобы резюме не уходило второй раз."""
+        peers = [
+            peer for peer in page.controls
+            if peer.type == "file" and peer.form_index == control.form_index
+        ]
+        for peer in peers:
+            if peer.file_path:
+                return peer
+        for peer in peers:
+            descriptor = normalize(self.descriptor(peer))
+            if any(marker in descriptor for marker in ("resume", "cv", "brief", "резюм")):
+                return peer
+        for peer in peers:
+            if peer.required:
+                return peer
+        return peers[0] if peers else control
 
     def _resume_alternative_satisfied(self, page: PageState, control: ControlState) -> bool:
         descriptor = normalize(self.descriptor(control))
@@ -1647,6 +1718,9 @@ class JupiterAgent:
                     if control.form_index != target_form_index:
                         continue
                     if control.disabled or self.is_submit(control):
+                        continue
+                    if control.type == "checkbox" and control.checked:
+                        self.drop_preselected_optional_consent(control, profile, trajectory)
                         continue
                     if not self.control_is_empty(control):
                         continue

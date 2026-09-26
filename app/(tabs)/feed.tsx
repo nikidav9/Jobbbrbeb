@@ -1167,21 +1167,21 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
           onPress={onUndo}
           activeOpacity={0.75}
           accessibilityRole="button"
-          accessibilityLabel="Вернуть последнюю вакансию"
+          accessibilityLabel="Вернуть пропущенную вакансию"
         >
           <Ionicons name="arrow-undo" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
       ) : null}
 
-      {/* Сколько свайпов осталось на сегодня. Не «сколько вакансий»: число
+      {/* Сколько откликов осталось на сегодня. Не «сколько вакансий»: число
           вакансий человеку ни о чём не говорит, а вот что запас кончается —
-          говорит, и заранее, а не в момент стены. */}
+          говорит, и заранее, а не в момент стены. Пропуск молнию не тратит. */}
       <TouchableOpacity
         style={[fh.count, energy <= 0 && fh.countEmpty]}
         onPress={onEnergyPress}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel={`Свайпов осталось на сегодня: ${energy}`}
+        accessibilityLabel={`Откликов осталось на сегодня: ${energy}`}
       >
         <Ionicons name="flash" size={16} color={energy > 0 ? Colors.primary : Colors.textMuted} />
         <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
@@ -1326,8 +1326,14 @@ function WorkerPermMode() {
 
   const permCompanyOptions = useMemo(() => {
     const counts = new Map<string, number>();
+    const applied = new Set(permApplications.filter(a => a.workerId === currentUser?.id).map(a => a.vacancyId));
+    // Свои — только те, что колода может показать: IT, не отклик и не свайп
+    // влево. Иначе в списке оставались работодатели с не-IT вакансиями
+    // (жалоба 26.09: «выбрал Лавку — пусто»), выбор давал пустую колоду.
     permVacancies.forEach(v => {
-      const name = v.status === 'open' ? v.company.trim() : '';
+      const shown = v.status === 'open' && sectionOfPerm(v.workType) === 'it'
+        && !applied.has(v.id) && !permSwiped.has(v.id);
+      const name = shown ? v.company.trim() : '';
       if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
     });
     // Карьерные компании — в тех же счётчиках: выбор в фильтре один список.
@@ -1338,7 +1344,7 @@ function WorkerPermMode() {
     return Array.from(counts, ([name, count]) => ({ name, count }))
       .filter(item => item.count > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [permVacancies, careerVacancies]);
+  }, [permVacancies, careerVacancies, permApplications, currentUser?.id, permSwiped]);
 
   // Вакансии для карты: метка — это адрес, станция остаётся для фильтра
   const permMapItems: MapListItem[] = useMemo(
@@ -1401,7 +1407,9 @@ function WorkerPermMode() {
   // Все hooks свайп-колоды объявлены до раннего возврата: порядок hooks
   // остаётся одинаковым и при выходе пользователя, и при загрузке сессии.
   const [swSkipped, setSwSkipped] = useState<Set<string>>(new Set());
-  const [swHistory, setSwHistory] = useState<string[]>([]);
+  // Последняя пропущенная карточка — «вернуть» достаёт только её, один шаг
+  // (решение владельца 26.09). После отклика возвращать нечего: он ушёл.
+  const [swLastSkipped, setSwLastSkipped] = useState<string | null>(null);
   const swWantRef = useRef<(vx?: number) => void>(() => {});
   const swSkipRef = useRef<(vx?: number) => void>(() => {});
   // Тот же хук, что у колоды смен: свайп должен ощущаться одинаково на обеих
@@ -1411,32 +1419,27 @@ function WorkerPermMode() {
     skip: vx => swSkipRef.current(vx),
   });
 
-  // «Назад»: вернуть последнюю пролистанную карточку наверх колоды. Отклик,
-  // если он уже ушёл, не отзываем — как в сменах кнопка просто возвращает вид.
-  // Свайпы влево — и по карьерным, и по своим вакансиям — сервер запоминает
-  // навсегда, поэтому «вернуть» снимает и запись. Вправо — это отклик: он уже
-  // либо в очереди Юпитера, либо ушёл работодателю, и не отзывается.
+  // «Назад»: вернуть последнюю ПРОПУЩЕННУЮ карточку наверх колоды — одну, не
+  // цепочку (решение владельца 26.09). Отклик не возвращается: он уже либо в
+  // очереди Юпитера, либо ушёл работодателю. Молнию возврат не отдаёт — пропуск
+  // её и не брал. Свайпы влево сервер запоминает навсегда, поэтому «вернуть»
+  // снимает и запись.
   const extLeftSwipes = useRef<Set<string>>(new Set());
   const permLeftSwipes = useRef<Set<string>>(new Set());
   const swUndo = useCallback(() => {
-    setSwHistory(h => {
-      if (!h.length) return h;
-      const last = h[h.length - 1];
-      if (extLeftSwipes.current.has(last) && currentUser?.id) {
-        extLeftSwipes.current.delete(last);
-        dbExtUnswipe(currentUser.id, last).catch(() => {});
-      } else if (permLeftSwipes.current.has(last) && currentUser?.id) {
-        permLeftSwipes.current.delete(last);
-        dbPermUnswipe(currentUser.id, last).catch(() => {});
-        setPermSwiped(s => { const n = new Set(s); n.delete(last); return n; });
-      }
-      setSwSkipped(s => { const n = new Set(s); n.delete(last); return n; });
-      // Свайп вернули — возвращаем и его стоимость. Иначе промах наказан
-      // дважды: и карточку верни, и энергию потерял.
-      energy.refundOne();
-      return h.slice(0, -1);
-    });
-  }, [energy, currentUser?.id]);
+    const last = swLastSkipped;
+    if (!last) return;
+    if (extLeftSwipes.current.has(last) && currentUser?.id) {
+      extLeftSwipes.current.delete(last);
+      dbExtUnswipe(currentUser.id, last).catch(() => {});
+    } else if (permLeftSwipes.current.has(last) && currentUser?.id) {
+      permLeftSwipes.current.delete(last);
+      dbPermUnswipe(currentUser.id, last).catch(() => {});
+      setPermSwiped(s => { const n = new Set(s); n.delete(last); return n; });
+    }
+    setSwSkipped(s => { const n = new Set(s); n.delete(last); return n; });
+    setSwLastSkipped(null);
+  }, [swLastSkipped, currentUser?.id]);
 
   // Карьерная лента приходит порциями: когда в колоде остаётся пять карт,
   // тихо берём следующую. Сервер уже не отдаёт свайпнутое, а на случай
@@ -1466,6 +1469,21 @@ function WorkerPermMode() {
   const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies, sections, levels, formats, sort: sortMode };
   const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0 || sections.length > 0
     || levels.length > 0 || formats.length > 0 || sortMode !== 'default';
+
+  const applyPermFilters = (f: PermFilters) => {
+    setSearchText(f.query);
+    setSearchIn(f.searchIn);
+    setPosted(f.posted);
+    setFilterStations(f.stations);
+    setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
+    setSchedules(f.schedules);
+    setFilterCompanies(f.companies);
+    setLevels(f.levels);
+    setFormats(f.formats);
+    setSortMode(f.sort);
+    setSections(f.sections);
+    if (currentUser?.id) saveFeedSections(currentUser.id, f.sections);
+  };
 
   const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
     if (!f.query) return true;
@@ -1668,8 +1686,8 @@ function WorkerPermMode() {
 
   // ── Свайп-колода ───────────────────────────────────────────────────────────
   // Верхняя открытая вакансия — карточка: вправо откликнуться, влево
-  // пропустить. Порядок пролистанных хранится в swHistory, чтобы кнопка
-  // возврата в шапке вернула последнюю.
+  // пропустить. Последняя пропущенная — в swLastSkipped, её и возвращает
+  // кнопка в шапке.
   const deckCards = feedCards.filter(c => !swSkipped.has(c.v.id));
   const swTop = deckCards[0] ?? null;
 
@@ -1700,7 +1718,7 @@ function WorkerPermMode() {
           if (accepted) {
             resetCardScroll();
             setSwSkipped(s => new Set(s).add(c.v.id));
-            setSwHistory(h => [...h, c.v.id]);
+            setSwLastSkipped(null);
             dbExtSwipe(currentUser.id, c.v.id, 1).catch(() => {});
           } else {
             energy.refundOne();
@@ -1712,7 +1730,7 @@ function WorkerPermMode() {
         // и быть не может, проверять раньше стены регистрации незачем.
         resetCardScroll();
         setSwSkipped(s => new Set(s).add(c.v.id));
-        setSwHistory(h => [...h, c.v.id]);
+        setSwLastSkipped(null);
         applyTo(c.v);
         swDecisionPending.current = false;
       } else {
@@ -1720,7 +1738,7 @@ function WorkerPermMode() {
           if (hasResume) {
             resetCardScroll();
             setSwSkipped(s => new Set(s).add(c.v.id));
-            setSwHistory(h => [...h, c.v.id]);
+            setSwLastSkipped(null);
             applyTo(c.v);
           } else {
             energy.refundOne();
@@ -1746,12 +1764,13 @@ function WorkerPermMode() {
       }
       guestSkipCount += 1;
     }
-    if (!energy.spendOne()) { setLimitOpen(true); swDeck.snapBack(); return; }
+    // Пропуск бесплатный: молния — цена отклика, а не просмотра (решение
+    // владельца 26.09). Листать ленту можно и с пустым запасом.
     swDecisionPending.current = true;
     swFly('left', vx, () => {
       resetCardScroll();
       setSwSkipped(s => new Set(s).add(c.v.id));
-      setSwHistory(h => [...h, c.v.id]);
+      setSwLastSkipped(c.v.id);
       // Карьерную вакансию, смахнутую влево, больше не показываем (решение
       // владельца 25.09): сервер запоминает свайп и опускает похожие. Свою —
       // тоже запоминаем, тем же способом, что и карьерные.
@@ -2238,7 +2257,7 @@ function WorkerPermMode() {
       <FeedSearchHeader
         value={searchText}
         onChange={setSearchText}
-        onUndo={swHistory.length ? swUndo : null}
+        onUndo={swLastSkipped ? swUndo : null}
         energy={energy.left}
         onEnergyPress={() => setLimitOpen(true)}
       />
@@ -2270,8 +2289,8 @@ function WorkerPermMode() {
         </View>
       ) : null}
 
-      {/* Запас свайпов кончился. Плашка появляется и по нажатию на счётчик, и
-          на каждой новой попытке свайпнуть — молча не пускать хуже, чем
+      {/* Запас откликов кончился. Плашка появляется и по нажатию на счётчик, и
+          на каждой новой попытке откликнуться — молча не пускать хуже, чем
           объяснить. Пока монетизации нет, выхода из неё, кроме «завтра», не
           предлагаем: обещать покупку, которой не существует, нельзя. */}
       {limitOpen ? (
@@ -2281,10 +2300,16 @@ function WorkerPermMode() {
             <View style={pS.limitIcon}>
               <Ionicons name="flash" size={26} color={Colors.primary} />
             </View>
-            <Text style={pS.limitTitle}>На сегодня всё</Text>
+            {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
+                ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
+            <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
             <Text style={pS.limitBody}>
-              Свайпы закончились. Завтра снова будет {DAILY_ENERGY} — запас не копится,
-              так что откладывать их на потом смысла нет.
+              {energy.left > 0
+                ? `Осталось ${energy.left} на сегодня. Каждый отклик тратит одну молнию, `
+                  + 'а пропуск вакансии — бесплатный. '
+                : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
+                  + 'сейчас — это молнии не тратит. '}
+              Завтра снова будет {DAILY_ENERGY} — запас не копится.
             </Text>
             <TouchableOpacity
               style={pS.limitBtn}
@@ -2306,20 +2331,7 @@ function WorkerPermMode() {
           bottomInset={tabBarHeight}
           companyOptions={permCompanyOptions}
           count={countPermLocal}
-          onApply={(f) => {
-            setSearchText(f.query);
-            setSearchIn(f.searchIn);
-            setPosted(f.posted);
-            setFilterStations(f.stations);
-            setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
-            setSchedules(f.schedules);
-            setFilterCompanies(f.companies);
-            setLevels(f.levels);
-            setFormats(f.formats);
-            setSortMode(f.sort);
-            setSections(f.sections);
-            if (currentUser?.id) saveFeedSections(currentUser.id, f.sections);
-          }}
+          onApply={applyPermFilters}
           onClose={() => setPermFilterOpen(false)}
           onOpenMap={() => { setPermFilterOpen(false); setMapOpen(true); }}
         />
@@ -2339,28 +2351,45 @@ function WorkerPermMode() {
           <Text style={styles.emptyTitle}>
             {backendOffline ? 'Нет связи с сервером'
               : careerLoading ? 'Загружаем вакансии…'
-              : sections.length > 0 ? 'Подходящие вакансии закончились'
+              : permFiltersActive ? 'По фильтрам ничего не нашлось'
               : 'Нет открытых вакансий'}
           </Text>
           <Text style={styles.emptySubtitle}>
             {backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.'
               : careerLoading ? ''
-              : sections.length > 0 ? 'В выбранных разделах вы всё посмотрели'
-              : 'Попробуйте изменить фильтры'}
+              : permFiltersActive ? 'Измените или сбросьте фильтры'
+              : 'Потяните вниз, чтобы обновить'}
           </Text>
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
               <Ionicons name="refresh" size={16} color="#fff" />
               <Text style={pS.retryTxt}>Попробовать снова</Text>
             </TouchableOpacity>
-          ) : !careerLoading && sections.length > 0 ? (
-            <TouchableOpacity
-              style={pS.retryBtn}
-              activeOpacity={0.85}
-              onPress={() => { setSections([]); if (currentUser?.id) saveFeedSections(currentUser.id, []); }}
-            >
-              <Text style={pS.retryTxt}>Показать другие разделы</Text>
-            </TouchableOpacity>
+          ) : !careerLoading && permFiltersActive ? (
+            // Шестерёнка живёт в ряду под карточкой: карточек нет — нет и её.
+            // Без этих кнопок человек, выбравший компанию без вакансий, застревал
+            // на пустом экране до перезапуска приложения (жалоба 26.09).
+            <View style={pS.emptyActions}>
+              <TouchableOpacity
+                style={pS.retryBtn}
+                activeOpacity={0.85}
+                onPress={() => setPermFilterOpen(true)}
+                accessibilityLabel="Изменить фильтры"
+                testID="empty-edit-filters"
+              >
+                <Ionicons name="settings-sharp" size={16} color="#fff" />
+                <Text style={pS.retryTxt}>Изменить фильтры</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={pS.resetBtn}
+                activeOpacity={0.85}
+                onPress={() => applyPermFilters(EMPTY_PERM_FILTERS)}
+                accessibilityLabel="Сбросить фильтры"
+                testID="empty-reset-filters"
+              >
+                <Text style={pS.resetTxt}>Сбросить</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
         </ScrollView>
       ) : swTop._ext ? (
@@ -2795,6 +2824,9 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
   },
   retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
+  emptyActions: { alignItems: 'center', gap: rs(4) },
+  resetBtn: { marginTop: rs(8), paddingHorizontal: rs(20), paddingVertical: rs(10) },
+  resetTxt: { color: Colors.primary, fontSize: rf(14), fontWeight: '700' },
   // Ширина по карточке, а не по экрану: карточка отступает на rs(13) плюс
   // рамка, и растворение должно кончаться ровно на её краю. bottom задаётся
   // рядом с карточкой через deckBottomReserve, чтобы совпадать на всех safe area.

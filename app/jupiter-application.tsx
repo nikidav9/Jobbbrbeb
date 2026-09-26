@@ -21,7 +21,7 @@ import {
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { jupiterManualEligible } from '@/services/jupiterFill';
-import { buildTimeline, jupiterNeedsSberConsent, jupiterStatus, TimelineStep } from '@/services/jupiterTimeline';
+import { buildTimeline, jupiterNeedsSberConsent, jupiterStatus, jupiterVacancyClosed, TimelineStep } from '@/services/jupiterTimeline';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
@@ -82,11 +82,14 @@ export default function JupiterApplicationScreen() {
   const status = app ? jupiterStatus(app) : null;
   const canFill = !!app && jupiterManualEligible(app);
   const waiting = app?.state === 'submitted';
-  const needsSberConsent = !!app && jupiterNeedsSberConsent(app);
+  // Работодатель закрыл вакансию, отклик не ушёл: отправлять некуда — ни
+  // анкеты, ни Юпитера, ни согласия Сбера (решение владельца 26.09).
+  const closed = !!app && jupiterVacancyClosed(app);
+  const needsSberConsent = !!app && !closed && jupiterNeedsSberConsent(app);
   // Автоотклик был выключен, когда заявка встала в очередь (или его отозвали
   // именно для неё) — пока человек не включит его заново, Юпитер к заявке не
   // вернётся.
-  const needsRequeue = !!app && (
+  const needsRequeue = !!app && !closed && (
     (app.state === 'ready_to_submit' && !app.submissionAuthorizedAt)
     || (app.state === 'action_required' && app.reasonCode === 'LIVE_AUTHORIZATION_REVOKED')
   );
@@ -213,6 +216,18 @@ export default function JupiterApplicationScreen() {
           ) : null}
 
           <View style={s.card}>
+            {closed ? (
+              <View style={s.step}>
+                <View style={s.rail}>
+                  <View style={[s.dot, s.dotPending]}><Ionicons name="lock-closed-outline" size={13} color="#6B7280" /></View>
+                  <View style={s.line} />
+                </View>
+                <View style={s.stepBody}>
+                  <Text style={[s.stepTitle, { color: '#4B5563' }]}>Работодатель закрыл вакансию</Text>
+                  <Text style={s.stepNote}>Отклик не отправлен — отправлять его уже некуда</Text>
+                </View>
+              </View>
+            ) : null}
             {waiting ? (
               <View style={s.step}>
                 <View style={s.rail}>

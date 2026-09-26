@@ -133,3 +133,14 @@ test('очередь не предлагает Сбер на согласии, �
   assert.equal(nextManualApplication(apps, 'x', [])?.id, 'ok');
   assert.equal(jupiterManualEligible(apps[0]), false);
 });
+
+test('закрытая работодателем вакансия — не в «Ждут вас», анкету не предлагаем', () => {
+  const base = {
+    id: 'a1', vacancyUrl: 'https://join.lesta.team/vacancy/x/1', company: 'Lesta Games',
+    state: 'action_required', reasonCode: 'SITE_NOT_VERIFIED',
+    createdAt: '', updatedAt: '',
+  } as any;
+  assert.equal(jupiterManualEligible({ ...base, vacancyActive: true }), true);
+  assert.equal(jupiterManualEligible({ ...base, vacancyActive: null }), true);
+  assert.equal(jupiterManualEligible({ ...base, vacancyActive: false }), false);
+});

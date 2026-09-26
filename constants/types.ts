@@ -340,6 +340,8 @@ export interface JupiterApplication {
   company?: string | null;
   /** Название вакансии из фида, если она там ещё есть; иначе null. */
   vacancyTitle?: string | null;
+  /** Вакансия ещё в списке сайта. false — работодатель её закрыл; null — неизвестно. */
+  vacancyActive?: boolean | null;
   state: JupiterApplicationState;
   reasonCode?: string | null;
   /** Есть, когда прогон ждёт человека: капча, код из письма, вход. */

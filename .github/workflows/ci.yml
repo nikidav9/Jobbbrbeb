@@ -241,6 +241,7 @@ jobs:
           (cd jupiter && python3 test_mail_sync.py)
           (cd jupiter && python3 test_sber.py)
           (cd jupiter && python3 test_policy.py)
+          (cd jupiter && python3 test_ru_ca.py)
           (cd jupiter && python3 test_e2e.py)
           (cd jupiter && python3 test_recon.py)
           (cd jupiter && python3 test_js_engine.py)

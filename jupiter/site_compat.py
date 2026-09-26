@@ -28,6 +28,17 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
         live_ready=True,
     ),
     SiteProfile("Магнит", ("rabota.magnit.ru",)),
+    SiteProfile(
+        "Контур",
+        ("kontur.ru",),
+        # Сухой прогон 26.09 по kontur.ru/career/vacancies/3728: ФИО без подписи
+        # (ResumeForm.Fio), телефон, почта, город, резюме файлом — один раз, хотя
+        # полей для файлов шесть; капчи нет. Подписка на рубрики вакансий живёт
+        # в той же форме: её галочки Юпитер не ставит, а отмеченную сайтом
+        # рубрику снимает (drop_preselected_optional_consent). Ловушку для ботов
+        # (ResumeForm.Liame) не трогает.
+        live_ready=True,
+    ),
     SiteProfile("Лента", ("career.lenta.com",), ("hh.ru", "spb.hh.ru", "superjob.ru", "avito.ru")),
     SiteProfile(
         "ВкусВилл",
