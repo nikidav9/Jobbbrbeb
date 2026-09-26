@@ -1326,8 +1326,14 @@ function WorkerPermMode() {
 
   const permCompanyOptions = useMemo(() => {
     const counts = new Map<string, number>();
+    const applied = new Set(permApplications.filter(a => a.workerId === currentUser?.id).map(a => a.vacancyId));
+    // Свои — только те, что колода может показать: IT, не отклик и не свайп
+    // влево. Иначе в списке оставались работодатели с не-IT вакансиями
+    // (жалоба 26.09: «выбрал Лавку — пусто»), выбор давал пустую колоду.
     permVacancies.forEach(v => {
-      const name = v.status === 'open' ? v.company.trim() : '';
+      const shown = v.status === 'open' && sectionOfPerm(v.workType) === 'it'
+        && !applied.has(v.id) && !permSwiped.has(v.id);
+      const name = shown ? v.company.trim() : '';
       if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
     });
     // Карьерные компании — в тех же счётчиках: выбор в фильтре один список.
@@ -1338,7 +1344,7 @@ function WorkerPermMode() {
     return Array.from(counts, ([name, count]) => ({ name, count }))
       .filter(item => item.count > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [permVacancies, careerVacancies]);
+  }, [permVacancies, careerVacancies, permApplications, currentUser?.id, permSwiped]);
 
   // Вакансии для карты: метка — это адрес, станция остаётся для фильтра
   const permMapItems: MapListItem[] = useMemo(
@@ -1466,6 +1472,21 @@ function WorkerPermMode() {
   const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies, sections, levels, formats, sort: sortMode };
   const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0 || sections.length > 0
     || levels.length > 0 || formats.length > 0 || sortMode !== 'default';
+
+  const applyPermFilters = (f: PermFilters) => {
+    setSearchText(f.query);
+    setSearchIn(f.searchIn);
+    setPosted(f.posted);
+    setFilterStations(f.stations);
+    setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
+    setSchedules(f.schedules);
+    setFilterCompanies(f.companies);
+    setLevels(f.levels);
+    setFormats(f.formats);
+    setSortMode(f.sort);
+    setSections(f.sections);
+    if (currentUser?.id) saveFeedSections(currentUser.id, f.sections);
+  };
 
   const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
     if (!f.query) return true;
@@ -2306,20 +2327,7 @@ function WorkerPermMode() {
           bottomInset={tabBarHeight}
           companyOptions={permCompanyOptions}
           count={countPermLocal}
-          onApply={(f) => {
-            setSearchText(f.query);
-            setSearchIn(f.searchIn);
-            setPosted(f.posted);
-            setFilterStations(f.stations);
-            setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
-            setSchedules(f.schedules);
-            setFilterCompanies(f.companies);
-            setLevels(f.levels);
-            setFormats(f.formats);
-            setSortMode(f.sort);
-            setSections(f.sections);
-            if (currentUser?.id) saveFeedSections(currentUser.id, f.sections);
-          }}
+          onApply={applyPermFilters}
           onClose={() => setPermFilterOpen(false)}
           onOpenMap={() => { setPermFilterOpen(false); setMapOpen(true); }}
         />
@@ -2339,28 +2347,45 @@ function WorkerPermMode() {
           <Text style={styles.emptyTitle}>
             {backendOffline ? 'Нет связи с сервером'
               : careerLoading ? 'Загружаем вакансии…'
-              : sections.length > 0 ? 'Подходящие вакансии закончились'
+              : permFiltersActive ? 'По фильтрам ничего не нашлось'
               : 'Нет открытых вакансий'}
           </Text>
           <Text style={styles.emptySubtitle}>
             {backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.'
               : careerLoading ? ''
-              : sections.length > 0 ? 'В выбранных разделах вы всё посмотрели'
-              : 'Попробуйте изменить фильтры'}
+              : permFiltersActive ? 'Измените или сбросьте фильтры'
+              : 'Потяните вниз, чтобы обновить'}
           </Text>
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
               <Ionicons name="refresh" size={16} color="#fff" />
               <Text style={pS.retryTxt}>Попробовать снова</Text>
             </TouchableOpacity>
-          ) : !careerLoading && sections.length > 0 ? (
-            <TouchableOpacity
-              style={pS.retryBtn}
-              activeOpacity={0.85}
-              onPress={() => { setSections([]); if (currentUser?.id) saveFeedSections(currentUser.id, []); }}
-            >
-              <Text style={pS.retryTxt}>Показать другие разделы</Text>
-            </TouchableOpacity>
+          ) : !careerLoading && permFiltersActive ? (
+            // Шестерёнка живёт в ряду под карточкой: карточек нет — нет и её.
+            // Без этих кнопок человек, выбравший компанию без вакансий, застревал
+            // на пустом экране до перезапуска приложения (жалоба 26.09).
+            <View style={pS.emptyActions}>
+              <TouchableOpacity
+                style={pS.retryBtn}
+                activeOpacity={0.85}
+                onPress={() => setPermFilterOpen(true)}
+                accessibilityLabel="Изменить фильтры"
+                testID="empty-edit-filters"
+              >
+                <Ionicons name="settings-sharp" size={16} color="#fff" />
+                <Text style={pS.retryTxt}>Изменить фильтры</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={pS.resetBtn}
+                activeOpacity={0.85}
+                onPress={() => applyPermFilters(EMPTY_PERM_FILTERS)}
+                accessibilityLabel="Сбросить фильтры"
+                testID="empty-reset-filters"
+              >
+                <Text style={pS.resetTxt}>Сбросить</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
         </ScrollView>
       ) : swTop._ext ? (
@@ -2795,6 +2820,9 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
   },
   retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
+  emptyActions: { alignItems: 'center', gap: rs(4) },
+  resetBtn: { marginTop: rs(8), paddingHorizontal: rs(20), paddingVertical: rs(10) },
+  resetTxt: { color: Colors.primary, fontSize: rf(14), fontWeight: '700' },
   // Ширина по карточке, а не по экрану: карточка отступает на rs(13) плюс
   // рамка, и растворение должно кончаться ровно на её краю. bottom задаётся
   // рядом с карточкой через deckBottomReserve, чтобы совпадать на всех safe area.
