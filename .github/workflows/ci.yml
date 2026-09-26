@@ -115,6 +115,15 @@ jobs:
       - name: Лента только IT — сервер, база и приложение
         run: php tests/it_only_feed_test.php
 
+      - name: Лента только по Москве — сервер, база и счётчики
+        run: php tests/moscow_only_feed_test.php
+
+      - name: Вид работ не угадывается у постоянных вакансий («Старший смены»)
+        run: php tests/career_work_type_test.php
+
+      - name: Логотипы компаний — файлы и покрытие ленты
+        run: php tests/company_logos_test.php
+
       - name: Описание из API источника — разделы, карточка вакансии, курсор
         run: php tests/career_api_description_test.php
 

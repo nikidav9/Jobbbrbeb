@@ -19,7 +19,7 @@ import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
-import { User, PermVacancy, ExtVacancy, WorkType } from '@/constants/types';
+import { User, PermVacancy, ExtVacancy } from '@/constants/types';
 import { JobSection, SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
 import { getInitials, nameColorFromString, saveFeedSections } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
@@ -2082,8 +2082,9 @@ function WorkerPermMode() {
     const displayCompany = ev.company || 'Карьерный сайт';
     const salary = typeof ev.salary === 'number' ? ev.salary : 0;
     const schedule = ev.schedule;
-    const workTypeRaw = ev.workType;
-    const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw as WorkType]?.label ?? workTypeRaw) : undefined;
+    // Чипа «вид работ» у карьерной вакансии нет: наши четыре вида — про смены
+    // линейного персонала, а старые строки базы угадывали его по названию
+    // («Старший разработчик» → «Старший смены»).
     const description = cleanDescription(ev.description ?? undefined);
     const metroLine = ev.metroStation
       ? METRO_LINES.find(l => l.stations.includes(ev.metroStation!)) ?? null
@@ -2131,7 +2132,6 @@ function WorkerPermMode() {
                     <View style={styles.chipsRow}>
                       {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
                       {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" textSize={11} /> : null}
-                      {workType ? <Chip label={workType} variant="neutral" icon="briefcase-outline" textSize={11} /> : null}
                       {ev.metroStation ? <Chip label={ev.metroStation} variant="neutral" icon="subway-outline" textSize={11} /> : null}
                     </View>
                   </View>
