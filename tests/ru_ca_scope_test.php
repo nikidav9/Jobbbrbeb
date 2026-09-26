@@ -21,6 +21,21 @@ check('домен-приставка не проходит', !jt_needs_ru_ca('ht
 check('остальные сайты — системный список', !jt_needs_ru_ca('https://yandex.ru/jobs/api/publications'));
 check('пустой адрес', !jt_needs_ru_ca(''));
 
+// Цепочка GlobalSign GCC R3 — только Росатом и ДРТ (сайты без промежуточного).
+check('Росатом — GlobalSign', jt_needs_gs_ca('https://rosatom-career.ru/api/vacancies/vacancies/search/'));
+check('ДРТ — GlobalSign', jt_needs_gs_ca('https://careers.delret.ru/entryPoint/ReferalPageEntryPoint?action=list'));
+check('остальной delret.ru — нет', !jt_needs_gs_ca('https://delret.ru/'));
+check('похожий домен Росатома не проходит', !jt_needs_gs_ca('https://evil-rosatom-career.ru/'));
+check('банки — не GlobalSign', !jt_needs_gs_ca('https://www.tbank.ru/'));
+check('Росатом — не Минцифры', !jt_needs_ru_ca('https://rosatom-career.ru/'));
+$gs = require __DIR__ . '/../php-proxy/globalsign_gcc_ca.php';
+preg_match_all('~-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----~s', $gs, $g);
+$gfp = array_map(fn($c) => strtoupper(openssl_x509_fingerprint($c, 'sha256')), $g[0]);
+check('GlobalSign: корень R3 и GCC R3 DV, отпечатки сверены', $gfp === [
+    'CBB522D7B7F127AD6A0113865BDF1CD4102E7D0759AF635A7CF4720DC963C53B',
+    '762538439509C411C437D3C567563E1378671281FC4A1464ADD031870843676E',
+]);
+
 $pem = require __DIR__ . '/../php-proxy/ru_trusted_ca.php';
 check('в файле ровно корневой и промежуточный', substr_count($pem, 'BEGIN CERTIFICATE') === 2);
 $certs = [];
