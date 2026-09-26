@@ -150,10 +150,12 @@ if (!$fn) { jt_respond(['error' => 'Missing fn'], 400); exit; }
 // закрыты, а пользовательские сценарии продолжают работать.
 $adminFns = [
     'dbKeyKind', 'adminResetPassword', 'dbMigrateChatMedia', 'dbDeleteUser',
-    'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges', 'cronShiftNudge',
+    'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges',
     'cronAnnounceMissed', 'adminRetireTelegram',
     // Проверка почты после выкладки (.github/workflows/mail-check.yml).
     'adminMailCheck',
+    // Сколько согласилось на рекламную рассылку — только числа.
+    'adminMarketingStats',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
     // dbGetUsers отдаёт всех пользователей разом. Приложение её не зовёт
@@ -262,6 +264,7 @@ $selfArgFns = [
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
     'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
     'dbRevokeCrossBorderConsent' => 0,
+    'dbSetMarketingConsent' => 0, 'dbGetMarketingConsent' => 0,
     'tgBindTelegram' => 0, 'tgUnbindTelegram' => 0,
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
     'supportHistory' => 0, 'supportState' => 0, 'supportSend' => 0,
@@ -1587,6 +1590,17 @@ define('JT_CROSSBORDER_CONSENT_VERSION', '2026-09-19');
 // диалога. До неё поручения в текстах не было.
 define('JT_JUPITER_CONSENT_FROM', '2026-09-25');
 
+// Редакция согласия на рекламную рассылку (constants/legal.ts, marketing).
+// Сервер сверяет её сам: согласие, данное на прежний текст, не покрывает
+// рассылку по новому, а старый клиент не должен записать устаревшую редакцию.
+define('JT_MARKETING_CONSENT_VERSION', '2026-09-26');
+
+// Общее согласие на обработку ПДн — все строки jm_consents, КРОМЕ отдельных
+// волеизъявлений: трансграничной передачи и рекламной рассылки. Строка одного
+// лишь согласия на рекламу не должна выглядеть как согласие на обработку
+// (им, например, Юпитер подтверждает анкету кандидата).
+const JT_CORE_CONSENT_FILTER = '(source.not.like.crossborder:*,source.not.like.marketing:*)';
+
 /**
  * Отметка «обращение закрыто» (null — открыто).
  *
@@ -2129,89 +2143,6 @@ function notify_user(string $userId, string $title, string $body, string $type =
     }
 }
 
-
-/**
- * Раз в два дня — тем, у кого рядом действительно есть смена.
- *
- * Прежнее касание работников было слепым: раз в три дня всем «в приложении
- * появились новые варианты рядом с вашим метро», без единой цифры и без
- * проверки, есть ли там что-то рядом на самом деле. Кончилось тем, что
- * 27% людей, сами подключивших телеграм, заблокировали бота.
- *
- * Здесь наоборот: если рядом ничего нет — человек не получает ничего. Молчание
- * дешевле блокировки, а «рядом» считается по остановкам на его ветке, а не по
- * тому, что обе станции есть в Москве.
- *
- * Возвращает, скольким написали и скольких промолчали — второе число тоже
- * стоит смотреть: если молчим почти всем, значит смен мало, а не рассылка
- * плохая.
- */
-function shift_nudge_run(): array {
-    require_once __DIR__ . '/bot_brain.php';
-
-    $today = gmdate('Y-m-d', time() + 3 * 3600);
-    $open = sb_select('jm_vacancies', ['status' => 'eq.open', 'date' => 'gte.' . $today],
-        'id,title,company,work_type,metro_station,date,time_start,time_end,salary');
-    if (empty($open)) return ['sent' => 0, 'silent' => 0, 'note' => 'открытых смен нет'];
-
-    // Кому уже писали за последние два дня.
-    $cut = gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400);
-    $skip = [];
-    foreach (sb_select('jm_notifications',
-        ['type' => 'eq.shift_nudge', 'created_at' => 'gte.' . $cut], 'user_id') as $r) {
-        $skip[$r['user_id']] = true;
-    }
-
-    $workers = sb_select('jm_users', ['role' => 'eq.worker'],
-        'id,first_name,metro_station,telegram_id,push_token,is_blocked,nudge_off');
-    $sent = 0; $silent = 0; $pushMsgs = [];
-
-    foreach ($workers as $w) {
-        if (!empty($w['is_blocked']) || !empty($w['nudge_off'])) continue;
-        if (empty($w['telegram_id']) && empty($w['push_token'])) continue;
-        if (isset($skip[$w['id']])) continue;
-
-        $st = $w['metro_station'] ?? null;
-        $near = [];
-        foreach ($open as $v) {
-            $d = bot_stops_between($st, $v['metro_station'] ?? null);
-            if ($d === null || $d > BOT_NEAR_STOPS) continue;
-            $v['_stops'] = $d;
-            $near[] = $v;
-        }
-        if (empty($near)) { $silent++; continue; }
-
-        usort($near, fn($a, $b) => $a['_stops'] === $b['_stops']
-            ? strcmp((string)$a['date'], (string)$b['date'])
-            : $a['_stops'] <=> $b['_stops']);
-        $near = array_slice($near, 0, 3);
-
-        $title = count($near) === 1 ? '⚡ Смена рядом с вами' : '⚡ Смены рядом с вами';
-        $list = implode("\n", array_map('bot_shift_line', $near));
-        $body = $list . "\n\nОткликнуться — в приложении, в два тапа.";
-
-        try {
-            sb_insert('jm_notifications',
-                ['user_id' => $w['id'], 'title' => $title, 'body' => $body, 'type' => 'shift_nudge']);
-        } catch (Throwable $e) {
-            sb_insert('jm_notifications', ['user_id' => $w['id'], 'title' => $title, 'body' => $body]);
-        }
-
-        if (!empty($w['telegram_id'])) {
-            tg_send_message((int)$w['telegram_id'], $title . "\n\n" . $body, true);
-        } else {
-            // В пуше видно две строки, поэтому там только ближайшая смена.
-            $pushMsgs[] = ['to' => $w['push_token'], 'title' => $title,
-                'body' => ltrim(bot_shift_line($near[0]), '• '),
-                'sound' => 'default', 'priority' => 'default', 'channelId' => 'vacancies',
-                'data' => ['type' => 'shift_nudge']];
-        }
-        $sent++;
-    }
-    if (!empty($pushMsgs)) expo_push($pushMsgs);
-
-    return ['sent' => $sent, 'silent' => $silent];
-}
 
 /**
  * Понедельничный пост в группу «ПОДРАБОТКИ»: актуальные постоянные вакансии,
@@ -3049,6 +2980,12 @@ function jt_consent_attach(string $uid, $payload): void
         ], 'id');
         jt_jupiter_auto_enable($uid, $stamp);
 
+        // Согласие на рекламную рассылку — такая же отдельная галочка.
+        $mkVersion = trim((string)($payload['marketingVersion'] ?? ''));
+        if ($mkVersion !== '' && hash_equals(JT_MARKETING_CONSENT_VERSION, $mkVersion)) {
+            jt_marketing_record($uid, true, 'registration');
+        }
+
         // Отдельная добровольная галочка при регистрации хранится отдельной
         // строкой. Так можно доказать самостоятельное волеизъявление, не
         // смешивая его с общим согласием на обработку ПДн.
@@ -3118,6 +3055,53 @@ function jt_jupiter_auto_enable(string $uid, string $stamp): void
     } catch (Throwable $e) {
         // См. выше: включение автоотклика регистрацию не роняет.
     }
+}
+
+/**
+ * Записать решение о рекламной рассылке (38-ФЗ, ст. 18).
+ *
+ * Каждое решение — НОВАЯ строка, не перезапись: история «дал — отозвал —
+ * дал снова» с датами и способом и есть то, что предъявляют, если человек
+ * скажет, что на рассылку не соглашался. Действует последнее решение.
+ * $source: registration | reconsent | settings.
+ */
+function jt_marketing_record(string $uid, bool $on, string $source): void
+{
+    sb_insert('jm_consents', [
+        'id'          => 'mk:' . $uid . ':' . bin2hex(random_bytes(6)),
+        'user_id'     => $uid,
+        'stamp'       => 'marketing:' . ($on ? JT_MARKETING_CONSENT_VERSION : 'revoked'),
+        'docs'        => ['marketing' => JT_MARKETING_CONSENT_VERSION, 'on' => $on],
+        'source'      => $on ? 'marketing:' . $source : 'marketing:revoked',
+        'accepted_at' => now_iso(),
+    ]);
+}
+
+/**
+ * Действующее решение о рекламной рассылке. `on` — только если последнее
+ * решение «да» И дано на текущую редакцию: согласие на прежний текст не
+ * покрывает рассылку по новому.
+ */
+function jt_marketing_status(string $uid): array
+{
+    $row = sb_select('jm_consents', [
+        'user_id' => 'eq.' . $uid,
+        'source'  => 'like.marketing:*',
+        'limit'   => '1',
+    ], 'docs,source,accepted_at', 'accepted_at.desc')[0] ?? null;
+    $docs = $row['docs'] ?? [];
+    if (is_string($docs)) $docs = json_decode($docs, true) ?: [];
+    $version = is_array($docs) ? (string)($docs['marketing'] ?? '') : '';
+    $on = $row !== null
+        && ($row['source'] ?? '') !== 'marketing:revoked'
+        && $version !== '' && hash_equals(JT_MARKETING_CONSENT_VERSION, $version);
+    return [
+        'on'      => $on,
+        'version' => $version !== '' ? $version : null,
+        'source'  => $row['source'] ?? null,
+        'at'      => $row['accepted_at'] ?? null,
+        'current' => JT_MARKETING_CONSENT_VERSION,
+    ];
 }
 
 /** Текущее отдельное решение по трансграничной передаче. */
@@ -4051,7 +4035,7 @@ try {
         case 'dbGetConsent': {
             $rows = sb_select('jm_consents', [
                 'user_id' => 'eq.' . (string)($args[0] ?? ''),
-                'source'  => 'not.like.crossborder:%',
+                'and'     => JT_CORE_CONSENT_FILTER,
             ], 'stamp,docs,source,accepted_at', 'accepted_at.desc');
             $data = $rows[0] ?? null;
             break;
@@ -4090,6 +4074,50 @@ try {
                 'accepted_at' => now_iso(),
             ], 'id');
             $data = ['ok' => true];
+            break;
+        }
+
+        // Рекламная рассылка: args [uid, on, version, source]. Включить можно
+        // только на текущую редакцию; выключить — всегда. Повтор того же
+        // решения строк не плодит.
+        case 'dbSetMarketingConsent': {
+            $uid = (string)($args[0] ?? '');
+            $on = ($args[1] ?? false) === true;
+            $source = (string)($args[3] ?? 'settings');
+            if (!in_array($source, ['registration', 'reconsent', 'settings'], true)) $source = 'settings';
+            if ($on && !hash_equals(JT_MARKETING_CONSENT_VERSION, (string)($args[2] ?? ''))) {
+                jt_respond(['error' => 'Редакция согласия устарела. Обновите приложение.'], 400); exit;
+            }
+            if (!sb_single('jm_users', ['id' => 'eq.' . $uid], 'id')) {
+                jt_respond(['error' => 'Пользователь не найден'], 404); exit;
+            }
+            if (jt_marketing_status($uid)['on'] !== $on) jt_marketing_record($uid, $on, $source);
+            $data = jt_marketing_status($uid);
+            break;
+        }
+
+        case 'dbGetMarketingConsent': {
+            $data = jt_marketing_status((string)($args[0] ?? ''));
+            break;
+        }
+
+        // Сколько людей сейчас согласны на рассылку — по последнему решению
+        // каждого. Только числа: адресов эта функция не отдаёт.
+        case 'adminMarketingStats': {
+            $last = [];
+            foreach (sb_select_all('jm_consents', ['source' => 'like.marketing:*', 'order' => 'accepted_at.asc,id.asc'],
+                    'user_id,docs,source') as $r) {
+                $last[(string)($r['user_id'] ?? '')] = $r;
+            }
+            $on = 0; $off = 0; $stale = 0;
+            foreach ($last as $r) {
+                $docs = $r['docs'] ?? [];
+                if (is_string($docs)) $docs = json_decode($docs, true) ?: [];
+                if (($r['source'] ?? '') === 'marketing:revoked') { $off++; continue; }
+                if ((string)($docs['marketing'] ?? '') === JT_MARKETING_CONSENT_VERSION) $on++; else $stale++;
+            }
+            $data = ['subscribed' => $on, 'revoked' => $off, 'old_version' => $stale,
+                'version' => JT_MARKETING_CONSENT_VERSION];
             break;
         }
 
@@ -4460,10 +4488,6 @@ try {
             $data = false;
             break;
 
-        // Ежедневные авто-касания (вызывается кроном раз в день):
-        // 1) напоминания директорам о необработанных заявках (каждый день)
-        // 2) «разместите смену/вакансию» директорам (раз в 3 дня)
-        // 3) «посмотрите новые смены» работникам (раз в 3 дня, со сдвигом)
         case 'cronEveningDigest': {
             // Вечерний дайджест смен на завтра в группу «ПОДРАБОТКИ».
             // Спящее условие: постим только когда на завтра 3+ открытых смены от 2+ лавок.
@@ -4641,6 +4665,7 @@ try {
                 foreach (array_chunk($newIds, 100) as $chunk) {
                     foreach (sb_select_all('jm_consents', [
                         'user_id' => sb_in_list($chunk),
+                        'and'     => JT_CORE_CONSENT_FILTER,
                     ], 'user_id') as $c) {
                         $withConsent[(string)($c['user_id'] ?? '')] = true;
                     }
@@ -4773,8 +4798,7 @@ try {
         case 'cronDailyNudges': {
             @set_time_limit(300);
             @ignore_user_abort(true);
-            $result = ['pendingReminders' => 0, 'employerNudges' => 0, 'workerNudges' => 0];
-            $dayIdx = (int)date('z');
+            $result = ['pendingReminders' => 0];
 
             // ── 1. Необработанные заявки старше 24 часов ──
             $cut24 = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
@@ -4879,46 +4903,15 @@ try {
                 $result['autoRejectedShifts']++;
             }
 
-            // ── 2. Директорам: пора размещать (раз в 3 дня) ──
-            if ($dayIdx % 3 === 0) {
-                $cut3d = gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400);
-                $employers = sb_select('jm_users', ['role' => 'eq.employer'], 'id,telegram_id,push_token');
-                $recentTv = sb_select('jm_vacancies', ['created_at' => 'gte.' . $cut3d], 'employer_id');
-                $recentPv = sb_select('jm_perm_vacancies', ['created_at' => 'gte.' . $cut3d], 'employer_id');
-                $recentPosters = [];
-                foreach (array_merge($recentTv, $recentPv) as $r) $recentPosters[$r['employer_id']] = true;
-                $workersCnt = count(sb_select('jm_users', ['role' => 'eq.worker'], 'id'));
-
-                $title = '👷 Работники ждут смен';
-                $body = "В JobToo {$workersCnt}+ работников готовы выйти. Разместите смену или вакансию — отклики придут в тот же день.";
-                foreach ($employers as $e) {
-                    if (isset($recentPosters[$e['id']])) continue; // недавно публиковал — не трогаем
-                    sb_insert('jm_notifications', ['user_id' => $e['id'], 'title' => $title, 'body' => $body]);
-                    if (jt_has_crossborder_consent((string)$e['id']) && !empty($e['telegram_id'])) {
-                        tg_send_message((int)$e['telegram_id'], $title . "\n\n" . $body, true);
-                    } elseif (!empty($e['push_token'])) {
-                        expo_push([[ 'to' => $e['push_token'], 'title' => $title, 'body' => $body,
-                            'sound' => 'default', 'priority' => 'default', 'channelId' => 'default', 'data' => ['type' => 'post_nudge'] ]]);
-                    }
-                    $result['employerNudges']++;
-                }
-            }
-
-            // ── 3. Работникам: смены рядом (раз в 2 дня и только тем, у кого рядом есть) ──
-            //
-            // Раньше здесь раз в три дня уходило всем «появились новые варианты
-            // рядом с вашим метро» — без цифр и без проверки, есть ли там
-            // что-то рядом. За этим последовало 27% блокировок бота среди тех,
-            // кто телеграм подключал сам. Теперь адресно, см. shift_nudge_run().
-            $nudge = shift_nudge_run();
-            $result['workerNudges'] = $nudge['sent'];
-            $result['workerSilent'] = $nudge['silent'];
+            // Здесь были «пора размещать» директорам и «смены рядом» работникам.
+            // Выключены 26.09 (решение владельца): смен больше нет, а по
+            // документам редакции 2026-09-26 такие касания — реклама, и слать
+            // их можно только по отдельному согласию (jt_marketing_status).
 
             $data = $result;
             break;
         }
 
-        // Отдельный вызов той же рассылки — чтобы прогнать вручную, не дожидаясь крона.
         // Догоняющее объявление: вакансии, о которых не объявили, потому что
         // запрос с телефона публикующего не дошёл. Подробности — в
         // jt_announce_missed.
@@ -4928,10 +4921,6 @@ try {
             $data = jt_announce_missed($hours, $limit);
             break;
         }
-
-        case 'cronShiftNudge':
-            @set_time_limit(300);
-            $data = shift_nudge_run(); break;
 
         // args: [title, body, roleFilter 'all'|'worker'|'employer']
         // Рассылка по всем с привязанным Telegram (кнопка приложения в каждом сообщении)
@@ -7035,7 +7024,7 @@ try {
             }
             $consentRow = sb_single('jm_consents', [
                 'user_id' => 'eq.' . $uid,
-                'source'  => 'not.like.crossborder:%',
+                'and'     => JT_CORE_CONSENT_FILTER,
             ], 'stamp,accepted_at');
             if ($consentRow && !empty($consentRow['stamp'])) {
                 $personalData['consent'] = true;

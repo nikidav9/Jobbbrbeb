@@ -13,6 +13,7 @@ import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
   dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
   jupiterLiveState, jupiterSetLive,
+  dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -39,6 +40,7 @@ const ABOUT_DOCS: {
   { key: 'privacy', icon: 'shield-checkmark-outline' },
   { key: 'consent', icon: 'checkmark-circle-outline' },
   { key: 'dataPolicy', icon: 'lock-closed-outline' },
+  { key: 'marketing', icon: 'megaphone-outline' },
 ];
 
 type RowProps = {
@@ -130,6 +132,32 @@ export default function ProfileSettingsScreen() {
       showToast('Не удалось изменить автоотклик', 'error');
     } finally {
       setJupiterBusy(false);
+    }
+  };
+  // Рекламная рассылка (38-ФЗ, ст. 18): переключатель — и способ дать
+  // согласие, и способ его отозвать. Показываем то, что записано на сервере.
+  const [adsOn, setAdsOn] = useState(false);
+  const [adsBusy, setAdsBusy] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.isGuest) return;
+    dbGetMarketingConsent(currentUser.id)
+      .then(st => setAdsOn(st.on))
+      .catch(error => console.warn('[dbGetMarketingConsent]', error));
+  }, [currentUser]);
+
+  const toggleAds = async (next: boolean) => {
+    if (!currentUser) return;
+    setAdsBusy(true);
+    try {
+      const st = await dbSetMarketingConsent(currentUser.id, next, LEGAL_DOCS.marketing.version, 'settings');
+      setAdsOn(st.on);
+      showToast(st.on ? 'Рекламная рассылка включена' : 'Рекламная рассылка отключена', 'success');
+    } catch (error) {
+      console.warn('[dbSetMarketingConsent]', error);
+      showToast(error instanceof Error ? error.message : 'Не удалось изменить рассылку', 'error');
+    } finally {
+      setAdsBusy(false);
     }
   };
   const [notificationMessage, setNotificationMessage] = useState('');
@@ -472,6 +500,37 @@ export default function ProfileSettingsScreen() {
                 <Text style={s.jupiterHint}>
                   Юпитер сам отправляет отклики на вакансии с сайтов компаний. Капчу, коды и согласия,
                   которые компания просит от своего имени, вы проходите сами.
+                </Text>
+              </View>
+            </View>
+          </SettingsSection>
+        ) : null}
+
+        {!currentUser.isGuest ? (
+          <SettingsSection title="Рассылки">
+            <View style={[s.row, { alignItems: 'flex-start' }]}>
+              <View style={s.rowIcon}>
+                <Ionicons name="megaphone-outline" size={rf(18)} color={Colors.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(11) }}>
+                  <Text style={[s.rowLabel, { flex: 1 }]}>Рекламные рассылки</Text>
+                  <Switch
+                    value={adsOn}
+                    onValueChange={toggleAds}
+                    disabled={adsBusy}
+                    accessibilityLabel="Рекламные рассылки"
+                  />
+                </View>
+                <Text style={s.jupiterHint}>
+                  Подборки вакансий, новые функции и акции JobToo — на почту и в уведомлениях.
+                  Коды входа и служебные письма приходят независимо от этой настройки.{' '}
+                  <Text
+                    style={{ color: Colors.primary }}
+                    onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}
+                  >
+                    Условия
+                  </Text>
                 </Text>
               </View>
             </View>

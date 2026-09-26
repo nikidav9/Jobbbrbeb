@@ -513,6 +513,8 @@ export type ConsentPayload = {
   docs: Record<string, string>;
   /** Отдельное добровольное согласие на трансграничную передачу. */
   crossBorderVersion?: string;
+  /** Галочка «рекламная рассылка» при регистрации — редакция документа marketing. */
+  marketingVersion?: string;
 };
 
 export async function dbUpsertUser(
@@ -669,6 +671,32 @@ export async function dbRecordCrossBorderConsent(
 export async function dbRevokeCrossBorderConsent(userId: string): Promise<void> {
   const res = await proxy<{ ok?: boolean; error?: string }>('dbRevokeCrossBorderConsent', [userId]);
   if (!res?.ok) throw new Error(res?.error || 'Не удалось отозвать согласие');
+}
+
+/**
+ * Согласие на рекламную рассылку (38-ФЗ, ст. 18) — отдельное и необязательное.
+ * `on` — последнее решение «да» на текущую редакцию документа.
+ */
+export type MarketingConsent = {
+  on: boolean;
+  version: string | null;
+  source: string | null;
+  at: string | null;
+  current: string;
+};
+
+export async function dbGetMarketingConsent(userId: string): Promise<MarketingConsent> {
+  return proxy('dbGetMarketingConsent', [userId]);
+}
+
+/** Дать или отозвать. Бросает ошибку: переключатель должен показать правду. */
+export async function dbSetMarketingConsent(
+  userId: string,
+  on: boolean,
+  version: string,
+  source: 'registration' | 'reconsent' | 'settings' = 'settings',
+): Promise<MarketingConsent> {
+  return proxy('dbSetMarketingConsent', [userId, on, version, source]);
 }
 
 /** Удаление администратором из дашборда — там пароля человека нет. */

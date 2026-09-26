@@ -33,7 +33,7 @@ const MAX_AGE = 75;
 
 export default function CompleteProfileSheet() {
   const insets = useSafeAreaInsets();
-  const { currentUser, updateUser, showToast, emailAuthReady } = useApp();
+  const { currentUser, updateUser, showToast, emailAuthReady, consentPending } = useApp();
 
   const [visible, setVisible] = useState(false);
   const [age, setAge] = useState('');
@@ -49,7 +49,8 @@ export default function CompleteProfileSheet() {
 
   useEffect(() => {
     if (!currentUser || currentUser.isGuest) return;
-    if (emailPending) return;
+    // Окно «Примите документы» — тоже сначала (см. consentPending).
+    if (emailPending || consentPending) return;
     if (!needsAge && !needsPhoto) return;
     let alive = true;
     const t = setTimeout(async () => {
@@ -62,7 +63,7 @@ export default function CompleteProfileSheet() {
       }
     }, SHOW_DELAY_MS);
     return () => { alive = false; clearTimeout(t); };
-  }, [currentUser?.id, needsAge, needsPhoto, emailPending]);
+  }, [currentUser?.id, needsAge, needsPhoto, emailPending, consentPending]);
 
   const remember = () => AsyncStorage.setItem(SEEN_KEY, '1').catch(() => {});
 

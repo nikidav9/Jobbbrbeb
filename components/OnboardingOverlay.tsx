@@ -145,6 +145,8 @@ export function OnboardingOverlay() {
   // Старому аккаунту без почты сначала — обязательное окно «Укажите почту»
   // (EmailRequiredGate): обучение поверх него перекрывало поле ввода.
   const emailPending = !!user && !isGuest && !user.emailVerifiedAt && !!app?.emailAuthReady;
+  // И окно «Примите документы» (ConsentGate) — тоже раньше обучения.
+  const consentPending = !!app?.consentPending;
   const steps = useMemo(() => onboardingSteps(role), [role]);
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const stepPath = step?.path;
@@ -160,7 +162,7 @@ export function OnboardingOverlay() {
   }, [visible, stepIndex, pathname]);
 
   useEffect(() => {
-    if (!userId || isGuest || emailPending) {
+    if (!userId || isGuest || emailPending || consentPending) {
       setVisible(false);
       return;
     }
@@ -186,7 +188,7 @@ export function OnboardingOverlay() {
       cancelled = true;
       replayListeners.delete(replay);
     };
-  }, [userId, isGuest, emailPending, steps.length]);
+  }, [userId, isGuest, emailPending, consentPending, steps.length]);
 
   useEffect(() => {
     if (!visible || !stepPath || pathname === stepPath) return;

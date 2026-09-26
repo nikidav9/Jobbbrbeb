@@ -9,7 +9,7 @@ import { useApp } from '@/hooks/useApp';
 import { Colors, Radius } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import {
-  dbGetConsent, dbRecordConsent,
+  dbGetConsent, dbRecordConsent, dbSetMarketingConsent,
 } from '@/services/db';
 import {
   LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions,
@@ -60,6 +60,9 @@ export default function ConsentGate() {
   const [checkRetry, setCheckRetry] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [coreAccepted, setCoreAccepted] = useState(false);
+  // Реклама — по желанию, по умолчанию снята. Снятая галочка ничего не
+  // отзывает: отзыв — переключатель в настройках. Здесь только «дать».
+  const [adsAccepted, setAdsAccepted] = useState(false);
   // Раскрытый документ. Тексты показываем прямо здесь, а не отправляем на
   // экран /legal: окно перекрывает всё, что под ним, — человек ушёл бы читать
   // и упёрся в него же поверх документа.
@@ -85,6 +88,8 @@ export default function ConsentGate() {
         setNeeded(needsReconsent(c?.stamp));
         setTermsAccepted(false);
         setCoreAccepted(false);
+        // И рекламу: иначе галочка прежнего человека досталась бы следующему.
+        setAdsAccepted(false);
         setCheckFailed(false);
         setChecked(true);
       })
@@ -96,6 +101,11 @@ export default function ConsentGate() {
       });
     return () => { alive = false; };
   }, [user?.id, checkRetry]);
+
+  // Пока окно открыто или ещё проверяем — шторка профиля и обучение ждут.
+  const blocking = !!user && !user.isGuest && (!checked || needed || checkFailed);
+  const setConsentPending = app?.setConsentPending;
+  useEffect(() => { setConsentPending?.(blocking); }, [blocking, setConsentPending]);
 
   async function accept() {
     if (!user || busy || !termsAccepted || !coreAccepted) return;
@@ -110,6 +120,12 @@ export default function ConsentGate() {
       if (needsReconsent(core?.stamp)) {
         setError('Согласие не сохранилось. Проверьте связь и попробуйте ещё раз.');
       } else {
+        if (adsAccepted) {
+          // Необязательное: не удалось — окно всё равно закрываем, включить
+          // рассылку можно в настройках. Держать человека из-за рекламы нельзя.
+          await dbSetMarketingConsent(user.id, true, LEGAL_DOCS.marketing.version, 'reconsent')
+            .catch(e => console.warn('[consent] реклама не записалась', e));
+        }
         setNeeded(false);
       }
     } catch (e: any) {
@@ -187,7 +203,7 @@ export default function ConsentGate() {
           </Text>
 
           <View style={styles.docs}>
-            {LEGAL_KEYS.map(key => {
+            {[...LEGAL_KEYS, 'marketing' as const].map(key => {
               const раскрыт = open === key;
               return (
                 <View key={key} style={styles.docWrap}>
@@ -249,6 +265,19 @@ export default function ConsentGate() {
             </View>
             <Text style={styles.consentText}>
               Отдельно даю Согласие на обработку персональных данных. Это самостоятельное действие, не являющееся частью принятия Пользовательского соглашения.
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.consentRow}
+            activeOpacity={0.8}
+            onPress={() => setAdsAccepted(v => !v)}
+          >
+            <View style={[styles.checkbox, adsAccepted && styles.checkboxActive]}>
+              {adsAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
+            </View>
+            <Text style={styles.consentText}>
+              По желанию: даю Согласие на получение рекламной рассылки о JobToo на почту и в уведомлениях. Можно отключить в настройках.
             </Text>
           </TouchableOpacity>
 
