@@ -378,7 +378,7 @@ export default function BroadcastPage() {
                       onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
                     >
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: u.role === 'worker' ? 'var(--info)' : 'var(--violet)', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-                        {(u.first_name?.[0] ?? u.phone[0]).toUpperCase()}
+                        {(u.first_name?.[0] ?? u.phone?.[0] ?? '?').toUpperCase()}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

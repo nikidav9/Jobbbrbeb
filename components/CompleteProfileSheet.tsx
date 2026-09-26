@@ -43,8 +43,13 @@ export default function CompleteProfileSheet() {
   const needsAge = !!currentUser && !currentUser.isGuest && !currentUser.age;
   const needsPhoto = !!currentUser && !currentUser.isGuest && !currentUser.avatarUrl;
 
+  // Старому аккаунту без почты сначала — окно «Укажите почту»
+  // (EmailRequiredGate). Этот лист — системный Modal и лёг бы поверх него.
+  const emailPending = !!currentUser && !currentUser.isGuest && !currentUser.emailVerifiedAt;
+
   useEffect(() => {
     if (!currentUser || currentUser.isGuest) return;
+    if (emailPending) return;
     if (!needsAge && !needsPhoto) return;
     let alive = true;
     const t = setTimeout(async () => {
@@ -57,7 +62,7 @@ export default function CompleteProfileSheet() {
       }
     }, SHOW_DELAY_MS);
     return () => { alive = false; clearTimeout(t); };
-  }, [currentUser?.id, needsAge, needsPhoto]);
+  }, [currentUser?.id, needsAge, needsPhoto, emailPending]);
 
   const remember = () => AsyncStorage.setItem(SEEN_KEY, '1').catch(() => {});
 

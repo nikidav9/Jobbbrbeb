@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AlertProvider } from '@/template';
 import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
+import EmailRequiredGate from '@/components/EmailRequiredGate';
 import CookieConsent from '@/components/CookieConsent';
 import { ToastLayer } from '@/components/ui/ToastLayer';
 import { OnboardingOverlay } from '@/components/OnboardingOverlay';
@@ -115,7 +116,7 @@ function AuthGuard() {
   const pathname = usePathname();
   const ctx = React.useContext(AppContext);
 
-  const publicPaths = new Set(['/', '/login', '/register-worker', '/register-employer', '/legal', '/perm-vacancy-detail']);
+  const publicPaths = new Set(['/', '/login', '/reset-password', '/register-worker', '/register-employer', '/legal', '/perm-vacancy-detail']);
 
   useEffect(() => {
     if (!ctx) return;
@@ -237,6 +238,7 @@ export default function RootLayout() {
             <Stack.Screen name="register-worker" />
             <Stack.Screen name="register-employer" />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
             <Stack.Screen name="legal" />
             <Stack.Screen name="candidates" />
             <Stack.Screen name="chat-room" />
@@ -258,6 +260,9 @@ export default function RootLayout() {
               приложение до принятия документов, а сообщения о неудачной
               записи должны быть видны и над ним. */}
           <ConsentGate />
+          {/* Старым аккаунтам по телефону — «Укажите почту» (вход теперь по
+              почте). Под окном согласия: сначала документы. */}
+          <EmailRequiredGate />
           {/* Баннер cookie/Метрики — только веб; грузит аналитику после согласия. */}
           <CookieConsent />
           <ToastLayer />

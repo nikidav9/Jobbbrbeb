@@ -103,7 +103,15 @@ export interface ResumeProfile {
 export interface User {
   id: string;
   role: 'worker' | 'employer';
+  /**
+   * Телефон для связи. С 25.09.2026 необязателен: регистрация идёт по почте.
+   * У старых аккаунтов он же — вход, пока не подтверждена почта.
+   */
   phone: string;
+  /** Почта для входа — только в своём профиле, чужим не отдаётся. */
+  email?: string;
+  /** Когда почта подтверждена кодом; пусто — старый аккаунт без почты. */
+  emailVerifiedAt?: string;
   lastName: string;
   firstName: string;
   age?: number;

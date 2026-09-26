@@ -61,6 +61,9 @@ jobs:
       - name: Объявление в группу доходит, а отказ виден
         run: php tests/group_post_test.php
 
+      - name: Вход по почте — коды, квитанции, письмо доходит до SMTP
+        run: php tests/auth_email_test.php
+
       - name: Согласие на обработку данных пишется и его пропажу видно
         run: php tests/consent_test.php
 

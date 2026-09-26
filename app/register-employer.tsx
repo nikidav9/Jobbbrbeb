@@ -2,16 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors, Radius } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
-import { PhoneInput } from '@/components/feature/PhoneInput';
+import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
 import { useApp } from '@/hooks/useApp';
-import { uid, nowISO, isPhoneComplete, extractPhoneDigits } from '@/services/storage';
-import { dbCheckPhoneExists, dbWarmup } from '@/services/db';
+import { uid, nowISO } from '@/services/storage';
+import { dbWarmup } from '@/services/db';
 import { PasswordRules } from '@/components/ui/PasswordRules';
 import { firstUnmetRule } from '@/constants/passwordRules';
 import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouStep';
@@ -19,9 +19,8 @@ import { uploadAvatar } from '@/services/avatarUpload';
 
 import { rs, rf } from '@/constants/scale';
 
-// Steps: 1-Phone, 2-Password, 3-Name+Company, 4-Legal
+// Steps: 1-Email+code, 2-Password, 3-Name+Company, 4-Legal
 const TOTAL = 5;
-const SUPPORT_EMAIL = 'support@jobtoo.ru';
 const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
 
@@ -30,7 +29,9 @@ export default function RegisterEmployer() {
   const { registerUser, showToast } = useApp();
 
   const [step, setStep] = useState(1);
-  const [phone, setPhone] = useState('+7 ');
+  // Шаг 1 — почта с кодом из письма (решение владельца 25.09.2026).
+  const [email, setEmail] = useState('');
+  const [emailTicket, setEmailTicket] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [lastName, setLastName] = useState('');
@@ -41,8 +42,6 @@ export default function RegisterEmployer() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [pdAgreed, setPdAgreed] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
 
   // Warm up the Supabase connection so the first phone-check doesn't hang
@@ -50,27 +49,6 @@ export default function RegisterEmployer() {
 
   const back = () => { if (step === 1) router.back(); else setStep(s => s - 1); };
   const next = () => setStep(s => s + 1);
-
-  // Step 1 → 2: check phone uniqueness
-  const continueFromPhone = async () => {
-    setPhoneError('');
-    setChecking(true);
-    try {
-      const digits = extractPhoneDigits(phone);
-      const exists = await dbCheckPhoneExists(digits);
-      if (exists) {
-        setPhoneError('Аккаунт с этим номером уже существует. Войдите в систему.');
-        return;
-      }
-      setStep(2);
-    } catch {
-      // Проверка уникальности — часть самой регистрации. При обрыве связи
-      // нельзя делать вид, что номер свободен: иначе создадим дубликат.
-      setPhoneError('Не удалось проверить номер. Проверьте связь и попробуйте ещё раз.');
-    } finally {
-      setChecking(false);
-    }
-  };
 
   // Step 2 → 3: validate password
   const continueFromPassword = () => {
@@ -106,7 +84,9 @@ export default function RegisterEmployer() {
       const user = {
         id,
         role: 'employer' as const,
-        phone: extractPhoneDigits(phone),
+        phone: '',
+        email,
+        emailVerifiedAt: nowISO(),
         password,
         lastName,
         firstName,
@@ -116,12 +96,14 @@ export default function RegisterEmployer() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user);
+      await registerUser(user, emailTicket);
       showToast('Добро пожаловать! 👋', 'success');
       router.replace('/(tabs)');
     } catch (e) {
       console.error('[RegisterEmployer] finish error', e);
-      showToast('Ошибка регистрации. Попробуйте ещё раз.', 'error');
+      const msg = e instanceof Error && e.message ? e.message : 'Ошибка регистрации. Попробуйте ещё раз.';
+      showToast(msg, 'error');
+      if (/почт/i.test(msg)) { setEmailTicket(''); setStep(1); }
     } finally {
       setFinishing(false);
     }
@@ -144,20 +126,15 @@ export default function RegisterEmployer() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
 
-          {/* Step 1: Phone */}
+          {/* Step 1: Email + code */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Введи номер телефона</Text>
-              <Text style={styles.subtitle}>Работник увидит его только после мэтча</Text>
-              <PhoneInput value={phone} onChange={v => { setPhone(v); setPhoneError(''); }} />
-              {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
-              <View style={{ marginTop: 8 }}>
-                {checking ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
-                ) : (
-                  <PrimaryButton label="Продолжить →" onPress={continueFromPhone} disabled={!isPhoneComplete(phone)} />
-                )}
-              </View>
+              <Text style={styles.title}>Рабочая почта</Text>
+              <Text style={styles.subtitle}>Пришлём код — по почте будете входить и восстанавливать пароль</Text>
+              <EmailCodeStep
+                purpose="register"
+                onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}
+              />
               <TouchableOpacity style={styles.loginHint} onPress={() => router.push('/login')}>
                 <Text style={styles.loginHintTxt}>
                   Уже есть аккаунт?{' '}
@@ -171,7 +148,7 @@ export default function RegisterEmployer() {
           {step === 2 && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>Создай пароль</Text>
-              <Text style={styles.subtitle}>Запомни его — восстановления нет.</Text>
+              <Text style={styles.subtitle}>Забудете — восстановите кодом из письма.</Text>
               <AppInput
                 label="Пароль"
                 value={password}
@@ -196,19 +173,6 @@ export default function RegisterEmployer() {
                 disabled={!password.trim() || !passwordConfirm.trim()}
               />
 
-              {/* Подсказка про почту стоит после кнопки: она нужна тем, кто
-                  сюда вернётся, и не должна перебивать главное действие */}
-              <TouchableOpacity
-                onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Восстановление пароля JobToo`)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.forgotBanner}>
-                  <Text style={styles.forgotText}>
-                    Забыли пароль? Обращайтесь на{' '}
-                    <Text style={styles.forgotLink}>{SUPPORT_EMAIL}</Text>
-                  </Text>
-                </View>
-              </TouchableOpacity>
             </View>
           )}
 
@@ -331,12 +295,6 @@ const styles = StyleSheet.create({
   fieldError: { fontSize: rf(13), color: Colors.red, lineHeight: rf(18) },
   loginHint: { marginTop: rs(8), alignItems: 'center' },
   loginHintTxt: { fontSize: rf(14), color: Colors.textMuted },
-  forgotBanner: {
-    backgroundColor: '#F0F4FF', borderRadius: rs(10), padding: rs(12),
-    borderWidth: 1, borderColor: '#BFCBF5',
-  },
-  forgotText: { fontSize: rf(12), color: Colors.textSecondary, lineHeight: rf(17) },
-  forgotLink: { color: Colors.primary, fontWeight: '600' },
   checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(14), paddingVertical: rs(8) },
   checkbox: { width: rs(24), height: rs(24), borderRadius: rs(6), borderWidth: 1.5, borderColor: Colors.inputBorder, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', marginTop: rs(2), flexShrink: 0 },
   checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },

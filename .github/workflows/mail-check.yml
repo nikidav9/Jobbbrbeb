@@ -1,0 +1,54 @@
+name: Проверка почты для кодов входа
+
+# Коды регистрации и восстановления пароля уходят письмом через SMTP Timeweb
+# с ящика support@jobtoo.ru (php-proxy/mailer.php). Если с сервера закрыт
+# порт 465 или пароль ящика не доехал до PHP, новые люди не смогут
+# зарегистрироваться вовсе — а тесты CI этого не видят: у них нет прод-сети.
+#
+# Поэтому после каждой выкладки и раз в сутки сервер сам проверяет: соединение,
+# TLS и вход в ящик — без отправки письма (adminMailCheck в db.php). Красная
+# проверка = регистрация по почте сейчас не работает.
+
+on:
+  workflow_run:
+    workflows:
+      - Сборка сайта и доставка на московский сервер
+    types: [completed]
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: SMTP отвечает и пускает ящик
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Вызвать adminMailCheck
+        env:
+          APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+          ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
+        run: |
+          if [ -z "$APP_SECRET" ] || [ -z "$ADMIN_TOKEN" ]; then
+            echo "Серверные секреты для задания не настроены"; exit 1
+          fi
+          # Новые переменные PHP получает, когда bootstrap (раз в минуту)
+          # пересоздаст контейнер, — даём на это несколько минут.
+          for attempt in 1 2 3 4 5; do
+            RESP=$(curl -sS -X POST "https://jobtoo.ru/api/db.php" \
+              -H "Content-Type: application/json" \
+              -H "X-App-Secret: $APP_SECRET" \
+              -H "X-Admin-Token: $ADMIN_TOKEN" \
+              -d '{"fn":"adminMailCheck","args":[]}') || RESP=''
+            echo "Ответ: $RESP"
+            echo "$RESP" | grep -q '"ok":true' && { echo "Почта работает"; exit 0; }
+            [ "$attempt" -lt 5 ] && sleep 60
+          done
+          echo "::error::Почта для кодов не работает — регистрация по почте сейчас невозможна"
+          exit 1

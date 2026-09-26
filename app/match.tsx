@@ -98,7 +98,7 @@ export default function MatchScreen() {
             <Text style={styles.cardBadge}>КОНТАКТ</Text>
             <View style={styles.divider} />
             <Text style={styles.contactName}>{employer ? `${employer.firstName} ${employer.lastName}` : vac.company}</Text>
-            <Text style={styles.contactPhone}>{employer?.phone ?? '—'}</Text>
+            <Text style={styles.contactPhone}>{employer?.phone || '—'}</Text>
           </View>
 
           {/* Vacancy card */}

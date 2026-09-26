@@ -24,6 +24,9 @@ export function AppInput({ label, error, style, ...rest }: Props) {
         placeholderTextColor={Colors.textMuted}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        // Подпись над полем — она же его имя для экранного диктора: иначе
+        // TalkBack/VoiceOver читает просто «поле ввода».
+        accessibilityLabel={label}
         {...rest}
       />
       {error ? <Text style={styles.err}>{error}</Text> : null}

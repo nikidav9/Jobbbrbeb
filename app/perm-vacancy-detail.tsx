@@ -548,7 +548,10 @@ export default function PermVacancyDetailScreen() {
                   <Ionicons name="call-outline" size={14} color={Colors.green} />
                   <Text style={styles.phoneRevealLabel}>Телефон работодателя</Text>
                 </View>
-                <Text style={styles.phoneRevealNumber}>{employer.phone}</Text>
+                {/* С 25.09.2026 телефон необязателен: у нового работодателя его может не быть. */}
+                <Text style={employer.phone ? styles.phoneRevealNumber : styles.phoneLockedSub}>
+                  {employer.phone || 'Не указан — напишите работодателю в чате'}
+                </Text>
               </View>
               <View style={styles.phoneUnlocked}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
