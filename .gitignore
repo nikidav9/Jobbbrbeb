@@ -29,6 +29,8 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
+# Корни Минцифры для Юпитера — публичные сертификаты, не ключи.
+!jupiter/ru_trusted_ca.pem
 
 # local env files
 .env
