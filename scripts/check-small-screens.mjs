@@ -195,42 +195,46 @@ function serve() {
 // Все экраны приложения (решение владельца 26.09: «провести везде тесты»).
 // back: на экране должна быть единая кнопка «назад» (components/ui/BackButton),
 // и, открытый по прямой ссылке — без истории, — экран она обязана покинуть:
-// router.back() там молчит, и человек застревал. Вкладки и вход её не имеют.
+// router.back() там молчит, и человек застревал. backTo — куда именно: гостя
+// на стартовый экран, вошедшего в ленту, из чата в чаты, из настроек в
+// профиль. Вкладки и вход кнопки не имеют.
 const screens = [
   // Гость
   { id: 'start', url: '/' },
   { id: 'login', url: '/login' },
   { id: 'reset-password', url: '/reset-password' },
-  { id: 'register-worker', url: '/register-worker', back: true },
-  { id: 'register-employer', url: '/register-employer', back: true },
-  { id: 'legal-list', url: '/legal', back: true },
-  { id: 'legal-terms', url: '/legal?doc=terms', back: true },
-  { id: 'legal-marketing', url: '/legal?doc=marketing', back: true },
-  { id: 'guest-perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', back: true },
+  { id: 'register-worker', url: '/register-worker', back: true, backTo: /^\/$/ },
+  { id: 'register-employer', url: '/register-employer', back: true, backTo: /^\/$/ },
+  { id: 'legal-list', url: '/legal', back: true, backTo: /^\/$/ },
+  { id: 'legal-terms', url: '/legal?doc=terms', back: true, backTo: /^\/$/ },
+  { id: 'legal-marketing', url: '/legal?doc=marketing', back: true, backTo: /^\/$/ },
+  { id: 'guest-perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', back: true, backTo: /^\/$/ },
   // Работник
   { id: 'worker-feed', url: '/(tabs)/feed', who: worker, wait: 3500 },
   { id: 'worker-matches', url: '/(tabs)/matches', who: worker },
-  { id: 'worker-chats', url: '/(tabs)/chats', who: worker, back: true },
-  { id: 'chat-room', url: '/chat-room?chatId=small-c1', who: worker, back: true },
+  { id: 'worker-chats', url: '/(tabs)/chats', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'chat-room', url: '/chat-room?chatId=small-c1', who: worker, back: true, backTo: /^\/chats$/ },
   { id: 'worker-profile', url: '/(tabs)/profile', who: worker },
-  { id: 'perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', who: worker, back: true },
-  { id: 'company', url: '/(tabs)/company?company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true },
-  { id: 'saved', url: '/saved', who: worker, back: true },
-  { id: 'mail', url: '/mail', who: worker, back: true },
-  { id: 'support', url: '/support', who: worker, back: true },
-  { id: 'settings-worker', url: '/profile-settings', who: worker, back: true },
-  { id: 'invite', url: '/invite', who: worker, back: true },
-  { id: 'user-profile', url: '/user-profile?userId=small-e1', who: worker, back: true },
-  { id: 'jupiter-application', url: '/jupiter-application?id=small-j1', who: worker, back: true },
-  { id: 'jupiter-fill', url: '/jupiter-fill?id=small-j1&company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true },
+  { id: 'perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'company', url: '/(tabs)/company?company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'saved', url: '/saved', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'mail', url: '/mail', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'support', url: '/support', who: worker, back: true, backTo: /^\/profile$/ },
+  { id: 'settings-worker', url: '/profile-settings', who: worker, back: true, backTo: /^\/profile$/ },
+  { id: 'invite', url: '/invite', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'user-profile', url: '/user-profile?userId=small-e1', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'jupiter-application', url: '/jupiter-application?id=small-j1', who: worker, back: true, backTo: /^\/feed$/ },
+  { id: 'jupiter-fill', url: '/jupiter-fill?id=small-j1&company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true, backTo: /^\/matches$/ },
   // Работодатель
   { id: 'employer-feed', url: '/(tabs)/feed', who: employer, wait: 3500 },
   { id: 'employer-matches', url: '/(tabs)/matches', who: employer },
   { id: 'employer-profile', url: '/(tabs)/profile', who: employer },
-  { id: 'create-perm', url: '/create-perm-vacancy', who: employer, back: true },
-  { id: 'candidates', url: '/candidates?vacancyId=small-p1', who: employer, back: true },
-  { id: 'settings-employer', url: '/profile-settings', who: employer, back: true },
-  { id: 'employer-user-profile', url: '/user-profile?userId=small-w1', who: employer, back: true },
+  { id: 'create-perm', url: '/create-perm-vacancy', who: employer, back: true, backTo: /^\/feed$/ },
+  // Экран кандидатов на смену мёртв (подработка закрыта 17.09) — проверяем,
+  // что старая ссылка не оставляет пустую страницу без выхода.
+  { id: 'candidates-not-found', url: '/candidates?vacancyId=small-p1', who: employer, back: true, backTo: /^\/feed$/ },
+  { id: 'settings-employer', url: '/profile-settings', who: employer, back: true, backTo: /^\/profile$/ },
+  { id: 'employer-user-profile', url: '/user-profile?userId=small-w1', who: employer, back: true, backTo: /^\/feed$/ },
 ];
 
 // Единая кнопка «назад»: есть, круглая, не меньше пальца.
@@ -289,6 +293,7 @@ const server = serve();
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 const checked = [];
+const backLanded = {};
 
 try {
   for (const width of WIDTHS) {
@@ -376,10 +381,22 @@ try {
           const bad = backs.find(b => Math.abs(b.w - b.h) > 2 || b.w < 34 || b.radius < b.w / 2 - 2);
           let problem = !backs.length ? 'нет кнопки «назад»' : bad ? `кнопка «назад» не того вида: ${JSON.stringify(bad)}` : '';
           if (!problem) {
+            // Адрес должен стоять на месте ДО нажатия: иначе переход мог
+            // сделать сам экран (догрузка сессии, охрана входа), а засчитали
+            // бы кнопке.
             const before = page.url();
+            await page.waitForTimeout(500);
+            if (page.url() !== before) problem = 'экран сам ушёл с адреса до нажатия «назад»';
+          }
+          if (!problem) {
+            const errorsBefore = pageErrors.length;
             await page.locator('[data-testid="back-button"]').first().click();
             await page.waitForTimeout(1500);
-            if (page.url() === before) problem = '«назад» без истории никуда не ведёт';
+            const landed = new URL(page.url()).pathname;
+            backLanded[key] = landed;
+            if (landed === new URL(`http://x${screen.url}`).pathname) problem = '«назад» без истории никуда не ведёт';
+            else if (screen.backTo && !screen.backTo.test(landed)) problem = `«назад» увела на ${landed}, ждали ${screen.backTo}`;
+            else if (pageErrors.length > errorsBefore) problem = `ошибка страницы после «назад»: ${pageErrors.slice(errorsBefore).join(' | ')}`;
           }
           if (problem) {
             const png = path.join(OUT, `${key}.png`);
@@ -406,7 +423,7 @@ try {
   await new Promise(resolve => server.close(resolve));
 }
 
-fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify({ checked, failures }, null, 2) + '\n');
+fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify({ checked, failures, backLanded }, null, 2) + '\n');
 console.log(`small-screen: проверено ${checked.length} состояний (${WIDTHS.join(', ')} px)`);
 if (failures.length) {
   console.error(`small-screen: ПРОВАЛЫ ${failures.length}`);

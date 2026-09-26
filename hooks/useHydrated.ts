@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
+// Гидратация одна на загрузку страницы. После неё экраны, открытые переходом
+// внутри приложения, рисуют по параметру сразу — без кадра чужого содержимого.
+let hydratedOnce = false;
+
 /**
  * Прошёл ли первый рендер в браузере.
  *
@@ -12,7 +16,7 @@ import { Platform } from 'react-native';
  * На телефоне статики нет, там сразу true.
  */
 export function useHydrated(): boolean {
-  const [hydrated, setHydrated] = useState(Platform.OS !== 'web');
-  useEffect(() => { setHydrated(true); }, []);
+  const [hydrated, setHydrated] = useState(Platform.OS !== 'web' || hydratedOnce);
+  useEffect(() => { hydratedOnce = true; setHydrated(true); }, []);
   return hydrated;
 }

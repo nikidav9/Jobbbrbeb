@@ -323,7 +323,7 @@ function MetroPicker({ visible, selected, onChange, onClose }: {
             <BackButton onPress={() => setLine(null)} />
           ) : <View style={{ width: BACK_BUTTON_SIZE }} />}
           <Text style={styles.filterSheetTitle} numberOfLines={1}>{line ? line.name : 'Метро'}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ width: BACK_BUTTON_SIZE, alignItems: 'center' }}>
             <Text style={styles.filterClose}>✕</Text>
           </TouchableOpacity>
         </View>

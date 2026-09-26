@@ -33,7 +33,7 @@ export default function CandidatesScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}><BackButton /></View>
-        <Text style={styles.notFound}>Смена не найдена</Text>
+        {currentUser ? <Text style={styles.notFound}>Смена не найдена</Text> : null}
       </SafeAreaView>
     );
   }

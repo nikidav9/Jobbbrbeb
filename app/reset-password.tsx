@@ -109,7 +109,7 @@ export default function ResetPassword() {
               </>
             )}
 
-            <TouchableOpacity style={styles.cancel} onPress={() => router.back()} accessibilityRole="button">
+            <TouchableOpacity style={styles.cancel} onPress={() => (router.canGoBack() ? router.back() : router.replace('/login'))} accessibilityRole="button">
               <Text style={styles.cancelText}>Отмена</Text>
             </TouchableOpacity>
           </View>
