@@ -20,8 +20,8 @@ import { useEnergy } from '@/hooks/useEnergy';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy, WorkType } from '@/constants/types';
-import { JobSection, JOB_SECTIONS, SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
-import { getInitials, nameColorFromString, getFeedSections, saveFeedSections } from '@/services/storage';
+import { JobSection, SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
+import { getInitials, nameColorFromString, saveFeedSections } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
@@ -654,28 +654,8 @@ function PermFilterSheet({
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: rs(12) }}>
-          <Text style={fst.label}>Разделы</Text>
-          <Text style={[fst.rowSelHint, { paddingHorizontal: rs(16), paddingBottom: rs(8) }]}>
-            Не выбрано — подберём сами по вашим откликам и резюме
-          </Text>
-          <View style={fst.chipsWrap}>
-            {JOB_SECTIONS.map(({ id, label }) => {
-              const on = draft.sections.includes(id);
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[fst.chip, on && fst.chipOn]}
-                  onPress={() => setDraft(d => ({
-                    ...d, sections: on ? d.sections.filter(s => s !== id) : [...d.sections, id],
-                  }))}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]} numberOfLines={1}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
+          {/* «Разделы» убраны 26.09.2026: лента только IT, и выбор «Склад» или
+              «Продажи» давал бы пустую колоду. */}
           <Text style={fst.label}>Компания</Text>
           <TouchableOpacity style={fst.rowSel} onPress={() => setCompanyOpen(true)} activeOpacity={0.8}>
             <Text style={fst.rowSelName} numberOfLines={1}>{draft.companies[0] ?? 'Все компании'}</Text>
@@ -1329,10 +1309,10 @@ function WorkerPermMode() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const id = currentUser.id;
-    getFeedSections(id).then(saved => {
-      setSections(saved);
-      setSectionsLoadedFor(id);
-    });
+    // Лента только IT: сохранённые раньше разделы («Склад», «Продажи»)
+    // больше не применяем — с ними колода была бы пустой.
+    setSections([]);
+    setSectionsLoadedFor(id);
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -1521,7 +1501,9 @@ function WorkerPermMode() {
     return true;
   };
   const matchesSearch = (v: PermVacancy) => permMatchesQuery(v.title, v.company, v.description ?? '', permF);
-  const matchesFilters = (v: PermVacancy) => permMatchesCompany(v.company, permF)
+  // Свои вакансии JobToo — тоже только IT (решение владельца 26.09.2026).
+  const matchesFilters = (v: PermVacancy) => sectionOfPerm(v.workType) === 'it'
+    && permMatchesCompany(v.company, permF)
     && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF)
     && permMatchesFacets(v.title, v.schedule, v.description ?? '', permF)
     && (permF.sections.length === 0 || permF.sections.includes(sectionOfPerm(v.workType)));
@@ -1544,6 +1526,7 @@ function WorkerPermMode() {
   // только под применённый выбор разделов).
   const countPermLocal = (f: PermFilters) => {
     const ownCount = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id)
+      && sectionOfPerm(v.workType) === 'it'
       && permMatchesCompany(v.company, f)
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)

@@ -22,8 +22,10 @@ const FS_PAGE = 1000;
  * Счётчики по строкам {company, section}. Чистая функция — её проверяет
  * tests/feed_stats_test.php без базы.
  */
-function fs_aggregate(array $rows, string $generatedAt): array
+function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = []): array
 {
+    $itSet = array_flip($itCompanies);
+    $feed = 0;
     $bySection = [];
     $byCompany = [];
     foreach ($rows as $r) {
@@ -33,6 +35,8 @@ function fs_aggregate(array $rows, string $generatedAt): array
         $byCompany[$company] ??= ['company' => $company, 'total' => 0, 'it' => 0];
         $byCompany[$company]['total']++;
         if ($section === 'it') $byCompany[$company]['it']++;
+        // То, что реально видит соискатель: раздел it или IT-компания целиком.
+        if ($section === 'it' || isset($itSet[$company])) $feed++;
     }
     arsort($bySection);
     $companies = array_values($byCompany);
@@ -41,6 +45,7 @@ function fs_aggregate(array $rows, string $generatedAt): array
         'generated_at' => $generatedAt,
         'total' => count($rows),
         'it_total' => $bySection['it'] ?? 0,
+        'it_feed_total' => $feed,
         'companies' => count($companies),
         'it_companies' => count(array_filter($companies, fn($c) => $c['it'] > 0)),
         'by_section' => $bySection,
@@ -67,7 +72,8 @@ if (!defined('FEED_STATS_LIBRARY_ONLY')) {
         if (count($page) < FS_PAGE) break;
     }
 
-    $json = json_encode(fs_aggregate($rows, gmdate('Y-m-d\TH:i:s\Z')), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    $itCompanies = array_column(sb_select('jm_it_companies', [], 'company'), 'company');
+    $json = json_encode(fs_aggregate($rows, gmdate('Y-m-d\TH:i:s\Z'), $itCompanies), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     @file_put_contents($cache, $json, LOCK_EX);
     echo $json;
 }

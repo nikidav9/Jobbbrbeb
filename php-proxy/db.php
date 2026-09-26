@@ -6326,8 +6326,11 @@ try {
             $sections = array_values(array_unique(array_filter((array)($args[1] ?? []),
                 fn($s) => is_string($s) && isset(JOB_SECTIONS[$s]))));
             $sections = $sections ?: null;
+            // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
+            // вакансии компаний из jm_it_companies (миграция 120).
             $pool = sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => 30, 'p_sections' => $sections,
+                'p_it_only' => true,
             ]);
             $history = [];
             if ($authUid !== null) {
