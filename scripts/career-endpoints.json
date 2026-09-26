@@ -1951,5 +1951,54 @@
     "url": "https://upside.pro/vacancies",
     "mode": "embedded",
     "company_hint": "UPSIDE"
+  },
+  {
+    "url": "https://rosatom-career.ru/api/vacancies/vacancies/search/",
+    "method": "POST",
+    "body": {
+      "page_size": 100,
+      "page_number": 1,
+      "functional_areas": [
+        "60f981b519480429d955432b"
+      ],
+      "cities": [
+        "60f9778e135b2dd05a554041"
+      ]
+    },
+    "map": {
+      "list": "items",
+      "title": "vacancy_name",
+      "id": "hire_request_id",
+      "url_template": "https://rosatom-career.ru/vacancies/{vacancy_id}?hire_request_id={hire_request_id}",
+      "address": "city.name",
+      "pay": "salary",
+      "description": "job_responsibilities",
+      "description_sections": {
+        "Обязанности": "job_responsibilities",
+        "Требования": "employee_requirements",
+        "Условия": "work_conditions",
+        "О проекте": "work_projects"
+      },
+      "company_const": "Росатом"
+    },
+    "company_hint": "Росатом"
+  },
+  {
+    "url": "https://careers.delret.ru/entryPoint/ReferalPageEntryPoint?action=list&drt_city_ids%5B%5D=019380c3-a968-7b49-b7b1-db80d8d8cdd2",
+    "paging": {
+      "type": "offset",
+      "param": "offset",
+      "limit_param": "limit",
+      "limit": 25,
+      "max_pages": 10
+    },
+    "map": {
+      "list": "hrpac_published_vacancy",
+      "title": "name",
+      "id": "id",
+      "url_template": "https://careers.delret.ru/referal-page/vacancy/{id}",
+      "company_const": "ДРТ"
+    },
+    "company_hint": "ДРТ"
   }
 ]
