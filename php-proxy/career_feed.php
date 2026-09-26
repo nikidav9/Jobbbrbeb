@@ -245,6 +245,16 @@ function cf_dig($data, string $path)
         // «*» — каждый элемент списка: вакансии, разложенные по группам
         // (у Яндекс Крауда — [{direction, vacancies: [...]}, ...]), путь
         // «*.vacancies» собирает в один список. Пустые ветки пропускаются.
+        // «**» — ключ на любой глубине: у Next.js (App Router) список лежит
+        // глубоко в дереве вёрстки, путь к нему меняется от выкладки к
+        // выкладке. «**.vacancies» — первый найденный список по этому ключу.
+        if ($key === '**') {
+            $next = $keys[$i + 1] ?? '';
+            if ($next === '') return null;
+            $rest = implode('.', array_slice($keys, $i + 2));
+            $found = cf_dig_deep($data, $next);
+            return $found === null ? null : cf_dig($found, $rest);
+        }
         if ($key === '*') {
             if (!is_array($data)) return null;
             $rest = implode('.', array_slice($keys, $i + 1));
@@ -260,6 +270,36 @@ function cf_dig($data, string $path)
         $data = $data[$key];
     }
     return $data;
+}
+
+/** Первое значение-список по ключу на любой глубине (обход в глубину, до 40 уровней). */
+function cf_dig_deep($data, string $key, int $depth = 0)
+{
+    if (!is_array($data) || $depth > 40) return null;
+    if (array_key_exists($key, $data) && is_array($data[$key]) && array_is_list($data[$key])) return $data[$key];
+    foreach ($data as $child) {
+        $found = cf_dig_deep($child, $key, $depth + 1);
+        if ($found !== null) return $found;
+    }
+    return null;
+}
+
+/**
+ * Текст из вложенной структуры: все строки по порядку, каждая с новой строки.
+ * Описание у сайтов бывает деревом (у SETTERS — вкладки
+ * [{label, paragraphs: [...]}]); cf_name из такого взял бы одно название.
+ */
+function cf_flat_text($value): string
+{
+    if (!is_array($value)) return cf_text($value);
+    $parts = [];
+    array_walk_recursive($value, function ($v, $k) use (&$parts) {
+        if (!is_string($v) || str_starts_with($v, '$')) return;
+        if (in_array((string)$k, ['id', 'slug', 'href', 'url', 'status', 'kind', 'createdAt'], true)) return;
+        $t = cf_text($v);
+        if ($t !== '') $parts[] = $t;
+    });
+    return implode("\n", $parts);
 }
 
 /**
@@ -319,8 +359,15 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
                   'description' => 'description', 'schedule' => 'schedule'] as $to => $_) {
             $field = (string)($map[$to] ?? '');
             if ($field === '') continue;
-            $value = cf_name(cf_dig($row, $field));
+            $raw = cf_dig($row, $field);
+            // Описание-дерево (вкладки, абзацы) — весь текст, а не первое имя.
+            $value = $to === 'description' && is_array($raw) ? cf_flat_text($raw) : cf_name($raw);
             if ($value !== '') $item[$to] = $value;
+            // Дерево — это уже полный текст (вкладки SETTERS), а не анонс:
+            // сразу в description_full, страницу вакансии не дочитываем.
+            if ($to === 'description' && is_array($raw) && mb_strlen($value) >= 200) {
+                $item['description_full'] = $value;
+            }
         }
 
         // Полное описание разделами прямо из списка (Сбер отдаёт обязанности,
@@ -797,12 +844,41 @@ function cf_link_title(DOMElement $a, bool $headingOnly = false, string $titleCl
  * Twinby — у них никакого отдельного запроса за вакансиями нет вовсе, всё
  * приезжает первой же страницей.
  */
+/**
+ * Данные Next.js App Router (RSC): куски строки из self.__next_f.push([1,"…"])
+ * склеиваются, режутся на строки «id:JSON», из каждой берётся JSON. Строки
+ * другого вида (I[…] — ссылки на модули, T… — текст) пропускаются: вакансий в
+ * них нет. Возвращает список разобранных значений, пустой — если данных нет.
+ */
+function cf_next_flight(string $html): array
+{
+    if (!preg_match_all('~self\.__next_f\.push\((\[.*?\])\)\s*</script>~s', $html, $m)) return [];
+    $stream = '';
+    foreach ($m[1] as $chunk) {
+        $piece = json_decode($chunk, true);
+        if (is_array($piece) && ($piece[0] ?? null) === 1 && is_string($piece[1] ?? null)) $stream .= $piece[1];
+    }
+    $rows = [];
+    foreach (explode("\n", $stream) as $line) {
+        if (!preg_match('~^[0-9a-f]+:([\[{].*)$~s', $line, $mm)) continue;
+        $value = json_decode($mm[1], true);
+        if (is_array($value)) $rows[] = $value;
+    }
+    return $rows;
+}
+
 function cf_embedded_state(string $html, string $scriptId = ''): ?array
 {
     // Свой скрипт с JSON, который называет запись источника
     // (map.state_script_id): у Яндекс Крауда — <script id="data"
     // type="application/json">. Только по точному id, чтобы не схватить
     // чужой блок разметки (JSON-LD, настройки аналитики).
+    // «__next_f» — данные Next.js App Router: не один JSON, а поток строк
+    // «id:значение» в нескольких self.__next_f.push([1,"…"]).
+    if ($scriptId === '__next_f') {
+        $rows = cf_next_flight($html);
+        return $rows ?: null;
+    }
     if ($scriptId !== '') {
         if (!preg_match('~<script[^>]+id="' . preg_quote($scriptId, '~') . '"[^>]*>(.*?)</script>~s', $html, $m)) return null;
         $data = json_decode(trim($m[1]), true);

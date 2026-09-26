@@ -144,6 +144,35 @@ check('«*.vacancies» + open: две открытые из двух групп,
 check('описание из группы доехало', ($g[0]['description'] ?? '') === 'Отвечать клиентам');
 check('без «*» путь работает как раньше', cf_dig(['a' => ['b' => 5]], 'a.b') === 5);
 
+// Next.js App Router (self.__next_f): поток «id:JSON» из нескольких кусков,
+// список вакансий — на любой глубине дерева («**.vacancies»), описание-дерево
+// (вкладки) собирается в текст целиком и сразу идёт в description_full.
+$flight = [
+    '0:["$","html",null,{"children":["$L1"]}]' . "\n",
+    'I[123,["chunk.js"],"default"]' . "\n",
+    '5:[["$","$L14",null,{"x":1}],["$","section",null,{"children":["$","div",null,{"vacancies":[' .
+        '{"id":"a1","slug":"designer","title":"Дизайнер","tabs":[{"label":"Что делать","paragraphs":["Рисовать баннеры и презентации для клиентов агентства каждый день.","Работать с брендбуками и гайдлайнами, развивать фирменный стиль."]},{"label":"Ждём","paragraphs":["Уверенный Figma, чувство композиции и типографики, портфолио."]}]},' .
+        '{"id":"a2","slug":"copy","title":"Копирайтер","tabs":[]}]}]}]]' . "\n",
+];
+$page = '';
+foreach ($flight as $i => $piece) {
+    // Кусок режется посреди строки — как у настоящих страниц.
+    foreach (mb_str_split($piece, 70) as $part) $page .= '<script>self.__next_f.push([1,' . json_encode($part, JSON_UNESCAPED_UNICODE) . '])</script>';
+}
+$page .= '<script>self.__next_f.push([2,null])</script>';
+$state = cf_embedded_state($page, '__next_f');
+check('__next_f: строки I[…] пропущены, JSON-строки разобраны', is_array($state) && count($state) === 2);
+check('«**.vacancies» находит список в глубине дерева', count(cf_dig($state, '**.vacancies') ?? []) === 2);
+$nx = cf_json_items($state, ['list' => '**.vacancies', 'title' => 'title', 'id' => 'id', 'description' => 'tabs',
+    'url_template' => 'https://example.ru/job?vacancy={slug}'], 'https://example.ru/job', $now);
+check('вакансии Next.js со ссылками по slug',
+    array_column($nx, 'url') === ['https://example.ru/job?vacancy=designer', 'https://example.ru/job?vacancy=copy']);
+check('описание-дерево: весь текст вкладок, а не первое имя',
+    str_contains($nx[0]['description'] ?? '', 'Рисовать баннеры') && str_contains($nx[0]['description'] ?? '', 'Уверенный Figma'));
+check('описание-дерево ≥200 знаков сразу в description_full', ($nx[0]['description_full'] ?? '') === ($nx[0]['description'] ?? null));
+check('пустые вкладки — без описания', !isset($nx[1]['description']));
+check('без __next_f на странице — null', cf_embedded_state('<html></html>', '__next_f') === null);
+
 if ($failures) {
     fwrite(STDERR, "career json: ПРОВАЛЫ\n");
     foreach ($failures as $f) fwrite(STDERR, "  - $f\n");
