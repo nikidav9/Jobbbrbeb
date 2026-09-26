@@ -211,6 +211,7 @@ while (($l = fgets($c)) !== false) {
     elseif ($cmd === 'AUTH') { $stage = 'user'; $w('334 VXNlcm5hbWU6'); }
     elseif ($cmd === 'MAIL' || $cmd === 'RCPT') $w('250 ok');
     elseif ($cmd === 'DATA') { $data = true; $w('354 go'); }
+    elseif ($cmd === 'STAR') { $w('220 go ahead'); }
     elseif ($cmd === 'QUIT') { $w('221 bye'); break; }
     else $w('500 ?');
 }
@@ -269,7 +270,35 @@ fclose($mute);
 check('молчащий сервер — отказ по сроку: ' . (string)$err . sprintf(' за %.1f с', $took),
     $err !== null && $took < 4.5);
 $live = jt_mail_config();
-check('боевые сроки: соединение 5 с, всё письмо 10 с', $live['timeout'] === 5 && $live['deadline'] === 10);
+check('боевые сроки: соединение 3 с на порт, всё письмо 10 с', $live['timeout'] === 3 && $live['deadline'] === 10);
+check('порты по очереди: 465 SSL, затем 587 и 2525 со STARTTLS',
+    $live['routes'] === [['ssl', 465], ['starttls', 587], ['starttls', 2525]]);
+
+// Перебор портов: закрытый порт пропускается, рабочий запоминается.
+@unlink(jt_mail_route_file());
+$proc = $spawn('секрет-123');
+$routeLog = [];
+$err = jt_mail_send('', '', '', ['routes' => [['tcp', $port + 2], ['tcp', $port]]] + $cfg, true, $routeLog);
+proc_close($proc);
+check('закрытый порт пропущен, вход через следующий', $err === null && count($routeLog) === 2
+    && str_starts_with((string)$routeLog[0]['error'], 'нет соединения') && $routeLog[1]['error'] === null);
+check('рабочий порт запомнен', json_decode((string)@file_get_contents(jt_mail_route_file()), true) === ['tcp', $port]);
+$proc = $spawn('секрет-123');
+$routeLog = [];
+$err = jt_mail_send('', '', '', ['routes' => [['tcp', $port + 2], ['tcp', $port]]] + $cfg, true, $routeLog);
+proc_close($proc);
+check('запомненный порт пробуется первым — без ожидания закрытого', $err === null && count($routeLog) === 1);
+@unlink(jt_mail_route_file());
+@unlink($log);
+
+// STARTTLS не включился — пароль ящика не уходит открытым текстом.
+$proc = $spawn('секрет-123');
+$err = jt_mail_send('', '', '', ['transport' => 'starttls', 'port' => $port] + $cfg, true);
+proc_close($proc);
+$dialog = (string)@file_get_contents($log);
+check('без шифрования логин не отправляется', $err === 'не удалось включить шифрование (STARTTLS)'
+    && !str_contains($dialog, base64_encode('секрет-123')) && !str_contains($dialog, 'AUTH'));
+@unlink($log);
 
 // ── Проводка в db.php ────────────────────────────────────────────────────────
 $db = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
