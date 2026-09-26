@@ -19,23 +19,65 @@
  */
 function jt_mail_config(): array
 {
+    // Порты по очереди. 26.09 первая выкладка показала: с прод-сервера
+    // smtp.timeweb.ru:465 не открывается (Connection timed out) — облачные
+    // хостинги часто закрывают исходящие SMTP-порты от спама. 587 и 2525 со
+    // STARTTLS закрывают реже. MAIL_SMTP_PORT в окружении — только он.
+    $port = (int)(getenv('MAIL_SMTP_PORT') ?: 0);
+    $routes = $port > 0
+        ? [[$port === 465 ? 'ssl' : 'starttls', $port]]
+        : [['ssl', 465], ['starttls', 587], ['starttls', 2525]];
     return [
         'host' => getenv('MAIL_SMTP_HOST') ?: 'smtp.timeweb.ru',
-        'port' => (int)(getenv('MAIL_SMTP_PORT') ?: 465),
-        'transport' => 'ssl',
+        'routes' => $routes,
         'user' => (string)getenv('MAIL_SMTP_USER'),
         'pass' => (string)getenv('MAIL_SMTP_PASSWORD'),
         // Письмо уходит внутри запроса к API, а обработчиков PHP всего
         // несколько. Зависший почтовый сервер не должен держать их по
-        // полминуты: соединение — 5 с, всё письмо целиком — не дольше 10 с.
-        'timeout' => 5,
+        // полминуты: соединение — 3 с на порт, всё письмо — не дольше 10 с.
+        'timeout' => 3,
         'deadline' => 10,
     ];
 }
 
-function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = null, bool $probeOnly = false): ?string
+/** Где лежит запомненный рабочий порт: пробуем его первым. */
+function jt_mail_route_file(): string
+{
+    return sys_get_temp_dir() . '/jt-mail-route.json';
+}
+
+/**
+ * Письмо по первому порту, до которого удалось достучаться. Порт, давший
+ * соединение, запоминается и в следующий раз пробуется первым, чтобы каждое
+ * письмо не ждало таймауты закрытых портов. Ошибка входа или отказ сервера —
+ * не повод пробовать другой порт: там будет то же самое.
+ *
+ * $log — сюда кладётся, что ответил каждый порт (для adminMailCheck).
+ */
+function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = null, bool $probeOnly = false, ?array &$log = null): ?string
 {
     $cfg ??= jt_mail_config();
+    if (!isset($cfg['routes'])) return jt_mail_send_route($to, $subject, $text, $cfg, $probeOnly);
+    $routes = $cfg['routes'];
+    $known = json_decode((string)@file_get_contents(jt_mail_route_file()), true);
+    if (is_array($known) && in_array($known, $routes, true)) {
+        $routes = array_values(array_merge([$known], array_filter($routes, fn($r) => $r !== $known)));
+    }
+    $log = [];
+    $err = 'нет портов для почты';
+    foreach ($routes as [$transport, $port]) {
+        $err = jt_mail_send_route($to, $subject, $text, ['transport' => $transport, 'port' => $port] + $cfg, $probeOnly);
+        $log[] = ['transport' => $transport, 'port' => $port, 'error' => $err];
+        if ($err === null || !str_starts_with($err, 'нет соединения')) {
+            if ($err === null) @file_put_contents(jt_mail_route_file(), json_encode([$transport, $port]));
+            return $err;
+        }
+    }
+    return $err;
+}
+
+function jt_mail_send_route(string $to, string $subject, string $text, array $cfg, bool $probeOnly = false): ?string
+{
     $user = (string)($cfg['user'] ?? '');
     if ($user === '' || (string)($cfg['pass'] ?? '') === '') return 'почта не настроена';
     // Адресат идёт в команду RCPT TO и в заголовок — никаких переводов строк
@@ -47,7 +89,9 @@ function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = n
         'verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $cfg['host'],
     ]]);
     $errno = 0; $errstr = '';
-    $sock = @stream_socket_client($cfg['transport'] . '://' . $cfg['host'] . ':' . $cfg['port'],
+    // starttls — сначала обычное соединение, шифрование включаем командой.
+    $scheme = $cfg['transport'] === 'starttls' ? 'tcp' : $cfg['transport'];
+    $sock = @stream_socket_client($scheme . '://' . $cfg['host'] . ':' . $cfg['port'],
         $errno, $errstr, (float)$cfg['timeout'], STREAM_CLIENT_CONNECT, $ctx);
     if (!$sock) return "нет соединения с почтовым сервером ($errno $errstr)";
 
@@ -79,6 +123,14 @@ function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = n
         [$code, $greet] = $read();
         if ($code !== 220) return "почтовый сервер не поздоровался: $greet";
         if ($e = $cmd('EHLO jobtoo.ru', 250)) return $e;
+        if ($cfg['transport'] === 'starttls') {
+            if ($e = $cmd('STARTTLS', 220)) return $e;
+            // Та же проверка сертификата и имени, что у ssl:// (контекст выше).
+            if (!@stream_socket_enable_crypto($sock, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT)) {
+                return 'не удалось включить шифрование (STARTTLS)';
+            }
+            if ($e = $cmd('EHLO jobtoo.ru', 250)) return $e;
+        }
         if ($e = $cmd('AUTH LOGIN', 334)) return $e;
         if ($e = $cmd(base64_encode($user), 334)) return $e;
         if ($e = $cmd(base64_encode((string)$cfg['pass']), 235)) return 'почтовый сервер не принял логин';

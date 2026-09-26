@@ -4129,8 +4129,9 @@ try {
         // Доходит ли сервер до SMTP Timeweb и пускает ли его ящик — без письма.
         case 'adminMailCheck': {
             $cfg = jt_mail_config();
-            $err = jt_mail_send('', '', '', $cfg, true);
-            $data = ['ok' => $err === null, 'error' => $err, 'host' => $cfg['host'], 'port' => $cfg['port'],
+            $routeLog = [];
+            $err = jt_mail_send('', '', '', $cfg, true, $routeLog);
+            $data = ['ok' => $err === null, 'error' => $err, 'host' => $cfg['host'], 'routes' => $routeLog,
                 'user_set' => $cfg['user'] !== ''];
             break;
         }
