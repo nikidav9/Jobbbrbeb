@@ -106,6 +106,9 @@ jobs:
       - name: Сертификат Минцифры — только три банка и только сборщик
         run: php tests/ru_ca_scope_test.php
 
+      - name: Открытые счётчики ленты — только числа и названия компаний
+        run: php tests/feed_stats_test.php
+
       - name: Описание из API источника — разделы, карточка вакансии, курсор
         run: php tests/career_api_description_test.php
 
