@@ -51,6 +51,23 @@ HTML;
 $x = cf_html_links($shared, 'https://example.ru/', $map, time());
 check('общий заголовок списка не выдаётся за должность', count($x) === 0);
 
+// Теги-фильтры внутри карточки (/job/vacancy/?tag=…) — ссылки на тот же
+// список, а не на другую вакансию: карточка остаётся карточкой (Информзащита).
+$tagged = <<<'HTML'
+<div class="list">
+  <div class="vacancy"><a class="vacancy__link" href="/job/vacancy/ib/engineer/"></a>
+    <div class="vacancy__top"><h3>Системный инженер</h3></div>
+    <div class="tags"><a href="/job/vacancy/?tag%5B0%5D=Dev">Департамент разработки</a></div></div>
+  <div class="vacancy"><a class="vacancy__link" href="/job/vacancy/ib/architect/"></a>
+    <div class="vacancy__top"><h3>Архитектор прикладных систем</h3></div>
+    <div class="tags"><a href="/job/vacancy/?tag%5B0%5D=Dev">Департамент разработки</a></div></div>
+</div>
+HTML;
+$t = cf_html_links($tagged, 'https://example.ru/job/vacancy/', ['link_path' => '/job/vacancy/', 'min_title' => 8, 'title_from_card' => true], time());
+$tt = array_column($t, 'title');
+check('карточка с тегами-фильтрами: обе вакансии со своими заголовками',
+    $tt === ['Системный инженер', 'Архитектор прикладных систем']);
+
 if ($failures) {
     echo "career card title: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

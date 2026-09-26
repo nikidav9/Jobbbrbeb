@@ -557,8 +557,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         // Без этого в ленту лезли «Все вакансии», «Все города», «Кандидатам» —
         // ссылки на разделы, у которых после `/vacancy/` ничего нет. Замерено
         // на живых страницах СИБУРа, МегаФона и Контура.
-        $tail = substr($href, strpos($href, $needle) + strlen($needle));
-        $tail = trim(explode('?', explode('#', $tail)[0])[0], '/');
+        $tail = cf_link_tail($href, $needle);
         if ($tail === '') continue;
         // Хвост, который сам является названием раздела, — не вакансия.
         // У Яндекса все 68 «вакансий» оказались ссылками вида
@@ -624,6 +623,13 @@ function cf_title_is_noise(string $title): bool
  * уровней), в котором ссылки на вакансии ведут в одно место. Выше него уже
  * список из нескольких вакансий, и заголовок оттуда был бы чужим.
  */
+/** Хвост пути после link_path без запроса и якоря: пусто — ссылка на сам список или фильтр. */
+function cf_link_tail(string $href, string $needle): string
+{
+    $tail = substr($href, strpos($href, $needle) + strlen($needle));
+    return trim(explode('?', explode('#', $tail)[0])[0], '/');
+}
+
 function cf_link_card(DOMElement $a, string $needle): ?DOMElement
 {
     $own = trim($a->getAttribute('href'));
@@ -633,7 +639,9 @@ function cf_link_card(DOMElement $a, string $needle): ?DOMElement
         $hrefs = [];
         foreach ($node->getElementsByTagName('a') as $link) {
             $h = trim($link->getAttribute('href'));
-            if ($h !== '' && str_contains($h, $needle)) $hrefs[$h] = true;
+            // Теги-фильтры списка (/job/vacancy/?tag=…) в карточке не мешают:
+            // это не другая вакансия, а ссылка на тот же список (Информзащита).
+            if ($h !== '' && str_contains($h, $needle) && cf_link_tail($h, $needle) !== '') $hrefs[$h] = true;
         }
         if (count($hrefs) !== 1 || !isset($hrefs[$own])) break;
         $card = $node;
