@@ -54,7 +54,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
 import { DescriptionBlocks } from '@/components/ui/DescriptionBlocks';
-import { ReplyBadge, hasReplyBadge } from '@/components/feature/ReplyBadge';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -1158,7 +1157,7 @@ function WorkerPermMode() {
     refreshChats,
     showToast,
     permSavedIds, optimisticAddPermSaved, optimisticRemovePermSaved, exitGuest,
-    backendOffline, responsivenessMap,
+    backendOffline,
   } = useApp();
   const tabBarHeight = useBottomTabBarHeight();
 
@@ -1743,19 +1742,6 @@ function WorkerPermMode() {
                       {v.metroStation ? <Chip label={v.metroStation} variant="neutral" icon="subway-outline" textSize={11} /> : null}
                     </View>
                   </View>
-
-                  {/* Репутация работодателя остаётся до отклика — это важная
-                      информация для решения, но визуально она отделена от шапки.
-
-                      Обёртка условна: ReplyBadge ничего не рисует, когда
-                      переписок меньше двух, а отступы вокруг неё оставались
-                      всегда — и у работодателя без переписок в карточке зияли
-                      42 пикселя пустоты. */}
-                  {hasReplyBadge(responsivenessMap[v.employerId]) ? (
-                    <View style={styles.replyBadgeWrap}>
-                      <ReplyBadge stats={responsivenessMap[v.employerId]} />
-                    </View>
-                  ) : null}
 
                   <View style={styles.cardDivider} />
 
@@ -3017,7 +3003,6 @@ const styles = StyleSheet.create({
   metroHintRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4), marginTop: rs(2) },
   jobTitle: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(30), marginTop: rs(1) },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  replyBadgeWrap: { marginHorizontal: rs(20), marginBottom: rs(14) },
   addressChip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#F3F4F6', borderRadius: rs(13), paddingHorizontal: rs(12), paddingVertical: rs(10),

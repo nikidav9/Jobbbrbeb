@@ -10,7 +10,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { ReplyBadge } from '@/components/feature/ReplyBadge';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Crypto from 'expo-crypto';
 import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
@@ -46,7 +45,7 @@ export default function PermVacancyDetailScreen() {
     currentUser, loading, users, permVacancies, permApplications,
     permSavedIds, optimisticAddPermSaved, optimisticRemovePermSaved,
     refreshPermApplications,
-    showToast, responsivenessMap } = useApp();
+    showToast } = useApp();
 
   const [applying, setApplying] = useState(false);
   // Серверная запись важнее последующего refresh: если отклик уже принят,
@@ -517,9 +516,6 @@ export default function PermVacancyDetailScreen() {
                   <Text style={styles.employerMeta}>{employer.metroStation}</Text>
                 </View>
               ) : null}
-              {/* Как отвечает — рядом с именем, до отклика: без ответа
-                  остаются 45% чатов, а узнаёт об этом человек через двое суток. */}
-              <ReplyBadge stats={employer ? responsivenessMap[employer.id] : null} />
               {(employer?.avgRating ?? 0) > 0 ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Ionicons name="star" size={12} color="#F59E0B" />

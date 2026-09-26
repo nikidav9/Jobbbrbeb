@@ -100,6 +100,9 @@ jobs:
       - name: Дозагрузка описаний — троттлер, очередь, что пишем в карточку
         run: php tests/describe_test.php
 
+      - name: Карточка свайпа — никуда не ведёт, листается, без плашки «Отвечает»
+        run: php tests/swipe_card_test.php
+
       - name: Описание из API источника — разделы, карточка вакансии, курсор
         run: php tests/career_api_description_test.php
 
@@ -163,8 +166,6 @@ jobs:
       - name: Анонимность отзывов о чужом профиле
         run: php tests/ratings_privacy_test.php
 
-      - name: Плашка отзывчивости доходит до свайпа
-        run: php tests/reply_badge_test.php
 
       - name: Обрыв связи не выдаётся за пустоту
         run: php tests/offline_states_test.php
