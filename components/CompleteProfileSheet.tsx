@@ -33,7 +33,7 @@ const MAX_AGE = 75;
 
 export default function CompleteProfileSheet() {
   const insets = useSafeAreaInsets();
-  const { currentUser, updateUser, showToast } = useApp();
+  const { currentUser, updateUser, showToast, emailAuthReady } = useApp();
 
   const [visible, setVisible] = useState(false);
   const [age, setAge] = useState('');
@@ -45,7 +45,7 @@ export default function CompleteProfileSheet() {
 
   // Старому аккаунту без почты сначала — окно «Укажите почту»
   // (EmailRequiredGate). Этот лист — системный Modal и лёг бы поверх него.
-  const emailPending = !!currentUser && !currentUser.isGuest && !currentUser.emailVerifiedAt;
+  const emailPending = !!currentUser && !currentUser.isGuest && !currentUser.emailVerifiedAt && emailAuthReady;
 
   useEffect(() => {
     if (!currentUser || currentUser.isGuest) return;

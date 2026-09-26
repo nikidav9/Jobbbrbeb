@@ -443,6 +443,20 @@ export async function dbRestoreSession(): Promise<User | null> {
 // отдаёт «квитанцию», которую предъявляют на последнем шаге.
 export type EmailCodePurpose = 'register' | 'attach' | 'reset';
 
+/**
+ * Готова ли почта для кодов. Пока нет (26.09 исходящий SMTP у хостинга
+ * закрыт) — регистрация по телефону и без окна «Укажите почту». Сбой связи
+ * — тоже «не готова»: безопасное состояние, в котором всё работает как раньше.
+ */
+export async function dbAuthConfig(): Promise<{ emailReady: boolean }> {
+  try {
+    const d = await proxy<{ email_ready?: boolean }>('dbAuthConfig');
+    return { emailReady: !!d?.email_ready };
+  } catch {
+    return { emailReady: false };
+  }
+}
+
 export async function dbAuthSendCode(email: string, purpose: EmailCodePurpose): Promise<void> {
   await proxy<{ ok: boolean }>('dbAuthSendCode', [email, purpose]);
 }

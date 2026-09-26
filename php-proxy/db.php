@@ -248,7 +248,7 @@ $publicFns = [
     'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed',
     // Регистрация и восстановление пароля по коду из письма — до входа.
     // dbAuthSendCode/dbAuthVerifyCode с целью attach сами требуют сессию.
-    'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword',
+    'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
     jt_respond(['error' => 'Authentication required'], 401); exit;
@@ -4131,8 +4131,18 @@ try {
             $cfg = jt_mail_config();
             $routeLog = [];
             $err = jt_mail_send('', '', '', $cfg, true, $routeLog);
+            jt_mail_ready_note($err === null);
             $data = ['ok' => $err === null, 'error' => $err, 'host' => $cfg['host'], 'routes' => $routeLog,
                 'user_set' => $cfg['user'] !== ''];
+            break;
+        }
+
+        // Готова ли почта: пока нет — приложение регистрирует по телефону и не
+        // просит почту у старых аккаунтов (см. jt_mail_ready_* в mailer.php).
+        case 'dbAuthConfig': {
+            $st = jt_mail_ready_cached();
+            if (!$st['fresh']) jt_mail_ready_refresh_later();
+            $data = ['email_ready' => $st['ok']];
             break;
         }
 
@@ -4177,7 +4187,13 @@ try {
                 $userId = (string)$owner['id'];
             }
             $res = jt_auth_issue_code($email, $purpose, $userId, jt_session_key(),
-                fn(string $to, string $code, string $p) => jt_mail_code($to, $code, $p));
+                function (string $to, string $code, string $p): ?string {
+                    $err = jt_mail_code($to, $code, $p);
+                    // Живая отправка — лучший признак готовности почты.
+                    if ($err === null) jt_mail_ready_note(true);
+                    elseif (str_starts_with($err, 'нет соединения')) jt_mail_ready_note(false);
+                    return $err;
+                });
             if (!$res['ok']) {
                 $status = in_array($res['reason'], ['mail_failed', 'busy'], true) ? 503 : 429;
                 jt_respond(['error' => jt_auth_reason_text($res['reason'], (int)($res['retry_in'] ?? 0)),

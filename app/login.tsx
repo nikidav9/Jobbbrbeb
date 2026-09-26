@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Radius } from '@/constants/theme';
@@ -21,7 +21,7 @@ const looksLikeLogin = (v: string) => /@/.test(v) ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export default function Login() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
-  const { loginUser, showToast } = useApp();
+  const { loginUser, showToast, emailAuthReady } = useApp();
 
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
@@ -63,6 +63,12 @@ export default function Login() {
   };
 
   const openReset = () => {
+    // Почта ещё не готова (SMTP у хостинга закрыт) — восстановление, как
+    // раньше, через поддержку: код всё равно не дойдёт.
+    if (!emailAuthReady) {
+      Linking.openURL('mailto:support@jobtoo.ru?subject=Восстановление пароля JobToo');
+      return;
+    }
     router.push(returnTo ? { pathname: '/reset-password', params: { returnTo } } : '/reset-password');
   };
 
@@ -119,7 +125,7 @@ export default function Login() {
           <View style={styles.forgotBanner}>
             <Text style={styles.forgotText}>
               Забыли пароль?{' '}
-              <Text style={styles.forgotLink}>Восстановить по почте</Text>
+              <Text style={styles.forgotLink}>{emailAuthReady ? 'Восстановить по почте' : 'Напишите на support@jobtoo.ru'}</Text>
             </Text>
           </View>
         </TouchableOpacity>

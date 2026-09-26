@@ -373,6 +373,30 @@ $mig = (string)file_get_contents(__DIR__ . '/../supabase/migrations/119_email_au
 check('почта стирается при удалении аккаунта', str_contains($mig, 'new.email := null;'));
 check('таблица кодов закрыта от anon', str_contains($mig, 'revoke all on public.jm_auth_codes from anon, authenticated;'));
 
+// ── Готовность почты: пока SMTP недоступен, всё работает как до почты ──────
+check('готовность почты доступна до входа', str_contains($db, "'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',"));
+$cfgCase = case_body($db, 'dbAuthConfig');
+check('ответ из кэша, перепроверка — после ответа клиенту',
+    str_contains($cfgCase, 'jt_mail_ready_cached()') && str_contains($cfgCase, 'jt_mail_ready_refresh_later()'));
+$mailerSrc = (string)file_get_contents(__DIR__ . '/../php-proxy/mailer.php');
+check('перепроверка идёт после fastcgi_finish_request, одна на всех',
+    str_contains($mailerSrc, 'fastcgi_finish_request()') && str_contains($mailerSrc, 'LOCK_EX | LOCK_NB'));
+@unlink(jt_mail_ready_file());
+check('без сведений почта считается не готовой', jt_mail_ready_cached() === ['ok' => false, 'fresh' => false]);
+jt_mail_ready_note(true);
+check('живая отправка отмечает готовность', jt_mail_ready_cached() === ['ok' => true, 'fresh' => true]);
+@unlink(jt_mail_ready_file());
+$gate = (string)file_get_contents(__DIR__ . '/../components/EmailRequiredGate.tsx');
+check('окно почты — только когда почта готова', str_contains($gate, '&& app.emailAuthReady;'));
+foreach (['app/register-worker.tsx', 'app/register-employer.tsx'] as $f) {
+    $src = (string)file_get_contents(__DIR__ . '/../' . $f);
+    check("$f: без почты — регистрация по телефону",
+        str_contains($src, '{emailAuthReady ? (') && str_contains($src, 'onPress={continueFromPhone}')
+        && str_contains($src, "phone: emailTicket ? '' : extractPhoneDigits(phone),"));
+}
+$loginSrc = (string)file_get_contents(__DIR__ . '/../app/login.tsx');
+check('без почты «Забыли пароль?» ведёт в поддержку', str_contains($loginSrc, 'if (!emailAuthReady) {'));
+
 if ($failures) {
     echo "auth email: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

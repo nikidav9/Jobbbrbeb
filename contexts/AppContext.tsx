@@ -50,6 +50,7 @@ import {
   dbRecordConsent,
   dbCompleteGuestRegistration,
   setSessionExpiredHandler,
+  dbAuthConfig,
 } from '@/services/db';
 import { LEGAL_STAMP, legalVersions } from '@/constants/legal';
 import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/services/notifications';
@@ -122,6 +123,11 @@ export interface AppContextValue {
   signInAs: (u: User) => Promise<void>;
   /** Заменить свой профиль ответом сервера: после привязки почты. */
   adoptUser: (u: User) => Promise<void>;
+  /**
+   * Готова ли почта для кодов (сервер проверяет SMTP). Пока нет — регистрация
+   * по телефону, окна «Укажите почту» нет, сброс пароля — через поддержку.
+   */
+  emailAuthReady: boolean;
   logout: () => Promise<void>;
   /** Войти как гость (просмотр без регистрации) в роли соискателя. */
   enterGuest: () => void;
@@ -174,6 +180,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentUser, _setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [dataReady, setDataReady] = useState(false);
+  const [emailAuthReady, setEmailAuthReady] = useState(false);
+  // Спрашиваем при запуске и при каждом возврате в приложение: когда хостинг
+  // откроет SMTP, вход по почте включится сам, без выкладки.
+  useEffect(() => {
+    let alive = true;
+    const check = () => { dbAuthConfig().then(c => { if (alive) setEmailAuthReady(c.emailReady); }).catch(() => {}); };
+    check();
+    const sub = AppState.addEventListener('change', st => { if (st === 'active') check(); });
+    return () => { alive = false; sub.remove(); };
+  }, []);
   const [offline, setOffline] = useState<OfflineMap>({
     vacancies: false, permVacancies: false, likes: false, permApplications: false, chats: false,
   });
@@ -1017,6 +1033,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         registerUser,
         loginUser,
         signInAs,
+        emailAuthReady,
         adoptUser,
         logout,
         enterGuest,

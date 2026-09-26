@@ -35,7 +35,9 @@ export default function EmailRequiredGate() {
   // Другой человек вошёл на этом устройстве — «позже» прежнего к нему не относится.
   useEffect(() => { setSnoozed(false); setCanSnooze(false); setError(''); }, [user?.id]);
 
-  const needed = !!user && !user.isGuest && !user.emailVerifiedAt && !app.loading && !snoozed;
+  // Пока почта не готова (сервер не достучался до SMTP) — не просим вовсе:
+  // письмо всё равно не уйдёт.
+  const needed = !!user && !user.isGuest && !user.emailVerifiedAt && !app.loading && !snoozed && app.emailAuthReady;
   if (!needed) return null;
 
   const onSendAttempt = (ok: boolean) => {
