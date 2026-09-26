@@ -2,14 +2,14 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking,
+  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
 } from 'react-native';
 import {
   GestureDetector,
   ScrollView as GHScrollView,
   RefreshControl as GHRefreshControl,
 } from 'react-native-gesture-handler';
-import Reanimated from 'react-native-reanimated';
+import Reanimated, { FadeIn, FadeOut, SlideInDown, SlideOutDown, useSharedValue, useAnimatedStyle, withTiming, withSpring } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -25,6 +25,7 @@ import { getInitials, nameColorFromString, getFeedSections, saveFeedSections } f
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
+import { vacancyLevel, vacancyFormat, VACANCY_LEVELS, VACANCY_FORMATS, type VacancyLevel, type VacancyFormat } from '@/services/vacancyFacets';
 import { METRO_LINES } from '@/constants/metro';
 import {
   dbUpdateVacancy,
@@ -482,8 +483,13 @@ export type PermFilters = {
   schedules: string[];
   companies: string[];
   sections: JobSection[];
+  // Как у Cofinder: уровень и формат вычисляются из текста вакансии
+  // (services/vacancyFacets.ts), сортировка — «как подобрали» или по свежести.
+  levels: VacancyLevel[];
+  formats: VacancyFormat[];
+  sort: 'default' | 'new';
 };
-export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [], sections: [] };
+export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [], sections: [], levels: [], formats: [], sort: 'default' };
 
 type FeedCard =
   | { _ext: false; v: PermVacancy }
@@ -622,8 +628,21 @@ function PermFilterSheet({
   const n = count(draft);
 
   return (
-    <View style={[styles.filterOverlay, { bottom: bottomInset }]}>
-      <View style={[styles.filterSheet, { maxHeight: '92%' }]}>
+    // Как у Sorce: фон затемняется, шторка выезжает снизу и уезжает обратно
+    // при закрытии (exiting срабатывает, потому что шторку снимают с экрана
+    // условием в разметке). Тап по затемнению закрывает без применения.
+    <Reanimated.View
+      entering={FadeIn.duration(180)}
+      exiting={FadeOut.duration(160)}
+      style={[styles.filterOverlay, { bottom: bottomInset }]}
+    >
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтры" />
+      <Reanimated.View
+        entering={SlideInDown.springify().damping(20).stiffness(180)}
+        exiting={SlideOutDown.duration(200)}
+        style={[styles.filterSheet, { maxHeight: '92%' }]}
+      >
+        <View style={styles.filterSheetHandle} />
         <View style={styles.filterSheetHeader}>
           <Text style={styles.filterSheetTitle}>Фильтры</Text>
           <TouchableOpacity onPress={() => setDraft(EMPTY_PERM_FILTERS)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -687,6 +706,52 @@ function PermFilterSheet({
             })}
           </View>
 
+          <Text style={fst.label}>Уровень</Text>
+          <View style={fst.chipsWrap}>
+            {VACANCY_LEVELS.map(({ id, label }) => {
+              const on = draft.levels.includes(id);
+              return (
+                <TouchableOpacity
+                  key={id}
+                  style={[fst.chip, on && fst.chipOn]}
+                  onPress={() => setDraft(d => ({ ...d, levels: on ? d.levels.filter(x => x !== id) : [...d.levels, id] }))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={fst.label}>Формат</Text>
+          <View style={fst.chipsWrap}>
+            {VACANCY_FORMATS.map(({ id, label }) => {
+              const on = draft.formats.includes(id);
+              return (
+                <TouchableOpacity
+                  key={id}
+                  style={[fst.chip, on && fst.chipOn]}
+                  onPress={() => setDraft(d => ({ ...d, formats: on ? d.formats.filter(x => x !== id) : [...d.formats, id] }))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={fst.label}>Сортировка</Text>
+          <View style={fst.chipsWrap}>
+            {([['default', 'По умолчанию'], ['new', 'Сначала новые']] as const).map(([id, lbl]) => {
+              const on = draft.sort === id;
+              return (
+                <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} onPress={() => setDraft(d => ({ ...d, sort: id }))} activeOpacity={0.8}>
+                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{lbl}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           <Text style={fst.label}>Время публикации</Text>
           <View style={fst.chipsWrap}>
             {([['all', 'За всё время'], ['week', 'За неделю'], ['3days', 'За три дня']] as const).map(([id, lbl]) => {
@@ -737,7 +802,7 @@ function PermFilterSheet({
         <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
           <Text style={fst.ctaTxt}>{n > 0 ? `Показать ${n}` : 'Показать вакансии'}</Text>
         </TouchableOpacity>
-      </View>
+      </Reanimated.View>
 
       <MetroPicker
         visible={metroOpen}
@@ -752,9 +817,46 @@ function PermFilterSheet({
         onChange={companies => setDraft(d => ({ ...d, companies }))}
         onClose={() => setCompanyOpen(false)}
       />
-    </View>
+    </Reanimated.View>
   );
 }
+
+/**
+ * Круглая кнопка нижнего ряда с откликом на нажатие, как у Sorce: под пальцем
+ * кнопка чуть сжимается и светлеет, после отпускания пружинит обратно, и
+ * только потом открывается шторка — иначе вспышку никто не успевает увидеть.
+ * Всё на Reanimated, на потоке интерфейса.
+ */
+function FlashButton({ onPress, style, accessibilityLabel, children }: {
+  onPress: () => void;
+  style: any;
+  accessibilityLabel: string;
+  children: React.ReactNode;
+}) {
+  const pressed = useSharedValue(0);
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - pressed.value * 0.1 }],
+  }));
+  const flashStyle = useAnimatedStyle(() => ({ opacity: pressed.value * 0.35 }));
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPressIn={() => { pressed.value = withTiming(1, { duration: 90 }); }}
+      onPressOut={() => { pressed.value = withSpring(0, { damping: 12, stiffness: 260 }); }}
+      onPress={() => setTimeout(onPress, 110)}
+    >
+      <Reanimated.View style={[style, animStyle]}>
+        {children}
+        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, flashBtn.flash, flashStyle]} />
+      </Reanimated.View>
+    </Pressable>
+  );
+}
+
+const flashBtn = StyleSheet.create({
+  flash: { backgroundColor: '#FFFFFF', borderRadius: 999 },
+});
 
 const pfl = StyleSheet.create({
   searchWrap: {
@@ -1181,6 +1283,9 @@ function WorkerPermMode() {
   const [posted, setPosted] = useState<'all' | 'week' | '3days'>('all');
   const [schedules, setSchedules] = useState<string[]>([]);
   const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
+  const [levels, setLevels] = useState<VacancyLevel[]>([]);
+  const [formats, setFormats] = useState<VacancyFormat[]>([]);
+  const [sortMode, setSortMode] = useState<PermFilters['sort']>('default');
   const [permFilterOpen, setPermFilterOpen] = useState(false);
   // Дневной запас свайпов и плашка «на сегодня всё».
   const energy = useEnergy();
@@ -1379,8 +1484,9 @@ function WorkerPermMode() {
 
   // Текущие применённые фильтры одним объектом — так их удобно и применять,
   // и считать «Показать N» для черновика в шторке.
-  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies, sections };
-  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0 || sections.length > 0;
+  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies, sections, levels, formats, sort: sortMode };
+  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0 || sections.length > 0
+    || levels.length > 0 || formats.length > 0 || sortMode !== 'default';
 
   const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
     if (!f.query) return true;
@@ -1401,9 +1507,23 @@ function WorkerPermMode() {
 
   const permMatchesCompany = (company: string | undefined, f: PermFilters) =>
     f.companies.length === 0 || (!!company && f.companies.includes(company));
+  // Уровень и формат: без признака в тексте вакансия выбранный фильтр не
+  // проходит — выдавать её за «Senior» или «удалёнку» было бы враньём.
+  const permMatchesFacets = (title: string, schedule: string | undefined, desc: string, f: PermFilters) => {
+    if (f.levels.length) {
+      const lv = vacancyLevel(title);
+      if (!lv || !f.levels.includes(lv)) return false;
+    }
+    if (f.formats.length) {
+      const fm = vacancyFormat(schedule, desc);
+      if (!fm || !f.formats.includes(fm)) return false;
+    }
+    return true;
+  };
   const matchesSearch = (v: PermVacancy) => permMatchesQuery(v.title, v.company, v.description ?? '', permF);
   const matchesFilters = (v: PermVacancy) => permMatchesCompany(v.company, permF)
     && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF)
+    && permMatchesFacets(v.title, v.schedule, v.description ?? '', permF)
     && (permF.sections.length === 0 || permF.sections.includes(sectionOfPerm(v.workType)));
   // Карьерная вакансия проходит те же фильтры: раздел у неё уже размечен
   // сервером при приёме (php-proxy/job_sections.php), а не выводится из вида работ.
@@ -1411,6 +1531,7 @@ function WorkerPermMode() {
     permMatchesQuery(v.title, v.company, v.description ?? '', f)
     && permMatchesCompany(v.company, f)
     && permMatchesMeta(v.metroStation ?? undefined, v.salary ?? 0, v.firstSeenAt, v.schedule ?? undefined, f)
+    && permMatchesFacets(v.title, v.schedule ?? undefined, v.description ?? '', f)
     && (f.sections.length === 0 || (!!v.section && f.sections.includes(v.section)));
 
   // Лента показывает только открытые вакансии, на которые человек ещё не
@@ -1426,6 +1547,7 @@ function WorkerPermMode() {
       && permMatchesCompany(v.company, f)
       && permMatchesQuery(v.title, v.company, v.description ?? '', f)
       && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)
+      && permMatchesFacets(v.title, v.schedule, v.description ?? '', f)
       && (f.sections.length === 0 || f.sections.includes(sectionOfPerm(v.workType)))).length;
     const extCount = careerVacancies.filter(v => matchesExtFilters(v, f)).length;
     return ownCount + extCount;
@@ -1438,8 +1560,15 @@ function WorkerPermMode() {
     metro: currentUser.metroStation ?? null,
   });
   const openCareerVacancies = careerVacancies.filter(v => matchesExtFilters(v, permF));
-  const feedCards: FeedCard[] = interleaveDeck(ownRanked, openCareerVacancies).map(x =>
+  const mixedCards: FeedCard[] = interleaveDeck(ownRanked, openCareerVacancies).map(x =>
     x.own ? { _ext: false as const, v: x.v } : { _ext: true as const, v: x.v });
+  // «Сначала новые» — по дате появления, без подбора под вкус: так человек
+  // видит свежее первым, как у Cofinder. Сортировка устойчивая, равные даты
+  // сохраняют порядок подбора.
+  const cardTime = (c: FeedCard) => Date.parse((c._ext ? c.v.firstSeenAt : c.v.createdAt) || '') || 0;
+  const feedCards: FeedCard[] = sortMode === 'new'
+    ? [...mixedCards].sort((a, b) => cardTime(b) - cardTime(a))
+    : mixedCards;
 
   const applyToExt = async (ev: ExtVacancy): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
@@ -1941,14 +2070,13 @@ function WorkerPermMode() {
           </OnboardingTarget>
 
           <OnboardingTarget targetKey="worker.feed.filter">
-            <TouchableOpacity
+            <FlashButton
               accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
               style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
               onPress={() => setPermFilterOpen(true)}
-              activeOpacity={0.75}
             >
               <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
-            </TouchableOpacity>
+            </FlashButton>
           </OnboardingTarget>
 
           <OnboardingTarget targetKey="worker.feed.apply">
@@ -2094,14 +2222,13 @@ function WorkerPermMode() {
             >
               <Ionicons name="close" size={34} color={Colors.red} />
             </TouchableOpacity>
-            <TouchableOpacity
+            <FlashButton
               accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
               style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
               onPress={() => setPermFilterOpen(true)}
-              activeOpacity={0.75}
             >
               <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
-            </TouchableOpacity>
+            </FlashButton>
             <TouchableOpacity
               accessibilityLabel="Подать заявку через Jupiter"
               style={[styles.deckFloatingAction, styles.deckFloatingWant]}
@@ -2205,6 +2332,9 @@ function WorkerPermMode() {
             setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
             setSchedules(f.schedules);
             setFilterCompanies(f.companies);
+            setLevels(f.levels);
+            setFormats(f.formats);
+            setSortMode(f.sort);
             setSections(f.sections);
             if (currentUser?.id) saveFeedSections(currentUser.id, f.sections);
           }}
@@ -3072,6 +3202,7 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(4), textAlign: 'center', lineHeight: rf(20) },
   filterOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, justifyContent: 'flex-end' },
   filterSheet: { backgroundColor: Colors.bg, borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20), paddingBottom: rs(40), maxHeight: '70%' },
+  filterSheetHandle: { alignSelf: 'center', width: rs(40), height: rs(5), borderRadius: rs(3), backgroundColor: Colors.divider, marginTop: rs(8) },
   filterSheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: rs(16), borderBottomWidth: 1, borderBottomColor: Colors.divider },
   filterSheetTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
   filterClose: { fontSize: rf(18), color: Colors.textMuted, padding: rs(4) },
