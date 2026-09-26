@@ -10,12 +10,13 @@ import { Colors, Radius } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
+import { PhoneInput } from '@/components/feature/PhoneInput';
 import { MetroPicker } from '@/components/feature/MetroPicker';
 import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouStep';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { useApp } from '@/hooks/useApp';
-import { uid, nowISO } from '@/services/storage';
-import { dbWarmup, dbSaveResumeFile } from '@/services/db';
+import { uid, nowISO, isPhoneComplete, extractPhoneDigits } from '@/services/storage';
+import { dbCheckPhoneExists, dbWarmup, dbSaveResumeFile } from '@/services/db';
 import { extractResumePdf, mergeResumeIntoUser } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { PasswordRules } from '@/components/ui/PasswordRules';
@@ -29,13 +30,18 @@ const TOTAL = 7;
 export default function RegisterWorker() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
-  const { registerUser, updateUser, showToast } = useApp();
+  const { emailAuthReady, registerUser, updateUser, showToast } = useApp();
 
   const [step, setStep] = useState(1);
   // Шаг 1 — почта с кодом из письма (решение владельца 25.09.2026, телефон
   // из регистрации убран). Квитанцию предъявляем в самом конце, в registerUser.
   const [email, setEmail] = useState('');
   const [emailTicket, setEmailTicket] = useState('');
+  // Пока почта не готова (сервер не достучался до SMTP) — как раньше, по
+  // телефону: регистрация не должна вставать из-за почты.
+  const [phone, setPhone] = useState('+7 ');
+  const [checking, setChecking] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [lastName, setLastName] = useState('');
@@ -80,6 +86,26 @@ export default function RegisterWorker() {
     }
   };
 
+  // Step 1 → 2 (режим телефона): номер ещё не занят
+  const continueFromPhone = async () => {
+    setPhoneError('');
+    setChecking(true);
+    try {
+      const exists = await dbCheckPhoneExists(extractPhoneDigits(phone));
+      if (exists) {
+        setPhoneError('Аккаунт с этим номером уже существует. Войдите в систему.');
+        return;
+      }
+      setStep(2);
+    } catch {
+      // Проверка уникальности — часть самой регистрации. При обрыве связи
+      // нельзя делать вид, что номер свободен: иначе создадим дубликат.
+      setPhoneError('Не удалось проверить номер. Проверьте связь и попробуйте ещё раз.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
   // Step 2 → 3: validate password
   const continueFromPassword = () => {
     setPassError('');
@@ -116,9 +142,9 @@ export default function RegisterWorker() {
       const user = {
         id,
         role: 'worker' as const,
-        phone: '',
-        email,
-        emailVerifiedAt: nowISO(),
+        // По почте — телефона нет; по телефону (почта не готова) — как раньше.
+        phone: emailTicket ? '' : extractPhoneDigits(phone),
+        ...(emailTicket ? { email, emailVerifiedAt: nowISO() } : {}),
         password,
         lastName,
         firstName,
@@ -130,7 +156,7 @@ export default function RegisterWorker() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user, emailTicket);
+      await registerUser(user, emailTicket || undefined);
       // Сейф резюме требует сессии — её выдаёт registerUser чуть выше.
       // Сбой сохранения не откатывает уже созданный аккаунт: резюме можно
       // загрузить и позже в профиле.
@@ -181,12 +207,30 @@ export default function RegisterWorker() {
           {/* Step 1: Email + code */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Твоя почта</Text>
-              <Text style={styles.subtitle}>Пришлём код — по почте будешь входить и восстанавливать пароль</Text>
-              <EmailCodeStep
-                purpose="register"
-                onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}
-              />
+              <Text style={styles.title}>{emailAuthReady ? 'Твоя почта' : 'Введи номер телефона'}</Text>
+              <Text style={styles.subtitle}>
+                {emailAuthReady
+                  ? 'Пришлём код — по почте будешь входить и восстанавливать пароль'
+                  : 'Работодатель увидит его только после мэтча'}
+              </Text>
+              {emailAuthReady ? (
+                <EmailCodeStep
+                  purpose="register"
+                  onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}
+                />
+              ) : (
+                <>
+                  <PhoneInput value={phone} onChange={v => { setPhone(v); setPhoneError(''); }} />
+                  {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
+                  <View style={{ marginTop: 8 }}>
+                    {checking ? (
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                    ) : (
+                      <PrimaryButton label="Продолжить →" onPress={continueFromPhone} disabled={!isPhoneComplete(phone)} />
+                    )}
+                  </View>
+                </>
+              )}
               <TouchableOpacity style={styles.loginHint} onPress={() => router.push('/login')}>
                 <Text style={styles.loginHintTxt}>
                   Уже есть аккаунт?{' '}
@@ -200,7 +244,7 @@ export default function RegisterWorker() {
           {step === 2 && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>Создай пароль</Text>
-              <Text style={styles.subtitle}>Забудешь — восстановишь кодом из письма.</Text>
+              <Text style={styles.subtitle}>{emailTicket ? 'Забудешь — восстановишь кодом из письма.' : 'Запомни его. Забудешь — пиши на support@jobtoo.ru.'}</Text>
               <AppInput
                 label="Пароль"
                 value={password}

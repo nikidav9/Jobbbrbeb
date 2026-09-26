@@ -164,6 +164,46 @@ function jt_mail_send_route(string $to, string $subject, string $text, array $cf
     }
 }
 
+// ── Готова ли почта ───────────────────────────────────────────────────────
+// 26.09: с прод-сервера исходящий SMTP закрыт на всех портах, и регистрация
+// по почте встала. Приложение спрашивает сервер (dbAuthConfig), готова ли
+// почта, и до тех пор регистрирует по телефону. Ответ — из кэша на 10 минут;
+// устаревший кэш освежается ПОСЛЕ ответа клиенту, чтобы никто не ждал
+// таймаутов закрытых портов. Отправка кода тоже обновляет кэш.
+const JT_MAIL_READY_TTL = 600;
+
+function jt_mail_ready_file(): string
+{
+    return sys_get_temp_dir() . '/jt-mail-ready.json';
+}
+
+function jt_mail_ready_note(bool $ok): void
+{
+    @file_put_contents(jt_mail_ready_file(), json_encode(['ok' => $ok, 'at' => time()]), LOCK_EX);
+}
+
+/** Последнее известное: готова ли почта, и не пора ли перепроверить. */
+function jt_mail_ready_cached(): array
+{
+    $st = json_decode((string)@file_get_contents(jt_mail_ready_file()), true);
+    $ok = is_array($st) && !empty($st['ok']);
+    $fresh = is_array($st) && (int)($st['at'] ?? 0) + JT_MAIL_READY_TTL > time();
+    return ['ok' => $ok, 'fresh' => $fresh];
+}
+
+/** Перепроверить почту после того, как ответ уже ушёл клиенту. */
+function jt_mail_ready_refresh_later(): void
+{
+    // Одна перепроверка на всех: остальные запросы за это время видят кэш.
+    $lock = @fopen(jt_mail_ready_file() . '.lock', 'c');
+    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return;
+    register_shutdown_function(function () use ($lock) {
+        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        jt_mail_ready_note(jt_mail_send('', '', '', null, true) === null);
+        flock($lock, LOCK_UN);
+    });
+}
+
 /** Письмо с кодом: текст под каждую цель. */
 function jt_mail_code(string $to, string $code, string $purpose, ?array $cfg = null): ?string
 {

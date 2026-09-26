@@ -144,7 +144,7 @@ export function OnboardingOverlay() {
   const isGuest = user?.isGuest ?? false;
   // Старому аккаунту без почты сначала — обязательное окно «Укажите почту»
   // (EmailRequiredGate): обучение поверх него перекрывало поле ввода.
-  const emailPending = !!user && !isGuest && !user.emailVerifiedAt;
+  const emailPending = !!user && !isGuest && !user.emailVerifiedAt && !!app?.emailAuthReady;
   const steps = useMemo(() => onboardingSteps(role), [role]);
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const stepPath = step?.path;
