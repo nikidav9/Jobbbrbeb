@@ -1061,5 +1061,243 @@
       "url_template": "https://www.tbank.ru/career/it/vacancy/moscow/{seoSlug}/{urlSlug}/",
       "company_const": "Т-Банк"
     }
+  },
+  {
+    "map": {
+      "link_path": "vacancy/",
+      "min_title": 4,
+      "company_const": "Aston"
+    },
+    "url": "https://career.astondevs.ru/vacancy",
+    "mode": "html_links",
+    "company_hint": "Aston"
+  },
+  {
+    "map": {
+      "id": "id",
+      "title": "title",
+      "list": "items",
+      "address": "city.name",
+      "pay": "salaryFrom",
+      "url_template": "https://job.2gis.ru/vacancies/{direction.slug}/{id}",
+      "description": "shortDescription",
+      "detail_url_template": "https://job.2gis.ru/api/v1/vacancies/{id}",
+      "detail_sections": {
+        "Описание": "description"
+      },
+      "company_const": "2ГИС"
+    },
+    "url": "https://job.2gis.ru/api/v1/vacancies",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 100,
+      "limit_param": "pageSize",
+      "max_pages": 5
+    },
+    "company_hint": "2ГИС"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Foxford"
+    },
+    "url": "https://jobs.foxford.ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "Foxford"
+  },
+  {
+    "map": {
+      "id": "id",
+      "title": "title",
+      "list": "",
+      "address": "office.city",
+      "schedule": "work_format.name",
+      "url_template": "https://globus-ltd.ru/vacancies?id={id}",
+      "description_sections": {
+        "О проекте": "about_project",
+        "О роли": "about_role",
+        "Обязанности": "duties",
+        "Требования": "requirements",
+        "Навыки": "skills",
+        "Будет плюсом": "nice_to_have",
+        "Мы предлагаем": "we_offer"
+      },
+      "company_const": "Globus IT"
+    },
+    "url": "https://globus-ltd.ru/api/vacancy",
+    "company_hint": "Globus IT"
+  },
+  {
+    "map": {
+      "link_path": "/about/vacancies/",
+      "min_title": 8,
+      "company_const": "Softline"
+    },
+    "url": "https://softline.ru/about/vacancies",
+    "mode": "html_links",
+    "company_hint": "Softline"
+  },
+  {
+    "map": {
+      "link_path": "/career/vacancies/",
+      "min_title": 8,
+      "company_const": "Notamedia"
+    },
+    "url": "https://nota.media/career/",
+    "mode": "html_links",
+    "company_hint": "Notamedia"
+  },
+  {
+    "map": {
+      "link_path": "/job/",
+      "min_title": 8,
+      "company_const": "Twinby"
+    },
+    "url": "https://twinby.ru/career",
+    "mode": "html_links",
+    "company_hint": "Twinby"
+  },
+  {
+    "map": {
+      "link_path": "/career/vacancies/",
+      "link_regex": "~^/career/vacancies/(?!short_form/?$)[^/]+/?$~",
+      "min_title": 8,
+      "company_const": "Наумен"
+    },
+    "url": "https://www.naumen.ru/career/vacancies/",
+    "mode": "html_links",
+    "company_hint": "Наумен"
+  },
+  {
+    "map": {
+      "link_path": "/ru/vacancies/",
+      "min_title": 8,
+      "company_const": "Rubius"
+    },
+    "url": "https://rubius.com/ru/company/career",
+    "mode": "html_links",
+    "company_hint": "Rubius"
+  },
+  {
+    "map": {
+      "link_path": "/career/",
+      "link_regex": "~^/career/[a-zA-Z0-9-]+/$~",
+      "min_title": 8,
+      "company_const": "RedLab"
+    },
+    "url": "https://redlab.dev/career/",
+    "mode": "html_links",
+    "company_hint": "RedLab"
+  },
+  {
+    "map": {
+      "link_path": "/vakansii/",
+      "link_regex": "~^/vakansii/[a-zA-Z0-9-]+/$~",
+      "min_title": 8,
+      "company_const": "BINOM"
+    },
+    "url": "https://binom.systems/vakansii/",
+    "mode": "html_links",
+    "company_hint": "BINOM"
+  },
+  {
+    "map": {
+      "link_path": "/company/vacancy/",
+      "link_regex": "~^/company/vacancy/[a-zA-Z0-9-]+/$~",
+      "min_title": 8,
+      "company_const": "PIX Robotics"
+    },
+    "url": "https://pix.ru/company/vacancy/",
+    "mode": "html_links",
+    "company_hint": "PIX Robotics"
+  },
+  {
+    "map": {
+      "link_path": "/career/vacancies/",
+      "min_title": 8,
+      "company_const": "Пачка"
+    },
+    "url": "https://pachca.com/career",
+    "mode": "html_links",
+    "company_hint": "Пачка"
+  },
+  {
+    "map": {
+      "link_path": "/ru/career/",
+      "min_title": 8,
+      "company_const": "Arenadata"
+    },
+    "url": "https://arenadata.tech/ru/career",
+    "mode": "html_links",
+    "company_hint": "Arenadata"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "ИнфоТеКС"
+    },
+    "url": "https://career.infotecs.ru/vacancies/",
+    "mode": "html_links",
+    "paging": {
+      "type": "page",
+      "param": "PAGEN_1",
+      "start": 1,
+      "max_pages": 6
+    },
+    "company_hint": "ИнфоТеКС"
+  },
+  {
+    "url": "https://usergate.com/api/v1/vacancies/all",
+    "method": "POST",
+    "body": {},
+    "map": {
+      "list": "data.vacancies",
+      "title": "name",
+      "id": "external_id",
+      "url": "alternate_url",
+      "address": "city",
+      "schedule": "employment",
+      "company_const": "UserGate",
+      "detail_url_template": "https://usergate.com/api/v1/vacancies/detail/{external_id}",
+      "detail_list": "data.vacancy",
+      "detail_sections": {
+        "Описание": "description"
+      }
+    },
+    "company_hint": "UserGate"
+  },
+  {
+    "url": "https://www.moysklad.ru/company/careers/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/company/careers/vacancy/",
+      "min_title": 6,
+      "company_const": "МойСклад"
+    },
+    "company_hint": "МойСклад"
+  },
+  {
+    "url": "https://profi.ru/vacancies/list/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 8,
+      "company_const": "Профи.ру"
+    },
+    "company_hint": "Профи.ру"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "Evercode Lab"
+    },
+    "url": "https://evercodelab.ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "Evercode Lab"
   }
 ]
