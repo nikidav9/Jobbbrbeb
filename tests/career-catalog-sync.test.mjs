@@ -25,10 +25,10 @@ const rows = sites
   });
 const baseName = (name) => name.split(/\s+·\s+/)[0];
 
-test('master-list содержит весь текущий каталог: 470 компаний / 477 разделов', () => {
-  assert.equal(rows.length, 477);
-  assert.equal(new Set(rows.map(({ name }) => baseName(name))).size, 470);
-  assert.equal(new Set(rows.map(({ url }) => url)).size, 477);
+test('master-list содержит весь текущий каталог: 473 компании / 480 разделов', () => {
+  assert.equal(rows.length, 480);
+  assert.equal(new Set(rows.map(({ name }) => baseName(name))).size, 473);
+  assert.equal(new Set(rows.map(({ url }) => url)).size, 480);
 });
 
 test('production синхронизируется именно из master-list', () => {
@@ -52,7 +52,7 @@ test('файл endpoints пригоден к употреблению', () => {
     assert.ok(!urls.has(item.url), `повтор URL: ${item.url}`);
     urls.add(item.url);
     const mode = item.mode ?? 'json';
-    assert.ok(['json', 'html_links', 'embedded'].includes(mode), `режим ${mode}`);
+    assert.ok(['json', 'html_links', 'html_blocks', 'embedded'].includes(mode), `режим ${mode}`);
   }
 });
 

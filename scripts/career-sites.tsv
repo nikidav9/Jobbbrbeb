@@ -504,7 +504,6 @@ SmartDec	https://smartdec.net/ru/hiring/
 Поехали	https://poehali.dev/careers
 Карма Групп	https://www.karma-group.ru/about/vacancies/
 СберЗдоровье	https://sberhealth.ru/
-Альфа-Деньги	https://adengi.ru/
 Extyl	https://www.extyl-pro.ru/vacancy/
 MIND Software	https://mindsw.io/career/vacancies
 Айти Новация	https://itnovation.pro/vacancies
@@ -549,3 +548,10 @@ EgeHack	https://egehack.com/
 Базис	https://basistech.ru/
 Oxygen	https://oxygen.cloud/
 Simple	https://simple.ru/
+
+# Проход 3 (26.09.2026): компании, которые раньше не прошли из-за разбора, —
+# собраны режимами html_blocks, Next.js (__next_f) и Strapi REST.
+Tilda Publishing	https://company.tilda.ru/ru
+SharpLase	https://sharplase.ru/o-kompanii/job/
+TalkBank	https://talkbank.io/vacansy
+Eduson	https://www.eduson.tv/vacancy-account-manager
