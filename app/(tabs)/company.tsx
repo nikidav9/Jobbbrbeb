@@ -18,6 +18,8 @@ import { useApp } from '@/hooks/useApp';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { normalizeCompany } from '@/services/company';
 import type { PermVacancy, User } from '@/constants/types';
+import { BackButton } from '@/components/ui/BackButton';
+import { useHydrated } from '@/hooks/useHydrated';
 
 type CompanyTab = 'overview' | 'jobs';
 
@@ -46,7 +48,9 @@ function vacancyLocation(v: PermVacancy): string | null {
 
 export default function CompanyScreen() {
   const router = useRouter();
-  const { company: rawCompany } = useLocalSearchParams<{ company?: string | string[] }>();
+  const params = useLocalSearchParams<{ company?: string | string[] }>();
+  // Параметр — после первого рендера: иначе расхождение со статическим HTML (#418).
+  const rawCompany = useHydrated() ? params.company : undefined;
   const tabBarHeight = useBottomTabBarHeight();
   const { users, permVacancies } = useApp();
   const [tab, setTab] = useState<CompanyTab>('overview');
@@ -92,15 +96,7 @@ export default function CompanyScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topBar}>
-        <TouchableOpacity
-          style={s.roundButton}
-          activeOpacity={0.75}
-          onPress={() => router.navigate('/(tabs)/feed')}
-          accessibilityRole="button"
-          accessibilityLabel="Назад"
-        >
-          <Ionicons name="chevron-back" size={25} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton onPress={() => router.navigate('/(tabs)/feed')} />
 
         <TouchableOpacity
           style={s.roundButton}

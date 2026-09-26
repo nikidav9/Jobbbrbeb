@@ -2,14 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
 import { JupiterEmail, jupiterMailbox, jupiterMailList, jupiterMailRead } from '@/services/db';
 import { Colors } from '@/constants/theme';
 import { mailDate, mailPreview, senderName, splitMailLinks } from '@/services/mailLinks';
+import { BackButton } from '@/components/ui/BackButton';
 
 export default function JupiterMail() {
-  const router = useRouter();
   const { currentUser, showToast } = useApp();
   const [address, setAddress] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -61,9 +60,7 @@ export default function JupiterMail() {
   return (
     <SafeAreaView style={styles.page}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => selected ? setSelected(null) : router.back()} accessibilityLabel="Назад">
-          <Ionicons name="arrow-back" size={26} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton onPress={selected ? () => setSelected(null) : undefined} />
         <Text style={styles.heading}>{selected ? 'Письмо' : 'Почта JobToo'}</Text>
         <TouchableOpacity onPress={refresh} disabled={refreshing} style={styles.refreshBtn} accessibilityLabel="Обновить почту">
           {refreshing

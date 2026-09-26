@@ -4,13 +4,13 @@ import {
   ActivityIndicator, Share, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Colors, Radius } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { dbGetMyReferral, MyReferral } from '@/services/db';
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 /**
  * Пригласить друга.
@@ -33,7 +33,6 @@ import { rs, rf } from '@/constants/scale';
  * каждый отклик, к партнёрам полетели пустые заявки, и партнёры отключились.
  */
 export default function InviteScreen() {
-  const router = useRouter();
   const { currentUser, showToast } = useApp();
 
   const [data, setData] = useState<MyReferral | null>(null);
@@ -87,11 +86,9 @@ export default function InviteScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={s.back}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <Text style={s.headerTitle}>Пригласить друга</Text>
-        <View style={{ width: rs(70) }} />
+        <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <ScrollView contentContainerStyle={s.body}>
@@ -174,7 +171,6 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(12),
     borderBottomWidth: 1, borderBottomColor: Colors.divider, backgroundColor: Colors.bg,
   },
-  back: { fontSize: rf(15), color: Colors.primary, fontWeight: '600', width: rs(70) },
   headerTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
 
   body: { padding: rs(16), gap: rs(12) },

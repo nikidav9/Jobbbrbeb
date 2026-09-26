@@ -192,20 +192,60 @@ function serve() {
   }).listen(PORT, '127.0.0.1');
 }
 
+// Все экраны приложения (решение владельца 26.09: «провести везде тесты»).
+// back: на экране должна быть единая кнопка «назад» (components/ui/BackButton),
+// и, открытый по прямой ссылке — без истории, — экран она обязана покинуть:
+// router.back() там молчит, и человек застревал. Вкладки и вход её не имеют.
 const screens = [
+  // Гость
+  { id: 'start', url: '/' },
   { id: 'login', url: '/login' },
-  { id: 'register-worker', url: '/register-worker' },
-  { id: 'register-employer', url: '/register-employer' },
+  { id: 'reset-password', url: '/reset-password' },
+  { id: 'register-worker', url: '/register-worker', back: true },
+  { id: 'register-employer', url: '/register-employer', back: true },
+  { id: 'legal-list', url: '/legal', back: true },
+  { id: 'legal-terms', url: '/legal?doc=terms', back: true },
+  { id: 'legal-marketing', url: '/legal?doc=marketing', back: true },
+  { id: 'guest-perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', back: true },
+  // Работник
   { id: 'worker-feed', url: '/(tabs)/feed', who: worker, wait: 3500 },
   { id: 'worker-matches', url: '/(tabs)/matches', who: worker },
-  { id: 'worker-chats', url: '/(tabs)/chats', who: worker },
-  { id: 'chat-room', url: '/chat-room?chatId=small-c1', who: worker },
+  { id: 'worker-chats', url: '/(tabs)/chats', who: worker, back: true },
+  { id: 'chat-room', url: '/chat-room?chatId=small-c1', who: worker, back: true },
   { id: 'worker-profile', url: '/(tabs)/profile', who: worker },
-  { id: 'perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', who: worker },
+  { id: 'perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', who: worker, back: true },
+  { id: 'company', url: '/(tabs)/company?company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true },
+  { id: 'saved', url: '/saved', who: worker, back: true },
+  { id: 'mail', url: '/mail', who: worker, back: true },
+  { id: 'support', url: '/support', who: worker, back: true },
+  { id: 'settings-worker', url: '/profile-settings', who: worker, back: true },
+  { id: 'invite', url: '/invite', who: worker, back: true },
+  { id: 'user-profile', url: '/user-profile?userId=small-e1', who: worker, back: true },
+  { id: 'jupiter-application', url: '/jupiter-application?id=small-j1', who: worker, back: true },
+  { id: 'jupiter-fill', url: '/jupiter-fill?id=small-j1&company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true },
+  // Работодатель
   { id: 'employer-feed', url: '/(tabs)/feed', who: employer, wait: 3500 },
-  { id: 'create-shift', url: '/create-vacancy', who: employer },
-  { id: 'create-perm', url: '/create-perm-vacancy', who: employer },
+  { id: 'employer-matches', url: '/(tabs)/matches', who: employer },
+  { id: 'employer-profile', url: '/(tabs)/profile', who: employer },
+  { id: 'create-perm', url: '/create-perm-vacancy', who: employer, back: true },
+  { id: 'candidates', url: '/candidates?vacancyId=small-p1', who: employer, back: true },
+  { id: 'settings-employer', url: '/profile-settings', who: employer, back: true },
+  { id: 'employer-user-profile', url: '/user-profile?userId=small-w1', who: employer, back: true },
 ];
+
+// Единая кнопка «назад»: есть, круглая, не меньше пальца.
+async function inspectBack(page) {
+  return page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('[data-testid="back-button"]')) {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      if (r.width < 1 || r.height < 1 || cs.visibility === 'hidden' || cs.display === 'none') continue;
+      out.push({ w: Math.round(r.width), h: Math.round(r.height), radius: parseFloat(cs.borderTopLeftRadius) || 0 });
+    }
+    return out;
+  });
+}
 
 async function inspectLayout(page) {
   return page.evaluate((tolerance) => {
@@ -274,6 +314,8 @@ try {
       });
 
       const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', e => pageErrors.push(String(e?.message || e).slice(0, 200)));
       if (screen.who) {
         await page.addInitScript(user => {
           localStorage.setItem('jm_currentUser', JSON.stringify(user));
@@ -297,6 +339,10 @@ try {
         await page.waitForTimeout(700);
 
         const layout = await inspectLayout(page);
+        // SMALL_SCREEN_SHOTS=1 — снимок каждого экрана для глаз, не только упавших.
+        if (process.env.SMALL_SCREEN_SHOTS) {
+          await page.screenshot({ path: path.join(OUT, `shot-${key}.png`) }).catch(() => {});
+        }
 
         // Экран вошедшего обязан быть экраном вошедшего.
         //
@@ -319,7 +365,29 @@ try {
             error: 'вход не сработал: показан выбор роли или окно согласия, а не экран приложения',
             screenshot: png,
           });
-        } else if (layout.overflow > TOLERANCE || layout.clippedFixed.length) {
+        } else if (pageErrors.length) {
+          const png = path.join(OUT, `${key}.png`);
+          await page.screenshot({ path: png, fullPage: true });
+          failures.push({ key, error: `ошибка страницы: ${pageErrors.join(' | ')}`, screenshot: png });
+        } else if (screen.back) {
+          // Кнопка есть, круглая и не меньше пальца, а нажатие уводит с экрана
+          // даже без истории (экран открыт по прямой ссылке).
+          const backs = await inspectBack(page);
+          const bad = backs.find(b => Math.abs(b.w - b.h) > 2 || b.w < 34 || b.radius < b.w / 2 - 2);
+          let problem = !backs.length ? 'нет кнопки «назад»' : bad ? `кнопка «назад» не того вида: ${JSON.stringify(bad)}` : '';
+          if (!problem) {
+            const before = page.url();
+            await page.locator('[data-testid="back-button"]').first().click();
+            await page.waitForTimeout(1500);
+            if (page.url() === before) problem = '«назад» без истории никуда не ведёт';
+          }
+          if (problem) {
+            const png = path.join(OUT, `${key}.png`);
+            await page.screenshot({ path: png, fullPage: true });
+            failures.push({ key, error: problem, screenshot: png });
+          }
+        }
+        if (!wrongScreen && !pageErrors.length && (layout.overflow > TOLERANCE || layout.clippedFixed.length)) {
           const png = path.join(OUT, `${key}.png`);
           await page.screenshot({ path: png, fullPage: true });
           failures.push({ key, ...layout, screenshot: png });

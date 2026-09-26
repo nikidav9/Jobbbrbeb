@@ -10,13 +10,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { getSupabaseClient } from '@/template';
 import { useApp } from '@/hooks/useApp';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 const ADMIN_PHONE = '89933431523';
 const sb = () => getSupabaseClient();
@@ -514,7 +514,6 @@ const W = Math.min(Dimensions.get('window').width, 1100);
 const CARD_W = (W - 48 - 12) / 2; // two-column chart width
 
 export default function AnalyticsScreen() {
-  const router = useRouter();
   const { currentUser } = useApp();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -548,11 +547,9 @@ export default function AnalyticsScreen() {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={s.backTxt}>← Назад</Text>
-          </TouchableOpacity>
+          <BackButton />
           <Text style={s.headerTitle}>Аналитика</Text>
-          <View style={{ width: 60 }} />
+          <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={s.center}>
           <Text style={{ fontSize: rf(48) }}>🔒</Text>
@@ -566,11 +563,9 @@ export default function AnalyticsScreen() {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={s.backTxt}>← Назад</Text>
-          </TouchableOpacity>
+          <BackButton />
           <Text style={s.headerTitle}>Аналитика</Text>
-          <View style={{ width: 60 }} />
+          <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={s.center}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -644,9 +639,7 @@ export default function AnalyticsScreen() {
     <SafeAreaView style={s.safe}>
       {/* header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={s.backTxt}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <View style={s.headerCenter}>
           <Text style={s.headerTitle}>📊 Аналитика</Text>
           {lastUpdated ? (
@@ -972,7 +965,6 @@ const s = StyleSheet.create({
   headerCenter: { alignItems: 'center' },
   headerTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
   headerSub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
-  backTxt: { fontSize: rf(15), color: Colors.primary, fontWeight: '600' },
   refreshBtn: {
     backgroundColor: Colors.primaryLight,
     paddingHorizontal: rs(12),

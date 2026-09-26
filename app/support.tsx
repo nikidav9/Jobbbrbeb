@@ -19,6 +19,7 @@ import {
   SupportState,
 } from '@/services/db';
 import { rs, rf } from '@/constants/scale';
+import { BackButton } from '@/components/ui/BackButton';
 
 const EMPTY_STATE: SupportState = { operatorRequestedAt: null, closedAt: null };
 
@@ -140,15 +141,7 @@ export default function SupportScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       <View style={s.header}>
-        <TouchableOpacity
-          onPress={goBack}
-          style={s.backBtn}
-          activeOpacity={0.72}
-          accessibilityRole="button"
-          accessibilityLabel="Назад"
-        >
-          <Ionicons name="chevron-back" size={rf(27)} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton onPress={goBack} />
 
         <Text style={s.headerTitle}>Помощь</Text>
 
@@ -352,15 +345,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: rs(12),
     backgroundColor: '#FFFFFF',
-  },
-  backBtn: {
-    width: rs(48),
-    height: rs(48),
-    borderRadius: rs(24),
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadow.card,
   },
   headerTitle: {
     flex: 1,

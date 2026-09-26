@@ -16,7 +16,7 @@ import {
   RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync,
 } from 'expo-audio';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Colors, Radius, Shadow } from '@/constants/theme';
+import { Colors, Radius } from '@/constants/theme';
 import { ReadTicks, isSeenByOther } from '@/components/ReadTicks';
 import { useApp } from '@/hooks/useApp';
 import { Message, Chat } from '@/constants/types';
@@ -33,6 +33,7 @@ import { useSignedMedia } from '@/hooks/useSignedMedia';
 import { WebVoiceRecording, webVoiceSupported, type VoiceClip } from '@/services/webVoice';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton } from '@/components/ui/BackButton';
 
 const POLL_INTERVAL = 8000;
 
@@ -851,9 +852,7 @@ export default function ChatRoom() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backIconBtn} activeOpacity={0.7}>
-            <Text style={styles.backIconTxt}>‹</Text>
-          </TouchableOpacity>
+          <BackButton fallback="/(tabs)/chats" />
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(24), gap: rs(12) }}>
           {!currentUser || loadingDbChat ? (
@@ -1098,9 +1097,7 @@ export default function ChatRoom() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backIconBtn} activeOpacity={0.7}>
-          <Text style={styles.backIconTxt}>‹</Text>
-        </TouchableOpacity>
+        <BackButton fallback="/(tabs)/chats" />
         <TouchableOpacity
           style={styles.headerCenter}
           activeOpacity={0.8}
@@ -1326,13 +1323,6 @@ const styles = StyleSheet.create({
   decisionBtnAccept: { backgroundColor: Colors.primary },
   decisionBtnAcceptTxt: { fontSize: rf(14), fontWeight: '700', color: '#fff' },
   // Compact back icon button
-  backIconBtn: {
-    width: rs(34), height: rs(34), borderRadius: rs(17),
-    backgroundColor: Colors.surface,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.divider,
-  },
-  backIconTxt: { fontSize: rf(22), color: Colors.textPrimary, lineHeight: rf(26), fontWeight: '400', marginTop: rs(-1) },
   // Blocked bar (worker)
   blockedBar: {
     backgroundColor: '#FEE2E2', paddingHorizontal: rs(16), paddingVertical: rs(10),
@@ -1344,7 +1334,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(12),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  backBtn: {},
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(10), justifyContent: 'center' },
   headerAvatar: { width: rs(34), height: rs(34), borderRadius: rs(17) },
   headerAvatarText: { color: '#fff', fontSize: rf(13), fontWeight: '700' },
