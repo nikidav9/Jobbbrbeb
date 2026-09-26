@@ -28,12 +28,15 @@ check('компаний с IT', $s['it_companies'] === 2);
 check('раздел без метки — other', ($s['by_section']['other'] ?? 0) === 1);
 check('первым идёт больше всего IT', $s['by_company'][0] === ['company' => 'Яндекс', 'total' => 2, 'it' => 2]);
 check('у Сбера посчитаны и все, и IT', in_array(['company' => 'Сбер', 'total' => 2, 'it' => 1], $s['by_company'], true));
+check('лента IT: раздел it плюс IT-компания целиком',
+    fs_aggregate([['company' => 'Яндекс', 'section' => 'marketing'], ['company' => 'Сбер', 'section' => 'it'],
+                  ['company' => 'Сбер', 'section' => 'sales']], 'x', ['Яндекс'])['it_feed_total'] === 2);
 check('пустая таблица', fs_aggregate([], 'x')['total'] === 0 && fs_aggregate([], 'x')['it_total'] === 0);
 
 // Только два столбца из базы: ни описаний, ни ссылок, ни чего-либо о людях.
 $src = (string)file_get_contents(__DIR__ . '/../php-proxy/feed_stats.php');
 check('из базы берутся только company и section', str_contains($src, "], 'company,section');")
-    && substr_count($src, 'sb_select(') === 1);
+    && substr_count($src, 'sb_select(') === 2 && str_contains($src, "sb_select('jm_it_companies', [], 'company')"));
 
 if ($failures) {
     echo "feed stats: ПРОВАЛЫ\n";

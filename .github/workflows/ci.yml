@@ -112,6 +112,9 @@ jobs:
       - name: Название вакансии из карточки рядом со ссылкой
         run: php tests/career_card_title_test.php
 
+      - name: Лента только IT — сервер, база и приложение
+        run: php tests/it_only_feed_test.php
+
       - name: Описание из API источника — разделы, карточка вакансии, курсор
         run: php tests/career_api_description_test.php
 
