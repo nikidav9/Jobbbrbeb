@@ -85,6 +85,27 @@ $n = cf_html_links($named, 'https://example.ru/', $nm + ['title_class' => 'vacan
 check('title_class: название из названного блока, а не город',
     array_column($n, 'title') === ['Инженер данных', 'Младший системный аналитик']);
 
+// Вакансии без своих страниц (map.block_class, режим html_blocks): каждая —
+// блок на странице списка, ссылка — якорь, текст — из блока.
+$blocks = <<<'HTML'
+<div class="vacancies">
+  <div class="vac" id="vacancy-01"><h3>Frontend-разработчик</h3><p>Обязанности: писать интерфейсы.</p></div>
+  <div class="vac"><div class="vac__name">Аналитик данных</div><p>Требования: SQL, Python.</p></div>
+  <div class="vac"><p>Блок без названия — не вакансия</p></div>
+  <div class="vacancies-note"><h3>Не блок вакансии</h3></div>
+</div>
+HTML;
+$b = cf_html_blocks($blocks, 'https://example.ru/career', ['block_class' => 'vac', 'company_const' => 'Тест'], time());
+check('html_blocks: только блоки с названием h*', array_column($b, 'title') === ['Frontend-разработчик']);
+check('html_blocks: якорь — id блока', ($b[0]['url'] ?? '') === 'https://example.ru/career#vacancy-01');
+check('html_blocks: текст блока без названия',
+    ($b[0]['description'] ?? '') === 'Обязанности: писать интерфейсы.');
+$b2 = cf_html_blocks($blocks, 'https://example.ru/career', ['block_class' => 'vac', 'title_class' => 'vac__name'], time());
+check('html_blocks: title_class и якорь по номеру блока',
+    array_column($b2, 'title') === ['Аналитик данных'] && ($b2[0]['url'] ?? '') === 'https://example.ru/career#vacancy-2');
+check('html_blocks: без block_class — ноль, а не вся страница',
+    cf_html_blocks($blocks, 'https://example.ru/career', [], time()) === []);
+
 if ($failures) {
     echo "career card title: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

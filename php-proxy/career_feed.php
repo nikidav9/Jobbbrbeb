@@ -240,7 +240,22 @@ function cf_items(string $html, string $pageUrl, int $now): array
 function cf_dig($data, string $path)
 {
     if ($path === '') return $data;
-    foreach (explode('.', $path) as $key) {
+    $keys = explode('.', $path);
+    foreach ($keys as $i => $key) {
+        // «*» — каждый элемент списка: вакансии, разложенные по группам
+        // (у Яндекс Крауда — [{direction, vacancies: [...]}, ...]), путь
+        // «*.vacancies» собирает в один список. Пустые ветки пропускаются.
+        if ($key === '*') {
+            if (!is_array($data)) return null;
+            $rest = implode('.', array_slice($keys, $i + 1));
+            $out = [];
+            foreach ($data as $el) {
+                $v = cf_dig($el, $rest);
+                if (is_array($v) && array_is_list($v)) array_push($out, ...$v);
+                elseif ($v !== null) $out[] = $v;
+            }
+            return $out;
+        }
         if (!is_array($data) || !array_key_exists($key, $data)) return null;
         $data = $data[$key];
     }
@@ -254,7 +269,8 @@ function cf_dig($data, string $path)
  *   list  — путь к массиву вакансий («items», «data», «» для голого массива);
  *   title — поле с названием (обязательно);
  *   url   — поле с готовой ссылкой ИЛИ url_template с «{поле}» внутри;
- *   id, company, address, pay, description, schedule, closed — необязательные.
+ *   id, company, address, pay, description, schedule, closed, open — необязательные.
+ *   В list можно «*»: «*.vacancies» — вакансии из всех групп одним списком.
  *
  * Правило про ссылку то же, что и для разметки: без пути к первоисточнику
  * вакансию не берём. Это не формальность — именно этим мы отличаемся от
@@ -280,6 +296,10 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
         if ($url === '') continue;
 
         // Закрытую вакансию не берём: человек поедет туда, где его не ждут.
+        // Бывает и обратный флаг — «открыта» (у Яндекс Крауда available):
+        // тогда берём только те, где он истинный.
+        $openField = (string)($map['open'] ?? '');
+        if ($openField !== '' && empty(cf_dig($row, $openField))) continue;
         $closedField = (string)($map['closed'] ?? '');
         if ($closedField !== '') {
             $closed = cf_dig($row, $closedField);
@@ -624,6 +644,68 @@ function cf_title_is_noise(string $title): bool
  * список из нескольких вакансий, и заголовок оттуда был бы чужим.
  */
 /** Хвост пути после link_path без запроса и якоря: пусто — ссылка на сам список или фильтр. */
+/**
+ * Вакансии, у которых нет своих страниц: все одним списком на странице,
+ * каждая — блок с названием и полным текстом (решение владельца 26.09.2026:
+ * берём, ссылка — якорь на странице списка). Так у NeuroCity, Палиндрома,
+ * Айти Новации, Extyl.
+ *
+ * $map: block_class — класс блока одной вакансии (обязателен, точное слово
+ * из class); title_class — класс названия внутри блока (без него — первый
+ * h1–h6). Текст вакансии — весь текст блока без названия. Якорь — id блока,
+ * а без него номер блока: vacancy-1, vacancy-2… Без block_class — ноль
+ * вакансий, а не весь текст страницы.
+ */
+function cf_html_blocks(string $html, string $pageUrl, array $map, int $now): array
+{
+    $blockClass = trim((string)($map['block_class'] ?? ''));
+    if ($blockClass === '') return [];
+    $titleClass = trim((string)($map['title_class'] ?? ''));
+    $doc = cf_dom($html);
+    if ($doc === null) return [];
+    $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
+    $hasClass = fn(DOMElement $el, string $c): bool =>
+        in_array($c, preg_split('/\s+/', $el->getAttribute('class')), true);
+    $base = explode('#', $pageUrl)[0];
+
+    $items = [];
+    $n = 0;
+    foreach ($doc->getElementsByTagName('*') as $block) {
+        if (count($items) >= 200) break;
+        if (!$hasClass($block, $blockClass)) continue;
+        $n++;
+        $titleEl = null;
+        foreach ($block->getElementsByTagName('*') as $el) {
+            $isTitle = $titleClass !== ''
+                ? $hasClass($el, $titleClass)
+                : preg_match('/^h[1-6]$/', $el->nodeName) === 1;
+            if ($isTitle && $clean($el->textContent ?? '') !== '') { $titleEl = $el; break; }
+        }
+        if ($titleEl === null) continue;
+        $title = $clean($titleEl->textContent ?? '');
+        if (mb_strlen($title) < max(3, (int)($map['min_title'] ?? 4)) || cf_title_is_noise($title)) continue;
+
+        $text = $clean(str_replace($title, '', $clean($block->textContent ?? '')));
+        $id = trim($block->getAttribute('id'));
+        $url = $base . '#' . ($id !== '' ? rawurlencode($id) : 'vacancy-' . $n);
+        $item = [
+            'id' => substr(hash('sha256', $url), 0, 24),
+            'title' => $title,
+            'kind' => 'permanent',
+            'url' => $url,
+            'company' => (string)($map['company_const'] ?? '') ?: null,
+            'active' => true,
+            'seen_at' => $now,
+        ];
+        if ($text !== '') {
+            $item['description'] = mb_substr($text, 0, 20000);
+            $item['description_full'] = $item['description'];
+        }
+        $items[] = $item;
+    }
+    return $items;
+}
+
 function cf_link_tail(string $href, string $needle): string
 {
     $tail = substr($href, strpos($href, $needle) + strlen($needle));
@@ -715,8 +797,17 @@ function cf_link_title(DOMElement $a, bool $headingOnly = false, string $titleCl
  * Twinby — у них никакого отдельного запроса за вакансиями нет вовсе, всё
  * приезжает первой же страницей.
  */
-function cf_embedded_state(string $html): ?array
+function cf_embedded_state(string $html, string $scriptId = ''): ?array
 {
+    // Свой скрипт с JSON, который называет запись источника
+    // (map.state_script_id): у Яндекс Крауда — <script id="data"
+    // type="application/json">. Только по точному id, чтобы не схватить
+    // чужой блок разметки (JSON-LD, настройки аналитики).
+    if ($scriptId !== '') {
+        if (!preg_match('~<script[^>]+id="' . preg_quote($scriptId, '~') . '"[^>]*>(.*?)</script>~s', $html, $m)) return null;
+        $data = json_decode(trim($m[1]), true);
+        return is_array($data) ? $data : null;
+    }
     if (preg_match('~<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>~s', $html, $m)) {
         $data = json_decode(trim($m[1]), true);
         if (is_array($data)) return $data;

@@ -1785,5 +1785,21 @@
     "url": "https://poehali.dev/careers",
     "mode": "html_links",
     "company_hint": "Поехали"
+  },
+  {
+    "map": {
+      "list": "*.vacancies",
+      "id": "id",
+      "title": "title",
+      "url": "url",
+      "open": "available",
+      "address": "tags.remotely",
+      "description": "description",
+      "state_script_id": "data",
+      "company_const": "Яндекс Крауд"
+    },
+    "url": "https://crowd.yandex.ru/vacancies",
+    "mode": "embedded",
+    "company_hint": "Яндекс Крауд"
   }
 ]
