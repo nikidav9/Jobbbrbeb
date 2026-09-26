@@ -1708,3 +1708,142 @@ export async function fetchExecutiveSummary() {
     weekly,
   }
 }
+
+// ─── external vacancies ─────────────────────────────────────────────────────
+//
+// Внешние (карьерные) вакансии: каталог, здоровье сбора, свайпы и отклики через
+// Jupiter. Каталог берём из открытого /api/feed_stats.php: там уже посчитаны
+// «IT-лента» и «Москва» тем же правилом, что в самой ленте (FS_MOSCOW_RE,
+// jm_it_companies) — повторять это правило здесь значило бы разойтись с ним.
+// Показы карточек в базу не пишутся (таблица событий снята в 096), поэтому
+// воронка начинается со свайпа, а не с показа.
+
+const FEED_STATS_URL = process.env.NEXT_PUBLIC_FEED_STATS_URL || 'https://jobtoo.ru/api/feed_stats.php'
+
+export const JOB_SECTION_LABELS: Record<string, string> = {
+  it: 'IT и разработка', warehouse: 'Склад и логистика', delivery: 'Курьеры и доставка',
+  transport: 'Водители и транспорт', retail: 'Магазины и торговый зал', food: 'Кафе и рестораны',
+  production: 'Производство и рабочие', service: 'Уборка, охрана, сервис', sales: 'Продажи и клиенты',
+  finance: 'Финансы и бухгалтерия', office: 'Офис, HR и юристы', marketing: 'Маркетинг и дизайн',
+  medical: 'Медицина и аптеки', engineering: 'Инженеры и стройка', other: 'Другое',
+}
+
+export const JUPITER_STATE_LABELS: Record<string, string> = {
+  queued: 'В очереди', running: 'Идёт', retryable_failed: 'Повтор', failed: 'Ошибка',
+  submitted: 'Отправлен', verified: 'Подтверждён', needs_human: 'Ждёт человека',
+}
+
+type FeedStats = {
+  generated_at: string
+  total: number; it_total: number; it_feed_total: number; feed_total: number
+  companies: number; it_companies: number
+  by_section: Record<string, number>
+  by_company: { company: string; total: number; it: number }[]
+}
+
+export async function fetchExternal() {
+  const now = new Date()
+  const since = subDays(now, 90).toISOString()
+  const until = new Date(now.getTime() + 86_400_000).toISOString()
+
+  const [stats, sourcesRes, swipes, apps] = await Promise.all([
+    fetch(FEED_STATS_URL, { cache: 'no-store' })
+      .then(r => (r.ok ? (r.json() as Promise<FeedStats>) : null))
+      .catch(() => null),
+    supabase.from('jm_ext_sources')
+      .select('id,name,enabled,last_run_at,last_status,last_count,last_success_at,consecutive_failures,last_deactivated'),
+    selectAllBetween('jm_ext_swipes', 'user_id,vacancy_id,dir,created_at', 'created_at', since, until),
+    selectAllBetween('jm_jupiter_applications', 'user_id,company,state,created_at,submitted_at', 'created_at', since, until),
+  ])
+
+  // Компания и раздел свайпнутых вакансий — пачками по id, а не весь каталог.
+  const ids = Array.from(new Set(swipes.map((s: any) => s.vacancy_id as string)))
+  const vacById: Record<string, { title: string; company: string; section: string }> = {}
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabase.from('jm_ext_vacancies')
+      .select('id,title,company,section').in('id', ids.slice(i, i + 200))
+    for (const v of (data ?? []) as any[]) vacById[v.id] = { title: v.title ?? '', company: v.company ?? '—', section: v.section ?? 'other' }
+  }
+
+  const right = swipes.filter((s: any) => s.dir === 1)
+  const left = swipes.filter((s: any) => s.dir === -1)
+  const days30 = dayRange(30)
+  const d30 = days30[0]
+  const in30 = (iso?: string | null) => !!iso && iso.slice(0, 10) >= d30
+  const right30 = right.filter((s: any) => in30(s.created_at))
+  const left30 = left.filter((s: any) => in30(s.created_at))
+  const apps30 = apps.filter((a: any) => in30(a.created_at))
+  const submitted = apps.filter((a: any) => a.state === 'submitted' || a.state === 'verified')
+
+  const rByDay = groupByDate(right30, 'created_at')
+  const lByDay = groupByDate(left30, 'created_at')
+  const aByDay = groupByDate(apps30, 'created_at')
+  const daily30 = days30.map(d => ({ date: toDayLabel(d), right: rByDay[d] ?? 0, left: lByDay[d] ?? 0, apps: aByDay[d] ?? 0 }))
+
+  const byState: Record<string, number> = {}
+  for (const a of apps as any[]) byState[a.state] = (byState[a.state] ?? 0) + 1
+  const appsByState = Object.entries(byState)
+    .map(([state, value]) => ({ name: JUPITER_STATE_LABELS[state] ?? state, value }))
+    .sort((a, b) => b.value - a.value)
+
+  // По компаниям: интерес (свайпы) рядом с каталогом (активные вакансии) и откликами.
+  const comp: Record<string, { right: number; left: number; apps: number; active: number; it: number }> = {}
+  const row = (c: string) => (comp[c] ??= { right: 0, left: 0, apps: 0, active: 0, it: 0 })
+  for (const s of swipes as any[]) {
+    const c = vacById[s.vacancy_id]?.company ?? '—'
+    if (s.dir === 1) row(c).right++; else row(c).left++
+  }
+  for (const a of apps as any[]) row(a.company || '—').apps++
+  for (const c of stats?.by_company ?? []) { row(c.company).active = c.total; row(c.company).it = c.it }
+  const companies = Object.entries(comp)
+    .map(([name, v]) => ({ name, ...v, likeRate: v.right + v.left > 0 ? Math.round((v.right / (v.right + v.left)) * 100) : null }))
+    .sort((a, b) => b.right - a.right || b.apps - a.apps || b.active - a.active)
+
+  const secSwipes: Record<string, { right: number; left: number }> = {}
+  for (const s of swipes as any[]) {
+    const sec = vacById[s.vacancy_id]?.section ?? 'other'
+    secSwipes[sec] ??= { right: 0, left: 0 }
+    if (s.dir === 1) secSwipes[sec].right++; else secSwipes[sec].left++
+  }
+  const sections = Object.keys({ ...(stats?.by_section ?? {}), ...secSwipes })
+    .map(k => ({ name: JOB_SECTION_LABELS[k] ?? k, active: stats?.by_section?.[k] ?? 0,
+                 right: secSwipes[k]?.right ?? 0, left: secSwipes[k]?.left ?? 0 }))
+    .sort((a, b) => b.active - a.active)
+
+  const vacRight: Record<string, number> = {}
+  for (const s of right as any[]) vacRight[s.vacancy_id] = (vacRight[s.vacancy_id] ?? 0) + 1
+  const topVacancies = Object.entries(vacRight)
+    .sort((a, b) => b[1] - a[1]).slice(0, 15)
+    .map(([id, n]) => ({ title: vacById[id]?.title || id, company: vacById[id]?.company ?? '—', right: n }))
+
+  const sources = ((sourcesRes.data ?? []) as any[]).map(s => ({
+    id: s.id as string, name: (s.name ?? s.id) as string, enabled: !!s.enabled,
+    lastRunAt: s.last_run_at as string | null, lastStatus: (s.last_status ?? '') as string,
+    lastCount: (s.last_count ?? 0) as number, lastSuccessAt: s.last_success_at as string | null,
+    failures: (s.consecutive_failures ?? 0) as number, deactivated: (s.last_deactivated ?? 0) as number,
+  }))
+
+  const swipers = new Set(swipes.map((s: any) => s.user_id)).size
+  const appliers = new Set(apps.map((a: any) => a.user_id)).size
+
+  return {
+    statsAt: stats?.generated_at ?? null,
+    kpi: {
+      active: stats?.total ?? null, itFeed: stats?.it_feed_total ?? null, feed: stats?.feed_total ?? null,
+      companies: stats?.companies ?? null, itCompanies: stats?.it_companies ?? null,
+      right30: right30.length, left30: left30.length,
+      likeRate30: right30.length + left30.length > 0 ? Math.round((right30.length / (right30.length + left30.length)) * 100) : 0,
+      swipers, appliers, apps90: apps.length, apps30: apps30.length, submitted: submitted.length,
+      // Грубая конверсия за 90 дней: отклик не привязан к свайпу по id вакансии
+      // (Jupiter хранит адрес), поэтому это отношение количеств, а не путь одного человека.
+      applyRate: right.length > 0 ? Math.round((apps.length / right.length) * 100) : 0,
+      submitRate: apps.length > 0 ? Math.round((submitted.length / apps.length) * 100) : 0,
+    },
+    funnel: [
+      { name: 'Свайп вправо', value: right.length, fill: PALETTE.pink },
+      { name: 'Отклик', value: apps.length, fill: PALETTE.purple },
+      { name: 'Отправлен', value: submitted.length, fill: PALETTE.green },
+    ],
+    daily30, appsByState, companies, sections, topVacancies, sources,
+  }
+}
