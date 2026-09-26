@@ -14,6 +14,7 @@ import { plural } from '@/services/time';
 import { dbGetPermSavedDetailed, dbRemovePermSaved } from '@/services/db';
 import { dayKey, dayShort, groupByDay } from '@/services/dayGroups';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
+import { BackButton } from '@/components/ui/BackButton';
 
 /**
  * Избранные вакансии.
@@ -122,14 +123,7 @@ export default function SavedScreen() {
     <SafeAreaView style={sv.safe} edges={['top', 'left', 'right']}>
       <View style={sv.header}>
         <OnboardingTarget targetKey="saved.back">
-          <TouchableOpacity
-            style={sv.back}
-            onPress={() => router.back()}
-            activeOpacity={0.8}
-            accessibilityLabel="Назад"
-          >
-            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
-          </TouchableOpacity>
+          <BackButton />
         </OnboardingTarget>
         <Text style={sv.title}>Избранное</Text>
         {/* Пустая колонка той же ширины, что кнопка: иначе заголовок встаёт
@@ -183,10 +177,6 @@ const sv = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(12),
-  },
-  back: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', ...Shadow.card,
   },
   backSpacer: { width: rs(44), height: rs(44) },
   title: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },

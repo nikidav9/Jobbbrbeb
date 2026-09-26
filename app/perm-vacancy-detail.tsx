@@ -36,6 +36,7 @@ import { rs, rf } from '@/constants/scale';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { permVacancyInfoLines } from '@/services/vacancyCard';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
+import { BackButton } from '@/components/ui/BackButton';
 
 export default function PermVacancyDetailScreen() {
   const router = useRouter();
@@ -181,9 +182,7 @@ export default function PermVacancyDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} accessibilityLabel="Назад" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-          </TouchableOpacity>
+          <BackButton onPress={goBack} />
         </View>
         <View style={styles.emptyCenter}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -197,9 +196,7 @@ export default function PermVacancyDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} accessibilityLabel="Назад" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-          </TouchableOpacity>
+          <BackButton onPress={goBack} />
           <View style={{ flex: 1 }} />
         </View>
         <View style={styles.emptyCenter}>
@@ -343,9 +340,7 @@ export default function PermVacancyDetailScreen() {
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.headerIconBtn} accessibilityLabel="Назад" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton onPress={goBack} />
         <View style={{ flex: 1 }} />
         <View style={[styles.headerActions, currentUser?.role !== 'worker' && styles.headerActionsSingle]}>
           <TouchableOpacity
@@ -663,10 +658,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: rs(18), paddingTop: rs(8), paddingBottom: rs(14),
-  },
-  headerIconBtn: {
-    width: rs(48), height: rs(48), borderRadius: rs(24),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', ...Shadow.card,
   },
   headerActions: {
     height: rs(48), minWidth: rs(98), borderRadius: rs(24),

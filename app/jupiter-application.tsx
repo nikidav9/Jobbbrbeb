@@ -26,6 +26,7 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
 import { rf, rs } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 const SBER_TERMS_URL = 'https://rabota.sber.ru/terms';
 
@@ -148,11 +149,9 @@ export default function JupiterApplicationScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={10} accessibilityLabel="Назад">
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={s.headerTitle}>Отклик</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       {loading ? (

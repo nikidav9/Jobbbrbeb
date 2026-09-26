@@ -21,6 +21,7 @@ import {
 } from '@/services/jupiterFill';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton } from '@/components/ui/BackButton';
 
 export default function JupiterFillScreen() {
   const router = useRouter();
@@ -80,7 +81,7 @@ export default function JupiterFillScreen() {
   useEffect(() => {
     if (Platform.OS !== 'web' || !url) return;
     Linking.openURL(url).catch(() => showToast('Не удалось открыть сайт компании', 'error'));
-    router.back();
+    if (router.canGoBack()) router.back();
   }, [url, router, showToast]);
 
   const fillHost = url ? fillHostFor(url) : null;
@@ -113,16 +114,25 @@ export default function JupiterFillScreen() {
     }
   };
 
+  // На вебе анкета открывается на сайте компании в новой вкладке. Здесь —
+  // только выход: без него страница, открытая по прямой ссылке, оставалась
+  // пустой и без единой кнопки.
   if (Platform.OS === 'web') {
-    return <View style={{ flex: 1, backgroundColor: Colors.bg }} />;
+    return (
+      <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
+        <View style={s.header}><BackButton fallback="/(tabs)/matches" /></View>
+        <Text style={s.webNote}>
+          {error ? 'Не удалось открыть анкету. Попробуйте ещё раз из раздела «Отклики».'
+            : 'Анкета компании открывается в новой вкладке браузера.'}
+        </Text>
+      </SafeAreaView>
+    );
   }
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={10} accessibilityLabel="Назад">
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <View style={s.headerMid}>
           <Text style={s.headerTitle} numberOfLines={1}>{company || 'Отклик на вакансию'}</Text>
           {queueLeft > 0 ? <Text style={s.headerSub}>Ещё {queueLeft} в очереди</Text> : null}
@@ -205,7 +215,6 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(12), paddingVertical: rs(10),
   },
-  backBtn: { padding: rs(4) },
   headerMid: { flex: 1, alignItems: 'center' },
   headerTitle: { textAlign: 'center', fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
   headerSub: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2) },
@@ -234,4 +243,5 @@ const s = StyleSheet.create({
     borderRadius: Radius.md, backgroundColor: Colors.primary, paddingVertical: rs(13), ...Shadow.card,
   },
   primaryBtnTxt: { color: '#FFFFFF', fontWeight: '800', fontSize: rf(14) },
+  webNote: { padding: rs(24), fontSize: rf(15), lineHeight: rf(21), color: Colors.textSecondary, textAlign: 'center' },
 });

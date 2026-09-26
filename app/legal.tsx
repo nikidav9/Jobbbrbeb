@@ -10,6 +10,8 @@ import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 
 import { LEGAL_DOCS, formatLegalDate, type LegalDocKey } from '@/constants/legal';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
+import { useHydrated } from '@/hooks/useHydrated';
 
 const ALL_DOC_KEYS: LegalDocKey[] = [
   'terms',
@@ -23,18 +25,18 @@ const ALL_DOC_KEYS: LegalDocKey[] = [
 // весь действующий набор документов; /legal?doc=... открывает конкретный текст.
 export default function LegalScreen() {
   const router = useRouter();
-  const { doc } = useLocalSearchParams<{ doc?: string }>();
+  const params = useLocalSearchParams<{ doc?: string }>();
+  // Параметр — после первого рендера: иначе расхождение со статическим HTML (#418).
+  const doc = useHydrated() ? params.doc : undefined;
   const content = doc ? LEGAL_DOCS[doc as LegalDocKey] ?? null : null;
 
   if (!doc) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backTxt}>← Назад</Text>
-          </TouchableOpacity>
+          <BackButton />
           <Text style={styles.headerTitle}>Документы</Text>
-          <View style={{ width: rs(70) }} />
+          <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
 
         <ScrollView
@@ -88,11 +90,9 @@ export default function LegalScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backTxt}>← Назад</Text>
-          </TouchableOpacity>
+          <BackButton />
           <Text style={styles.headerTitle}>Документ</Text>
-          <View style={{ width: rs(70) }} />
+          <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={styles.notFound}>
           <Text style={{ color: Colors.textMuted }}>Документ не найден</Text>
@@ -104,11 +104,9 @@ export default function LegalScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backTxt}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle} numberOfLines={1}>{content.title}</Text>
-        <View style={{ width: rs(70) }} />
+        <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -137,8 +135,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  backBtn: { width: rs(70) },
-  backTxt: { fontSize: rf(15), color: '#6B7280', fontWeight: '500' },
   headerTitle: {
     fontSize: rf(15),
     fontWeight: '700',

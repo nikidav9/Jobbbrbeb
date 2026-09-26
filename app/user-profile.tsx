@@ -5,7 +5,7 @@ import {
   TouchableOpacity, ActivityIndicator, Platform, Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { ScoreCard } from '@/components/feature/ScoreCard';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
@@ -16,6 +16,7 @@ import { lastSeenLabel, replySpeedLabel, replyRateLabel } from '@/services/prese
 import { getSupabaseClient } from '@/template';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 function StarRow({ rating, count }: { rating: number; count: number }) {
   return (
@@ -105,7 +106,6 @@ function PublicResumeMore({
 type Tab = 'info' | 'reviews';
 
 export default function UserProfileScreen() {
-  const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { users, currentUser, likes, permApplications, showToast } = useApp();
 
@@ -196,9 +196,7 @@ export default function UserProfileScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.backText}>← Назад</Text>
-          </TouchableOpacity>
+          <BackButton />
         </View>
         <View style={styles.center}>
           {fetchingUser ? (
@@ -249,11 +247,9 @@ export default function UserProfileScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backText}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle}>Профиль</Text>
-        <View style={{ width: 70 }} />
+        <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>

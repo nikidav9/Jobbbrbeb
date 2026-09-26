@@ -130,7 +130,7 @@ export default function Login() {
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.cancel} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.cancel} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
           <Text style={styles.cancelText}>Отмена</Text>
         </TouchableOpacity>
 

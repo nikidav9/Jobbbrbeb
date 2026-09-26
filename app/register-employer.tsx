@@ -19,6 +19,7 @@ import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouS
 import { uploadAvatar } from '@/services/avatarUpload';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 // Steps: 1-Email+code, 2-Password, 3-Name+Company, 4-Legal
 const TOTAL = 5;
@@ -55,7 +56,12 @@ export default function RegisterEmployer() {
   // Warm up the Supabase connection so the first phone-check doesn't hang
   useEffect(() => { dbWarmup(); }, []);
 
-  const back = () => { if (step === 1) router.back(); else setStep(s => s - 1); };
+  // Первый шаг, открытый по прямой ссылке: истории нет, router.back() молчит.
+  const back = () => {
+    if (step > 1) setStep(s => s - 1);
+    else if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
   const next = () => setStep(s => s + 1);
 
   // Step 1 → 2 (режим телефона): номер ещё не занят
@@ -140,11 +146,9 @@ export default function RegisterEmployer() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={back}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
+        <BackButton onPress={back} />
         <Text style={styles.stepLabel}>{step} из {TOTAL}</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <View style={styles.progress}>
@@ -342,8 +346,6 @@ export default function RegisterEmployer() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rs(16), paddingVertical: rs(12) },
-  backBtn: { width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
-  backIcon: { fontSize: rf(18), color: Colors.textSecondary },
   stepLabel: { fontSize: rf(13), color: Colors.textMuted },
   progress: { height: rs(3), backgroundColor: Colors.divider },
   progressFill: { height: rs(3), backgroundColor: Colors.primary },

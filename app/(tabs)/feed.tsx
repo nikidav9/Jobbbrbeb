@@ -69,6 +69,7 @@ import { ApplySheet } from '@/components/feature/ApplySheet';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { payShort } from '@/services/pay';
 import { permVacancyInfoLines } from '@/services/vacancyCard';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 // Гостю даём несколько бесплатных «отклонить», дальше — стена регистрации.
 // Счётчик модульный: общий для колод «Подработка» и «Работа», чтобы гость не
@@ -319,12 +320,10 @@ function MetroPicker({ visible, selected, onChange, onClose }: {
       <View style={[styles.filterSheet, { maxHeight: '90%' }]}>
         <View style={styles.filterSheetHeader}>
           {line ? (
-            <TouchableOpacity onPress={() => setLine(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="chevron-back" size={rf(20)} color={Colors.textPrimary} />
-            </TouchableOpacity>
-          ) : <View style={{ width: rs(22) }} />}
+            <BackButton onPress={() => setLine(null)} />
+          ) : <View style={{ width: BACK_BUTTON_SIZE }} />}
           <Text style={styles.filterSheetTitle} numberOfLines={1}>{line ? line.name : 'Метро'}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ width: BACK_BUTTON_SIZE, alignItems: 'center' }}>
             <Text style={styles.filterClose}>✕</Text>
           </TouchableOpacity>
         </View>

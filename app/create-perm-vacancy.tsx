@@ -20,6 +20,7 @@ import { AutoRejectNotice } from '@/components/AutoRejectNotice';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 export default function CreatePermVacancy() {
   const router = useRouter();
@@ -110,11 +111,9 @@ export default function CreatePermVacancy() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backText}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle}>{isEdit ? 'Редактировать' : 'Постоянная вакансия'}</Text>
-        <View style={{ width: 70 }} />
+        <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -247,7 +246,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(14),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  backText: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500' },
   headerTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
   body: { padding: rs(20), gap: rs(18), paddingBottom: rs(20) },
   modeBadge: { backgroundColor: '#EDE9FE', borderRadius: rs(100), paddingHorizontal: rs(14), paddingVertical: rs(7), alignSelf: 'flex-start' },

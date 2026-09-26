@@ -27,6 +27,7 @@ import {
 } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug, isWebPushRegistered } from '@/lib/webPush';
 import { clearRuntimeCache } from '@/services/storage';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
 
@@ -429,13 +430,7 @@ export default function ProfileSettingsScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       <View style={s.header}>
-        <TouchableOpacity
-          style={s.backButton}
-          onPress={() => router.replace('/(tabs)/profile')}
-          activeOpacity={0.72}
-        >
-          <Ionicons name="chevron-back" size={rf(25)} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton onPress={() => router.replace('/(tabs)/profile')} />
         <Text style={s.headerTitle}>Настройки</Text>
         <View style={s.headerSpacer} />
       </View>
@@ -755,17 +750,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#F6F6F8',
   },
-  backButton: {
-    width: rs(46),
-    height: rs(46),
-    borderRadius: rs(23),
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadow.card,
-  },
   headerTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
-  headerSpacer: { width: rs(46), height: rs(46) },
+  headerSpacer: { width: BACK_BUTTON_SIZE, height: BACK_BUTTON_SIZE },
   scroll: { paddingHorizontal: rs(18), paddingTop: rs(12), paddingBottom: rs(48), gap: rs(24) },
   section: { gap: rs(10) },
   sectionTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary, paddingHorizontal: rs(4) },

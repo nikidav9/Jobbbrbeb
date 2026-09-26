@@ -10,6 +10,7 @@ import { getSupabaseClient } from '@/template';
 import { useApp } from '@/hooks/useApp';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 const sb = () => getSupabaseClient();
 
@@ -108,11 +109,9 @@ export default function AdminScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.backTxt}>← Назад</Text>
-          </TouchableOpacity>
+          <BackButton />
           <Text style={styles.headerTitle}>Администрирование</Text>
-          <View style={{ width: 60 }} />
+          <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={styles.center}>
           <Text style={{ fontSize: rf(48) }}>🔒</Text>
@@ -360,9 +359,7 @@ export default function AdminScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backTxt}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle}>Администрирование</Text>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <TouchableOpacity
@@ -478,7 +475,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(14),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  backTxt: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500', width: rs(60) },
   headerTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
   refreshBtn: { fontSize: rf(22), color: Colors.primary, fontWeight: '700', width: rs(40), textAlign: 'right' },
 

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { METRO_LINES } from '@/constants/metro';
 import { rs, rf } from '@/constants/scale';
+import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 interface Props {
   visible: boolean;
@@ -60,12 +61,10 @@ export function MetroPicker({ visible, onClose, onSelect, selectedLineId, select
         <View style={styles.sheet}>
           <View style={styles.header}>
             {line ? (
-              <TouchableOpacity onPress={() => setLine(null)} hitSlop={8}>
-                <Ionicons name="chevron-back" size={rf(20)} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            ) : <View style={{ width: rs(22) }} />}
+              <BackButton onPress={() => setLine(null)} />
+            ) : <View style={{ width: BACK_BUTTON_SIZE }} />}
             <Text style={styles.title} numberOfLines={1}>{line ? line.name : 'Метро'}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={8}>
+            <TouchableOpacity onPress={onClose} hitSlop={8} style={{ width: BACK_BUTTON_SIZE, alignItems: 'center' }}>
               <Text style={styles.close}>✕</Text>
             </TouchableOpacity>
           </View>

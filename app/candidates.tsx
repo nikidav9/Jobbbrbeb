@@ -11,6 +11,7 @@ import { dbUpsertLike, dbCheckAndCreateMatch } from '@/services/db';
 import { getInitials, nameColorFromString } from '@/services/storage';
 
 import { rs, rf } from '@/constants/scale';
+import { BackButton } from '@/components/ui/BackButton';
 
 type LocalDecision = 'rejected' | 'accepted' | 'matched';
 
@@ -26,7 +27,16 @@ export default function CandidatesScreen() {
   const [localDecisions, setLocalDecisions] = useState<Record<string, LocalDecision>>({});
 
   const vacancy = vacancies.find(v => v.id === vacancyId);
-  if (!vacancy || !currentUser) return null;
+  // Старая ссылка на смену (подработка закрыта 17.09) или смена ещё не
+  // загрузилась: раньше экран был пустым и без выхода.
+  if (!vacancy || !currentUser) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}><BackButton /></View>
+        {currentUser ? <Text style={styles.notFound}>Смена не найдена</Text> : null}
+      </SafeAreaView>
+    );
+  }
 
   const vacLikes = likes.filter(l => l.vacancyId === vacancyId).map(l => {
     const local = localDecisions[l.workerId];
@@ -128,9 +138,7 @@ export default function CandidatesScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Назад</Text>
-        </TouchableOpacity>
+        <BackButton />
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>{vacancy.title}</Text>
           <Text style={styles.headerSub}>🚇 {vacancy.metroStation}</Text>
@@ -270,8 +278,6 @@ export default function CandidatesScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', gap: rs(10), paddingHorizontal: rs(16), paddingVertical: rs(12), borderBottomWidth: 1, borderBottomColor: Colors.divider },
-  backBtn: {},
-  backText: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500' },
   headerCenter: { flex: 1 },
   headerTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
   headerSub: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
@@ -310,4 +316,5 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: rs(60), gap: rs(8) },
   emptyTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
   emptySub: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', paddingHorizontal: rs(32) },
+  notFound: { padding: rs(24), fontSize: rf(15), color: Colors.textSecondary, textAlign: 'center' },
 });

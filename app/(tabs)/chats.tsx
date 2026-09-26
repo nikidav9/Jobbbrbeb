@@ -17,7 +17,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Colors, Radius, Shadow } from '@/constants/theme';
+import { Colors, Radius } from '@/constants/theme';
 import { ReadTicks, isSeenByOther } from '@/components/ReadTicks';
 import { useApp } from '@/hooks/useApp';
 import { Chat } from '@/constants/types';
@@ -28,6 +28,7 @@ import GuestGate from '@/components/GuestGate';
 import { rs, rf } from '@/constants/scale';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { messagePreview } from '@/services/messagePreview';
+import { BackButton } from '@/components/ui/BackButton';
 
 const DELETE_THRESHOLD = -80;
 // Ширина кнопки удаления: на столько строка и отъезжает. Раньше число -120
@@ -292,14 +293,7 @@ export default function ChatsScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
         <OnboardingTarget targetKey="chats.back">
-          <TouchableOpacity
-            style={styles.back}
-            onPress={() => router.back()}
-            activeOpacity={0.8}
-            accessibilityLabel="Назад"
-          >
-            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
-          </TouchableOpacity>
+          <BackButton />
         </OnboardingTarget>
         <Text style={styles.topTitle}>Сообщения</Text>
         {/* Пустая колонка той же ширины: иначе заголовок встаёт по центру
@@ -427,10 +421,6 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(12),
-  },
-  back: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', ...Shadow.card,
   },
   backSpacer: { width: rs(44), height: rs(44) },
   topTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
