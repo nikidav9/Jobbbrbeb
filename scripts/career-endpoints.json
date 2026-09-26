@@ -1733,5 +1733,57 @@
     "url": "https://wunderfund.io",
     "mode": "embedded",
     "company_hint": "Wunder Fund"
+  },
+  {
+    "url": "https://it2bsns.ru/wp-json/wp/v2/vacancies",
+    "map": {
+      "list": "",
+      "id": "id",
+      "title": "title.rendered",
+      "url": "link",
+      "description": "content.rendered",
+      "company_const": "Айтуби"
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "limit_param": "per_page",
+      "limit": 100,
+      "start": 1,
+      "max_pages": 5
+    },
+    "company_hint": "Айтуби"
+  },
+  {
+    "map": {
+      "link_path": "/career/detail/",
+      "min_title": 8,
+      "company_const": "БФТ-Холдинг"
+    },
+    "url": "https://bft.ru/career/list/",
+    "mode": "html_links",
+    "company_hint": "БФТ-Холдинг"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/moscow/",
+      "min_title": 3,
+      "title_from_card": true,
+      "title_class": "vacancy__text",
+      "company_const": "Синимекс"
+    },
+    "url": "https://www.cinimex.ru/vacancies/moscow/",
+    "mode": "html_links",
+    "company_hint": "Синимекс"
+  },
+  {
+    "map": {
+      "link_path": "/careers/",
+      "min_title": 5,
+      "company_const": "Поехали"
+    },
+    "url": "https://poehali.dev/careers",
+    "mode": "html_links",
+    "company_hint": "Поехали"
   }
 ]
