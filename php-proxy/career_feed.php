@@ -573,7 +573,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         if (!empty($map['title_from_card'])
             && (mb_strlen($title) < $minTitle || cf_title_is_noise($title))) {
             $card = cf_link_card($a, $needle);
-            if ($card !== null) $title = cf_link_title($card, true);
+            if ($card !== null) $title = cf_link_title($card, true, trim((string)($map['title_class'] ?? '')));
         }
         if (mb_strlen($title) < $minTitle) continue;
         if (preg_match(CF_COUNT_LABEL, $title)) continue;
@@ -649,9 +649,21 @@ function cf_link_card(DOMElement $a, string $needle): ?DOMElement
     return $card;
 }
 
-function cf_link_title(DOMElement $a, bool $headingOnly = false): string
+function cf_link_title(DOMElement $a, bool $headingOnly = false, string $titleClass = ''): string
 {
     $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
+
+    // Название в блоке с «чужим» классом (у CINIMEX — div.vacancy__text рядом с
+    // пустой ссылкой-оверлеем): запись источника называет этот класс сама
+    // (map.title_class), угадывать по общим словам вроде «vacancy» опасно —
+    // так же называются блоки с зарплатой и городом.
+    if ($titleClass !== '') {
+        foreach ($a->getElementsByTagName('*') as $el) {
+            if (!in_array($titleClass, preg_split('/\s+/', $el->getAttribute('class')), true)) continue;
+            $text = $clean($el->textContent ?? '');
+            if ($text !== '' && cq_title_problem($text) === null) return $text;
+        }
+    }
 
     // Кандидатов берём по порядку и возвращаем первого, кто похож на должность.
     // Раньше брался просто первый: у С-Терры блок «…item__subtitle» с городом

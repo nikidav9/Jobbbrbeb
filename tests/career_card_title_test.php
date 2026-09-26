@@ -68,6 +68,23 @@ $tt = array_column($t, 'title');
 check('карточка с тегами-фильтрами: обе вакансии со своими заголовками',
     $tt === ['Системный инженер', 'Архитектор прикладных систем']);
 
+// Название в блоке, который запись источника называет сама (map.title_class):
+// ссылка — пустой оверлей, заголовка h* и класса title/name нет (CINIMEX).
+$named = <<<'HTML'
+<div class="list">
+  <div class="vacancy"><div class="vacancy__text">Инженер данных</div><div class="vacancy__city">Москва</div>
+    <a class="stretched-link" href="/vacancies/moscow/data-engineer/"></a></div>
+  <div class="vacancy"><div class="vacancy__text">Младший системный аналитик</div>
+    <a class="stretched-link" href="/vacancies/moscow/analyst/"></a></div>
+</div>
+HTML;
+$nm = ['link_path' => '/vacancies/moscow/', 'min_title' => 3, 'title_from_card' => true];
+check('без title_class пустой оверлей без заголовка не даёт вакансий',
+    count(cf_html_links($named, 'https://example.ru/', $nm, time())) === 0);
+$n = cf_html_links($named, 'https://example.ru/', $nm + ['title_class' => 'vacancy__text'], time());
+check('title_class: название из названного блока, а не город',
+    array_column($n, 'title') === ['Инженер данных', 'Младший системный аналитик']);
+
 if ($failures) {
     echo "career card title: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
