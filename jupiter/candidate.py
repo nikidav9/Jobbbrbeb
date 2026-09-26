@@ -77,6 +77,16 @@ CONSENT_KINDS: tuple[ConsentKind, ...] = (
         "третьим лицам", "третьи лица", "партнёрам", "партнерам",
         "third part", "affiliates",
     )),
+    # Трансграничная передача и особые категории (здоровье, судимость,
+    # биометрия) — отдельные волеизъявления: поручение Юпитеру их не
+    # покрывает (Соглашение п. 8.3). Обязательная такая галочка — к человеку.
+    ConsentKind("crossborder_consent", False, (
+        "трансгранич", "за пределы российской", "иностранн государств",
+        "cross border", "outside russia",
+    )),
+    ConsentKind("special_category_consent", False, (
+        "биометрическ", "состояни здоровья", "судимост", "biometric",
+    )),
     ConsentKind("personal_data_consent", True, (
         "обработк персональн", "персональных данных", "персональными данными",
         "обработку данных", "personal data", "processing of personal",
@@ -84,6 +94,12 @@ CONSENT_KINDS: tuple[ConsentKind, ...] = (
     ConsentKind("privacy_consent", True, (
         "политик конфиденциальност", "пользовательск соглашен", "условия",
         "privacy policy", "terms", "user agreement", "оферт",
+    )),
+    # «Подтверждаю достоверность данных». Даётся по поручению (Соглашение
+    # п. 8.3): за точность профиля отвечает сам человек (п. 3.1, 4.4).
+    ConsentKind("data_accuracy_confirmation", True, (
+        "достоверн", "подтверждаю правильност", "information is accurate",
+        "true and correct", "true and accurate",
     )),
 )
 

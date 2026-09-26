@@ -946,7 +946,7 @@ HTML и форм, политика переходов, отправка и пр�
 | `jupiter/submission.py` | Доказательства отправки, отпечаток отклика и журнал поданных |
 | `jupiter/spa_payload.py` | Чтение встроенного JSON SPA (`__NEXT_DATA__`, ld+json, Nuxt) ради адреса анкеты |
 | `jupiter/js_engine.py` | QuickJS-движок: выполняет скрипты страницы, перехватывает fetch/XHR, находит API-эндпоинты SPA |
-| `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача (29 сайтов: dry-run пройден разведкой без капчи и поля сверены вручную) |
+| `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (29 сайтов) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`). Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
 | `jupiter/recon.py` | Разведка форм отклика по всем 170 разделам `scripts/career-sites.tsv`: Jupiter в dry-run с синтетическим кандидатом, класс раздела и снимок полей. Итог — `docs/разведка-форм.md`; `--via-proxy` только для облачного контейнера |
 | `infra/recon-run.sh` | Та же разведка на московском сервере раз в сутки (таймер `jt-recon`, в 04:40; первый прогон сразу, пока журнал пуст; состояние — `recon_state`/`recon_last` в `security-status.json`): честная подпись Jupiter, 4 потока, только чтение; итог — открытый `https://147.45.184.99.sslip.io/jupiter-recon.json` (адреса работодателей и устройство анкет, без людей) |
 | `jupiter/mail_sync.py` | «Почта JobToo»: служба `jt-jupiter-mail` читает общий ящик Timeweb по IMAP и раскладывает письма по людям (`jupiterMailIngest`); адресата берёт только из первого `Received` публичного MX Timeweb. Адреса — `имя.фамилия@jobtoo.ru`, выдаёт `jt_jupiter_mailbox()` в `db.php` по правилам `php-proxy/jupiter_mail_address.php`; подробности — `docs/jupiter-mail.md` |
@@ -1005,6 +1005,23 @@ HTML и форм, политика переходов, отправка и пр�
   116): пока она не пуста, повторное согласие автоотклик не включает —
   `requestJupiterLive` (`services/jupiterLive.ts`) при отзыве переспрашивает
   явно.
+- **Согласия работодателю — тоже по поручению (редакция 2026-09-26-2).**
+  Соглашение п. 8.2–8.7, Согласие, dataPolicy п. 9.1.1: Юпитер даёт от имени
+  человека только то, без чего сайт не примет отклик — обработка ПДн этим
+  работодателем, его политика и правила сайта, достоверность анкеты. Никогда:
+  реклама, кадровый резерв, третьи лица, трансграничная передача, особые
+  категории, смешанные галочки. Сервер: `JT_EMPLOYER_CONSENT_FROM`,
+  `jt_employer_delegated` (по `jm_consents`) — `jupiterEnqueue` сразу пишет в
+  заявку `third_party_consent_at`/`third_party_terms_url`; принятие редакции
+  (`jt_employer_requeue_consent`) и повторный свайп снимают с паузы
+  `CONSENT_REQUIRED`. Воркер: `DELEGATED_CONSENTS` в `jupiter/run_worker.py`,
+  виды галочек — `CONSENT_KINDS` в `jupiter/candidate.py`. Карточка отклика
+  (`app/jupiter-application.tsx`) показывает дату и ссылку «Условия и политика
+  работодателя». Перечень «Работодатели Юпитера» — документ `employers` из
+  `constants/jupiterEmployers.ts` (генерирует `scripts/gen-jupiter-employers.mjs`
+  из `scripts/career-sites.tsv`, сверку держит
+  `tests/jupiter-employers.test.mjs`). Сторож сервера —
+  `tests/jupiter_live_consent_test.php`.
 - **Остановка «нужен человек» — возобновляемая.** Капча, код из письма, вход,
   неизвестный обязательный вопрос: Jupiter отдаёт `HumanActionRequest` с
   токеном и сохраняет состояние (адрес шага, куки, список хостов).
