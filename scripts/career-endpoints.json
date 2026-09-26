@@ -1299,5 +1299,60 @@
     "url": "https://evercodelab.ru/vacancies",
     "mode": "html_links",
     "company_hint": "Evercode Lab"
+  },
+  {
+    "company_hint": "IT_One",
+    "url": "https://www.it-one.ru/vacancies/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 4,
+      "title_from_card": true,
+      "company_const": "IT_One"
+    }
+  },
+  {
+    "company_hint": "ДатаРу",
+    "url": "https://dataru.ru/career/vacancy",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/career/vacancy/",
+      "min_title": 4,
+      "title_from_card": true,
+      "company_const": "ДатаРу"
+    }
+  },
+  {
+    "company_hint": "Протей",
+    "url": "https://protei.ru/vacancies",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 4,
+      "title_from_card": true,
+      "company_const": "Протей"
+    }
+  },
+  {
+    "company_hint": "iFellow",
+    "url": "https://ifellowgroup.ru/vacancy/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 4,
+      "title_from_card": true,
+      "company_const": "iFellow"
+    }
+  },
+  {
+    "company_hint": "РДВ Технолоджи",
+    "url": "https://rdwcomp.ru/kompaniya/vakansii/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/kompaniya/vakansii/",
+      "min_title": 4,
+      "title_from_card": true,
+      "company_const": "РДВ Технолоджи"
+    }
   }
 ]

@@ -109,6 +109,9 @@ jobs:
       - name: Открытые счётчики ленты — только числа и названия компаний
         run: php tests/feed_stats_test.php
 
+      - name: Название вакансии из карточки рядом со ссылкой
+        run: php tests/career_card_title_test.php
+
       - name: Описание из API источника — разделы, карточка вакансии, курсор
         run: php tests/career_api_description_test.php
 

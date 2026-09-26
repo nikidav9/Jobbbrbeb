@@ -512,6 +512,8 @@ const CF_COUNT_LABEL = '~^\d+\s+ваканс~ui';
  *   link_path  — что должно быть в адресе ссылки («/vacancy/»), обязательно;
  *   min_title  — короче скольких букв текст за должность не считаем (8);
  *   company    — постоянное название компании, если на странице его нет.
+ *   title_from_card — название не внутри ссылки, а в заголовке её карточки
+ *              («Подробнее» или пустой оверлей): cf_link_card + cf_link_title.
  */
 /**
  * Разбор чужой разметки. Она почти всегда кривая, поэтому разбираем молча:
@@ -565,13 +567,18 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         if (in_array(mb_strtolower($tail), CF_SECTION_WORDS, true)) continue;
 
         $title = cf_link_title($a);
+        // Карточка-обёртка: название стоит РЯДОМ со ссылкой (в соседнем
+        // заголовке), а сама ссылка — «Подробнее» или прозрачный оверлей.
+        // Так свёрстаны IT_One, ДатаРу, Протей, iFellow, Галактика. Включается
+        // записью источника (title_from_card), чтобы не менять уже работающие.
+        if (!empty($map['title_from_card'])
+            && (mb_strlen($title) < $minTitle || cf_title_is_noise($title))) {
+            $card = cf_link_card($a, $needle);
+            if ($card !== null) $title = cf_link_title($card, true);
+        }
         if (mb_strlen($title) < $minTitle) continue;
         if (preg_match(CF_COUNT_LABEL, $title)) continue;
-        $lower = mb_strtolower($title);
-        foreach (CF_LINK_NOISE as $noise) {
-            if (str_starts_with($lower, $noise)) { $title = ''; break; }
-        }
-        if ($title === '') continue;
+        if (cf_title_is_noise($title)) continue;
 
         $url = cf_json_url(['href' => $href], ['url' => 'href'], $pageUrl);
         if ($url === '') continue;
@@ -602,7 +609,39 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
  * в классе, — и только если его нет, берём весь текст, расставляя пробелы на
  * границах элементов.
  */
-function cf_link_title(DOMElement $a): string
+/** Текст ссылки — служебная надпись («Подробнее», «Откликнуться»), а не должность. */
+function cf_title_is_noise(string $title): bool
+{
+    $lower = mb_strtolower($title);
+    foreach (CF_LINK_NOISE as $noise) {
+        if (str_starts_with($lower, $noise)) return true;
+    }
+    return false;
+}
+
+/**
+ * Карточка вакансии вокруг ссылки: самый внешний предок (не выше пяти
+ * уровней), в котором ссылки на вакансии ведут в одно место. Выше него уже
+ * список из нескольких вакансий, и заголовок оттуда был бы чужим.
+ */
+function cf_link_card(DOMElement $a, string $needle): ?DOMElement
+{
+    $own = trim($a->getAttribute('href'));
+    $card = null;
+    $node = $a->parentNode;
+    for ($depth = 0; $depth < 5 && $node instanceof DOMElement; $depth++, $node = $node->parentNode) {
+        $hrefs = [];
+        foreach ($node->getElementsByTagName('a') as $link) {
+            $h = trim($link->getAttribute('href'));
+            if ($h !== '' && str_contains($h, $needle)) $hrefs[$h] = true;
+        }
+        if (count($hrefs) !== 1 || !isset($hrefs[$own])) break;
+        $card = $node;
+    }
+    return $card;
+}
+
+function cf_link_title(DOMElement $a, bool $headingOnly = false): string
 {
     $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
 
@@ -630,6 +669,9 @@ function cf_link_title(DOMElement $a): string
         if (cq_title_problem($text) === null) return $text;
     }
     if ($candidates) return $candidates[0];
+    // Из карточки берём только заголовок: весь её текст — это должность,
+    // город, зарплата и кнопка вперемешку.
+    if ($headingOnly) return '';
     // Запасной ход: весь текст ссылки, но с пробелом на каждой границе узла.
     $parts = [];
     $walk = function (DOMNode $node) use (&$walk, &$parts): void {
