@@ -1354,5 +1354,304 @@
       "title_from_card": true,
       "company_const": "РДВ Технолоджи"
     }
+  },
+  {
+    "url": "https://emex.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://emex.huntflow.io/vacancy/{slug}",
+      "company_const": "Emex"
+    },
+    "company_hint": "Emex"
+  },
+  {
+    "url": "https://mobileup.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://mobileup.huntflow.io/vacancy/{slug}",
+      "company_const": "MobileUp"
+    },
+    "company_hint": "MobileUp"
+  },
+  {
+    "url": "https://mst.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://mst.huntflow.io/vacancy/{slug}",
+      "company_const": "MST"
+    },
+    "company_hint": "MST"
+  },
+  {
+    "url": "https://outlines_tech.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://outlines_tech.huntflow.io/vacancy/{slug}",
+      "company_const": "Outlines Tech"
+    },
+    "company_hint": "Outlines Tech"
+  },
+  {
+    "url": "https://ktshiring.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://ktshiring.huntflow.io/vacancy/{slug}",
+      "company_const": "KTS"
+    },
+    "company_hint": "KTS"
+  },
+  {
+    "url": "https://2up.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://2up.huntflow.io/vacancy/{slug}",
+      "company_const": "2UP"
+    },
+    "company_hint": "2UP"
+  },
+  {
+    "url": "https://hunter-mob.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://hunter-mob.huntflow.io/vacancy/{slug}",
+      "company_const": "HunterMob"
+    },
+    "company_hint": "HunterMob"
+  },
+  {
+    "url": "https://itoolabs.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://itoolabs.huntflow.io/vacancy/{slug}",
+      "company_const": "iToolabs"
+    },
+    "company_hint": "iToolabs"
+  },
+  {
+    "url": "https://napoleonit.huntflow.io/api/vacancy",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20
+    },
+    "map": {
+      "list": "items",
+      "id": "id",
+      "title": "position",
+      "address": "city",
+      "url_template": "https://napoleonit.huntflow.io/vacancy/{slug}",
+      "company_const": "Napoleon IT"
+    },
+    "company_hint": "Napoleon IT"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 6,
+      "company_const": "DNS"
+    },
+    "url": "https://www.dns-tech.ru/vacancies",
+    "mode": "html_links",
+    "company_hint": "DNS"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 6,
+      "company_const": "Мерлион"
+    },
+    "url": "https://job.merlion.com/vacancy/",
+    "mode": "html_links",
+    "company_hint": "Мерлион"
+  },
+  {
+    "map": {
+      "id": "code",
+      "list": "result.vacancies",
+      "title": "title",
+      "address": "city",
+      "schedule": "direction",
+      "url_template": "https://job.hoff.ru/vacancies{code}",
+      "company_const": "Hoff"
+    },
+    "url": "https://job-api.hoff.ru/vacancies?limit=100&offset=0",
+    "company_hint": "Hoff"
+  },
+  {
+    "map": {
+      "link_path": "/careers/",
+      "min_title": 8,
+      "link_regex": "~^/careers/[a-zA-Z0-9-]+/?$~",
+      "company_const": "F6"
+    },
+    "url": "https://www.f6.ru/careers/",
+    "mode": "html_links",
+    "company_hint": "F6"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/",
+      "min_title": 4,
+      "title_from_card": true,
+      "link_regex": "~^/vacancies/[a-zA-Z0-9-]+/?$~",
+      "company_const": "Гарда"
+    },
+    "url": "https://garda.ai/vacancies",
+    "mode": "html_links",
+    "company_hint": "Гарда"
+  },
+  {
+    "url": "https://galaktika.ru/wp-json/wp/v2/jobs?per_page=100",
+    "map": {
+      "list": "",
+      "title": "title.rendered",
+      "url": "link",
+      "id": "id",
+      "company_const": "Галактика"
+    },
+    "company_hint": "Галактика"
+  },
+  {
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 8,
+      "company_const": "IXcellerate"
+    },
+    "url": "https://ixcellerate.ru/vacancies/",
+    "mode": "html_links",
+    "company_hint": "IXcellerate"
+  },
+  {
+    "map": {
+      "link_path": "/about/vacancies/",
+      "min_title": 4,
+      "company_const": "Иннодата"
+    },
+    "url": "https://www.innodata.ru/about/vacancies/",
+    "mode": "html_links",
+    "company_hint": "Иннодата"
+  },
+  {
+    "map": {
+      "link_path": "/ru/job-",
+      "min_title": 3,
+      "company_const": "Лайв Тайпинг"
+    },
+    "url": "https://livetyping.com/ru/job",
+    "mode": "html_links",
+    "company_hint": "Лайв Тайпинг"
+  },
+  {
+    "mode": "html_links",
+    "url": "https://career.nlmk.com/vacancy/",
+    "map": {
+      "link_path": "/vacancy/detail/",
+      "min_title": 8,
+      "company_const": "НЛМК"
+    },
+    "company_hint": "НЛМК"
+  },
+  {
+    "url": "https://netology.ru/job",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/job/",
+      "min_title": 8,
+      "company_const": "Нетология"
+    },
+    "company_hint": "Нетология"
+  },
+  {
+    "url": "https://c.tutu.ru/hr/vacancies",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/hr/vacancies/",
+      "min_title": 6,
+      "company_const": "Туту"
+    },
+    "company_hint": "Туту"
+  },
+  {
+    "url": "https://huntflow.ru/career/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/career/vacancy/",
+      "min_title": 6,
+      "company_const": "Хантфлоу"
+    },
+    "company_hint": "Хантфлоу"
   }
 ]

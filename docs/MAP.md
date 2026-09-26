@@ -582,7 +582,8 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   (решение владельца). Новые адреса проверяет `scripts/career-catalog-check.py`:
   раздел отвечает 200 и не уводит на hh/SuperJob; где отсюда мешает защита
   от ботов или геоблок — стоит главная сайта, раздел ищет разведка.
-- `scripts/career-endpoints.json` — 83 проверенных адреса, найденных
+- `scripts/career-endpoints.json` — 125 проверенных адресов (26.09 добавлены 22:
+  9 компаний на Huntflow через их JSON `/api/vacancy?page=N` и 13 страниц/API), найденных
   разведкой, с картами полей и режимом разбора (`json`, `html_links`,
   `embedded`). Из них 65 рабочих: остальные 18 лежат в
   `scripts/career-runtime-quarantine.json` с причиной и датой. ВТБ там по
