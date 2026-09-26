@@ -12,6 +12,9 @@
 @ini_set('display_errors', '0');
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: public, max-age=600');
+// Открытые числа без людей — читает и раздел «Внешние вакансии» дашборда с
+// другого адреса, поэтому любой источник.
+header('Access-Control-Allow-Origin: *');
 
 require_once __DIR__ . '/sb_lite.php';
 

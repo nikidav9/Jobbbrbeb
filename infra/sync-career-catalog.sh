@@ -128,7 +128,7 @@ for idx, row in enumerate(rows, 1):
     if u.scheme.lower() != 'https' or not u.hostname or u.username or u.password:
         raise SystemExit(f'{path}:{idx}: нужен HTTPS URL без credentials: {url}')
     mode = str(row.get('mode') or 'json')
-    if mode not in ('json', 'html_links', 'embedded'):
+    if mode not in ('json', 'html_links', 'html_blocks', 'embedded'):
         raise SystemExit(f'{path}:{idx}: неизвестный mode: {mode}')
     if url in seen:
         raise SystemExit(f'{path}:{idx}: повтор URL: {url}')
@@ -151,7 +151,7 @@ from urllib.parse import urlsplit
 repo_json, discovered_path = sys.argv[1], sys.argv[2]
 repo_rows = json.loads(repo_json)
 
-ALLOWED_MODES = ('json', 'html_links', 'embedded')
+ALLOWED_MODES = ('json', 'html_links', 'html_blocks', 'embedded')
 FIELDS = ('url', 'mode', 'map', 'paging', 'method', 'body')
 
 def load_discovered(path):

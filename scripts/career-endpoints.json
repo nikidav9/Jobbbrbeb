@@ -1700,6 +1700,259 @@
     "company_hint": "МТС Банк"
   },
   {
+    "map": {
+      "link_path": "/hr/vacancies/",
+      "min_title": 4,
+      "company_const": "Туту"
+    },
+    "url": "https://c.tutu.ru/hr/vacancies",
+    "mode": "html_links",
+    "company_hint": "Туту"
+  },
+  {
+    "map": {
+      "link_path": "/job/vacancy/",
+      "min_title": 8,
+      "title_from_card": true,
+      "company_const": "Информзащита"
+    },
+    "url": "https://www.infosec.ru/job/vacancy/",
+    "mode": "html_links",
+    "company_hint": "Информзащита"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "props.pageProps.allJobsData",
+      "title": "title",
+      "address": "location",
+      "description": "todo_ru",
+      "url_template": "https://wunderfund.io/jobs/{id}",
+      "company_const": "Wunder Fund"
+    },
+    "url": "https://wunderfund.io",
+    "mode": "embedded",
+    "company_hint": "Wunder Fund"
+  },
+  {
+    "url": "https://it2bsns.ru/wp-json/wp/v2/vacancies",
+    "map": {
+      "list": "",
+      "id": "id",
+      "title": "title.rendered",
+      "url": "link",
+      "description": "content.rendered",
+      "company_const": "Айтуби"
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "limit_param": "per_page",
+      "limit": 100,
+      "start": 1,
+      "max_pages": 5
+    },
+    "company_hint": "Айтуби"
+  },
+  {
+    "map": {
+      "link_path": "/career/detail/",
+      "min_title": 8,
+      "company_const": "БФТ-Холдинг"
+    },
+    "url": "https://bft.ru/career/list/",
+    "mode": "html_links",
+    "company_hint": "БФТ-Холдинг"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/moscow/",
+      "min_title": 3,
+      "title_from_card": true,
+      "title_class": "vacancy__text",
+      "company_const": "Синимекс"
+    },
+    "url": "https://www.cinimex.ru/vacancies/moscow/",
+    "mode": "html_links",
+    "company_hint": "Синимекс"
+  },
+  {
+    "map": {
+      "link_path": "/careers/",
+      "min_title": 5,
+      "company_const": "Поехали"
+    },
+    "url": "https://poehali.dev/careers",
+    "mode": "html_links",
+    "company_hint": "Поехали"
+  },
+  {
+    "map": {
+      "list": "*.vacancies",
+      "id": "id",
+      "title": "title",
+      "url": "url",
+      "open": "available",
+      "address": "tags.remotely",
+      "description": "description",
+      "state_script_id": "data",
+      "company_const": "Яндекс Крауд"
+    },
+    "url": "https://crowd.yandex.ru/vacancies",
+    "mode": "embedded",
+    "company_hint": "Яндекс Крауд"
+  },
+  {
+    "url": "https://www.neuro-city.ru/",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "vacancy",
+      "title_class": "vacancy__title",
+      "min_title": 4,
+      "company_const": "NeuroCity"
+    },
+    "company_hint": "NeuroCity"
+  },
+  {
+    "url": "https://palindrome.media/career/",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "accordion-item",
+      "title_class": "accordion-item__title",
+      "company_const": "Палиндром"
+    },
+    "company_hint": "Палиндром"
+  },
+  {
+    "url": "https://itnovation.pro/vacancies",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "t585__wrapper",
+      "title_class": "t585__title",
+      "min_title": 3,
+      "company_const": "Айти Новация"
+    },
+    "company_hint": "Айти Новация"
+  },
+  {
+    "mode": "html_blocks",
+    "url": "https://www.extyl-pro.ru/vacancy/",
+    "map": {
+      "block_class": "faq__item",
+      "title_class": "faq__head",
+      "min_title": 3,
+      "company_const": "Extyl"
+    },
+    "company_hint": "Extyl"
+  },
+  {
+    "mode": "html_links",
+    "url": "https://company.tilda.ru/ru",
+    "map": {
+      "link_path": "/ru/",
+      "link_regex": "~^/ru/(?!otzyvy$|madeontilda/?$|privacy$)[a-z0-9-]+/?$~",
+      "min_title": 4,
+      "company_const": "Tilda Publishing"
+    },
+    "company_hint": "Tilda Publishing"
+  },
+  {
+    "url": "https://smartdec.net/ru/hiring/",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "card",
+      "title_class": "hiring-pos-name",
+      "min_title": 4,
+      "company_const": "SmartDec"
+    },
+    "company_hint": "SmartDec"
+  },
+  {
+    "company_hint": "SharpLase",
+    "mode": "html_blocks",
+    "url": "https://sharplase.ru/o-kompanii/job/",
+    "map": {
+      "block_class": "career-vacancy-item",
+      "title_class": "career-vacancy-head__text",
+      "min_title": 3,
+      "company_const": "SharpLase"
+    }
+  },
+  {
+    "mode": "html_links",
+    "url": "https://yoloprice.com/career",
+    "map": {
+      "link_path": "yoloprice.com/",
+      "link_regex": "~^/(?!career$|en$)[a-z]{2,}$~",
+      "min_title": 6,
+      "company_const": "YoloPrice"
+    },
+    "company_hint": "YoloPrice"
+  },
+  {
+    "url": "https://talkbank.io/vacansy",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "t-card__col",
+      "title_class": "t-card__title",
+      "min_title": 4,
+      "company_const": "TalkBank"
+    },
+    "company_hint": "TalkBank"
+  },
+  {
+    "url": "https://www.eduson.tv/vacancy-account-manager",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy-",
+      "link_regex": "~^/vacancy-[a-z-]+$~",
+      "min_title": 5,
+      "company_const": "Eduson"
+    },
+    "company_hint": "Eduson"
+  },
+  {
+    "url": "https://proscom.ru/strapi/api/jobs",
+    "mode": "json",
+    "map": {
+      "list": "data",
+      "title": "attributes.title",
+      "url_template": "https://proscom.ru/vacancies/{attributes.slug}",
+      "id": "id",
+      "description": "attributes.content",
+      "company_const": "Proscom"
+    },
+    "company_hint": "Proscom"
+  },
+  {
+    "map": {
+      "state_script_id": "__next_f",
+      "list": "**.vacancies",
+      "id": "id",
+      "title": "title",
+      "url_template": "https://www.setters.agency/job?vacancy={slug}",
+      "description": "tabs",
+      "company_const": "SETTERS"
+    },
+    "url": "https://www.setters.agency/job",
+    "mode": "embedded",
+    "company_hint": "SETTERS"
+  },
+  {
+    "map": {
+      "state_script_id": "__next_f",
+      "list": "**.items",
+      "id": "id",
+      "title": "title",
+      "url_template": "https://upside.pro{permalink}",
+      "description": "summary",
+      "company_const": "UPSIDE"
+    },
+    "url": "https://upside.pro/vacancies",
+    "mode": "embedded",
+    "company_hint": "UPSIDE"
+  },
+  {
     "url": "https://rosatom-career.ru/api/vacancies/vacancies/search/",
     "method": "POST",
     "body": {

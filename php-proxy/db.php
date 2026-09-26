@@ -189,6 +189,7 @@ $adminFns = [
     // сессию значило бы дать одному человеку доступ к заявкам другого.
     'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
     'jupiterGetCandidateProfile', 'jupiterSubmitGuard', 'jupiterMailIngest',
+    'jupiterRequeueSiteReady',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -1590,6 +1591,17 @@ define('JT_CROSSBORDER_CONSENT_VERSION', '2026-09-19');
 // диалога. До неё поручения в текстах не было.
 define('JT_JUPITER_CONSENT_FROM', '2026-09-25');
 
+// Редакция (Соглашение п. 8.3, Согласие, dataPolicy п. 9.1.1), с которой
+// поручение Юпитеру включает согласия, которых работодатель требует для
+// рассмотрения отклика, принятие правил его сайта и подтверждение
+// достоверности анкеты. Решение владельца 26.09.2026. Версия сравнивается
+// целиком: `2026-09-26` (без поручения) < `2026-09-26-2`.
+define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');
+
+// Известные адреса условий работодателей. Для остальных сайтов условия
+// показываются ссылкой на сам сайт вакансии (карточка отклика).
+const JT_EMPLOYER_TERMS = ['rabota.sber.ru' => 'https://rabota.sber.ru/terms'];
+
 // Редакция согласия на рекламную рассылку (constants/legal.ts, marketing).
 // Сервер сверяет её сам: согласие, данное на прежний текст, не покрывает
 // рассылку по новому, а старый клиент не должен записать устаревшую редакцию.
@@ -2979,6 +2991,7 @@ function jt_consent_attach(string $uid, $payload): void
             'accepted_at' => now_iso(),
         ], 'id');
         jt_jupiter_auto_enable($uid, $stamp);
+        jt_employer_requeue_consent($uid, $stamp);
 
         // Согласие на рекламную рассылку — такая же отдельная галочка.
         $mkVersion = trim((string)($payload['marketingVersion'] ?? ''));
@@ -3027,6 +3040,91 @@ function jt_jupiter_stamp_ok(string $stamp): bool
     $consent = substr((string)($versions['consent'] ?? ''), 0, 10);
     return $terms !== '' && $terms >= JT_JUPITER_CONSENT_FROM
         && $consent !== '' && $consent >= JT_JUPITER_CONSENT_FROM;
+}
+
+/**
+ * Отпечаток несёт поручение давать работодателю согласия от имени человека
+ * (редакция JT_EMPLOYER_CONSENT_FROM). В отличие от jt_jupiter_stamp_ok
+ * версия сравнивается целиком: суффикс `-2` здесь и есть граница.
+ */
+function jt_employer_stamp_ok(string $stamp): bool
+{
+    $versions = [];
+    foreach (explode('|', $stamp) as $part) {
+        $pair = explode(':', $part, 2);
+        if (count($pair) === 2) {
+            $versions[$pair[0]] = $pair[1];
+        }
+    }
+    $terms = (string)($versions['terms'] ?? '');
+    $consent = (string)($versions['consent'] ?? '');
+    return $terms !== '' && strcmp($terms, JT_EMPLOYER_CONSENT_FROM) >= 0
+        && $consent !== '' && strcmp($consent, JT_EMPLOYER_CONSENT_FROM) >= 0;
+}
+
+/**
+ * Принял ли человек редакцию с поручением на согласия работодателю.
+ * Смотрим записи jm_consents (их у человека единицы): ответ зависит от того,
+ * что он принял, а не от флага, который можно забыть поставить.
+ */
+function jt_employer_delegated(string $uid): bool
+{
+    if ($uid === '') return false;
+    try {
+        foreach (sb_select('jm_consents', ['user_id' => 'eq.' . $uid], 'stamp') as $row) {
+            if (jt_employer_stamp_ok((string)($row['stamp'] ?? ''))) return true;
+        }
+    } catch (Throwable $e) {
+        // Нет ответа базы — поручения нет: согласие от имени человека
+        // даётся только тогда, когда оно точно записано.
+    }
+    return false;
+}
+
+/** Поля заявки, которыми фиксируется поручение на согласия работодателю. */
+function jt_employer_consent_fields(string $vacancyUrl, string $now): array
+{
+    $host = strtolower((string)(parse_url($vacancyUrl, PHP_URL_HOST) ?: ''));
+    if (str_starts_with($host, 'www.')) $host = substr($host, 4);
+    return [
+        'third_party_consent_at' => $now,
+        'third_party_terms_url' => JT_EMPLOYER_TERMS[$host] ?? null,
+    ];
+}
+
+/**
+ * Приняв новую редакцию, человек снимает с паузы отклики, которые ждали его
+ * согласия (CONSENT_REQUIRED). Только те, где согласия ещё не было: если оно
+ * уже стояло и отклик всё равно встал, дело не в поручении (например, одна
+ * галочка вместе с рекламой) — повтор ничего не даст.
+ */
+function jt_employer_requeue_consent(string $uid, string $stamp): void
+{
+    if ($uid === '' || !jt_employer_stamp_ok($stamp)) return;
+    try {
+        $user = sb_single('jm_users', ['id' => 'eq.' . $uid], 'jupiter_live_enabled_at,is_blocked');
+        if (!$user || empty($user['jupiter_live_enabled_at']) || !empty($user['is_blocked'])) return;
+        $rows = sb_select('jm_jupiter_applications', [
+            'user_id' => 'eq.' . $uid,
+            'state' => 'eq.action_required',
+            'reason_code' => 'eq.CONSENT_REQUIRED',
+            'third_party_consent_at' => 'is.null',
+            'lease_owner' => 'is.null',
+            'limit' => '200',
+        ], 'id,vacancy_url');
+        $now = now_iso();
+        foreach ($rows as $row) {
+            sb_update('jm_jupiter_applications', [
+                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uid,
+                'state' => 'eq.action_required', 'lease_owner' => 'is.null',
+            ], ['state' => 'queued', 'reason_code' => null, 'not_before' => null,
+                'submission_authorized_at' => $now, 'updated_at' => $now]
+                + jt_employer_consent_fields((string)$row['vacancy_url'], $now));
+        }
+        if ($rows) rt_touch('jm_jupiter_applications');
+    } catch (Throwable $e) {
+        // Запись согласия важнее: снятие с паузы не должно её ронять.
+    }
 }
 
 /**
@@ -4024,6 +4122,7 @@ try {
                 'accepted_at' => now_iso(),
             ], 'id');
             jt_jupiter_auto_enable($uid, $stamp);
+            jt_employer_requeue_consent($uid, $stamp);
             $data = ['записано' => true];
             break;
         }
@@ -6598,6 +6697,38 @@ try {
             break;
         }
 
+        // Воркер: сайты, которые разведка только что подключила (dry_run_ok),
+        // снимают с паузы свои отклики со SITE_NOT_VERIFIED. Хосты — от
+        // воркера (site_compat.live_ready), сервер лишь сверяет адреса.
+        case 'jupiterRequeueSiteReady': {
+            $hosts = [];
+            foreach ((array)($args[0] ?? []) as $h) {
+                $h = strtolower(trim((string)$h));
+                if (str_starts_with($h, 'www.')) $h = substr($h, 4);
+                if ($h !== '') $hosts[$h] = true;
+            }
+            $rows = $hosts ? sb_select('jm_jupiter_applications', [
+                'state' => 'eq.action_required',
+                'reason_code' => 'eq.SITE_NOT_VERIFIED',
+                'lease_owner' => 'is.null',
+                'limit' => '500',
+            ], 'id,user_id,vacancy_url') : [];
+            $moved = 0;
+            $now = now_iso();
+            foreach ($rows as $row) {
+                $host = strtolower((string)(parse_url((string)$row['vacancy_url'], PHP_URL_HOST) ?: ''));
+                if (str_starts_with($host, 'www.')) $host = substr($host, 4);
+                if (!isset($hosts[$host])) continue;
+                sb_update('jm_jupiter_applications', [
+                    'id' => 'eq.' . $row['id'], 'state' => 'eq.action_required',
+                    'reason_code' => 'eq.SITE_NOT_VERIFIED', 'lease_owner' => 'is.null',
+                ], ['state' => 'queued', 'reason_code' => null, 'not_before' => null, 'updated_at' => $now]);
+                $moved++;
+            }
+            if ($moved) rt_touch('jm_jupiter_applications');
+            jt_respond(['moved' => $moved]); exit;
+        }
+
         case 'jupiterRequeueLive': {
             $uidArg = (string)$args[0];
             $id = (string)($args[1] ?? '');
@@ -6755,6 +6886,10 @@ try {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
             $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
+            $live = !empty($user['jupiter_live_enabled_at']);
+            // Поручение на согласия работодателю (Соглашение п. 8.3) — только
+            // вместе с боевой подачей: без неё согласия никому не нужны.
+            $delegated = $live && jt_employer_delegated($uidArg);
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
@@ -6765,23 +6900,41 @@ try {
                 // (the unique index still prevents duplicate employer
                 // submissions), but do not leave an old dry-run row stuck
                 // forever with submission_authorized_at = null.
-                $canAuthorizeExisting = !empty($user['jupiter_live_enabled_at'])
+                $canAuthorizeExisting = $live
                     && empty($existing['submission_authorized_at'])
                     && empty($existing['lease_owner'])
                     && in_array((string)($existing['state'] ?? ''), ['queued', 'ready_to_submit'], true);
-                if ($canAuthorizeExisting) {
-                    sb_update('jm_jupiter_applications', [
+                // Повторный свайп по отклику, который ждал согласия, — то же
+                // поручение: если теперь оно есть, отклик идёт дальше сам.
+                $canResumeConsent = $delegated
+                    && empty($existing['third_party_consent_at'])
+                    && empty($existing['lease_owner'])
+                    && (string)($existing['state'] ?? '') === 'action_required'
+                    && (string)($existing['reason_code'] ?? '') === 'CONSENT_REQUIRED';
+                if ($canAuthorizeExisting || $canResumeConsent) {
+                    $now = now_iso();
+                    $filters = [
                         'id' => 'eq.' . (string)$existing['id'],
                         'user_id' => 'eq.' . $uidArg,
-                        'submission_authorized_at' => 'is.null',
                         'lease_owner' => 'is.null',
-                    ], [
+                    ];
+                    if ($canAuthorizeExisting) {
+                        $filters['submission_authorized_at'] = 'is.null';
+                    } else {
+                        $filters['state'] = 'eq.action_required';
+                    }
+                    $patch = [
                         'state' => 'queued',
-                        'submission_authorized_at' => now_iso(),
+                        'submission_authorized_at' => !empty($existing['submission_authorized_at'])
+                            ? $existing['submission_authorized_at'] : $now,
                         'reason_code' => null,
                         'not_before' => null,
-                        'updated_at' => now_iso(),
-                    ]);
+                        'updated_at' => $now,
+                    ];
+                    if ($delegated && empty($existing['third_party_consent_at'])) {
+                        $patch += jt_employer_consent_fields((string)$existing['vacancy_url'], $now);
+                    }
+                    sb_update('jm_jupiter_applications', $filters, $patch);
                     $existing = sb_single('jm_jupiter_applications', [
                         'id' => 'eq.' . (string)$existing['id'],
                         'user_id' => 'eq.' . $uidArg,
@@ -6797,10 +6950,13 @@ try {
                 'canonical_url' => $canonical,
                 'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
                 'state' => 'queued',
-                'submission_authorized_at' => !empty($user['jupiter_live_enabled_at']) ? now_iso() : null,
+                'submission_authorized_at' => $live ? now_iso() : null,
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
+            if ($delegated) {
+                $row += jt_employer_consent_fields($url, now_iso());
+            }
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.

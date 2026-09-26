@@ -23,7 +23,9 @@
 //   Coral: https://static.tildacdn.com/tild3433-6632-4261-b633-303934643364/favicon_edited_1.ico
 //   Crosstech: https://crosstech.ru/favicon.svg
 //   Directum: https://www.directum.ru/favicon.svg
+//   Eduson: https://www.eduson.tv/assets/favicons/favicon-5729f3e4684a3f255e3f6f0b0f5251d9304edaac224cbac3e516213ab1700e86.svg
 //   Evercode Lab: https://evercodelab.com/icon.ico?2784e210b86d0eeb
+//   Extyl: https://www.extyl-pro.ru/local/templates/extylnew/images/favicon/safari-pinned-tab.svg
 //   Foxford: https://foxford.ru/apple-touch-icon.png
 //   Globus IT: https://globus-ltd.ru/favicon.svg
 //   GRASS: https://thgrass.com/apple-touch-icon.png
@@ -45,35 +47,48 @@
 //   METRO: https://www.metro-cc.ru/favicon.ico
 //   Mish: https://mish.design/favicon/apple-touch-icon.png
 //   Navio: https://navio.auto/images/favicon.png
+//   NeuroCity: https://www.neuro-city.ru/favicon.svg
 //   Orion soft: https://www.orionsoft.ru/img/favicons/apple-touch-icon-152x152.png
 //   Performance Lab: https://www.performance-lab.ru/wp-content/uploads/2020/06/favicon.svg
 //   PIX Robotics: https://pix.ru/favicon.png
 //   Positive Technologies: https://pt-corp.storage.yandexcloud.net/apple_touch_icon_a07ddfdc8a.png
+//   Proscom: https://proscom.ru/safari-pinned-tab.svg
 //   RedLab: https://redlab.dev/wp-content/themes/redlab/images/favicon/apple-touch-icon.png
 //   Reksoft: https://www.reksoft.com/wp-content/themes/reksoft/favicon.svg
 //   Rush Agency: https://www.rush-agency.ru/apple-touch-icon.png
 //   SberDevices: https://sberdevices.ru/apple-touch-icon.png
 //   SearchInform: https://searchinform.ru/themes/2021/assets/shared/favicon/cropped-searchinform-favicon-192x192.png
 //   Selecty: https://static.tildacdn.com/tild3437-3236-4561-a132-333034623666/image.png
+//   SETTERS: https://www.setters.agency/icon.png?icon.13ntlfmptar_n.png
+//   SharpLase: https://sharplase.ru/favicon.ico
 //   SimbirSoft: https://www.simbirsoft.com/favicon.png
 //   Simple Wine: https://careers.simple.ru/favicon.ico
 //   Skyeng: https://cdn-user53347.skyeng.ru/assets/images/favicon/apple-touch-icon.png
+//   SmartDec: https://smartdec.net/assets/android-icon-192x192.png
 //   Softline: https://softline.ru/favicon.ico
 //   Stepik: https://stepik.org/static/classic/ico/favicon.svg
 //   t2: https://msk.t2.ru/static/media/favicon-196.9ef6f636.png
+//   TalkBank: https://static.tildacdn.com/tild3265-6235-4264-b436-383535386663/_.png
+//   Tilda Publishing: https://tilda.cc/apple-touch-icon.png
 //   Twinby: https://twinby.ru/favicon.ico
+//   UPSIDE: https://upside.pro/icon.svg
 //   UserGate: https://usergate.com/f/dist/media/favicons/favicon.svg
 //   VK: https://vk.com/favicon.ico
 //   Wildberries / РВБ: https://rwb.ru/favicon.svg
+//   Wunder Fund: https://wunderfund.io/fav.svg
 //   X5 Group: https://www.x5.ru/wp-content/themes/x5/assets/img/favicon/favicon.svg
 //   X5 Tech: https://x5.tech/_next/static/media/faviconName.fb892b5f.png
 //   Yadro: https://yadro.com/assets/shared/icons/favicon.svg
+//   YoloPrice: https://static.tildacdn.com/tild3334-3966-4232-a539-323134633130/favicon.svg
 //   Авиасейлс: https://static.aviasales.com/selene-static/spa/favicons/AS-icon.svg
 //   Авито: https://www.avito.ru/apple-touch-icon.png
 //   Адвантум: https://static.tildacdn.com/tild6232-3764-4636-a635-343930653639/advantum_simbol.png
+//   Айти Новация: https://static.tildacdn.com/tild3362-6465-4364-b532-666134306265/sign_svg.svg
+//   Айтуби: https://it2bsns.ru/wp-content/uploads/2023/06/cropped-android-chrome-512x512-1-192x192.png
 //   Альфа-Банк: https://job.alfabank.ru/favicon-32x32.png
 //   Аурига: https://auriga.ru/app/wp-content/themes/auriga/assets/dist/images/favicon/apple-touch-icon.png
 //   Билайн: https://moskva.beeline.ru/favicon.svg
+//   БФТ-Холдинг: https://bft.ru/favicon.svg
 //   ВкусВилл: https://vkusvill.ru/apple-touch-icon.png?v=1
 //   ВТБ: https://www.vtb.ru/media-files/system/vtb.ru/favicons/favicon-svg.svg
 //   Галактика: https://galaktika.ru/wp-content/uploads/fbrfg/favicon.svg
@@ -88,6 +103,7 @@
 //   Золотое Яблоко: https://goldapple.ru/_static-files/favicons/favicon-194x194.png
 //   Иви: https://s3.dfs.ivi.ru/849c829d658baaeff512d766b0db3cce/dist/release_26.09.11_7d2a8216/storm/images/favicon/favicon_int.svg
 //   Индасофт: https://indusoft.ru/android-icon-192x192.png
+//   Информзащита: https://www.infosec.ru/favicon.ico
 //   Инфосистемы Джет: https://jet.su/local/templates/bx/favicon/apple-touch-icon.png
 //   ИнфоТеКС: https://infotecs.ru/images/favicon/apple-touch-icon.png
 //   Контакт: https://itcontact.ru/wp-content/themes/itcontact/img/logo.svg
@@ -106,8 +122,10 @@
 //   Норникель: https://nornickel.ru/images/icons/apple-touch-icon.png
 //   НСПК: https://nspk.ru/favicon.svg
 //   Островок: https://f.worldota.net/ostrota/theme/ostrovok_v2/favicon-20240322165030.png
+//   Палиндром: https://palindrome.media/wp-content/uploads/2021/09/cropped-512x512-1-192x192.png
 //   Пачка: https://pachca.com/icon.svg?icon.176663c2.svg
 //   Петрович: https://petrovichjob.ru/favicon.ico
+//   Поехали: https://poehali.dev/poehali/favicon.svg
 //   Профи.ру: https://profi.ru/apple-touch-icon-152x152-red-precomposed.png
 //   РБК: https://s.rbk.ru/v1_static/favicon/common/android-chrome-512x512.png
 //   РДВ Технолоджи: https://rdwcomp.ru/assets/templates/favicons/favicon.svg
@@ -118,12 +136,14 @@
 //   Северсталь: https://severstal.com/local/templates/severstal/assets/favicons/favicon.svg
 //   Селектел: https://selectel.ru/apple-touch-icon.png
 //   СИБУР: https://sibur.ru/local/templates/main/assets/images/Fav-ru.jpg?v=2
+//   Синимекс: https://www.cinimex.ru/local/templates/.default/favicon/apple-touch-icon-180x180.png
 //   Солар: https://rt-solar.ru/upload/cssinliner_webp//apple-touch-icon.webp
 //   Т-Банк: https://cdn.tbank.ru/params/common_front/resourses/icons/apple-touch-icon-180x180.png
 //   Тензор: https://tensor.ru/cdn/TensorRuCDN/favicons/1.0.0/favicon.svg
 //   Техвилл: https://techvill.ru/icon.jpg
 //   Точка Банк: https://hr.tochka.com/favicon.svg
 //   Траектория технологий: https://trctech.ru/assets/cache/images/img/other/favicon-196x196-972.png
+//   Туту: https://cdn1.tu-tu.ru/lib-assets/@tutu-react/favicon@1.3.2/favicon.svg
 //   ФосАгро: https://cdn.phosagro.ru/apple-touch-icon.png
 //   Хоулмонт: https://www.haulmont.ru/favicon.ico
 //   Циан: https://cian.ru/apple-touch-icon.png
@@ -152,7 +172,9 @@ const LOGOS: Record<string, number> = {
   "coral": require('@/assets/logos/coral.png'),
   "crosstech": require('@/assets/logos/crosstech.png'),
   "directum": require('@/assets/logos/directum.png'),
+  "eduson": require('@/assets/logos/eduson.png'),
   "evercode lab": require('@/assets/logos/evercode-lab.png'),
+  "extyl": require('@/assets/logos/extyl.png'),
   "foxford": require('@/assets/logos/foxford.png'),
   "globus it": require('@/assets/logos/globus-it.png'),
   "grass": require('@/assets/logos/grass.png'),
@@ -174,35 +196,48 @@ const LOGOS: Record<string, number> = {
   "metro": require('@/assets/logos/metro.png'),
   "mish": require('@/assets/logos/mish.png'),
   "navio": require('@/assets/logos/navio.png'),
+  "neurocity": require('@/assets/logos/neurocity.png'),
   "orion soft": require('@/assets/logos/orion-soft.png'),
   "performance lab": require('@/assets/logos/performance-lab.png'),
   "pix robotics": require('@/assets/logos/pix-robotics.png'),
   "positive technologies": require('@/assets/logos/positive-technologies.png'),
+  "proscom": require('@/assets/logos/proscom.png'),
   "redlab": require('@/assets/logos/redlab.png'),
   "reksoft": require('@/assets/logos/reksoft.png'),
   "rush agency": require('@/assets/logos/rush-agency.png'),
   "sberdevices": require('@/assets/logos/sberdevices.png'),
   "searchinform": require('@/assets/logos/searchinform.png'),
   "selecty": require('@/assets/logos/selecty.png'),
+  "setters": require('@/assets/logos/setters.png'),
+  "sharplase": require('@/assets/logos/sharplase.png'),
   "simbirsoft": require('@/assets/logos/simbirsoft.png'),
   "simple wine": require('@/assets/logos/simple-wine.png'),
   "skyeng": require('@/assets/logos/skyeng.png'),
+  "smartdec": require('@/assets/logos/smartdec.png'),
   "softline": require('@/assets/logos/softline.png'),
   "stepik": require('@/assets/logos/stepik.png'),
   "t2": require('@/assets/logos/t2.png'),
+  "talkbank": require('@/assets/logos/talkbank.png'),
+  "tilda publishing": require('@/assets/logos/tilda-publishing.png'),
   "twinby": require('@/assets/logos/twinby.png'),
+  "upside": require('@/assets/logos/upside.png'),
   "usergate": require('@/assets/logos/usergate.png'),
   "vk": require('@/assets/logos/vk.png'),
   "wildberries / рвб": require('@/assets/logos/wildberries-rvb.png'),
+  "wunder fund": require('@/assets/logos/wunder-fund.png'),
   "x5 group": require('@/assets/logos/x5-group.png'),
   "x5 tech": require('@/assets/logos/x5-tech.png'),
   "yadro": require('@/assets/logos/yadro.png'),
+  "yoloprice": require('@/assets/logos/yoloprice.png'),
   "авиасейлс": require('@/assets/logos/aviaseyls.png'),
   "авито": require('@/assets/logos/avito.png'),
   "адвантум": require('@/assets/logos/advantum.png'),
+  "айти новация": require('@/assets/logos/ayti-novatsiya.png'),
+  "айтуби": require('@/assets/logos/aytubi.png'),
   "альфа-банк": require('@/assets/logos/alfa-bank.png'),
   "аурига": require('@/assets/logos/auriga.png'),
   "билайн": require('@/assets/logos/bilayn.png'),
+  "бфт-холдинг": require('@/assets/logos/bft-holding.png'),
   "вкусвилл": require('@/assets/logos/vkusvill.png'),
   "втб": require('@/assets/logos/vtb.png'),
   "галактика": require('@/assets/logos/galaktika.png'),
@@ -217,6 +252,7 @@ const LOGOS: Record<string, number> = {
   "золотое яблоко": require('@/assets/logos/zolotoe-yabloko.png'),
   "иви": require('@/assets/logos/ivi.png'),
   "индасофт": require('@/assets/logos/indasoft.png'),
+  "информзащита": require('@/assets/logos/informzaschita.png'),
   "инфосистемы джет": require('@/assets/logos/infosistemy-dzhet.png'),
   "инфотекс": require('@/assets/logos/infoteks.png'),
   "контакт": require('@/assets/logos/kontakt.png'),
@@ -235,8 +271,10 @@ const LOGOS: Record<string, number> = {
   "норникель": require('@/assets/logos/nornickel.png'),
   "нспк": require('@/assets/logos/nspk.png'),
   "островок": require('@/assets/logos/ostrovok.png'),
+  "палиндром": require('@/assets/logos/palindrom.png'),
   "пачка": require('@/assets/logos/pachka.png'),
   "петрович": require('@/assets/logos/petrovich.png'),
+  "поехали": require('@/assets/logos/poehali.png'),
   "профи.ру": require('@/assets/logos/profi-ru.png'),
   "рбк": require('@/assets/logos/rbk.png'),
   "рдв технолоджи": require('@/assets/logos/rdv-tehnolodzhi.png'),
@@ -247,12 +285,14 @@ const LOGOS: Record<string, number> = {
   "северсталь": require('@/assets/logos/severstal.png'),
   "селектел": require('@/assets/logos/selectel.png'),
   "сибур": require('@/assets/logos/sibur.png'),
+  "синимекс": require('@/assets/logos/sinimeks.png'),
   "солар": require('@/assets/logos/solar.png'),
   "т-банк": require('@/assets/logos/t-bank.png'),
   "тензор": require('@/assets/logos/tenzor.png'),
   "техвилл": require('@/assets/logos/techvill.png'),
   "точка банк": require('@/assets/logos/tochka-bank.png'),
   "траектория технологий": require('@/assets/logos/traektoriya-tehnologiy.png'),
+  "туту": require('@/assets/logos/tutu.png'),
   "фосагро": require('@/assets/logos/fosagro.png'),
   "хоулмонт": require('@/assets/logos/houlmont.png'),
   "циан": require('@/assets/logos/tsian.png'),

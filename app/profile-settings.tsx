@@ -42,6 +42,7 @@ const ABOUT_DOCS: {
   { key: 'consent', icon: 'checkmark-circle-outline' },
   { key: 'dataPolicy', icon: 'lock-closed-outline' },
   { key: 'marketing', icon: 'megaphone-outline' },
+  { key: 'employers', icon: 'business-outline' },
 ];
 
 type RowProps = {

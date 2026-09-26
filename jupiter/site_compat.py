@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
+import os
+import time
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
+
+# Итог ежедневной разведки (infra/recon-run.sh). Сайт, где разведка дошла до
+# анкеты, заполнила её целиком без капчи и остановилась перед отправкой
+# (dry_run_ok), подключается сам — без ручного флага. Решение владельца
+# 26.09.2026. Файл старше RECON_MAX_AGE не в счёт: разведка встала — вход
+# закрывается, а не держится открытым по вчерашней картине.
+RECON_FILE = os.environ.get("JUPITER_RECON_FILE", "/var/www/html/jupiter-recon.json")
+RECON_MAX_AGE = float(os.environ.get("JUPITER_RECON_MAX_AGE_DAYS", "3")) * 86400
+_recon_cache: tuple[str, float, frozenset[str]] = ("", 0.0, frozenset())
 
 
 @dataclass(frozen=True)
@@ -227,7 +239,18 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile(
         "Effective Technologies",
         ("career.effective-group.ru",),
-        field_overrides={"name": "first_name", "subname": "last_name", "rezum": "resume_url"},
+        # PHONE объявлен type="phone", а не tel — без карты не узнаётся.
+        # MESS («ник в мессенджере») обязателен, ключа нет — ждёт человека.
+        field_overrides={"name": "first_name", "subname": "last_name", "rezum": "resume_url",
+                         "phone": "phone", "decs": "cover_letter"},
+    ),
+    SiteProfile(
+        "Surf",
+        ("career.surf.ru",),
+        # Tilda: Name/Name_2/Input_N. Грейд и «кем работаешь» — ключей нет,
+        # не выдумываем; разведка решит, обязательны ли они. 26.09.2026.
+        field_overrides={"name": "first_name", "name_2": "last_name", "input_3": "desired_role",
+                         "input_4": "resume_url"},
     ),
     SiteProfile(
         "PIX Robotics",
@@ -283,10 +306,46 @@ def profile_for_url(url: str) -> SiteProfile | None:
     return None
 
 
+def recon_ok_hosts(path: str | None = None, now: float | None = None) -> frozenset[str]:
+    """Хосты, где последняя разведка дала dry_run_ok. Нет файла или он
+    протух — пусто. Кэш по mtime: воркер спрашивает на каждую задачу."""
+    global _recon_cache
+    path = path or RECON_FILE
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return frozenset()
+    if (now if now is not None else time.time()) - mtime > RECON_MAX_AGE:
+        return frozenset()
+    if _recon_cache[0] == path and _recon_cache[1] == mtime:
+        return _recon_cache[2]
+    hosts: set[str] = set()
+    try:
+        with open(path, encoding="utf-8") as fh:
+            items = json.load(fh)
+    except (OSError, ValueError):
+        items = []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and item.get("klass") == "dry_run_ok":
+            for key in ("url", "start_url"):
+                host = normalize_host(str(item.get(key) or ""))
+                if host:
+                    hosts.add(host)
+    result = frozenset(hosts)
+    _recon_cache = (path, mtime, result)
+    return result
+
+
 def live_ready(url: str) -> bool:
-    """Можно ли подавать сюда по-настоящему. Незнакомый сайт — нельзя."""
+    """Можно ли подавать сюда по-настоящему. Незнакомый сайт — нельзя.
+
+    Да — если владелец поставил флаг в профиле или свежая разведка прошла
+    анкету этого хоста до конца (dry_run_ok)."""
     profile = profile_for_url(url)
-    return bool(profile and profile.live_ready)
+    if profile and profile.live_ready:
+        return True
+    host = normalize_host(url)
+    return bool(host) and host in recon_ok_hosts()
 
 
 def trusted_hosts_for(url: str) -> set[str]:

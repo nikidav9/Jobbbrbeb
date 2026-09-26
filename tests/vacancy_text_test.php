@@ -108,6 +108,26 @@ foreach (['Сбер' => $sber, 'Магнит' => $magnit, 'METRO' => $metro, 'Pe
 }
 check('Магнит: нет склейки "заказыЧем"', !str_contains($magnit, 'заказыЧем'));
 
+// Next.js App Router: текст вакансии — в дереве вёрстки self.__next_f (UPSIDE).
+// Берутся секции с заголовком раздела вакансии; меню и переводы — нет;
+// декоративный маркер пункта («*» отдельным span) — не текст.
+$li = fn(string $t) => ['$', 'li', $t, ['children' => [['$', 'span', null, ['children' => '*']], ['$', 'span', null, ['children' => $t]]]]];
+$tree = ['$', 'main', null, ['children' => [
+    ['$', 'nav', null, ['children' => ['$', 'a', null, ['children' => 'Кейсы Услуги Команда Контакты']]]],
+    ['$', 'section', 'responsibilities', ['children' => [['$', 'h2', null, ['children' => 'Обязанности']],
+        ['$', 'ul', null, ['children' => [$li('Разрабатывать маркетинговую стратегию агентства и продуктов'), $li('Курировать сайт, кейсы и участие в рейтингах')]]]]]],
+    ['$', 'section', 'requirements', ['children' => [['$', 'h2', null, ['children' => 'Требования']],
+        ['$', 'ul', null, ['children' => [$li('Опыт в маркетинге digital-агентства или SaaS от трёх лет'), $li('Понимание performance-метрик и SEO')]]]]]],
+    ['$', 'section', 'cases', ['children' => [['$', 'h2', null, ['children' => 'Кейсы']], ['$', 'p', null, ['children' => 'Наши работы для брендов']]]]],
+]]];
+$stream = '0:{"i18n":{"vacancy":{"responsibilities":"Обязанности"}}}' . "\n" . '7:' . json_encode($tree, JSON_UNESCAPED_UNICODE) . "\n";
+$nextPage = '<html><body>';
+foreach (mb_str_split($stream, 90) as $part) $nextPage .= '<script>self.__next_f.push([1,' . json_encode($part, JSON_UNESCAPED_UNICODE) . '])</script>';
+$nx = vt_extract($nextPage . '</body></html>');
+check('Next.js: разделы вакансии из дерева вёрстки', str_contains($nx, '## Обязанности') && str_contains($nx, '## Требования'));
+check('Next.js: пункты без декоративной «*»', str_contains($nx, '- Разрабатывать маркетинговую') && !str_contains($nx, '- *'));
+check('Next.js: меню и чужие секции не попали', !str_contains($nx, 'Кейсы Услуги') && !str_contains($nx, 'Наши работы'));
+
 if ($failures) {
     fwrite(STDERR, "FAIL:\n  " . implode("\n  ", $failures) . "\n");
     exit(1);
