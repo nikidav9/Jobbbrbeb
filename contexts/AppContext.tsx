@@ -31,8 +31,6 @@ import {
   dbGetVacancies,
   dbGetLikesForUser,
   dbGetVacancyStatsMap,
-  dbResponsivenessMap,
-  Responsiveness,
   dbGetPermVacancyViewsMap,
   dbGetChats,
   dbGetSaved,
@@ -138,7 +136,6 @@ export interface AppContextValue {
   refreshPermSaved: (u?: User) => Promise<void>;
   updateUser: (u: User) => Promise<void>;
   vacancyStatsMap: Record<string, VacancyStats>;
-  responsivenessMap: Record<string, Responsiveness>;
   refreshVacancyStats: () => Promise<void>;
   permVacancyViewsMap: Record<string, number>;
   refreshPermVacancyViews: () => Promise<void>;
@@ -204,7 +201,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [vacancyStatsMap, setVacancyStatsMap] = useState<Record<string, VacancyStats>>({});
-  const [responsivenessMap, setResponsivenessMap] = useState<Record<string, Responsiveness>>({});
   const [permVacancyViewsMap, setPermVacancyViewsMap] = useState<Record<string, number>>({});
 
   const unreadNotifCount = notifications.filter(n => !n.isRead).length;
@@ -387,7 +383,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           // Quick retry for stats + notifications in case initial fetch is slow
           setTimeout(() => {
             if (cancelled) return;
-            Promise.all([refreshVacancyStats(), refreshResponsiveness(), refreshNotifications()]).catch(() => {});
+            Promise.all([refreshVacancyStats(), refreshNotifications()]).catch(() => {});
           }, 5000);
 
           // Refresh push token on every cold start — FCM token can change after APK reinstall
@@ -429,7 +425,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               refreshPermSaved(sessionUser),
               refreshNotifications(),
               refreshVacancyStats(),
-        refreshResponsiveness(),
               refreshPermVacancyViews(),
             ]).catch(() => {});
           }, 100);
@@ -547,7 +542,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshPermApplications(user),
         refreshNotifications(),
         refreshVacancyStats(),
-        refreshResponsiveness(),
         refreshPermVacancyViews(),
         refreshSaved(user),
         refreshPermSaved(user),
@@ -609,7 +603,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshPermApplications(user),
         refreshNotifications(),
         refreshVacancyStats(),
-        refreshResponsiveness(),
         refreshPermVacancyViews(),
         refreshSaved(user),
         refreshPermSaved(user),
@@ -955,14 +948,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch {}
   };
 
-  // Отзывчивость директоров — одной картой на всех: на карточку в ленте
-  // отдельным запросом ходить нельзя, лента превратится в слайд-шоу.
-  const refreshResponsiveness = async () => {
-    try {
-      setResponsivenessMap(await dbResponsivenessMap());
-    } catch {}
-  };
-
   const refreshPermVacancyViews = async () => {
     try {
       const map = await dbGetPermVacancyViewsMap();
@@ -1026,7 +1011,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshAll,
         updateUser,
         vacancyStatsMap,
-        responsivenessMap,
         refreshVacancyStats,
         permVacancyViewsMap,
         refreshPermVacancyViews,
