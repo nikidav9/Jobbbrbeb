@@ -16,6 +16,7 @@ const ALL_DOC_KEYS: LegalDocKey[] = [
   'privacy',
   'dataPolicy',
   'consent',
+  'marketing',
 ];
 
 // Тексты и редакции лежат в constants/legal.ts. /legal без параметра показывает

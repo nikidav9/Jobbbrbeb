@@ -612,6 +612,19 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 - Заголовки безопасности — `infra/nginx-site.conf`.
 - Юридические тексты — `constants/legal.ts`. Правка `dataPolicy` **не** вызывает
   повторного согласия: ключа нет в `LEGAL_KEYS`, это сделано намеренно.
+- **Согласие на рекламную рассылку** (38-ФЗ ст. 18; документ `marketing`, тоже
+  вне `LEGAL_KEYS`) — отдельное, необязательное, только о самом JobToo, по
+  почте и push. Каждое решение — новая строка `jm_consents` с `source`
+  `marketing:*` (`jt_marketing_record` / `jt_marketing_status` в `db.php`);
+  действует последнее, «да» — только на `JT_MARKETING_CONSENT_VERSION`.
+  Даётся галочкой при регистрации (`marketingVersion` в согласии
+  `dbUpsertUser`), в `ConsentGate.tsx`, переключателем в
+  `app/profile-settings.tsx` (`dbSetMarketingConsent`, он же отзыв). Счётчик —
+  `adminMarketingStats`, без адресов. Общее согласие читается с
+  `JT_CORE_CONSENT_FILTER` — строки рекламы и трансграничные за него не
+  сойдут. **Самой рассылки ещё нет:** будущие письма — только по
+  `jt_marketing_status(...)['on']` и со ссылкой «Отписаться» (её обещает
+  документ). Сторож — `tests/marketing_consent_test.php`.
 - **Общее согласие на обработку данных** пишется тем же запросом, что создаёт
   человека: `jt_consent_attach` в `db.php`, третий довод `dbUpsertUser`.
   Отдельное пользовательское согласие на трансграничную передачу для push/web-push

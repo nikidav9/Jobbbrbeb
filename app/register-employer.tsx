@@ -48,6 +48,8 @@ export default function RegisterEmployer() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [pdAgreed, setPdAgreed] = useState(false);
+  // Реклама — отдельная необязательная галочка, по умолчанию снята (38-ФЗ, ст. 18).
+  const [adsAgreed, setAdsAgreed] = useState(false);
   const [passError, setPassError] = useState('');
 
   // Warm up the Supabase connection so the first phone-check doesn't hang
@@ -122,7 +124,7 @@ export default function RegisterEmployer() {
         avatarUrl,
         createdAt: nowISO(),
       };
-      await registerUser(user, emailTicket || undefined);
+      await registerUser(user, emailTicket || undefined, { marketing: adsAgreed });
       showToast('Добро пожаловать! 👋', 'success');
       router.replace('/(tabs)');
     } catch (e) {
@@ -286,6 +288,21 @@ export default function RegisterEmployer() {
                       Согласие на обработку персональных данных
                     </Text>
                     . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.checkRow} onPress={() => setAdsAgreed(v => !v)} activeOpacity={0.8}>
+                <View style={[styles.checkbox, adsAgreed && styles.checkboxActive]}>
+                  {adsAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.checkLabel}>
+                    По желанию: даю{' '}
+                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}>
+                      Согласие на получение рекламной рассылки
+                    </Text>
+                    {' '}о JobToo на почту и в уведомлениях. Можно отключить в настройках.
                   </Text>
                 </View>
               </TouchableOpacity>

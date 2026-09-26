@@ -67,6 +67,9 @@ jobs:
       - name: Согласие на обработку данных пишется и его пропажу видно
         run: php tests/consent_test.php
 
+      - name: Согласие на рекламную рассылку — отдельное, отзываемое, только о себе
+        run: php tests/marketing_consent_test.php
+
       - name: Решение по отклику принимает владелец вакансии и оно доходит
         run: php tests/perm_app_test.php
 

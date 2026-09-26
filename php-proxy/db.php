@@ -154,6 +154,8 @@ $adminFns = [
     'cronAnnounceMissed', 'adminRetireTelegram',
     // Проверка почты после выкладки (.github/workflows/mail-check.yml).
     'adminMailCheck',
+    // Сколько согласилось на рекламную рассылку — только числа.
+    'adminMarketingStats',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
     // dbGetUsers отдаёт всех пользователей разом. Приложение её не зовёт
@@ -262,6 +264,7 @@ $selfArgFns = [
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
     'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
     'dbRevokeCrossBorderConsent' => 0,
+    'dbSetMarketingConsent' => 0, 'dbGetMarketingConsent' => 0,
     'tgBindTelegram' => 0, 'tgUnbindTelegram' => 0,
     'dbGetSkillResults' => 0, 'dbSubmitSkillTest' => 0,
     'supportHistory' => 0, 'supportState' => 0, 'supportSend' => 0,
@@ -1586,6 +1589,17 @@ define('JT_CROSSBORDER_CONSENT_VERSION', '2026-09-19');
 // на автоотклик Юпитера включается принятием документов, без отдельного
 // диалога. До неё поручения в текстах не было.
 define('JT_JUPITER_CONSENT_FROM', '2026-09-25');
+
+// Редакция согласия на рекламную рассылку (constants/legal.ts, marketing).
+// Сервер сверяет её сам: согласие, данное на прежний текст, не покрывает
+// рассылку по новому, а старый клиент не должен записать устаревшую редакцию.
+define('JT_MARKETING_CONSENT_VERSION', '2026-09-26');
+
+// Общее согласие на обработку ПДн — все строки jm_consents, КРОМЕ отдельных
+// волеизъявлений: трансграничной передачи и рекламной рассылки. Строка одного
+// лишь согласия на рекламу не должна выглядеть как согласие на обработку
+// (им, например, Юпитер подтверждает анкету кандидата).
+const JT_CORE_CONSENT_FILTER = '(source.not.like.crossborder:*,source.not.like.marketing:*)';
 
 /**
  * Отметка «обращение закрыто» (null — открыто).
@@ -3049,6 +3063,12 @@ function jt_consent_attach(string $uid, $payload): void
         ], 'id');
         jt_jupiter_auto_enable($uid, $stamp);
 
+        // Согласие на рекламную рассылку — такая же отдельная галочка.
+        $mkVersion = trim((string)($payload['marketingVersion'] ?? ''));
+        if ($mkVersion !== '' && hash_equals(JT_MARKETING_CONSENT_VERSION, $mkVersion)) {
+            jt_marketing_record($uid, true, 'registration');
+        }
+
         // Отдельная добровольная галочка при регистрации хранится отдельной
         // строкой. Так можно доказать самостоятельное волеизъявление, не
         // смешивая его с общим согласием на обработку ПДн.
@@ -3118,6 +3138,53 @@ function jt_jupiter_auto_enable(string $uid, string $stamp): void
     } catch (Throwable $e) {
         // См. выше: включение автоотклика регистрацию не роняет.
     }
+}
+
+/**
+ * Записать решение о рекламной рассылке (38-ФЗ, ст. 18).
+ *
+ * Каждое решение — НОВАЯ строка, не перезапись: история «дал — отозвал —
+ * дал снова» с датами и способом и есть то, что предъявляют, если человек
+ * скажет, что на рассылку не соглашался. Действует последнее решение.
+ * $source: registration | reconsent | settings.
+ */
+function jt_marketing_record(string $uid, bool $on, string $source): void
+{
+    sb_insert('jm_consents', [
+        'id'          => 'mk:' . $uid . ':' . bin2hex(random_bytes(6)),
+        'user_id'     => $uid,
+        'stamp'       => 'marketing:' . ($on ? JT_MARKETING_CONSENT_VERSION : 'revoked'),
+        'docs'        => ['marketing' => JT_MARKETING_CONSENT_VERSION, 'on' => $on],
+        'source'      => $on ? 'marketing:' . $source : 'marketing:revoked',
+        'accepted_at' => now_iso(),
+    ]);
+}
+
+/**
+ * Действующее решение о рекламной рассылке. `on` — только если последнее
+ * решение «да» И дано на текущую редакцию: согласие на прежний текст не
+ * покрывает рассылку по новому.
+ */
+function jt_marketing_status(string $uid): array
+{
+    $row = sb_select('jm_consents', [
+        'user_id' => 'eq.' . $uid,
+        'source'  => 'like.marketing:*',
+        'limit'   => '1',
+    ], 'docs,source,accepted_at', 'accepted_at.desc')[0] ?? null;
+    $docs = $row['docs'] ?? [];
+    if (is_string($docs)) $docs = json_decode($docs, true) ?: [];
+    $version = is_array($docs) ? (string)($docs['marketing'] ?? '') : '';
+    $on = $row !== null
+        && ($row['source'] ?? '') !== 'marketing:revoked'
+        && $version !== '' && hash_equals(JT_MARKETING_CONSENT_VERSION, $version);
+    return [
+        'on'      => $on,
+        'version' => $version !== '' ? $version : null,
+        'source'  => $row['source'] ?? null,
+        'at'      => $row['accepted_at'] ?? null,
+        'current' => JT_MARKETING_CONSENT_VERSION,
+    ];
 }
 
 /** Текущее отдельное решение по трансграничной передаче. */
@@ -4051,7 +4118,7 @@ try {
         case 'dbGetConsent': {
             $rows = sb_select('jm_consents', [
                 'user_id' => 'eq.' . (string)($args[0] ?? ''),
-                'source'  => 'not.like.crossborder:%',
+                'and'     => JT_CORE_CONSENT_FILTER,
             ], 'stamp,docs,source,accepted_at', 'accepted_at.desc');
             $data = $rows[0] ?? null;
             break;
@@ -4090,6 +4157,50 @@ try {
                 'accepted_at' => now_iso(),
             ], 'id');
             $data = ['ok' => true];
+            break;
+        }
+
+        // Рекламная рассылка: args [uid, on, version, source]. Включить можно
+        // только на текущую редакцию; выключить — всегда. Повтор того же
+        // решения строк не плодит.
+        case 'dbSetMarketingConsent': {
+            $uid = (string)($args[0] ?? '');
+            $on = ($args[1] ?? false) === true;
+            $source = (string)($args[3] ?? 'settings');
+            if (!in_array($source, ['registration', 'reconsent', 'settings'], true)) $source = 'settings';
+            if ($on && !hash_equals(JT_MARKETING_CONSENT_VERSION, (string)($args[2] ?? ''))) {
+                jt_respond(['error' => 'Редакция согласия устарела. Обновите приложение.'], 400); exit;
+            }
+            if (!sb_single('jm_users', ['id' => 'eq.' . $uid], 'id')) {
+                jt_respond(['error' => 'Пользователь не найден'], 404); exit;
+            }
+            if (jt_marketing_status($uid)['on'] !== $on) jt_marketing_record($uid, $on, $source);
+            $data = jt_marketing_status($uid);
+            break;
+        }
+
+        case 'dbGetMarketingConsent': {
+            $data = jt_marketing_status((string)($args[0] ?? ''));
+            break;
+        }
+
+        // Сколько людей сейчас согласны на рассылку — по последнему решению
+        // каждого. Только числа: адресов эта функция не отдаёт.
+        case 'adminMarketingStats': {
+            $last = [];
+            foreach (sb_select_all('jm_consents', ['source' => 'like.marketing:*', 'order' => 'accepted_at.asc'],
+                    'user_id,docs,source') as $r) {
+                $last[(string)($r['user_id'] ?? '')] = $r;
+            }
+            $on = 0; $off = 0; $stale = 0;
+            foreach ($last as $r) {
+                $docs = $r['docs'] ?? [];
+                if (is_string($docs)) $docs = json_decode($docs, true) ?: [];
+                if (($r['source'] ?? '') === 'marketing:revoked') { $off++; continue; }
+                if ((string)($docs['marketing'] ?? '') === JT_MARKETING_CONSENT_VERSION) $on++; else $stale++;
+            }
+            $data = ['subscribed' => $on, 'revoked' => $off, 'old_version' => $stale,
+                'version' => JT_MARKETING_CONSENT_VERSION];
             break;
         }
 
@@ -4641,6 +4752,7 @@ try {
                 foreach (array_chunk($newIds, 100) as $chunk) {
                     foreach (sb_select_all('jm_consents', [
                         'user_id' => sb_in_list($chunk),
+                        'and'     => JT_CORE_CONSENT_FILTER,
                     ], 'user_id') as $c) {
                         $withConsent[(string)($c['user_id'] ?? '')] = true;
                     }
@@ -7031,7 +7143,7 @@ try {
             }
             $consentRow = sb_single('jm_consents', [
                 'user_id' => 'eq.' . $uid,
-                'source'  => 'not.like.crossborder:%',
+                'and'     => JT_CORE_CONSENT_FILTER,
             ], 'stamp,accepted_at');
             if ($consentRow && !empty($consentRow['stamp'])) {
                 $personalData['consent'] = true;

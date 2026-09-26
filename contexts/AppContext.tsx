@@ -52,7 +52,7 @@ import {
   setSessionExpiredHandler,
   dbAuthConfig,
 } from '@/services/db';
-import { LEGAL_STAMP, legalVersions } from '@/constants/legal';
+import { LEGAL_DOCS, LEGAL_STAMP, legalVersions } from '@/constants/legal';
 import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/services/notifications';
 import { registerWebPush } from '@/lib/webPush';
 import { setWebSplashProgress } from '@/lib/webSplash';
@@ -117,7 +117,8 @@ export interface AppContextValue {
   optimisticAddLike: (l: Like) => void;
   optimisticUpdateLike: (l: Like) => void;
   /** emailTicket — квитанция кода из письма (регистрация по почте). */
-  registerUser: (u: User, emailTicket?: string) => Promise<void>;
+  /** marketing — отдельная необязательная галочка «рекламная рассылка». */
+  registerUser: (u: User, emailTicket?: string, opts?: { marketing?: boolean }) => Promise<void>;
   loginUser: (login: string, password: string) => Promise<User | null>;
   /** Войти уже полученным профилем: после сброса пароля по коду. */
   signInAs: (u: User) => Promise<void>;
@@ -128,6 +129,12 @@ export interface AppContextValue {
    * по телефону, окна «Укажите почту» нет, сброс пароля — через поддержку.
    */
   emailAuthReady: boolean;
+  /**
+   * Открыто окно «Примите документы» (ConsentGate): шторка профиля и обучение
+   * ждут его, иначе системный Modal ложится поверх и закрывает кнопку «Принять».
+   */
+  consentPending: boolean;
+  setConsentPending: (v: boolean) => void;
   logout: () => Promise<void>;
   /** Войти как гость (просмотр без регистрации) в роли соискателя. */
   enterGuest: () => void;
@@ -181,6 +188,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [loading, setLoading] = useState(true);
   const [dataReady, setDataReady] = useState(false);
   const [emailAuthReady, setEmailAuthReady] = useState(false);
+  const [consentPending, setConsentPending] = useState(false);
   // Спрашиваем при запуске и при каждом возврате в приложение: когда хостинг
   // откроет SMTP, вход по почте включится сам, без выкладки.
   useEffect(() => {
@@ -688,7 +696,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // ─── Auth actions ──────────────────────────────────────────────────────────
 
-  const registerUser = async (u: User, emailTicket?: string) => {
+  const registerUser = async (u: User, emailTicket?: string, opts?: { marketing?: boolean }) => {
     // Приглашение, если человек пришёл по ссылке знакомого. Забираем ДО
     // записи и стираем СРАЗУ после: чужой код, оставшийся в хранилище, был бы
     // приписан следующему, кто зарегистрируется на этом телефоне.
@@ -697,6 +705,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await dbUpsertUser(u, referralCode, {
       stamp: LEGAL_STAMP,
       docs: coreDocs,
+      ...(opts?.marketing ? { marketingVersion: LEGAL_DOCS.marketing.version } : {}),
     }, emailTicket);
     if (referralCode) void clearPendingReferral();
     // Если человек пришёл из гостевого просмотра, замыкаем анонимную
@@ -1034,6 +1043,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         loginUser,
         signInAs,
         emailAuthReady,
+        consentPending,
+        setConsentPending,
         adoptUser,
         logout,
         enterGuest,
