@@ -88,6 +88,8 @@ export default function ConsentGate() {
         setNeeded(needsReconsent(c?.stamp));
         setTermsAccepted(false);
         setCoreAccepted(false);
+        // И рекламу: иначе галочка прежнего человека досталась бы следующему.
+        setAdsAccepted(false);
         setCheckFailed(false);
         setChecked(true);
       })

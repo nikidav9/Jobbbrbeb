@@ -181,6 +181,27 @@ check('окно документов: реклама не держит кноп�
 check('настройки: переключатель пишет решение на сервер',
     str_contains($settings, "dbSetMarketingConsent(currentUser.id, next, LEGAL_DOCS.marketing.version, 'settings')"));
 
+// ── Реклама без согласия не уходит ──────────────────────────────────────────
+// «Разместите смену» директорам и «смены рядом» работникам слались всем
+// кроном — по документам это реклама. Выключены 26.09; вернуть можно только
+// со сверкой jt_marketing_status.
+$nudges = case_src($db, 'cronDailyNudges');
+check('крон напоминаний найден', $nudges !== '');
+check('«пора размещать» директорам выключено', !str_contains($nudges, 'Работники ждут смен'));
+check('«смены рядом» работникам выключено',
+    !str_contains($db, 'function shift_nudge_run(') && !str_contains($db, "'cronShiftNudge'"));
+
+// Галочка прежнего человека не должна достаться следующему на том же устройстве.
+check('окно документов сбрасывает галочку рекламы при смене человека',
+    preg_match('~setCoreAccepted\(false\);(?:\s*//[^\n]*)*\s*setAdsAccepted\(false\);~', $gate) === 1);
+
+$tg = (string)file_get_contents("$root/php-proxy/tg.php");
+check('tg.php: строки рекламы не вытесняют трансграничное решение',
+    str_contains($tg, "'source' => 'not.like.marketing:*',"));
+
+check('документ называет сервисы доставки push',
+    str_contains($legal, 'сервисов доставки push/web-push уведомлений, которым передаются только технические реквизиты'));
+
 if ($failures) {
     fwrite(STDERR, "marketing consent FAILED:\n  - " . implode("\n  - ", $failures) . "\n");
     exit(1);

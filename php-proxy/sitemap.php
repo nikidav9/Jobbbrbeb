@@ -47,6 +47,7 @@ const SM_STATIC = [
     '/legal?doc=privacy',
     '/legal?doc=dataPolicy',
     '/legal?doc=consent',
+    '/legal?doc=marketing',
 ];
 
 function sm_url(string $loc, string $lastmod = ''): string

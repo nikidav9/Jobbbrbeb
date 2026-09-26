@@ -140,6 +140,9 @@ function jt_has_crossborder_consent(string $userId): bool {
     $rows = sb('GET', 'jm_consents', [
         'select' => 'docs,source,accepted_at',
         'user_id' => 'eq.' . $userId,
+        // Строки рекламной рассылки (каждое переключение — новая строка) не
+        // должны вытеснить трансграничное решение из окна в 20 строк.
+        'source' => 'not.like.marketing:*',
         'order' => 'accepted_at.desc',
         'limit' => '20',
     ]);
