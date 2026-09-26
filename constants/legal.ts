@@ -237,7 +237,7 @@
  * version.
  */
 
-import { JUPITER_EMPLOYERS } from './jupiterEmployers';
+import { JUPITER_EMPLOYERS } from './jupiterEmployers.ts';
 
 const OPERATOR_NAME = 'Давыдов Никита Сергеевич';
 const OPERATOR_INN = '773423983287';
