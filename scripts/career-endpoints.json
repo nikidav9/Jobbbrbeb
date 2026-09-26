@@ -1034,5 +1034,32 @@
       "url_template": "https://hr.tochka.com/vacancies/catalog/{slug}/",
       "company_const": "Точка Банк"
     }
+  },
+  {
+    "company_hint": "Т-Банк",
+    "url": "https://www.tbank.ru/pfpjobs/papi/getVacancies",
+    "mode": "json",
+    "method": "POST",
+    "body": {
+      "limit": 300,
+      "pagination": {},
+      "filters": {
+        "generatedGraphQL": {
+          "type": "T_CAREER",
+          "categories": [
+            "tcareer_it"
+          ]
+        }
+      }
+    },
+    "map": {
+      "list": "payload.vacancies",
+      "id": "urlSlug",
+      "title": "title",
+      "address": "subtitle",
+      "description": "shortDescription",
+      "url_template": "https://www.tbank.ru/career/it/vacancy/moscow/{seoSlug}/{urlSlug}/",
+      "company_const": "Т-Банк"
+    }
   }
 ]

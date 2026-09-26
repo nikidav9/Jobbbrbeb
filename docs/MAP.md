@@ -381,6 +381,11 @@ SPA-сайтов страница вакансии пустая, поэтому 
 `php-proxy/ru_trusted_ca.php`, потому что выкладка копирует только *.php), для
 остальных — ничего не меняется. Юпитер, вход и база этому центру не доверяют.
 Промежуточный сертификат действует до 06.03.2027 — к этому сроку обновить.
+Источники трёх банков: Альфа-Банк — `job.alfabank.ru/api/vacancies?city=0100`
+(Москва, описание разделами из списка); Точка — `hr.tochka.com/api/v2/hr/vacancies/`;
+Т-Банк — POST `www.tbank.ru/pfpjobs/papi/getVacancies` с фильтром
+`generatedGraphQL {type: T_CAREER, categories: [tcareer_it]}` (все IT-вакансии
+одним запросом, `limit` 300), описание describe.php дочитывает со страницы.
 Охрана — `tests/ru_ca_scope_test.php`.
 Показывает структуру `components/ui/DescriptionBlocks.tsx` в карточке ленты
 (`app/(tabs)/feed.tsx`, `renderExtDeckCard`): разбор текста на блоки —
