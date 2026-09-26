@@ -164,7 +164,7 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{name}</Text>
             <View style={styles.metaRow}>
-              <MetaBit name="call-outline" text={worker.phone} />
+              {worker.phone ? <MetaBit name="call-outline" text={worker.phone} /> : null}
               {worker.metroStation ? <MetaBit name="subway-outline" text={worker.metroStation} /> : null}
               {(worker.avgRating ?? 0) > 0
                 ? <MetaBit name="star" text={(worker.avgRating ?? 0).toFixed(1)} color={Colors.amber} />

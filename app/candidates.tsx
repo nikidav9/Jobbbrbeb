@@ -226,7 +226,7 @@ export default function CandidatesScreen() {
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Телефон</Text>
                   <Text style={[styles.infoVal, isMatch && { color: Colors.primary }]}>
-                    {isMatch ? worker.phone : '••••••'}
+                    {isMatch ? (worker.phone || 'Не указан — напишите в чате') : '••••••'}
                   </Text>
                 </View>
               </View>

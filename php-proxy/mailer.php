@@ -17,21 +17,31 @@
  * $cfg — для тестов (transport tcp на 127.0.0.1 без TLS); в бою берётся из
  * окружения, ssl:// на 465.
  */
-function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = null): ?string
+function jt_mail_config(): array
 {
-    $cfg ??= [
+    return [
         'host' => getenv('MAIL_SMTP_HOST') ?: 'smtp.timeweb.ru',
         'port' => (int)(getenv('MAIL_SMTP_PORT') ?: 465),
         'transport' => 'ssl',
         'user' => (string)getenv('MAIL_SMTP_USER'),
         'pass' => (string)getenv('MAIL_SMTP_PASSWORD'),
-        'timeout' => 15,
+        // Письмо уходит внутри запроса к API, а обработчиков PHP всего
+        // несколько. Зависший почтовый сервер не должен держать их по
+        // полминуты: соединение — 5 с, всё письмо целиком — не дольше 10 с.
+        'timeout' => 5,
+        'deadline' => 10,
     ];
+}
+
+function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = null, bool $probeOnly = false): ?string
+{
+    $cfg ??= jt_mail_config();
     $user = (string)($cfg['user'] ?? '');
     if ($user === '' || (string)($cfg['pass'] ?? '') === '') return 'почта не настроена';
     // Адресат идёт в команду RCPT TO и в заголовок — никаких переводов строк
     // и угловых скобок, иначе это инъекция команд SMTP.
-    if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n<>]/', $to)) return 'некорректный адрес';
+    if (!$probeOnly && (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n<>]/', $to))) return 'некорректный адрес';
+    $until = microtime(true) + (float)($cfg['deadline'] ?? 10);
 
     $ctx = stream_context_create(['ssl' => [
         'verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $cfg['host'],
@@ -40,12 +50,20 @@ function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = n
     $sock = @stream_socket_client($cfg['transport'] . '://' . $cfg['host'] . ':' . $cfg['port'],
         $errno, $errstr, (float)$cfg['timeout'], STREAM_CLIENT_CONNECT, $ctx);
     if (!$sock) return "нет соединения с почтовым сервером ($errno $errstr)";
-    stream_set_timeout($sock, (int)$cfg['timeout']);
 
     // Ответ SMTP может быть многострочным: «250-…» продолжение, «250 …» конец.
-    $read = function () use ($sock): array {
+    // Каждое чтение ограничено остатком общего срока: молчащий сервер
+    // возвращает код 0, и отправка обрывается.
+    $read = function () use ($sock, $until): array {
         $all = '';
-        while (($line = fgets($sock, 1024)) !== false) {
+        while (true) {
+            $left = $until - microtime(true);
+            if ($left <= 0) return [0, 'почтовый сервер не ответил вовремя'];
+            stream_set_timeout($sock, (int)max(1, ceil($left)));
+            $line = fgets($sock, 1024);
+            if ($line === false) {
+                return [0, stream_get_meta_data($sock)['timed_out'] ? 'почтовый сервер не ответил вовремя' : 'соединение оборвалось'];
+            }
             $all .= $line;
             if (strlen($line) < 4 || $line[3] !== '-') break;
         }
@@ -64,6 +82,9 @@ function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = n
         if ($e = $cmd('AUTH LOGIN', 334)) return $e;
         if ($e = $cmd(base64_encode($user), 334)) return $e;
         if ($e = $cmd(base64_encode((string)$cfg['pass']), 235)) return 'почтовый сервер не принял логин';
+        // Проверка после выкладки (adminMailCheck): соединение, TLS и вход —
+        // без письма.
+        if ($probeOnly) { fwrite($sock, "QUIT\r\n"); return null; }
         if ($e = $cmd('MAIL FROM:<' . $user . '>', 250)) return $e;
         if ($e = $cmd('RCPT TO:<' . $to . '>', 250)) return $e;
         if ($e = $cmd('DATA', 354)) return $e;

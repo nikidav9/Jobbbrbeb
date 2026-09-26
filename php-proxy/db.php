@@ -152,6 +152,8 @@ $adminFns = [
     'dbKeyKind', 'adminResetPassword', 'dbMigrateChatMedia', 'dbDeleteUser',
     'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges', 'cronShiftNudge',
     'cronAnnounceMissed', 'adminRetireTelegram',
+    // Проверка почты после выкладки (.github/workflows/mail-check.yml).
+    'adminMailCheck',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
     'scoreRecalcAll', 'billingReport',
     // dbGetUsers отдаёт всех пользователей разом. Приложение её не зовёт
@@ -4124,6 +4126,15 @@ try {
         // Проверка «этот номер уже занят» нужна форме регистрации, но ею же
         // перебирают базу номеров. Поэтому считаем и её: тридцати проверок за
         // четверть часа человеку при регистрации хватит с запасом.
+        // Доходит ли сервер до SMTP Timeweb и пускает ли его ящик — без письма.
+        case 'adminMailCheck': {
+            $cfg = jt_mail_config();
+            $err = jt_mail_send('', '', '', $cfg, true);
+            $data = ['ok' => $err === null, 'error' => $err, 'host' => $cfg['host'], 'port' => $cfg['port'],
+                'user_set' => $cfg['user'] !== ''];
+            break;
+        }
+
         // ── Коды из писем ─────────────────────────────────────────────────
         // args: [email, purpose]. register — почта ещё не занята; reset —
         // отвечаем одинаково, есть такой аккаунт или нет (иначе по форме
@@ -4148,6 +4159,13 @@ try {
             }
             if ($purpose === 'attach') {
                 if ($authUid === null) { jt_respond(['error' => 'Authentication required'], 401); exit; }
+                // Подтверждённую почту из сессии не меняем: иначе украденная
+                // сессия превращалась бы в полный захват — своя почта, сброс
+                // пароля, и владелец снаружи. Смены почты в интерфейсе нет.
+                $me = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'email_verified_at');
+                if (!empty($me['email_verified_at'])) {
+                    jt_respond(['error' => 'Почта уже подтверждена'], 409); exit;
+                }
                 if ($owner && (string)$owner['id'] !== (string)$authUid) {
                     jt_respond(['error' => 'Эта почта уже привязана к другому аккаунту'], 409); exit;
                 }
@@ -4160,7 +4178,7 @@ try {
             $res = jt_auth_issue_code($email, $purpose, $userId, jt_session_key(),
                 fn(string $to, string $code, string $p) => jt_mail_code($to, $code, $p));
             if (!$res['ok']) {
-                $status = $res['reason'] === 'mail_failed' ? 503 : 429;
+                $status = in_array($res['reason'], ['mail_failed', 'busy'], true) ? 503 : 429;
                 jt_respond(['error' => jt_auth_reason_text($res['reason'], (int)($res['retry_in'] ?? 0)),
                     'reason' => $res['reason'], 'retry_in' => $res['retry_in'] ?? null], $status); exit;
             }
@@ -4189,7 +4207,8 @@ try {
             if ($purpose === 'attach' && (string)($res['user_id'] ?? '') !== (string)$authUid) {
                 jt_respond(['error' => 'Код выпущен для другого аккаунта'], 403); exit;
             }
-            jt_try_reset('code');
+            // Счётчик неверных кодов НЕ обнуляем удачным: иначе, подтверждая
+            // коды со своего ящика, можно было бы сбрасывать себе лимит.
             $data = ['ticket' => jt_auth_ticket_issue($email, $purpose,
                 $purpose === 'register' ? null : (string)($res['user_id'] ?? ''), jt_session_key())];
             break;
@@ -4204,8 +4223,14 @@ try {
             $new = (string)($args[1] ?? '');
             $bad = jt_password_problem($new);
             if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
-            $row = sb_single('jm_users', ['id' => 'eq.' . (string)$t['uid'], 'email' => 'eq.' . $t['email']], 'id,is_blocked');
+            $row = sb_single('jm_users', ['id' => 'eq.' . (string)$t['uid'], 'email' => 'eq.' . $t['email']], 'id,is_blocked,sessions_valid_from');
             if (!$row || !empty($row['is_blocked'])) { jt_respond(['error' => 'Аккаунт не найден'], 404); exit; }
+            // Квитанция одноразовая: сброс ставит sessions_valid_from = сейчас,
+            // и та же квитанция второй раз уже «старше» — как и после любой
+            // другой смены пароля.
+            if (!empty($row['sessions_valid_from']) && (int)strtotime((string)$row['sessions_valid_from']) >= (int)$t['iat']) {
+                jt_respond(['error' => 'Код уже использован. Начните заново'], 400); exit;
+            }
             sb_update('jm_users', ['id' => 'eq.' . $row['id']], [
                 'password' => password_hash($new, PASSWORD_BCRYPT),
                 'sessions_valid_from' => now_iso(),
@@ -4222,6 +4247,8 @@ try {
             if ($t === null || (string)$t['uid'] !== (string)$authUid) {
                 jt_respond(['error' => 'Код устарел. Запросите новый'], 400); exit;
             }
+            $me = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'email_verified_at');
+            if (!empty($me['email_verified_at'])) { jt_respond(['error' => 'Почта уже подтверждена'], 409); exit; }
             $taken = sb_single('jm_users', ['email' => 'eq.' . $t['email']], 'id');
             if ($taken && (string)$taken['id'] !== (string)$authUid) {
                 jt_respond(['error' => 'Эта почта уже привязана к другому аккаунту'], 409); exit;
@@ -4247,6 +4274,13 @@ try {
                 jt_respond(['error' => 'Сначала подтвердите почту: сейчас телефон — ваш вход'], 409); exit;
             }
             if ($digits !== '') {
+                // «Номер уже указан в другом аккаунте» — это ответ на вопрос
+                // «есть ли у номера аккаунт». Тот же лимит, что у
+                // dbCheckPhoneExists, иначе перебор номеров шёл бы без предела.
+                if (jt_try_blocked('phone')) {
+                    jt_respond(['error' => 'Слишком много проверок. Попробуйте через 15 минут.'], 429); exit;
+                }
+                jt_try_note('phone');
                 $taken = sb_single('jm_users', ['phone' => 'eq.' . $digits], 'id');
                 if ($taken && (string)$taken['id'] !== (string)$authUid) {
                     jt_respond(['error' => 'Этот номер уже указан в другом аккаунте'], 409); exit;

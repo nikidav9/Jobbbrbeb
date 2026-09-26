@@ -20,6 +20,16 @@ const JT_CODE_PER_HOUR = 5;        // и не больше пяти в час н
 // резюме, фото, — и заполнять её можно не спеша.
 const JT_TICKET_TTL = 7200;
 const JT_AUTH_PURPOSES = ['register', 'attach', 'reset'];
+// Общий потолок писем в час на весь сервис. Лимиты на адрес и на IP не
+// спасают от рассылки на чужие адреса с разных IP — а это жалобы на спам и
+// блокировка ящика support@, через который Jupiter ещё и читает входящие.
+const JT_CODE_GLOBAL_PER_HOUR = 300;
+
+/** Условное обновление строк кода: вернёт, сколько строк реально изменилось. */
+function jt_auth_patch(array $filter, array $data): int
+{
+    return count(sb('PATCH', 'jm_auth_codes', $filter, $data, ['Prefer: return=representation']));
+}
 
 /** Почта в том виде, в котором хранится, или null. */
 function jt_email_norm(string $raw): ?string
@@ -54,6 +64,19 @@ function jt_auth_issue_code(string $email, string $purpose, ?string $userId, str
         if ($age < JT_CODE_RESEND) return ['ok' => false, 'reason' => 'wait', 'retry_in' => JT_CODE_RESEND - $age];
         if (count($recent) >= JT_CODE_PER_HOUR) return ['ok' => false, 'reason' => 'too_many', 'retry_in' => 3600];
     }
+    $hourAll = sb_select('jm_auth_codes', [
+        'created_at' => 'gt.' . gmdate('Y-m-d\TH:i:s\Z', $now - 3600),
+        'limit' => (string)JT_CODE_GLOBAL_PER_HOUR,
+    ], 'id');
+    if (count($hourAll) >= JT_CODE_GLOBAL_PER_HOUR) {
+        error_log('[auth] достигнут общий потолок писем в час');
+        return ['ok' => false, 'reason' => 'busy'];
+    }
+    // Уборка попутно: примерно раз на пятьдесят выпусков стираем коды старше
+    // суток. Отдельный таймер ради этого не нужен, а таблица не растёт вечно.
+    if (random_int(1, 50) === 1) {
+        sb('DELETE', 'jm_auth_codes', ['created_at' => 'lt.' . gmdate('Y-m-d\TH:i:s\Z', $now - 86400)]);
+    }
     $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $id = bin2hex(random_bytes(12));
     sb_insert('jm_auth_codes', [
@@ -87,14 +110,25 @@ function jt_auth_check_code(string $email, string $purpose, string $code, string
     ]);
     if (!$row) return ['ok' => false, 'reason' => 'no_code'];
     if ((int)strtotime((string)$row['expires_at']) < time()) return ['ok' => false, 'reason' => 'expired'];
-    if ((int)$row['attempts'] >= JT_CODE_ATTEMPTS) return ['ok' => false, 'reason' => 'too_many_attempts'];
+    $tried = (int)$row['attempts'];
+    if ($tried >= JT_CODE_ATTEMPTS) return ['ok' => false, 'reason' => 'too_many_attempts'];
+    // Попытку сначала ЗАНИМАЕМ условным обновлением (attempts ещё равно
+    // прочитанному), и только потом сравниваем. Иначе параллельные запросы
+    // видели бы одно и то же attempts и получали больше пяти догадок.
+    if (jt_auth_patch(['id' => 'eq.' . $row['id'], 'attempts' => 'eq.' . $tried, 'consumed_at' => 'is.null'],
+            ['attempts' => $tried + 1]) !== 1) {
+        return ['ok' => false, 'reason' => 'wrong_code', 'left' => max(0, JT_CODE_ATTEMPTS - $tried - 1)];
+    }
     $code = preg_replace('/\D+/', '', $code);
     if (strlen($code) !== 6 || !hash_equals((string)$row['code_hash'], jt_auth_code_hash($email, $purpose, $code, $key))) {
-        sb_update('jm_auth_codes', ['id' => 'eq.' . $row['id']], ['attempts' => (int)$row['attempts'] + 1]);
-        $left = JT_CODE_ATTEMPTS - (int)$row['attempts'] - 1;
+        $left = JT_CODE_ATTEMPTS - $tried - 1;
         return ['ok' => false, 'reason' => $left > 0 ? 'wrong_code' : 'too_many_attempts', 'left' => max(0, $left)];
     }
-    sb_update('jm_auth_codes', ['id' => 'eq.' . $row['id']], ['consumed_at' => gmdate('Y-m-d\TH:i:s\Z')]);
+    // Гасим тоже условно: один код — одна квитанция, даже при гонке.
+    if (jt_auth_patch(['id' => 'eq.' . $row['id'], 'consumed_at' => 'is.null'],
+            ['consumed_at' => gmdate('Y-m-d\TH:i:s\Z')]) !== 1) {
+        return ['ok' => false, 'reason' => 'no_code'];
+    }
     return ['ok' => true, 'user_id' => $row['user_id'] ?? null];
 }
 
@@ -102,7 +136,8 @@ function jt_auth_check_code(string $email, string $purpose, string $code, string
 function jt_auth_ticket_issue(string $email, string $purpose, ?string $uid, string $key): string
 {
     $payload = rtrim(strtr(base64_encode(json_encode([
-        't' => 'email', 'e' => $email, 'p' => $purpose, 'u' => $uid, 'exp' => time() + JT_TICKET_TTL,
+        't' => 'email', 'e' => $email, 'p' => $purpose, 'u' => $uid,
+        'iat' => time(), 'exp' => time() + JT_TICKET_TTL,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), '+/', '-_'), '=');
     // Своя приставка в подписи: квитанцию нельзя предъявить как токен сессии и наоборот.
     return $payload . '.' . hash_hmac('sha256', 'email-ticket|' . $payload, $key);
@@ -121,7 +156,7 @@ function jt_auth_ticket_check(string $ticket, string $purpose, string $key): ?ar
     if ((int)($d['exp'] ?? 0) < time()) return null;
     $email = jt_email_norm((string)($d['e'] ?? ''));
     if ($email === null) return null;
-    return ['email' => $email, 'uid' => isset($d['u']) ? (string)$d['u'] : null];
+    return ['email' => $email, 'uid' => isset($d['u']) ? (string)$d['u'] : null, 'iat' => (int)($d['iat'] ?? 0)];
 }
 
 /** Пароль, который сервер готов принять: те же правила, что на экране. */
@@ -140,6 +175,7 @@ function jt_auth_reason_text(string $reason, int $retryIn = 0): string
         'wait' => "Новый код можно запросить через {$retryIn} с",
         'too_many' => 'Слишком много кодов за час. Попробуйте позже',
         'mail_failed' => 'Не удалось отправить письмо. Попробуйте ещё раз чуть позже',
+        'busy' => 'Сейчас слишком много запросов. Попробуйте через несколько минут',
         'no_code' => 'Сначала запросите код',
         'expired' => 'Код устарел. Запросите новый',
         'too_many_attempts' => 'Слишком много неверных попыток. Запросите новый код',

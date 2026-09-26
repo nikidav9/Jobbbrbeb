@@ -10,7 +10,16 @@ ini_set('error_log', '/dev/null');
 
 // ── Заглушка базы (sb_lite.php обёрнут в if (!function_exists('sb'))) ───────
 $GLOBALS['T'] = ['jm_auth_codes' => [], 'jm_users' => []];
-function sb(string $m, string $t, array $q = [], $b = null, array $e = []): array { return []; }
+/** Условный PATCH — как PostgREST с return=representation: вернёт изменённые строки. */
+function sb(string $m, string $t, array $q = [], $b = null, array $e = []): array
+{
+    if ($m !== 'PATCH') return [];
+    $changed = [];
+    foreach ($GLOBALS['T'][$t] as $i => $r) {
+        if (stub_ok($r, $q)) { $GLOBALS['T'][$t][$i] = array_merge($r, (array)$b); $changed[] = $GLOBALS['T'][$t][$i]; }
+    }
+    return $changed;
+}
 function stub_ok(array $r, array $f): bool
 {
     foreach ($f as $col => $cond) {
@@ -117,6 +126,38 @@ jt_auth_issue_code('g@h.ru', 'reset', 'u9', $key, $mail);
 $age(601);
 check('через 10 минут код устарел', jt_auth_check_code('g@h.ru', 'reset', $sent[0][1], $key)['reason'] === 'expired');
 
+// Гонка: другой запрос успел занять попытку между чтением и сверкой — эта
+// сверка не проходит даже с верным кодом (попытка не «бесплатная»).
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+jt_auth_issue_code('race@x.ru', 'reset', 'u5', $key, $mail);
+$GLOBALS['T']['jm_auth_codes'][0]['attempts'] = 0;
+// Имитация: строка прочитана с attempts=0, а в базе уже 1.
+$row0 = sb_single('jm_auth_codes', ['email' => 'eq.race@x.ru']);
+$GLOBALS['T']['jm_auth_codes'][0]['attempts'] = 1;
+check('занятая параллельно попытка не даёт сверить код',
+    jt_auth_patch(['id' => 'eq.' . $row0['id'], 'attempts' => 'eq.0', 'consumed_at' => 'is.null'], ['attempts' => 1]) === 0);
+check('попытки считаются в базе, а не в памяти запроса',
+    jt_auth_check_code('race@x.ru', 'reset', $sent[0][1], $key)['ok'] === true
+    && $GLOBALS['T']['jm_auth_codes'][0]['attempts'] === 2);
+check('погашенный код второй раз не гасится (одна квитанция на код)',
+    jt_auth_patch(['id' => 'eq.' . $row0['id'], 'consumed_at' => 'is.null'], ['consumed_at' => 'x']) === 0);
+
+$src = (string)file_get_contents(__DIR__ . '/../php-proxy/auth_email.php');
+check('сверка занимает попытку условно — по прочитанному attempts, до сравнения кода',
+    str_contains($src, "jt_auth_patch(['id' => 'eq.' . \$row['id'], 'attempts' => 'eq.' . \$tried, 'consumed_at' => 'is.null'],")
+    && strpos($src, "'attempts' => 'eq.' . \$tried") < strpos($src, 'hash_equals((string)$row[\'code_hash\']'));
+
+// Общий потолок писем в час на весь сервис.
+$GLOBALS['T']['jm_auth_codes'] = [];
+for ($i = 0; $i < JT_CODE_GLOBAL_PER_HOUR; $i++) {
+    $GLOBALS['T']['jm_auth_codes'][] = ['id' => "g$i", 'email' => "u$i@x.ru", 'purpose' => 'register', 'user_id' => null,
+        'code_hash' => 'h', 'attempts' => 0, 'consumed_at' => null,
+        'created_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 60), 'expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 500)];
+}
+$sent = [];
+$r = jt_auth_issue_code('new@x.ru', 'register', null, $key, $mail);
+check('после потолка писем в час — отказ без отправки', $r['ok'] === false && $r['reason'] === 'busy' && $sent === []);
+
 // Письмо не ушло — пауза не держит, можно сразу ещё раз.
 $GLOBALS['T']['jm_auth_codes'] = [];
 $fail = fn(string $to, string $c, string $p): ?string => 'нет соединения';
@@ -127,7 +168,9 @@ check('после сбоя почты можно сразу попробоват
 
 // ── Квитанция ────────────────────────────────────────────────────────────────
 $t = jt_auth_ticket_issue('ivan@mail.ru', 'reset', 'u1', $key);
-check('квитанция проверяется под свою цель', jt_auth_ticket_check($t, 'reset', $key) === ['email' => 'ivan@mail.ru', 'uid' => 'u1']);
+$chk = jt_auth_ticket_check($t, 'reset', $key);
+check('квитанция проверяется под свою цель', ($chk['email'] ?? '') === 'ivan@mail.ru' && ($chk['uid'] ?? '') === 'u1');
+check('в квитанции время выпуска (для одноразовости сброса)', abs(($chk['iat'] ?? 0) - time()) <= 2);
 check('квитанция не годится под чужую цель', jt_auth_ticket_check($t, 'register', $key) === null);
 check('квитанция не годится с чужим ключом', jt_auth_ticket_check($t, 'reset', 'other') === null);
 [$p, $sig] = explode('.', $t);
@@ -208,6 +251,26 @@ check('перевод строки в адресате — отказ до со�
     jt_mail_send("ivan@mail.ru\r\nRCPT TO:<evil@x.ru>", 'Т', 'Т', $cfg) === 'некорректный адрес');
 check('без логина почты — честный отказ', jt_mail_send('ivan@mail.ru', 'Т', 'Т', ['user' => '', 'pass' => ''] + $cfg) === 'почта не настроена');
 
+// Проверка после выкладки: вход без письма.
+$proc = $spawn('секрет-123');
+$err = jt_mail_send('', '', '', $cfg, true);
+proc_close($proc);
+$dialog = (string)@file_get_contents($log);
+check('проверка ящика входит и не шлёт письмо', $err === null && str_contains($dialog, 'AUTH LOGIN') && !str_contains($dialog, 'RCPT TO'));
+@unlink($log);
+
+// Молчащий сервер: соединение есть, ответа нет — отправка обрывается по
+// общему сроку, а не держит обработчик PHP бесконечно.
+$mute = stream_socket_server('tcp://127.0.0.1:' . ($port + 1), $en, $es);
+$t0 = microtime(true);
+$err = jt_mail_send('ivan@mail.ru', 'Т', 'Т', ['port' => $port + 1, 'timeout' => 2, 'deadline' => 2] + $cfg);
+$took = microtime(true) - $t0;
+fclose($mute);
+check('молчащий сервер — отказ по сроку: ' . (string)$err . sprintf(' за %.1f с', $took),
+    $err !== null && $took < 4.5);
+$live = jt_mail_config();
+check('боевые сроки: соединение 5 с, всё письмо 10 с', $live['timeout'] === 5 && $live['deadline'] === 10);
+
 // ── Проводка в db.php ────────────────────────────────────────────────────────
 $db = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
 function case_body(string $src, string $fn): string
@@ -237,6 +300,7 @@ check('попытка считается до ответа «почта заня
 
 $verify = case_body($db, 'dbAuthVerifyCode');
 check('неверные коды с одного адреса ограничены', str_contains($verify, "jt_try_blocked('code')") && str_contains($verify, "jt_try_note('code')"));
+check('удачный код не обнуляет счётчик неверных', !str_contains($verify, "jt_try_reset('code')"));
 check('код привязки из чужой сессии не принимается',
     str_contains($verify, "if (\$purpose === 'attach' && (string)(\$res['user_id'] ?? '') !== (string)\$authUid) {"));
 
@@ -244,9 +308,14 @@ $reset = case_body($db, 'dbAuthResetPassword');
 check('сброс пароля гасит прежние сессии', str_contains($reset, "'sessions_valid_from' => now_iso(),"));
 check('сброс проверяет пароль сервером', str_contains($reset, 'jt_password_problem($new)'));
 check('сброс — только по квитанции reset', str_contains($reset, "jt_auth_ticket_check((string)(\$args[0] ?? ''), 'reset', jt_session_key())"));
+check('квитанция сброса одноразовая (старше sessions_valid_from — отказ)',
+    str_contains($reset, "(int)strtotime((string)\$row['sessions_valid_from']) >= (int)\$t['iat']"));
 
 $attach = case_body($db, 'dbAuthAttachEmail');
 check('привязка — только своей квитанцией', str_contains($attach, "(string)\$t['uid'] !== (string)\$authUid"));
+check('подтверждённую почту из сессии не сменить',
+    str_contains($attach, "if (!empty(\$me['email_verified_at'])) { jt_respond(['error' => 'Почта уже подтверждена'], 409); exit; }")
+    && str_contains($send, "jt_respond(['error' => 'Почта уже подтверждена'], 409); exit;"));
 
 $upsert = case_body($db, 'dbUpsertUser');
 check('регистрация по квитанции register ставит подтверждённую почту',
@@ -261,6 +330,8 @@ check('вход по почте или по телефону старого ак
     && str_contains($login, "sb_single('jm_users', ['phone' => 'eq.' . \$phone])"));
 
 $phone = case_body($db, 'dbSetContactPhone');
+check('перебор номеров через «телефон для связи» ограничен',
+    str_contains($phone, "jt_try_blocked('phone')") && str_contains($phone, "jt_try_note('phone')"));
 check('без подтверждённой почты телефон-вход не стереть и не сменить',
     str_contains($phone, "if (empty(\$me['email_verified_at']) && (string)(\$me['phone'] ?? '') !== \$digits) {"));
 
