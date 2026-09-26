@@ -103,6 +103,9 @@ jobs:
       - name: Карточка свайпа — никуда не ведёт, листается, без плашки «Отвечает»
         run: php tests/swipe_card_test.php
 
+      - name: Сертификат Минцифры — только три банка и только сборщик
+        run: php tests/ru_ca_scope_test.php
+
       - name: Описание из API источника — разделы, карточка вакансии, курсор
         run: php tests/career_api_description_test.php
 

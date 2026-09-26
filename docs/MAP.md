@@ -372,6 +372,16 @@ SPA-сайтов страница вакансии пустая, поэтому 
 одинаковыми колонками (`ing_chunks_by_columns`): новых ключей нет у строк
 других источников, и затирать им описание нельзя. Тест —
 `tests/career_api_description_test.php`.
+**Сертификат Минцифры** (решение владельца 26.09.2026). Т-Банк, Альфа-Банк и
+Точка подписаны Russian Trusted CA, которого нет в системном списке. Сборщик
+(`cf_fetch_pinned` в `career_unit.php`) и дозагрузка описаний
+(`ing_fetch_html` в `ingest.php`) зовут `jt_apply_ru_ca()` из `safe_url.php`:
+для доменов из `JT_RU_CA_HOSTS` (tbank.ru, alfabank.ru, tochka.com и их
+поддомены) доверие — ТОЛЬКО этому центру (`CURLOPT_CAINFO_BLOB`, PEM в
+`php-proxy/ru_trusted_ca.php`, потому что выкладка копирует только *.php), для
+остальных — ничего не меняется. Юпитер, вход и база этому центру не доверяют.
+Промежуточный сертификат действует до 06.03.2027 — к этому сроку обновить.
+Охрана — `tests/ru_ca_scope_test.php`.
 Показывает структуру `components/ui/DescriptionBlocks.tsx` в карточке ленты
 (`app/(tabs)/feed.tsx`, `renderExtDeckCard`): разбор текста на блоки —
 `services/descriptionBlocks.ts`, чистая функция, отдельно от вёрстки.

@@ -89,6 +89,8 @@ function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): a
         $curlOptions[CURLOPT_HTTPGET] = true;
     }
     curl_setopt_array($ch, $curlOptions);
+    // Т-Банк, Альфа-Банк, Точка — сертификат Минцифры, только им (safe_url.php).
+    jt_apply_ru_ca($ch, $pageUrl);
     $ok = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $servedBy = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
