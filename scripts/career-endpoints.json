@@ -1698,5 +1698,40 @@
       "company_const": "МТС Банк"
     },
     "company_hint": "МТС Банк"
+  },
+  {
+    "map": {
+      "link_path": "/hr/vacancies/",
+      "min_title": 4,
+      "company_const": "Туту"
+    },
+    "url": "https://c.tutu.ru/hr/vacancies",
+    "mode": "html_links",
+    "company_hint": "Туту"
+  },
+  {
+    "map": {
+      "link_path": "/job/vacancy/",
+      "min_title": 8,
+      "title_from_card": true,
+      "company_const": "Информзащита"
+    },
+    "url": "https://www.infosec.ru/job/vacancy/",
+    "mode": "html_links",
+    "company_hint": "Информзащита"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "props.pageProps.allJobsData",
+      "title": "title",
+      "address": "location",
+      "description": "todo_ru",
+      "url_template": "https://wunderfund.io/jobs/{id}",
+      "company_const": "Wunder Fund"
+    },
+    "url": "https://wunderfund.io",
+    "mode": "embedded",
+    "company_hint": "Wunder Fund"
   }
 ]

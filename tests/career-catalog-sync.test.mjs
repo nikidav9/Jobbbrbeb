@@ -25,10 +25,10 @@ const rows = sites
   });
 const baseName = (name) => name.split(/\s+·\s+/)[0];
 
-test('master-list содержит весь текущий каталог: 408 компаний / 415 разделов', () => {
-  assert.equal(rows.length, 415);
-  assert.equal(new Set(rows.map(({ name }) => baseName(name))).size, 408);
-  assert.equal(new Set(rows.map(({ url }) => url)).size, 415);
+test('master-list содержит весь текущий каталог: 424 компании / 431 раздел', () => {
+  assert.equal(rows.length, 431);
+  assert.equal(new Set(rows.map(({ name }) => baseName(name))).size, 424);
+  assert.equal(new Set(rows.map(({ url }) => url)).size, 431);
 });
 
 test('production синхронизируется именно из master-list', () => {

@@ -65,6 +65,7 @@
 //   UserGate: https://usergate.com/f/dist/media/favicons/favicon.svg
 //   VK: https://vk.com/favicon.ico
 //   Wildberries / РВБ: https://rwb.ru/favicon.svg
+//   Wunder Fund: https://wunderfund.io/fav.svg
 //   X5 Group: https://www.x5.ru/wp-content/themes/x5/assets/img/favicon/favicon.svg
 //   X5 Tech: https://x5.tech/_next/static/media/faviconName.fb892b5f.png
 //   Yadro: https://yadro.com/assets/shared/icons/favicon.svg
@@ -88,6 +89,7 @@
 //   Золотое Яблоко: https://goldapple.ru/_static-files/favicons/favicon-194x194.png
 //   Иви: https://s3.dfs.ivi.ru/849c829d658baaeff512d766b0db3cce/dist/release_26.09.11_7d2a8216/storm/images/favicon/favicon_int.svg
 //   Индасофт: https://indusoft.ru/android-icon-192x192.png
+//   Информзащита: https://www.infosec.ru/favicon.ico
 //   Инфосистемы Джет: https://jet.su/local/templates/bx/favicon/apple-touch-icon.png
 //   ИнфоТеКС: https://infotecs.ru/images/favicon/apple-touch-icon.png
 //   Контакт: https://itcontact.ru/wp-content/themes/itcontact/img/logo.svg
@@ -124,6 +126,7 @@
 //   Техвилл: https://techvill.ru/icon.jpg
 //   Точка Банк: https://hr.tochka.com/favicon.svg
 //   Траектория технологий: https://trctech.ru/assets/cache/images/img/other/favicon-196x196-972.png
+//   Туту: https://cdn1.tu-tu.ru/lib-assets/@tutu-react/favicon@1.3.2/favicon.svg
 //   ФосАгро: https://cdn.phosagro.ru/apple-touch-icon.png
 //   Хоулмонт: https://www.haulmont.ru/favicon.ico
 //   Циан: https://cian.ru/apple-touch-icon.png
@@ -194,6 +197,7 @@ const LOGOS: Record<string, number> = {
   "usergate": require('@/assets/logos/usergate.png'),
   "vk": require('@/assets/logos/vk.png'),
   "wildberries / рвб": require('@/assets/logos/wildberries-rvb.png'),
+  "wunder fund": require('@/assets/logos/wunder-fund.png'),
   "x5 group": require('@/assets/logos/x5-group.png'),
   "x5 tech": require('@/assets/logos/x5-tech.png'),
   "yadro": require('@/assets/logos/yadro.png'),
@@ -217,6 +221,7 @@ const LOGOS: Record<string, number> = {
   "золотое яблоко": require('@/assets/logos/zolotoe-yabloko.png'),
   "иви": require('@/assets/logos/ivi.png'),
   "индасофт": require('@/assets/logos/indasoft.png'),
+  "информзащита": require('@/assets/logos/informzaschita.png'),
   "инфосистемы джет": require('@/assets/logos/infosistemy-dzhet.png'),
   "инфотекс": require('@/assets/logos/infoteks.png'),
   "контакт": require('@/assets/logos/kontakt.png'),
@@ -253,6 +258,7 @@ const LOGOS: Record<string, number> = {
   "техвилл": require('@/assets/logos/techvill.png'),
   "точка банк": require('@/assets/logos/tochka-bank.png'),
   "траектория технологий": require('@/assets/logos/traektoriya-tehnologiy.png'),
+  "туту": require('@/assets/logos/tutu.png'),
   "фосагро": require('@/assets/logos/fosagro.png'),
   "хоулмонт": require('@/assets/logos/houlmont.png'),
   "циан": require('@/assets/logos/tsian.png'),

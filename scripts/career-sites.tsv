@@ -470,3 +470,25 @@ Spirit. Fitness	https://career.spiritfit.ru/
 ВДНХ	https://vdnh.ru/
 Лужники	https://www.luzhniki.ru/
 Крокус	https://crocus-group.ru/
+
+# budu.jobs (26.09.2026): сверка каталога budu.jobs/companies (3549 компаний)
+# с нашим списком. У budu взяты только названия и сайты; вакансии — с сайтов
+# самих компаний. Три первые собираются (career-endpoints.json), остальные —
+# живые российские компании со страницей вакансий, но без разбираемого
+# источника или без текста вакансий: их ищет еженедельная разведка.
+Туту	https://c.tutu.ru/hr/vacancies
+Информзащита	https://www.infosec.ru/job/vacancy/
+Wunder Fund	https://wunderfund.io/
+Proscom	https://proscom.ru/vacancies
+UPSIDE	https://upside.pro/vacancies
+MedEQ	https://medeq.ru/vacancies
+NeuroCity	https://www.neuro-city.ru/
+ИТЭЛМА	https://www.itelma.ru/karera/
+Палиндром	https://palindrome.media/career/
+SETTERS	https://www.setters.agency/job
+Weborama	https://wbrm.ru/vacancies/
+Holy Corn	https://holycorn.ru/work
+H2O	https://h2oclean.ru/vacancies
+Beget	https://beget.com/ru
+Targem Games	https://targem.ru/job/
+SmartDec	https://smartdec.net/ru/hiring/
