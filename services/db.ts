@@ -236,6 +236,7 @@ function rowToUser(r: any): User {
     avgRating: r.avg_rating ?? 0,
     ratingCount: r.rating_count ?? 0,
     password: r.password ?? '',
+    hasPassword: r.has_password ?? undefined,
     bio: r.bio ?? undefined,
     personalDetails: r.personal_data && typeof r.personal_data === 'object'
       ? r.personal_data

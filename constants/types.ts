@@ -121,6 +121,12 @@ export interface User {
   company?: string;
   createdAt: string;
   password?: string;
+  /**
+   * Есть ли у аккаунта пароль — вычисляет сервер, сам хеш сюда не входит.
+   * Регистрация «почта → код» (с 27.09.2026) пароль не заводит. undefined —
+   * старый кэш/ответ без поля, «не знаем»: ведём себя как раньше.
+   */
+  hasPassword?: boolean;
   isBlocked?: boolean;
   avatarUrl?: string;
   avgRating?: number;

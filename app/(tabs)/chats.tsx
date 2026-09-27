@@ -117,7 +117,10 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
 
   const otherId = currentUser.role === 'worker' ? item.employerId : item.workerId;
   const other = users.find((u: any) => u.id === otherId);
-  const name = other ? `${other.firstName} ${other.lastName}` : item.companyName;
+  // Работодатель короткого пути по почте (решение владельца 27.09.2026)
+  // регистрируется без имени — `other` находится, но firstName/lastName
+  // пустые, и голая склейка давала бы один пробел вместо названия компании.
+  const name = (other ? `${other.firstName} ${other.lastName}`.trim() : '') || item.companyName;
   const avatarUrl = other?.avatarUrl;
 
   const unread = currentUser.role === 'worker' ? item.unreadWorker : item.unreadEmployer;

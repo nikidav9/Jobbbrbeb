@@ -389,7 +389,16 @@ function FilterSheet({
 }) {
   const [draft, setDraft] = useState<FeedFilters>(initial);
   const [companyQuery, setCompanyQuery] = useState('');
-  const swipe = useSwipeToDismiss(onClose);
+  // useSwipeToDismiss уводит окно вниз своей translateY-анимацией. Раньше её
+  // onClose вызывал закрытие напрямую — React убирал <FilterSheet/> из
+  // разметки, и Reanimated поверх уже уехавшего окна заново проигрывал
+  // exiting (FadeOut/SlideOutDown), отчего окно дёргалось: свайп, потом ещё
+  // раз «уезжает». Флаг говорит: окна на экране уже нет, повторная exiting-
+  // анимация не нужна — unmount происходит следующим рендером, когда
+  // Reanimated уже видит exiting=undefined.
+  const [swipedAway, setSwipedAway] = useState(false);
+  const swipe = useSwipeToDismiss(() => setSwipedAway(true));
+  useEffect(() => { if (swipedAway) onClose(); }, [swipedAway]);
 
   const companyRows = useMemo(() => {
     const q = companyQuery.trim().toLocaleLowerCase('ru-RU');
@@ -412,13 +421,13 @@ function FilterSheet({
     // условием в разметке). Тап по затемнению закрывает без применения.
     <Reanimated.View
       entering={FadeIn.duration(180)}
-      exiting={FadeOut.duration(160)}
+      exiting={swipedAway ? undefined : FadeOut.duration(160)}
       style={[styles.filterOverlay, { bottom: bottomInset }]}
     >
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтр" />
       <Reanimated.View
         entering={SlideInDown.springify().damping(20).stiffness(180)}
-        exiting={SlideOutDown.duration(200)}
+        exiting={swipedAway ? undefined : SlideOutDown.duration(200)}
         style={[styles.filterSheet, { maxHeight: '80%' }]}
         testID="filter-sheet"
       >

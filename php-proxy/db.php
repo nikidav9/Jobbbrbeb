@@ -747,6 +747,24 @@ function is_bcrypt(string $s): bool {
     return (bool)preg_match('/^\$2[aby]\$/', $s);
 }
 
+// Клиенту нужно знать, ЕСТЬ ли у аккаунта пароль (регистрация «почта → код»
+// его не заводит), чтобы предложить понятное «Задать пароль» вместо вечного
+// «неверный пароль». Сам хеш клиенту не уходит никогда. Строка по
+// USER_SELF_COLS колонку password не содержит вовсе — тогда читаем её
+// отдельным точечным запросом, а не расширяем список колонок целиком.
+function jt_attach_has_password(?array $row): ?array {
+    if ($row === null) return null;
+    if (array_key_exists('password', $row)) {
+        $row['has_password'] = (string)($row['password'] ?? '') !== '';
+        unset($row['password']);
+        return $row;
+    }
+    $id = (string)($row['id'] ?? '');
+    $pw = $id === '' ? null : sb_single('jm_users', ['id' => 'eq.' . $id], 'password');
+    $row['has_password'] = (string)($pw['password'] ?? '') !== '';
+    return $row;
+}
+
 function sb_select(string $t, array $f = [], string $sel = '*', ?string $ord = null): array {
     $q = array_merge(['select' => $sel], $f);
     if ($ord) $q['order'] = $ord;
@@ -3828,13 +3846,12 @@ try {
                 } catch (\Throwable $e) { /* вход важнее, чем перевод в хеш */ }
             }
 
-            unset($row['password']);
-            $data = ['user' => $row, 'session_token' => jt_session_issue((string)$row['id'])]; break;
+            $data = ['user' => jt_attach_has_password($row), 'session_token' => jt_session_issue((string)$row['id'])]; break;
         }
 
         case 'dbSession': {
             $row = sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS);
-            $data = $row ? ['user' => $row] : null;
+            $data = $row ? ['user' => jt_attach_has_password($row)] : null;
             break;
         }
 
@@ -4411,7 +4428,7 @@ try {
                     jt_respond(['error' => 'Не получилось войти. Попробуйте ещё раз'], 403); exit;
                 }
                 jt_try_reset('login');
-                $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+                $data = ['user' => jt_attach_has_password(sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS)),
                     'session_token' => jt_session_issue((string)$row['id'])];
                 break;
             }
@@ -4444,7 +4461,7 @@ try {
                 'sessions_valid_from' => now_iso(),
             ]);
             jt_try_reset('login');
-            $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+            $data = ['user' => jt_attach_has_password(sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS)),
                 'session_token' => jt_session_issue((string)$row['id'])];
             break;
         }
@@ -4463,7 +4480,7 @@ try {
             }
             sb_update('jm_users', ['id' => 'eq.' . $authUid],
                 ['email' => $t['email'], 'email_verified_at' => now_iso()]);
-            $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS)];
+            $data = ['user' => jt_attach_has_password(sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS))];
             break;
         }
 

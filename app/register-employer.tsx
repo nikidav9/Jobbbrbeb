@@ -21,16 +21,25 @@ import { uploadAvatar } from '@/services/avatarUpload';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
-// Steps: 1-Email+code, 2-Password, 3-Name+Company, 4-Legal
-const TOTAL = 5;
+// Путь по почте (emailAuthReady, решение владельца «позже отдельно» от
+// 27.09.2026, сделано следующим срезом — как у соискателя): один экран
+// «почта + согласия» → код → «Как называется компания?» → сразу в кабинет,
+// без пароля и без остальных прежних шагов. Пароль и имя человека спросит
+// профиль/настройки, если понадобятся.
+// Путь по телефону (SMTP ещё не готов) — прежние 5 шагов без изменений:
+// 1-Телефон, 2-Пароль, 3-Имя+Компания, 4-Согласие, 5-О компании.
 const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
 
 export default function RegisterEmployer() {
   const router = useRouter();
   const { emailAuthReady, registerUser, showToast } = useApp();
+  const TOTAL = emailAuthReady ? 3 : 5;
 
   const [step, setStep] = useState(1);
+  // Код отправлен — второй (свой) шаг EmailCodeStep. Только для прогресса в
+  // шапке: сам переход между «почта» и «код» держит компонент у себя.
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
   // Шаг 1 — почта с кодом из письма (решение владельца 25.09.2026).
   const [email, setEmail] = useState('');
   const [emailTicket, setEmailTicket] = useState('');
@@ -44,6 +53,8 @@ export default function RegisterEmployer() {
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [company, setCompany] = useState<CompanyOption | ''>('');
+  // Шаг 2 короткого пути по почте — свободное название компании, без списка.
+  const [companyName, setCompanyName] = useState('');
   const [age, setAge] = useState('');
   const [bio, setBio] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -58,7 +69,12 @@ export default function RegisterEmployer() {
 
   // Первый шаг, открытый по прямой ссылке: истории нет, router.back() молчит.
   const back = () => {
-    if (step > 1) setStep(s => s - 1);
+    if (step > 1) {
+      // Возврат с шага компании на шаг почты размонтирует EmailCodeStep
+      // (условный рендер по step === 1) — его фаза сама вернётся на «почта».
+      if (emailAuthReady) setEmailCodeSent(false);
+      setStep(s => s - 1);
+    }
     else if (router.canGoBack()) router.back();
     else router.replace('/');
   };
@@ -143,16 +159,114 @@ export default function RegisterEmployer() {
     }
   };
 
+  // Почта → код → «Как называется компания?» → сразу в кабинет (решение
+  // владельца, тот же срез, что у соискателя 27.09.2026): без пароля и без
+  // прежних шагов «Имя», «О компании». Название компании вводит человек сам —
+  // это и есть кабинет, показывать пустое имя в вакансиях/чате нечем.
+  const finishByEmail = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      const id = uid();
+      const user = {
+        id,
+        role: 'employer' as const,
+        phone: '',
+        email,
+        emailVerifiedAt: nowISO(),
+        lastName: '',
+        firstName: '',
+        company: companyName.trim(),
+        createdAt: nowISO(),
+      };
+      await registerUser(user, emailTicket, { marketing: adsAgreed });
+      showToast('Добро пожаловать! 👋', 'success');
+      router.replace('/(tabs)');
+    } catch (e) {
+      console.error('[RegisterEmployer] finishByEmail error', e);
+      const msg = e instanceof Error && e.message ? e.message : 'Ошибка регистрации. Попробуйте ещё раз.';
+      showToast(msg, 'error');
+      // Квитанция устарела или почту успели занять — вернуть на шаг почты:
+      // step === 1 размонтирует EmailCodeStep и его фаза сама сбросится.
+      if (/почт/i.test(msg)) { setEmailTicket(''); setEmailCodeSent(false); setStep(1); }
+    } finally {
+      setFinishing(false);
+    }
+  };
+
+  // Общие для почты (под полем, до отправки кода) и телефона (отдельный шаг
+  // 4) — одни и те же три галочки.
+  const renderConsentCheckboxes = () => (
+    <>
+      <TouchableOpacity style={styles.checkRow} onPress={() => setAgreed(v => !v)} activeOpacity={0.8}>
+        <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
+          {agreed ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkLabel}>
+            Я принимаю{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}>
+              Пользовательское соглашение
+            </Text>
+            {' '}и подтверждаю, что ознакомлен(а) с{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
+              Политикой конфиденциальности
+            </Text>
+            {' и '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}>
+              Политикой обработки персональных данных
+            </Text>
+            .
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.checkRow} onPress={() => setPdAgreed(v => !v)} activeOpacity={0.8}>
+        <View style={[styles.checkbox, pdAgreed && styles.checkboxActive]}>
+          {pdAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkLabel}>
+            Отдельно даю{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
+              Согласие на обработку персональных данных
+            </Text>
+            . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.checkRow} onPress={() => setAdsAgreed(v => !v)} activeOpacity={0.8}>
+        <View style={[styles.checkbox, adsAgreed && styles.checkboxActive]}>
+          {adsAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkLabel}>
+            По желанию: даю{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}>
+              Согласие на получение рекламной рассылки
+            </Text>
+            {' '}о JobToo на почту и в уведомлениях. Можно отключить в настройках.
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </>
+  );
+
+  // Шаг «почта» и шаг «код» внутри EmailCodeStep считаются одним шагом снаружи
+  // (свой переход держит сам компонент) — тот же приём, что у register-worker.
+  const displayedStep = emailAuthReady ? (step === 1 ? (emailCodeSent ? 2 : 1) : 3) : step;
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <BackButton onPress={back} />
-        <Text style={styles.stepLabel}>{step} из {TOTAL}</Text>
+        <Text style={styles.stepLabel}>{displayedStep} из {TOTAL}</Text>
         <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <View style={styles.progress}>
-        <View style={[styles.progressFill, { width: `${(step / TOTAL) * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${(displayedStep / TOTAL) * 100}%` }]} />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -161,15 +275,18 @@ export default function RegisterEmployer() {
           {/* Step 1: Email + code */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>{emailAuthReady ? 'Рабочая почта' : 'Введите номер телефона'}</Text>
+              <Text style={styles.title}>{emailAuthReady ? 'Регистрация компании' : 'Введите номер телефона'}</Text>
               <Text style={styles.subtitle}>
                 {emailAuthReady
-                  ? 'Пришлём код — по почте будете входить и восстанавливать пароль'
+                  ? 'Пришлём код — пароль не нужен'
                   : 'Работник увидит его только после мэтча'}
               </Text>
               {emailAuthReady ? (
                 <EmailCodeStep
                   purpose="register"
+                  disabled={!agreed || !pdAgreed}
+                  belowEmail={renderConsentCheckboxes()}
+                  onSendAttempt={ok => { if (ok) setEmailCodeSent(true); }}
                   onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}
                 />
               ) : (
@@ -194,8 +311,31 @@ export default function RegisterEmployer() {
             </View>
           )}
 
-          {/* Step 2: Password */}
-          {step === 2 && (
+          {/* Step 2 (почта): «Как называется компания?» — одно поле, без пароля */}
+          {step === 2 && emailAuthReady && (
+            <View style={styles.stepContent}>
+              <Text style={styles.title}>Как называется компания?</Text>
+              <Text style={styles.subtitle}>Работники увидят это название в вакансиях</Text>
+              <AppInput
+                label="Название компании"
+                value={companyName}
+                onChangeText={setCompanyName}
+                placeholder="Лавка"
+                autoFocus
+              />
+              <View style={{ marginTop: 4 }}>
+                <PrimaryButton
+                  label="Готово →"
+                  onPress={finishByEmail}
+                  loading={finishing}
+                  disabled={!companyName.trim() || finishing}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Step 2 (телефон): Password */}
+          {step === 2 && !emailAuthReady && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>Придумайте пароль</Text>
               <Text style={styles.subtitle}>{emailTicket ? 'Забудете — восстановите кодом из письма.' : 'Запомните его. Забудете — пишите на support@jobtoo.ru.'}</Text>
@@ -258,58 +398,7 @@ export default function RegisterEmployer() {
               <Text style={styles.title}>Согласие</Text>
               <Text style={styles.subtitle}>Для завершения регистрации</Text>
 
-              <TouchableOpacity style={styles.checkRow} onPress={() => setAgreed(v => !v)} activeOpacity={0.8}>
-                <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
-                  {agreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    Я принимаю{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}>
-                      Пользовательское соглашение
-                    </Text>
-                    {' '}и подтверждаю, что ознакомлен(а) с{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
-                      Политикой конфиденциальности
-                    </Text>
-                    {' и '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}>
-                      Политикой обработки персональных данных
-                    </Text>
-                    .
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.checkRow} onPress={() => setPdAgreed(v => !v)} activeOpacity={0.8}>
-                <View style={[styles.checkbox, pdAgreed && styles.checkboxActive]}>
-                  {pdAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    Отдельно даю{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
-                      Согласие на обработку персональных данных
-                    </Text>
-                    . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.checkRow} onPress={() => setAdsAgreed(v => !v)} activeOpacity={0.8}>
-                <View style={[styles.checkbox, adsAgreed && styles.checkboxActive]}>
-                  {adsAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    По желанию: даю{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}>
-                      Согласие на получение рекламной рассылки
-                    </Text>
-                    {' '}о JobToo на почту и в уведомлениях. Можно отключить в настройках.
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              {renderConsentCheckboxes()}
 
               <View style={{ marginTop: 16 }}>
                 <PrimaryButton label="Продолжить →" onPress={next} disabled={!agreed || !pdAgreed} />

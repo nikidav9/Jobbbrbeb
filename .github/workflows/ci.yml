@@ -166,6 +166,9 @@ jobs:
       - name: Чужие данные на чтение не отдаются
         run: php tests/read_authz_test.php
 
+      - name: has_password вычисляется, хеш пароля клиенту не уходит
+        run: php tests/has_password_test.php
+
       - name: Уведомление о сообщении собирает сервер, а не телефон
         run: php tests/message_notify_test.php
 
