@@ -19,7 +19,10 @@ import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouS
 import { uploadAvatar } from '@/services/avatarUpload';
 
 import { rs, rf } from '@/constants/scale';
-import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
+import { BackButton } from '@/components/ui/BackButton';
+import { JTProgress, JTLink, jtBackStyle } from '@/components/ui/jt';
+import { ConsentChecks } from '@/components/feature/ConsentChecks';
+import { JT, JT_FONT } from '@/constants/jt';
 
 // Путь по почте (emailAuthReady, решение владельца «позже отдельно» от
 // 27.09.2026, сделано следующим срезом — как у соискателя): один экран
@@ -197,60 +200,11 @@ export default function RegisterEmployer() {
   // Общие для почты (под полем, до отправки кода) и телефона (отдельный шаг
   // 4) — одни и те же три галочки.
   const renderConsentCheckboxes = () => (
-    <>
-      <TouchableOpacity style={styles.checkRow} onPress={() => setAgreed(v => !v)} activeOpacity={0.8}>
-        <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
-          {agreed ? <Text style={styles.checkmark}>✓</Text> : null}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.checkLabel}>
-            Я принимаю{' '}
-            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}>
-              Пользовательское соглашение
-            </Text>
-            {' '}и подтверждаю, что ознакомлен(а) с{' '}
-            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
-              Политикой конфиденциальности
-            </Text>
-            {' и '}
-            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}>
-              Политикой обработки персональных данных
-            </Text>
-            .
-          </Text>
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.checkRow} onPress={() => setPdAgreed(v => !v)} activeOpacity={0.8}>
-        <View style={[styles.checkbox, pdAgreed && styles.checkboxActive]}>
-          {pdAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.checkLabel}>
-            Отдельно даю{' '}
-            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
-              Согласие на обработку персональных данных
-            </Text>
-            . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
-          </Text>
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.checkRow} onPress={() => setAdsAgreed(v => !v)} activeOpacity={0.8}>
-        <View style={[styles.checkbox, adsAgreed && styles.checkboxActive]}>
-          {adsAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.checkLabel}>
-            По желанию: даю{' '}
-            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}>
-              Согласие на получение рекламной рассылки
-            </Text>
-            {' '}о JobToo на почту и в уведомлениях. Можно отключить в настройках.
-          </Text>
-        </View>
-      </TouchableOpacity>
-    </>
+    <ConsentChecks
+      agreed={agreed} onAgreed={() => setAgreed(v => !v)}
+      pdAgreed={pdAgreed} onPdAgreed={() => setPdAgreed(v => !v)}
+      adsAgreed={adsAgreed} onAdsAgreed={() => setAdsAgreed(v => !v)}
+    />
   );
 
   // Шаг «почта» и шаг «код» внутри EmailCodeStep считаются одним шагом снаружи
@@ -260,13 +214,8 @@ export default function RegisterEmployer() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <BackButton onPress={back} />
-        <Text style={styles.stepLabel}>{displayedStep} из {TOTAL}</Text>
-        <View style={{ width: BACK_BUTTON_SIZE }} />
-      </View>
-
-      <View style={styles.progress}>
-        <View style={[styles.progressFill, { width: `${(displayedStep / TOTAL) * 100}%` }]} />
+        <BackButton onPress={back} style={jtBackStyle} />
+        <JTProgress step={displayedStep} total={TOTAL} />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -274,16 +223,23 @@ export default function RegisterEmployer() {
 
           {/* Step 1: Email + code */}
           {step === 1 && (
-            <View style={styles.stepContent}>
-              <Text style={styles.title}>{emailAuthReady ? 'Регистрация компании' : 'Введите номер телефона'}</Text>
-              <Text style={styles.subtitle}>
-                {emailAuthReady
-                  ? 'Пришлём код — пароль не нужен'
-                  : 'Работник увидит его только после мэтча'}
-              </Text>
+            <View style={[styles.stepContent, emailAuthReady && styles.grow]}>
+              {!(emailAuthReady && emailCodeSent) ? (
+                <>
+                <Text style={styles.title}>{emailAuthReady ? 'Регистрация компании' : 'Введите номер телефона'}</Text>
+                <Text style={styles.subtitle}>
+                  {emailAuthReady
+                    ? 'Пришлём код — пароль не нужен'
+                    : 'Работник увидит его только после мэтча'}
+                </Text>
+                </>
+              ) : null}
               {emailAuthReady ? (
                 <EmailCodeStep
                   purpose="register"
+                  hero
+                  pinButton
+                  onPhaseChange={p => setEmailCodeSent(p === 'code')}
                   disabled={!agreed || !pdAgreed}
                   belowEmail={renderConsentCheckboxes()}
                   onSendAttempt={ok => { if (ok) setEmailCodeSent(true); }}
@@ -302,12 +258,11 @@ export default function RegisterEmployer() {
                   </View>
                 </>
               )}
-              <TouchableOpacity style={styles.loginHint} onPress={() => router.push('/login')}>
+              {!(emailAuthReady && emailCodeSent) ? (
                 <Text style={styles.loginHintTxt}>
-                  Уже есть аккаунт?{' '}
-                  <Text style={{ color: Colors.primary, fontWeight: '700' }}>Войти →</Text>
+                  Уже есть аккаунт? <JTLink onPress={() => router.push('/login')}>Войти</JTLink>
                 </Text>
-              </TouchableOpacity>
+              ) : null}
             </View>
           )}
 
@@ -433,25 +388,17 @@ export default function RegisterEmployer() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rs(16), paddingVertical: rs(12) },
-  stepLabel: { fontSize: rf(13), color: Colors.textMuted },
-  progress: { height: rs(3), backgroundColor: Colors.divider },
-  progressFill: { height: rs(3), backgroundColor: Colors.primary },
+  safe: { flex: 1, backgroundColor: JT.background },
+  grow: { flexGrow: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: rs(14), paddingHorizontal: rs(24), paddingTop: rs(12), height: rs(56) },
   // flexGrow + center: короткий шаг встаёт по центру экрана, длинный
   // ведёт себя как обычная прокрутка сверху.
-  body: { padding: rs(24), paddingBottom: rs(40), flexGrow: 1, justifyContent: 'center' },
+  body: { paddingHorizontal: rs(24), paddingTop: rs(26), paddingBottom: rs(28), flexGrow: 1 },
   stepContent: { gap: rs(16) },
-  title: { fontSize: rf(24), fontWeight: '700', color: Colors.textPrimary },
-  subtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(-8), lineHeight: rf(20) },
+  title: { fontFamily: JT_FONT.head, fontSize: rf(27), lineHeight: rf(31), letterSpacing: -0.3, color: JT.ink },
+  subtitle: { fontFamily: JT_FONT.medium, fontSize: rf(16), color: JT.textSecondary, marginTop: rs(-6), lineHeight: rf(23) },
   fieldError: { fontSize: rf(13), color: Colors.red, lineHeight: rf(18) },
-  loginHint: { marginTop: rs(8), alignItems: 'center' },
-  loginHintTxt: { fontSize: rf(14), color: Colors.textMuted },
-  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(14), paddingVertical: rs(8) },
-  checkbox: { width: rs(24), height: rs(24), borderRadius: rs(6), borderWidth: 1.5, borderColor: Colors.inputBorder, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', marginTop: rs(2), flexShrink: 0 },
-  checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  checkmark: { color: '#fff', fontWeight: '700', fontSize: rf(14) },
-  checkLabel: { fontSize: rf(14), color: Colors.textPrimary, lineHeight: rf(22), flex: 1 },
+  loginHintTxt: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: JT.ink, textAlign: 'center', marginTop: rs(4) },
   link: { color: Colors.primary, fontWeight: '600', textDecorationLine: 'underline' },
   companyOption: {
     flexDirection: 'row', alignItems: 'center', gap: rs(14),
