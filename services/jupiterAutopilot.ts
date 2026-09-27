@@ -115,7 +115,7 @@ function jtConsentDecision(text, delegated) {
 function jtIsApplyButton(text) {
   var t = jtFlat(text);
   if (!t || t.length > 40) return false;
-  return /^(откликнуться|отклик|откликнуться на вакансию|подать заявку|подать отклик|отправить резюме|оставить заявку|заполнить анкету|заполнить форму|хочу у вас работать|хочу в команду|apply|apply now|respond)$/.test(t);
+  return /^(откликнуться|отклик|откликнуться на вакансию|подать заявку|подать отклик|отправить резюме|оставить заявку|заполнить анкету|заполнить форму|хочу у вас работать|хочу работать|хочу работать у вас|хочу в команду|apply|apply now|respond)$/.test(t);
 }
 
 // Кнопка отправки анкеты.
@@ -123,7 +123,7 @@ function jtIsSubmitButton(text) {
   var t = jtFlat(text);
   if (!t || t.length > 40) return false;
   if (/подписат|subscribe|поиск|найти|search|войти|login|регистрац/.test(t)) return false;
-  return /отправ|откликнуться|отклик|подать|submit|apply|send|готово/.test(t);
+  return /отправ|откликнуться|отклик|подать|заявк|submit|apply|send|готово/.test(t);
 }
 
 // Сайт подтвердил приём отклика. «Мы рассмотрим / свяжемся» сюда не входит:
@@ -387,7 +387,15 @@ ${AUTOPILOT_CORE}
     for (var i = 0; i < els.length; i++) {
       var el = els[i], type = (el.getAttribute('type') || '').toLowerCase();
       var req = el.required || el.getAttribute('aria-required') === 'true';
-      if (!req || el.disabled || type === 'hidden') continue;
+      // Прочие виджеты Tilda оставляют скрытое поле с data-tilda-req:
+      // пустое — обязательное не заполнено. Загрузку файла разбираем ниже.
+      if (type === 'hidden') {
+        if (el.getAttribute('data-tilda-req') === '1' && !el.value && !el.closest('[data-field-type="uw"]')) out.push((el.name || 'поле').slice(0, 60));
+        continue;
+      }
+      if (!req || el.disabled) continue;
+      // Поле ответа капчи — забота человека, а не «незаполненная анкета».
+      if (/captcha|капч/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + textOf(el))) continue;
       if (type !== 'file' && !visible(el)) continue;
       if (type === 'checkbox') { if (!el.checked && jtConsentDecision(textOf(el), CFG.delegated).action === 'none') out.push(textOf(el).slice(0, 60)); continue; }
       if (type === 'radio') {
@@ -396,8 +404,19 @@ ${AUTOPILOT_CORE}
         if (!any) out.push(textOf(el).slice(0, 60));
         continue;
       }
+      if (el.closest('[data-field-type="uw"]')) continue;
       if (type === 'file') { if (!el.files || !el.files.length) out.push('файл: ' + textOf(el).slice(0, 50)); continue; }
       if (isEmpty(el)) out.push(textOf(el).slice(0, 60));
+    }
+    // Виджет загрузки Tilda (группа data-field-type="uw") рисует свою кнопку
+    // и сам грузит файл к себе; итог — непустое скрытое поле в группе. Пока
+    // его нет, резюме не приложено, даже если файл лёг в исходный input.
+    var uw = form.querySelectorAll('[data-field-type="uw"]');
+    for (var u = 0; u < uw.length; u++) {
+      if (!uw[u].querySelector('[data-tilda-req="1"]')) continue;
+      var got = uw[u].querySelectorAll('input[type=hidden]'), ok = false;
+      for (var h = 0; h < got.length; h++) if (got[h].value) ok = true;
+      if (!ok) out.push('файл: ' + (uw[u].getAttribute('data-field-name') || 'резюме').slice(0, 50));
     }
     return out;
   }
