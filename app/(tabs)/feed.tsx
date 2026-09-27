@@ -25,7 +25,8 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
-import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS } from '@/services/vacancyFacets';
+import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
+import { JT, JT_FONT } from '@/constants/jt';
 import {
   type FeedFilters, EMPTY_FEED_FILTERS, isFilterActive, matchOwnVacancy, toExtFeedFilters, pluralVacancies,
 } from '@/services/feedFilters';
@@ -288,10 +289,12 @@ const FILTER_CHIP_KINDS: FilterSheetKind[] = ['salary', 'spec', 'level', 'format
  * Нажатие на чип открывает его шторку, «×» на включённом чипе сбрасывает
  * фильтр сразу, не открывая шторку.
  */
-function FilterChipsBar({ filters, onOpen, onClear }: {
+function FilterChipsBar({ filters, onOpen, onClear, onOpenAll }: {
   filters: FeedFilters;
   onOpen: (kind: FilterSheetKind) => void;
   onClear: (kind: FilterSheetKind) => void;
+  /** Чёрная кнопка слева (макет JT-design) — список всех фильтров. */
+  onOpenAll: () => void;
 }) {
   return (
     <ScrollView
@@ -301,6 +304,16 @@ function FilterChipsBar({ filters, onOpen, onClear }: {
       contentContainerStyle={fb.row}
       testID="filter-bar"
     >
+      <TouchableOpacity
+        style={fb.allBtn}
+        activeOpacity={0.8}
+        onPress={onOpenAll}
+        testID="filter-all"
+        accessibilityRole="button"
+        accessibilityLabel="Все фильтры"
+      >
+        <Ionicons name="options-outline" size={rs(20)} color={JT.surface} />
+      </TouchableOpacity>
       {FILTER_CHIP_KINDS.map(kind => {
         const { label, active } = filterChipInfo(kind, filters);
         return (
@@ -324,7 +337,7 @@ function FilterChipsBar({ filters, onOpen, onClear }: {
                 accessibilityRole="button"
                 accessibilityLabel={`Сбросить фильтр «${label}»`}
               >
-                <Ionicons name="close" size={13} color={Colors.textMuted} />
+                <Ionicons name="close" size={rs(16)} color={JT.ink} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -334,18 +347,95 @@ function FilterChipsBar({ filters, onOpen, onClear }: {
   );
 }
 
+// Чипы — макет JT-design: высота 36, скругление 18; выбранный — оранжевый с
+// чёрным контуром и крестиком, остальные — контур border-soft.
 const fb = StyleSheet.create({
-  row: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(13), paddingVertical: rs(10) },
-  chip: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#FFFFFF', borderRadius: rs(100),
-    borderWidth: 1, borderColor: Colors.inputBorder,
+  row: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(20), paddingVertical: rs(10) },
+  allBtn: {
+    width: rs(46), height: rs(36), borderRadius: rs(14),
+    backgroundColor: JT.ink, alignItems: 'center', justifyContent: 'center',
   },
-  chipActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
-  chipBody: { paddingHorizontal: rs(13), paddingVertical: rs(8) },
-  chipTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.textPrimary },
-  chipTxtActive: { color: Colors.primary },
-  chipClear: { paddingRight: rs(10), paddingLeft: rs(2), paddingVertical: rs(8) },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', height: rs(36),
+    borderRadius: rs(18), borderWidth: 2, borderColor: JT.borderSoft,
+    backgroundColor: 'transparent',
+  },
+  chipActive: { backgroundColor: JT.accent, borderColor: JT.ink },
+  chipBody: { paddingHorizontal: rs(14), height: '100%', justifyContent: 'center' },
+  chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
+  chipTxtActive: { color: JT.ink },
+  chipClear: { paddingRight: rs(12), paddingLeft: rs(0), height: '100%', justifyContent: 'center' },
+
+});
+
+/**
+ * «Все фильтры» — чёрная кнопка слева от чипов (макет JT-design). Список
+ * шести фильтров с текущим выбором; строка открывает шторку этого фильтра.
+ */
+function AllFiltersSheet({ filters, onPick, onReset, onClose, bottomInset }: {
+  filters: FeedFilters;
+  onPick: (kind: FilterSheetKind) => void;
+  onReset: () => void;
+  onClose: () => void;
+  bottomInset: number;
+}) {
+  const anyActive = FILTER_CHIP_KINDS.some(k => filterChipInfo(k, filters).active);
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(180)}
+      exiting={FadeOut.duration(160)}
+      style={[styles.filterOverlay, { bottom: bottomInset }]}
+    >
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтры" />
+      <Reanimated.View
+        entering={SlideInDown.springify().damping(20).stiffness(180)}
+        exiting={SlideOutDown.duration(200)}
+        style={[styles.filterSheet, { maxHeight: '80%' }]}
+        testID="filter-all-sheet"
+      >
+        <SheetHandle />
+        <View style={styles.filterSheetHeader}>
+          <Text style={styles.filterSheetTitle}>Фильтры</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.filterClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        {FILTER_CHIP_KINDS.map(kind => {
+          const { label, active } = filterChipInfo(kind, filters);
+          return (
+            <TouchableOpacity
+              key={kind}
+              style={afs.row}
+              activeOpacity={0.75}
+              onPress={() => onPick(kind)}
+              accessibilityRole="button"
+              accessibilityLabel={`${FILTER_SHEET_TITLES[kind]}: ${active ? label : 'не выбрано'}`}
+            >
+              <Text style={afs.title}>{FILTER_SHEET_TITLES[kind]}</Text>
+              <Text style={[afs.value, active && afs.valueOn]} numberOfLines={1}>{active ? label : 'Любой'}</Text>
+              <Ionicons name="chevron-forward" size={rs(18)} color={JT.textTertiary} />
+            </TouchableOpacity>
+          );
+        })}
+        {anyActive ? (
+          <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onReset(); onClose(); }}>
+            <Text style={fst.ctaTxt}>Сбросить все</Text>
+          </TouchableOpacity>
+        ) : <View style={{ height: rs(16) }} />}
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+const afs = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(10),
+    paddingHorizontal: rs(16), paddingVertical: rs(14),
+    borderBottomWidth: 1, borderBottomColor: Colors.divider,
+  },
+  title: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink },
+  value: { maxWidth: '45%', fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary },
+  valueOn: { color: JT.accent, fontFamily: JT_FONT.bold },
 });
 
 const fst = StyleSheet.create({
@@ -835,36 +925,22 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
 // теперь идёт через полосу чипов под шапкой, а не по слову. Освободившееся
 // место не растягиваем пустотой: марка слева, кнопки справа, между ними
 // гибкий пробел.
-function FeedSearchHeader({ energy, onUndo, onEnergyPress }: {
-  /** Сколько свайпов осталось на сегодня. */
+function FeedSearchHeader({ energy, onEnergyPress }: {
+  /** Сколько откликов осталось на сегодня. */
   energy: number;
-  /** Вернуть последнюю пролистанную вакансию. null — возвращать нечего. */
-  onUndo: (() => void) | null;
   onEnergyPress: () => void;
 }) {
   return (
     <View style={fh.row}>
       <View style={fh.logoWrap} accessibilityLabel="JobToo">
         <Image
-          source={require('@/assets/images/header-jt-logo.png')}
+          source={require('@/assets/images/jt-logo-wide.png')}
           style={fh.logoImage}
           resizeMode="contain"
         />
       </View>
 
       <View style={fh.spacer} />
-
-      {onUndo ? (
-        <TouchableOpacity
-          style={fh.undo}
-          onPress={onUndo}
-          activeOpacity={0.75}
-          accessibilityRole="button"
-          accessibilityLabel="Вернуть пропущенную вакансию"
-        >
-          <Ionicons name="arrow-undo" size={20} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      ) : null}
 
       {/* Сколько откликов осталось на сегодня. Не «сколько вакансий»: число
           вакансий человеку ни о чём не говорит, а вот что запас кончается —
@@ -876,45 +952,136 @@ function FeedSearchHeader({ energy, onUndo, onEnergyPress }: {
         accessibilityRole="button"
         accessibilityLabel={`Откликов осталось на сегодня: ${energy}`}
       >
-        <Ionicons name="flash" size={16} color={energy > 0 ? Colors.primary : Colors.textMuted} />
+        <Ionicons name="flash" size={rs(20)} color={energy > 0 ? JT.accent : JT.muted} />
         <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
+// Шапка ленты — макет JT-design: логотип JT слева, счётчик ⚡ — белая
+// пилюля высотой 44 с чёрным контуром 2.
 const fh = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0,
-    backgroundColor: Colors.bgWarm,
+    paddingHorizontal: rs(20), paddingTop: rs(10), paddingBottom: 0,
+    backgroundColor: JT.background,
   },
-  logoWrap: {
-    width: rs(40), height: rs(46), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  // Точный логотип, присланный владельцем. Уменьшен вдвое, выровнен по
-  // центру относительно кнопок счётчика и возврата.
-  logoImage: {
-    width: rs(40), height: rs(26),
-  },
-  // Раньше это место занимал поиск (flex: 1); без него пробел растягивается
-  // тем же способом — марка не липнет к кнопкам справа.
+  logoWrap: { height: rs(44), justifyContent: 'center', flexShrink: 0 },
+  // assets/images/jt-logo-wide.png — логотип макета, 600×387.
+  logoImage: { width: rs(53), height: rs(34) },
   spacer: { flex: 1, minWidth: rs(8) },
-  undo: {
-    width: rs(46), height: rs(46), borderRadius: rs(23), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#E9EAEC',
-  },
   count: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(5),
-    backgroundColor: '#FFFFFF', borderRadius: rs(24),
-    paddingHorizontal: rs(13), height: rs(46), flexShrink: 0,
+    flexDirection: 'row', alignItems: 'center', gap: rs(6),
+    backgroundColor: JT.surface, borderRadius: rs(22),
+    borderWidth: 2, borderColor: JT.ink,
+    paddingHorizontal: rs(16), height: rs(44), flexShrink: 0,
   },
-  countTxt: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
-  countEmpty: { backgroundColor: '#ECEDEF' },
-  countTxtEmpty: { color: Colors.textMuted },
+  countTxt: { fontFamily: JT_FONT.bold, fontSize: rf(18), color: JT.ink },
+  countEmpty: { backgroundColor: JT.stack1 },
+  countTxtEmpty: { color: JT.textTertiary },
+});
+
+/**
+ * Нижний ряд под карточкой — макет JT-design: ↺ вернуть · ✕ пропустить ·
+ * ♥ откликнуться · закладка. Большие кнопки — «наклейки»: чёрный контур и
+ * жёсткая тень без размытия (чёрный круг со сдвигом 4 pt под кнопкой — так
+ * она одинакова на iOS, Android и в вебе).
+ */
+function DeckActions({ bottom, onUndo, onSkip, onWant, saved, onSave }: {
+  bottom: number;
+  onUndo: (() => void) | null;
+  onSkip: () => void;
+  onWant: () => void;
+  saved?: boolean;
+  /** Нет — закладки у карточки нет (карьерные сохраняются следующим этапом). */
+  onSave?: () => void;
+}) {
+  return (
+    <View style={[da.wrap, { bottom }]} pointerEvents="box-none">
+      <TouchableOpacity
+        style={[da.small, !onUndo && da.disabled]}
+        disabled={!onUndo}
+        onPress={onUndo ?? undefined}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !onUndo }}
+        accessibilityLabel="Вернуть пропущенную вакансию"
+      >
+        <Ionicons name="arrow-undo" size={rs(22)} color={JT.ink} />
+      </TouchableOpacity>
+
+      <OnboardingTarget targetKey="worker.feed.reject">
+        <View style={da.bigWrap}>
+          <View style={da.bigShadow} />
+          <TouchableOpacity
+            style={[da.big, da.skip]}
+            onPress={onSkip}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Пропустить вакансию"
+          >
+            <Ionicons name="close" size={rs(36)} color={JT.ink} />
+          </TouchableOpacity>
+        </View>
+      </OnboardingTarget>
+
+      <OnboardingTarget targetKey="worker.feed.apply">
+        <View style={da.bigWrap}>
+          <View style={da.bigShadow} />
+          <TouchableOpacity
+            style={[da.big, da.want]}
+            onPress={onWant}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Откликнуться на вакансию"
+          >
+            <Ionicons name="heart" size={rs(32)} color={JT.ink} />
+          </TouchableOpacity>
+        </View>
+      </OnboardingTarget>
+
+      {onSave ? (
+        <OnboardingTarget targetKey="worker.feed.save">
+          <TouchableOpacity
+            style={da.small}
+            onPress={onSave}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={saved ? 'Удалить из избранного' : 'Сохранить вакансию'}
+          >
+            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={rs(22)} color={saved ? JT.accent : JT.ink} />
+          </TouchableOpacity>
+        </OnboardingTarget>
+      ) : <View style={da.smallSpacer} />}
+    </View>
+  );
+}
+
+const da = StyleSheet.create({
+  wrap: {
+    position: 'absolute', left: rs(20), right: rs(20), zIndex: 20, elevation: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(18),
+  },
+  small: {
+    width: rs(48), height: rs(48), borderRadius: rs(24),
+    backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  smallSpacer: { width: rs(48), height: rs(48) },
+  disabled: { opacity: 0.35 },
+  bigWrap: { width: rs(72), height: rs(72) },
+  bigShadow: {
+    position: 'absolute', left: rs(4), top: rs(4),
+    width: rs(68), height: rs(68), borderRadius: rs(34), backgroundColor: JT.ink,
+  },
+  big: {
+    width: rs(68), height: rs(68), borderRadius: rs(34),
+    borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  skip: { backgroundColor: JT.surface },
+  want: { backgroundColor: JT.accent },
 });
 
 function WorkerPermMode() {
@@ -947,7 +1114,7 @@ function WorkerPermMode() {
   // под конкретный чип. Поиск по слову, метро, график, разделы и сортировка
   // убраны совсем — решение владельца.
   const [filters, setFilters] = useState<FeedFilters>(EMPTY_FEED_FILTERS);
-  const [openSheet, setOpenSheet] = useState<FilterSheetKind | null>(null);
+  const [openSheet, setOpenSheet] = useState<FilterSheetKind | 'all' | null>(null);
   // Дневной запас свайпов и плашка «на сегодня всё».
   const energy = useEnergy();
   const [limitOpen, setLimitOpen] = useState(false);
@@ -1465,11 +1632,10 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
-  // Опускаем ряд ✕ / фильтр / ♥ ещё ниже, ближе к плавающему таббару.
-  // Резерв карточки считается от той же координаты, поэтому её видимая высота
-  // увеличивается ровно на столько же и снизу не появляется новая пустота.
-  const deckActionGap = rs(-6);
-  const deckCardGap = rs(8);
+  // Ряд ↺ / ✕ / ♥ / закладка стоит над таббаром с зазором, карточка — над
+  // рядом с запасом под края двух «призраков» колоды (до 17pt), как в макете.
+  const deckActionGap = rs(12);
+  const deckCardGap = rs(26);
   const deckActionSize = rs(68);
   const deckActionBottom = tabBarHeight + deckActionGap;
   const deckBottomReserve = deckActionBottom + deckActionSize + deckCardGap;
@@ -1508,6 +1674,7 @@ function WorkerPermMode() {
             внутренними полями. */}
         <OnboardingTarget targetKey="worker.feed.card" style={styles.cardViewportShell}>
           <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
+          <View style={styles.cardSticker} pointerEvents="none" />
           <GHScrollView
             ref={cardScrollRef}
             style={styles.cardViewportClip}
@@ -1667,27 +1834,12 @@ function WorkerPermMode() {
           </TouchableOpacity>
           </GHScrollView>
 
+          {/* Закладка переехала в нижний ряд (макет JT-design), здесь —
+              только «поделиться». */}
           <View
             style={pS.deckUtilityOverlay}
             pointerEvents="box-none"
           >
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel={permSavedIds.includes(v.id) ? 'Удалить из избранного' : 'Сохранить вакансию'}
-              style={pS.deckUtilityTap}
-              onPress={() => { void toggleSaved(v); }}
-              activeOpacity={0.7}
-            >
-              <OnboardingTarget targetKey="worker.feed.save">
-                <View style={[pS.deckUtilityBtn, permSavedIds.includes(v.id) && pS.deckUtilityBtnSaved]}>
-                  <Ionicons
-                    name={permSavedIds.includes(v.id) ? 'bookmark' : 'bookmark-outline'}
-                    size={21}
-                    color={permSavedIds.includes(v.id) ? Colors.primary : Colors.textSecondary}
-                  />
-                </View>
-              </OnboardingTarget>
-            </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Поделиться вакансией"
@@ -1735,39 +1887,27 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
-          <View style={styles.shiftDeckRow}>
-          <OnboardingTarget targetKey="worker.feed.reject">
-            <TouchableOpacity
-              accessibilityLabel="Отклонить вакансию"
-              style={[styles.deckFloatingAction, styles.deckFloatingSkip]}
-              onPress={() => swSkip(0.5)}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="close" size={34} color={Colors.red} />
-            </TouchableOpacity>
-          </OnboardingTarget>
-
-          <OnboardingTarget targetKey="worker.feed.apply">
-            <TouchableOpacity
-              accessibilityLabel="Откликнуться на вакансию"
-              style={[styles.deckFloatingAction, styles.deckFloatingWant]}
-              onPress={() => swWant(0.5)}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="heart" size={31} color="#fff" />
-            </TouchableOpacity>
-          </OnboardingTarget>
-          </View>
-        </View>
+        <DeckActions
+          bottom={deckActionBottom}
+          onUndo={swLastSkipped ? swUndo : null}
+          onSkip={() => swSkip(0.5)}
+          onWant={() => swWant(0.5)}
+          saved={permSavedIds.includes(v.id)}
+          onSave={() => { void toggleSaved(v); }}
+        />
       </View>
     );
   };
 
+  // Карьерная карточка — макет JT-design 1:1: «наклейка» (контур и жёсткая
+  // тень), знак компании 44, заголовок Unbounded, плашки «место · формат ·
+  // уровень · зарплата», описание обрезано с растворением и кнопкой
+  // «Подробнее». «Подробнее» раскрывает вакансию целиком — описание по
+  // разделам и расположение, — и её листают внутри карточки тем же списком
+  // (card_scroll_test). Вся карточка двигается одним слоем, как своя.
   const renderExtDeckCard = (ev: ExtVacancy) => {
     const displayCompany = ev.company || 'Карьерный сайт';
     const salary = typeof ev.salary === 'number' ? ev.salary : 0;
-    const schedule = ev.schedule;
     // Чипа «вид работ» у карьерной вакансии нет: наши четыре вида — про смены
     // линейного персонала, а старые строки базы угадывали его по названию
     // («Старший разработчик» → «Старший смены»).
@@ -1775,11 +1915,21 @@ function WorkerPermMode() {
     const metroLine = ev.metroStation
       ? METRO_LINES.find(l => l.stations.includes(ev.metroStation!)) ?? null
       : null;
+    const posted = agoRu(ev.firstSeenAt);
+    const levelId = vacancyLevel(ev.title);
+    const level = levelId ? VACANCY_LEVELS.find(x => x.id === levelId)?.label ?? null : null;
+    const formatId = vacancyFormat(ev.schedule, ev.description);
+    const format = formatId ? VACANCY_FORMATS.find(x => x.id === formatId)?.label ?? null : null;
+    // Лента только по Москве (миграция 121): без метро место — «Москва».
+    const place = ev.metroStation ? `м. ${ev.metroStation}` : 'Москва';
+    const expanded = expandedDescriptionId === ev.id;
     return (
       <View style={[styles.cardArea, { paddingBottom: deckBottomReserve }]}>
         {deckCards[2] ? <View style={[styles.ghost2, { bottom: deckBottomReserve }]} /> : null}
         {deckCards[1] ? <View style={[styles.ghost1, { bottom: deckBottomReserve }]} /> : null}
         <View style={styles.cardViewportShell}>
+          <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
+          <View style={styles.cardSticker} pointerEvents="none" />
           <GHScrollView
             ref={cardScrollRef}
             style={styles.cardViewportClip}
@@ -1789,89 +1939,141 @@ function WorkerPermMode() {
             onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
             onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
             onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
-            refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+            refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />}
           >
           <GestureDetector gesture={swDeck.gesture}>
-            <Reanimated.View style={[styles.cardAnimated, swDeck.cardStyle]}>
+            <Reanimated.View style={styles.cardAnimated}>
               <View style={styles.card}>
-                <Reanimated.View style={[styles.wantOverlay, swDeck.wantStyle]}>
-                  <Text style={styles.wantText}>JUPITER ♥</Text>
-                </Reanimated.View>
-                <Reanimated.View style={[styles.skipOverlay, swDeck.skipStyle]}>
-                  <Text style={styles.skipText}>НЕТ ✕</Text>
-                </Reanimated.View>
-
                 <View style={styles.cardBody}>
-                  <View style={styles.cardTop}>
-                    <View style={styles.companyRow}>
-                      <CompanyMark company={displayCompany} size={34} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.companyName} numberOfLines={1} adjustsFontSizeToFit>
-                          {displayCompany}
-                        </Text>
-                        <Text style={[styles.postedAgo, { color: Colors.primary }]}>Карьерный сайт</Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.jobTitle} numberOfLines={3}>{ev.title}</Text>
-
-                    <View style={styles.chipsRow}>
-                      {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
-                      {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" textSize={11} /> : null}
-                      {ev.metroStation ? <Chip label={ev.metroStation} variant="neutral" icon="subway-outline" textSize={11} /> : null}
+                  <View style={jt.head}>
+                    <CompanyMark company={displayCompany} size={rs(44)} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={jt.company} numberOfLines={1}>{displayCompany}</Text>
+                      <Text style={jt.meta} numberOfLines={1}>
+                        {posted ? `Карьерный сайт · ${posted}` : 'Карьерный сайт'}
+                      </Text>
                     </View>
                   </View>
 
-                  <View style={styles.cardMiddle}>
-                    {(ev.metroStation || ev.address) ? (
-                      <View style={pS.sectionBlock}>
-                        <View style={pS.blockHead}>
-                          <Ionicons name="location-outline" size={16} color={Colors.textPrimary} />
-                          <Text style={pS.descTitle}>Расположение</Text>
-                        </View>
-                        {ev.metroStation ? (
-                          <View style={pS.locRow}>
-                            {metroLine ? (
-                              <View style={[pS.metroDot, { backgroundColor: metroLine.color }]} />
-                            ) : (
-                              <Ionicons name="subway-outline" size={16} color={Colors.textMuted} />
-                            )}
-                            <View style={{ flex: 1 }}>
-                              {metroLine ? <Text style={pS.metroLineName}>{metroLine.name}</Text> : null}
-                              <Text style={pS.locValue}>{ev.metroStation}</Text>
-                            </View>
-                          </View>
-                        ) : null}
-                        {ev.address ? (
-                          <View style={pS.locRow}>
-                            <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
-                            <Text style={[pS.locValue, { flex: 1 }]}>{ev.address}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    ) : null}
+                  <Text style={jt.title} numberOfLines={expanded ? undefined : 3}>{ev.title}</Text>
 
-                    <View style={pS.sectionBlock}>
+                  <View style={jt.tags}>
+                    <View style={jt.tag}>
+                      <Ionicons name="location-outline" size={rs(16)} color={JT.ink} />
+                      <Text style={jt.tagTxt} numberOfLines={1}>{place}</Text>
+                    </View>
+                    {format ? <View style={jt.tag}><Text style={jt.tagTxt}>{format}</Text></View> : null}
+                    {level ? <View style={jt.tag}><Text style={jt.tagTxt}>{level}</Text></View> : null}
+                    <View style={[jt.tag, jt.tagSalary]}>
+                      <Text style={jt.tagTxt} numberOfLines={1}>
+                        {salary > 0
+                          ? `${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`
+                          : 'з/п не указана'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {expanded ? (
+                    <View style={jt.full}>
                       {description ? (
-                        <View style={pS.blockHead}>
-                          <Ionicons name="document-text-outline" size={16} color={Colors.textPrimary} />
-                          <Text style={pS.descTitle}>Описание вакансии</Text>
+                        <View style={pS.sectionBlock}>
+                          <View style={pS.blockHead}>
+                            <Ionicons name="document-text-outline" size={16} color={JT.ink} />
+                            <Text style={pS.descTitle}>Описание вакансии</Text>
+                          </View>
+                          <DescriptionBlocks text={description} />
                         </View>
                       ) : null}
-                      {description ? <DescriptionBlocks text={description} /> : null}
+                      {(ev.metroStation || ev.address) ? (
+                        <View style={pS.sectionBlock}>
+                          <View style={pS.blockHead}>
+                            <Ionicons name="location-outline" size={16} color={JT.ink} />
+                            <Text style={pS.descTitle}>Расположение</Text>
+                          </View>
+                          {ev.metroStation ? (
+                            <View style={pS.locRow}>
+                              {metroLine ? (
+                                <View style={[pS.metroDot, { backgroundColor: metroLine.color }]} />
+                              ) : (
+                                <Ionicons name="subway-outline" size={16} color={Colors.textMuted} />
+                              )}
+                              <View style={{ flex: 1 }}>
+                                {metroLine ? <Text style={pS.metroLineName}>{metroLine.name}</Text> : null}
+                                <Text style={pS.locValue}>{ev.metroStation}</Text>
+                              </View>
+                            </View>
+                          ) : null}
+                          {ev.address ? (
+                            <View style={pS.locRow}>
+                              <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
+                              <Text style={[pS.locValue, { flex: 1 }]}>{ev.address}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      ) : null}
+                      <TouchableOpacity
+                        style={jt.moreBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (swDeck.wasSwipe()) return;
+                          setExpandedDescriptionId(null);
+                          resetCardScroll();
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Свернуть вакансию"
+                      >
+                        <Text style={jt.moreTxt}>Свернуть</Text>
+                        <Ionicons name="chevron-up" size={rs(18)} color={JT.ink} />
+                      </TouchableOpacity>
                     </View>
-                  </View>
+                  ) : (
+                    <>
+                      {description ? (
+                        <View style={jt.previewWrap}>
+                          <Text style={jt.preview} numberOfLines={5}>{description}</Text>
+                          <LinearGradient
+                            colors={['rgba(255,255,255,0)', JT.surface]}
+                            style={jt.previewFade}
+                            pointerEvents="none"
+                          />
+                        </View>
+                      ) : null}
+                      <View style={{ flexGrow: 1 }} />
+                      <TouchableOpacity
+                        style={jt.moreBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (swDeck.wasSwipe()) return;
+                          setExpandedDescriptionId(ev.id);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Подробнее о вакансии"
+                        testID="card-more"
+                      >
+                        <Text style={jt.moreTxt}>Подробнее</Text>
+                        <Ionicons name="chevron-down" size={rs(18)} color={JT.ink} />
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             </Reanimated.View>
           </GestureDetector>
           </GHScrollView>
+
+          <Reanimated.View pointerEvents="none" style={[styles.wantOverlay, swDeck.wantStyle]}>
+            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[styles.skipOverlay, swDeck.skipStyle]}>
+            <Text style={styles.skipText}>НЕТ ✕</Text>
+          </Reanimated.View>
+          </Reanimated.View>
         </View>
 
         {moreBelow ? (
           <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve }]} pointerEvents="none">
             <LinearGradient
-              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', Colors.bg]}
+              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', JT.surface]}
               style={StyleSheet.absoluteFill}
             />
             <View style={pS.scrollHint}>
@@ -1881,26 +2083,12 @@ function WorkerPermMode() {
           </View>
         ) : null}
 
-        <View style={[styles.shiftDeckActions, { bottom: deckActionBottom }]} pointerEvents="box-none">
-          <View style={styles.shiftDeckRow}>
-            <TouchableOpacity
-              accessibilityLabel="Пропустить"
-              style={[styles.deckFloatingAction, styles.deckFloatingSkip]}
-              onPress={() => swSkip(0.5)}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="close" size={34} color={Colors.red} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              accessibilityLabel="Подать заявку через Jupiter"
-              style={[styles.deckFloatingAction, styles.deckFloatingWant]}
-              onPress={() => swWant(0.5)}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="heart" size={31} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
+        <DeckActions
+          bottom={deckActionBottom}
+          onUndo={swLastSkipped ? swUndo : null}
+          onSkip={() => swSkip(0.5)}
+          onWant={() => swWant(0.5)}
+        />
       </View>
     );
   };
@@ -1916,7 +2104,6 @@ function WorkerPermMode() {
       )}
 
       <FeedSearchHeader
-        onUndo={swLastSkipped ? swUndo : null}
         energy={energy.left}
         onEnergyPress={() => setLimitOpen(true)}
       />
@@ -1925,7 +2112,7 @@ function WorkerPermMode() {
           27.09.2026): всегда на экране, даже когда колода пуста или ещё
           грузится — иначе пустой фильтр был бы тупиком. */}
       <OnboardingTarget targetKey="worker.feed.filter">
-        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} />
+        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} onOpenAll={() => setOpenSheet('all')} />
       </OnboardingTarget>
       {/* Пустая колода без загрузки прячет счётчик: он мог остаться от
           прежнего выбора чипов (свежий пул ещё не разложился в карточки),
@@ -1933,7 +2120,9 @@ function WorkerPermMode() {
           как противоречие, а не справка. */}
       {(swTop || careerLoading) ? (
         <Text style={pS.totalTxt} testID="feed-total">
-          {careerLoading ? 'Считаем вакансии…' : `Всего ${totalCount} ${pluralVacancies(totalCount)}`}
+          {careerLoading ? 'Считаем вакансии…'
+            : permFiltersActive ? `${totalCount.toLocaleString('ru-RU')} ${pluralVacancies(totalCount)} по вашим фильтрам`
+            : `Всего ${totalCount.toLocaleString('ru-RU')} ${pluralVacancies(totalCount)}`}
         </Text>
       ) : null}
 
@@ -1980,7 +2169,16 @@ function WorkerPermMode() {
         </View>
       ) : null}
 
-      {openSheet && (
+      {openSheet === 'all' && (
+        <AllFiltersSheet
+          filters={filters}
+          onPick={kind => setOpenSheet(kind)}
+          onReset={() => applyFilters(EMPTY_FEED_FILTERS)}
+          onClose={() => setOpenSheet(null)}
+          bottomInset={tabBarHeight}
+        />
+      )}
+      {openSheet && openSheet !== 'all' && (
         <FilterSheet
           kind={openSheet}
           initial={filters}
@@ -2328,9 +2526,9 @@ function WorkerCareer() {
       // iOS standalone PWA берёт фон зоны со временем из подложки документа,
       // а не только из theme-color. Поэтому красим и HTML/BODY, пока активна
       // вкладка вакансий. Родительский Stack для tabs прозрачный (см. _layout).
-      if (meta) meta.setAttribute('content', Colors.bgWarm);
-      document.documentElement.style.backgroundColor = Colors.bgWarm;
-      document.body.style.backgroundColor = Colors.bgWarm;
+      if (meta) meta.setAttribute('content', JT.background);
+      document.documentElement.style.backgroundColor = JT.background;
+      document.body.style.backgroundColor = JT.background;
 
       return () => {
         if (meta) meta.setAttribute('content', previousTheme || '#F5F7FA');
@@ -2340,7 +2538,7 @@ function WorkerCareer() {
     }, [])
   );
 
-  if (!currentUser) return <View style={{ flex: 1, backgroundColor: Colors.bgWarm }} />;
+  if (!currentUser) return <View style={{ flex: 1, backgroundColor: JT.background }} />;
 
   return (
     // Тёплый фон только у ленты работника: экран работодателя — список
@@ -2366,6 +2564,39 @@ export default function HomeScreen() {
 // ─────────────────────────────────────────────────
 // Permanent mode styles
 // ─────────────────────────────────────────────────
+// Карьерная карточка — макет JT-design.
+const jt = StyleSheet.create({
+  head: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12),
+    paddingHorizontal: rs(20), paddingTop: rs(20),
+  },
+  company: { fontFamily: JT_FONT.bold, fontSize: rf(17), color: JT.ink },
+  meta: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(2) },
+  title: {
+    fontFamily: JT_FONT.head, fontSize: rf(21), lineHeight: rf(25), letterSpacing: -0.2,
+    color: JT.ink, paddingHorizontal: rs(20), marginTop: rs(14),
+  },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), paddingHorizontal: rs(20), marginTop: rs(14) },
+  tag: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(6),
+    backgroundColor: JT.background, borderRadius: rs(12),
+    paddingHorizontal: rs(12), paddingVertical: rs(7), maxWidth: '100%',
+  },
+  tagSalary: { backgroundColor: JT.accentSoft },
+  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink, flexShrink: 1 },
+  previewWrap: { paddingHorizontal: rs(20), marginTop: rs(14) },
+  preview: { fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(22), color: JT.textBody },
+  previewFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: rf(26) },
+  full: { paddingHorizontal: rs(20), paddingTop: rs(16), gap: rs(16) },
+  moreBtn: {
+    alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: rs(6),
+    height: rs(40), paddingHorizontal: rs(18), borderRadius: rs(20),
+    borderWidth: 2, borderColor: JT.borderSoft,
+    marginTop: rs(14), marginBottom: rs(18),
+  },
+  moreTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
+});
+
 const pS = StyleSheet.create({
   // — плашка подтверждения перехода к партнёрской вакансии —
   confirmOverlay: {
@@ -2513,7 +2744,6 @@ const pS = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#F2F3F5',
   },
-  deckUtilityBtnSaved: { backgroundColor: Colors.primaryLight },
 
   // — card —
   card: {
@@ -2692,7 +2922,7 @@ const styles = StyleSheet.create({
   companyFallback: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   companyFallbackText: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
   safe: { flex: 1, backgroundColor: Colors.bg },
-  safeWarm: { flex: 1, backgroundColor: Colors.bgWarm },
+  safeWarm: { flex: 1, backgroundColor: JT.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingVertical: rs(12),
@@ -2723,28 +2953,36 @@ const styles = StyleSheet.create({
   dcCntActive: { color: 'rgba(255,255,255,0.8)' },
   // Нижний резерв задаётся динамически рядом с карточкой: высота таббара
   // + 68pt кнопки + одинаковые поля по 13pt сверху и снизу.
-  cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(13), paddingTop: rs(13), paddingBottom: 0 },
-  ghost1: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.97 }, { translateY: 6 }], opacity: 0.5, zIndex: 0 },
-  ghost2: { position: 'absolute', left: rs(13), right: rs(13), top: rs(13), bottom: 0, backgroundColor: Colors.bg, borderRadius: Radius.card, transform: [{ scale: 0.94 }, { translateY: 12 }], opacity: 0.3, zIndex: 0 },
+  // Колода — макет JT-design: карточка-«наклейка», под ней края двух
+  // следующих (stack-1 / stack-2 с тем же чёрным контуром).
+  cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(20), paddingTop: rs(8), paddingBottom: 0 },
+  ghost1: { position: 'absolute', left: rs(20), right: rs(25), top: rs(8), bottom: 0, backgroundColor: JT.stack1, borderRadius: rs(26), borderWidth: 2, borderColor: JT.ink, transform: [{ translateY: rs(9) }, { scaleX: 0.95 }], zIndex: 0 },
+  ghost2: { position: 'absolute', left: rs(20), right: rs(25), top: rs(8), bottom: 0, backgroundColor: JT.stack2, borderRadius: rs(26), borderWidth: 2, borderColor: JT.ink, transform: [{ translateY: rs(17) }, { scaleX: 0.88 }], zIndex: 0 },
   // Скругление принадлежит viewport, а не прокручиваемому содержимому.
   // Поэтому верх и низ карточки остаются закруглёнными на любой позиции скролла.
   cardViewportShell: {
     flex: 1,
-    borderRadius: rs(24),
-    backgroundColor: Colors.bg,
-    ...Shadow.card,
+    // Место под жёсткую тень «наклейки» справа и снизу.
+    marginRight: rs(5),
+    marginBottom: rs(5),
   },
   // One transform owner for the whole visual card. Interactive overlays stay
   // outside GestureDetector but inside this layer, so they never look pinned
   // to the screen while the vacancy is being swiped.
   deckSwipeLayer: { flex: 1 },
+  // Жёсткая тень без размытия (5, 5) — чёрная копия карточки под ней: так
+  // она одинакова на iOS, Android и в вебе, где shadow* её не нарисуют.
+  cardSticker: {
+    position: 'absolute', left: rs(5), top: rs(5), right: -rs(5), bottom: -rs(5),
+    borderRadius: rs(26), backgroundColor: JT.ink,
+  },
   cardViewportClip: {
     flex: 1,
-    borderRadius: rs(24),
+    borderRadius: rs(26),
     overflow: 'hidden',
-    backgroundColor: Colors.bg,
-    borderWidth: 1,
-    borderColor: '#E3E5E9',
+    backgroundColor: JT.surface,
+    borderWidth: 2,
+    borderColor: JT.ink,
   },
   // flexGrow, а не flex: короткая вакансия всё так же занимает экран целиком,
   // а длинная вырастает выше него и листается внутри списка.
@@ -2753,7 +2991,7 @@ const styles = StyleSheet.create({
   // Нажатия оно не ловит: кнопок здесь ровно две — закладка и «поделиться».
   cardBody: { flexGrow: 1 },
   postedAgo: { fontSize: rf(12), fontWeight: '500', color: Colors.textMuted, flexShrink: 0 },
-  card: { flexGrow: 1, backgroundColor: Colors.bg },
+  card: { flexGrow: 1, backgroundColor: JT.surface },
   wantOverlay: { position: 'absolute', top: rs(20), left: rs(20), zIndex: 80, elevation: 80, backgroundColor: Colors.green, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '-10deg' }] },
   wantText: { color: '#fff', fontSize: rf(20), fontWeight: '800' },
   skipOverlay: { position: 'absolute', top: rs(20), right: rs(20), zIndex: 80, elevation: 80, backgroundColor: Colors.red, borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), transform: [{ rotate: '10deg' }] },
@@ -2814,15 +3052,6 @@ const styles = StyleSheet.create({
   },
   deckFloatingSkip: { backgroundColor: '#FFFFFF' },
   deckFloatingWant: { width: rs(68), height: rs(68), borderRadius: rs(34), backgroundColor: Colors.primary, borderColor: Colors.primary },
-  // Плавающие кнопки сменной колоды + подсказка «Свайпай» — как в «Работе» и на
-  // образце. Колонка: ряд кнопок сверху, подсказка снизу, прижата к низу карточки.
-  shiftDeckActions: {
-    position: 'absolute', left: rs(21), right: rs(21), bottom: 0, zIndex: 20, elevation: 20,
-    alignItems: 'center', gap: rs(13),
-  },
-  shiftDeckRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(34),
-  },
   swipeHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(9), marginTop: rs(1) },
   swipeHint: { fontSize: rf(12), lineHeight: rf(16), color: '#9AA3B2', fontWeight: '500' },
   cardActionItem: {
