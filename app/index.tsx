@@ -18,7 +18,6 @@ import { hideWebSplash, setWebSplashProgress } from '@/lib/webSplash';
 
 import { rs } from '@/constants/scale';
 import { dbCountUsers, dbRecordGuestEvent } from '@/services/db';
-import { LegalLinks } from '@/components/LegalLinks';
 
 const USER_COUNT_KEY = 'cached_user_count';
 
@@ -34,7 +33,8 @@ const r = (n: number) => Math.round(n * sc);
  * Неразрывные пробелы — чтобы на 320 px не повисало одно слово на строке.
  */
 const SLIDES = [
-  { key: 'swipe', title: 'Постоянная IT-работа в Москве — одним свайпом' },
+  // \u00A0 перед тире: иначе на узком экране строка начиналась с «— одним свайпом».
+  { key: 'swipe', title: 'Постоянная IT-работа в\u00A0Москве\u00A0— одним\u00A0свайпом' },
   { key: 'sites', title: 'Вакансии прямо с сайтов компаний' },
   { key: 'apply', title: 'Отклик на сайт компании отправим за вас' },
 ] as const;
@@ -81,24 +81,43 @@ function SitesArt({ size }: { size: number }) {
   );
 }
 
-// Слайд 3: тот же персонаж, что на слайде 1, + бейдж-самолётик у телефона —
-// «отправим отклик за вас».
+// Слайд 3: карточка отклика с отметкой «отправлен» и самолётиком. Раньше тут
+// повторялся персонаж первого слайда — слайды выглядели одинаково.
 function ApplyArt({ size }: { size: number }) {
-  const artW = size * 0.77;
   return (
-    <View style={{ width: artW, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Image
-        source={require('@/assets/images/char-worker-crop.png')}
-        style={{ width: artW, height: size }}
-        contentFit="contain"
-        transition={200}
-      />
-      <ArtBadge size={size * 0.32} icon="paper-plane" style={{ left: -size * 0.05, top: size * 0.06 }} />
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} viewBox="0 0 160 160">
+        <Rect x={16} y={30} width={128} height={100} rx={18} fill="#FFFFFF" stroke="#171717" strokeWidth={2.5} />
+        <Circle cx={38} cy={56} r={11} fill={Colors.primary} />
+        <Rect x={56} y={49} width={64} height={7} rx={3.5} fill={Colors.textSecondary} />
+        <Rect x={56} y={61} width={40} height={5} rx={2.5} fill={Colors.divider} />
+        <Rect x={30} y={82} width={100} height={6} rx={3} fill={Colors.divider} />
+        <Rect x={30} y={94} width={76} height={6} rx={3} fill={Colors.divider} />
+        <Rect x={30} y={108} width={58} height={14} rx={7} fill={Colors.green} />
+        <Line x1={37} y1={115} x2={41} y2={119} stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" />
+        <Line x1={41} y1={119} x2={48} y2={111} stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" />
+        <Rect x={53} y={113} width={28} height={4} rx={2} fill="#FFFFFF" />
+      </Svg>
+      <ArtBadge size={size * 0.32} icon="paper-plane" style={{ right: -size * 0.03, top: size * 0.02 }} />
     </View>
   );
 }
 
+// Все три картинки на одном мягком круге — разные по стилю рисунки
+// читаются как одна серия.
 function SlideArt({ index, size }: { index: number; size: number }) {
+  return (
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: Colors.primaryLight,
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      <SlideArtInner index={index} size={size * 0.86} />
+    </View>
+  );
+}
+
+function SlideArtInner({ index, size }: { index: number; size: number }) {
   if (index === 0) {
     return (
       <Image
@@ -111,6 +130,12 @@ function SlideArt({ index, size }: { index: number; size: number }) {
   }
   if (index === 1) return <SitesArt size={size} />;
   return <ApplyArt size={size} />;
+}
+
+// 1 человек, 2–4 человека, 5+ человек; 12–14 — «человек».
+function peopleWord(n: number): string {
+  const d = n % 10, h = n % 100;
+  return d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'человека' : 'человек';
 }
 
 export default function RootScreen() {
@@ -314,8 +339,14 @@ export default function RootScreen() {
                 showsHorizontalScrollIndicator={false}
                 decelerationRate="fast"
                 bounces={false}
-                onMomentumScrollEnd={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
-                onScrollEndDrag={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
+                // Слайд считаем по ходу прокрутки, а не в конце: на iOS
+                // onMomentumScrollEnd внутри вертикального списка приходил не
+                // всегда, и на всех слайдах горела первая точка.
+                scrollEventThrottle={32}
+                onScroll={e => {
+                  const i = Math.max(0, Math.min(SLIDES.length - 1, Math.round(e.nativeEvent.contentOffset.x / slideWidth)));
+                  setActiveSlide(prev => (prev === i ? prev : i));
+                }}
               >
                 {SLIDES.map((slide, i) => (
                   <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
@@ -348,7 +379,7 @@ export default function RootScreen() {
         <Animated.View style={[styles.userCountCard, { opacity: introFade }]}>
           <Text style={styles.userCountTxt}>
             {userCountReady && userCount != null
-              ? <>Более <Text style={styles.userCountNum}>{userCount.toLocaleString('ru')}</Text> пользователей уже с нами!</>
+              ? <>С нами уже <Text style={styles.userCountNum}>{userCount.toLocaleString('ru')}</Text> {peopleWord(userCount)}</>
               : 'Сообщество JobToo растёт'
             }
           </Text>
@@ -396,21 +427,26 @@ export default function RootScreen() {
             <Text style={styles.guestLinkTxt}>Смотреть вакансии без регистрации</Text>
           </TouchableOpacity>
 
-          {/* ── Работодателям ── */}
-          <View style={styles.employerRow}>
-            <Text style={styles.employerGray}>Работодатель? </Text>
+          {/* ── Второстепенное — одной тихой строкой. Карточка «Все документы»
+              весила как главная кнопка, хотя это справка. ── */}
+          <View style={styles.footerRow}>
             <TouchableOpacity
               onPress={() => router.push('/register-employer')}
               testID="entry-employer"
               accessibilityLabel="Разместить вакансию"
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
             >
-              <Text style={styles.employerLink}>Разместить вакансию</Text>
+              <Text style={styles.footerLink}>Работодателям</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Документы доступны до регистрации — прямо со стартового экрана. */}
-          <View style={{ marginTop: r(10) }}>
-            <LegalLinks />
+            <Text style={styles.footerDot}>·</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/legal')}
+              testID="entry-legal"
+              accessibilityLabel="Все документы"
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            >
+              <Text style={styles.footerLink}>Документы</Text>
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.version}>JobToo v{Constants.expoConfig?.version ?? '1.4.0'}</Text>
@@ -421,8 +457,9 @@ export default function RootScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Тёплый фон — как в ленте: экран продаёт одно действие, а не читается.
-  safe: { flex: 1, backgroundColor: Colors.bgWarm },
+  // Белый фон (решение владельца 27.09): персиковый делал экран мутным, и
+  // белые кнопки на нём «плавали». Оранжевый — только акцент.
+  safe: { flex: 1, backgroundColor: '#FFFFFF' },
 
   scroll: {
     flexGrow: 1,
@@ -460,21 +497,12 @@ const styles = StyleSheet.create({
   },
   dot: {
     width: r(7), height: r(7), borderRadius: r(4),
-    // Тёмный и полупрозрачный — иначе на тёплом фоне не видно вовсе.
-    backgroundColor: 'rgba(17,17,17,0.25)',
+    backgroundColor: 'rgba(17,17,17,0.15)',
   },
   dotActive: { width: r(18), backgroundColor: Colors.primary },
 
-  userCountCard: {
-    alignSelf: 'center',
-    marginTop: r(4),
-    paddingVertical: r(6), paddingHorizontal: r(14),
-    borderRadius: r(20),
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    backgroundColor: '#FFFFFF',
-  },
-  userCountTxt: { fontSize: r(12), color: Colors.textSecondary },
+  userCountCard: { alignSelf: 'center', marginTop: r(6) },
+  userCountTxt: { fontSize: r(13), color: Colors.textSecondary },
   userCountNum: { fontWeight: '800', color: Colors.primary },
 
   // ── Главное действие ──
@@ -488,7 +516,7 @@ const styles = StyleSheet.create({
   loginBtn: {
     width: '100%', height: r(52), borderRadius: rs(100),
     marginTop: r(10),
-    borderWidth: 1.5, borderColor: Colors.primary,
+    borderWidth: 1.5, borderColor: Colors.primaryBorder,
     backgroundColor: '#FFFFFF',
     alignItems: 'center', justifyContent: 'center',
   },
@@ -502,12 +530,12 @@ const styles = StyleSheet.create({
   },
   guestLinkTxt: { fontSize: r(14), fontWeight: '700', color: Colors.textSecondary },
 
-  employerRow: {
+  footerRow: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    marginTop: r(14),
+    gap: r(8), marginTop: r(18),
   },
-  employerGray: { fontSize: r(13), color: Colors.textSecondary },
-  employerLink: { fontSize: r(13), fontWeight: '800', color: Colors.primary },
+  footerLink: { fontSize: r(13), fontWeight: '600', color: Colors.textSecondary },
+  footerDot: { fontSize: r(13), color: Colors.textMuted },
 
   version: { textAlign: 'center', fontSize: r(11), color: Colors.textMuted, marginTop: r(8) },
 });
