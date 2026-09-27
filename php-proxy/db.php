@@ -4274,10 +4274,10 @@ try {
         }
 
         // ── Коды из писем ─────────────────────────────────────────────────
-        // args: [email, purpose]. register — почта ещё не занята; reset —
-        // отвечаем одинаково, есть такой аккаунт или нет (иначе по форме
-        // восстановления можно перебирать, чья почта у нас есть); attach —
-        // только с сессией, почта не занята другим аккаунтом.
+        // args: [email, purpose]. register — почта ещё не занята; reset и
+        // login — отвечаем одинаково, есть такой аккаунт или нет (иначе по
+        // форме входа/восстановления можно перебирать, чья почта у нас есть);
+        // attach — только с сессией, почта не занята другим аккаунтом.
         case 'dbAuthSendCode': {
             $purpose = (string)($args[1] ?? '');
             if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
@@ -4309,7 +4309,10 @@ try {
                 }
                 $userId = (string)$authUid;
             }
-            if ($purpose === 'reset') {
+            // reset и login отвечают одинаково независимо от того, есть ли
+            // такая почта: иначе по форме входа/восстановления можно
+            // перебирать, чья почта у нас есть.
+            if ($purpose === 'reset' || $purpose === 'login') {
                 if (!$owner || !empty($owner['is_blocked'])) { $data = ['ok' => true]; break; }
                 $userId = (string)$owner['id'];
             }
@@ -4330,7 +4333,10 @@ try {
             break;
         }
 
-        // args: [email, purpose, code] → { ticket } — квитанция для последнего шага.
+        // args: [email, purpose, code] → { ticket } — квитанция для последнего
+        // шага. Кроме login: там анкеты после кода нет, поэтому вместо
+        // квитанции сразу { user, session_token } — код одноразовый, и вторым
+        // запросом предъявлять уже нечего.
         case 'dbAuthVerifyCode': {
             $purpose = (string)($args[1] ?? '');
             if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
@@ -4350,6 +4356,21 @@ try {
             // его из чужой сессии нельзя.
             if ($purpose === 'attach' && (string)($res['user_id'] ?? '') !== (string)$authUid) {
                 jt_respond(['error' => 'Код выпущен для другого аккаунта'], 403); exit;
+            }
+            if ($purpose === 'login') {
+                // Код login выпускается только существующему аккаунту с этой
+                // почтой (dbAuthSendCode), но проверяем оба условия ещё раз
+                // здесь: id из кода и email из запроса должны совпасть, а
+                // аккаунт — не быть заблокирован.
+                $row = sb_single('jm_users', ['id' => 'eq.' . (string)($res['user_id'] ?? ''),
+                    'email' => 'eq.' . $email], 'id,is_blocked');
+                if (!$row || !empty($row['is_blocked'])) {
+                    jt_respond(['error' => 'Не получилось войти. Попробуйте ещё раз'], 403); exit;
+                }
+                jt_try_reset('login');
+                $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+                    'session_token' => jt_session_issue((string)$row['id'])];
+                break;
             }
             // Счётчик неверных кодов НЕ обнуляем удачным: иначе, подтверждая
             // коды со своего ящика, можно было бы сбрасывать себе лимит.

@@ -3,19 +3,18 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
   ScrollView, Dimensions, Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useApp } from '@/hooks/useApp';
 import { Colors } from '@/constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SplashLoader, { useLoadingPercent, DrawnArt, bootElapsed, SPLASH_MIN_MS } from '@/components/SplashLoader';
-import { ICON_WORKER, ICON_EMPLOYER } from '@/constants/roleIcons';
-import { Ionicons } from '@expo/vector-icons';
+import SplashLoader, { useLoadingPercent, bootElapsed, SPLASH_MIN_MS } from '@/components/SplashLoader';
 import Constants from 'expo-constants';
 import { hideWebSplash, setWebSplashProgress } from '@/lib/webSplash';
 
-import { rs, rf } from '@/constants/scale';
+import { rs } from '@/constants/scale';
 import { dbCountUsers, dbRecordGuestEvent } from '@/services/db';
 import { LegalLinks } from '@/components/LegalLinks';
 
@@ -142,103 +141,32 @@ export default function RootScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         bounces={false}
-        scrollEnabled={false}
       >
-        <View style={{ minHeight: r(8) }} />
-
         {/* ── Лого ── */}
         <Animated.View style={[styles.logoRow, { opacity: introFade }]}>
           <Text style={styles.logo}>
             <Text style={styles.logoDark}>Job</Text>
             <Text style={styles.logoOrange}>Too</Text>
           </Text>
-          <Text style={styles.tagline}>Постоянная работа — в одной ленте</Text>
+        </Animated.View>
+
+        {/* ── Иллюстрация ── */}
+        <Animated.View style={[styles.artWrap, { opacity: introFade }]}>
+          <Image
+            source={require('@/assets/images/char-worker-crop.png')}
+            style={styles.art}
+            contentFit="contain"
+            transition={200}
+          />
         </Animated.View>
 
         {/* ── Заголовок ── */}
         <Animated.View style={[styles.headlineBlock, { opacity: introFade }]}>
-          <Text style={styles.headline}>{'Выберите,\nкто вы'}</Text>
-          <Text style={styles.headlineSub}>{'Мы адаптируем приложение\nпод ваши задачи'}</Text>
+          <Text style={styles.headline}>Постоянная IT-работа в Москве — одним свайпом</Text>
+          <Text style={styles.headlineSub}>Вакансии компаний напрямую. Откликайтесь в один жест.</Text>
         </Animated.View>
 
-        {/* ══ Карточка 1: Ищу работу ══ */}
-        <TouchableOpacity
-          style={styles.card}
-          activeOpacity={0.85}
-          onPress={() => router.push('/register-worker')}
-        >
-          <View style={styles.cardIcon}>
-            <DrawnArt
-              strokes={ICON_WORKER}
-              viewBox="0 0 100 100"
-              width={r(72)}
-              height={r(72)}
-              duration={900}
-              delay={120}
-              color={Colors.primary}
-            />
-          </View>
-          <View style={styles.cardTextWrap}>
-            <Text style={styles.cardTitle}>Ищу работу</Text>
-            <Text style={styles.cardSub}>{'Постоянная работа —\nсвайпайте и откликайтесь'}</Text>
-          </View>
-          <View style={styles.arrowBtn}>
-            <Ionicons name="chevron-forward" size={r(18)} color={Colors.primary} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ══ Карточка 2: Ищу работника ══ */}
-        <TouchableOpacity
-          style={[styles.card, { marginTop: r(16) }]}
-          activeOpacity={0.85}
-          onPress={() => router.push('/register-employer')}
-        >
-          <View style={styles.cardIcon}>
-            <DrawnArt
-              strokes={ICON_EMPLOYER}
-              viewBox="0 0 100 100"
-              width={r(72)}
-              height={r(72)}
-              duration={900}
-              delay={560}
-              color={Colors.primary}
-            />
-          </View>
-          <View style={styles.cardTextWrap}>
-            <Text style={styles.cardTitle}>Ищу работника</Text>
-            <Text style={styles.cardSub}>{'Размещайте вакансии\nи находите сотрудников'}</Text>
-          </View>
-          <View style={styles.arrowBtn}>
-            <Ionicons name="chevron-forward" size={r(18)} color={Colors.primary} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ══ Посмотреть без регистрации ══ */}
-        {/* Снимаем стену регистрации: даём заглянуть в ленту вакансий как
-            гость. Любое действие внутри попросит зарегистрироваться. */}
-        <TouchableOpacity
-          style={styles.guestBtn}
-          activeOpacity={0.7}
-          onPress={() => {
-            void dbRecordGuestEvent('guest_started');
-            enterGuest();
-            router.replace('/(tabs)');
-          }}
-        >
-          <Ionicons name="eye-outline" size={r(17)} color={Colors.primary} />
-          <Text style={styles.guestBtnTxt}>Посмотреть вакансии без регистрации</Text>
-        </TouchableOpacity>
-
-        {/* ── Преимущества ── */}
-        <Animated.View style={[styles.featuresRow, { opacity: introFade }]}>
-          <Text style={styles.featureTxt}>Отклик в один свайп</Text>
-          <Text style={styles.featureDot}>·</Text>
-          <Text style={styles.featureTxt}>Без комиссии</Text>
-          <Text style={styles.featureDot}>·</Text>
-          <Text style={styles.featureTxt}>Поддержка в приложении</Text>
-        </Animated.View>
-
-        {/* ── Счётчик пользователей ── */}
+        {/* ── Счётчик пользователей: социальное доказательство рядом с призывом ── */}
         <Animated.View style={[styles.userCountCard, { opacity: introFade }]}>
           <Text style={styles.userCountTxt}>
             {userCountReady && userCount != null
@@ -248,35 +176,80 @@ export default function RootScreen() {
           </Text>
         </Animated.View>
 
-        <View style={{ flex: 1, minHeight: r(12) }} />
+        <View style={{ flex: 1, minHeight: r(8) }} />
 
-        {/* ── Вход ── */}
-        <Animated.View style={[styles.loginCard, { opacity: introFade }]}>
-          <Text style={styles.loginGray}>Уже есть аккаунт? </Text>
-          <TouchableOpacity onPress={() => router.push('/login')}>
-            <Text style={styles.loginLink}>Войти</Text>
+        {/* ══ Главное действие: зарегистрироваться ══ */}
+        <Animated.View style={{ opacity: introFade, width: '100%' }}>
+          <TouchableOpacity
+            style={styles.registerBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push('/register-worker')}
+            testID="entry-register"
+            accessibilityLabel="Зарегистрироваться"
+          >
+            <Text style={styles.registerBtnTxt}>Зарегистрироваться</Text>
           </TouchableOpacity>
-        </Animated.View>
 
-        {/* Документы доступны до регистрации — прямо со стартового экрана. */}
-        <Animated.View style={{ opacity: introFade, marginBottom: r(10) }}>
-          <LegalLinks />
-        </Animated.View>
+          {/* ── Уже есть аккаунт ── */}
+          <TouchableOpacity
+            style={styles.loginBtn}
+            activeOpacity={0.7}
+            onPress={() => router.push('/login')}
+            testID="entry-login"
+            accessibilityLabel="Уже есть аккаунт"
+          >
+            <Text style={styles.loginBtnTxt}>Уже есть аккаунт</Text>
+          </TouchableOpacity>
 
-        <Animated.Text style={[styles.version, { opacity: introFade }]}>JobToo v{Constants.expoConfig?.version ?? '1.4.0'}</Animated.Text>
+          {/* ══ Посмотреть без регистрации ══ */}
+          {/* Снимаем стену регистрации: даём заглянуть в ленту вакансий как
+              гость. Любое действие внутри попросит зарегистрироваться. */}
+          <TouchableOpacity
+            style={styles.guestLink}
+            activeOpacity={0.6}
+            onPress={() => {
+              void dbRecordGuestEvent('guest_started');
+              enterGuest();
+              router.replace('/(tabs)');
+            }}
+            testID="entry-guest"
+            accessibilityLabel="Смотреть вакансии без регистрации"
+          >
+            <Text style={styles.guestLinkTxt}>Смотреть вакансии без регистрации</Text>
+          </TouchableOpacity>
+
+          {/* ── Работодателям ── */}
+          <View style={styles.employerRow}>
+            <Text style={styles.employerGray}>Работодатель? </Text>
+            <TouchableOpacity
+              onPress={() => router.push('/register-employer')}
+              testID="entry-employer"
+              accessibilityLabel="Разместить вакансию"
+            >
+              <Text style={styles.employerLink}>Разместить вакансию</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Документы доступны до регистрации — прямо со стартового экрана. */}
+          <View style={{ marginTop: r(10) }}>
+            <LegalLinks />
+          </View>
+
+          <Text style={styles.version}>JobToo v{Constants.expoConfig?.version ?? '1.4.0'}</Text>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // Светлый фон: на этом экране человек читает и выбирает, поэтому сплошная
-  // заливка цветом здесь утомляет — оранжевый остаётся только на загрузке.
-  safe: { flex: 1, backgroundColor: '#F5F7FA' },
+  // Тёплый фон — как в ленте: экран продаёт одно действие, а не читается.
+  safe: { flex: 1, backgroundColor: Colors.bgWarm },
 
   scroll: {
     flexGrow: 1,
-    paddingHorizontal: r(20),
+    alignItems: 'center',
+    paddingHorizontal: r(24),
     paddingTop: r(10),
     paddingBottom: r(12),
     maxWidth: rs(430),
@@ -284,79 +257,29 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 
-  logoRow: { marginBottom: r(14) },
-  logo: { fontSize: r(34), fontWeight: '800', letterSpacing: -0.8 },
+  logoRow: { marginBottom: r(6) },
+  logo: { fontSize: r(24), fontWeight: '800', letterSpacing: -0.6 },
   logoDark: { color: '#111111' },
   logoOrange: { color: Colors.primary },
-  tagline: { fontSize: r(14), color: Colors.textSecondary, marginTop: r(4) },
 
-  headlineBlock: { marginBottom: r(18) },
+  // Иллюстрация — спокойная, без теней и градиентов: аудитория на дешёвых
+  // телефонах, лишние эффекты там же и тормозят.
+  artWrap: { marginBottom: r(8) },
+  art: { width: r(122), height: r(159) },
+
+  headlineBlock: { alignItems: 'center', marginBottom: r(14) },
   headline: {
-    fontSize: r(38), fontWeight: '800', color: '#111111', lineHeight: r(44),
+    fontSize: r(24), fontWeight: '800', color: '#111111', lineHeight: r(30),
+    textAlign: 'center',
   },
   headlineSub: {
-    fontSize: r(15), color: Colors.textSecondary,
-    marginTop: r(8), lineHeight: r(21),
+    fontSize: r(13.5), color: Colors.textSecondary,
+    marginTop: r(6), lineHeight: r(18), textAlign: 'center',
   },
 
-  // Карточка-обводка: белая линия по оранжевому — как весь рисованный стиль
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: r(14),
-    borderWidth: 1.5,
-    borderColor: Colors.inputBorder,
-    borderRadius: r(20),
-    backgroundColor: '#FFFFFF',
-    paddingVertical: r(22),
-    paddingLeft: r(16),
-    paddingRight: r(12),
-  },
-  cardIcon: { width: r(72), height: r(72), alignItems: 'center', justifyContent: 'center' },
-  cardTextWrap: { flex: 1 },
-  cardTitle: {
-    fontSize: r(20), fontWeight: '800', color: '#111111', marginBottom: r(4),
-  },
-  cardSub: {
-    fontSize: r(13), color: Colors.textSecondary, lineHeight: r(18),
-  },
-  arrowBtn: {
-    width: r(32), height: r(32), borderRadius: r(16),
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  featuresRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    flexWrap: 'wrap', gap: r(6),
-    marginTop: r(16),
-  },
-  featureTxt: { fontSize: r(11.5), color: Colors.textSecondary },
-  featureDot: { fontSize: r(11.5), color: Colors.textMuted },
-
-  guestBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: r(7), marginTop: r(16),
-    paddingVertical: r(12), paddingHorizontal: r(16),
-    borderRadius: r(14), borderWidth: 1, borderColor: Colors.inputBorder,
-    backgroundColor: '#FFFFFF',
-  },
-  guestBtnTxt: { fontSize: r(14), fontWeight: '700', color: Colors.primary },
-
-  loginCard: {
-    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: Colors.inputBorder,
-    borderRadius: r(14),
-    paddingVertical: r(13),
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    marginBottom: r(10),
-  },
-  loginGray: { fontSize: r(15), color: '#111111' },
-  loginLink: { fontSize: r(15), fontWeight: '900', color: Colors.primary },
-
-  version: { textAlign: 'center', fontSize: r(12), color: Colors.textMuted },
   userCountCard: {
     alignSelf: 'center',
-    marginTop: r(10),
+    marginTop: r(4),
     paddingVertical: r(6), paddingHorizontal: r(14),
     borderRadius: r(20),
     borderWidth: 1,
@@ -365,4 +288,38 @@ const styles = StyleSheet.create({
   },
   userCountTxt: { fontSize: r(12), color: Colors.textSecondary },
   userCountNum: { fontWeight: '800', color: Colors.primary },
+
+  // ── Главное действие ──
+  registerBtn: {
+    width: '100%', height: r(52), borderRadius: rs(100),
+    backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  registerBtnTxt: { fontSize: r(16), fontWeight: '800', color: '#fff' },
+
+  loginBtn: {
+    width: '100%', height: r(52), borderRadius: rs(100),
+    marginTop: r(10),
+    borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  loginBtnTxt: { fontSize: r(16), fontWeight: '800', color: Colors.primary },
+
+  // Снимаем стену регистрации: даём заглянуть в ленту как гость —
+  // текстовая ссылка, а не кнопка, чтобы не спорить с двумя выше.
+  guestLink: {
+    alignSelf: 'center', marginTop: r(14),
+    paddingVertical: r(6), paddingHorizontal: r(8),
+  },
+  guestLinkTxt: { fontSize: r(14), fontWeight: '700', color: Colors.textSecondary },
+
+  employerRow: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    marginTop: r(14),
+  },
+  employerGray: { fontSize: r(13), color: Colors.textSecondary },
+  employerLink: { fontSize: r(13), fontWeight: '800', color: Colors.primary },
+
+  version: { textAlign: 'center', fontSize: r(11), color: Colors.textMuted, marginTop: r(8) },
 });

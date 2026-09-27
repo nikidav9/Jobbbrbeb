@@ -1,6 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { vacancyLevel, vacancyFormat } from '../services/vacancyFacets.ts';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { vacancyLevel, vacancyFormat, vacancySpecs } from '../services/vacancyFacets.ts';
+
+type FacetCase = {
+  title: string;
+  schedule: string | null;
+  text: string | null;
+  level: ReturnType<typeof vacancyLevel>;
+  format: ReturnType<typeof vacancyFormat>;
+  specs: ReturnType<typeof vacancySpecs>;
+};
+
+// Общий файл случаев с php-proxy/vacancy_facets.php (tests/vacancy_facets_test.php
+// читает тот же файл) — паритет TS/PHP держится на одной таблице примеров,
+// а не на двух написанных порознь.
+const cases: FacetCase[] = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'tests/fixtures/vacancy_facets_cases.json'), 'utf8'),
+);
 
 // Уровень и формат вычисляются из текста, и ошибка тут тихая: фильтр
 // «Senior» просто молча не покажет половину вакансий. Поэтому под тестом.
@@ -44,4 +62,29 @@ test('формат: график главнее текста, гибрид гл�
   assert.equal(vacancyFormat('', 'Возможна удалённая работа'), 'remote');
   assert.equal(vacancyFormat('Полный день', 'Хорошая команда'), null);
   assert.equal(vacancyFormat(null, null), null);
+});
+
+test('специализация: первое совпавшее правило побеждает', () => {
+  assert.deepEqual(vacancySpecs('Java QA Automation'), ['qa']);
+  assert.deepEqual(vacancySpecs('Android-разработчик (Kotlin)'), ['mobile']);
+  assert.deepEqual(vacancySpecs('Аналитик данных'), ['analytics']);
+  assert.deepEqual(vacancySpecs('Data Engineer (Python)'), ['data']);
+  assert.deepEqual(vacancySpecs('Fullstack-разработчик (JS/React)'), ['frontend', 'backend']);
+});
+
+test('специализация: неизвестное название — пустой список, а не выдуманный бэкенд', () => {
+  assert.deepEqual(vacancySpecs('Разработчик программного обеспечения'), []);
+  assert.deepEqual(vacancySpecs('Программист'), []);
+  assert.deepEqual(vacancySpecs(''), []);
+  assert.deepEqual(vacancySpecs(undefined), []);
+});
+
+// Общая таблица случаев с PHP-зеркалом (php-proxy/vacancy_facets.php) — если
+// paritet разошёлся, упадёт здесь или в tests/vacancy_facets_test.php.
+test('паритет с php-proxy/vacancy_facets.php по общему файлу случаев', () => {
+  for (const c of cases) {
+    assert.equal(vacancyLevel(c.title), c.level, `level: ${c.title}`);
+    assert.equal(vacancyFormat(c.schedule, c.text), c.format, `format: ${c.title}`);
+    assert.deepEqual(vacancySpecs(c.title), c.specs, `specs: ${c.title}`);
+  }
 });

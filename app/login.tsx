@@ -8,26 +8,38 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Radius } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
+import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
+import { dbAuthLoginByCode } from '@/services/db';
 import { useApp } from '@/hooks/useApp';
 import { LegalLinks } from '@/components/LegalLinks';
 
 import { rs, rf } from '@/constants/scale';
 
-// Вход — по почте (решение владельца 25.09.2026). Старые аккаунты, заведённые
-// по телефону, входят номером в то же поле; почту у них сразу спросит окно
-// EmailRequiredGate.
+// Вход — по коду из письма, пароль остаётся запасным (решение владельца
+// 27.09.2026). Старые аккаунты, заведённые по телефону, кода не получают —
+// им годится только вход по паролю, поэтому ссылка на него остаётся всегда.
 const looksLikeLogin = (v: string) => /@/.test(v) ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) : v.replace(/\D/g, '').length >= 10;
 
 export default function Login() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
-  const { loginUser, showToast, emailAuthReady } = useApp();
+  const { loginUser, signInAs, showToast, emailAuthReady } = useApp();
+
+  // null — режим не выбирали руками, он следует за готовностью почты:
+  // не готова — только пароль; станет готова — сама подхватит код.
+  const [manualMode, setManualMode] = useState<'code' | 'password' | null>(null);
+  const mode = manualMode ?? (emailAuthReady ? 'code' : 'password');
 
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const goInside = () => {
+    showToast('Добро пожаловать! 👋', 'success');
+    router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
+  };
 
   const handleLogin = async () => {
     setPhoneError('');
@@ -52,9 +64,8 @@ export default function Login() {
     }
 
     if (user) {
-      showToast('Добро пожаловать! 👋', 'success');
+      goInside();
       setLoading(false);
-      router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
       return;
     }
 
@@ -82,53 +93,100 @@ export default function Login() {
         <View style={styles.sheet}>
 
         <Text style={styles.title}>Войти</Text>
-        <Text style={styles.subtitle}>Почта и пароль. Регистрировались по номеру — введите номер</Text>
 
-        <AppInput
-          label="Почта или телефон"
-          value={login}
-          onChangeText={v => { setLogin(v); setPhoneError(''); }}
-          placeholder="name@mail.ru"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="username"
-          textContentType="username"
-          accessibilityLabel="Почта или телефон"
-          error={phoneError}
-        />
+        {mode === 'code' ? (
+          <>
+            <Text style={styles.subtitle}>Пришлём код на почту</Text>
+            <View testID="login-code-mode">
+              <EmailCodeStep
+                purpose="login"
+                onVerified={() => {}}
+                verify={async (email, code) => {
+                  const user = await dbAuthLoginByCode(email, code);
+                  await signInAs(user);
+                  goInside();
+                }}
+              />
+            </View>
 
-        <AppInput
-          label="Пароль"
-          value={password}
-          onChangeText={v => { setPassword(v); setPassError(''); }}
-          secureTextEntry
-          placeholder="Ваш пароль"
-        />
-        {passError ? <Text style={styles.errText}>{passError}</Text> : null}
-
-        <View style={{ marginTop: 8 }}>
-          {loading ? (
-            <ActivityIndicator color={Colors.primary} />
-          ) : (
-            <PrimaryButton
-              label="Войти →"
-              onPress={handleLogin}
-              disabled={!looksLikeLogin(login) || !password.trim()}
-            />
-          )}
-        </View>
-
-        {/* Порядок внизу: сначала подсказка про почту, «Отмена» — последней.
-            Раньше подсказка стояла над кнопкой «Войти» и перебивала её. */}
-        <TouchableOpacity style={styles.forgotRow} onPress={openReset} activeOpacity={0.8} accessibilityRole="button">
-          <View style={styles.forgotBanner}>
-            <Text style={styles.forgotText}>
-              Забыли пароль?{' '}
-              <Text style={styles.forgotLink}>{emailAuthReady ? 'Восстановить по почте' : 'Напишите на support@jobtoo.ru'}</Text>
+            <Text style={styles.hint}>
+              Письма нет? Проверьте «Спам». Если аккаунта с этой почтой нет —{' '}
+              <Text style={styles.hintLink} onPress={() => router.push('/register-worker')}>
+                Зарегистрироваться
+              </Text>
             </Text>
-          </View>
-        </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="login-password-link"
+              style={styles.switchRow}
+              onPress={() => setManualMode('password')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.switchText}>Войти по паролю</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.subtitle}>Почта и пароль. Регистрировались по номеру — введите номер</Text>
+
+            <AppInput
+              label="Почта или телефон"
+              value={login}
+              onChangeText={v => { setLogin(v); setPhoneError(''); }}
+              placeholder="name@mail.ru"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
+              accessibilityLabel="Почта или телефон"
+              error={phoneError}
+            />
+
+            <AppInput
+              label="Пароль"
+              value={password}
+              onChangeText={v => { setPassword(v); setPassError(''); }}
+              secureTextEntry
+              placeholder="Ваш пароль"
+            />
+            {passError ? <Text style={styles.errText}>{passError}</Text> : null}
+
+            <View style={{ marginTop: 8 }}>
+              {loading ? (
+                <ActivityIndicator color={Colors.primary} />
+              ) : (
+                <PrimaryButton
+                  label="Войти →"
+                  onPress={handleLogin}
+                  disabled={!looksLikeLogin(login) || !password.trim()}
+                />
+              )}
+            </View>
+
+            {/* Порядок внизу: сначала подсказка про почту, «Отмена» — последней.
+                Раньше подсказка стояла над кнопкой «Войти» и перебивала её. */}
+            <TouchableOpacity style={styles.forgotRow} onPress={openReset} activeOpacity={0.8} accessibilityRole="button">
+              <View style={styles.forgotBanner}>
+                <Text style={styles.forgotText}>
+                  Забыли пароль?{' '}
+                  <Text style={styles.forgotLink}>{emailAuthReady ? 'Восстановить по почте' : 'Напишите на support@jobtoo.ru'}</Text>
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {emailAuthReady && (
+              <TouchableOpacity
+                testID="login-code-link"
+                style={styles.switchRow}
+                onPress={() => setManualMode('code')}
+                accessibilityRole="button"
+              >
+                <Text style={styles.switchText}>Войти по коду из письма</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
 
         <TouchableOpacity style={styles.cancel} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
           <Text style={styles.cancelText}>Отмена</Text>
@@ -156,6 +214,10 @@ const styles = StyleSheet.create({
   title: { fontSize: rf(22), fontWeight: '700', color: Colors.textPrimary },
   subtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(-6), lineHeight: rf(20) },
   errText: { fontSize: rf(13), color: Colors.red, marginTop: rs(-6) },
+  hint: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18) },
+  hintLink: { color: Colors.primary, fontWeight: '600' },
+  switchRow: { marginTop: rs(-4) },
+  switchText: { fontSize: rf(13), color: Colors.primary, fontWeight: '600' },
   forgotRow: { marginTop: rs(-4) },
   forgotBanner: {
     backgroundColor: '#F0F4FF', borderRadius: rs(10), padding: rs(12),

@@ -437,11 +437,13 @@ export async function dbRestoreSession(): Promise<User | null> {
   }
 }
 
-// ─── Вход по почте с кодом (решение владельца 25.09.2026) ────────────────────
+// ─── Вход по почте с кодом (решение владельца 25.09.2026, вход — 27.09.2026) ─
 // register — новый аккаунт; attach — почта к старому аккаунту по телефону;
-// reset — восстановление пароля. Код приходит письмом, сверяет сервер и
-// отдаёт «квитанцию», которую предъявляют на последнем шаге.
-export type EmailCodePurpose = 'register' | 'attach' | 'reset';
+// reset — восстановление пароля; login — сам вход, пароль остаётся запасным
+// вариантом. Код приходит письмом, сверяет сервер; для register/attach/reset
+// в ответ идёт «квитанция», которую предъявляют на последнем шаге, а для
+// login — сразу сессия (см. dbAuthLoginByCode).
+export type EmailCodePurpose = 'register' | 'attach' | 'reset' | 'login';
 
 /**
  * Готова ли почта для кодов. Пока нет (26.09 исходящий SMTP у хостинга
@@ -464,6 +466,13 @@ export async function dbAuthSendCode(email: string, purpose: EmailCodePurpose): 
 export async function dbAuthVerifyCode(email: string, purpose: EmailCodePurpose, code: string): Promise<string> {
   const d = await proxy<{ ticket: string }>('dbAuthVerifyCode', [email, purpose, code]);
   return d.ticket;
+}
+
+/** Вход по коду из письма: код одноразовый, квитанции нет — сессия сразу. */
+export async function dbAuthLoginByCode(email: string, code: string): Promise<User> {
+  const d = await proxy<{ user: any; session_token: string }>('dbAuthVerifyCode', [email, 'login', code]);
+  await saveSessionToken(d.session_token);
+  return rowToUser(d.user);
 }
 
 /** Новый пароль по квитанции reset: сервер гасит прежние сессии и выдаёт новую. */

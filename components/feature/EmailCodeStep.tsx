@@ -24,9 +24,15 @@ type Props = {
   emailLabel?: string;
   /** Пришло ли письмо: сбой отправки или первая отправка (для «Напомнить позже»). */
   onSendAttempt?: (ok: boolean) => void;
+  /**
+   * Свой шаг проверки кода вместо запроса квитанции (dbAuthVerifyCode +
+   * onVerified) — например вход: код одноразовый, сервер отдаёт сессию сразу,
+   * квитанция не нужна. Бросает ошибку — компонент покажет её текст.
+   */
+  verify?: (email: string, code: string) => Promise<void>;
 };
 
-export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', onSendAttempt }: Props) {
+export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', onSendAttempt, verify: customVerify }: Props) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [phase, setPhase] = useState<'email' | 'code'>('email');
@@ -74,8 +80,12 @@ export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', 
     setBusy(true);
     setError('');
     try {
-      const ticket = await dbAuthVerifyCode(normalized, purpose, digits);
-      onVerified(normalized, ticket);
+      if (customVerify) {
+        await customVerify(normalized, digits);
+      } else {
+        const ticket = await dbAuthVerifyCode(normalized, purpose, digits);
+        onVerified(normalized, ticket);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось проверить код');
     } finally {

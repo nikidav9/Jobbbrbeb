@@ -211,6 +211,7 @@ function jt_mail_code(string $to, string $code, string $purpose, ?array $cfg = n
         'register' => ['Код для регистрации в JobToo', 'Ваш код для регистрации в JobToo:'],
         'attach'   => ['Подтверждение почты в JobToo', 'Ваш код для подтверждения почты в JobToo:'],
         'reset'    => ['Восстановление пароля JobToo', 'Ваш код для восстановления пароля в JobToo:'],
+        'login'    => ['Код для входа в JobToo', 'Ваш код для входа в JobToo:'],
     ][$purpose] ?? ['Код JobToo', 'Ваш код JobToo:'];
     $text = $what[1] . "\n\n    " . $code . "\n\n"
         . "Код действует 10 минут. Никому его не сообщайте — сотрудники JobToo\n"
