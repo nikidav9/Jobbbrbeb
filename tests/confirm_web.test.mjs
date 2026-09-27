@@ -11,9 +11,6 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const OWN = path.join('services', 'confirm.ts');
-// Старая админка: там «Удалить всех, кроме админа». Оживлять её на вебе
-// мимоходом нельзя — это отдельное решение владельца, не правка удобства.
-const LEGACY = new Set([path.join('app', 'admin.tsx')]);
 
 function sources(dir) {
   const out = [];
@@ -27,7 +24,7 @@ function sources(dir) {
 
 const files = ['app', 'components', 'services', 'hooks']
   .flatMap(sources)
-  .filter(f => f !== OWN && !LEGACY.has(f));
+  .filter(f => f !== OWN);
 // Комментарии не в счёт: в них эти имена объясняют, почему их нет.
 const code = f => fs.readFileSync(path.join(root, f), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -41,6 +38,12 @@ test('window.confirm нигде, кроме services/confirm.ts', () => {
 test('Alert.alert нигде, кроме services/confirm.ts', () => {
   const bad = files.filter(f => /Alert\.alert\s*\(/.test(code(f)));
   assert.deepEqual(bad, []);
+});
+
+// Одна кнопка стирала всех пользователей, кроме админа (решение 27.09).
+test('в админке нет массового удаления пользователей', () => {
+  const admin = code(path.join('app', 'admin.tsx'));
+  assert.doesNotMatch(admin, /deleteAllUsersExceptAdmin|Удалить всех/);
 });
 
 test('окно вопросов смонтировано в корне для веба', () => {
