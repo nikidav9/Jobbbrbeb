@@ -536,6 +536,27 @@ https-хоста, «..» не разбирает. Так читаются «Га
 `jm_perm_swipes` (`dbPermSwipe`/`dbPermUnswipe`/`dbGetPermSwipes`, все в
 `$selfArgFns`): смахнутая своя тоже не возвращается после перезапуска.
 
+**Фильтры ленты — на сервере, не только по порции** (с 27.09.2026). Раньше
+зарплата, уровень, формат, компания и дата применялись на клиенте только к уже
+полученной порции ~60 карточек: выбор компании, которой в порции не было, давал
+пустую колоду, хотя в базе вакансии есть. Третий довод `dbGetExtFeed([limit,
+sections, filters])` — объект `{salary_from, specs, levels, formats, companies,
+posted}`; `ext_feed_filters` (нормализация недоверенного ввода) и
+`ext_feed_match` (`php-proxy/ext_feed.php`) фильтруют весь пул
+`jm_ext_feed_pool` до `ext_feed_arrange`, а не уже отданную порцию. Выбраны
+компании — пул на компанию расширяется до 200 (иначе 30). Ответ —
+`{items, total, companies}`: `total` — честное число совпавших по всему пулу,
+`companies` — счёт по компаниям при остальных фильтрах, кроме самой компании
+(не больше 300). Старый клиент без третьего довода получает прежний голый
+массив. Новый facet «Специализация» (Бэкенд, Фронтенд, DevOps и SRE…) —
+`vacancySpecs` в `services/vacancyFacets.ts` (там же `vacancyLevel`/
+`vacancyFormat`); серверное зеркало всех трёх — `php-proxy/vacancy_facets.php`
+(`vf_level`/`vf_format`/`vf_specs`), паритет держит общий файл случаев
+`tests/fixtures/vacancy_facets_cases.json` (читают и
+`tests/vacancy-facets.test.ts`, и `tests/vacancy_facets_test.php`). Экран
+(`app/(tabs)/feed.tsx`) пока шлёт пустой фильтр и берёт `.items` — переезд
+шторки `PermFilterSheet` на серверные фильтры отдельным шагом.
+
 **Расписание забора.** `.github/workflows/career-ingest.yml` зовёт `ingest.php`
 каждые 6 часов (02:30, 08:30, 14:30, 20:30 UTC) — полный круг с гашением и
 дочитыванием описаний. Плюс ежечасно в :45 — `scope=api`: только адреса с

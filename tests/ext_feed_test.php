@@ -97,6 +97,13 @@ check('posted — мусор превращается в all', $junkFilters['pos
 
 $emptyFilters = ext_feed_filters('мусор не массив');
 check('нестроковый мусор целиком — пустой фильтр', $emptyFilters === ext_feed_filters([]));
+check('пустой фильтр — не включён', !ext_feed_filters_active($emptyFilters));
+foreach ([['salary_from' => 150000], ['specs' => ['qa']], ['levels' => ['senior']], ['formats' => ['remote']],
+          ['companies' => ['Сбер']], ['posted' => 'day']] as $one) {
+    check('включён фильтр ' . array_key_first($one), ext_feed_filters_active(ext_feed_filters($one)));
+}
+check('dbGetExtFeed расширяет пул при любом фильтре',
+    str_contains((string)file_get_contents(__DIR__ . '/../php-proxy/db.php'), 'ext_feed_filters_active($filters)) ? 200 : 30'));
 check('пустой фильтр не сужает: salary_from 0', $emptyFilters['salary_from'] === 0);
 
 check('posted принимает month (30 суток)', ext_feed_filters(['posted' => 'month'])['posted'] === 'month');

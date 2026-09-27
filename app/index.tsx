@@ -136,6 +136,8 @@ export default function RootScreen() {
       moved = false;
       startX = e.pageX;
       startScroll = node.scrollLeft;
+      // Без этого протаскивание мышью заодно выделяет заголовок под курсором.
+      document.body.style.userSelect = 'none';
     };
     const onMove = (e: MouseEvent) => {
       if (!dragging) return;
@@ -146,6 +148,7 @@ export default function RootScreen() {
     const onUp = () => {
       if (!dragging) return;
       dragging = false;
+      document.body.style.userSelect = '';
       if (moved) goToSlide(Math.round(node.scrollLeft / slideWidth));
     };
     node.addEventListener('mousedown', onDown);
@@ -274,7 +277,7 @@ export default function RootScreen() {
                 {SLIDES.map((slide, i) => (
                   <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
                     <View style={styles.slideArt}>
-                      <SlideArt index={i} size={r(130)} />
+                      <SlideArt index={i} size={r(184)} />
                     </View>
                     <Text style={styles.slideTitle}>{slide.title}</Text>
                   </View>
@@ -398,7 +401,7 @@ const styles = StyleSheet.create({
   // телефонах, лишние эффекты там же и тормозят.
   carouselWrap: { width: '100%', marginBottom: r(6) },
   slide: { alignItems: 'center', paddingHorizontal: r(4) },
-  slideArt: { height: r(130), alignItems: 'center', justifyContent: 'center' },
+  slideArt: { height: r(184), alignItems: 'center', justifyContent: 'center' },
   slideTitle: {
     fontSize: r(21), fontWeight: '800', color: '#111111', lineHeight: r(27),
     textAlign: 'center', marginTop: r(10), minHeight: r(58),

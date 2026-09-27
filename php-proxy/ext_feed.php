@@ -182,6 +182,13 @@ function ext_feed_filters($raw): array
     ];
 }
 
+/** Включён ли хоть один фильтр (нормализованный ext_feed_filters). */
+function ext_feed_filters_active(array $f): bool
+{
+    return $f['salary_from'] > 0 || $f['specs'] || $f['levels'] || $f['formats']
+        || $f['companies'] || $f['posted'] !== 'all';
+}
+
 /**
  * Матч вакансии под нормализованный фильтр (ext_feed_filters). $ignoreCompany
  * пропускает фильтр по компании — им считаются подписи в шторке («сколько
