@@ -1,7 +1,10 @@
-// Ручной путь отклика «Ждут вас»: заявка, которую сервер сам отправить не
-// может (капча, SPA, сайт ещё не в списке проверенных). Мы открываем страницу
-// вакансии во встроенном браузере и заполняем анкету данными профиля —
-// прикрепляет резюме, проходит капчу и жмёт «Отправить» на сайте человек сам.
+// Путь отклика «Ждут вас»: заявка, которую сервер сам отправить не может
+// (капча, SPA, сайт ещё не в списке проверенных). Страница вакансии
+// открывается во встроенном браузере на телефоне, и автопилот
+// (services/jupiterAutopilot.ts) у человека на глазах открывает анкету,
+// заполняет её, прикладывает резюме и ставит разрешённые поручением галочки.
+// Отправляет человек сам — кнопкой «Отправить отклик»; проверку «я не робот»
+// тоже проходит он. Решение владельца 27.09.2026: без скрытой отправки.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator, Linking,
@@ -16,12 +19,54 @@ import {
   jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile,
 } from '@/services/db';
 import type { JupiterApplication } from '@/constants/types';
+import { fillHostFor, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
 import {
-  buildFillScript, fillHostFor, jupiterManualEligible, nextManualApplication,
-} from '@/services/jupiterFill';
+  buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult,
+} from '@/services/jupiterAutopilot';
 
 import { rs, rf } from '@/constants/scale';
 import { BackButton } from '@/components/ui/BackButton';
+
+type FillStatus =
+  | 'loading' | 'filling' | 'ready' | 'captcha' | 'missing' | 'consent'
+  | 'no_form' | 'no_submit' | 'submitting' | 'unknown' | 'error';
+
+// Резюме больше 8 МБ в анкету не вкладываем: base64 внутри скрипта страницы
+// раздуется ещё на треть, а сайты такие файлы всё равно не принимают.
+const RESUME_LIMIT = 8 * 1024 * 1024;
+
+/** Скачать своё резюме и отдать base64 без префикса data:…;base64,. */
+async function loadResumeBase64(url: string): Promise<string | null> {
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  if (!blob.size || blob.size > RESUME_LIMIT) return null;
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  const comma = dataUrl.indexOf(',');
+  return comma === -1 ? null : dataUrl.slice(comma + 1);
+}
+
+function statusText(status: FillStatus, result: AutopilotResult | null): string {
+  const missing = result?.missing?.length ? ` Не хватает: ${result.missing.slice(0, 3).join('; ')}.` : '';
+  switch (status) {
+    case 'loading': return 'Открываем анкету…';
+    case 'filling': return 'Юпитер заполняет анкету данными из вашего профиля…';
+    case 'ready': return `Анкета заполнена${result?.resume ? ', резюме приложено' : ''}. Проверьте и нажмите «Отправить отклик».`;
+    case 'captcha': return 'Анкета заполнена. Остался один шаг: подтвердите на странице, что вы не робот, и нажмите «Отправить отклик».';
+    case 'missing': return `Заполните на странице то, чего нет в профиле, и нажмите «Отправить отклик».${missing}`;
+    case 'consent': return 'Сайт просит согласие, которое вместе с обязательным включает рекламу или что-то ещё. Решите сами на странице, затем «Отправить отклик».';
+    case 'no_form': return 'Анкету не нашли. Нажмите «Откликнуться» на странице — Юпитер заполнит её.';
+    case 'no_submit': return 'Не нашли кнопку отправки. Нажмите «Отправить» на самой странице, затем «Я отправил».';
+    case 'submitting': return 'Отправляем и ждём подтверждения от сайта…';
+    case 'unknown': return 'Сайт не показал подтверждения. Если на странице видно «спасибо» — нажмите «Я отправил».';
+    default: return 'Не удалось заполнить анкету автоматически. Заполните её на странице и нажмите «Отправить» на сайте.';
+  }
+}
 
 export default function JupiterFillScreen() {
   const router = useRouter();
@@ -41,7 +86,10 @@ export default function JupiterFillScreen() {
   const [profile, setProfile] = useState<JupiterFillProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [filledCount, setFilledCount] = useState(0);
+  const [delegated, setDelegated] = useState(false);
+  const [resume, setResume] = useState<{ b64: string; name: string } | null>(null);
+  const [status, setStatus] = useState<FillStatus>('loading');
+  const [result, setResult] = useState<AutopilotResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const webRef = useRef<WebView>(null);
 
@@ -58,7 +106,21 @@ export default function JupiterFillScreen() {
         ]);
         const own = apps.find(app => app.id === id);
         if (!own || !fillHostFor(own.vacancyUrl)) throw new Error('Заявка не найдена');
+        // Резюме — своё, по короткой подписанной ссылке. Не скачалось — анкета
+        // всё равно заполняется, файл человек приложит на странице сам.
+        let file: { b64: string; name: string } | null = null;
+        if (p?.resume_url) {
+          try {
+            const b64 = await loadResumeBase64(p.resume_url);
+            if (b64) file = { b64, name: p.resume_name || 'resume.pdf' };
+          } catch { /* без резюме */ }
+        }
         if (!cancelled) {
+          setResume(file);
+          // Согласия от имени человека — только если поручение записано в
+          // заявке (Соглашение п. 8.2); иначе галочки ставит он сам.
+          setDelegated(!!own.thirdPartyConsentAt);
+          setStatus('filling');
           setProfile(p);
           setUrl(own.vacancyUrl);
           setNext(nextManualApplication(apps, id, skipped));
@@ -85,11 +147,41 @@ export default function JupiterFillScreen() {
   }, [url, router, showToast]);
 
   const fillHost = url ? fillHostFor(url) : null;
-  const fillScript = profile && fillHost ? buildFillScript(profile, fillHost) : null;
+  const fillScript = useMemo(() => {
+    if (!profile || !fillHost) return null;
+    // Ссылка на резюме в страницу работодателя не уходит — только содержимое.
+    const { resume_url: _u, resume_name: _n, ...values } = profile;
+    return buildAutopilotScript(values as JupiterFillProfile, fillHost, {
+      submit: false, delegated, resumeBase64: resume?.b64 ?? null, resumeName: resume?.name ?? null, deadlineMs: 45000,
+    });
+  }, [profile, fillHost, delegated, resume]);
 
   const refill = () => {
     if (!fillScript || !webRef.current) return;
-    webRef.current.injectJavaScript(fillScript);
+    setStatus('filling');
+    webRef.current.injectJavaScript(rerunAutopilotScript(fillScript));
+  };
+
+  // «Отправить отклик» — нажатие человека; скрипт лишь передаёт его на кнопку
+  // отправки анкеты на сайте и ждёт подтверждения.
+  const sendApplication = () => {
+    if (!webRef.current || status === 'submitting') return;
+    setStatus('submitting');
+    webRef.current.injectJavaScript(SUBMIT_BY_USER_SCRIPT);
+  };
+
+  const onAutopilot = (msg: AutopilotResult) => {
+    setResult(msg);
+    if (msg.outcome === 'submitted') { void onSubmitted(); return; }
+    if (msg.outcome === 'ready') { setStatus('ready'); return; }
+    if (msg.outcome === 'needs_user') {
+      const map: Record<string, FillStatus> = { captcha: 'captcha', missing: 'missing', consent: 'consent', no_submit: 'no_submit' };
+      setStatus(map[msg.reason] ?? 'missing');
+      return;
+    }
+    if (msg.outcome === 'no_form') { setStatus('no_form'); return; }
+    if (msg.outcome === 'unknown') { setStatus('unknown'); return; }
+    setStatus('error');
   };
 
   const goNext = () => {
@@ -146,11 +238,7 @@ export default function JupiterFillScreen() {
 
       <View style={s.notice}>
         <Ionicons name="information-circle" size={18} color={Colors.primary} />
-        <Text style={s.noticeTxt}>
-          Мы заполнили анкету из вашего профиля. Проверьте поля, прикрепите резюме, если сайт просит,
-          пройдите проверку «я не робот» и нажмите «Отправить» на сайте.
-          {filledCount > 0 ? ` Заполнено полей: ${filledCount}.` : ''}
-        </Text>
+        <Text style={s.noticeTxt}>{statusText(status, result)}</Text>
       </View>
 
       {loading ? (
@@ -178,7 +266,7 @@ export default function JupiterFillScreen() {
           onMessage={(e) => {
             try {
               const data = JSON.parse(e.nativeEvent.data);
-              if (data?.type === 'jt-filled' && typeof data.count === 'number') setFilledCount(data.count);
+              if (data?.type === 'jt-autopilot' && typeof data.outcome === 'string') onAutopilot(data as AutopilotResult);
             } catch { /* сообщение не наше — игнорируем */ }
           }}
           javaScriptEnabled
@@ -197,14 +285,19 @@ export default function JupiterFillScreen() {
           <Text style={s.secondaryBtnTxt}>Заполнить ещё раз</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[s.primaryBtn, submitting && { opacity: 0.6 }]}
-          onPress={onSubmitted}
-          disabled={submitting}
+          style={[s.primaryBtn, (submitting || status === 'submitting' || status === 'loading') && { opacity: 0.6 }]}
+          onPress={sendApplication}
+          disabled={submitting || status === 'submitting' || status === 'loading' || !fillScript}
           activeOpacity={0.85}
         >
-          {submitting ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={s.primaryBtnTxt}>Я отправил отклик</Text>}
+          {submitting || status === 'submitting'
+            ? <ActivityIndicator size="small" color="#FFFFFF" />
+            : <Text style={s.primaryBtnTxt}>Отправить отклик</Text>}
         </TouchableOpacity>
       </View>
+      <TouchableOpacity style={s.manualLink} onPress={onSubmitted} disabled={submitting} hitSlop={8}>
+        <Text style={s.manualLinkTxt}>Я уже отправил на сайте</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -243,5 +336,7 @@ const s = StyleSheet.create({
     borderRadius: Radius.md, backgroundColor: Colors.primary, paddingVertical: rs(13), ...Shadow.card,
   },
   primaryBtnTxt: { color: '#FFFFFF', fontWeight: '800', fontSize: rf(14) },
+  manualLink: { alignItems: 'center', paddingBottom: rs(14), backgroundColor: Colors.bg },
+  manualLinkTxt: { fontSize: rf(13), color: Colors.textSecondary, textDecorationLine: 'underline' },
   webNote: { padding: rs(24), fontSize: rf(15), lineHeight: rf(21), color: Colors.textSecondary, textAlign: 'center' },
 });

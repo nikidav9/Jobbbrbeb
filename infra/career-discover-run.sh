@@ -129,6 +129,10 @@ exec 9>"$LOCK"
 flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
 
 command -v docker >/dev/null || fail "docker не установлен"
+# Браузер в 1 ГБ на машине в 4 ГБ, где живут сайт и база: без запаса памяти
+# не стартуем (27.09.2026 сайт задохнулся, когда шли два браузера сразу).
+avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+[ "${avail_kb:-0}" -ge 1572864 ] || fail "мало свободной памяти: ${avail_kb:-0} КБ, нужно 1,5 ГБ"
 [ -r "$REPO/scripts/career-discover.mjs" ] || fail "нет $REPO/scripts"
 
 # Образ Playwright весит около полутора гигабайт. На забитом диске выкачка

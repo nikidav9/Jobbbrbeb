@@ -14,6 +14,24 @@ set -eu
 REPO=/opt/jobtoo
 SECRETS=/opt/jobtoo-secrets/env
 
+# ── Сторож памяти для браузерных контейнеров ──────────────────────────────
+# 27.09.2026 сайт перестал отвечать: TCP-порты открыты, но даже /health от
+# самого nginx не приходил — так выглядит машина, задохнувшаяся по памяти.
+# В ту ночь на 4 ГБ шли сразу два браузера Playwright по 1 ГБ: разовый замер
+# (jt-browser-probe) и недельная разведка (jt-career-discover). Браузерные
+# прогоны — разовые и перезапускаемые, а сайт и база — нет. Поэтому, когда
+# доступной памяти меньше 600 МБ, контейнеры Playwright гасятся первыми.
+# Стоит в самом начале: bootstrap идёт раз в минуту и должен успеть сюда
+# даже на задыхающейся машине.
+avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+if [ "${avail_kb:-0}" -gt 0 ] && [ "${avail_kb:-0}" -lt 614400 ] && command -v docker >/dev/null 2>&1; then
+  pw=$(docker ps -q --filter 'ancestor=mcr.microsoft.com/playwright:v1.51.1-jammy' 2>/dev/null || true)
+  if [ -n "$pw" ]; then
+    echo "$pw" | xargs -r docker kill >/dev/null 2>&1 || true
+    echo "$(date -Is) [память] доступно ${avail_kb} КБ — остановлены браузерные контейнеры" >> /var/log/jt-apply.log
+  fi
+fi
+
 say() {
   # Только в свой журнал.
   #
