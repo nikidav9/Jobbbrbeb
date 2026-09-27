@@ -62,6 +62,8 @@ test('buildFillScript не падает на профиле без даты ро
 
 test('мессенджер, компания, ИНН и рекомендатель не заполняются', () => {
   assert.equal(jtKeyForField('Telegram', undefined, 'telegram'), null);
+  // Составное «Telegram или телефон» — номер туда вписать можно.
+  assert.equal(jtKeyForField('Telegram или телефон', 'text', 'contact'), 'phone');
   assert.equal(jtKeyForField('Телеграм, чтобы с вами было проще связаться'), null);
   assert.equal(jtKeyForField('Компания'), null);
   assert.equal(jtKeyForField('ИНН*'), null);
@@ -143,4 +145,10 @@ test('закрытая работодателем вакансия — не в �
   assert.equal(jupiterManualEligible({ ...base, vacancyActive: true }), true);
   assert.equal(jupiterManualEligible({ ...base, vacancyActive: null }), true);
   assert.equal(jupiterManualEligible({ ...base, vacancyActive: false }), false);
+});
+
+test('транслит и короткие подписи: otchestvo, «Сообщение»', () => {
+  // Автопилот кладёт name в текст подписи (textOf), когда подписи нет.
+  assert.equal(jtKeyForField('otchestvo', 'text', 'otchestvo'), 'patronymic');
+  assert.equal(jtKeyForField('Сообщение', 'textarea', 'msg'), 'cover_letter');
 });
