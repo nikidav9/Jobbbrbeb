@@ -102,10 +102,15 @@ check('живая, чужой сайт, похожий хост и чужой и
 check('хост с символами шаблона не гасит ничего', ing_deactivate_stale('career_owner', $start, 'kontur.ru/*') === 0
     && ing_deactivate_stale('career_owner', $start, '*') === 0);
 
-// ── Проводка: ежечасный заход не гасит и не сдвигает расписание ──────────────
+// ── Проводка: ежечасный заход гасит только целые API-сайты ──────────────────
+// С 26.09 (закрытая вакансия Lesta висела до шести часов) заход по API гасит
+// пропавшие, но только по хостам, прошедшим целиком, и никогда — общим гашением
+// по источнику или по недельному пределу: сайты со ссылками он не обходит.
 $ingest = (string)file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
-check('заход по API не гасит', str_contains($ingest, "\$mayDeactivate = \$scope !== 'api';")
+check('общее гашение — только на полном круге', str_contains($ingest, "\$mayDeactivate = \$scope !== 'api';")
     && str_contains($ingest, 'if ($complete && $mayDeactivate) {'));
+check('заход по API гасит только сайты, прошедшие целиком',
+    preg_match("~\\} elseif \\(\\\$complete && \\\$scope === 'api'\\) \\{\\s*foreach \\(ing_complete_hosts\\(\\\$unitHosts, \\\$unitFailed\\) as \\\$host\\) \\{\\s*\\\$gone \\+= ing_deactivate_stale\\(\\(string\\)\\\$src\\['id'\\], \\\$startedAt, \\\$host\\);~", $ingest) === 1);
 check('у захода по API своя контрольная точка',
     str_contains($ingest, "hash('sha256', (string)\$src['id'] . (\$scope !== '' ? '|' . \$scope : ''))"));
 check('заход по API не проверяет и не сдвигает расписание источника',
@@ -128,6 +133,12 @@ check('career.php в режиме API берёт только JSON и встро
     str_contains($career, "define('CF_ONLY_API', (\$_GET['modes'] ?? '') === 'api');")
     && str_contains($career, "in_array(\$u['kind'], ['json', 'embedded'], true)"));
 check('следующая страница помнит режим API', str_contains($career, "(CF_ONLY_API ? '&modes=api' : '')"));
+// Хост, общий у API-адреса и страницы ссылок: в режиме API страница ссылок не
+// обходится, её вакансии «не увидены» — называть такой хост нельзя, иначе
+// ежечасный заход погасит живые вакансии.
+check('в режиме API хосты страниц со ссылками из отчёта убраны',
+    str_contains($career, "if (CF_ONLY_API) \$ownHosts = array_values(array_diff(\$ownHosts, array_keys(\$nonApiHosts)));")
+    && strpos($career, '$nonApiHosts = [];') < strpos($career, "if (CF_ONLY_API) {\n    \$units = array_values"));
 check('каждый ответ career.php называет свои хосты адреса',
     str_contains($career, "'hosts' => \$hosts,")
     && substr_count($career, ', $ownHosts);') === 2);

@@ -560,5 +560,99 @@ class ValueFitsField(unittest.TestCase):
         self.assertEqual(got["citizenship"][0], "rf")
 
 
+class KonturLessons(unittest.TestCase):
+    """Сухой прогон Контура 26.09: анкета и подписка на вакансии в одной форме.
+
+    Юпитер отмечал 36 рубрик подписки (они похожи на «желаемую должность»),
+    вкладывал одно резюме во все шесть полей для файлов, не узнавал поле
+    ФИО без подписи (ResumeForm.Fio) и оставлял отмеченную самим сайтом
+    рубрику — отправка подписала бы человека на рассылку без спроса.
+    """
+
+    HTML = (
+        '<form method="post" action="/apply">'
+        '<input name="ResumeForm.Fio">'
+        '<input name="ResumeForm.Email" type="email">'
+        '<input type="file" name="ResumeFile1"><input type="file" name="ResumeFile2">'
+        '<input type="file" name="ResumeFile3">'
+        '<label><input type="checkbox" name="ResumeForm.NeedSubscribe">'
+        'Присылать новые вакансии из рубрики</label>'
+        '<label><input type="checkbox" name="VacancySubscriptionForm.RubricIds[4].IsSelected">'
+        'Backend-разработка</label>'
+        '<label><input type="checkbox" checked name="VacancySubscriptionForm.RubricIds[3].IsSelected">'
+        'Управление командой</label>'
+        '<label><input type="checkbox" name="Position">Разработчик</label>'
+        '<label><input type="checkbox" checked name="agree" required>'
+        'Согласен на обработку персональных данных</label>'
+        '<button type="submit">Отправить</button></form>'
+    )
+
+    def setUp(self):
+        import os, tempfile
+        fd, self.resume = tempfile.mkstemp(suffix=".pdf")
+        os.write(fd, b"%PDF-1.4\n%%EOF\n"); os.close(fd)
+        self.page = parse(self.HTML)
+        self.profile = CandidateProfile(values={
+            "full_name": "Иванов Иван Иванович", "email": "ivan@example.com",
+            "desired_role": "Разработчик", "consent": True,
+        }, resume_path=self.resume)
+        self.agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        self.trajectory: list = []
+
+    def fill(self, name):
+        self.agent.fill_control(self.page, control(self.page, name), self.profile, self.trajectory)
+        return control(self.page, name)
+
+    def test_fio_without_label_is_the_full_name(self):
+        self.assertEqual(self.fill("ResumeForm.Fio").value, "Иванов Иван Иванович")
+
+    def test_resume_goes_into_one_file_field_only(self):
+        for name in ("ResumeFile1", "ResumeFile2", "ResumeFile3"):
+            self.fill(name)
+        attached = [c.name for c in self.page.controls if c.type == "file" and c.file_path]
+        self.assertEqual(attached, ["ResumeFile1"])
+
+    def test_subscription_and_role_lookalikes_are_not_ticked(self):
+        for name in ("ResumeForm.NeedSubscribe", "VacancySubscriptionForm.RubricIds[4].IsSelected", "Position"):
+            self.assertFalse(self.fill(name).checked, name)
+
+    def test_preselected_subscription_is_unticked_but_required_consent_stays(self):
+        rubric = control(self.page, "VacancySubscriptionForm.RubricIds[3].IsSelected")
+        agree = control(self.page, "agree")
+        for c in (rubric, agree):
+            self.agent.drop_preselected_optional_consent(c, self.profile, self.trajectory)
+        self.assertFalse(rubric.checked)
+        self.assertTrue(agree.checked)
+        self.assertEqual([t["action"] for t in self.trajectory], ["consent_unchecked"])
+
+    def test_resume_goes_into_the_resume_field_not_the_photo(self):
+        page = parse(
+            '<form><input type="file" name="photo">'
+            '<input type="file" name="resume" required></form>'
+        )
+        for name in ("photo", "resume"):
+            self.agent.fill_control(page, control(page, name), self.profile, [])
+        attached = [c.name for c in page.controls if c.type == "file" and c.file_path]
+        self.assertEqual(attached, ["resume"])
+
+    def test_ready_to_sign_nda_is_a_statement_not_a_subscription(self):
+        page = parse(
+            '<form><label><input type="checkbox" checked name="nda">'
+            'Готов подписать NDA</label></form>'
+        )
+        box = control(page, "nda")
+        trajectory: list = []
+        self.agent.drop_preselected_optional_consent(box, self.profile, trajectory)
+        self.assertTrue(box.checked)
+        self.assertEqual(trajectory, [])
+
+    def test_explicit_yes_still_ticks_a_fact(self):
+        page = parse('<form><label><input type="checkbox" name="relocation">Готов к переезду</label></form>')
+        profile = CandidateProfile(values={"relocation": True})
+        box = control(page, "relocation")
+        self.agent.fill_control(page, box, profile, [])
+        self.assertTrue(box.checked)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

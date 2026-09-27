@@ -34,6 +34,7 @@ export const NAV: NavItem[] = [
   { href: '/dormant',     label: 'Ни разу не заходили',  short: 'Спящие',   icon: 'clock',   group: 'Люди' },
   { href: '/vacancies',   label: 'Вакансии',                                icon: 'jobs',    group: 'Работа' },
   { href: '/external',    label: 'Внешние вакансии',     short: 'Внешние',  icon: 'jobs',    group: 'Работа' },
+  { href: '/jupiter',     label: 'Юпитер',                                  icon: 'funnel',  group: 'Работа' },
   { href: '/outreach',    label: 'Обзвон',                                  icon: 'phone',   group: 'Люди' },
   { href: '/support',     label: 'Поддержка',                               icon: 'ticket',  group: 'Общение' },
   { href: '/matching',    label: 'Совпадения',           short: 'Матчи',    icon: 'match',   group: 'Работа' },

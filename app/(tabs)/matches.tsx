@@ -326,6 +326,7 @@ const JUPITER_BADGE_COLORS: Record<JupiterBadge['tone'], { bg: string; fg: strin
   failed: { bg: Colors.redLight, fg: Colors.red },
   working: { bg: Colors.blueLight, fg: Colors.blue },
   needs_you: { bg: Colors.primaryLight, fg: Colors.primary },
+  closed: { bg: Colors.divider, fg: Colors.textMuted },
 };
 
 type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';

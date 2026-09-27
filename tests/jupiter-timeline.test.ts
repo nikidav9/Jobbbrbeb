@@ -71,3 +71,22 @@ test('статус: особые причины важнее состояния'
   assert.equal(jupiterStatus(app({ state: 'submitted' })).label, 'Отправлено');
   assert.equal(jupiterStatus(app({ state: 'filling' })).label, 'Юпитер обрабатывает');
 });
+
+test('вакансия закрыта работодателем: статус, метка и строка — без «отправьте»', async () => {
+  const { jupiterVacancyClosed } = await import('../services/jupiterTimeline.ts');
+  const parked = {
+    id: 'a1', vacancyUrl: 'https://join.lesta.team/vacancy/x/1', company: 'Lesta Games',
+    state: 'action_required', reasonCode: 'SITE_NOT_VERIFIED', createdAt: '', updatedAt: '',
+    vacancyActive: false,
+  } as any;
+  assert.equal(jupiterVacancyClosed(parked), true);
+  assert.equal(jupiterStatus(parked).label, 'Вакансия закрыта работодателем');
+  assert.deepEqual(jupiterBadge(parked), { label: 'ЗАКРЫТА', tone: 'closed' });
+  assert.match(jupiterRowSummary(parked), /закрыл вакансию/);
+  // Неизвестно — не закрыта: строки вакансии в базе может не быть.
+  assert.equal(jupiterVacancyClosed({ ...parked, vacancyActive: null }), false);
+  // Отправленный отклик дошёл, пока вакансия была открыта, — он «отправлен».
+  const sent = { ...parked, state: 'submitted', reasonCode: null };
+  assert.equal(jupiterVacancyClosed(sent), false);
+  assert.equal(jupiterBadge(sent).tone, 'sent');
+});

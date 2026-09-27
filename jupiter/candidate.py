@@ -63,9 +63,13 @@ class ConsentKind:
 # Порядок важен: маркетинг и кадровый резерв проверяются раньше, потому что
 # их формулировки часто содержат слово «персональных данных» внутри.
 CONSENT_KINDS: tuple[ConsentKind, ...] = (
+    # Подписка на новые вакансии — тоже рассылка, а не отклик: у Контура
+    # рубрики подписки (VacancySubscriptionForm.RubricIds…) и «Присылать новые
+    # вакансии» стоят в той же форме, что анкета, и Юпитер отмечал все 36.
     ConsentKind("marketing_consent", False, (
         "реклам", "маркетинг", "рассылк", "новост", "акци",
-        "marketing", "newsletter", "promotion", "advertis",
+        "подписк", "подписаться", "подпишитесь", "присылать",
+        "marketing", "newsletter", "promotion", "advertis", "subscri",
     )),
     ConsentKind("talent_pool_consent", False, (
         "кадровый резерв", "базу кандидат", "базе кандидат", "базу соискател",

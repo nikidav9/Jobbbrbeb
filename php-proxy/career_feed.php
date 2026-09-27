@@ -608,9 +608,11 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
 
     $items = [];
     $seen = [];
+    $baseTag = $doc->getElementsByTagName('base')->item(0);
+    $baseHref = $baseTag instanceof DOMElement ? trim($baseTag->getAttribute('href')) : '';
     foreach ($doc->getElementsByTagName('a') as $a) {
         if (count($items) >= 500) break;
-        $href = trim($a->getAttribute('href'));
+        $href = cf_resolve_relative(trim($a->getAttribute('href')), $pageUrl, $baseHref);
         if ($href === '' || !str_contains($href, $needle)) continue;
         // Не каждый хвост после общего префикса является вакансией. Например,
         // у Петровича и категории, и карточки живут под /vakancies/. Для
@@ -663,6 +665,35 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         ];
     }
     return $items;
+}
+
+/**
+ * Относительная ссылка без «/» в начале — «vacancies/job/5766-…» — так, как её
+ * понимает браузер: от <base href> страницы или от папки её адреса. Так
+ * свёрстан портал «Газпрома» (gazpromvacancy.ru) и главная Lesta: сборщик их
+ * ссылки раньше отбрасывал, и из сотни вакансий не доходило ни одной.
+ *
+ * Достраиваем только до https-адреса ТОГО ЖЕ хоста, что и страница: <base>
+ * с чужим хостом не берём, «..» не разбираем. Ссылки с протоколом, корневые
+ * («/…»), якоря и «mailto:» возвращаем как есть — их судьбу решает cf_json_url.
+ */
+function cf_resolve_relative(string $href, string $pageUrl, string $baseHref = ''): string
+{
+    if ($href === '' || preg_match('~^([a-z][a-z0-9+.-]*:|/|#|\?)~i', $href)) return $href;
+    if (str_contains($href, '..')) return $href;
+    $page = parse_url($pageUrl);
+    if (($page['scheme'] ?? '') !== 'https' || ($page['host'] ?? '') === '') return $href;
+    $from = $pageUrl;
+    if ($baseHref !== '') {
+        $b = parse_url($baseHref);
+        if (($b['scheme'] ?? '') === 'https' && strcasecmp((string)($b['host'] ?? ''), $page['host']) === 0) {
+            $from = $baseHref;
+        }
+    }
+    $path = (string)(parse_url($from, PHP_URL_PATH) ?: '/');
+    $dir = substr($path, 0, strrpos($path, '/') + 1);
+    if (str_starts_with($href, './')) $href = substr($href, 2);
+    return 'https://' . $page['host'] . $dir . $href;
 }
 
 /**
