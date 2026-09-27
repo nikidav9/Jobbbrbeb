@@ -1374,9 +1374,24 @@ export default function ProfileScreen() {
               open={openSection === 'account'}
               onToggle={() => toggleSection('account')}
             >
-              <TouchableOpacity style={sS.actionRow} onPress={() => setShowSettings(true)} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={sS.actionRow}
+                onPress={() => {
+                  // Регистрация «почта → код» пароля не заводит — вести на
+                  // «Сменить пароль» для такого аккаунта бессмысленно, он
+                  // всегда отвечает «неверный пароль».
+                  if (currentUser.hasPassword === false) {
+                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
+                  } else {
+                    setShowSettings(true);
+                  }
+                }}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="key-outline" size={17} color={Colors.textSecondary} />
-                <Text style={[sS.actionLabel, { flex: 1 }]}>Сменить пароль</Text>
+                <Text style={[sS.actionLabel, { flex: 1 }]}>
+                  {currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
+                </Text>
                 <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
               </TouchableOpacity>
               <TouchableOpacity style={sS.actionRow} onPress={() => setShowConfirmLogout(true)} activeOpacity={0.7}>
@@ -1599,29 +1614,39 @@ export default function ProfileScreen() {
               В чужих переписках и откликах ваши сообщения останутся, но уже
               без вашего имени. Восстановить аккаунт будет нельзя.
             </Text>
-            <TextInput
-              style={styles.deleteInput}
-              value={deletePassword}
-              onChangeText={(t: string) => { setDeletePassword(t); setDeleteError(''); }}
-              placeholder="Пароль — чтобы это были точно вы"
-              placeholderTextColor={Colors.textMuted}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
-            {/* Регистрация «почта → код» не заводит пароль (решение
-                владельца 27.09.2026) — удаление всё равно обязательно
-                (152-ФЗ), поэтому рядом всегда есть путь мимо забытого/
-                отсутствующего пароля через код на почту. */}
-            <TouchableOpacity
-              onPress={() => {
-                setShowConfirmDelete(false); setDeletePassword(''); setDeleteError('');
-                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
-              }}
-              accessibilityRole="button"
-            >
-              <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-            </TouchableOpacity>
+            {currentUser?.hasPassword === false ? (
+              // Аккаунт «почта → код» без пароля: удаление по одной сессии
+              // не делаем (безопасность) — сначала задать пароль, потом удалить.
+              <Text style={styles.confirmBody}>
+                Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
+              </Text>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.deleteInput}
+                  value={deletePassword}
+                  onChangeText={(t: string) => { setDeletePassword(t); setDeleteError(''); }}
+                  placeholder="Пароль — чтобы это были точно вы"
+                  placeholderTextColor={Colors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+                {/* Регистрация «почта → код» не заводит пароль (решение
+                    владельца 27.09.2026) — удаление всё равно обязательно
+                    (152-ФЗ), поэтому рядом всегда есть путь мимо забытого/
+                    отсутствующего пароля через код на почту. */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowConfirmDelete(false); setDeletePassword(''); setDeleteError('');
+                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <View style={styles.confirmBtns}>
               <TouchableOpacity
                 style={styles.cancelBtn}
@@ -1629,15 +1654,27 @@ export default function ProfileScreen() {
               >
                 <Text style={styles.cancelText}>Отмена</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.logoutConfirmBtn}
-                onPress={handleDeleteAccount}
-                disabled={deletingAccount}
-              >
-                <Text style={styles.logoutConfirmText}>
-                  {deletingAccount ? 'Удаляю…' : 'Удалить'}
-                </Text>
-              </TouchableOpacity>
+              {currentUser?.hasPassword === false ? (
+                <TouchableOpacity
+                  style={styles.setPasswordBtn}
+                  onPress={() => {
+                    setShowConfirmDelete(false);
+                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
+                  }}
+                >
+                  <Text style={styles.setPasswordText}>Задать пароль</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.logoutConfirmBtn}
+                  onPress={handleDeleteAccount}
+                  disabled={deletingAccount}
+                >
+                  <Text style={styles.logoutConfirmText}>
+                    {deletingAccount ? 'Удаляю…' : 'Удалить'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -1718,7 +1755,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               onPress={() => {
                 setShowSettings(false); setCurPassword(''); setNewPassword(''); setConfirmPassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
               }}
               accessibilityRole="button"
             >
@@ -2615,6 +2652,8 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: rf(15), fontWeight: '600', color: Colors.textSecondary },
   logoutConfirmBtn: { flex: 1, backgroundColor: Colors.red, borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center' },
   logoutConfirmText: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
+  setPasswordBtn: { flex: 1, backgroundColor: Colors.primary, borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center' },
+  setPasswordText: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
 });
 
 const photoSrcS = StyleSheet.create({

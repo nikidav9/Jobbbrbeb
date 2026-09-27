@@ -455,6 +455,9 @@ export default function ProfileSettingsScreen() {
             label={currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
             icon="key-outline"
             onPress={() => {
+              // Регистрация «почта → код» (27.09.2026) пароля не заводит —
+              // «Сменить пароль» на таком аккаунте всегда отвечал бы «неверный
+              // пароль». Ведём сразу туда, откуда пароль реально берётся.
               if (currentUser.hasPassword === false) {
                 router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
               } else {
@@ -711,7 +714,7 @@ export default function ProfileSettingsScreen() {
             <TouchableOpacity
               onPress={() => {
                 setShowPassword(false); setOldPassword(''); setNewPassword(''); setConfirmPassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
               }}
               accessibilityRole="button"
             >
@@ -739,28 +742,48 @@ export default function ProfileSettingsScreen() {
             <Text style={s.sheetText}>
               Профиль и сохранённые резюме будут удалены. Это действие нельзя отменить.
             </Text>
-            <View style={s.form}>
-              <AppInput
-                label="Пароль"
-                value={deletePassword}
-                onChangeText={setDeletePassword}
-                secureTextEntry
-                placeholder="Подтвердите пароль"
-              />
-            </View>
-            {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
-                аккаунта «почта → код» пароля может не быть вовсе. */}
-            <TouchableOpacity
-              onPress={() => {
-                setShowDelete(false); setDeletePassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
-              }}
-              accessibilityRole="button"
-            >
-              <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-            </TouchableOpacity>
+            {currentUser.hasPassword === false ? (
+              // Аккаунт «почта → код» без пароля: удаление по одной сессии
+              // не делаем (безопасность) — сначала задать пароль, потом удалить.
+              <Text style={s.sheetText}>
+                Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
+              </Text>
+            ) : (
+              <>
+                <View style={s.form}>
+                  <AppInput
+                    label="Пароль"
+                    value={deletePassword}
+                    onChangeText={setDeletePassword}
+                    secureTextEntry
+                    placeholder="Подтвердите пароль"
+                  />
+                </View>
+                {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
+                    аккаунта «почта → код» пароля может не быть вовсе. */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowDelete(false); setDeletePassword('');
+                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <View style={s.sheetActions}>
-              <PrimaryButton label={deleting ? 'Удаление…' : 'Удалить аккаунт'} onPress={deleteAccount} disabled={deleting || !deletePassword.trim()} />
+              {currentUser.hasPassword === false ? (
+                <PrimaryButton
+                  label="Задать пароль"
+                  onPress={() => {
+                    setShowDelete(false);
+                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
+                  }}
+                />
+              ) : (
+                <PrimaryButton label={deleting ? 'Удаление…' : 'Удалить аккаунт'} onPress={deleteAccount} disabled={deleting || !deletePassword.trim()} />
+              )}
               <PrimaryButton label="Отмена" onPress={() => setShowDelete(false)} secondary />
             </View>
           </View>

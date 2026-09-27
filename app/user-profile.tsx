@@ -10,7 +10,7 @@ import { ScoreCard } from '@/components/feature/ScoreCard';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { METRO_LINES } from '@/constants/metro';
-import { nameColorFromString, getInitials } from '@/services/storage';
+import { nameColorFromString, getInitials, displayName } from '@/services/storage';
 import { dbGetRatingsForUser, dbGetUserById, dbUserStats, UserRating, UserStats } from '@/services/db';
 import { lastSeenLabel, replySpeedLabel, replyRateLabel } from '@/services/presence';
 import { getSupabaseClient } from '@/template';
@@ -222,7 +222,15 @@ export default function UserProfileScreen() {
 
   const isWorker = user.role === 'worker';
   const color = nameColorFromString(user.id);
-  const initials = getInitials(`${user.firstName} ${user.lastName}`);
+  // Работодатель короткого пути (почта → код → компания, решение владельца
+  // 27.09.2026) регистрируется без имени — оно ему тут не нужно, только
+  // название компании. `${firstName} ${lastName}` тогда даёт один пробел;
+  // у работодателя подставляем название компании, иначе displayName (часть
+  // почты; чужая почта сюда не приходит — тогда «Без имени»).
+  const name = `${user.firstName} ${user.lastName}`.trim()
+    || (user.role === 'employer' && user.company ? user.company : '')
+    || displayName(user);
+  const initials = getInitials(name);
   const line = METRO_LINES.find(l => l.id === user.metroLineId);
 
   /**
@@ -268,7 +276,7 @@ export default function UserProfileScreen() {
             </View>
           )}
 
-          <Text style={styles.name}>{user.firstName} {user.lastName}</Text>
+          <Text style={styles.name}>{name}</Text>
 
           <View style={[styles.roleBadge, { backgroundColor: isWorker ? Colors.primaryLight : '#FEF3C7' }]}>
             <Text style={[styles.roleText, { color: isWorker ? Colors.primary : '#92400E' }]}>
