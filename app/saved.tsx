@@ -8,13 +8,20 @@ import { useRouter } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import { useApp } from '@/hooks/useApp';
-import { PermVacancy } from '@/constants/types';
+import { PermVacancy, ExtVacancy } from '@/constants/types';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { plural } from '@/services/time';
 import { dbGetPermSavedDetailed, dbRemovePermSaved } from '@/services/db';
 import { dayKey, dayShort, groupByDay } from '@/services/dayGroups';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { BackButton } from '@/components/ui/BackButton';
+import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
+import { openExtVacancy } from '@/services/extVacancyHandoff';
+
+// Строка избранного: своя вакансия JobToo или карьерная (закладки миграции 129).
+type SavedRow =
+  | { kind: 'perm'; id: string; title: string; company: string; closed: boolean; at: string | null; v: PermVacancy }
+  | { kind: 'ext'; id: string; title: string; company: string; closed: boolean; at: string | null; v: ExtVacancy };
 
 /**
  * Избранные вакансии.
@@ -37,9 +44,13 @@ export default function SavedScreen() {
 
   const userId = currentUser?.id ?? '';
 
+  const extSaved = useExtSaved();
+
   const load = useCallback(async () => {
     if (!userId) return;
     try {
+      // Карьерные закладки — отдельной таблицей; их сбой не прячет свои.
+      loadExtSaved(userId, true).catch(() => setLoadFailed(true));
       const rows = await dbGetPermSavedDetailed(userId);
       const map: Record<string, string | null> = {};
       for (const r of rows) map[r.vacancyId] = r.savedAt;
@@ -74,29 +85,49 @@ export default function SavedScreen() {
     }
   };
 
-  const saved: PermVacancy[] = permVacancies.filter((v: PermVacancy) => permSavedIds.includes(v.id));
+  const unsaveExt = async (v: ExtVacancy) => {
+    if (!userId) return;
+    try {
+      await toggleExtSaved(userId, v);
+    } catch {
+      showToast('Не удалось удалить из избранного', 'error');
+    }
+  };
+
+  const saved: SavedRow[] = [
+    ...permVacancies.filter((v: PermVacancy) => permSavedIds.includes(v.id)).map((v): SavedRow => ({
+      kind: 'perm', id: v.id, title: v.title, company: v.company, closed: v.status !== 'open', at: dates[v.id] ?? null, v,
+    })),
+    ...extSaved.map(({ vacancy: v, savedAt }): SavedRow => ({
+      kind: 'ext', id: v.id, title: v.title, company: v.company || 'Карьерный сайт', closed: !v.active, at: savedAt, v,
+    })),
+  ];
   // Свежие сверху. У вакансии без даты (сохранена до того, как мы начали их
   // читать) ключ пустой — такие уходят в конец отдельной группой.
-  const sorted = [...saved].sort((a, b) => (dates[b.id] ?? '').localeCompare(dates[a.id] ?? ''));
+  const sorted = [...saved].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
 
-  const groups = groupByDay(sorted, v => dates[v.id]);
+  const groups = groupByDay(sorted, r => r.at);
 
-  const renderRow = (v: PermVacancy, last: boolean) => {
-    const closed = v.status !== 'open';
-    const at = dates[v.id];
+  const renderRow = (r: SavedRow, last: boolean) => {
+    const { closed, at } = r;
+    const open = () => {
+      if (r.kind === 'perm') { router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: r.id } }); return; }
+      openExtVacancy(r.v);
+      router.push({ pathname: '/ext-vacancy', params: { id: r.id } });
+    };
     return (
-      <View key={v.id} style={[sv.row, !last && sv.rowDivider]}>
+      <View key={`${r.kind}-${r.id}`} style={[sv.row, !last && sv.rowDivider]}>
         <TouchableOpacity
           style={sv.rowTap}
           activeOpacity={0.85}
-          onPress={() => router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: v.id } })}
+          onPress={open}
         >
-          <View style={[sv.logo, { backgroundColor: nameColorFromString(v.company) }]}>
-            <Text style={sv.logoTxt}>{getInitials(v.company)}</Text>
+          <View style={[sv.logo, { backgroundColor: nameColorFromString(r.company) }]}>
+            <Text style={sv.logoTxt}>{getInitials(r.company)}</Text>
           </View>
           <View style={sv.rowBody}>
-            <Text style={sv.rowTitle} numberOfLines={2}>{v.title}</Text>
-            <Text style={sv.rowCompany} numberOfLines={1}>{v.company}</Text>
+            <Text style={sv.rowTitle} numberOfLines={2}>{r.title}</Text>
+            <Text style={sv.rowCompany} numberOfLines={1}>{r.company}</Text>
           </View>
           <View style={sv.rowRight}>
             <View style={[sv.pill, closed ? sv.pillClosed : sv.pillSaved]}>
@@ -109,9 +140,9 @@ export default function SavedScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={sv.unsave}
-          onPress={() => unsave(v.id)}
+          onPress={() => (r.kind === 'perm' ? unsave(r.id) : unsaveExt(r.v))}
           hitSlop={8}
-          accessibilityLabel={`Удалить из избранного: ${v.title}`}
+          accessibilityLabel={`Удалить из избранного: ${r.title}`}
         >
           <Ionicons name="bookmark" size={20} color={Colors.primary} />
         </TouchableOpacity>
@@ -162,7 +193,7 @@ export default function SavedScreen() {
               {g.label} · {g.items.length} {plural(g.items.length, 'вакансия', 'вакансии', 'вакансий')}
             </Text>
             <View style={sv.group}>
-              {g.items.map((v, i) => renderRow(v, i === g.items.length - 1))}
+              {g.items.map((r, i) => renderRow(r, i === g.items.length - 1))}
             </View>
           </View>
         ))}

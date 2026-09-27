@@ -26,6 +26,7 @@ import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
 import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
+import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
 import {
@@ -1318,6 +1319,14 @@ function WorkerPermMode() {
   const [swLastSkipped, setSwLastSkipped] = useState<string | null>(null);
   const swWantRef = useRef<(vx?: number) => void>(() => {});
   const swSkipRef = useRef<(vx?: number) => void>(() => {});
+  const extSaved = useExtSaved();
+  const extSavedIds = useMemo(() => new Set(extSaved.map(i => i.vacancy.id)), [extSaved]);
+  const extSaving = useRef(new Set<string>());
+  useEffect(() => {
+    if (!currentUser?.id || currentUser.isGuest) return;
+    // Сбой загрузки закладок не мешает ленте: кнопка просто без отметки.
+    loadExtSaved(currentUser.id).catch(() => {});
+  }, [currentUser?.id, currentUser?.isGuest]);
   // Возврат с «Вакансии подробно»: ✕ и «Откликнуться» там работают как свайп
   // (README макета). Смахиваем ту же карточку, если она всё ещё сверху;
   // пауза — чтобы анимация шла уже на видимом экране, а не под переходом.
@@ -1533,6 +1542,23 @@ function WorkerPermMode() {
 
   // Тот же набор, что видит директор в своей шторке, — и так же иконками,
   // а не смайликами: их рисует система, и на каждом телефоне по-своему.
+  // Закладки карьерных вакансий (миграция 129): отметка читается из общего
+  // хранилища services/extSaved.ts — оно же у «Вакансии подробно» и избранного.
+  const toggleExtSave = async (v: ExtVacancy) => {
+    if (!currentUser) return;
+    if (currentUser.isGuest) { promptRegister({ vacancyKind: 'permanent' }); return; }
+    if (extSaving.current.has(v.id)) return;
+    extSaving.current.add(v.id);
+    try {
+      const now = await toggleExtSaved(currentUser.id, v);
+      showToast(now ? 'Сохранено в избранное' : 'Убрано из избранного', 'success');
+    } catch {
+      showToast('Не удалось сохранить. Проверьте связь.', 'error');
+    } finally {
+      extSaving.current.delete(v.id);
+    }
+  };
+
   const toggleSaved = async (v: PermVacancy) => {
     if (!currentUser) return;
     if (currentUser.isGuest) {
@@ -2081,6 +2107,8 @@ function WorkerPermMode() {
           onUndo={swLastSkipped ? swUndo : null}
           onSkip={() => swSkip(0.5)}
           onWant={() => swWant(0.5)}
+          saved={extSavedIds.has(ev.id)}
+          onSave={() => { void toggleExtSave(ev); }}
         />
       </View>
     );

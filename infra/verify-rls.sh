@@ -39,7 +39,9 @@ with required(table_name) as (
     -- Были невидимы для сторожа: список таблиц выводился регуляркой, которая
     -- не понимала записи вида `alter table public.jm_… enable row level
     -- security`. jm_resume_files — резюме людей, там персональные данные.
-    ('jm_guest_events'), ('jm_referral_rewards'), ('jm_resume_files')
+    ('jm_guest_events'), ('jm_referral_rewards'), ('jm_resume_files'),
+    -- Закладки карьерных вакансий (миграция 129).
+    ('jm_ext_saved')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r
