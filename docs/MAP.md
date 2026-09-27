@@ -190,6 +190,36 @@
 
 ### Профиль, резюме и личные данные (`app/(tabs)/profile.tsx`)
 - У работника четыре сегмента: резюме, личные данные, файлы резюме и отзывы.
+- **Редизайн профиля соискателя (27.09, решение владельца)** — только ветка
+  `currentUser.role === 'worker'` в `app/(tabs)/profile.tsx`; профиль
+  работодателя и нижнее меню не тронуты. Эталон — `docs/design/profile/`
+  (README + 4 HTML-макета + рендеры 390 px), «смотри исключительно на этот
+  дизайн». Компоненты — `components/profile/`: `ProfileHeader` (лого + Помощь/
+  Уведомления/Настройки + карточка пользователя), `ProfileTabs` (пилюли,
+  на узких экранах — горизонтальная прокрутка, у пилюль `flexShrink: 0` —
+  иначе текст обрезается тише, чем появляется скролл), `SectionCard`,
+  `EditableRow`, `AddRow`, `SkillChip`, `LanguageLevel` (шкала — по номеру
+  уровня CEFR A1…C2, «Родной» = все 6), `ResumeFileCard`, `EmptyState`, плюс
+  композиты вкладок `ResumeTabContent`/`PersonalTabContent`/`FilesTabContent`/
+  `ReviewsTabContent`. Токены — `constants/profileTheme.ts` (отдельно от
+  `constants/theme`, который держат остальные экраны). Жёсткая тень без
+  размытия — не системная тень, а подложка `components/profile/HardShadowCard.tsx`
+  (View со сдвигом позади карточки), одинаково на iOS/Android/вебе. Иконки и
+  иллюстрации — свои на react-native-svg: `components/profile/icons.tsx`,
+  `components/profile/illustrations.tsx` (пути 1:1 из HTML-эталона).
+  Шрифты Unbounded/Onest — `@expo-google-fonts/{unbounded,onest}`,
+  загружаются в `app/_layout.tsx` рядом с Ionicons, без блокировки экрана.
+  Справочник вариантов выбора для «Личных» (`workAuthorization`/`relocation`/
+  `driversLicense`) переехал в `lib/personalFieldChoices.ts` — общий для
+  экрана (модалка редактирования) и `PersonalTabContent`, чтобы не заводить
+  циклический импорт из файла маршрута. Вкладка «Отзывы» у соискателя больше
+  не открывает `RatingsModal` — звёзды в карточке переключают на вкладку
+  «Отзывы» (`ReviewsTabContent`, свой fetch `dbGetRatingsForUser`); у
+  работодателя `RatingsModal` и старая карточка профиля не изменились.
+  «Гражданство/статус разрешения» и «Город/метро» в HTML-эталоне не
+  нарисованы (там только 4 секции) — добавлены в `PersonalTabContent` тем же
+  визуальным языком (эйброу + белая карточка), чтобы не терять
+  функциональность старого профиля.
 - **Загрузка резюме на регистрации** — только на запасном пути по телефону
   (`app/register-worker.tsx`, шаг 6 из 7, необязательный, решение владельца
   25.09); по почте регистрация — «почта → код → лента», резюме и имя спросит
