@@ -21,11 +21,17 @@ import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy } from '@/constants/types';
 import { JobSection, SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
-import { getInitials, nameColorFromString, saveFeedSections } from '@/services/storage';
+import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
-import { vacancyLevel, vacancyFormat, VACANCY_LEVELS, VACANCY_FORMATS, type VacancyLevel, type VacancyFormat } from '@/services/vacancyFacets';
+import {
+  vacancyLevel, vacancyFormat, vacancySpecs, VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS,
+  type VacancyLevel, type VacancyFormat, type VacancySpec,
+} from '@/services/vacancyFacets';
+import {
+  type FeedFilters, EMPTY_FEED_FILTERS, isFilterActive, matchOwnVacancy, toExtFeedFilters, pluralVacancies,
+} from '@/services/feedFilters';
 import { METRO_LINES } from '@/constants/metro';
 import {
   dbUpdateVacancy,
@@ -69,7 +75,6 @@ import { ApplySheet } from '@/components/feature/ApplySheet';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { payShort } from '@/services/pay';
 import { permVacancyInfoLines } from '@/services/vacancyCard';
-import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 // Гостю даём несколько бесплатных «отклонить», дальше — стена регистрации.
 // Счётчик модульный: общий для колод «Подработка» и «Работа», чтобы гость не
@@ -156,11 +161,6 @@ const wpStyles = StyleSheet.create({
 
 const { width: SW } = Dimensions.get('window');
 
-// Flat list of all metro stations with their line metadata
-const ALL_STATIONS = METRO_LINES.flatMap(l =>
-  l.stations.map(s => ({ station: s, lineId: l.id, lineColor: l.color, lineName: l.name }))
-).sort((a, b) => a.station.localeCompare(b.station, 'ru'));
-
 // Часть описаний приходит с продублированным английским переводом после
 // разделителя из тире. Показываем только исходный текст: режем хвост, если
 // после строки-разделителя идёт преимущественно латиница.
@@ -178,247 +178,8 @@ function cleanDescription(text?: string): string {
   return text;
 }
 
-function MetroStationPicker({
-  visible,
-  selectedStation,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  selectedStation: string | null;
-  onSelect: (station: string | null) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState('');
-
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return ALL_STATIONS;
-    return ALL_STATIONS.filter(s => s.station.toLowerCase().includes(q));
-  }, [query]);
-
-  if (!visible) return null;
-
-  return (
-    <View style={styles.filterOverlay}>
-      <View style={[styles.filterSheet, { maxHeight: '85%' }]}>
-        <View style={styles.filterSheetHeader}>
-          <Text style={styles.filterSheetTitle}>Станция метро</Text>
-          <TouchableOpacity onPress={() => { setQuery(''); onClose(); }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={metroPickerSt.searchRow}>
-          <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
-          <TextInput
-            style={metroPickerSt.searchInput}
-            placeholder="Введите название станции..."
-            placeholderTextColor={Colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-            clearButtonMode="while-editing"
-            returnKeyType="search"
-          />
-          {query.length > 0 ? (
-            <TouchableOpacity onPress={() => setQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={metroPickerSt.searchClear}>✕</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {selectedStation ? (
-          <TouchableOpacity
-            style={styles.clearFilterRow}
-            onPress={() => { setQuery(''); onSelect(null); onClose(); }}
-          >
-            <Text style={styles.clearFilterTxt}>✕ Сбросить фильтр</Text>
-          </TouchableOpacity>
-        ) : null}
-
-        <FlatList
-          data={results}
-          keyExtractor={(item, i) => `${item.lineId}-${i}`}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[styles.lineRow, selectedStation === item.station ? styles.lineRowActive : null]}
-              onPress={() => { setQuery(''); onSelect(item.station); onClose(); }}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.lineDot, { backgroundColor: item.lineColor }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.lineName, selectedStation === item.station ? { color: Colors.primary, fontWeight: '700' } : null]}>
-                  {item.station}
-                </Text>
-                <Text style={metroPickerSt.lineSubtitle}>{item.lineName}</Text>
-              </View>
-              {selectedStation === item.station ? <Text style={{ color: Colors.primary }}>✓</Text> : null}
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={
-            <View style={metroPickerSt.empty}>
-              <Text style={metroPickerSt.emptyTxt}>Станция не найдена</Text>
-            </View>
-          }
-        />
-      </View>
-    </View>
-  );
-}
-
-const metroPickerSt = StyleSheet.create({
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), marginVertical: rs(10),
-    backgroundColor: Colors.surface, borderRadius: rs(12),
-    paddingHorizontal: rs(12), paddingVertical: rs(10),
-    borderWidth: 1, borderColor: Colors.inputBorder,
-  },
-  searchInput: { flex: 1, fontSize: rf(15), color: Colors.textPrimary },
-  searchClear: { fontSize: rf(14), color: Colors.textMuted, paddingLeft: rs(4) },
-  lineSubtitle: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
-  empty: { padding: rs(24), alignItems: 'center' },
-  emptyTxt: { fontSize: rf(14), color: Colors.textMuted },
-});
-
-// Мультивыбор метро в два уровня: линии → станции (с «Выбрать все»),
-// поиск по всем станциям, выбранное отмечается галочкой. Формат как на
-// референсе, но в наших цветах. Возвращает массив станций.
-function MetroPicker({ visible, selected, onChange, onClose }: {
-  visible: boolean;
-  selected: string[];
-  onChange: (stations: string[]) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<string[]>(selected);
-  const [query, setQuery] = useState('');
-  const [line, setLine] = useState<(typeof METRO_LINES)[number] | null>(null);
-  const insets = useSafeAreaInsets();
-
-  useEffect(() => {
-    if (visible) { setDraft(selected); setQuery(''); setLine(null); }
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!visible) return null;
-
-  const draftSet = new Set(draft);
-  const toggle = (s: string) => setDraft(d => d.includes(s) ? d.filter(x => x !== s) : [...d, s]);
-  const q = query.trim().toLowerCase();
-  const searchResults = q ? ALL_STATIONS.filter(s => s.station.toLowerCase().includes(q)) : [];
-
-  const Check = ({ on }: { on: boolean }) => (
-    <View style={[mp.check, on && mp.checkOn]}>
-      {on ? <Ionicons name="checkmark" size={rf(14)} color="#fff" /> : null}
-    </View>
-  );
-
-  return (
-    <View style={styles.filterOverlay}>
-      <View style={[styles.filterSheet, { maxHeight: '90%' }]}>
-        <View style={styles.filterSheetHeader}>
-          {line ? (
-            <BackButton onPress={() => setLine(null)} />
-          ) : <View style={{ width: BACK_BUTTON_SIZE }} />}
-          <Text style={styles.filterSheetTitle} numberOfLines={1}>{line ? line.name : 'Метро'}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ width: BACK_BUTTON_SIZE, alignItems: 'center' }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={metroPickerSt.searchRow}>
-          <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
-          <TextInput
-            style={metroPickerSt.searchInput}
-            placeholder="Поиск"
-            placeholderTextColor={Colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            clearButtonMode="while-editing"
-          />
-        </View>
-
-        {q ? (
-          <FlatList
-            data={searchResults}
-            keyExtractor={(it, i) => `${it.lineId}-${it.station}-${i}`}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <TouchableOpacity style={[mp.card, draftSet.has(item.station) && mp.cardOn]} onPress={() => toggle(item.station)} activeOpacity={0.8}>
-                <View style={[mp.dot, { backgroundColor: item.lineColor }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={mp.name}>{item.station}</Text>
-                  <Text style={mp.sub}>{item.lineName}</Text>
-                </View>
-                <Check on={draftSet.has(item.station)} />
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={<View style={metroPickerSt.empty}><Text style={metroPickerSt.emptyTxt}>Станция не найдена</Text></View>}
-          />
-        ) : line ? (
-          <FlatList
-            data={line.stations}
-            keyExtractor={(s, i) => `${s}-${i}`}
-            keyboardShouldPersistTaps="handled"
-            ListHeaderComponent={(() => {
-              const allOn = line.stations.every(s => draftSet.has(s));
-              return (
-                <TouchableOpacity
-                  style={mp.card}
-                  activeOpacity={0.8}
-                  onPress={() => setDraft(d => {
-                    const set = new Set(d);
-                    if (allOn) line.stations.forEach(s => set.delete(s));
-                    else line.stations.forEach(s => set.add(s));
-                    return [...set];
-                  })}
-                >
-                  <Text style={[mp.name, { flex: 1, fontWeight: '700' }]}>Выбрать все</Text>
-                  <Check on={allOn} />
-                </TouchableOpacity>
-              );
-            })()}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={[mp.card, draftSet.has(item) && mp.cardOn]} onPress={() => toggle(item)} activeOpacity={0.8}>
-                <View style={[mp.dot, { backgroundColor: line.color }]} />
-                <Text style={[mp.name, { flex: 1 }]}>{item}</Text>
-                <Check on={draftSet.has(item)} />
-              </TouchableOpacity>
-            )}
-          />
-        ) : (
-          <FlatList
-            data={METRO_LINES}
-            keyExtractor={l => l.id}
-            renderItem={({ item }) => {
-              const cnt = item.stations.filter(s => draftSet.has(s)).length;
-              return (
-                <TouchableOpacity style={mp.card} onPress={() => setLine(item)} activeOpacity={0.8}>
-                  <View style={[mp.bar, { backgroundColor: item.color }]} />
-                  <Text style={[mp.name, { flex: 1 }]} numberOfLines={1}>{item.name}</Text>
-                  {cnt > 0 ? <Text style={mp.badge}>{cnt}</Text> : null}
-                  <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
-                </TouchableOpacity>
-              );
-            }}
-          />
-        )}
-
-        <View style={[mp.footer, { paddingBottom: insets.bottom + rs(84) }]}>
-          <TouchableOpacity style={mp.save} onPress={() => { onChange(draft); onClose(); }} activeOpacity={0.85}>
-            <Text style={mp.saveTxt}>Сохранить{draft.length ? ` · ${draft.length}` : ''}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={mp.reset} onPress={() => setDraft([])} activeOpacity={0.85}>
-            <Text style={mp.resetTxt}>Сбросить</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
+// Строка с галочкой — общий вид для списков множественного выбора в
+// шторках фильтров (специализация, компания): карточка, подпись, чек справа.
 const mp = StyleSheet.create({
   card: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
@@ -427,21 +188,13 @@ const mp = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: rs(14), backgroundColor: Colors.bg,
   },
   cardOn: { borderColor: Colors.primary },
-  bar: { width: rs(5), height: rs(20), borderRadius: rs(3) },
-  dot: { width: rs(11), height: rs(11), borderRadius: rs(6) },
   name: { fontSize: rf(15), color: Colors.textPrimary, fontWeight: '500' },
   sub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
-  badge: { fontSize: rf(12), fontWeight: '800', color: Colors.primary, marginRight: rs(6) },
   check: {
     width: rs(22), height: rs(22), borderRadius: rs(6),
     borderWidth: 1.5, borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
   },
   checkOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  footer: { padding: rs(16), gap: rs(8), borderTopWidth: 1, borderTopColor: Colors.divider },
-  save: { backgroundColor: Colors.primary, borderRadius: rs(14), alignItems: 'center', paddingVertical: rs(14) },
-  saveTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-  reset: { backgroundColor: Colors.primaryLight, borderRadius: rs(14), alignItems: 'center', paddingVertical: rs(13) },
-  resetTxt: { color: Colors.primary, fontSize: rf(14), fontWeight: '700' },
 });
 
 
