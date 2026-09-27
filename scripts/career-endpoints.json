@@ -2275,5 +2275,105 @@
       "link_path": "/vacancies/job/",
       "company_const": "Газпром"
     }
+  },
+  {
+    "url": "https://innostage-group.ru/career/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/career/vakancy/",
+      "link_regex": "~/career/vakancy/\\d+/?$~",
+      "min_title": 5,
+      "company_const": "Innostage"
+    },
+    "company_hint": "Innostage"
+  },
+  {
+    "url": "https://company.drweb.ru/careers/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "company.drweb.ru/careers/?i=",
+      "min_title": 5,
+      "company_const": "Доктор Веб"
+    },
+    "company_hint": "Доктор Веб"
+  },
+  {
+    "url": "https://amonitoring.ru/career/vacancies/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/career/vacancies/",
+      "link_regex": "~^/career/vacancies/[a-z0-9_-]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "Перспективный мониторинг"
+    },
+    "company_hint": "Перспективный мониторинг"
+  },
+  {
+    "url": "https://norsi-trans.ru/company/career/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/company/career/",
+      "link_regex": "~^/company/career/[a-z0-9_-]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "Норси-Транс"
+    },
+    "company_hint": "Норси-Транс"
+  },
+  {
+    "url": "https://bastion-tech.ru/vacancies",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "link_regex": "~^/vacancies/[a-z0-9_-]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "Бастион"
+    },
+    "company_hint": "Бастион"
+  },
+  {
+    "url": "https://team.onetwotrip.com/vacancies",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "link_regex": "~^/vacancies/\\d+$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "OneTwoTrip"
+    },
+    "company_hint": "OneTwoTrip"
+  },
+  {
+    "url": "https://flowwow.huntflow.io/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 5,
+      "company_const": "Flowwow",
+      "link_regex": "~^/vacancy/(?!ia-ne-nashel)~"
+    },
+    "company_hint": "Flowwow"
+  },
+  {
+    "url": "https://yclients.huntflow.io/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 5,
+      "company_const": "YCLIENTS"
+    },
+    "company_hint": "YCLIENTS"
+  },
+  {
+    "url": "https://tripster.huntflow.io/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy/",
+      "min_title": 5,
+      "company_const": "Tripster"
+    },
+    "company_hint": "Tripster"
   }
 ]
