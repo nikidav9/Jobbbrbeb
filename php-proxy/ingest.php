@@ -533,9 +533,12 @@ function ing_deactivate_stale(string $sourceId, string $cut, ?string $host): int
  * Сходить в один источник, включая все страницы полного фида.
  *
  * $scope = 'api' — ежечасный заход по карьерным адресам с настоящим API
- * (career.php?modes=api). Он добавляет и обновляет вакансии, но ничего не
- * гасит: сайты со ссылками в нём не обходятся, и их вакансии он бы «не
- * увидел». Гашение — дело полного круга раз в шесть часов.
+ * (career.php?modes=api). Он добавляет и обновляет вакансии и гасит пропавшие
+ * только на сайтах, прошедших целиком, — по хостам, которые career.php назвал
+ * в этом режиме. Хосты, общие со страницами ссылок, career.php в режиме api
+ * не называет: их вакансии этот заход не видит. Остальное гашение — дело
+ * полного круга раз в шесть часов. Так закрытая вакансия API-сайта гаснет за
+ * час, а не за шесть (жалоба 26.09: Lesta, «Мы уже закрыли эту вакансию»).
  */
 function ing_run_source(array $src, string $scope = ''): array
 {
@@ -717,6 +720,11 @@ function ing_run_source(array $src, string $scope = ''): array
             foreach (ing_complete_hosts($unitHosts, $unitFailed) as $host) {
                 $gone += ing_deactivate_stale((string)$src['id'], $startedAt, $host);
             }
+        }
+        if ($gone > 0) sm_cache_invalidate();
+    } elseif ($complete && $scope === 'api') {
+        foreach (ing_complete_hosts($unitHosts, $unitFailed) as $host) {
+            $gone += ing_deactivate_stale((string)$src['id'], $startedAt, $host);
         }
         if ($gone > 0) sm_cache_invalidate();
     }

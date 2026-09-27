@@ -7,8 +7,10 @@ import http.cookiejar
 import json
 import mimetypes
 import re
+import os
 import socket
 import secrets
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -578,6 +580,32 @@ class _PinnedHTTPHandler(urllib.request.HTTPHandler):
         )
 
 
+# Т-Банк, Альфа-Банк и Точка подписаны центром Минцифры (Russian Trusted CA),
+# которого нет в системном списке, и без него их анкеты не открыть даже из
+# Москвы. Решение владельца 26.09.2026 — то же, что у сборщика вакансий
+# (php-proxy/safe_url.php, JT_RU_CA_HOSTS): для этих доменов и их поддоменов
+# доверяем ТОЛЬКО этому центру (он заменяет системный список, а не дополняет),
+# для остальных сайтов не меняется ничего. Проверка сертификата и имени хоста
+# остаётся включённой.
+RU_CA_HOSTS = ("tbank.ru", "alfabank.ru", "tochka.com")
+_RU_CA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ru_trusted_ca.pem")
+_ru_ca_context: ssl.SSLContext | None = None
+
+
+def needs_ru_ca(host: str) -> bool:
+    host = (host or "").lower().rstrip(".")
+    return any(host == s or host.endswith("." + s) for s in RU_CA_HOSTS)
+
+
+def ru_ca_context() -> ssl.SSLContext:
+    global _ru_ca_context
+    if _ru_ca_context is None:
+        # cafile вместо системного списка: create_default_context не грузит
+        # системные корни, когда ему дан свой файл.
+        _ru_ca_context = ssl.create_default_context(cafile=_RU_CA_FILE)
+    return _ru_ca_context
+
+
 class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
     def __init__(self, pins: dict[str, str]):
         super().__init__()
@@ -588,7 +616,7 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(
             _pinned_connection(http.client.HTTPSConnection, self.pins.get(host)),
             req,
-            context=self._context,
+            context=ru_ca_context() if needs_ru_ca(host) else self._context,
         )
 
 

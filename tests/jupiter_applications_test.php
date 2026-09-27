@@ -224,6 +224,12 @@ check('jupiterMyApplications подтягивает название вакан�
     && str_contains($myApps, "'vacancy_title'"));
 check('список адресов для запроса названий экранирован sb_in_list',
     str_contains($myApps, "sb_in_list(\$urls)"));
+// Закрытая работодателем вакансия (решение владельца 26.09): экран отклика
+// не предлагает «Открыть анкету», если сбор погасил вакансию. Неизвестно —
+// null, а не false: без строки вакансии закрытой её не объявляем.
+check('jupiterMyApplications отдаёт, открыта ли вакансия',
+    str_contains($myApps, "'url,title,active'")
+    && str_contains($myApps, "\$row['vacancy_active'] = \$activeByUrl[\$u] ?? null;"));
 
 if ($failures) {
     echo "jupiter applications: ПРОВАЛЫ\n";

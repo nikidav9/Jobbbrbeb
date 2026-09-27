@@ -9,6 +9,16 @@ const WAIT = { fg: '#B45309', bg: '#FEF3C7' };
 const DONE = { fg: '#047857', bg: '#D1FAE5' };
 const INFO = { fg: '#1D4ED8', bg: '#DBEAFE' };
 const FAIL = { fg: '#DC2626', bg: '#FEE2E2' };
+const CLOSED = { fg: '#4B5563', bg: '#E5E7EB' };
+
+/**
+ * Работодатель закрыл вакансию, а отклик так и не ушёл. Отправленный отклик
+ * закрытым не считаем: он дошёл, пока вакансия была открыта. Решение владельца
+ * 26.09: такой отклик — «Вакансия закрыта», без кнопки отправки, не в «Ждут вас».
+ */
+export function jupiterVacancyClosed(a: JupiterApplication): boolean {
+  return a.vacancyActive === false && a.state !== 'submitted' && a.state !== 'duplicate';
+}
 
 export function jupiterIsSber(a: Pick<JupiterApplication, 'vacancyUrl'>): boolean {
   return /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
@@ -35,6 +45,7 @@ function stateStatus(state: JupiterApplicationState): JupiterStatus {
 
 /** Статус-плашка отклика: особые причины важнее общего состояния. */
 export function jupiterStatus(a: JupiterApplication): JupiterStatus {
+  if (jupiterVacancyClosed(a)) return { label: 'Вакансия закрыта работодателем', ...CLOSED };
   if (a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED') return { label: 'Автоотклик выключен · не отправлено', ...WAIT };
   if (jupiterNeedsSberConsent(a)) return { label: 'Нужно согласие Сбера · не отправлено', ...WAIT };
   if (a.reasonCode === 'UNSUPPORTED_SCRIPT') return { label: 'Нужен браузер · отклик не отправлен', ...WAIT };
@@ -43,11 +54,12 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   return stateStatus(a.state);
 }
 
-export type JupiterBadge = { label: string; tone: 'sent' | 'needs_you' | 'failed' | 'working' };
+export type JupiterBadge = { label: string; tone: 'sent' | 'needs_you' | 'failed' | 'working' | 'closed' };
 
 /** Метка строки списка — как у Sorce: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ ПОЛУЧИЛОСЬ / В РАБОТЕ. */
 export function jupiterBadge(a: JupiterApplication): JupiterBadge {
   if (a.state === 'submitted' || a.state === 'duplicate') return { label: 'ОТПРАВЛЕНО', tone: 'sent' };
+  if (jupiterVacancyClosed(a)) return { label: 'ЗАКРЫТА', tone: 'closed' };
   if (a.state === 'failed') return { label: 'НЕ ПОЛУЧИЛОСЬ', tone: 'failed' };
   if (a.state === 'action_required') return { label: 'НУЖНЫ ВЫ', tone: 'needs_you' };
   return { label: 'В РАБОТЕ', tone: 'working' };
@@ -55,6 +67,7 @@ export function jupiterBadge(a: JupiterApplication): JupiterBadge {
 
 /** Итог одной строкой: что сделано или чего не хватает, — для списка «Откликов». */
 export function jupiterRowSummary(a: JupiterApplication): string {
+  if (jupiterVacancyClosed(a)) return 'Работодатель закрыл вакансию — отклик не отправлен';
   if (a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED') return 'Автоотклик выключен — отправьте сами';
   if (jupiterNeedsSberConsent(a)) return 'Нужно ваше согласие для Сбера';
   switch (a.state) {

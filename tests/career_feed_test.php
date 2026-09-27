@@ -565,6 +565,24 @@ check('адрес, к которому пришли, проверяется по
 check('размер страницы вакансии ограничен',
     str_contains($ingest, '$tooLarge = true; return 0;'));
 
+// Относительные ссылки без «/» — «vacancies/job/5766-…» (портал «Газпрома»,
+// главная Lesta). Раньше отбрасывались все: из сотни вакансий — ни одной.
+$gzHtml = '<html><head><base href="https://www.gazpromvacancy.ru/"></head><body>'
+    . '<a href="vacancies/job/5766-programmist-1s/">Программист-разработчик 1С</a>'
+    . '<a href="../../etc/passwd">Главный специалист отдела</a></body></html>';
+$gz = cf_html_links($gzHtml, 'https://www.gazpromvacancy.ru/vacancies/cat/it/', ['link_path' => '/vacancies/job/'], $now);
+check('относительная ссылка достраивается от <base href>',
+    count($gz) === 1 && $gz[0]['url'] === 'https://www.gazpromvacancy.ru/vacancies/job/5766-programmist-1s/');
+check('без <base> — от папки адреса страницы',
+    cf_resolve_relative('job/7', 'https://x.ru/vacancies/list', '') === 'https://x.ru/vacancies/job/7');
+check('<base> с чужим хостом не берём — ссылка остаётся на хосте страницы',
+    cf_resolve_relative('job/7', 'https://x.ru/v/', 'https://evil.ru/') === 'https://x.ru/v/job/7');
+check('«..» не разбираем', cf_resolve_relative('../job/7', 'https://x.ru/v/', '') === '../job/7');
+check('корневые, абсолютные и mailto не трогаем',
+    cf_resolve_relative('/vacancy/1', 'https://x.ru/v/', '') === '/vacancy/1'
+    && cf_resolve_relative('https://y.ru/1', 'https://x.ru/v/', '') === 'https://y.ru/1'
+    && cf_resolve_relative('mailto:hr@x.ru', 'https://x.ru/v/', '') === 'mailto:hr@x.ru');
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
