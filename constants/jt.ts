@@ -23,4 +23,5 @@ export const JT_FONT = {
   head: 'Unbounded-700',
   medium: 'Manrope-500',
   bold: 'Manrope-700',
+  heavy: 'Manrope-800',
 } as const;

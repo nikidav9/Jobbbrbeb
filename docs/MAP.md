@@ -749,6 +749,19 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   (`assets/fonts/*.ttf`, собраны из woff2 макета, SIL OFL), грузятся в
   `useFonts` в `app/_layout.tsx`. Подзаголовок 3-го слайда без «или ссылкой»:
   импорта резюме по ссылке пока нет.
+- **Вид входа и регистрации — макет «JT-auth-and-details»** (27.09.2026):
+  `app/login.tsx` — полный экран (не модалка), иллюстрация «дверь»
+  (`assets/images/auth-login-door.png`); `register-worker`/`register-employer` —
+  круглая «назад» и полоска шагов `JTProgress`. Общие элементы макета —
+  `components/ui/jt.tsx` (`JTButton` с жёсткой тенью, `JTInput`, `JTCheck`,
+  `JTLink`, `jtBackStyle`); три согласия — `components/feature/ConsentChecks.tsx`
+  (одна копия на оба экрана). Шаг кода в `EmailCodeStep`: шесть ячеек поверх
+  одного скрытого поля (вставка и автоподстановка кода работают), проверка сама
+  после шестой цифры, таймер «0:58» → «Отправить код ещё раз». `hero` —
+  полноэкранный вариант (иллюстрация «письмо», «Письма нет?»), без него —
+  компактный для окон (`reset-password`, `EmailRequiredGate`). У макета 4 цифры,
+  сервер шлёт 6 — решение владельца оставить 6. Шрифт `Manrope-800` для кнопок
+  и ссылок — `assets/fonts`, ключ `JT_FONT.heavy`.
 - **Регистрация — по почте**, телефона в ней нет (решение владельца). Шаг 1 у
   `register-worker`/`register-employer` — `components/feature/EmailCodeStep.tsx`:
   почта → код из письма → «квитанция». Её предъявляет `dbUpsertUser` четвёртым
