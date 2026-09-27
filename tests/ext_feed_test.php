@@ -136,6 +136,18 @@ check('posted принимает month (30 суток)', ext_feed_filters(['post
 $baseFilters = ext_feed_filters([]);
 check('пустой фильтр пропускает всё', ext_feed_match(['company' => 'Сбер', 'title' => 'Курьер', 'salary' => null], $baseFilters));
 
+// Поиск «Вакансия или стек»: все слова, без регистра, по названию, компании и описанию.
+$q = ext_feed_filters(['query' => '  Python   SENIOR, python ']);
+check('поиск: слова в нижнем регистре и без повторов', $q['query'] === ['python', 'senior']);
+check('поиск: все слова нашлись — проходит',
+    ext_feed_match(['title' => 'Senior Python-разработчик', 'company' => 'Ozon'], $q));
+check('поиск: одно слово не нашлось — не проходит',
+    !ext_feed_match(['title' => 'Python-разработчик', 'company' => 'Ozon'], $q));
+check('поиск: слово из описания и компании засчитывается',
+    ext_feed_match(['title' => 'Разработчик', 'company' => 'Senior Group', 'description' => 'Пишем на Python'], $q));
+check('поиск: не строка — пустой запрос', ext_feed_filters(['query' => ['x']])['query'] === []);
+check('поиск: не больше 6 слов', count(ext_feed_filters(['query' => 'a b c d e f g h'])['query']) === 6);
+
 $salaryFilter = ext_feed_filters(['salary_from' => 100000]);
 check('зарплата ниже порога не проходит', !ext_feed_match(['salary' => 90000], $salaryFilter));
 check('без зарплаты при фильтре не проходит', !ext_feed_match(['salary' => null], $salaryFilter));
