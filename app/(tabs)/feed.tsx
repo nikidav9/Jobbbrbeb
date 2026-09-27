@@ -534,7 +534,7 @@ function FilterSheet({
                       onPress={() => setDraft(d => ({ ...d, companies: toggled(d.companies, item.name) }))}>
                       <View style={{ flex: 1 }}>
                         <Text style={mp.name} numberOfLines={1}>{item.name}</Text>
-                        <Text style={mp.sub}>{item.count} вакансий</Text>
+                        <Text style={mp.sub}>{item.count} {pluralVacancies(item.count)}</Text>
                       </View>
                       <Check on={on} />
                     </TouchableOpacity>
