@@ -12,6 +12,9 @@ test('согласие на обработку ПДн ставится толь�
   const text = 'Я даю согласие на обработку персональных данных';
   assert.equal(core.jtConsentDecision(text, true).action, 'check');
   assert.equal(core.jtConsentDecision(text, false).action, 'ask');
+  // Падеж не мешает: основы фразы ищутся по отдельности.
+  assert.equal(core.jtConsentDecision('Я соглашаюсь с политикой конфиденциальности', true).action, 'check');
+  assert.equal(core.jtConsentDecision('Принимаю условия пользовательского соглашения', true).action, 'check');
 });
 
 test('реклама, кадровый резерв, третьи лица, трансграничная передача — никогда', () => {

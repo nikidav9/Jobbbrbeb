@@ -96,7 +96,11 @@ function jtConsentDecision(text, delegated) {
   for (var i = 0; i < JT_CONSENT_KINDS.length; i++) {
     var pats = JT_CONSENT_KINDS[i][2];
     for (var j = 0; j < pats.length; j++) {
-      if (flat.indexOf(jtFlat(pats[j])) !== -1) { kinds.push(JT_CONSENT_KINDS[i]); break; }
+      // Фраза — набор основ: «политик конфиденциальност» ловит и «с политикой
+      // конфиденциальности», где сплошная подстрока не совпала бы из-за падежа.
+      var roots = jtFlat(pats[j]).split(' '), all = true;
+      for (var r = 0; r < roots.length; r++) if (roots[r] && flat.indexOf(roots[r]) === -1) all = false;
+      if (all) { kinds.push(JT_CONSENT_KINDS[i]); break; }
     }
   }
   if (!kinds.length) return { action: 'none', kinds: [] };
