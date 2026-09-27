@@ -4,6 +4,7 @@ import {
   ScrollView, Dimensions, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
+import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -24,7 +25,64 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const sc = Math.min(SW / 390, SH / 844);
 const r = (n: number) => Math.round(n * sc);
 
+/**
+ * Карусель на входе — как в getmatch: пролистай, узнай суть за три экрана.
+ * Первый слайд — фото персонажа (уже есть в ресурсах), второй и третий —
+ * простые плоские рисунки на react-native-svg: новых картинок не заводим,
+ * а анимированный DrawnArt здесь не нужен — слайд статичен, пока его не пролистали.
+ */
+const SLIDES = [
+  { key: 'swipe', title: 'Постоянная IT-работа в Москве — одним свайпом' },
+  { key: 'sites', title: 'Вакансии прямо с сайтов компаний' },
+  { key: 'apply', title: 'Отклик на сайт компании отправим за вас' },
+] as const;
 
+// Слайд 2: карточка браузера со списком вакансий — «берём напрямую с сайтов».
+function SitesArt({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 160 160">
+      <Rect x={14} y={18} width={132} height={124} rx={16} fill="#FFFFFF" stroke={Colors.inputBorder} strokeWidth={2} />
+      <Circle cx={28} cy={34} r={3.5} fill={Colors.inputBorder} />
+      <Circle cx={40} cy={34} r={3.5} fill={Colors.inputBorder} />
+      <Circle cx={52} cy={34} r={3.5} fill={Colors.primary} />
+      <Line x1={14} y1={46} x2={146} y2={46} stroke={Colors.divider} strokeWidth={2} />
+      {[64, 92, 120].map(cy => (
+        <React.Fragment key={cy}>
+          <Circle cx={30} cy={cy} r={9} fill={Colors.primaryLight} stroke={Colors.primary} strokeWidth={1.5} />
+          <Rect x={46} y={cy - 7} width={72} height={6} rx={3} fill={Colors.inputBorder} />
+          <Rect x={46} y={cy + 3} width={46} height={5} rx={2.5} fill={Colors.divider} />
+        </React.Fragment>
+      ))}
+    </Svg>
+  );
+}
+
+// Слайд 3: бумажный самолётик летит к карточке компании — «отправим за вас».
+function ApplyArt({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 160 160">
+      <Circle cx={80} cy={80} r={62} fill={Colors.primaryLight} />
+      <Path d="M40 108 Q60 70 96 52" stroke={Colors.primaryBorder} strokeWidth={2.5} strokeDasharray="5 6" fill="none" />
+      <Path d="M96 46 L134 30 L110 64 L98 60 Z" fill={Colors.primary} />
+      <Path d="M98 60 L110 64 L100 76 Z" fill="#E0590F" />
+    </Svg>
+  );
+}
+
+function SlideArt({ index, size }: { index: number; size: number }) {
+  if (index === 0) {
+    return (
+      <Image
+        source={require('@/assets/images/char-worker-crop.png')}
+        style={{ width: size * 0.77, height: size, alignSelf: 'center' }}
+        contentFit="contain"
+        transition={200}
+      />
+    );
+  }
+  if (index === 1) return <SitesArt size={size} />;
+  return <ApplyArt size={size} />;
+}
 
 export default function RootScreen() {
   const router = useRouter();
@@ -50,6 +108,55 @@ export default function RootScreen() {
   // Always holds latest currentUser — avoids stale closure inside animation callback
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
+
+  // ── Карусель на входе ──
+  const carouselRef = useRef<ScrollView>(null);
+  const [slideWidth, setSlideWidth] = useState(0);
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  const goToSlide = (index: number) => {
+    const clamped = Math.max(0, Math.min(SLIDES.length - 1, index));
+    setActiveSlide(clamped);
+    if (slideWidth > 0) carouselRef.current?.scrollTo({ x: clamped * slideWidth, animated: true });
+  };
+
+  useEffect(() => {
+    // Мышь на вебе не тянет ScrollView сама — тач и колесо работают, а
+    // зажатую левую кнопку браузер не превращает в жест прокрутки.
+    // Тянем содержимое вручную поверх обычного скролла.
+    if (Platform.OS !== 'web' || slideWidth <= 0) return;
+    const node = carouselRef.current as unknown as HTMLElement | null;
+    if (!node) return;
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startScroll = 0;
+    const onDown = (e: MouseEvent) => {
+      dragging = true;
+      moved = false;
+      startX = e.pageX;
+      startScroll = node.scrollLeft;
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!dragging) return;
+      const dx = e.pageX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      node.scrollLeft = startScroll - dx;
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (moved) goToSlide(Math.round(node.scrollLeft / slideWidth));
+    };
+    node.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      node.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [slideWidth]);
 
   useEffect(() => {
     // Показываем кэшированное значение сразу
@@ -150,20 +257,45 @@ export default function RootScreen() {
           </Text>
         </Animated.View>
 
-        {/* ── Иллюстрация ── */}
-        <Animated.View style={[styles.artWrap, { opacity: introFade }]}>
-          <Image
-            source={require('@/assets/images/char-worker-crop.png')}
-            style={styles.art}
-            contentFit="contain"
-            transition={200}
-          />
-        </Animated.View>
+        {/* ── Карусель: три слайда, как в getmatch ── */}
+        <Animated.View style={[styles.carouselWrap, { opacity: introFade }]}>
+          <View onLayout={e => setSlideWidth(e.nativeEvent.layout.width)}>
+            {slideWidth > 0 && (
+              <ScrollView
+                ref={carouselRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                bounces={false}
+                onMomentumScrollEnd={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
+                onScrollEndDrag={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
+              >
+                {SLIDES.map((slide, i) => (
+                  <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
+                    <View style={styles.slideArt}>
+                      <SlideArt index={i} size={r(130)} />
+                    </View>
+                    <Text style={styles.slideTitle}>{slide.title}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
 
-        {/* ── Заголовок ── */}
-        <Animated.View style={[styles.headlineBlock, { opacity: introFade }]}>
-          <Text style={styles.headline}>Постоянная IT-работа в Москве — одним свайпом</Text>
-          <Text style={styles.headlineSub}>Вакансии компаний напрямую. Откликайтесь в один жест.</Text>
+          <View style={styles.dotsRow}>
+            {SLIDES.map((slide, i) => (
+              <TouchableOpacity
+                key={slide.key}
+                onPress={() => goToSlide(i)}
+                hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                accessibilityLabel={`Слайд ${i + 1} из ${SLIDES.length}`}
+                testID={`entry-dot-${i}`}
+              >
+                <View style={[styles.dot, i === activeSlide && styles.dotActive]} />
+              </TouchableOpacity>
+            ))}
+          </View>
         </Animated.View>
 
         {/* ── Счётчик пользователей: социальное доказательство рядом с призывом ── */}
@@ -262,20 +394,25 @@ const styles = StyleSheet.create({
   logoDark: { color: '#111111' },
   logoOrange: { color: Colors.primary },
 
-  // Иллюстрация — спокойная, без теней и градиентов: аудитория на дешёвых
+  // Карусель — спокойная, без теней и градиентов: аудитория на дешёвых
   // телефонах, лишние эффекты там же и тормозят.
-  artWrap: { marginBottom: r(8) },
-  art: { width: r(122), height: r(159) },
+  carouselWrap: { width: '100%', marginBottom: r(6) },
+  slide: { alignItems: 'center', paddingHorizontal: r(4) },
+  slideArt: { height: r(130), alignItems: 'center', justifyContent: 'center' },
+  slideTitle: {
+    fontSize: r(21), fontWeight: '800', color: '#111111', lineHeight: r(27),
+    textAlign: 'center', marginTop: r(10), minHeight: r(58),
+  },
 
-  headlineBlock: { alignItems: 'center', marginBottom: r(14) },
-  headline: {
-    fontSize: r(24), fontWeight: '800', color: '#111111', lineHeight: r(30),
-    textAlign: 'center',
+  dotsRow: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    gap: r(8), marginTop: r(4),
   },
-  headlineSub: {
-    fontSize: r(13.5), color: Colors.textSecondary,
-    marginTop: r(6), lineHeight: r(18), textAlign: 'center',
+  dot: {
+    width: r(7), height: r(7), borderRadius: r(4),
+    backgroundColor: Colors.primaryBorder,
   },
+  dotActive: { width: r(18), backgroundColor: Colors.primary },
 
   userCountCard: {
     alignSelf: 'center',

@@ -11,6 +11,16 @@
 // не lookbehind: PCRE его умеет, но так проще сверять регулярки глазами
 // построчно с оригиналом.
 
+// Известные id — для нормализации фильтров недоверенного ввода
+// (php-proxy/ext_feed.php: ext_feed_filters). Подписи — в services/vacancyFacets.ts,
+// сюда голые id, сверка идёт через общий файл случаев и глазами при правке.
+const VF_LEVELS = ['intern', 'junior', 'middle', 'senior', 'lead', 'head'];
+const VF_FORMATS = ['remote', 'hybrid', 'office'];
+const VF_SPECS = [
+    'backend', 'frontend', 'mobile', 'qa', 'devops', 'data',
+    'analytics', 'design', 'management', 'security', 'support', 'onec',
+];
+
 const VF_LEVEL_RULES = [
     ['head', '~\bhead\b|\bcto\b|\bcpo\b|\bvp\b|директор|(^|[^а-яё])(руководитель|начальник)([^а-яё]|$)~iu'],
     ['lead', '~\b(team\s*|tech\s*)?lead\b|\blead\b|тимлид|техлид|(^|[^а-яё])ведущ(ий|ая|его)([^а-яё]|$)~iu'],

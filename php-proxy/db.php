@@ -6435,13 +6435,23 @@ try {
             $sections = array_values(array_unique(array_filter((array)($args[1] ?? []),
                 fn($s) => is_string($s) && isset(JOB_SECTIONS[$s]))));
             $sections = $sections ?: null;
+            // Фильтры (зарплата, уровень, формат, компания, дата) переехали на
+            // сервер: раньше их применял клиент только к уже полученной
+            // порции, и выбор компании, которой в порции не было, давал
+            // пустоту. Третий довод передан массивом (объектом из JSON) —
+            // старые сборки без него получают прежний ответ-массив.
+            $filters = (isset($args[2]) && is_array($args[2])) ? ext_feed_filters($args[2]) : null;
+            // Выбраны компании — им нужен более широкий пул на компанию,
+            // иначе фильтр всё равно упрётся в те же ~30 карточек.
+            $perCompany = ($filters !== null && !empty($filters['companies'])) ? 200 : 30;
             // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
             // вакансии компаний из jm_it_companies (миграция 120). И только
             // Москва, удалёнка и вакансии без города (миграция 121).
             $pool = sb_rpc('jm_ext_feed_pool', [
-                'p_user' => $authUid, 'p_per_company' => 30, 'p_sections' => $sections,
+                'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
             ]);
+            $pool = is_array($pool) ? $pool : [];
             $history = [];
             if ($authUid !== null) {
                 foreach (sb_select('jm_ext_swipes', [
@@ -6458,9 +6468,39 @@ try {
             $profile = $authUid !== null
                 ? sb_single('jm_users', ['id' => 'eq.' . $authUid], 'work_types,metro_station,resume_data')
                 : null;
-            $arranged = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history, $profile ?: []), $limit,
-                ($authUid ?? 'guest') . '|' . gmdate('Y-m-d'));
-            $data = array_map('ext_feed_public_row', $arranged);
+            $taste = ext_feed_taste($history, $profile ?: []);
+            $seed = ($authUid ?? 'guest') . '|' . gmdate('Y-m-d');
+
+            if ($filters === null) {
+                // Старый клиент без OTA: прежний ответ-массив без изменений.
+                $arranged = ext_feed_arrange($pool, $taste, $limit, $seed);
+                $data = array_map('ext_feed_public_row', $arranged);
+                break;
+            }
+
+            $matched = array_values(array_filter($pool, fn($row) => ext_feed_match($row, $filters)));
+            // Счёт по компаниям — при всех фильтрах, КРОМЕ самой компании:
+            // иначе выбор одной компании убрал бы остальные из списка шторки.
+            $companyCounts = [];
+            foreach ($pool as $row) {
+                if (!ext_feed_match($row, $filters, true)) continue;
+                $c = trim((string)($row['company'] ?? ''));
+                if ($c === '') continue;
+                $companyCounts[$c] = ($companyCounts[$c] ?? 0) + 1;
+            }
+            uksort($companyCounts, fn($a, $b) => $companyCounts[$b] <=> $companyCounts[$a] ?: $a <=> $b);
+            $companies = [];
+            foreach ($companyCounts as $company => $count) {
+                $companies[] = ['company' => $company, 'count' => $count];
+                if (count($companies) >= 300) break;
+            }
+
+            $arranged = ext_feed_arrange($matched, $taste, $limit, $seed);
+            $data = [
+                'items' => array_map('ext_feed_public_row', $arranged),
+                'total' => count($matched),
+                'companies' => $companies,
+            ];
             break;
         }
 

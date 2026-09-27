@@ -81,6 +81,61 @@ check('described_at не долетает до клиента', !array_key_exist
 check('старый вызов ext_feed_score без section/metro в $taste не падает',
     is_float(ext_feed_score(['company' => 'a', 'title' => 'b'], ['company' => [], 'tokens' => []], 0.0)));
 
+// ── Фильтры на сервере (ext_feed_filters, ext_feed_match) ───────────────────
+$junkFilters = ext_feed_filters([
+    'salary_from' => '999999999', 'specs' => ['onec', 'onec', 'bogus', 42],
+    'levels' => ['senior', 'nope'], 'formats' => ['remote', 'atlantis'],
+    'companies' => array_merge(array_fill(0, 60, 'X'), [str_repeat('Y', 300), '  Сбер  ', '']),
+    'posted' => 'never',
+]);
+check('зарплата зажата потолком', $junkFilters['salary_from'] === 10_000_000);
+check('specs — только известные, без дублей', $junkFilters['specs'] === ['onec']);
+check('levels — только известные', $junkFilters['levels'] === ['senior']);
+check('formats — только известные', $junkFilters['formats'] === ['remote']);
+check('companies — не больше 50, длинные и пустые отсеяны, обрезаны', count($junkFilters['companies']) <= 50 && in_array('Сбер', $junkFilters['companies'], true) && !in_array(str_repeat('Y', 300), $junkFilters['companies'], true));
+check('posted — мусор превращается в all', $junkFilters['posted'] === 'all');
+
+$emptyFilters = ext_feed_filters('мусор не массив');
+check('нестроковый мусор целиком — пустой фильтр', $emptyFilters === ext_feed_filters([]));
+check('пустой фильтр не сужает: salary_from 0', $emptyFilters['salary_from'] === 0);
+
+check('posted принимает month (30 суток)', ext_feed_filters(['posted' => 'month'])['posted'] === 'month');
+
+$baseFilters = ext_feed_filters([]);
+check('пустой фильтр пропускает всё', ext_feed_match(['company' => 'Сбер', 'title' => 'Курьер', 'salary' => null], $baseFilters));
+
+$salaryFilter = ext_feed_filters(['salary_from' => 100000]);
+check('зарплата ниже порога не проходит', !ext_feed_match(['salary' => 90000], $salaryFilter));
+check('без зарплаты при фильтре не проходит', !ext_feed_match(['salary' => null], $salaryFilter));
+check('зарплата равна порогу проходит', ext_feed_match(['salary' => 100000], $salaryFilter));
+check('зарплата выше порога проходит', ext_feed_match(['salary' => 150000], $salaryFilter));
+
+$now = time();
+$postedFilter = ext_feed_filters(['posted' => 'day']);
+check('вакансия за сегодня проходит фильтр «за день»', ext_feed_match(['first_seen_at' => date('c', $now - 3600)], $postedFilter));
+check('вакансия недельной давности не проходит «за день»', !ext_feed_match(['first_seen_at' => date('c', $now - 3 * 86400)], $postedFilter));
+$monthFilter = ext_feed_filters(['posted' => 'month']);
+check('вакансия месячной давности проходит «за месяц»', ext_feed_match(['first_seen_at' => date('c', $now - 20 * 86400)], $monthFilter));
+check('вакансия старше месяца не проходит «за месяц»', !ext_feed_match(['first_seen_at' => date('c', $now - 40 * 86400)], $monthFilter));
+
+$levelFilter = ext_feed_filters(['levels' => ['senior']]);
+check('уровень совпал — проходит', ext_feed_match(['title' => 'Senior Go-разработчик'], $levelFilter));
+check('уровень не совпал — не проходит', !ext_feed_match(['title' => 'Junior QA'], $levelFilter));
+check('без уровня в названии — не проходит', !ext_feed_match(['title' => 'Курьер'], $levelFilter));
+
+$formatFilter = ext_feed_filters(['formats' => ['remote']]);
+check('формат по графику совпал', ext_feed_match(['schedule' => 'Удалённо'], $formatFilter));
+check('формат не совпал — не проходит', !ext_feed_match(['schedule' => 'Офис'], $formatFilter));
+
+$specFilter = ext_feed_filters(['specs' => ['qa', 'mobile']]);
+check('специализация пересекается — проходит', ext_feed_match(['title' => 'Java QA Automation'], $specFilter));
+check('специализация не пересекается — не проходит', !ext_feed_match(['title' => 'Java-разработчик'], $specFilter));
+
+$companyFilter = ext_feed_filters(['companies' => ['Сбер']]);
+check('компания совпала', ext_feed_match(['company' => 'Сбер', 'title' => ''], $companyFilter));
+check('компания не совпала', !ext_feed_match(['company' => 'Магнит', 'title' => ''], $companyFilter));
+check('ignoreCompany пропускает фильтр по компании', ext_feed_match(['company' => 'Магнит', 'title' => ''], $companyFilter, true));
+
 if ($failures) {
     fwrite(STDERR, "FAIL:\n  " . implode("\n  ", $failures) . "\n");
     exit(1);

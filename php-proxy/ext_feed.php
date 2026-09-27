@@ -14,6 +14,7 @@
 // до первого свайпа, а совпадение станции метро — частый повод откликнуться.
 
 require_once __DIR__ . '/job_sections.php';
+require_once __DIR__ . '/vacancy_facets.php';
 
 const EXT_FEED_STOPWORDS = [
     'для', 'или', 'при', 'под', 'над', 'без', 'как', 'что', 'это', 'все',
@@ -131,6 +132,98 @@ function ext_feed_public_row(array $row): array
     // detail_spec — служебный адрес для describe.php, клиенту он не нужен.
     unset($row['description_full'], $row['described_at'], $row['detail_spec']);
     return $row;
+}
+
+// ── Фильтры на сервере ───────────────────────────────────────────────────────
+// Раньше фильтры (зарплата, уровень, формат, компания, дата) применялись на
+// клиенте только к уже полученной порции ~60 карточек: выбрал компанию, которой
+// в порции не было, — пусто, хотя в базе вакансии есть. Теперь дело сервера:
+// dbGetExtFeed (db.php) прогоняет фильтр по всему пулу до ext_feed_arrange и
+// отдаёт честное «Всего N».
+
+const EXT_FEED_POSTED_DAYS = ['day' => 1, '3days' => 3, 'week' => 7, 'month' => 30];
+
+/**
+ * Нормализация недоверенного ввода: любой мусор — часть пустого фильтра
+ * (то есть «фильтр не сужает»), а не ошибка. $raw — то, что пришло в JSON
+ * третьим аргументом dbGetExtFeed, может быть чем угодно.
+ */
+function ext_feed_filters($raw): array
+{
+    $raw = is_array($raw) ? $raw : [];
+
+    $salaryFrom = (int)($raw['salary_from'] ?? 0);
+    $salaryFrom = max(0, min(10_000_000, $salaryFrom));
+
+    $onlyKnown = fn(array $ids, $list) => array_values(array_unique(array_filter(
+        (array)$list,
+        fn($v) => is_string($v) && in_array($v, $ids, true),
+    )));
+
+    $companies = [];
+    foreach ((array)($raw['companies'] ?? []) as $c) {
+        if (count($companies) >= 50) break;
+        if (!is_string($c)) continue;
+        $c = trim($c);
+        if ($c === '' || mb_strlen($c, 'UTF-8') > 200 || in_array($c, $companies, true)) continue;
+        $companies[] = $c;
+    }
+
+    $posted = (string)($raw['posted'] ?? 'all');
+    if (!in_array($posted, ['all', 'day', '3days', 'week', 'month'], true)) $posted = 'all';
+
+    return [
+        'salary_from' => $salaryFrom,
+        'specs' => $onlyKnown(VF_SPECS, $raw['specs'] ?? []),
+        'levels' => $onlyKnown(VF_LEVELS, $raw['levels'] ?? []),
+        'formats' => $onlyKnown(VF_FORMATS, $raw['formats'] ?? []),
+        'companies' => $companies,
+        'posted' => $posted,
+    ];
+}
+
+/**
+ * Матч вакансии под нормализованный фильтр (ext_feed_filters). $ignoreCompany
+ * пропускает фильтр по компании — им считаются подписи в шторке («сколько
+ * вакансий у каждой компании при остальных фильтрах»).
+ */
+function ext_feed_match(array $row, array $f, bool $ignoreCompany = false): bool
+{
+    if (($f['salary_from'] ?? 0) > 0) {
+        $salary = (float)($row['salary'] ?? 0);
+        if ($salary <= 0 || $salary < $f['salary_from']) return false;
+    }
+
+    $posted = $f['posted'] ?? 'all';
+    if ($posted !== 'all') {
+        $days = EXT_FEED_POSTED_DAYS[$posted] ?? null;
+        if ($days !== null) {
+            $ts = strtotime((string)($row['first_seen_at'] ?? ''));
+            if ($ts === false || $ts < time() - $days * 86400) return false;
+        }
+    }
+
+    if (!empty($f['levels'])) {
+        $level = vf_level((string)($row['title'] ?? ''));
+        if ($level === null || !in_array($level, $f['levels'], true)) return false;
+    }
+
+    if (!empty($f['formats'])) {
+        $format = vf_format($row['schedule'] ?? null, $row['description'] ?? null);
+        if ($format === null || !in_array($format, $f['formats'], true)) return false;
+    }
+
+    if (!empty($f['specs'])) {
+        $specs = vf_specs((string)($row['title'] ?? ''));
+        if (!array_intersect($specs, $f['specs'])) return false;
+    }
+
+    if (!$ignoreCompany && !empty($f['companies'])) {
+        $company = trim((string)($row['company'] ?? ''));
+        if (!in_array($company, $f['companies'], true)) return false;
+    }
+
+    return true;
 }
 
 /**

@@ -1373,8 +1373,8 @@ function WorkerPermMode() {
     if (!currentUser?.id || sectionsLoadedFor !== currentUser.id) return;
     let cancelled = false;
     setCareerLoading(true);
-    dbGetExtFeed(60, sections).then(data => {
-      if (!cancelled) setCareerVacancies(data);
+    dbGetExtFeed(60, { salaryFrom: 0, specs: [], levels: [], formats: [], companies: [], posted: 'all' }).then(res => {
+      if (!cancelled) setCareerVacancies(res.items);
     }).catch(() => {}).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
   }, [sectionsKey, currentUser?.id, sectionsLoadedFor]);
@@ -1385,8 +1385,8 @@ function WorkerPermMode() {
     try {
       const promises: Promise<void>[] = [
         refreshPermVacancies(), refreshPermApplications(),
-        dbGetExtFeed(60, sections).then(data => {
-          setCareerVacancies(data);
+        dbGetExtFeed(60, { salaryFrom: 0, specs: [], levels: [], formats: [], companies: [], posted: 'all' }).then(res => {
+          setCareerVacancies(res.items);
           // swSkipped обнуляется, поэтому смахнутые за сессию свои переносим в
           // permSwiped — иначе они вернулись бы в колоду. Не при самом свайпе:
           // тогда своя пропадала бы из чередования и следующая своя вставала
@@ -1450,10 +1450,10 @@ function WorkerPermMode() {
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
     if (left > 5) return;
     careerRefilling.current = true;
-    dbGetExtFeed(60, sections)
-      .then(more => setCareerVacancies(cur => {
+    dbGetExtFeed(60, { salaryFrom: 0, specs: [], levels: [], formats: [], companies: [], posted: 'all' })
+      .then(res => setCareerVacancies(cur => {
         const seen = new Set(cur.map(v => v.id));
-        const add = more.filter(v => !seen.has(v.id));
+        const add = res.items.filter(v => !seen.has(v.id));
         return add.length ? [...cur, ...add] : cur;
       }))
       .catch(() => {})

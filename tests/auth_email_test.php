@@ -408,6 +408,11 @@ $mig = (string)file_get_contents(__DIR__ . '/../supabase/migrations/119_email_au
 check('почта стирается при удалении аккаунта', str_contains($mig, 'new.email := null;'));
 check('таблица кодов закрыта от anon', str_contains($mig, 'revoke all on public.jm_auth_codes from anon, authenticated;'));
 
+$mig127 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/127_auth_code_login.sql');
+check('миграция входа расширяет цель кода идемпотентно',
+    str_contains($mig127, 'drop constraint if exists jm_auth_codes_purpose_check;')
+    && str_contains($mig127, "check (purpose in ('register', 'attach', 'reset', 'login'));"));
+
 // ── Готовность почты: пока SMTP недоступен, всё работает как до почты ──────
 check('готовность почты доступна до входа', str_contains($db, "'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',"));
 $cfgCase = case_body($db, 'dbAuthConfig');
@@ -431,6 +436,15 @@ foreach (['app/register-worker.tsx', 'app/register-employer.tsx'] as $f) {
 }
 $loginSrc = (string)file_get_contents(__DIR__ . '/../app/login.tsx');
 check('без почты «Забыли пароль?» ведёт в поддержку', str_contains($loginSrc, 'if (!emailAuthReady) {'));
+check('вход по коду — свой шаг с кодом и переключатель на пароль',
+    str_contains($loginSrc, 'purpose="login"') && str_contains($loginSrc, 'dbAuthLoginByCode')
+    && str_contains($loginSrc, 'testID="login-code-mode"') && str_contains($loginSrc, 'testID="login-password-link"')
+    && str_contains($loginSrc, 'testID="login-code-link"'));
+
+$stepSrc = (string)file_get_contents(__DIR__ . '/../components/feature/EmailCodeStep.tsx');
+check('шаг с кодом даёт подменить проверку (нужно входу — без квитанции)',
+    str_contains($stepSrc, 'verify?: (email: string, code: string) => Promise<void>;')
+    && str_contains($stepSrc, 'if (customVerify) {'));
 
 if ($failures) {
     echo "auth email: ПРОВАЛЫ\n";
