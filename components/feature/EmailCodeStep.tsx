@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -24,9 +25,30 @@ type Props = {
   emailLabel?: string;
   /** Пришло ли письмо: сбой отправки или первая отправка (для «Напомнить позже»). */
   onSendAttempt?: (ok: boolean) => void;
+  /**
+   * Свой шаг проверки кода вместо запроса квитанции (dbAuthVerifyCode +
+   * onVerified) — например вход: код одноразовый, сервер отдаёт сессию сразу,
+   * квитанция не нужна. Бросает ошибку — компонент покажет её текст.
+   */
+  verify?: (email: string, code: string) => Promise<void>;
+  /**
+   * Доп. содержимое под полем почты, пока не отправлен код — например,
+   * галочки согласий при регистрации (решение владельца 27.09.2026: почта →
+   * код → сразу лента, согласия спрашиваются тут же, а не отдельным шагом).
+   * На шаге ввода кода не показывается — подтверждать там уже нечего.
+   */
+  belowEmail?: React.ReactNode;
+  /**
+   * Доп. условие, запрещающее отправку кода, помимо заполненности самой
+   * почты, — например, не отмечены обязательные согласия из `belowEmail`.
+   */
+  disabled?: boolean;
 };
 
-export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', onSendAttempt }: Props) {
+export function EmailCodeStep({
+  purpose, onVerified, emailLabel = 'Почта', onSendAttempt, verify: customVerify, belowEmail, disabled,
+}: Props) {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [phase, setPhase] = useState<'email' | 'code'>('email');
@@ -51,6 +73,9 @@ export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', 
   const normalized = email.trim().toLowerCase();
 
   const send = async () => {
+    // Enter в поле почты зовёт send мимо погашенной кнопки: без этой строки
+    // код уходил бы при неотмеченных обязательных согласиях.
+    if (disabled) return;
     if (!EMAIL_RE.test(normalized)) { setError('Проверьте адрес почты'); return; }
     setBusy(true);
     setError('');
@@ -74,8 +99,12 @@ export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', 
     setBusy(true);
     setError('');
     try {
-      const ticket = await dbAuthVerifyCode(normalized, purpose, digits);
-      onVerified(normalized, ticket);
+      if (customVerify) {
+        await customVerify(normalized, digits);
+      } else {
+        const ticket = await dbAuthVerifyCode(normalized, purpose, digits);
+        onVerified(normalized, ticket);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось проверить код');
     } finally {
@@ -102,10 +131,22 @@ export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', 
           onSubmitEditing={send}
           returnKeyType="send"
         />
+        {/* Регистрация отвечает 409 «Аккаунт с этой почтой уже есть»
+            (dbAuthSendCode) ещё на отправке кода — почта на этом шаге не
+            меняется на другой экран, а человека уводило обратно на ввод
+            почты без объяснений. Ссылка ведёт туда, где есть вход по этой
+            же почте. Только для регистрации: у входа и восстановления такой
+            ошибки не бывает. */}
+        {purpose === 'register' && /уже есть/i.test(error) ? (
+          <TouchableOpacity onPress={() => router.push('/login')} accessibilityRole="button">
+            <Text style={styles.link}>Войти →</Text>
+          </TouchableOpacity>
+        ) : null}
+        {belowEmail}
         <View style={styles.btn}>
           {busy
             ? <ActivityIndicator color={Colors.primary} />
-            : <PrimaryButton label="Получить код →" onPress={send} disabled={!normalized} />}
+            : <PrimaryButton label="Получить код →" onPress={send} disabled={!normalized || disabled} />}
         </View>
       </View>
     );

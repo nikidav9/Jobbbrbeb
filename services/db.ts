@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
 import type { JupiterEvent } from '@/services/jupiterTimeline';
 import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
-import type { JobSection } from '@/constants/jobSections';
+import type { VacancySpec, VacancyLevel, VacancyFormat } from '@/services/vacancyFacets';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 
@@ -437,11 +437,13 @@ export async function dbRestoreSession(): Promise<User | null> {
   }
 }
 
-// ─── Вход по почте с кодом (решение владельца 25.09.2026) ────────────────────
+// ─── Вход по почте с кодом (решение владельца 25.09.2026, вход — 27.09.2026) ─
 // register — новый аккаунт; attach — почта к старому аккаунту по телефону;
-// reset — восстановление пароля. Код приходит письмом, сверяет сервер и
-// отдаёт «квитанцию», которую предъявляют на последнем шаге.
-export type EmailCodePurpose = 'register' | 'attach' | 'reset';
+// reset — восстановление пароля; login — сам вход, пароль остаётся запасным
+// вариантом. Код приходит письмом, сверяет сервер; для register/attach/reset
+// в ответ идёт «квитанция», которую предъявляют на последнем шаге, а для
+// login — сразу сессия (см. dbAuthLoginByCode).
+export type EmailCodePurpose = 'register' | 'attach' | 'reset' | 'login';
 
 /**
  * Готова ли почта для кодов. Пока нет (26.09 исходящий SMTP у хостинга
@@ -464,6 +466,13 @@ export async function dbAuthSendCode(email: string, purpose: EmailCodePurpose): 
 export async function dbAuthVerifyCode(email: string, purpose: EmailCodePurpose, code: string): Promise<string> {
   const d = await proxy<{ ticket: string }>('dbAuthVerifyCode', [email, purpose, code]);
   return d.ticket;
+}
+
+/** Вход по коду из письма: код одноразовый, квитанции нет — сессия сразу. */
+export async function dbAuthLoginByCode(email: string, code: string): Promise<User> {
+  const d = await proxy<{ user: any; session_token: string }>('dbAuthVerifyCode', [email, 'login', code]);
+  await saveSessionToken(d.session_token);
+  return rowToUser(d.user);
 }
 
 /** Новый пароль по квитанции reset: сервер гасит прежние сессии и выдаёт новую. */
@@ -1881,13 +1890,49 @@ function toExtVacancy(row: any): ExtVacancy {
 }
 
 /**
+ * Фильтры ленты (зарплата, уровень, формат, специализация, компания, дата) —
+ * теперь ищут по всей базе на сервере (php-proxy/ext_feed.php), а не только
+ * по уже полученной порции: раньше выбор компании, которой не было в порции,
+ * давал пустую колоду, хотя в базе вакансии есть.
+ */
+export type ExtFeedFilters = {
+  salaryFrom: number;
+  specs: VacancySpec[];
+  levels: VacancyLevel[];
+  formats: VacancyFormat[];
+  companies: string[];
+  posted: 'all' | 'day' | '3days' | 'week' | 'month';
+};
+
+/**
  * Порция ленты карьерных вакансий под человека: без уже свайпнутых, с
  * чередованием компаний и учётом вкуса (php-proxy/ext_feed.php). Вместо
- * всего каталога — ~60 карточек за раз.
+ * всего каталога — ~60 карточек за раз. `total` и `companies` считаются по
+ * всему пулу на сервере — честные, а не только по вернувшейся порции.
  */
-export async function dbGetExtFeed(limit = 60, sections: JobSection[] = []): Promise<ExtVacancy[]> {
-  const rows = (await proxy('dbGetExtFeed', [limit, sections])) as any[];
-  return (Array.isArray(rows) ? rows : []).map(toExtVacancy);
+export async function dbGetExtFeed(
+  limit = 60,
+  filters: ExtFeedFilters,
+): Promise<{ items: ExtVacancy[]; total: number; companies: { company: string; count: number }[] }> {
+  const res = await proxy('dbGetExtFeed', [limit, [], {
+    salary_from: filters.salaryFrom,
+    specs: filters.specs,
+    levels: filters.levels,
+    formats: filters.formats,
+    companies: filters.companies,
+    posted: filters.posted,
+  }]);
+  // Старый сервер без OTA отвечает голым массивом — устойчиво читаем и так.
+  if (Array.isArray(res)) return { items: res.map(toExtVacancy), total: res.length, companies: [] };
+  const r = (res ?? {}) as any;
+  const items = (Array.isArray(r.items) ? r.items : []).map(toExtVacancy);
+  return {
+    items,
+    total: typeof r.total === 'number' ? r.total : items.length,
+    companies: Array.isArray(r.companies)
+      ? r.companies.map((c: any) => ({ company: String(c.company ?? ''), count: Number(c.count ?? 0) }))
+      : [],
+  };
 }
 
 /** Свайп по карьерной вакансии: 1 — вправо, -1 — влево. */

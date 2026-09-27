@@ -166,6 +166,31 @@ check('сбой почты — понятная причина', $r['ok'] === fa
 check('код из неотправленного письма не действует', jt_auth_check_code('i@j.ru', 'register', '123456', $key)['ok'] === false);
 check('после сбоя почты можно сразу попробовать снова', jt_auth_issue_code('i@j.ru', 'register', null, $key, $mail)['ok'] === true);
 
+// ── Вход по коду (решение владельца 27.09.2026) ─────────────────────────────
+// dbAuthSendCode находит владельца по почте сам и передаёт сюда его id — здесь
+// проверяем только выпуск/сверку кода под целью login; кто именно получает
+// код (существующий незаблокированный аккаунт) и как из проверенного кода
+// собирается сессия — в db.php, см. проверки ниже по его исходнику.
+check('login — цель из общего списка', in_array('login', JT_AUTH_PURPOSES, true));
+
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+$r = jt_auth_issue_code('login@mail.ru', 'login', 'u42', $key, $mail);
+check('код на вход выпущен и письмо ушло', $r['ok'] === true && count($sent) === 1);
+$ok = jt_auth_check_code('login@mail.ru', 'login', $sent[0][1], $key);
+check('верный код на вход принят и знает, чей он', $ok['ok'] === true && $ok['user_id'] === 'u42');
+
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+jt_auth_issue_code('login2@mail.ru', 'login', 'u43', $key, $mail);
+$right = $sent[0][1];
+$wrong = str_pad((string)(((int)$right + 1) % 1000000), 6, '0', STR_PAD_LEFT);
+$bad = jt_auth_check_code('login2@mail.ru', 'login', $wrong, $key);
+check('неверный код на вход считает попытки, а не молчит', $bad['ok'] === false && $bad['reason'] === 'wrong_code' && $bad['left'] === 4);
+
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+jt_auth_issue_code('was-reset@mail.ru', 'reset', 'u44', $key, $mail);
+check('код цели reset не проходит как login (хеш привязан к цели)',
+    jt_auth_check_code('was-reset@mail.ru', 'login', $sent[0][1], $key)['ok'] === false);
+
 // ── Квитанция ────────────────────────────────────────────────────────────────
 $t = jt_auth_ticket_issue('ivan@mail.ru', 'reset', 'u1', $key);
 $chk = jt_auth_ticket_check($t, 'reset', $key);
@@ -326,12 +351,22 @@ check('письма с одного адреса ограничены', str_cont
 check('попытка считается до ответа «почта занята» — перебор адресов ограничен',
     strpos($send, "jt_try_note('mail')") !== false
     && strpos($send, "jt_try_note('mail')") < strpos($send, "if (\$purpose === 'register' && \$owner) {"));
+check('вход по коду отвечает как сброс — не выдаёт, есть ли такая почта',
+    str_contains($send, "if (\$purpose === 'reset' || \$purpose === 'login') {"));
 
 $verify = case_body($db, 'dbAuthVerifyCode');
 check('неверные коды с одного адреса ограничены', str_contains($verify, "jt_try_blocked('code')") && str_contains($verify, "jt_try_note('code')"));
 check('удачный код не обнуляет счётчик неверных', !str_contains($verify, "jt_try_reset('code')"));
 check('код привязки из чужой сессии не принимается',
     str_contains($verify, "if (\$purpose === 'attach' && (string)(\$res['user_id'] ?? '') !== (string)\$authUid) {"));
+check('вход по коду сверяет и id из кода, и почту из запроса, и блокировку',
+    str_contains($verify, "if (\$purpose === 'login') {")
+    && str_contains($verify, "'id' => 'eq.' . (string)(\$res['user_id'] ?? ''),")
+    && str_contains($verify, "'email' => 'eq.' . \$email], 'id,is_blocked');")
+    && str_contains($verify, "if (!\$row || !empty(\$row['is_blocked'])) {"));
+check('вход по коду выдаёт сессию сразу, без квитанции',
+    str_contains($verify, "jt_try_reset('login');")
+    && str_contains($verify, "\$data = ['user' => sb_single('jm_users', ['id' => 'eq.' . \$row['id']], USER_SELF_COLS),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
 
 $reset = case_body($db, 'dbAuthResetPassword');
 check('сброс пароля гасит прежние сессии', str_contains($reset, "'sessions_valid_from' => now_iso(),"));
@@ -353,6 +388,24 @@ check('регистрация по квитанции register ставит по
 check('почту в профиль через обычное сохранение не подсунуть',
     preg_match("~\\\$editable = \[[^\]]*'email'~s", $upsert) === 0 && preg_match("~\\\$atCreate = \[[^\]]*'email'~s", $upsert) === 0);
 
+// ── Почта без пароля (решение владельца 27.09.2026: «почта → код → сразу
+// лента», вход потом по коду из письма) ─────────────────────────────────────
+// По квитанции пустой пароль пропускается (аккаунт без пароля), непустой —
+// по-прежнему сверяется jt_password_problem. Без квитанции (регистрация по
+// телефону старых сборок) пароль остаётся обязательным.
+check('по квитанции пустой пароль не идёт на проверку правил',
+    (bool)preg_match('~\$pwd = \(string\)\(\$u\[\'password\'\] \?\? \'\'\);\s*if \(\$pwd !== \'\'\) \{\s*\$bad = jt_password_problem\(\$pwd\);~', $upsert));
+check('по квитанции непустой плохой пароль всё ещё отклоняется',
+    str_contains($upsert, "if (\$bad !== null) { jt_respond(['error' => \$bad], 400); exit; }"));
+check('без квитанции телефон и пароль по-прежнему обязательны',
+    str_contains($upsert, "} elseif (empty(\$u['phone']) || empty(\$u['password'])) {")
+    && str_contains($upsert, "throw new RuntimeException('Для регистрации нужны почта с кодом и пароль');"));
+// Мутация: если бы проверку одели в `if ($pwd === '')` вместо `!== ''`
+// (перепутали знак), пустой пароль как раз попадал бы под jt_password_problem
+// — этот же regex её бы не нашёл, потому что ищет именно `!== ''`.
+check('инвариант не переворачивается на противоположный (пустой пароль не проверяется)',
+    !str_contains($upsert, "if (\$pwd === '') {\n                        \$bad = jt_password_problem"));
+
 $login = case_body($db, 'dbLogin');
 check('вход по почте или по телефону старого аккаунта',
     str_contains($login, "sb_single('jm_users', ['email' => 'eq.' . \$email])")
@@ -372,6 +425,11 @@ check('PHP получает логин и пароль ящика из секр�
 $mig = (string)file_get_contents(__DIR__ . '/../supabase/migrations/119_email_auth.sql');
 check('почта стирается при удалении аккаунта', str_contains($mig, 'new.email := null;'));
 check('таблица кодов закрыта от anon', str_contains($mig, 'revoke all on public.jm_auth_codes from anon, authenticated;'));
+
+$mig127 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/128_auth_code_login.sql');
+check('миграция входа расширяет цель кода идемпотентно',
+    str_contains($mig127, 'drop constraint if exists jm_auth_codes_purpose_check;')
+    && str_contains($mig127, "check (purpose in ('register', 'attach', 'reset', 'login'));"));
 
 // ── Готовность почты: пока SMTP недоступен, всё работает как до почты ──────
 check('готовность почты доступна до входа', str_contains($db, "'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',"));
@@ -396,6 +454,22 @@ foreach (['app/register-worker.tsx', 'app/register-employer.tsx'] as $f) {
 }
 $loginSrc = (string)file_get_contents(__DIR__ . '/../app/login.tsx');
 check('без почты «Забыли пароль?» ведёт в поддержку', str_contains($loginSrc, 'if (!emailAuthReady) {'));
+check('вход по коду — свой шаг с кодом и переключатель на пароль',
+    str_contains($loginSrc, 'purpose="login"') && str_contains($loginSrc, 'dbAuthLoginByCode')
+    && str_contains($loginSrc, 'testID="login-code-mode"') && str_contains($loginSrc, 'testID="login-password-link"')
+    && str_contains($loginSrc, 'testID="login-code-link"'));
+
+$stepSrc = (string)file_get_contents(__DIR__ . '/../components/feature/EmailCodeStep.tsx');
+check('шаг с кодом даёт подменить проверку (нужно входу — без квитанции)',
+    str_contains($stepSrc, 'verify?: (email: string, code: string) => Promise<void>;')
+    && str_contains($stepSrc, 'if (customVerify) {'));
+
+// Аккаунт без пароля (регистрация почта → код): смена пароля не должна
+// пропускать пустой «старый пароль» — иначе чужая сессия ставит свой пароль.
+$dbSrcCp = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
+$cpAt = strpos($dbSrcCp, "case 'dbChangePassword'");
+$cpBody = $cpAt === false ? '' : substr($dbSrcCp, $cpAt, 1500);
+check('смена пароля отказывает аккаунту без пароля', str_contains($cpBody, "\$ok = \$stored !== '' && ("));
 
 if ($failures) {
     echo "auth email: ПРОВАЛЫ\n";

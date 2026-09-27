@@ -25,7 +25,7 @@ check('фильтр: раздел it или IT-компания',
 check('старая перегрузка функции снята', str_contains($mig, 'drop function if exists public.jm_ext_feed_pool(text, int, text[]);'));
 check('функцию может звать db.php', str_contains($mig, 'grant execute on function public.jm_ext_feed_pool(text, int, text[], boolean) to service_role;'));
 
-check('свои вакансии — только IT в колоде', str_contains($feed, "const matchesFilters = (v: PermVacancy) => sectionOfPerm(v.workType) === 'it'"));
+check('свои вакансии — только IT в колоде', str_contains($feed, "&& sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now)"));
 check('и в счётчике «Показать N»', substr_count($feed, "sectionOfPerm(v.workType) === 'it'") >= 2);
 check('сохранённые разделы не применяются', !str_contains($feed, 'getFeedSections('));
 check('блока «Разделы» в шторке нет', !str_contains($feed, '<Text style={fst.label}>Разделы</Text>'));

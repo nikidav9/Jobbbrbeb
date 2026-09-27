@@ -1,8 +1,10 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
 import type { DocumentPickerAsset } from 'expo-document-picker';
 import { parseResumeText, parseResumeIdentity, inferWorkTypes } from '@/lib/resumeParser';
 import { ResumeProfile, User } from '@/constants/types';
+import { dbSaveResumeFile, ResumeVaultItem } from '@/services/db';
 
 type PdfTextItem = {
   str: string;
@@ -152,4 +154,36 @@ export function mergeResumeIntoUser(
       ...(importedRelocation ? { relocation: importedRelocation } : {}),
     },
   };
+}
+
+export type PickedResumeImport = {
+  updatedUser: User;
+  savedFile: ResumeVaultItem;
+};
+
+/**
+ * Открыть выбор PDF, распознать его и сохранить в приватном сейфе.
+ *
+ * Общая для импорта в профиле (`app/(tabs)/profile.tsx`) и для окна первого
+ * отклика (`components/feature/ProfileGateSheet.tsx`) — расхождение в шагах
+ * сохранения значило бы, что один и тот же файл ведёт себя по-разному в
+ * зависимости от того, откуда его загрузили.
+ *
+ * Возвращает null, если выбор файла отменён.
+ */
+export async function pickAndImportResume(currentUser: User): Promise<PickedResumeImport | null> {
+  const picked = await DocumentPicker.getDocumentAsync({
+    type: 'application/pdf',
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+  if (picked.canceled || !picked.assets[0]) return null;
+
+  const asset = picked.assets[0];
+  const { resume, identity, bytes } = await extractResumePdf(asset);
+  // Сначала сохраняем исходный PDF в приватный сейф. Сервер делает его
+  // активным и синхронизирует структурированное резюме с jm_users.
+  const savedFile = await dbSaveResumeFile(asset.name || resume.sourceFileName || 'resume.pdf', bytes, resume);
+  const updatedUser = mergeResumeIntoUser(currentUser, savedFile.resume, identity);
+  return { updatedUser, savedFile };
 }

@@ -3,19 +3,20 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
   ScrollView, Dimensions, Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
+import Svg, { Circle, Line, Rect } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useApp } from '@/hooks/useApp';
 import { Colors } from '@/constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SplashLoader, { useLoadingPercent, DrawnArt, bootElapsed, SPLASH_MIN_MS } from '@/components/SplashLoader';
-import { ICON_WORKER, ICON_EMPLOYER } from '@/constants/roleIcons';
-import { Ionicons } from '@expo/vector-icons';
+import SplashLoader, { useLoadingPercent, bootElapsed, SPLASH_MIN_MS } from '@/components/SplashLoader';
 import Constants from 'expo-constants';
 import { hideWebSplash, setWebSplashProgress } from '@/lib/webSplash';
 
-import { rs, rf } from '@/constants/scale';
+import { rs } from '@/constants/scale';
 import { dbCountUsers, dbRecordGuestEvent } from '@/services/db';
 import { LegalLinks } from '@/components/LegalLinks';
 
@@ -25,7 +26,92 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const sc = Math.min(SW / 390, SH / 844);
 const r = (n: number) => Math.round(n * sc);
 
+/**
+ * Карусель на входе — как в getmatch: пролистай, узнай суть за три экрана.
+ * Первый слайд — фото персонажа (уже есть в ресурсах), второй и третий —
+ * тот же персонаж и та же оранжевая «таблетка»-бейдж, что и в остальном
+ * интерфейсе: иначе слайды 2–3 читаются как значки от другого приложения.
+ * Неразрывные пробелы — чтобы на 320 px не повисало одно слово на строке.
+ */
+const SLIDES = [
+  { key: 'swipe', title: 'Постоянная IT-работа в Москве — одним свайпом' },
+  { key: 'sites', title: 'Вакансии прямо с сайтов компаний' },
+  { key: 'apply', title: 'Отклик на сайт компании отправим за вас' },
+] as const;
 
+// Бейдж-«таблетка» поверх картинки — общий акцент для 2 и 3 слайда, тот же
+// оранжевый и та же белая обводка, что и у кнопок ниже.
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+function ArtBadge({ size, icon, style }: { size: number; icon: IconName; style?: object }) {
+  return (
+    <View style={[{
+      position: 'absolute',
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: Colors.primary,
+      borderWidth: size * 0.09, borderColor: '#FFFFFF',
+      alignItems: 'center', justifyContent: 'center',
+    }, style]}
+    >
+      <Ionicons name={icon} size={size * 0.46} color="#FFFFFF" />
+    </View>
+  );
+}
+
+// Слайд 2: карточка браузера со списком вакансий — «берём напрямую с сайтов».
+// Насыщенные цвета и тёмный контур — тот же визуальный вес, что у персонажа.
+function SitesArt({ size }: { size: number }) {
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} viewBox="0 0 160 160">
+        <Rect x={12} y={14} width={136} height={132} rx={18} fill="#FFFFFF" stroke="#171717" strokeWidth={2.5} />
+        <Circle cx={27} cy={31} r={4} fill={Colors.primary} />
+        <Circle cx={40} cy={31} r={4} fill={Colors.textMuted} />
+        <Circle cx={53} cy={31} r={4} fill={Colors.textMuted} />
+        <Line x1={12} y1={46} x2={148} y2={46} stroke={Colors.divider} strokeWidth={2} />
+        {[68, 98, 128].map(cy => (
+          <React.Fragment key={cy}>
+            <Circle cx={31} cy={cy} r={10} fill={Colors.primary} />
+            <Rect x={50} y={cy - 7} width={76} height={7} rx={3.5} fill={Colors.textSecondary} />
+            <Rect x={50} y={cy + 5} width={50} height={5} rx={2.5} fill={Colors.divider} />
+          </React.Fragment>
+        ))}
+      </Svg>
+      <ArtBadge size={size * 0.32} icon="business" style={{ right: -size * 0.03, bottom: -size * 0.03 }} />
+    </View>
+  );
+}
+
+// Слайд 3: тот же персонаж, что на слайде 1, + бейдж-самолётик у телефона —
+// «отправим отклик за вас».
+function ApplyArt({ size }: { size: number }) {
+  const artW = size * 0.77;
+  return (
+    <View style={{ width: artW, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Image
+        source={require('@/assets/images/char-worker-crop.png')}
+        style={{ width: artW, height: size }}
+        contentFit="contain"
+        transition={200}
+      />
+      <ArtBadge size={size * 0.32} icon="paper-plane" style={{ left: -size * 0.05, top: size * 0.06 }} />
+    </View>
+  );
+}
+
+function SlideArt({ index, size }: { index: number; size: number }) {
+  if (index === 0) {
+    return (
+      <Image
+        source={require('@/assets/images/char-worker-crop.png')}
+        style={{ width: size * 0.77, height: size, alignSelf: 'center' }}
+        contentFit="contain"
+        transition={200}
+      />
+    );
+  }
+  if (index === 1) return <SitesArt size={size} />;
+  return <ApplyArt size={size} />;
+}
 
 export default function RootScreen() {
   const router = useRouter();
@@ -51,6 +137,64 @@ export default function RootScreen() {
   // Always holds latest currentUser — avoids stale closure inside animation callback
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
+
+  // ── Карусель на входе ──
+  const carouselRef = useRef<ScrollView>(null);
+  const [slideWidth, setSlideWidth] = useState(0);
+  const [slideHeight, setSlideHeight] = useState(0);
+  const [activeSlide, setActiveSlide] = useState(0);
+  // Картинка занимает большую часть высоты слайда, но не съедает место
+  // подписи под ней и не раздувается на высоком экране.
+  const artSize = slideHeight > 0
+    ? Math.max(r(90), Math.min(r(230), slideHeight * 0.6, slideHeight - r(66)))
+    : r(140);
+
+  const goToSlide = (index: number) => {
+    const clamped = Math.max(0, Math.min(SLIDES.length - 1, index));
+    setActiveSlide(clamped);
+    if (slideWidth > 0) carouselRef.current?.scrollTo({ x: clamped * slideWidth, animated: true });
+  };
+
+  useEffect(() => {
+    // Мышь на вебе не тянет ScrollView сама — тач и колесо работают, а
+    // зажатую левую кнопку браузер не превращает в жест прокрутки.
+    // Тянем содержимое вручную поверх обычного скролла.
+    if (Platform.OS !== 'web' || slideWidth <= 0) return;
+    const node = carouselRef.current as unknown as HTMLElement | null;
+    if (!node) return;
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startScroll = 0;
+    const onDown = (e: MouseEvent) => {
+      dragging = true;
+      moved = false;
+      startX = e.pageX;
+      startScroll = node.scrollLeft;
+      // Без этого протаскивание мышью заодно выделяет заголовок под курсором.
+      document.body.style.userSelect = 'none';
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!dragging) return;
+      const dx = e.pageX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      node.scrollLeft = startScroll - dx;
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.userSelect = '';
+      if (moved) goToSlide(Math.round(node.scrollLeft / slideWidth));
+    };
+    node.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      node.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [slideWidth]);
 
   useEffect(() => {
     // Показываем кэшированное значение сразу
@@ -142,103 +286,65 @@ export default function RootScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         bounces={false}
-        scrollEnabled={false}
       >
-        <View style={{ minHeight: r(8) }} />
-
         {/* ── Лого ── */}
         <Animated.View style={[styles.logoRow, { opacity: introFade }]}>
           <Text style={styles.logo}>
             <Text style={styles.logoDark}>Job</Text>
             <Text style={styles.logoOrange}>Too</Text>
           </Text>
-          <Text style={styles.tagline}>Постоянная работа — в одной ленте</Text>
         </Animated.View>
 
-        {/* ── Заголовок ── */}
-        <Animated.View style={[styles.headlineBlock, { opacity: introFade }]}>
-          <Text style={styles.headline}>{'Выберите,\nкто вы'}</Text>
-          <Text style={styles.headlineSub}>{'Мы адаптируем приложение\nпод ваши задачи'}</Text>
+        {/* ── Карусель: три слайда, как в getmatch ── */}
+        {/* Растягивается на всё, что осталось между лого и кнопками: картинка
+            подстраивается под доступную высоту (см. artSize), а не наоборот. */}
+        <Animated.View style={[styles.carouselWrap, { opacity: introFade }]}>
+          <View
+            style={styles.carouselBox}
+            onLayout={e => {
+              setSlideWidth(e.nativeEvent.layout.width);
+              setSlideHeight(e.nativeEvent.layout.height);
+            }}
+          >
+            {slideWidth > 0 && slideHeight > 0 && (
+              <ScrollView
+                ref={carouselRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                bounces={false}
+                onMomentumScrollEnd={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
+                onScrollEndDrag={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
+              >
+                {SLIDES.map((slide, i) => (
+                  <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
+                    <View style={styles.slideArt}>
+                      <SlideArt index={i} size={artSize} />
+                    </View>
+                    <Text style={styles.slideTitle}>{slide.title}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+
+          <View style={styles.dotsRow}>
+            {SLIDES.map((slide, i) => (
+              <TouchableOpacity
+                key={slide.key}
+                onPress={() => goToSlide(i)}
+                hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                accessibilityLabel={`Слайд ${i + 1} из ${SLIDES.length}`}
+                testID={`entry-dot-${i}`}
+              >
+                <View style={[styles.dot, i === activeSlide && styles.dotActive]} />
+              </TouchableOpacity>
+            ))}
+          </View>
         </Animated.View>
 
-        {/* ══ Карточка 1: Ищу работу ══ */}
-        <TouchableOpacity
-          style={styles.card}
-          activeOpacity={0.85}
-          onPress={() => router.push('/register-worker')}
-        >
-          <View style={styles.cardIcon}>
-            <DrawnArt
-              strokes={ICON_WORKER}
-              viewBox="0 0 100 100"
-              width={r(72)}
-              height={r(72)}
-              duration={900}
-              delay={120}
-              color={Colors.primary}
-            />
-          </View>
-          <View style={styles.cardTextWrap}>
-            <Text style={styles.cardTitle}>Ищу работу</Text>
-            <Text style={styles.cardSub}>{'Постоянная работа —\nсвайпайте и откликайтесь'}</Text>
-          </View>
-          <View style={styles.arrowBtn}>
-            <Ionicons name="chevron-forward" size={r(18)} color={Colors.primary} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ══ Карточка 2: Ищу работника ══ */}
-        <TouchableOpacity
-          style={[styles.card, { marginTop: r(16) }]}
-          activeOpacity={0.85}
-          onPress={() => router.push('/register-employer')}
-        >
-          <View style={styles.cardIcon}>
-            <DrawnArt
-              strokes={ICON_EMPLOYER}
-              viewBox="0 0 100 100"
-              width={r(72)}
-              height={r(72)}
-              duration={900}
-              delay={560}
-              color={Colors.primary}
-            />
-          </View>
-          <View style={styles.cardTextWrap}>
-            <Text style={styles.cardTitle}>Ищу работника</Text>
-            <Text style={styles.cardSub}>{'Размещайте вакансии\nи находите сотрудников'}</Text>
-          </View>
-          <View style={styles.arrowBtn}>
-            <Ionicons name="chevron-forward" size={r(18)} color={Colors.primary} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ══ Посмотреть без регистрации ══ */}
-        {/* Снимаем стену регистрации: даём заглянуть в ленту вакансий как
-            гость. Любое действие внутри попросит зарегистрироваться. */}
-        <TouchableOpacity
-          style={styles.guestBtn}
-          activeOpacity={0.7}
-          onPress={() => {
-            void dbRecordGuestEvent('guest_started');
-            enterGuest();
-            router.replace('/(tabs)');
-          }}
-        >
-          <Ionicons name="eye-outline" size={r(17)} color={Colors.primary} />
-          <Text style={styles.guestBtnTxt}>Посмотреть вакансии без регистрации</Text>
-        </TouchableOpacity>
-
-        {/* ── Преимущества ── */}
-        <Animated.View style={[styles.featuresRow, { opacity: introFade }]}>
-          <Text style={styles.featureTxt}>Отклик в один свайп</Text>
-          <Text style={styles.featureDot}>·</Text>
-          <Text style={styles.featureTxt}>Без комиссии</Text>
-          <Text style={styles.featureDot}>·</Text>
-          <Text style={styles.featureTxt}>Поддержка в приложении</Text>
-        </Animated.View>
-
-        {/* ── Счётчик пользователей ── */}
+        {/* ── Счётчик пользователей: социальное доказательство рядом с призывом ── */}
         <Animated.View style={[styles.userCountCard, { opacity: introFade }]}>
           <Text style={styles.userCountTxt}>
             {userCountReady && userCount != null
@@ -248,35 +354,80 @@ export default function RootScreen() {
           </Text>
         </Animated.View>
 
-        <View style={{ flex: 1, minHeight: r(12) }} />
+        <View style={{ height: r(14) }} />
 
-        {/* ── Вход ── */}
-        <Animated.View style={[styles.loginCard, { opacity: introFade }]}>
-          <Text style={styles.loginGray}>Уже есть аккаунт? </Text>
-          <TouchableOpacity onPress={() => router.push('/login')}>
-            <Text style={styles.loginLink}>Войти</Text>
+        {/* ══ Главное действие: зарегистрироваться ══ */}
+        <Animated.View style={{ opacity: introFade, width: '100%' }}>
+          <TouchableOpacity
+            style={styles.registerBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push('/register-worker')}
+            testID="entry-register"
+            accessibilityLabel="Зарегистрироваться"
+          >
+            <Text style={styles.registerBtnTxt}>Зарегистрироваться</Text>
           </TouchableOpacity>
-        </Animated.View>
 
-        {/* Документы доступны до регистрации — прямо со стартового экрана. */}
-        <Animated.View style={{ opacity: introFade, marginBottom: r(10) }}>
-          <LegalLinks />
-        </Animated.View>
+          {/* ── Уже есть аккаунт ── */}
+          <TouchableOpacity
+            style={styles.loginBtn}
+            activeOpacity={0.7}
+            onPress={() => router.push('/login')}
+            testID="entry-login"
+            accessibilityLabel="Уже есть аккаунт"
+          >
+            <Text style={styles.loginBtnTxt}>Уже есть аккаунт</Text>
+          </TouchableOpacity>
 
-        <Animated.Text style={[styles.version, { opacity: introFade }]}>JobToo v{Constants.expoConfig?.version ?? '1.4.0'}</Animated.Text>
+          {/* ══ Посмотреть без регистрации ══ */}
+          {/* Снимаем стену регистрации: даём заглянуть в ленту вакансий как
+              гость. Любое действие внутри попросит зарегистрироваться. */}
+          <TouchableOpacity
+            style={styles.guestLink}
+            activeOpacity={0.6}
+            onPress={() => {
+              void dbRecordGuestEvent('guest_started');
+              enterGuest();
+              router.replace('/(tabs)');
+            }}
+            testID="entry-guest"
+            accessibilityLabel="Смотреть вакансии без регистрации"
+          >
+            <Text style={styles.guestLinkTxt}>Смотреть вакансии без регистрации</Text>
+          </TouchableOpacity>
+
+          {/* ── Работодателям ── */}
+          <View style={styles.employerRow}>
+            <Text style={styles.employerGray}>Работодатель? </Text>
+            <TouchableOpacity
+              onPress={() => router.push('/register-employer')}
+              testID="entry-employer"
+              accessibilityLabel="Разместить вакансию"
+            >
+              <Text style={styles.employerLink}>Разместить вакансию</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Документы доступны до регистрации — прямо со стартового экрана. */}
+          <View style={{ marginTop: r(10) }}>
+            <LegalLinks />
+          </View>
+
+          <Text style={styles.version}>JobToo v{Constants.expoConfig?.version ?? '1.4.0'}</Text>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // Светлый фон: на этом экране человек читает и выбирает, поэтому сплошная
-  // заливка цветом здесь утомляет — оранжевый остаётся только на загрузке.
-  safe: { flex: 1, backgroundColor: '#F5F7FA' },
+  // Тёплый фон — как в ленте: экран продаёт одно действие, а не читается.
+  safe: { flex: 1, backgroundColor: Colors.bgWarm },
 
   scroll: {
     flexGrow: 1,
-    paddingHorizontal: r(20),
+    alignItems: 'center',
+    paddingHorizontal: r(24),
     paddingTop: r(10),
     paddingBottom: r(12),
     maxWidth: rs(430),
@@ -284,79 +435,39 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 
-  logoRow: { marginBottom: r(14) },
-  logo: { fontSize: r(34), fontWeight: '800', letterSpacing: -0.8 },
+  logoRow: { marginBottom: r(6) },
+  logo: { fontSize: r(24), fontWeight: '800', letterSpacing: -0.6 },
   logoDark: { color: '#111111' },
   logoOrange: { color: Colors.primary },
-  tagline: { fontSize: r(14), color: Colors.textSecondary, marginTop: r(4) },
 
-  headlineBlock: { marginBottom: r(18) },
-  headline: {
-    fontSize: r(38), fontWeight: '800', color: '#111111', lineHeight: r(44),
+  // Карусель — спокойная, без теней и градиентов: аудитория на дешёвых
+  // телефонах, лишние эффекты там же и тормозят. flex: 1 — забирает всё
+  // место между лого и кнопками, картинка масштабируется под него (artSize).
+  carouselWrap: { flex: 1, width: '100%', marginBottom: r(6) },
+  carouselBox: { flex: 1, width: '100%' },
+  slide: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: r(4),
   },
-  headlineSub: {
-    fontSize: r(15), color: Colors.textSecondary,
-    marginTop: r(8), lineHeight: r(21),
-  },
-
-  // Карточка-обводка: белая линия по оранжевому — как весь рисованный стиль
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: r(14),
-    borderWidth: 1.5,
-    borderColor: Colors.inputBorder,
-    borderRadius: r(20),
-    backgroundColor: '#FFFFFF',
-    paddingVertical: r(22),
-    paddingLeft: r(16),
-    paddingRight: r(12),
-  },
-  cardIcon: { width: r(72), height: r(72), alignItems: 'center', justifyContent: 'center' },
-  cardTextWrap: { flex: 1 },
-  cardTitle: {
-    fontSize: r(20), fontWeight: '800', color: '#111111', marginBottom: r(4),
-  },
-  cardSub: {
-    fontSize: r(13), color: Colors.textSecondary, lineHeight: r(18),
-  },
-  arrowBtn: {
-    width: r(32), height: r(32), borderRadius: r(16),
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
+  slideArt: { alignItems: 'center', justifyContent: 'center' },
+  slideTitle: {
+    fontSize: r(21), fontWeight: '800', color: '#111111', lineHeight: r(27),
+    textAlign: 'center', marginTop: r(10), minHeight: r(58),
   },
 
-  featuresRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    flexWrap: 'wrap', gap: r(6),
-    marginTop: r(16),
-  },
-  featureTxt: { fontSize: r(11.5), color: Colors.textSecondary },
-  featureDot: { fontSize: r(11.5), color: Colors.textMuted },
-
-  guestBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: r(7), marginTop: r(16),
-    paddingVertical: r(12), paddingHorizontal: r(16),
-    borderRadius: r(14), borderWidth: 1, borderColor: Colors.inputBorder,
-    backgroundColor: '#FFFFFF',
-  },
-  guestBtnTxt: { fontSize: r(14), fontWeight: '700', color: Colors.primary },
-
-  loginCard: {
-    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: Colors.inputBorder,
-    borderRadius: r(14),
-    paddingVertical: r(13),
+  dotsRow: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    marginBottom: r(10),
+    gap: r(8), marginTop: r(4),
   },
-  loginGray: { fontSize: r(15), color: '#111111' },
-  loginLink: { fontSize: r(15), fontWeight: '900', color: Colors.primary },
+  dot: {
+    width: r(7), height: r(7), borderRadius: r(4),
+    // Тёмный и полупрозрачный — иначе на тёплом фоне не видно вовсе.
+    backgroundColor: 'rgba(17,17,17,0.25)',
+  },
+  dotActive: { width: r(18), backgroundColor: Colors.primary },
 
-  version: { textAlign: 'center', fontSize: r(12), color: Colors.textMuted },
   userCountCard: {
     alignSelf: 'center',
-    marginTop: r(10),
+    marginTop: r(4),
     paddingVertical: r(6), paddingHorizontal: r(14),
     borderRadius: r(20),
     borderWidth: 1,
@@ -365,4 +476,38 @@ const styles = StyleSheet.create({
   },
   userCountTxt: { fontSize: r(12), color: Colors.textSecondary },
   userCountNum: { fontWeight: '800', color: Colors.primary },
+
+  // ── Главное действие ──
+  registerBtn: {
+    width: '100%', height: r(52), borderRadius: rs(100),
+    backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  registerBtnTxt: { fontSize: r(16), fontWeight: '800', color: '#fff' },
+
+  loginBtn: {
+    width: '100%', height: r(52), borderRadius: rs(100),
+    marginTop: r(10),
+    borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  loginBtnTxt: { fontSize: r(16), fontWeight: '800', color: Colors.primary },
+
+  // Снимаем стену регистрации: даём заглянуть в ленту как гость —
+  // текстовая ссылка, а не кнопка, чтобы не спорить с двумя выше.
+  guestLink: {
+    alignSelf: 'center', marginTop: r(14),
+    paddingVertical: r(6), paddingHorizontal: r(8),
+  },
+  guestLinkTxt: { fontSize: r(14), fontWeight: '700', color: Colors.textSecondary },
+
+  employerRow: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    marginTop: r(14),
+  },
+  employerGray: { fontSize: r(13), color: Colors.textSecondary },
+  employerLink: { fontSize: r(13), fontWeight: '800', color: Colors.primary },
+
+  version: { textAlign: 'center', fontSize: r(11), color: Colors.textMuted, marginTop: r(8) },
 });

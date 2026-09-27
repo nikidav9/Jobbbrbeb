@@ -13,6 +13,7 @@ import { AlertProvider } from '@/template';
 import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
 import EmailRequiredGate from '@/components/EmailRequiredGate';
+import { ProfileGateHost } from '@/components/feature/ProfileGateHost';
 import CookieConsent from '@/components/CookieConsent';
 import { ToastLayer } from '@/components/ui/ToastLayer';
 import { ConfirmHost } from '@/components/ui/ConfirmHost';
@@ -264,6 +265,9 @@ export default function RootLayout() {
           {/* Старым аккаунтам по телефону — «Укажите почту» (вход теперь по
               почте). Под окном согласия: сначала документы. */}
           <EmailRequiredGate />
+          {/* Окно первого отклика: регистрирует в resumeGate.ts функцию
+              открытия — см. components/feature/ProfileGateHost.tsx. */}
+          <ProfileGateHost />
           {/* Баннер cookie/Метрики — только веб; грузит аналитику после согласия. */}
           <CookieConsent />
           <ToastLayer />

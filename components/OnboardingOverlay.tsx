@@ -103,7 +103,9 @@ function fallbackRect(target: string | undefined, width: number, height: number,
   if (!target) return undefined;
   if (target === 'worker.feed.card') return { x: 16, y: top + 118, w: width - 32, h: Math.max(220, height - top - bottom - 270) };
   if (target === 'worker.feed.reject') return { x: width * 0.15, y: height - bottom - 166, w: 72, h: 72 };
-  if (target === 'worker.feed.filter') return { x: width * 0.5 - 36, y: height - bottom - 166, w: 72, h: 72 };
+  // Полоса чипов встала под шапкой (решение владельца 27.09.2026, вместо
+  // шестерёнки в нижнем ряду) — рамка теперь сверху, а не между кнопками.
+  if (target === 'worker.feed.filter') return { x: 16, y: top + 60, w: width - 32, h: 46 };
   if (target === 'worker.feed.apply') return { x: width * 0.75 - 18, y: height - bottom - 166, w: 72, h: 72 };
   if (target === 'worker.feed.save') return { x: width - 132, y: top + 126, w: 52, h: 52 };
   if (target === 'tab.matches') return { x: width / 3, y: height - bottom - 78, w: width / 3, h: 64 };
