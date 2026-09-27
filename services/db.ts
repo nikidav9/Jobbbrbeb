@@ -223,6 +223,7 @@ function rowToUser(r: any): User {
     phone: r.phone ?? '',
     email: r.email ?? undefined,
     emailVerifiedAt: r.email_verified_at ?? undefined,
+    hasPassword: typeof r.has_password === 'boolean' ? r.has_password : undefined,
     lastName: r.last_name,
     firstName: r.first_name,
     age: r.age ?? undefined,

@@ -449,10 +449,18 @@ export default function ProfileSettingsScreen() {
             icon="notifications-outline"
             onPress={openNotificationSettings}
           />
+          {/* Аккаунт по коду из письма пароля не имеет: «Сменить» с полем
+              «текущий пароль» ему не пройти. Такому сразу — задать по коду. */}
           <SettingsRow
-            label="Сменить пароль"
+            label={currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
             icon="key-outline"
-            onPress={() => setShowPassword(true)}
+            onPress={() => {
+              if (currentUser.hasPassword === false) {
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
+              } else {
+                setShowPassword(true);
+              }
+            }}
             last
           />
         </SettingsSection>
