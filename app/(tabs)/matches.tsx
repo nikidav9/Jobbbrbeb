@@ -17,7 +17,7 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterLiveStatus,
+  jupiterLiveStatus, jupiterMailUnread,
 } from '@/services/db';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
@@ -315,17 +315,16 @@ function permAppStatus(status: PermApplicationStatus): string {
   }
 }
 
-// Чипы — как в макете «JT-responses» (27.09.2026): «Все», «Нужны вы»,
-// «Рассматривают», «Ответили». Наши статусы раскладываются по смыслу:
+// Чипы — «Все», «Нужны вы», «Рассматривают» (макет «JT-responses»; «Ответили»
+// убран решением владельца 28.09.2026). Наши статусы раскладываются по смыслу:
 // «Нужны вы» — Юпитер ждёт человека или работодатель написал и ответ не
-// прочитан; «Рассматривают» — отправлено, в работе, ждём работодателя;
-// «Ответили» — интервью, оффер, отказ. «Не получилось» и «Закрыта» — только во «Всех».
-type AppFilter = 'all' | 'needs' | 'review' | 'answered';
+// прочитан; «Рассматривают» — отправлено, в работе, ждём работодателя.
+// Интервью, оффер, отказ, «Не получилось» и «Закрыта» — только во «Всех».
+type AppFilter = 'all' | 'needs' | 'review';
 const APP_FILTERS: { key: AppFilter; label: string }[] = [
   { key: 'all', label: 'Все' },
   { key: 'needs', label: 'Нужны вы' },
   { key: 'review', label: 'Рассматривают' },
-  { key: 'answered', label: 'Ответили' },
 ];
 
 // Одна строка общего списка: отклик Юпитера на карьерном сайте или отклик на
@@ -356,6 +355,8 @@ function WorkerMatches() {
   const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
   const [jupiterError, setJupiterError] = useState(false);
   const [jupiterLive, setJupiterLive] = useState(false);
+  // Непрочитанные письма на почте JobToo для откликов — точка на конверте.
+  const [unreadMail, setUnreadMail] = useState(0);
   const tabBarHeight = useBottomTabBarHeight();
 
   const currentUserId = currentUser?.id ?? '';
@@ -375,6 +376,12 @@ function WorkerMatches() {
   }, [currentUserId, currentUser?.isGuest]);
 
   useFocusEffect(useCallback(() => { void loadJupiter(); }, [loadJupiter]));
+  // Число непрочитанных — при каждом возврате на экран (письмо прочитали в
+  // «Почте» — точка гаснет). Сбой или старый сервер — просто без точки.
+  useFocusEffect(useCallback(() => {
+    if (!currentUserId || currentUser?.isGuest) return;
+    jupiterMailUnread(currentUserId).then(setUnreadMail).catch(() => {});
+  }, [currentUserId, currentUser?.isGuest]))
 
   // Пока Юпитер действительно работает, статус должен обновляться сам.
   // Иначе человек видит "обрабатывает" до ручного свайпа экрана и не понимает,
@@ -458,7 +465,7 @@ function WorkerMatches() {
         ? `${unread} ${plural(unread, 'новое сообщение', 'новых сообщения', 'новых сообщений')} от работодателя`
         : null,
       badge: unread > 0 ? 'Нужны вы' : permAppStatus(a.status),
-      bucket: unread > 0 ? 'needs' : answered ? 'answered' : 'review',
+      bucket: unread > 0 ? 'needs' : answered ? 'other' : 'review',
       open: () => (unread > 0 && chat
         ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } })
         : router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })),
@@ -473,7 +480,6 @@ function WorkerMatches() {
     all: searched.length,
     needs: searched.filter(i => i.bucket === 'needs').length,
     review: searched.filter(i => i.bucket === 'review').length,
-    answered: searched.filter(i => i.bucket === 'answered').length,
   };
   const shown = filter === 'all' ? searched : searched.filter(i => i.bucket === filter);
   const byDay = groupByDay(shown, i => i.at);
@@ -585,8 +591,8 @@ function WorkerMatches() {
             {headBtn('bookmark-outline', 'Сохранённые вакансии', () => router.push('/saved'))}
           </OnboardingTarget>
           <OnboardingTarget targetKey="matches.chats">
-            {headBtn('mail-outline', unreadChats.length > 0 ? 'Сообщения, есть новые' : 'Сообщения',
-              () => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats'), unreadChats.length > 0)}
+            {headBtn('mail-outline', unreadChats.length + unreadMail > 0 ? 'Сообщения, есть новые' : 'Сообщения',
+              () => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats'), unreadChats.length + unreadMail > 0)}
           </OnboardingTarget>
           {headBtn('search', searchOpen ? 'Закрыть поиск' : 'Поиск по откликам',
             () => { setSearchOpen(o => !o); if (searchOpen) setSearch(''); }, false, searchOpen)}

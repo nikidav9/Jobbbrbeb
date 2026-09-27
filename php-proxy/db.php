@@ -248,7 +248,7 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
-    'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed',
+    'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed', 'dbCountExtFeed',
     // Регистрация и восстановление пароля по коду из письма — до входа.
     // dbAuthSendCode/dbAuthVerifyCode с целью attach сами требуют сессию.
     'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',
@@ -289,7 +289,7 @@ $selfArgFns = [
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
-    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
+    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
     'jupiterApplicationEvents' => 0,
     // Свайпы по карьерным вакансиям: только свои.
@@ -6485,6 +6485,10 @@ try {
         // Гость получает общую ленту с чередованием компаний, вошедший — без
         // уже свайпнутых и с учётом вкуса. Кто вошёл — из подписанной сессии,
         // не из аргументов: чужие свайпы так не подсмотреть.
+        // dbCountExtFeed — кнопка «Показать N вакансий» на экране фильтров:
+        // тот же пул и тот же фильтр, но только число, без карточек, вкуса
+        // и полного описания — её зовут на каждое изменение фильтра.
+        case 'dbCountExtFeed':
         case 'dbGetExtFeed': {
             $limit = max(10, min(100, (int)($args[0] ?? 60)));
             // Раздел из шторки фильтров: только известные id, без дублей и
@@ -6519,8 +6523,14 @@ try {
             $pool = sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
+                'p_hide_seen' => $filters['hide_seen'] ?? true,
             ], ['select' => EXT_FEED_POOL_SELECT]);
             $pool = is_array($pool) ? $pool : [];
+            if ($fn === 'dbCountExtFeed') {
+                $f = $filters ?? ext_feed_filters([]);
+                $data = ['total' => count(array_filter($pool, fn($row) => ext_feed_match($row, $f)))];
+                break;
+            }
             $history = [];
             if ($authUid !== null) {
                 foreach (sb_select('jm_ext_swipes', [
@@ -6676,6 +6686,17 @@ try {
             $data = sb_select('jm_jupiter_emails', [
                 'user_id' => 'eq.' . (string)$args[0], 'limit' => '100',
             ], 'id,sender,subject,body,received_at,read_at', 'received_at.desc');
+            break;
+        }
+
+        // Точка на конверте в «Откликах»: сколько непрочитанных писем на почте
+        // JobToo для откликов. Только число, без тел писем, — её зовут при
+        // каждом возврате на экран. Не больше 99: больше точке не нужно.
+        case 'jupiterMailUnread': {
+            $rows = sb_select('jm_jupiter_emails', [
+                'user_id' => 'eq.' . (string)$args[0], 'read_at' => 'is.null', 'limit' => '99',
+            ], 'id');
+            $data = ['unread' => count($rows)];
             break;
         }
 

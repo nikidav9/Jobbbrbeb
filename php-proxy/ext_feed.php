@@ -207,6 +207,11 @@ function ext_feed_filters($raw): array
         'companies' => $companies,
         'posted' => $posted,
         'query' => $words,
+        // Переключатели экрана фильтров (макет «JT-filters»): только с
+        // указанной зарплатой — по умолчанию выкл; скрыть просмотренные —
+        // по умолчанию вкл (решение владельца), то есть как было всегда.
+        'salary_known' => ($raw['salary_known'] ?? false) === true,
+        'hide_seen' => ($raw['hide_seen'] ?? true) !== false,
     ];
 }
 
@@ -221,6 +226,7 @@ function ext_feed_match(array $row, array $f, bool $ignoreCompany = false): bool
         $salary = (float)($row['salary'] ?? 0);
         if ($salary <= 0 || $salary < $f['salary_from']) return false;
     }
+    if (!empty($f['salary_known']) && (float)($row['salary'] ?? 0) <= 0) return false;
 
     $posted = $f['posted'] ?? 'all';
     if ($posted !== 'all') {

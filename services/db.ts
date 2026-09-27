@@ -1811,6 +1811,12 @@ export async function jupiterMailList(userId: string): Promise<JupiterEmail[]> {
   return proxy('jupiterMailList', [userId]);
 }
 
+/** Сколько непрочитанных писем на почте JobToo для откликов (для точки на конверте). */
+export async function jupiterMailUnread(userId: string): Promise<number> {
+  const r = await proxy<{ unread?: number }>('jupiterMailUnread', [userId]);
+  return typeof r?.unread === 'number' ? r.unread : 0;
+}
+
 export async function jupiterMailRead(userId: string, id: string): Promise<void> {
   await proxy('jupiterMailRead', [userId, id]);
 }
@@ -1905,6 +1911,8 @@ export type ExtFeedFilters = {
   posted: 'all' | 'day' | '3days' | 'week' | 'month';
   /** Поиск «Вакансия или стек»: все слова в названии, компании или описании. */
   query?: string;
+  salaryKnown?: boolean;
+  hideSeen?: boolean;
 };
 
 /**
@@ -1925,6 +1933,8 @@ export async function dbGetExtFeed(
     companies: filters.companies,
     posted: filters.posted,
     query: filters.query ?? '',
+    salary_known: filters.salaryKnown ?? false,
+    hide_seen: filters.hideSeen ?? true,
   }]);
   // Старый сервер без OTA отвечает голым массивом — устойчиво читаем и так.
   if (Array.isArray(res)) return { items: res.map(toExtVacancy), total: res.length, companies: [] };
@@ -1951,6 +1961,25 @@ export async function dbAddExtSaved(userId: string, vacancyId: string): Promise<
 
 export async function dbRemoveExtSaved(userId: string, vacancyId: string): Promise<void> {
   await proxy('dbRemoveExtSaved', [userId, vacancyId]);
+}
+
+/**
+ * Кнопка «Показать N вакансий» на экране фильтров: тот же фильтр, что у
+ * dbGetExtFeed, но сервер отдаёт только число (dbCountExtFeed).
+ */
+export async function dbCountExtFeed(filters: ExtFeedFilters): Promise<number> {
+  const res = await proxy<{ total?: number }>('dbCountExtFeed', [10, [], {
+    salary_from: filters.salaryFrom,
+    specs: filters.specs,
+    levels: filters.levels,
+    formats: filters.formats,
+    companies: filters.companies,
+    posted: filters.posted,
+    query: filters.query ?? '',
+    salary_known: filters.salaryKnown ?? false,
+    hide_seen: filters.hideSeen ?? true,
+  }]);
+  return typeof res?.total === 'number' ? res.total : 0;
 }
 
 /** Свайп по карьерной вакансии: 1 — вправо, -1 — влево. */

@@ -148,6 +148,24 @@ check('поиск: слово из описания и компании засч
 check('поиск: не строка — пустой запрос', ext_feed_filters(['query' => ['x']])['query'] === []);
 check('поиск: не больше 6 слов', count(ext_feed_filters(['query' => 'a b c d e f g h'])['query']) === 6);
 
+// Переключатели экрана фильтров (макет «JT-filters»).
+check('по умолчанию просмотренные скрыты', ext_feed_filters([])['hide_seen'] === true);
+check('скрыть просмотренные выключается только явным false', ext_feed_filters(['hide_seen' => false])['hide_seen'] === false
+    && ext_feed_filters(['hide_seen' => 'нет'])['hide_seen'] === true);
+check('«только с зарплатой» по умолчанию выключен', ext_feed_filters([])['salary_known'] === false);
+$known = ext_feed_filters(['salary_known' => true]);
+check('«только с зарплатой»: без суммы не проходит', !ext_feed_match(['salary' => null], $known));
+check('«только с зарплатой»: с суммой проходит', ext_feed_match(['salary' => 90000], $known));
+check('hide_seen уходит в jm_ext_feed_pool', str_contains($dbSrc, "'p_hide_seen' => \$filters['hide_seen'] ?? true,"));
+check('счётчик «Показать N» — без карточек и публичный',
+    str_contains($dbSrc, "case 'dbCountExtFeed':") && str_contains($dbSrc, "'dbGetExtFeed', 'dbCountExtFeed',")
+    && str_contains($dbSrc, "\$data = ['total' => count(array_filter(\$pool, fn(\$row) => ext_feed_match(\$row, \$f)))];"));
+$mig130 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/130_feed_hide_seen.sql');
+check('миграция 130: старая перегрузка снята', str_contains($mig130, 'drop function if exists public.jm_ext_feed_pool(text, int, text[], boolean, boolean);'));
+check('миграция 130: выключено — возвращаются только смахнутые влево', str_contains($mig130, 'and (p_hide_seen or s.dir = 1)'));
+check('миграция 130: функцию зовёт только сервер',
+    str_contains($mig130, 'grant execute on function public.jm_ext_feed_pool(text, int, text[], boolean, boolean, boolean) to service_role;'));
+
 $salaryFilter = ext_feed_filters(['salary_from' => 100000]);
 check('зарплата ниже порога не проходит', !ext_feed_match(['salary' => 90000], $salaryFilter));
 check('без зарплаты при фильтре не проходит', !ext_feed_match(['salary' => null], $salaryFilter));

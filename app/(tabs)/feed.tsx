@@ -2,14 +2,14 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
+  TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
 import {
   GestureDetector,
   ScrollView as GHScrollView,
   RefreshControl as GHRefreshControl,
 } from 'react-native-gesture-handler';
-import Reanimated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import Reanimated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -26,6 +26,8 @@ import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
 import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
+import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
+import { FORMATS, GRADES } from '@/components/filters/kit';
 import { JTBolt } from '@/components/ui/JTBolt';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
@@ -197,29 +199,7 @@ function previewText(text: string): string {
   return intro.map(l => l.replace(/^(## |• |- |\* )/, '')).join(' ');
 }
 
-// Строка с галочкой — общий вид для списков множественного выбора в
-// шторках фильтров (специализация, компания): карточка, подпись, чек справа.
-const mp = StyleSheet.create({
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    marginHorizontal: rs(16), marginTop: rs(8),
-    paddingHorizontal: rs(14), paddingVertical: rs(14),
-    borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: rs(14), backgroundColor: Colors.bg,
-  },
-  cardOn: { borderColor: Colors.primary },
-  name: { fontSize: rf(15), color: Colors.textPrimary, fontWeight: '500' },
-  sub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
-  check: {
-    width: rs(22), height: rs(22), borderRadius: rs(6),
-    borderWidth: 1.5, borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
-  },
-  checkOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  emptyWrap: { padding: rs(24), alignItems: 'center' },
-  emptyTxt: { fontSize: rf(14), color: Colors.textMuted },
-});
 
-
-type VacancyCompanyOption = { name: string; count: number };
 
 type FeedCard =
   | { _ext: false; v: PermVacancy }
@@ -227,29 +207,12 @@ type FeedCard =
 
 // ─────────────────────────────────────────────────
 // Полоса чипов над колодой (решение владельца 27.09.2026 вместо шестерёнки
-// и общей шторки PermFilterSheet). Один компонент шторки на все шесть
-// фильтров — ниже, FilterSheet; полоса только показывает текущий выбор и
-// открывает нужную шторку.
+// и общей шторки PermFilterSheet). Чип открывает отдельный экран фильтра
+// (app/filters/*, макет «JT-filters»), крестик сбрасывает фильтр сразу.
 // ─────────────────────────────────────────────────
 type FilterSheetKind = 'salary' | 'spec' | 'level' | 'format' | 'company' | 'posted';
 
-const FILTER_SHEET_TITLES: Record<FilterSheetKind, string> = {
-  salary: 'Зарплата',
-  spec: 'Специализация',
-  level: 'Уровень',
-  format: 'Формат работы',
-  company: 'Компания',
-  posted: 'Дата публикации',
-};
 
-const SALARY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: 'Любая' },
-  { value: 100000, label: 'от 100 000' },
-  { value: 150000, label: 'от 150 000' },
-  { value: 200000, label: 'от 200 000' },
-  { value: 250000, label: 'от 250 000' },
-  { value: 350000, label: 'от 350 000' },
-];
 
 const POSTED_OPTIONS: { id: FeedFilters['posted']; label: string }[] = [
   { id: 'all', label: 'За всё время' },
@@ -278,15 +241,16 @@ function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string;
       return { label: n === 1 ? one : `Специализация · ${n}`, active: true };
     }
     case 'level': {
-      const n = f.levels.length;
-      if (!n) return { label: 'Уровень', active: false };
-      const one = VACANCY_LEVELS.find(l => l.id === f.levels[0])?.label ?? '';
-      return { label: n === 1 ? one : `Уровень · ${n}`, active: true };
+      // Грейды макета: Junior = стажёр + junior, поэтому считаем кнопки, а не id.
+      const on = GRADES.filter(g => g.ids.every(id => f.levels.includes(id)));
+      if (!f.levels.length) return { label: 'Грейд', active: false };
+      if (on.length === 1) return { label: on[0].label, active: true };
+      return { label: `Грейд · ${on.length || f.levels.length}`, active: true };
     }
     case 'format': {
       const n = f.formats.length;
       if (!n) return { label: 'Формат работы', active: false };
-      const one = VACANCY_FORMATS.find(v => v.id === f.formats[0])?.label ?? '';
+      const one = FORMATS.find(v => v.id === f.formats[0])?.chip ?? '';
       return { label: n === 1 ? one : `Формат работы · ${n}`, active: true };
     }
     case 'company': {
@@ -301,7 +265,8 @@ function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string;
   }
 }
 
-const FILTER_CHIP_KINDS: FilterSheetKind[] = ['salary', 'spec', 'level', 'format', 'company', 'posted'];
+// Компании в фильтрах больше нет (макет «JT-filters», решение владельца).
+const FILTER_CHIP_KINDS: FilterSheetKind[] = ['salary', 'spec', 'level', 'format', 'posted'];
 
 /**
  * Прокрутка вбок отдельная от свайпа карточки: полоса стоит НАД карточкой,
@@ -388,304 +353,6 @@ const fb = StyleSheet.create({
   chipClear: { paddingRight: rs(12), paddingLeft: rs(0), height: '100%', justifyContent: 'center' },
 
 });
-
-/**
- * «Все фильтры» — чёрная кнопка слева от чипов (макет JT-design). Список
- * шести фильтров с текущим выбором; строка открывает шторку этого фильтра.
- */
-function AllFiltersSheet({ filters, onPick, onReset, onClose, bottomInset }: {
-  filters: FeedFilters;
-  onPick: (kind: FilterSheetKind) => void;
-  onReset: () => void;
-  onClose: () => void;
-  bottomInset: number;
-}) {
-  const anyActive = FILTER_CHIP_KINDS.some(k => filterChipInfo(k, filters).active);
-  return (
-    <Reanimated.View
-      entering={FadeIn.duration(180)}
-      exiting={FadeOut.duration(160)}
-      style={[styles.filterOverlay, { bottom: bottomInset }]}
-    >
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтры" />
-      <Reanimated.View
-        entering={SlideInDown.springify().damping(20).stiffness(180)}
-        exiting={SlideOutDown.duration(200)}
-        style={[styles.filterSheet, { maxHeight: '80%' }]}
-        testID="filter-all-sheet"
-      >
-        <SheetHandle />
-        <View style={styles.filterSheetHeader}>
-          <Text style={styles.filterSheetTitle}>Фильтры</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
-        {FILTER_CHIP_KINDS.map(kind => {
-          const { label, active } = filterChipInfo(kind, filters);
-          return (
-            <TouchableOpacity
-              key={kind}
-              style={afs.row}
-              activeOpacity={0.75}
-              onPress={() => onPick(kind)}
-              accessibilityRole="button"
-              accessibilityLabel={`${FILTER_SHEET_TITLES[kind]}: ${active ? label : 'не выбрано'}`}
-            >
-              <Text style={afs.title}>{FILTER_SHEET_TITLES[kind]}</Text>
-              <Text style={[afs.value, active && afs.valueOn]} numberOfLines={1}>{active ? label : 'Любой'}</Text>
-              <Ionicons name="chevron-forward" size={rs(18)} color={JT.textTertiary} />
-            </TouchableOpacity>
-          );
-        })}
-        {anyActive ? (
-          <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onReset(); onClose(); }}>
-            <Text style={fst.ctaTxt}>Сбросить все</Text>
-          </TouchableOpacity>
-        ) : <View style={{ height: rs(16) }} />}
-      </Reanimated.View>
-    </Reanimated.View>
-  );
-}
-
-const afs = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(16), paddingVertical: rs(14),
-    borderBottomWidth: 1, borderBottomColor: Colors.divider,
-  },
-  title: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink },
-  value: { maxWidth: '45%', fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary },
-  valueOn: { color: JT.accent, fontFamily: JT_FONT.bold },
-});
-
-const fst = StyleSheet.create({
-  label: { fontSize: rf(13.5), fontWeight: '800', color: Colors.textMuted, paddingHorizontal: rs(16), paddingTop: rs(14), paddingBottom: rs(8) },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), paddingHorizontal: rs(16) },
-  chip: { paddingHorizontal: rs(13), paddingVertical: rs(9), borderRadius: rs(100), backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.divider },
-  chipOn: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryBorder },
-  chipTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.textPrimary },
-  chipTxtOn: { color: Colors.primary },
-  cta: { margin: rs(16), backgroundColor: Colors.primary, borderRadius: rs(16), alignItems: 'center', paddingVertical: rs(15) },
-  ctaTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-});
-
-const pfl = StyleSheet.create({
-  searchWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), marginTop: rs(12), marginBottom: rs(4),
-    backgroundColor: Colors.surface, borderRadius: rs(12),
-    paddingHorizontal: rs(12), paddingVertical: rs(11),
-    borderWidth: 1, borderColor: Colors.inputBorder,
-  },
-  searchInput: { flex: 1, fontSize: rf(15), color: Colors.textPrimary, padding: 0 },
-});
-
-/**
- * Одна шторка на все шесть фильтров: заголовок и тело меняются по kind,
- * низ — общая кнопка «Применить». Черновик применяется только по ней; тап
- * по затемнению закрывает без применения — тот же приём, что был у
- * PermFilterSheet (styles.filterOverlay, fst.*), плюс общая ручка шторки
- * и смахивание вниз из components/ui/Sheet — раньше своя шторка их не звала.
- */
-function FilterSheet({
-  kind, initial, companyOptions, onApply, onClose, bottomInset,
-}: {
-  kind: FilterSheetKind;
-  initial: FeedFilters;
-  companyOptions: VacancyCompanyOption[];
-  onApply: (f: FeedFilters) => void;
-  onClose: () => void;
-  bottomInset: number;
-}) {
-  const [draft, setDraft] = useState<FeedFilters>(initial);
-  const [companyQuery, setCompanyQuery] = useState('');
-  // useSwipeToDismiss уводит окно вниз своей translateY-анимацией. Раньше её
-  // onClose вызывал закрытие напрямую — React убирал <FilterSheet/> из
-  // разметки, и Reanimated поверх уже уехавшего окна заново проигрывал
-  // exiting (FadeOut/SlideOutDown), отчего окно дёргалось: свайп, потом ещё
-  // раз «уезжает». Флаг говорит: окна на экране уже нет, повторная exiting-
-  // анимация не нужна — unmount происходит следующим рендером, когда
-  // Reanimated уже видит exiting=undefined.
-  const [swipedAway, setSwipedAway] = useState(false);
-  const swipe = useSwipeToDismiss(() => setSwipedAway(true));
-  // Звать onClose ровно один раз, когда свайп долистал до закрытия, а не при
-  // каждой смене ссылки на сам onClose (проп пересоздаётся в родителе на
-  // каждый рендер).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (swipedAway) onClose(); }, [swipedAway]);
-
-  const companyRows = useMemo(() => {
-    const q = companyQuery.trim().toLocaleLowerCase('ru-RU');
-    return q ? companyOptions.filter(x => x.name.toLocaleLowerCase('ru-RU').includes(q)) : companyOptions;
-  }, [companyOptions, companyQuery]);
-
-  const Check = ({ on }: { on: boolean }) => (
-    <View style={[mp.check, on && mp.checkOn]}>
-      {on ? <Ionicons name="checkmark" size={rf(14)} color="#fff" /> : null}
-    </View>
-  );
-
-  function toggled<T>(list: T[], id: T): T[] {
-    return list.includes(id) ? list.filter(x => x !== id) : [...list, id];
-  }
-
-  return (
-    // Как у Sorce: фон затемняется, шторка выезжает снизу и уезжает обратно
-    // при закрытии (exiting срабатывает, потому что шторку снимают с экрана
-    // условием в разметке). Тап по затемнению закрывает без применения.
-    <Reanimated.View
-      entering={FadeIn.duration(180)}
-      exiting={swipedAway ? undefined : FadeOut.duration(160)}
-      style={[styles.filterOverlay, { bottom: bottomInset }]}
-    >
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтр" />
-      <Reanimated.View
-        entering={SlideInDown.springify().damping(20).stiffness(180)}
-        exiting={swipedAway ? undefined : SlideOutDown.duration(200)}
-        style={[styles.filterSheet, { maxHeight: '80%' }]}
-        testID="filter-sheet"
-      >
-        <Animated.View style={swipe.animStyle}>
-          <View {...swipe.panHandlers}>
-            <SheetHandle />
-            <View style={styles.filterSheetHeader}>
-              <Text style={styles.filterSheetTitle}>{FILTER_SHEET_TITLES[kind]}</Text>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.filterClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {kind === 'salary' ? (
-            <>
-              <Text style={fst.label}>₽ в месяц на руки</Text>
-              <View style={[fst.chipsWrap, { paddingBottom: rs(8) }]}>
-                {SALARY_OPTIONS.map(({ value, label }) => {
-                  const on = draft.salaryFrom === value;
-                  return (
-                    <TouchableOpacity key={value} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                      onPress={() => setDraft(d => ({ ...d, salaryFrom: value }))}>
-                      <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </>
-          ) : kind === 'level' ? (
-            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
-              {VACANCY_LEVELS.map(({ id, label }) => {
-                const on = draft.levels.includes(id);
-                return (
-                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, levels: toggled(d.levels, id) }))}>
-                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : kind === 'format' ? (
-            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
-              {VACANCY_FORMATS.map(({ id, label }) => {
-                const on = draft.formats.includes(id);
-                return (
-                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, formats: toggled(d.formats, id) }))}>
-                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : kind === 'posted' ? (
-            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
-              {POSTED_OPTIONS.map(({ id, label }) => {
-                const on = draft.posted === id;
-                return (
-                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, posted: id }))}>
-                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : kind === 'spec' ? (
-            <FlatList
-              data={VACANCY_SPECS}
-              keyExtractor={s => s.id}
-              // Список длиннее, чем помещается над кнопкой «Применить»: без
-              // ограничения по высоте FlatList растягивается по содержимому
-              // и сама кнопка уезжает за пределы видимой части шторки.
-              style={{ maxHeight: rs(340) }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingTop: rs(8), paddingBottom: rs(12) }}
-              renderItem={({ item }) => {
-                const on = draft.specs.includes(item.id);
-                return (
-                  <TouchableOpacity style={[mp.card, on && mp.cardOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, specs: toggled(d.specs, item.id) }))}>
-                    <Ionicons name={item.icon as any} size={20} color={on ? Colors.primary : Colors.textSecondary} />
-                    <Text style={[mp.name, { flex: 1 }]}>{item.label}</Text>
-                    <Check on={on} />
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          ) : (
-            <>
-              <View style={pfl.searchWrap}>
-                <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
-                <TextInput
-                  style={pfl.searchInput}
-                  placeholder="Название компании"
-                  placeholderTextColor={Colors.textMuted}
-                  value={companyQuery}
-                  onChangeText={setCompanyQuery}
-                  clearButtonMode="while-editing"
-                />
-              </View>
-              <FlatList
-                data={companyRows}
-                keyExtractor={item => item.name}
-                // Компаний может быть много больше, чем помещается над
-                // кнопкой «Применить» — тот же приём, что и у списка
-                // специализаций: список скроллится внутри своей высоты.
-                style={{ maxHeight: rs(300) }}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: rs(12) }}
-                renderItem={({ item }) => {
-                  const on = draft.companies.includes(item.name);
-                  return (
-                    <TouchableOpacity style={[mp.card, on && mp.cardOn]} activeOpacity={0.8}
-                      onPress={() => setDraft(d => ({ ...d, companies: toggled(d.companies, item.name) }))}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={mp.name} numberOfLines={1}>{item.name}</Text>
-                        <Text style={mp.sub}>{item.count} {pluralVacancies(item.count)}</Text>
-                      </View>
-                      <Check on={on} />
-                    </TouchableOpacity>
-                  );
-                }}
-                ListEmptyComponent={<View style={mp.emptyWrap}><Text style={mp.emptyTxt}>Компания не найдена</Text></View>}
-              />
-            </>
-          )}
-
-          <TouchableOpacity
-            style={[fst.cta, { marginBottom: rs(16) }]}
-            activeOpacity={0.85}
-            testID="filter-apply"
-            onPress={() => { onApply(draft); onClose(); }}
-          >
-            <Text style={fst.ctaTxt}>Применить</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </Reanimated.View>
-    </Reanimated.View>
-  );
-}
-
 
 // ─────────────────────────────────────────────────
 // Разовая / Регулярная — панель над лентой смен
@@ -1164,8 +831,10 @@ function WorkerPermMode() {
   // общую шторку PermFilterSheet: один объект фильтров, шторка открывается
   // под конкретный чип. Поиск по слову, метро, график, разделы и сортировка
   // убраны совсем — решение владельца.
-  const [filters, setFilters] = useState<FeedFilters>(EMPTY_FEED_FILTERS);
-  const [openSheet, setOpenSheet] = useState<FilterSheetKind | 'all' | null>(null);
+  // Фильтры — общее хранилище: их правят отдельные экраны app/filters/*
+  // (макет «JT-filters»), лента только читает и сбрасывает крестиком.
+  const filters = useAppliedFilters();
+  const setFilters = setAppliedFilters;
   // Дневной запас свайпов и плашка «на сегодня всё».
   const energy = useEnergy();
   const [limitOpen, setLimitOpen] = useState(false);
@@ -1191,7 +860,6 @@ function WorkerPermMode() {
   // Сервер знает весь пул, а не только пришедшую порцию — «Всего N» и список
   // компаний в шторке считаются от него, не от того, что успело загрузиться.
   const [careerTotal, setCareerTotal] = useState(0);
-  const [careerCompanies, setCareerCompanies] = useState<{ company: string; count: number }[]>([]);
   const [careerLoading, setCareerLoading] = useState(false);
   // Свои вакансии, смахнутые влево и записанные на сервере, — их колода
   // больше не показывает (та же идея, что у extLeftSwipes ниже).
@@ -1213,35 +881,6 @@ function WorkerPermMode() {
   // слитые по имени. Свои считаются при всех фильтрах, КРОМЕ самой компании —
   // иначе выбор одной компании убрал бы остальные из списка, как раньше было
   // с картой станций.
-  const ownCompanyCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    const applied = new Set(permApplications.filter(a => a.workerId === currentUser?.id).map(a => a.vacancyId));
-    const now = Date.now();
-    const filtersNoCompany: FeedFilters = { ...filters, companies: [] };
-    // Свои — только те, что колода может показать: IT, не отклик и не свайп
-    // влево. Иначе в списке оставались работодатели с не-IT вакансиями
-    // (жалоба 26.09: «выбрал Лавку — пусто»), выбор давал пустую колоду.
-    permVacancies.forEach(v => {
-      const shown = v.status === 'open' && sectionOfPerm(v.workType) === 'it'
-        && !applied.has(v.id) && !permSwiped.has(v.id)
-        && matchOwnVacancy(v, filtersNoCompany, now);
-      const name = shown ? v.company.trim() : '';
-      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
-    });
-    return counts;
-  }, [permVacancies, permApplications, currentUser?.id, permSwiped, filters]);
-
-  const permCompanyOptions = useMemo(() => {
-    const counts = new Map(ownCompanyCounts);
-    careerCompanies.forEach(({ company, count }) => {
-      const name = company.trim();
-      if (!name) return;
-      counts.set(name, (counts.get(name) ?? 0) + count);
-    });
-    return Array.from(counts, ([name, count]) => ({ name, count }))
-      .filter(item => item.count > 0)
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [ownCompanyCounts, careerCompanies]);
 
   // Карьерная лента фильтруется на сервере (php-proxy/ext_feed.php) — клиент
   // только передаёт текущий выбор и заменяет колоду целиком под ответ. Ключ —
@@ -1255,6 +894,7 @@ function WorkerPermMode() {
     const t = setTimeout(() => setSearchQuery(searchText.trim()), 400);
     return () => clearTimeout(t);
   }, [searchText]);
+  useEffect(() => { setFeedQuery(searchQuery); }, [searchQuery]);
   const extFilters = () => ({ ...toExtFeedFilters(filters), query: searchQuery });
   const filtersKey = JSON.stringify([filters, searchQuery]);
   // Поколение выборки: растёт при каждой смене фильтров. Дозагрузка, начатая
@@ -1270,7 +910,6 @@ function WorkerPermMode() {
       if (cancelled) return;
       setCareerVacancies(res.items);
       setCareerTotal(res.total);
-      setCareerCompanies(res.companies);
     }).catch(() => {
       if (cancelled) return;
       // Сбой под новыми чипами не должен оставлять колоду и «Всего N» от
@@ -1278,7 +917,6 @@ function WorkerPermMode() {
       // сейчас выбрано. Пустое состояние само предложит обновить.
       setCareerVacancies([]);
       setCareerTotal(0);
-      setCareerCompanies([]);
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
     }).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
@@ -1294,7 +932,6 @@ function WorkerPermMode() {
         dbGetExtFeed(60, extFilters()).then(res => {
           setCareerVacancies(res.items);
           setCareerTotal(res.total);
-          setCareerCompanies(res.companies);
           // swSkipped обнуляется, поэтому смахнутые за сессию свои переносим в
           // permSwiped — иначе они вернулись бы в колоду. Не при самом свайпе:
           // тогда своя пропадала бы из чередования и следующая своя вставала
@@ -1400,7 +1037,20 @@ function WorkerPermMode() {
   // Поиск считается фильтром: «по вашим фильтрам», «ничего не нашлось», сброс.
   const permFiltersActive = isFilterActive(filters) || searchQuery !== '';
 
-  const openFilterSheet = (kind: FilterSheetKind) => setOpenSheet(kind);
+  // Чип открывает свой экран (README макета): зарплата, специализация и
+  // формат — отдельные экраны; грейд и дата — «Все фильтры» (у грейда своего
+  // экрана нет, прокрутка к разделу).
+  const openFilterSheet = (kind: FilterSheetKind) => {
+    if (kind === 'salary' || kind === 'spec' || kind === 'format') {
+      router.push({ pathname: `/filters/${kind}`, params: { from: 'feed' } });
+      return;
+    }
+    openAllFilters(kind === 'level' ? 'level' : undefined);
+  };
+  const openAllFilters = (section?: string) => {
+    beginDraft();
+    router.push(section ? { pathname: '/filters', params: { section } } : '/filters');
+  };
   const applyFilters = (next: FeedFilters) => setFilters(next);
   // «×» на включённом чипе сбрасывает ровно этот фильтр, не открывая шторку.
   const clearFilter = (kind: FilterSheetKind) => setFilters(f => {
@@ -1422,7 +1072,8 @@ function WorkerPermMode() {
   // одной чистой функцией из services/feedFilters.ts, той же, что тестируется
   // node:test-ом отдельно от React.
   const now = Date.now();
-  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id)
+  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id)
+    && (!filters.hideSeen || !permSwiped.has(v.id))
     && sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now)
     && matchesSearch(`${v.title} ${v.company} ${v.description ?? ''}`, searchQuery));
 
@@ -2136,7 +1787,7 @@ function WorkerPermMode() {
           27.09.2026): всегда на экране, даже когда колода пуста или ещё
           грузится — иначе пустой фильтр был бы тупиком. */}
       <OnboardingTarget targetKey="worker.feed.filter">
-        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} onOpenAll={() => setOpenSheet('all')} />
+        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} onOpenAll={() => openAllFilters()} />
       </OnboardingTarget>
       {/* Пустая колода без загрузки прячет счётчик: он мог остаться от
           прежнего выбора чипов (свежий пул ещё не разложился в карточки),
@@ -2192,26 +1843,6 @@ function WorkerPermMode() {
           </View>
         </View>
       ) : null}
-
-      {openSheet === 'all' && (
-        <AllFiltersSheet
-          filters={filters}
-          onPick={kind => setOpenSheet(kind)}
-          onReset={() => applyFilters(EMPTY_FEED_FILTERS)}
-          onClose={() => setOpenSheet(null)}
-          bottomInset={tabBarHeight}
-        />
-      )}
-      {openSheet && openSheet !== 'all' && (
-        <FilterSheet
-          kind={openSheet}
-          initial={filters}
-          companyOptions={permCompanyOptions}
-          bottomInset={tabBarHeight}
-          onApply={applyFilters}
-          onClose={() => setOpenSheet(null)}
-        />
-      )}
 
       {/* Лента — всегда колода: вкладок «Отклики»/«Избранное» здесь больше нет,
           они уехали на свой экран, и списочный режим стал недостижим. */}
