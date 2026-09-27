@@ -929,15 +929,34 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   `jm_resume_files` (выбранный файл с `storage_path`) ДО записи отклика, тем
   же кодом и текстом 409, что уже стоял в `jupiterEnqueue`; старые сборки без
   клиентского диалога остановит только сервер. На клиенте общая точка входа —
-  `services/resumeGate.ts` (`ensureResumeForApply`): диалог «Нужно резюме» с
-  переходом в «Профиль → Файлы», вызывается из `app/(tabs)/feed.tsx` (свайп
-  вправо что по своей, что по карьерной карточке) и из
-  `app/perm-vacancy-detail.tsx` (перед открытием окна отклика). Гостя эта
-  проверка не касается: его сначала ведёт на регистрацию `applyTo`.
+  `services/resumeGate.ts` (`ensureResumeForApply`), вызывается из
+  `app/(tabs)/feed.tsx` (свайп вправо что по своей, что по карьерной
+  карточке) и из `app/perm-vacancy-detail.tsx` (перед открытием окна
+  отклика). Гостя эта проверка не касается: его сначала ведёт на регистрацию
+  `applyTo`.
   Та же проверка стоит в `dbUpsertLike` — на НОВЫЙ отклик работника на смену
   (`workerLiked`, раньше не было): старые сборки до 17.09 ещё показывают живые
   смены. Решение работодателя и «пропустить» она не трогает.
   Проверка — `tests/apply_requires_resume_test.php`.
+- **Окно первого отклика «Создайте профиль за минуту»** (решение владельца
+  27.09.2026, как у getmatch). После «почта → код → лента» у соискателя нет
+  ни резюме, ни имени, а `ensureResumeForApply` сигнатуру не меняет — вместо
+  запасного `confirm`/`Alert` она зовёт открыватель, который на старте
+  регистрирует `ProfileGateHost` (`components/feature/ProfileGateHost.tsx`,
+  смонтирован в `app/_layout.tsx` внутри `AppProvider` — только там известен
+  `currentUser`). Само окно — `components/feature/ProfileGateSheet.tsx`
+  (шторка на `components/ui/Sheet.tsx`): нет резюме — выбор «Загрузить PDF»
+  / «Заполнить самому» с уходом на `profile?tab=resume`; резюме есть, а
+  имени/фамилии из PDF не нашлось — сразу поля имени; удачный импорт без
+  имени сам переключает окно на поля, второй раз нажимать не нужно. Решение
+  «что показать» — чистая функция `decideProfileGateStep`
+  (`services/profileGateDecision.ts`, без RN-импортов ради
+  `tests/profileGateDecision.test.ts`). Сам импорт PDF (выбор файла →
+  `extractResumePdf` → `dbSaveResumeFile` → `mergeResumeIntoUser`) вынесен в
+  `pickAndImportResume` (`services/resumeImport.ts`) — им пользуются и это
+  окно, и обычный импорт в профиле (`app/(tabs)/profile.tsx`), чтобы один и
+  тот же файл вёл себя одинаково независимо от места загрузки. Без хоста
+  (тесты, редкий случай) — прежний запасной `confirm`/`Alert`.
 - **Решение принимает владелец вакансии.** `dbSetPermApplicationStatus` в
   `db.php` берёт отклик из `jm_perm_applications` и сверяет `employer_id` с
   сессией (чужой — 403, ненайденный — 404). Проверки не было вовсе: любой

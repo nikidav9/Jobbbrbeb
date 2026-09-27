@@ -3657,8 +3657,15 @@ try {
                     if (sb_single('jm_users', ['email' => 'eq.' . $regEmail], 'id')) {
                         jt_respond(['error' => 'Аккаунт с этой почтой уже есть. Войдите'], 409); exit;
                     }
-                    $bad = jt_password_problem((string)($u['password'] ?? ''));
-                    if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
+                    // Пароль необязателен (решение владельца 27.09.2026: почта
+                    // → код → сразу лента, вход потом по коду из письма).
+                    // Указан — проверяем как раньше; пуст — аккаунт без
+                    // пароля, ниже по коду пустой password просто не уйдёт в базу.
+                    $pwd = (string)($u['password'] ?? '');
+                    if ($pwd !== '') {
+                        $bad = jt_password_problem($pwd);
+                        if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
+                    }
                     unset($u['phone']);
                 } elseif (empty($u['phone']) || empty($u['password'])) {
                     throw new RuntimeException('Для регистрации нужны почта с кодом и пароль');

@@ -30,9 +30,23 @@ type Props = {
    * квитанция не нужна. Бросает ошибку — компонент покажет её текст.
    */
   verify?: (email: string, code: string) => Promise<void>;
+  /**
+   * Доп. содержимое под полем почты, пока не отправлен код — например,
+   * галочки согласий при регистрации (решение владельца 27.09.2026: почта →
+   * код → сразу лента, согласия спрашиваются тут же, а не отдельным шагом).
+   * На шаге ввода кода не показывается — подтверждать там уже нечего.
+   */
+  belowEmail?: React.ReactNode;
+  /**
+   * Доп. условие, запрещающее отправку кода, помимо заполненности самой
+   * почты, — например, не отмечены обязательные согласия из `belowEmail`.
+   */
+  disabled?: boolean;
 };
 
-export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', onSendAttempt, verify: customVerify }: Props) {
+export function EmailCodeStep({
+  purpose, onVerified, emailLabel = 'Почта', onSendAttempt, verify: customVerify, belowEmail, disabled,
+}: Props) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [phase, setPhase] = useState<'email' | 'code'>('email');
@@ -112,10 +126,11 @@ export function EmailCodeStep({ purpose, onVerified, emailLabel = 'Почта', 
           onSubmitEditing={send}
           returnKeyType="send"
         />
+        {belowEmail}
         <View style={styles.btn}>
           {busy
             ? <ActivityIndicator color={Colors.primary} />
-            : <PrimaryButton label="Получить код →" onPress={send} disabled={!normalized} />}
+            : <PrimaryButton label="Получить код →" onPress={send} disabled={!normalized || disabled} />}
         </View>
       </View>
     );

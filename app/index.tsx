@@ -4,7 +4,8 @@ import {
   ScrollView, Dimensions, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
-import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Line, Rect } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -28,44 +29,72 @@ const r = (n: number) => Math.round(n * sc);
 /**
  * Карусель на входе — как в getmatch: пролистай, узнай суть за три экрана.
  * Первый слайд — фото персонажа (уже есть в ресурсах), второй и третий —
- * простые плоские рисунки на react-native-svg: новых картинок не заводим,
- * а анимированный DrawnArt здесь не нужен — слайд статичен, пока его не пролистали.
+ * тот же персонаж и та же оранжевая «таблетка»-бейдж, что и в остальном
+ * интерфейсе: иначе слайды 2–3 читаются как значки от другого приложения.
+ * Неразрывные пробелы — чтобы на 320 px не повисало одно слово на строке.
  */
 const SLIDES = [
-  { key: 'swipe', title: 'Постоянная IT-работа в Москве — одним свайпом' },
-  { key: 'sites', title: 'Вакансии прямо с сайтов компаний' },
-  { key: 'apply', title: 'Отклик на сайт компании отправим за вас' },
+  { key: 'swipe', title: 'Постоянная IT-работа в Москве — одним свайпом' },
+  { key: 'sites', title: 'Вакансии прямо с сайтов компаний' },
+  { key: 'apply', title: 'Отклик на сайт компании отправим за вас' },
 ] as const;
 
-// Слайд 2: карточка браузера со списком вакансий — «берём напрямую с сайтов».
-function SitesArt({ size }: { size: number }) {
+// Бейдж-«таблетка» поверх картинки — общий акцент для 2 и 3 слайда, тот же
+// оранжевый и та же белая обводка, что и у кнопок ниже.
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+function ArtBadge({ size, icon, style }: { size: number; icon: IconName; style?: object }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 160 160">
-      <Rect x={14} y={18} width={132} height={124} rx={16} fill="#FFFFFF" stroke={Colors.inputBorder} strokeWidth={2} />
-      <Circle cx={28} cy={34} r={3.5} fill={Colors.inputBorder} />
-      <Circle cx={40} cy={34} r={3.5} fill={Colors.inputBorder} />
-      <Circle cx={52} cy={34} r={3.5} fill={Colors.primary} />
-      <Line x1={14} y1={46} x2={146} y2={46} stroke={Colors.divider} strokeWidth={2} />
-      {[64, 92, 120].map(cy => (
-        <React.Fragment key={cy}>
-          <Circle cx={30} cy={cy} r={9} fill={Colors.primaryLight} stroke={Colors.primary} strokeWidth={1.5} />
-          <Rect x={46} y={cy - 7} width={72} height={6} rx={3} fill={Colors.inputBorder} />
-          <Rect x={46} y={cy + 3} width={46} height={5} rx={2.5} fill={Colors.divider} />
-        </React.Fragment>
-      ))}
-    </Svg>
+    <View style={[{
+      position: 'absolute',
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: Colors.primary,
+      borderWidth: size * 0.09, borderColor: '#FFFFFF',
+      alignItems: 'center', justifyContent: 'center',
+    }, style]}
+    >
+      <Ionicons name={icon} size={size * 0.46} color="#FFFFFF" />
+    </View>
   );
 }
 
-// Слайд 3: бумажный самолётик летит к карточке компании — «отправим за вас».
-function ApplyArt({ size }: { size: number }) {
+// Слайд 2: карточка браузера со списком вакансий — «берём напрямую с сайтов».
+// Насыщенные цвета и тёмный контур — тот же визуальный вес, что у персонажа.
+function SitesArt({ size }: { size: number }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 160 160">
-      <Circle cx={80} cy={80} r={62} fill={Colors.primaryLight} />
-      <Path d="M40 108 Q60 70 96 52" stroke={Colors.primaryBorder} strokeWidth={2.5} strokeDasharray="5 6" fill="none" />
-      <Path d="M96 46 L134 30 L110 64 L98 60 Z" fill={Colors.primary} />
-      <Path d="M98 60 L110 64 L100 76 Z" fill="#E0590F" />
-    </Svg>
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} viewBox="0 0 160 160">
+        <Rect x={12} y={14} width={136} height={132} rx={18} fill="#FFFFFF" stroke="#171717" strokeWidth={2.5} />
+        <Circle cx={27} cy={31} r={4} fill={Colors.primary} />
+        <Circle cx={40} cy={31} r={4} fill={Colors.textMuted} />
+        <Circle cx={53} cy={31} r={4} fill={Colors.textMuted} />
+        <Line x1={12} y1={46} x2={148} y2={46} stroke={Colors.divider} strokeWidth={2} />
+        {[68, 98, 128].map(cy => (
+          <React.Fragment key={cy}>
+            <Circle cx={31} cy={cy} r={10} fill={Colors.primary} />
+            <Rect x={50} y={cy - 7} width={76} height={7} rx={3.5} fill={Colors.textSecondary} />
+            <Rect x={50} y={cy + 5} width={50} height={5} rx={2.5} fill={Colors.divider} />
+          </React.Fragment>
+        ))}
+      </Svg>
+      <ArtBadge size={size * 0.32} icon="business" style={{ right: -size * 0.03, bottom: -size * 0.03 }} />
+    </View>
+  );
+}
+
+// Слайд 3: тот же персонаж, что на слайде 1, + бейдж-самолётик у телефона —
+// «отправим отклик за вас».
+function ApplyArt({ size }: { size: number }) {
+  const artW = size * 0.77;
+  return (
+    <View style={{ width: artW, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Image
+        source={require('@/assets/images/char-worker-crop.png')}
+        style={{ width: artW, height: size }}
+        contentFit="contain"
+        transition={200}
+      />
+      <ArtBadge size={size * 0.32} icon="paper-plane" style={{ left: -size * 0.05, top: size * 0.06 }} />
+    </View>
   );
 }
 
@@ -112,7 +141,13 @@ export default function RootScreen() {
   // ── Карусель на входе ──
   const carouselRef = useRef<ScrollView>(null);
   const [slideWidth, setSlideWidth] = useState(0);
+  const [slideHeight, setSlideHeight] = useState(0);
   const [activeSlide, setActiveSlide] = useState(0);
+  // Картинка занимает большую часть высоты слайда, но не съедает место
+  // подписи под ней и не раздувается на высоком экране.
+  const artSize = slideHeight > 0
+    ? Math.max(r(90), Math.min(r(230), slideHeight * 0.6, slideHeight - r(66)))
+    : r(140);
 
   const goToSlide = (index: number) => {
     const clamped = Math.max(0, Math.min(SLIDES.length - 1, index));
@@ -261,9 +296,17 @@ export default function RootScreen() {
         </Animated.View>
 
         {/* ── Карусель: три слайда, как в getmatch ── */}
+        {/* Растягивается на всё, что осталось между лого и кнопками: картинка
+            подстраивается под доступную высоту (см. artSize), а не наоборот. */}
         <Animated.View style={[styles.carouselWrap, { opacity: introFade }]}>
-          <View onLayout={e => setSlideWidth(e.nativeEvent.layout.width)}>
-            {slideWidth > 0 && (
+          <View
+            style={styles.carouselBox}
+            onLayout={e => {
+              setSlideWidth(e.nativeEvent.layout.width);
+              setSlideHeight(e.nativeEvent.layout.height);
+            }}
+          >
+            {slideWidth > 0 && slideHeight > 0 && (
               <ScrollView
                 ref={carouselRef}
                 horizontal
@@ -277,7 +320,7 @@ export default function RootScreen() {
                 {SLIDES.map((slide, i) => (
                   <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
                     <View style={styles.slideArt}>
-                      <SlideArt index={i} size={r(184)} />
+                      <SlideArt index={i} size={artSize} />
                     </View>
                     <Text style={styles.slideTitle}>{slide.title}</Text>
                   </View>
@@ -311,7 +354,7 @@ export default function RootScreen() {
           </Text>
         </Animated.View>
 
-        <View style={{ flex: 1, minHeight: r(8) }} />
+        <View style={{ height: r(14) }} />
 
         {/* ══ Главное действие: зарегистрироваться ══ */}
         <Animated.View style={{ opacity: introFade, width: '100%' }}>
@@ -398,10 +441,14 @@ const styles = StyleSheet.create({
   logoOrange: { color: Colors.primary },
 
   // Карусель — спокойная, без теней и градиентов: аудитория на дешёвых
-  // телефонах, лишние эффекты там же и тормозят.
-  carouselWrap: { width: '100%', marginBottom: r(6) },
-  slide: { alignItems: 'center', paddingHorizontal: r(4) },
-  slideArt: { height: r(184), alignItems: 'center', justifyContent: 'center' },
+  // телефонах, лишние эффекты там же и тормозят. flex: 1 — забирает всё
+  // место между лого и кнопками, картинка масштабируется под него (artSize).
+  carouselWrap: { flex: 1, width: '100%', marginBottom: r(6) },
+  carouselBox: { flex: 1, width: '100%' },
+  slide: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: r(4),
+  },
+  slideArt: { alignItems: 'center', justifyContent: 'center' },
   slideTitle: {
     fontSize: r(21), fontWeight: '800', color: '#111111', lineHeight: r(27),
     textAlign: 'center', marginTop: r(10), minHeight: r(58),
@@ -413,7 +460,8 @@ const styles = StyleSheet.create({
   },
   dot: {
     width: r(7), height: r(7), borderRadius: r(4),
-    backgroundColor: Colors.primaryBorder,
+    // Тёмный и полупрозрачный — иначе на тёплом фоне не видно вовсе.
+    backgroundColor: 'rgba(17,17,17,0.25)',
   },
   dotActive: { width: r(18), backgroundColor: Colors.primary },
 
