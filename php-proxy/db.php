@@ -771,6 +771,18 @@ function sb_single(string $t, array $f = [], string $sel = '*'): ?array {
     return !empty($rows) ? $rows[0] : null;
 }
 
+// Свой профиль для владельца сессии: USER_SELF_COLS и признак has_password.
+// Сам пароль (хеш) наружу не уходит — только «задан или нет». Без признака
+// экран настроек не отличал аккаунт, созданный по коду из письма, и на
+// «Сменить пароль» отвечал «неверный пароль»: старого пароля у него нет.
+function jt_self_user(string $uid): ?array {
+    $row = sb_single('jm_users', ['id' => 'eq.' . $uid], USER_SELF_COLS . ',password');
+    if (!$row) return null;
+    $row['has_password'] = (string)($row['password'] ?? '') !== '';
+    unset($row['password']);
+    return $row;
+}
+
 // Сигнал приложению уходит отсюда, из обёрток записи, а не из мест вызова:
 // так о нём невозможно забыть при следующей правке. Он идёт после самой
 // записи — сначала данные, потом слово о них.
@@ -3829,11 +3841,12 @@ try {
             }
 
             unset($row['password']);
+            $row['has_password'] = true; // вошёл по паролю — значит, он задан
             $data = ['user' => $row, 'session_token' => jt_session_issue((string)$row['id'])]; break;
         }
 
         case 'dbSession': {
-            $row = sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS);
+            $row = jt_self_user($authUid);
             $data = $row ? ['user' => $row] : null;
             break;
         }
@@ -4411,7 +4424,7 @@ try {
                     jt_respond(['error' => 'Не получилось войти. Попробуйте ещё раз'], 403); exit;
                 }
                 jt_try_reset('login');
-                $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+                $data = ['user' => jt_self_user((string)$row['id']),
                     'session_token' => jt_session_issue((string)$row['id'])];
                 break;
             }
@@ -4444,7 +4457,7 @@ try {
                 'sessions_valid_from' => now_iso(),
             ]);
             jt_try_reset('login');
-            $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+            $data = ['user' => jt_self_user((string)$row['id']),
                 'session_token' => jt_session_issue((string)$row['id'])];
             break;
         }
@@ -4463,7 +4476,7 @@ try {
             }
             sb_update('jm_users', ['id' => 'eq.' . $authUid],
                 ['email' => $t['email'], 'email_verified_at' => now_iso()]);
-            $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $authUid], USER_SELF_COLS)];
+            $data = ['user' => jt_self_user($authUid)];
             break;
         }
 
