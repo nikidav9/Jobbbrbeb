@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
+  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable, Alert,
 } from 'react-native';
 import {
   GestureDetector,
@@ -48,7 +48,9 @@ import {
   dbPermUnswipe,
   dbGetPermSwipes,
   jupiterEnqueue,
+  jupiterMyApplications,
 } from '@/services/db';
+import { fillHostFor, jupiterManualEligible } from '@/services/jupiterFill';
 import { ensureResumeForApply } from '@/services/resumeGate';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
@@ -1445,6 +1447,8 @@ function WorkerPermMode() {
   // тихо берём следующую. Сервер уже не отдаёт свайпнутое, а на случай
   // гонки (свайп ещё не записан) повторы отсекаются по id.
   const careerRefilling = useRef(false);
+  // Когда последний раз предлагали открыть отложенную анкету (см. followUpApplication).
+  const lastFollowUp = useRef(0);
   useEffect(() => {
     if (careerRefilling.current || careerVacancies.length === 0) return;
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
@@ -1570,6 +1574,32 @@ function WorkerPermMode() {
     ? [...mixedCards].sort((a, b) => cardTime(b) - cardTime(a))
     : mixedCards;
 
+  // Сайт с капчей или анкетой на скрипте сервер откладывает в «Ждут вас».
+  // Через ~40 с после свайпа проверяем заявку и, если она ждёт человека,
+  // предлагаем открыть анкету: Юпитер заполнит её на глазах, отправит
+  // человек сам (app/jupiter-fill.tsx). Не чаще раза в 2 минуты — листать
+  // ленту это не должно мешать; остальные ждут в «Откликах».
+  const followUpApplication = (applicationId: string, company?: string | null) => {
+    if (Platform.OS === 'web' || !currentUser) return;
+    const userId = currentUser.id;
+    setTimeout(async () => {
+      if (Date.now() - lastFollowUp.current < 120000) return;
+      try {
+        const own = (await jupiterMyApplications(userId)).find(a => a.id === applicationId);
+        if (!own || own.state !== 'action_required' || !jupiterManualEligible(own) || !fillHostFor(own.vacancyUrl)) return;
+        lastFollowUp.current = Date.now();
+        Alert.alert(
+          company || 'Отклик',
+          'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
+          [
+            { text: 'Позже', style: 'cancel' },
+            { text: 'Открыть', onPress: () => router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } }) },
+          ],
+        );
+      } catch { /* не вышло — заявка ждёт в «Откликах» */ }
+    }, 40000);
+  };
+
   const applyToExt = async (ev: ExtVacancy): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
     setApplying(ev.id);
@@ -1580,6 +1610,7 @@ function WorkerPermMode() {
       showToast(application.state === 'queued'
         ? 'Юпитер готовит и отправляет отклик. Статус — в «Откликах».'
         : 'Заявка уже есть. Статус — в «Откликах».', 'success');
+      if (application.state === 'queued') followUpApplication(application.id, ev.company);
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';

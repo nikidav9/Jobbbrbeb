@@ -164,12 +164,11 @@ foreach (['jupiterFillProfile', 'jupiterMarkManualSubmitted'] as $fn) {
 }
 $fillProfile = substr($db, strpos($db, "case 'jupiterFillProfile':"),
     strpos($db, "case 'jupiterMarkManualSubmitted':") - strpos($db, "case 'jupiterFillProfile':"));
-check('jupiterFillProfile не отдаёт резюме, ссылки и согласия',
-    $fillProfile !== ''
-    && !str_contains($fillProfile, 'resume_url')
-    && !str_contains($fillProfile, 'storage_path')
-    && !str_contains($fillProfile, 'jt_resume_signed_url')
-    && !str_contains($fillProfile, 'consent'));
+// Ссылка на своё выбранное резюме отдаётся (см. tests/jupiter_fill_resume_test.php),
+// а вот согласия по-прежнему остаются за человеком — их сервер не отдаёт и
+// не даёт от его имени.
+check('jupiterFillProfile не отдаёт согласия',
+    $fillProfile !== '' && !str_contains($fillProfile, 'consent'));
 check('jupiterFillProfile не собирает дату рождения',
     !str_contains($fillProfile, 'birth') && !str_contains($fillProfile, 'birthday'));
 

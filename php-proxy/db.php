@@ -6776,9 +6776,10 @@ try {
             break;
         }
 
-        // Данные для ручного заполнения анкеты в WebView. Отдаём только
-        // собственные поля человека — без резюме, ссылок и согласий: их
-        // заполняет отдельный экран, а не этот скрипт.
+        // Данные для ручного заполнения анкеты в WebView: собственные поля
+        // человека и ссылка на его же выбранное резюме — приложить файл
+        // тем же способом, что и остальные поля. Согласия сюда не входят:
+        // их даёт сам человек, нажимая «Отправить отклик».
         case 'jupiterFillProfile': {
             $uidArg = (string)($args[0] ?? '');
             $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg],
@@ -6793,7 +6794,7 @@ try {
             if (!is_array($personalData)) $personalData = [];
             $resume = sb_single('jm_resume_files', [
                 'user_id' => 'eq.' . $uidArg, 'selected' => 'eq.true',
-            ], 'resume_data');
+            ], 'resume_data,storage_path,file_name');
             $resumeData = null;
             if ($resume && !empty($resume['resume_data'])) {
                 $resumeData = is_string($resume['resume_data'])
@@ -6805,6 +6806,13 @@ try {
                     : $user['resume_data'];
             }
             if (!is_array($resumeData)) $resumeData = [];
+            $resumeUrl = null;
+            if ($resume && !empty($resume['storage_path'])) {
+                try { $resumeUrl = jt_resume_signed_url((string)$resume['storage_path']); }
+                catch (Throwable $e) { /* Без подписанной ссылки просто не отдаём её. */ }
+            }
+            $resumeName = $resume && !empty($resume['file_name'])
+                ? (string)$resume['file_name'] : 'resume.pdf';
             $mailbox = ['address' => jt_jupiter_mailbox($uidArg)];
             $firstName = trim((string)($user['first_name'] ?? ''));
             $lastName = trim((string)($user['last_name'] ?? ''));
@@ -6825,6 +6833,8 @@ try {
                 'city' => $city !== '' ? $city : null,
                 'citizenship' => $citizenship !== '' ? $citizenship : null,
                 'desired_role' => $desiredRole !== '' ? $desiredRole : null,
+                'resume_url' => $resumeUrl,
+                'resume_name' => $resumeName,
             ]]); exit;
         }
 
