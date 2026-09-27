@@ -208,6 +208,16 @@ ${AUTOPILOT_CORE}
     }
     var wrap = el.closest && el.closest('label');
     if (wrap) parts.push(wrap.textContent || '');
+    // Подпись рядом без for/id (Битрикс: ГУМ, СИБУР) — ближайший <label> в
+    // обёртке поля, если он не привязан к другому полю.
+    if (!parts.join('').trim() || !(el.labels && el.labels.length)) {
+      var box = el.parentElement;
+      for (var up = 0; box && up < 2; up++, box = box.parentElement) {
+        var near = box.querySelector('label');
+        if (near && (!near.control || near.control === el)) { parts.push(near.textContent || ''); break; }
+      }
+    }
+    if (el.getAttribute('data-text')) parts.push(el.getAttribute('data-text'));
     parts.push(el.getAttribute('placeholder') || '', el.getAttribute('aria-label') || '', el.name || '', el.id || '');
     // Подпись рядом: у галочек текст часто в соседнем элементе.
     if ((el.type === 'checkbox' || el.type === 'radio') && el.parentElement) parts.push(el.parentElement.textContent || '');
@@ -241,7 +251,7 @@ ${AUTOPILOT_CORE}
     roots.push(document.body);
     var best = null, bestScore = 1;
     for (var i = 0; i < roots.length; i++) {
-      var score = 0, els = controls(roots[i]);
+      var score = 0, hasFile = false, els = controls(roots[i]);
       for (var j = 0; j < els.length; j++) {
         if (!visible(els[j])) {
           // Скрытое поле файла — норма (сайты прячут его под своей кнопкой),
@@ -254,8 +264,11 @@ ${AUTOPILOT_CORE}
         if (roots[i] === document.body && els[j].closest && els[j].closest('form')) continue;
         var k = keyOf(els[j]);
         if (k === 'email' || k === 'phone' || k === 'first_name' || k === 'last_name' || k === 'full_name') score++;
-        if (els[j].type === 'file') score++;
+        if (els[j].type === 'file') { score++; hasFile = true; }
       }
+      // <form> с полем файла — анкета, даже если кроме резюме в ней только
+      // согласие (Crosstech). Подписка на рассылку файла не просит.
+      if (hasFile && roots[i] !== document.body) score++;
       // Настоящая <form> предпочтительнее всей страницы при равном счёте.
       if (score > bestScore || (score === bestScore && best === document.body)) { best = roots[i]; bestScore = score; }
     }
@@ -443,6 +456,15 @@ ${AUTOPILOT_CORE}
     if (!form) {
       if (attempt < 2 && clickApply()) { later(function() { run(attempt + 1); }, 2500); return; }
       if (attempt < 4) { later(function() { run(attempt + 1); }, 1500); return; }
+      // Отклик только после входа в аккаунт сайта — это к человеку, и
+      // причина должна быть понятна («Войти и откликнуться» у Яндекса).
+      var btns = document.querySelectorAll('a, button, [role=button]');
+      for (var b = 0; b < btns.length; b++) {
+        if (visible(btns[b]) && /войти и откликнуться|войдите,? чтобы откликнуться|sign in to apply|log ?in to apply/i.test(btns[b].textContent || '')) {
+          finish('needs_user', 'login_required');
+          return;
+        }
+      }
       finish('no_form', 'no_candidate_fields');
       return;
     }
