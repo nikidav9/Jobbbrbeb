@@ -276,6 +276,8 @@ $selfArgFns = [
     'dbGetPermVacanciesByEmployer' => 0, 'dbGetPermApplications' => 0,
     'dbGetPermSaved' => 0, 'dbAddPermSaved' => 0, 'dbRemovePermSaved' => 0,
     'dbGetPermSavedDetailed' => 0,
+    // Закладки карьерных вакансий (миграция 129) — только свои.
+    'dbGetExtSaved' => 0, 'dbAddExtSaved' => 0, 'dbRemoveExtSaved' => 0,
     'dbSavePushToken' => 0, 'dbClearPushToken' => 0,
     'dbGetWebPushSubscription' => 0, 'dbSaveWebPushSubscription' => 0,
     'dbDeleteWebPushSubscription' => 0, 'dbGetNotifications' => 0,
@@ -7501,6 +7503,36 @@ try {
 
         case 'dbRemovePermSaved':
             sb_delete('jm_perm_saved', ['user_id' => 'eq.' . $args[0], 'vacancy_id' => 'eq.' . $args[1]]); break;
+
+        // ── Закладки карьерных вакансий (миграция 129) ────────────────────────
+        // Список — сразу с вакансиями: экрану избранного их больше неоткуда
+        // взять (лента держит только текущую порцию). Свежие сверху, не
+        // больше 200; вакансия, ушедшая из базы, уходит и из закладок (cascade).
+        case 'dbGetExtSaved': {
+            $rows = sb_select('jm_ext_saved', [
+                'user_id' => 'eq.' . $args[0], 'limit' => '200',
+            ], 'created_at,jm_ext_vacancies(' . EXT_FEED_POOL_SELECT . ',description_full)', 'created_at.desc');
+            $data = [];
+            foreach ($rows as $r) {
+                $v = $r['jm_ext_vacancies'] ?? null;
+                if (!is_array($v) || !isset($v['id'])) continue;
+                $data[] = ext_feed_public_row($v) + ['saved_at' => $r['created_at'] ?? null];
+            }
+            break;
+        }
+
+        case 'dbAddExtSaved':
+        case 'dbRemoveExtSaved': {
+            $vid = is_string($args[1] ?? null) ? trim($args[1]) : '';
+            if ($vid === '' || strlen($vid) > 200) { jt_respond(['error' => 'Bad vacancy id'], 400); exit; }
+            if ($fn === 'dbAddExtSaved') {
+                sb_upsert('jm_ext_saved', ['user_id' => $args[0], 'vacancy_id' => $vid]);
+            } else {
+                sb_delete('jm_ext_saved', ['user_id' => 'eq.' . $args[0], 'vacancy_id' => 'eq.' . $vid]);
+            }
+            $data = ['ok' => true];
+            break;
+        }
 
         // ── Ratings ────────────────────────────────────────────────────────────
         // Отзывы о человеке. КОЛОНКИ РАЗНЫЕ в зависимости от того, о ком

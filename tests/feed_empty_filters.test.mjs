@@ -14,7 +14,8 @@ test('пустой экран при фильтрах сам сбрасывае�
   assert.ok(empty.length > 0, 'пустое состояние ленты не найдено');
   assert.match(empty, /permFiltersActive \? \(/);
   assert.match(empty, /testID="empty-reset-filters"/);
-  assert.match(empty, /onPress=\{\(\) => applyFilters\(EMPTY_FEED_FILTERS\)\}/);
+  // Сброс снимает и фильтры, и поиск «Вакансия или стек».
+  assert.match(empty, /onPress=\{\(\) => \{ applyFilters\(EMPTY_FEED_FILTERS\); setSearchText\(''\); setSearchQuery\(''\); \}\}/);
 });
 
 test('«изменить фильтры» из пустого экрана убрано — полоса чипов уже на экране', () => {

@@ -187,6 +187,18 @@ function ext_feed_filters($raw): array
     $posted = (string)($raw['posted'] ?? 'all');
     if (!in_array($posted, ['all', 'day', '3days', 'week', 'month'], true)) $posted = 'all';
 
+    // Поиск «Вакансия или стек» (макет ленты, 27.09.2026): слова запроса,
+    // не больше 6, каждое до 40 символов — дальше ввод просто обрезается.
+    $words = [];
+    if (is_string($raw['query'] ?? null)) {
+        $q = mb_strtolower(mb_substr($raw['query'], 0, 120, 'UTF-8'), 'UTF-8');
+        foreach (preg_split('/[\s,;]+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $w) {
+            $w = mb_substr($w, 0, 40, 'UTF-8');
+            if (!in_array($w, $words, true)) $words[] = $w;
+            if (count($words) >= 6) break;
+        }
+    }
+
     return [
         'salary_from' => $salaryFrom,
         'specs' => $onlyKnown(VF_SPECS, $raw['specs'] ?? []),
@@ -194,6 +206,7 @@ function ext_feed_filters($raw): array
         'formats' => $onlyKnown(VF_FORMATS, $raw['formats'] ?? []),
         'companies' => $companies,
         'posted' => $posted,
+        'query' => $words,
     ];
 }
 
@@ -236,6 +249,18 @@ function ext_feed_match(array $row, array $f, bool $ignoreCompany = false): bool
     if (!$ignoreCompany && !empty($f['companies'])) {
         $company = trim((string)($row['company'] ?? ''));
         if (!in_array($company, $f['companies'], true)) return false;
+    }
+
+    // Поиск: каждое слово должно встретиться в названии, компании или
+    // описании — «python senior» не пустит вакансию, где есть только одно.
+    if (!empty($f['query'])) {
+        $hay = mb_strtolower(
+            ($row['title'] ?? '') . ' ' . ($row['company'] ?? '') . ' ' . ($row['description'] ?? ''),
+            'UTF-8',
+        );
+        foreach ($f['query'] as $w) {
+            if (!str_contains($hay, $w)) return false;
+        }
     }
 
     return true;

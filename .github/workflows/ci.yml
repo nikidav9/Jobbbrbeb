@@ -94,6 +94,9 @@ jobs:
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
 
+      - name: Закладки карьерных вакансий — только свои, таблица закрыта RLS
+        run: php tests/ext_saved_test.php
+
       - name: Уровень, формат и специализация вакансии — паритет PHP и TS
         run: php tests/vacancy_facets_test.php
 

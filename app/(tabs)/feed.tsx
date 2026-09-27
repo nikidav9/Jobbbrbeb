@@ -26,6 +26,8 @@ import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
 import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
+import { JTBolt } from '@/components/ui/JTBolt';
+import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
 import {
@@ -175,6 +177,14 @@ function cleanDescription(text?: string): string {
     }
   }
   return text;
+}
+
+// Поиск по своим вакансиям — то же правило, что на сервере для карьерных
+// (ext_feed_match): каждое слово запроса есть в тексте, без регистра.
+function matchesSearch(text: string, query: string): boolean {
+  if (!query) return true;
+  const hay = text.toLowerCase();
+  return query.toLowerCase().split(/[\s,;]+/).filter(Boolean).slice(0, 6).every(w => hay.includes(w));
 }
 
 // Превью описания на карточке — вступление до первого раздела (`## `), как
@@ -936,10 +946,13 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
 // теперь идёт через полосу чипов под шапкой, а не по слову. Освободившееся
 // место не растягиваем пустотой: марка слева, кнопки справа, между ними
 // гибкий пробел.
-function FeedSearchHeader({ energy, onEnergyPress }: {
+function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
   /** Сколько откликов осталось на сегодня. */
   energy: number;
   onEnergyPress: () => void;
+  /** Поиск «Вакансия или стек» (доска «Лента вакансий», 27.09.2026). */
+  query: string;
+  onQuery: (q: string) => void;
 }) {
   return (
     <View style={fh.row}>
@@ -951,7 +964,27 @@ function FeedSearchHeader({ energy, onEnergyPress }: {
         />
       </View>
 
-      <View style={fh.spacer} />
+      <View style={fh.search}>
+        <Ionicons name="search" size={rs(18)} color={JT.ink} />
+        <TextInput
+          value={query}
+          onChangeText={onQuery}
+          placeholder="Вакансия или стек"
+          placeholderTextColor={JT.textTertiary}
+          style={fh.searchInput}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+          maxLength={120}
+          accessibilityLabel="Поиск вакансий"
+          testID="feed-search"
+        />
+        {query ? (
+          <TouchableOpacity onPress={() => onQuery('')} hitSlop={8} accessibilityLabel="Очистить поиск">
+            <Ionicons name="close-circle" size={rs(18)} color={JT.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       {/* Сколько откликов осталось на сегодня. Не «сколько вакансий»: число
           вакансий человеку ни о чём не говорит, а вот что запас кончается —
@@ -963,7 +996,7 @@ function FeedSearchHeader({ energy, onEnergyPress }: {
         accessibilityRole="button"
         accessibilityLabel={`Откликов осталось на сегодня: ${energy}`}
       >
-        <Ionicons name="flash" size={rs(20)} color={energy > 0 ? JT.accent : JT.muted} />
+        <JTBolt size={rs(20)} fill={energy > 0 ? JT.accent : JT.muted} />
         <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
       </TouchableOpacity>
     </View>
@@ -980,15 +1013,22 @@ const fh = StyleSheet.create({
   },
   logoWrap: { height: rs(44), justifyContent: 'center', flexShrink: 0 },
   // assets/images/jt-logo-wide.png — логотип макета, 600×387.
-  logoImage: { width: rs(53), height: rs(34) },
-  spacer: { flex: 1, minWidth: rs(8) },
+  logoImage: { width: rs(47), height: rs(30) },
+  search: {
+    flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    height: rs(44), paddingHorizontal: rs(12), borderRadius: rs(22),
+    backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink,
+  },
+  searchInput: {
+    flex: 1, minWidth: 0, padding: 0, fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink,
+  },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
     backgroundColor: JT.surface, borderRadius: rs(22),
     borderWidth: 2, borderColor: JT.ink,
-    paddingHorizontal: rs(16), height: rs(44), flexShrink: 0,
+    paddingLeft: rs(10), paddingRight: rs(14), height: rs(44), flexShrink: 0,
   },
-  countTxt: { fontFamily: JT_FONT.bold, fontSize: rf(18), color: JT.ink },
+  countTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(17), color: JT.ink },
   countEmpty: { backgroundColor: JT.stack1 },
   countTxtEmpty: { color: JT.textTertiary },
 });
@@ -1207,7 +1247,16 @@ function WorkerPermMode() {
   // только передаёт текущий выбор и заменяет колоду целиком под ответ. Ключ —
   // строка, а не объект: объект фильтров новая ссылка на каждый рендер,
   // эффект гонял бы запрос без остановки.
-  const filtersKey = JSON.stringify(filters);
+  // Поиск уходит на сервер с паузой 400 мс после последней буквы — не
+  // запрос на каждое нажатие. Пустая строка — поиска нет.
+  const [searchText, setSearchText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchText.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchText]);
+  const extFilters = () => ({ ...toExtFeedFilters(filters), query: searchQuery });
+  const filtersKey = JSON.stringify([filters, searchQuery]);
   // Поколение выборки: растёт при каждой смене фильтров. Дозагрузка, начатая
   // при прежних фильтрах, по возвращении видит чужое поколение и не
   // подмешивает карточки старого выбора в новую колоду.
@@ -1217,7 +1266,7 @@ function WorkerPermMode() {
     let cancelled = false;
     careerGen.current += 1;
     setCareerLoading(true);
-    dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
+    dbGetExtFeed(60, extFilters()).then(res => {
       if (cancelled) return;
       setCareerVacancies(res.items);
       setCareerTotal(res.total);
@@ -1242,7 +1291,7 @@ function WorkerPermMode() {
     try {
       const promises: Promise<void>[] = [
         refreshPermVacancies(), refreshPermApplications(),
-        dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
+        dbGetExtFeed(60, extFilters()).then(res => {
           setCareerVacancies(res.items);
           setCareerTotal(res.total);
           setCareerCompanies(res.companies);
@@ -1271,6 +1320,14 @@ function WorkerPermMode() {
   const [swLastSkipped, setSwLastSkipped] = useState<string | null>(null);
   const swWantRef = useRef<(vx?: number) => void>(() => {});
   const swSkipRef = useRef<(vx?: number) => void>(() => {});
+  const extSaved = useExtSaved();
+  const extSavedIds = useMemo(() => new Set(extSaved.map(i => i.vacancy.id)), [extSaved]);
+  const extSaving = useRef(new Set<string>());
+  useEffect(() => {
+    if (!currentUser?.id || currentUser.isGuest) return;
+    // Сбой загрузки закладок не мешает ленте: кнопка просто без отметки.
+    loadExtSaved(currentUser.id).catch(() => {});
+  }, [currentUser?.id, currentUser?.isGuest]);
   // Возврат с «Вакансии подробно»: ✕ и «Откликнуться» там работают как свайп
   // (README макета). Смахиваем ту же карточку, если она всё ещё сверху;
   // пауза — чтобы анимация шла уже на видимом экране, а не под переходом.
@@ -1326,7 +1383,7 @@ function WorkerPermMode() {
     if (left > 5) return;
     careerRefilling.current = true;
     const gen = careerGen.current;
-    dbGetExtFeed(60, toExtFeedFilters(filters))
+    dbGetExtFeed(60, extFilters())
       .then(res => gen === careerGen.current && setCareerVacancies(cur => {
         const seen = new Set(cur.map(v => v.id));
         const add = res.items.filter(v => !seen.has(v.id));
@@ -1340,7 +1397,8 @@ function WorkerPermMode() {
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
   const myAppVacIds = new Set(myApps.map(a => a.vacancyId));
-  const permFiltersActive = isFilterActive(filters);
+  // Поиск считается фильтром: «по вашим фильтрам», «ничего не нашлось», сброс.
+  const permFiltersActive = isFilterActive(filters) || searchQuery !== '';
 
   const openFilterSheet = (kind: FilterSheetKind) => setOpenSheet(kind);
   const applyFilters = (next: FeedFilters) => setFilters(next);
@@ -1365,7 +1423,8 @@ function WorkerPermMode() {
   // node:test-ом отдельно от React.
   const now = Date.now();
   const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id)
-    && sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now));
+    && sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now)
+    && matchesSearch(`${v.title} ${v.company} ${v.description ?? ''}`, searchQuery));
 
   // Своя лента ранжируется под вкус (виды работ, метро) и чередуется с
   // карьерной — «своя, карьерная, карьерная, своя, …» (services/feedMix.ts).
@@ -1484,6 +1543,23 @@ function WorkerPermMode() {
 
   // Тот же набор, что видит директор в своей шторке, — и так же иконками,
   // а не смайликами: их рисует система, и на каждом телефоне по-своему.
+  // Закладки карьерных вакансий (миграция 129): отметка читается из общего
+  // хранилища services/extSaved.ts — оно же у «Вакансии подробно» и избранного.
+  const toggleExtSave = async (v: ExtVacancy) => {
+    if (!currentUser) return;
+    if (currentUser.isGuest) { promptRegister({ vacancyKind: 'permanent' }); return; }
+    if (extSaving.current.has(v.id)) return;
+    extSaving.current.add(v.id);
+    try {
+      const now = await toggleExtSaved(currentUser.id, v);
+      showToast(now ? 'Сохранено в избранное' : 'Убрано из избранного', 'success');
+    } catch {
+      showToast('Не удалось сохранить. Проверьте связь.', 'error');
+    } finally {
+      extSaving.current.delete(v.id);
+    }
+  };
+
   const toggleSaved = async (v: PermVacancy) => {
     if (!currentUser) return;
     if (currentUser.isGuest) {
@@ -2032,6 +2108,8 @@ function WorkerPermMode() {
           onUndo={swLastSkipped ? swUndo : null}
           onSkip={() => swSkip(0.5)}
           onWant={() => swWant(0.5)}
+          saved={extSavedIds.has(ev.id)}
+          onSave={() => { void toggleExtSave(ev); }}
         />
       </View>
     );
@@ -2050,6 +2128,8 @@ function WorkerPermMode() {
       <FeedSearchHeader
         energy={energy.left}
         onEnergyPress={() => setLimitOpen(true)}
+        query={searchText}
+        onQuery={setSearchText}
       />
 
       {/* Полоса чипов вместо шестерёнки и общей шторки (решение владельца
@@ -2086,7 +2166,7 @@ function WorkerPermMode() {
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLimitOpen(false)} />
           <View style={[pS.limitCard, { marginBottom: tabBarHeight + rs(16) }]}>
             <View style={pS.limitIcon}>
-              <Ionicons name="flash" size={26} color={Colors.primary} />
+              <JTBolt size={26} />
             </View>
             {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
                 ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
@@ -2168,7 +2248,7 @@ function WorkerPermMode() {
             <TouchableOpacity
               style={pS.retryBtn}
               activeOpacity={0.85}
-              onPress={() => applyFilters(EMPTY_FEED_FILTERS)}
+              onPress={() => { applyFilters(EMPTY_FEED_FILTERS); setSearchText(''); setSearchQuery(''); }}
               accessibilityLabel="Сбросить фильтры"
               testID="empty-reset-filters"
             >

@@ -1903,6 +1903,8 @@ export type ExtFeedFilters = {
   formats: VacancyFormat[];
   companies: string[];
   posted: 'all' | 'day' | '3days' | 'week' | 'month';
+  /** Поиск «Вакансия или стек»: все слова в названии, компании или описании. */
+  query?: string;
 };
 
 /**
@@ -1922,6 +1924,7 @@ export async function dbGetExtFeed(
     formats: filters.formats,
     companies: filters.companies,
     posted: filters.posted,
+    query: filters.query ?? '',
   }]);
   // Старый сервер без OTA отвечает голым массивом — устойчиво читаем и так.
   if (Array.isArray(res)) return { items: res.map(toExtVacancy), total: res.length, companies: [] };
@@ -1934,6 +1937,20 @@ export async function dbGetExtFeed(
       ? r.companies.map((c: any) => ({ company: String(c.company ?? ''), count: Number(c.count ?? 0) }))
       : [],
   };
+}
+
+/** Закладки карьерных вакансий (миграция 129): свежие сверху, с вакансией. */
+export async function dbGetExtSaved(userId: string): Promise<{ vacancy: ExtVacancy; savedAt: string | null }[]> {
+  const rows = await proxy<any[]>('dbGetExtSaved', [userId]);
+  return (Array.isArray(rows) ? rows : []).map(r => ({ vacancy: toExtVacancy(r), savedAt: r.saved_at ?? null }));
+}
+
+export async function dbAddExtSaved(userId: string, vacancyId: string): Promise<void> {
+  await proxy('dbAddExtSaved', [userId, vacancyId]);
+}
+
+export async function dbRemoveExtSaved(userId: string, vacancyId: string): Promise<void> {
+  await proxy('dbRemoveExtSaved', [userId, vacancyId]);
 }
 
 /** Свайп по карьерной вакансии: 1 — вправо, -1 — влево. */
