@@ -46,13 +46,13 @@ checks = {
     'отклики отпускают refresh в finally': "showToast('Не удалось обновить отклики. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in matches,
     'лента отпускает refresh в finally': "showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in feed,
     'шторка откликов отпускает refresh в finally': "showToast('Не удалось обновить отклики. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in perm,
-    'чат ждёт сервер перед скрытием': "await onDelete();\n              setDeleted(true);" in chats,
+    'чат ждёт сервер перед скрытием': "await onDelete();\n      setDeleted(true);" in chats,
     'pending удаления не скрывает строку': 'if (deleting) return null;' not in chats and 'if (deleted) return null;' in chats,
     # Важно поведение, а не механизм: признак «удаляем» снимается, и строка
     # возвращается на место. Раньше здесь стояла дословная строка с
     # Animated.spring — жест переехал на gesture-handler, и проверка
     # покраснела, хотя возврат строки никуда не делся.
-    'ошибка удаления возвращает строку': "setDeleting(false);\n              close();" in chats
+    'ошибка удаления возвращает строку': "setDeleting(false);\n      close();" in chats
         and "const close = useCallback(() => { x.value = withSpring(0, SPRING); }" in chats,
     'успех удаления идёт после серверной записи': chats.find("await dbDeleteChat(chatId);") < chats.find("showToast('Переписка удалена', 'success');"),
     'постоянная вакансия видна до подтверждения удаления': 'if (deletedPermIds.has(v.id)) return false;' in feed and 'if (deletingPermIds.has(v.id)) return false;' not in feed,

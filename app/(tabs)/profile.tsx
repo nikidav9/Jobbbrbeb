@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput, Alert,
+  TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput,
   ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,6 +43,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { rs, rf } from '@/constants/scale';
 import { forgetResumeCheck } from '@/services/resumeGate';
+import { confirmAsync } from '@/services/confirm';
 
 const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
@@ -1025,41 +1026,37 @@ export default function ProfileScreen() {
     }
   };
 
-  const deleteResumeFromVault = (item: ResumeVaultItem) => {
+  // confirmAsync, а не Alert.alert: на вебе тот ничего не показывал, и
+  // «Удалить» в сейфе резюме на сайте и в Телеграме не срабатывало.
+  const deleteResumeFromVault = async (item: ResumeVaultItem) => {
     if (resumeFileBusyId) return;
-    Alert.alert(
-      'Удалить резюме?',
-      item.selected
+    const ok = await confirmAsync({
+      title: 'Удалить резюме?',
+      body: item.selected
         ? 'Это активное резюме. После удаления профиль переключится на следующее сохранённое резюме.'
         : 'PDF будет удалён из сейфа без возможности восстановления.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить',
-          style: 'destructive',
-          onPress: async () => {
-            setResumeFileBusyId(item.id);
-            try {
-              const nextActive = await dbDeleteResumeFile(item.id);
-              forgetResumeCheck();
-              if (item.selected) {
-                if (nextActive) {
-                  await updateUser(mergeResumeIntoUser(currentUser, nextActive.resume));
-                } else {
-                  await updateUser({ ...currentUser, resume: undefined });
-                }
-              }
-              setResumeFiles(await dbGetResumeFiles());
-              showToast('Резюме удалено', 'success');
-            } catch (error) {
-              showToast(error instanceof Error ? error.message : 'Не удалось удалить резюме', 'error');
-            } finally {
-              setResumeFileBusyId(null);
-            }
-          },
-        },
-      ],
-    );
+      confirmLabel: 'Удалить',
+      danger: true,
+    });
+    if (!ok) return;
+    setResumeFileBusyId(item.id);
+    try {
+      const nextActive = await dbDeleteResumeFile(item.id);
+      forgetResumeCheck();
+      if (item.selected) {
+        if (nextActive) {
+          await updateUser(mergeResumeIntoUser(currentUser, nextActive.resume));
+        } else {
+          await updateUser({ ...currentUser, resume: undefined });
+        }
+      }
+      setResumeFiles(await dbGetResumeFiles());
+      showToast('Резюме удалено', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Не удалось удалить резюме', 'error');
+    } finally {
+      setResumeFileBusyId(null);
+    }
   };
 
   const handleLogout = async () => {

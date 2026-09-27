@@ -1,4 +1,4 @@
-import { Alert, Platform } from 'react-native';
+import { confirmAsync } from '@/services/confirm';
 import { jupiterLiveState, jupiterSetLive, jupiterMailbox } from '@/services/db';
 
 // Готовность почты и поручения проверяется раз в 10 минут, а не на каждом
@@ -35,12 +35,7 @@ async function checkJupiterLive(userId: string): Promise<boolean> {
 
   if (state.revoked) {
     const message = 'Автоотклик Юпитера выключен в настройках. Включить снова?';
-    const approved = Platform.OS === 'web'
-      ? typeof window !== 'undefined' && window.confirm(message)
-      : await new Promise<boolean>(resolve => Alert.alert('Автоотклик Юпитера', message, [
-          { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Включить', onPress: () => resolve(true) },
-        ], { cancelable: true, onDismiss: () => resolve(false) }));
+    const approved = await confirmAsync({ title: 'Автоотклик Юпитера', body: message, confirmLabel: 'Включить' });
     if (!approved) return false;
     await jupiterSetLive(userId, true);
     return true;

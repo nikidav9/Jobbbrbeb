@@ -15,6 +15,7 @@ import ConsentGate from '@/components/ConsentGate';
 import EmailRequiredGate from '@/components/EmailRequiredGate';
 import CookieConsent from '@/components/CookieConsent';
 import { ToastLayer } from '@/components/ui/ToastLayer';
+import { ConfirmHost } from '@/components/ui/ConfirmHost';
 import { OnboardingOverlay } from '@/components/OnboardingOverlay';
 import { setupAndroidChannels } from '@/services/notifications';
 import { routeForNotification } from '@/services/notificationRoute';
@@ -266,6 +267,7 @@ export default function RootLayout() {
           {/* Баннер cookie/Метрики — только веб; грузит аналитику после согласия. */}
           <CookieConsent />
           <ToastLayer />
+          {Platform.OS === 'web' ? <ConfirmHost /> : null}
         </AppProvider>
       </SafeAreaProvider>
     </AlertProvider>

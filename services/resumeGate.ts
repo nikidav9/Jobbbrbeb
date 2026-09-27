@@ -1,6 +1,6 @@
-import { Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { dbGetResumeFiles } from '@/services/db';
+import { confirmAsync } from '@/services/confirm';
 
 /**
  * Решение владельца 25.09.2026: откликаться можно только с загруженным
@@ -31,12 +31,9 @@ export async function ensureResumeForApply(): Promise<boolean> {
   }
 
   const prompt = 'Откликаться можно только с резюме. Загрузите PDF в профиль — это займёт минуту. Перейти к загрузке?';
-  const openFiles = Platform.OS === 'web'
-    ? typeof window !== 'undefined' && window.confirm(prompt)
-    : await new Promise<boolean>(resolve => Alert.alert('Нужно резюме', prompt, [
-        { text: 'Позже', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Загрузить', onPress: () => resolve(true) },
-      ], { cancelable: true, onDismiss: () => resolve(false) }));
+  const openFiles = await confirmAsync({
+    title: 'Нужно резюме', body: prompt, confirmLabel: 'Загрузить', cancelLabel: 'Позже',
+  });
   if (openFiles) router.push({ pathname: '/(tabs)/profile', params: { tab: 'files' } });
   return false;
 }
