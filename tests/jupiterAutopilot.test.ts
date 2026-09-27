@@ -76,3 +76,14 @@ test('ссылка на резюме в страницу не попадает �
   assert.match(script, /"b64":"JVBERi0="/);
   assert.doesNotMatch(script, /resume_url/);
 });
+
+test('собранный скрипт разбирается целиком (одна ошибка экранирования ломает все сайты)', () => {
+  // 27.09.2026: «\\s» в шаблонной строке превратился в «s», и регэксп маски
+  // телефона стал недопустимым — скрипт не запускался ни на одном сайте.
+  for (const submit of [false, true]) {
+    const script = buildAutopilotScript({ first_name: 'Тест' } as never, 'example.ru',
+      { submit, delegated: true, resumeBase64: 'JVBERi0=', resumeName: 'cv.pdf' });
+    assert.doesNotThrow(() => new Function(script), `submit=${submit}`);
+  }
+});
+

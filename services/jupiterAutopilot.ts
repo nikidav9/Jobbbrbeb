@@ -238,7 +238,7 @@ ${AUTOPILOT_CORE}
   function isEmpty(el) {
     var v = String(el.value == null ? '' : el.value);
     if (!v.trim()) return true;
-    return v.indexOf('_') !== -1 && v.replace(/^\s*\+?7/, '').replace(/\D/g, '').length === 0;
+    return v.indexOf('_') !== -1 && v.replace(/^\\s*\\+?7/, '').replace(/\\D/g, '').length === 0;
   }
   function keyOf(el) {
     var type = el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : (el.getAttribute('type') || 'text').toLowerCase();
