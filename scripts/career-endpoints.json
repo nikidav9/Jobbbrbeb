@@ -1653,5 +1653,14 @@
       "company_const": "Хантфлоу"
     },
     "company_hint": "Хантфлоу"
+  },
+  {
+    "company_hint": "Газпром",
+    "url": "https://www.gazpromvacancy.ru/vacancies/region/moskva/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/job/",
+      "company_const": "Газпром"
+    }
   }
 ]
