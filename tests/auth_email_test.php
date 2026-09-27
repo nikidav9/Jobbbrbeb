@@ -166,6 +166,31 @@ check('сбой почты — понятная причина', $r['ok'] === fa
 check('код из неотправленного письма не действует', jt_auth_check_code('i@j.ru', 'register', '123456', $key)['ok'] === false);
 check('после сбоя почты можно сразу попробовать снова', jt_auth_issue_code('i@j.ru', 'register', null, $key, $mail)['ok'] === true);
 
+// ── Вход по коду (решение владельца 27.09.2026) ─────────────────────────────
+// dbAuthSendCode находит владельца по почте сам и передаёт сюда его id — здесь
+// проверяем только выпуск/сверку кода под целью login; кто именно получает
+// код (существующий незаблокированный аккаунт) и как из проверенного кода
+// собирается сессия — в db.php, см. проверки ниже по его исходнику.
+check('login — цель из общего списка', in_array('login', JT_AUTH_PURPOSES, true));
+
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+$r = jt_auth_issue_code('login@mail.ru', 'login', 'u42', $key, $mail);
+check('код на вход выпущен и письмо ушло', $r['ok'] === true && count($sent) === 1);
+$ok = jt_auth_check_code('login@mail.ru', 'login', $sent[0][1], $key);
+check('верный код на вход принят и знает, чей он', $ok['ok'] === true && $ok['user_id'] === 'u42');
+
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+jt_auth_issue_code('login2@mail.ru', 'login', 'u43', $key, $mail);
+$right = $sent[0][1];
+$wrong = str_pad((string)(((int)$right + 1) % 1000000), 6, '0', STR_PAD_LEFT);
+$bad = jt_auth_check_code('login2@mail.ru', 'login', $wrong, $key);
+check('неверный код на вход считает попытки, а не молчит', $bad['ok'] === false && $bad['reason'] === 'wrong_code' && $bad['left'] === 4);
+
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+jt_auth_issue_code('was-reset@mail.ru', 'reset', 'u44', $key, $mail);
+check('код цели reset не проходит как login (хеш привязан к цели)',
+    jt_auth_check_code('was-reset@mail.ru', 'login', $sent[0][1], $key)['ok'] === false);
+
 // ── Квитанция ────────────────────────────────────────────────────────────────
 $t = jt_auth_ticket_issue('ivan@mail.ru', 'reset', 'u1', $key);
 $chk = jt_auth_ticket_check($t, 'reset', $key);
@@ -326,12 +351,22 @@ check('письма с одного адреса ограничены', str_cont
 check('попытка считается до ответа «почта занята» — перебор адресов ограничен',
     strpos($send, "jt_try_note('mail')") !== false
     && strpos($send, "jt_try_note('mail')") < strpos($send, "if (\$purpose === 'register' && \$owner) {"));
+check('вход по коду отвечает как сброс — не выдаёт, есть ли такая почта',
+    str_contains($send, "if (\$purpose === 'reset' || \$purpose === 'login') {"));
 
 $verify = case_body($db, 'dbAuthVerifyCode');
 check('неверные коды с одного адреса ограничены', str_contains($verify, "jt_try_blocked('code')") && str_contains($verify, "jt_try_note('code')"));
 check('удачный код не обнуляет счётчик неверных', !str_contains($verify, "jt_try_reset('code')"));
 check('код привязки из чужой сессии не принимается',
     str_contains($verify, "if (\$purpose === 'attach' && (string)(\$res['user_id'] ?? '') !== (string)\$authUid) {"));
+check('вход по коду сверяет и id из кода, и почту из запроса, и блокировку',
+    str_contains($verify, "if (\$purpose === 'login') {")
+    && str_contains($verify, "'id' => 'eq.' . (string)(\$res['user_id'] ?? ''),")
+    && str_contains($verify, "'email' => 'eq.' . \$email], 'id,is_blocked');")
+    && str_contains($verify, "if (!\$row || !empty(\$row['is_blocked'])) {"));
+check('вход по коду выдаёт сессию сразу, без квитанции',
+    str_contains($verify, "jt_try_reset('login');")
+    && str_contains($verify, "\$data = ['user' => sb_single('jm_users', ['id' => 'eq.' . \$row['id']], USER_SELF_COLS),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
 
 $reset = case_body($db, 'dbAuthResetPassword');
 check('сброс пароля гасит прежние сессии', str_contains($reset, "'sessions_valid_from' => now_iso(),"));
