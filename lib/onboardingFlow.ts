@@ -39,7 +39,7 @@ const workerSteps: OnboardingStep[] = [
   {
     id: 'worker-filter', chapter: 'work', path: '/feed', target: 'worker.feed.filter', icon: 'options-outline',
     title: 'Настроить выдачу',
-    body: 'Фильтры помогут выбрать метро, зарплату, график и работодателя.',
+    body: 'Чипы помогут выбрать зарплату, специализацию, уровень, формат работы, компанию и дату публикации.',
   },
   {
     id: 'worker-reject', chapter: 'work', path: '/feed', target: 'worker.feed.reject', icon: 'close-circle-outline',

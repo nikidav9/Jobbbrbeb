@@ -9,8 +9,8 @@ import {
   ScrollView as GHScrollView,
   RefreshControl as GHRefreshControl,
 } from 'react-native-gesture-handler';
-import Reanimated, { FadeIn, FadeOut, SlideInDown, SlideOutDown, useSharedValue, useAnimatedStyle, withTiming, withSpring } from 'react-native-reanimated';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Reanimated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
@@ -20,15 +20,12 @@ import { useEnergy } from '@/hooks/useEnergy';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy } from '@/constants/types';
-import { JobSection, SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
+import { SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
-import {
-  vacancyLevel, vacancyFormat, vacancySpecs, VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS,
-  type VacancyLevel, type VacancyFormat, type VacancySpec,
-} from '@/services/vacancyFacets';
+import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS } from '@/services/vacancyFacets';
 import {
   type FeedFilters, EMPTY_FEED_FILTERS, isFilterActive, matchOwnVacancy, toExtFeedFilters, pluralVacancies,
 } from '@/services/feedFilters';
@@ -64,7 +61,6 @@ import { DescriptionBlocks } from '@/components/ui/DescriptionBlocks';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
-import { MetroMap, MapListItem } from '@/components/feature/MetroMap';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { PermApplicationsSheet } from '@/components/feature/PermApplicationsSheet';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
@@ -73,7 +69,6 @@ import { registerWebPush, isWebPushRegistered, getWebPushDebug } from '@/lib/web
 import { rs, rf } from '@/constants/scale';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
-import { payShort } from '@/services/pay';
 import { permVacancyInfoLines } from '@/services/vacancyCard';
 
 // Гостю даём несколько бесплатных «отклонить», дальше — стена регистрации.
@@ -950,7 +945,6 @@ function WorkerPermMode() {
   const [applying, setApplying] = useState<string | null>(null);
   // Вакансия, по которой человек сейчас пишет отклик (null — окно закрыто)
   const [permApplyFor, setPermApplyFor] = useState<PermVacancy | null>(null);
-  const [mapOpen, setMapOpen] = useState(false);
   const [careerVacancies, setCareerVacancies] = useState<ExtVacancy[]>([]);
   // Сервер знает весь пул, а не только пришедшую порцию — «Всего N» и список
   // компаний в шторке считаются от него, не от того, что успело загрузиться.
@@ -1006,24 +1000,6 @@ function WorkerPermMode() {
       .filter(item => item.count > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   }, [ownCompanyCounts, careerCompanies]);
-
-  // Вакансии для карты: метка — это адрес, станция остаётся для фильтра
-  const permMapItems: MapListItem[] = useMemo(
-    () => (permVacancies as PermVacancy[])
-      .filter((v: PermVacancy) => v.status === 'open' && (filters.companies.length === 0 || filters.companies.includes(v.company)) && (!!v.metroStation || !!v.address))
-      .map((v: PermVacancy) => ({
-        id: v.id,
-        station: (v.metroStation ?? '') as string,
-        title: v.title,
-        company: v.company,
-        pay: payShort(v.salary, v.workType),
-        meta: v.schedule,
-        address: v.address,
-        lat: v.lat,
-        lng: v.lng,
-      })),
-    [permVacancies, filters.companies],
-  );
 
   // Карьерная лента фильтруется на сервере (php-proxy/ext_feed.php) — клиент
   // только передаёт текущий выбор и заменяет колоду целиком под ответ. Ключ —
@@ -1840,32 +1816,20 @@ function WorkerPermMode() {
       )}
 
       <FeedSearchHeader
-        value={searchText}
-        onChange={setSearchText}
         onUndo={swLastSkipped ? swUndo : null}
         energy={energy.left}
         onEnergyPress={() => setLimitOpen(true)}
       />
 
-      <View style={pS.chipRow}>
-        {filterStations.length > 0 ? (
-          <TouchableOpacity style={pS.activeStationChip} onPress={() => setFilterStations([])} activeOpacity={0.8}>
-            <Ionicons name="location" size={13} color={Colors.primary} />
-            <Text style={pS.activeStationTxt}>
-              {filterStations.length === 1 ? `м. ${filterStations[0]}` : `Станций: ${filterStations.length}`}
-            </Text>
-            <Ionicons name="close" size={14} color={Colors.textMuted} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      <MetroMap
-        visible={mapOpen}
-        title="Вакансии на карте"
-        items={permMapItems}
-        onSelect={(st) => { setFilterStations(st ? [st] : []); setMapOpen(false); }}
-        onClose={() => setMapOpen(false)}
-      />
+      {/* Полоса чипов вместо шестерёнки и общей шторки (решение владельца
+          27.09.2026): всегда на экране, даже когда колода пуста или ещё
+          грузится — иначе пустой фильтр был бы тупиком. */}
+      <OnboardingTarget targetKey="worker.feed.filter">
+        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} />
+      </OnboardingTarget>
+      <Text style={pS.totalTxt} testID="feed-total">
+        {careerLoading ? 'Считаем вакансии…' : `Всего ${totalCount} ${pluralVacancies(totalCount)}`}
+      </Text>
 
       {backendOffline ? (
         <View style={pS.offlineBar}>
@@ -1910,15 +1874,14 @@ function WorkerPermMode() {
         </View>
       ) : null}
 
-      {permFilterOpen && (
-        <PermFilterSheet
-          initial={permF}
-          bottomInset={tabBarHeight}
+      {openSheet && (
+        <FilterSheet
+          kind={openSheet}
+          initial={filters}
           companyOptions={permCompanyOptions}
-          count={countPermLocal}
-          onApply={applyPermFilters}
-          onClose={() => setPermFilterOpen(false)}
-          onOpenMap={() => { setPermFilterOpen(false); setMapOpen(true); }}
+          bottomInset={tabBarHeight}
+          onApply={applyFilters}
+          onClose={() => setOpenSheet(null)}
         />
       )}
 
@@ -1951,30 +1914,18 @@ function WorkerPermMode() {
               <Text style={pS.retryTxt}>Попробовать снова</Text>
             </TouchableOpacity>
           ) : !careerLoading && permFiltersActive ? (
-            // Шестерёнка живёт в ряду под карточкой: карточек нет — нет и её.
-            // Без этих кнопок человек, выбравший компанию без вакансий, застревал
-            // на пустом экране до перезапуска приложения (жалоба 26.09).
-            <View style={pS.emptyActions}>
-              <TouchableOpacity
-                style={pS.retryBtn}
-                activeOpacity={0.85}
-                onPress={() => setPermFilterOpen(true)}
-                accessibilityLabel="Изменить фильтры"
-                testID="empty-edit-filters"
-              >
-                <Ionicons name="settings-sharp" size={16} color="#fff" />
-                <Text style={pS.retryTxt}>Изменить фильтры</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={pS.resetBtn}
-                activeOpacity={0.85}
-                onPress={() => applyPermFilters(EMPTY_PERM_FILTERS)}
-                accessibilityLabel="Сбросить фильтры"
-                testID="empty-reset-filters"
-              >
-                <Text style={pS.resetTxt}>Сбросить</Text>
-              </TouchableOpacity>
-            </View>
+            // Полоса чипов всегда на экране (в отличие от прежней шестерёнки
+            // в ряду под карточкой) — пустой колоде здесь нужен только сброс,
+            // менять фильтры можно прямо по чипам сверху.
+            <TouchableOpacity
+              style={pS.retryBtn}
+              activeOpacity={0.85}
+              onPress={() => applyFilters(EMPTY_FEED_FILTERS)}
+              accessibilityLabel="Сбросить фильтры"
+              testID="empty-reset-filters"
+            >
+              <Text style={pS.retryTxt}>Сбросить фильтры</Text>
+            </TouchableOpacity>
           ) : null}
         </ScrollView>
       ) : swTop._ext ? (
@@ -1985,13 +1936,6 @@ function WorkerPermMode() {
           {renderPermDeckCard(swTop.v)}
         </>
       )}
-
-      <MetroPicker
-        visible={filterPicker}
-        selected={filterStations}
-        onChange={setFilterStations}
-        onClose={() => setFilterPicker(false)}
-      />
 
       <ApplySheet
         visible={!!permApplyFor}
@@ -2385,16 +2329,12 @@ const pS = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: rf(13), color: Colors.textPrimary },
   searchClear: { fontSize: rf(13), color: Colors.textMuted },
-  chipRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: rs(6),
-    marginHorizontal: rs(16), marginBottom: rs(4),
+  // «Всего N вакансий» под полосой чипов — мелко и серо, это справка, а не
+  // заголовок. Во время загрузки карьерной части — «Считаем вакансии…».
+  totalTxt: {
+    fontSize: rf(12), color: Colors.textMuted,
+    paddingHorizontal: rs(16), paddingBottom: rs(6),
   },
-  activeStationChip: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    backgroundColor: Colors.primaryLight, borderRadius: rs(100), paddingHorizontal: rs(12), paddingVertical: rs(6),
-    borderWidth: 1, borderColor: 'transparent',
-  },
-  activeStationTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
 
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
@@ -2409,9 +2349,6 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
   },
   retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
-  emptyActions: { alignItems: 'center', gap: rs(4) },
-  resetBtn: { marginTop: rs(8), paddingHorizontal: rs(20), paddingVertical: rs(10) },
-  resetTxt: { color: Colors.primary, fontSize: rf(14), fontWeight: '700' },
   // Ширина по карточке, а не по экрану: карточка отступает на rs(13) плюс
   // рамка, и растворение должно кончаться ровно на её краю. bottom задаётся
   // рядом с карточкой через deckBottomReserve, чтобы совпадать на всех safe area.
