@@ -90,7 +90,7 @@ export function matchOwnVacancy(v: OwnVacancyLike, f: FeedFilters, now: number):
     const fm = vacancyFormat(v.schedule, v.description);
     if (!fm || !f.formats.includes(fm)) return false;
   }
-  if (f.companies.length && !f.companies.includes(v.company)) return false;
+  if (f.companies.length && !f.companies.includes(v.company.trim())) return false;
   if (!postedWithin(v.createdAt, f.posted, now)) return false;
   return true;
 }

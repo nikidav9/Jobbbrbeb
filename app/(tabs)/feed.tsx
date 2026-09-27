@@ -1014,9 +1014,14 @@ function WorkerPermMode() {
   // строка, а не объект: объект фильтров новая ссылка на каждый рендер,
   // эффект гонял бы запрос без остановки.
   const filtersKey = JSON.stringify(filters);
+  // Поколение выборки: растёт при каждой смене фильтров. Дозагрузка, начатая
+  // при прежних фильтрах, по возвращении видит чужое поколение и не
+  // подмешивает карточки старого выбора в новую колоду.
+  const careerGen = useRef(0);
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
+    careerGen.current += 1;
     setCareerLoading(true);
     dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
       if (cancelled) return;
@@ -1101,8 +1106,9 @@ function WorkerPermMode() {
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
     if (left > 5) return;
     careerRefilling.current = true;
+    const gen = careerGen.current;
     dbGetExtFeed(60, toExtFeedFilters(filters))
-      .then(res => setCareerVacancies(cur => {
+      .then(res => gen === careerGen.current && setCareerVacancies(cur => {
         const seen = new Set(cur.map(v => v.id));
         const add = res.items.filter(v => !seen.has(v.id));
         return add.length ? [...cur, ...add] : cur;

@@ -71,6 +71,9 @@ export function EmailCodeStep({
   const normalized = email.trim().toLowerCase();
 
   const send = async () => {
+    // Enter в поле почты зовёт send мимо погашенной кнопки: без этой строки
+    // код уходил бы при неотмеченных обязательных согласиях.
+    if (disabled) return;
     if (!EMAIL_RE.test(normalized)) { setError('Проверьте адрес почты'); return; }
     setBusy(true);
     setError('');
