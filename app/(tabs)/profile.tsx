@@ -42,6 +42,7 @@ import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { rs, rf } from '@/constants/scale';
+import { forgetResumeCheck } from '@/services/resumeGate';
 
 const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
@@ -1009,6 +1010,7 @@ export default function ProfileScreen() {
     setResumeFileBusyId(item.id);
     try {
       const selected = await dbSelectResumeFile(item.id);
+      forgetResumeCheck();
       await updateUser(mergeResumeIntoUser(currentUser, selected.resume));
       setResumeFiles(prev => prev.map(file => ({
         ...file,
@@ -1039,6 +1041,7 @@ export default function ProfileScreen() {
             setResumeFileBusyId(item.id);
             try {
               const nextActive = await dbDeleteResumeFile(item.id);
+              forgetResumeCheck();
               if (item.selected) {
                 if (nextActive) {
                   await updateUser(mergeResumeIntoUser(currentUser, nextActive.resume));
