@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,6 +118,25 @@ assert "systemctl start --no-block jt-recon.service" in bootstrap
 assert 'start" >>"$LOG"' in recon_run
 assert '"recon_state"' in (ROOT / "infra" / "migrate.sh").read_text(encoding="utf-8")
 assert "location = /jupiter-recon.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+
+# Разовый замер браузером (решение владельца 27.09.2026): только чтение.
+# В скрипте нет ни ввода, ни отправки; переход не GET обрывается; капча не
+# решается; подпись честная; браузер — только в контейнере, не в Jupiter.
+probe = (ROOT / "scripts" / "browser-probe.mjs").read_text(encoding="utf-8")
+probe_run = (ROOT / "infra" / "browser-probe-run.sh").read_text(encoding="utf-8")
+for forbidden in (".fill(", ".type(", ".press(", "setInputFiles", "submit()", ".check(", "requestSubmit"):
+    assert forbidden not in probe, forbidden
+assert "type === 'document' && !['GET', 'HEAD'].includes(req.method())" in probe
+assert "route.abort()" in probe
+assert "JobToo/1.0; +https://jobtoo.ru" in probe
+assert "type') === 'submit'" in probe  # кнопку отправки формы не нажимаем
+assert "mcr.microsoft.com/playwright" in probe_run and "--memory 1g" in probe_run
+assert "PROBE_VERSION=" in bootstrap and "/opt/jobtoo-state/browser-probe.$PROBE_VERSION" in bootstrap
+assert "jt-browser-probe.timer" not in bootstrap  # разовый, не по расписанию
+assert "location = /jupiter-browser-probe.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+for path in (ROOT / "jupiter").glob("*.py"):
+    text = path.read_text(encoding="utf-8")
+    assert not re.search(r"^\s*(import|from)\s+(playwright|selenium)", text, re.M), path
 
 print("jupiter native engine infra: ok")
 

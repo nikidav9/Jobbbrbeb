@@ -591,6 +591,17 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 миграций на пустой базе. Данные, живущие в одной базе и больше нигде, теряются
 вместе с ней.
 
+**Разовый замер браузером (27.09.2026, до решения о Chromium в Jupiter).**
+`scripts/browser-probe.mjs` в том же Docker-образе Playwright
+(`infra/browser-probe-run.sh`, запуск один на `PROBE_VERSION` из
+`infra/bootstrap.sh`, служба `jt-browser-probe` без таймера) обходит сайты
+классов `spa` и `captcha` из `/var/www/html/jupiter-recon.json`: видна ли в
+браузере анкета (≥2 полей кандидата) и какая капча — `visible`, `invisible`,
+страница-проверка. Только чтение: без ввода, переход не GET обрывается,
+подпись честная. Итог — `/jupiter-browser-probe.json`, ход —
+`/jupiter-browser-probe-status.json`; сторож — `tests/jupiter_private_lab_infra_test.py`.
+Сам Jupiter браузера по-прежнему не содержит.
+
 **Разведка сама находит и включает новые источники.** Недельный таймер
 `jt-career-discover` (вс 03:10, `infra/bootstrap.sh`) запускает
 `infra/career-discover-run.sh`: тот берёт Docker-образ Playwright, обходит

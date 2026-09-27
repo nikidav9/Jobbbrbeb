@@ -301,6 +301,35 @@ EOF
   fi
 fi
 
+# Разовый замер браузером (infra/browser-probe-run.sh): что Chromium увидит на
+# сайтах, где разведка Jupiter упёрлась в spa и captcha. Решение владельца
+# 27.09.2026 — сначала цифры, потом решение о браузере в бою. Только чтение.
+# Таймера нет: прогон один на версию. Новый прогон — поднять PROBE_VERSION.
+# Отметку ставим до запуска: bootstrap идёт раз в минуту и не должен
+# стартовать замер заново, пока тот идёт или если он упал.
+PROBE_VERSION=2026-09-27
+if [ -f "$REPO/infra/browser-probe-run.sh" ] && [ -s /var/www/html/jupiter-recon.json ] \
+   && [ ! -f "/opt/jobtoo-state/browser-probe.$PROBE_VERSION" ]; then
+  install -m 755 "$REPO/infra/browser-probe-run.sh" /usr/local/bin/jt-browser-probe
+  cat > /etc/systemd/system/jt-browser-probe.service <<'EOF'
+[Unit]
+Description=JobToo one-off read-only browser probe of employer application forms
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jt-browser-probe
+TimeoutStartSec=4h
+Nice=15
+EOF
+  systemctl daemon-reload
+  mkdir -p /opt/jobtoo-state
+  touch "/opt/jobtoo-state/browser-probe.$PROBE_VERSION"
+  systemctl start --no-block jt-browser-probe.service >/dev/null 2>&1 || true
+  say "замер" "браузерный замер $PROBE_VERSION запущен"
+fi
+
 # Разовый опыт: дозванивается ли Телеграм до этой машины напрямую.
 # Подробности и сетка безопасности — в самом скрипте. Отметкой, а не
 # каждую минуту: переключать вебхук по кругу нельзя.
