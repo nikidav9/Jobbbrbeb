@@ -1,5 +1,16 @@
-import { Alert, Platform } from 'react-native';
+import { confirmAsync } from '@/services/confirm';
 import { jupiterLiveState, jupiterSetLive, jupiterMailbox } from '@/services/db';
+
+// Готовность почты и поручения проверяется раз в 10 минут, а не на каждом
+// свайпе: два запроса подряд перед каждым откликом замораживали колоду.
+// Помним только успех и только для того же человека; настройки, где
+// поручение выключают, сбрасывают память (forgetJupiterLive).
+const LIVE_OK_TTL = 10 * 60 * 1000;
+let liveOk: { userId: string; until: number } | null = null;
+
+export function forgetJupiterLive(): void {
+  liveOk = null;
+}
 
 /**
  * Поручение на автоотклик включается принятием документов (решение
@@ -8,6 +19,13 @@ import { jupiterLiveState, jupiterSetLive, jupiterMailbox } from '@/services/db'
  * почта должна быть готова, а отозванное поручение переспрашивается явно.
  */
 export async function requestJupiterLive(userId: string): Promise<boolean> {
+  if (liveOk && liveOk.userId === userId && Date.now() < liveOk.until) return true;
+  const ok = await checkJupiterLive(userId);
+  if (ok) liveOk = { userId, until: Date.now() + LIVE_OK_TTL };
+  return ok;
+}
+
+async function checkJupiterLive(userId: string): Promise<boolean> {
   const mailbox = await jupiterMailbox(userId);
   if (!mailbox.ready || !mailbox.address) {
     throw new Error('Почта JobToo ещё не принимает письма. Отправка внешних откликов будет доступна после подключения.');
@@ -17,12 +35,7 @@ export async function requestJupiterLive(userId: string): Promise<boolean> {
 
   if (state.revoked) {
     const message = 'Автоотклик Юпитера выключен в настройках. Включить снова?';
-    const approved = Platform.OS === 'web'
-      ? typeof window !== 'undefined' && window.confirm(message)
-      : await new Promise<boolean>(resolve => Alert.alert('Автоотклик Юпитера', message, [
-          { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Включить', onPress: () => resolve(true) },
-        ], { cancelable: true, onDismiss: () => resolve(false) }));
+    const approved = await confirmAsync({ title: 'Автоотклик Юпитера', body: message, confirmLabel: 'Включить' });
     if (!approved) return false;
     await jupiterSetLive(userId, true);
     return true;

@@ -68,6 +68,27 @@ check('отклик возврат гасит', substr_count($want, 'setSwLastSk
 check('кнопка есть, только когда есть что вернуть',
     str_contains($feed, 'onUndo={swLastSkipped ? swUndo : null}'));
 
+// ── Отклик не замораживает колоду (27.09) ───────────────────────────────────
+// Раньше свайп вправо ждал резюме, почту, поручение и саму заявку подряд —
+// четыре запроса, и всё это время следующую карточку нельзя было тронуть.
+// Заявка теперь уходит в фоне, а проверки помнят успех.
+check('заявка Юпитеру не держит колоду',
+    str_contains($want, 'void sendExtApply(') && !str_contains($want, 'await sendExtApply'));
+$prepAt = strpos($want, 'prepareExtApply()');
+$sendAt = strpos($want, 'sendExtApply(');
+$nextAt = $prepAt !== false ? strpos($want, 'setSwSkipped', $prepAt) : false;
+check('следующая карточка открывается до отправки заявки',
+    $nextAt !== false && $sendAt !== false && $nextAt < $sendAt);
+check('не дошла заявка — молния назад', (bool)preg_match('~sendExtApply\(ev\)[\s\S]{0,300}energy\.refundOne\(\)~', $want));
+$gate = (string)file_get_contents(__DIR__ . '/../services/resumeGate.ts');
+$live = (string)file_get_contents(__DIR__ . '/../services/jupiterLive.ts');
+check('проверка резюме помнит успех', str_contains($gate, 'resumeOkUntil') && str_contains($gate, 'export function forgetResumeCheck'));
+check('поручение Юпитеру помнит успех', str_contains($live, 'liveOk') && str_contains($live, 'export function forgetJupiterLive'));
+$profile = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
+$settings = (string)file_get_contents(__DIR__ . '/../app/profile-settings.tsx');
+check('смена резюме сбрасывает память', substr_count($profile, 'forgetResumeCheck()') >= 2);
+check('переключатель автоотклика сбрасывает память', str_contains($settings, 'forgetJupiterLive()'));
+
 // ── Счётчик в шапке показывает запас, а не что-нибудь ещё ───────────────────
 // Раньше там было число вакансий в подборке. Если проводку перепутать
 // обратно, экран останется красивым и будет врать.

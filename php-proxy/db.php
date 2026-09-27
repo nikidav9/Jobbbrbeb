@@ -879,8 +879,12 @@ function jt_resume_sync_user(string $uid, ?array $row): void {
     ]);
 }
 
-function sb_rpc(string $fn, array $params = []): mixed {
+// $query — необязательные параметры адреса, например ['select' => '...']:
+// PostgREST принимает select у RPC, возвращающей setof (как jm_ext_feed_pool),
+// точно так же, как у обычной таблицы. Без него функция ведёт себя как раньше.
+function sb_rpc(string $fn, array $params = [], array $query = []): mixed {
     $url = SB_URL . '/rest/v1/rpc/' . $fn;
+    if (!empty($query)) $url .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
     $hdrs = ['apikey: ' . SB_KEY, 'Authorization: Bearer ' . SB_KEY, 'Content-Type: application/json'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_HTTPHEADER => $hdrs, CURLOPT_TIMEOUT => 10, CURLOPT_SSL_VERIFYPEER => true]);
@@ -3535,6 +3539,33 @@ function jt_recalc_employer_score(string $uid): array {
     return $out;
 }
 
+/**
+ * Дотягивает description_full только для карточек, которые реально уйдут
+ * клиенту (dbGetExtFeed: пул на компанию до 200 строк без описания,
+ * EXT_FEED_POOL_SELECT в ext_feed.php, а отдаётся не больше ~60 после
+ * ext_feed_arrange). Один запрос по списку id вместо тяжёлой колонки в
+ * каждой строке пула. Сбой запроса — не повод ронять ленту: карточки уйдут
+ * без полного описания, ext_feed_public_row тогда оставит короткое.
+ */
+function ext_feed_attach_full_descriptions(array $rows): array {
+    $ids = array_values(array_filter(array_map(
+        fn($r) => (string)($r['id'] ?? ''), $rows,
+    ), fn($id) => $id !== ''));
+    if (!$ids) return $rows;
+    try {
+        $full = sb_select('jm_ext_vacancies', ['id' => sb_in_list($ids)], 'id,description_full');
+    } catch (Throwable $e) {
+        return $rows;
+    }
+    $byId = [];
+    foreach ($full as $f) $byId[(string)($f['id'] ?? '')] = (string)($f['description_full'] ?? '');
+    foreach ($rows as $i => $row) {
+        $id = (string)($row['id'] ?? '');
+        if (isset($byId[$id])) $rows[$i]['description_full'] = $byId[$id];
+    }
+    return $rows;
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 try {
     $data = null;
@@ -3657,8 +3688,15 @@ try {
                     if (sb_single('jm_users', ['email' => 'eq.' . $regEmail], 'id')) {
                         jt_respond(['error' => 'Аккаунт с этой почтой уже есть. Войдите'], 409); exit;
                     }
-                    $bad = jt_password_problem((string)($u['password'] ?? ''));
-                    if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
+                    // Пароль необязателен (решение владельца 27.09.2026: почта
+                    // → код → сразу лента, вход потом по коду из письма).
+                    // Указан — проверяем как раньше; пуст — аккаунт без
+                    // пароля, ниже по коду пустой password просто не уйдёт в базу.
+                    $pwd = (string)($u['password'] ?? '');
+                    if ($pwd !== '') {
+                        $bad = jt_password_problem($pwd);
+                        if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
+                    }
                     unset($u['phone']);
                 } elseif (empty($u['phone']) || empty($u['password'])) {
                     throw new RuntimeException('Для регистрации нужны почта с кодом и пароль');
@@ -3810,7 +3848,12 @@ try {
             if (!$row || $new === '') { $data = ['ok' => false, 'reason' => 'not_found']; break; }
 
             $stored = (string)($row['password'] ?? '');
-            $ok = is_bcrypt($stored) ? password_verify($old, $stored) : hash_equals($stored, $old);
+            // Аккаунт без пароля (регистрация почта → код, 27.09): сверять
+            // «старый пароль» не с чем, и hash_equals('', '') пропустил бы
+            // любого, у кого есть сессия, — он поставил бы свой пароль и
+            // выбил владельца. Пароль такому аккаунту задают только через код
+            // из письма (dbAuthResetPassword).
+            $ok = $stored !== '' && (is_bcrypt($stored) ? password_verify($old, $stored) : hash_equals($stored, $old));
             if (!$ok) { $data = ['ok' => false, 'reason' => 'wrong_password']; break; }
 
             // Вместе с паролем гасим выданные токены: смена пароля затем и
@@ -4274,10 +4317,10 @@ try {
         }
 
         // ── Коды из писем ─────────────────────────────────────────────────
-        // args: [email, purpose]. register — почта ещё не занята; reset —
-        // отвечаем одинаково, есть такой аккаунт или нет (иначе по форме
-        // восстановления можно перебирать, чья почта у нас есть); attach —
-        // только с сессией, почта не занята другим аккаунтом.
+        // args: [email, purpose]. register — почта ещё не занята; reset и
+        // login — отвечаем одинаково, есть такой аккаунт или нет (иначе по
+        // форме входа/восстановления можно перебирать, чья почта у нас есть);
+        // attach — только с сессией, почта не занята другим аккаунтом.
         case 'dbAuthSendCode': {
             $purpose = (string)($args[1] ?? '');
             if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
@@ -4309,7 +4352,10 @@ try {
                 }
                 $userId = (string)$authUid;
             }
-            if ($purpose === 'reset') {
+            // reset и login отвечают одинаково независимо от того, есть ли
+            // такая почта: иначе по форме входа/восстановления можно
+            // перебирать, чья почта у нас есть.
+            if ($purpose === 'reset' || $purpose === 'login') {
                 if (!$owner || !empty($owner['is_blocked'])) { $data = ['ok' => true]; break; }
                 $userId = (string)$owner['id'];
             }
@@ -4330,7 +4376,10 @@ try {
             break;
         }
 
-        // args: [email, purpose, code] → { ticket } — квитанция для последнего шага.
+        // args: [email, purpose, code] → { ticket } — квитанция для последнего
+        // шага. Кроме login: там анкеты после кода нет, поэтому вместо
+        // квитанции сразу { user, session_token } — код одноразовый, и вторым
+        // запросом предъявлять уже нечего.
         case 'dbAuthVerifyCode': {
             $purpose = (string)($args[1] ?? '');
             if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
@@ -4350,6 +4399,21 @@ try {
             // его из чужой сессии нельзя.
             if ($purpose === 'attach' && (string)($res['user_id'] ?? '') !== (string)$authUid) {
                 jt_respond(['error' => 'Код выпущен для другого аккаунта'], 403); exit;
+            }
+            if ($purpose === 'login') {
+                // Код login выпускается только существующему аккаунту с этой
+                // почтой (dbAuthSendCode), но проверяем оба условия ещё раз
+                // здесь: id из кода и email из запроса должны совпасть, а
+                // аккаунт — не быть заблокирован.
+                $row = sb_single('jm_users', ['id' => 'eq.' . (string)($res['user_id'] ?? ''),
+                    'email' => 'eq.' . $email], 'id,is_blocked');
+                if (!$row || !empty($row['is_blocked'])) {
+                    jt_respond(['error' => 'Не получилось войти. Попробуйте ещё раз'], 403); exit;
+                }
+                jt_try_reset('login');
+                $data = ['user' => sb_single('jm_users', ['id' => 'eq.' . $row['id']], USER_SELF_COLS),
+                    'session_token' => jt_session_issue((string)$row['id'])];
+                break;
             }
             // Счётчик неверных кодов НЕ обнуляем удачным: иначе, подтверждая
             // коды со своего ящика, можно было бы сбрасывать себе лимит.
@@ -6414,13 +6478,34 @@ try {
             $sections = array_values(array_unique(array_filter((array)($args[1] ?? []),
                 fn($s) => is_string($s) && isset(JOB_SECTIONS[$s]))));
             $sections = $sections ?: null;
+            // Фильтры (зарплата, уровень, формат, компания, дата) переехали на
+            // сервер: раньше их применял клиент только к уже полученной
+            // порции, и выбор компании, которой в порции не было, давал
+            // пустоту. Третий довод передан массивом (объектом из JSON) —
+            // старые сборки без него получают прежний ответ-массив.
+            $filters = (isset($args[2]) && is_array($args[2])) ? ext_feed_filters($args[2]) : null;
+            // Пул на компанию шире у любого нового клиента (он всегда шлёт третий
+            // довод), а не только когда фильтр реально что-то отсекает: раньше
+            // «Всего N» без включённого фильтра считалось по ≤30 свежим карточкам
+            // каждой компании, а с фильтром — уже по 200, и получалось, что
+            // включение фильтра УВЕЛИЧИВАЕТ N вместо того, чтобы его сужать.
+            // Старый клиент без третьего довода «Всего N» не показывает — ему
+            // прежние 30 достаточно.
+            $perCompany = $filters !== null ? 200 : 30;
             // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
             // вакансии компаний из jm_it_companies (миграция 120). И только
             // Москва, удалёнка и вакансии без города (миграция 121).
+            //
+            // select= — без description_full/described_at/detail_spec
+            // (EXT_FEED_POOL_SELECT в ext_feed.php): пул на компанию доходит до
+            // 200 строк, description_full — КБ на строку, а гость публичный, и
+            // CURLOPT_TIMEOUT в sb_rpc — 10 секунд. Полное описание дотягиваем
+            // ниже только для уже отобранных ≤60 карточек.
             $pool = sb_rpc('jm_ext_feed_pool', [
-                'p_user' => $authUid, 'p_per_company' => 30, 'p_sections' => $sections,
+                'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
-            ]);
+            ], ['select' => EXT_FEED_POOL_SELECT]);
+            $pool = is_array($pool) ? $pool : [];
             $history = [];
             if ($authUid !== null) {
                 foreach (sb_select('jm_ext_swipes', [
@@ -6437,9 +6522,39 @@ try {
             $profile = $authUid !== null
                 ? sb_single('jm_users', ['id' => 'eq.' . $authUid], 'work_types,metro_station,resume_data')
                 : null;
-            $arranged = ext_feed_arrange(is_array($pool) ? $pool : [], ext_feed_taste($history, $profile ?: []), $limit,
-                ($authUid ?? 'guest') . '|' . gmdate('Y-m-d'));
-            $data = array_map('ext_feed_public_row', $arranged);
+            $taste = ext_feed_taste($history, $profile ?: []);
+            $seed = ($authUid ?? 'guest') . '|' . gmdate('Y-m-d');
+
+            if ($filters === null) {
+                // Старый клиент без OTA: прежний ответ-массив без изменений.
+                $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($pool, $taste, $limit, $seed));
+                $data = array_map('ext_feed_public_row', $arranged);
+                break;
+            }
+
+            $matched = array_values(array_filter($pool, fn($row) => ext_feed_match($row, $filters)));
+            // Счёт по компаниям — при всех фильтрах, КРОМЕ самой компании:
+            // иначе выбор одной компании убрал бы остальные из списка шторки.
+            $companyCounts = [];
+            foreach ($pool as $row) {
+                if (!ext_feed_match($row, $filters, true)) continue;
+                $c = trim((string)($row['company'] ?? ''));
+                if ($c === '') continue;
+                $companyCounts[$c] = ($companyCounts[$c] ?? 0) + 1;
+            }
+            uksort($companyCounts, fn($a, $b) => $companyCounts[$b] <=> $companyCounts[$a] ?: $a <=> $b);
+            $companies = [];
+            foreach ($companyCounts as $company => $count) {
+                $companies[] = ['company' => $company, 'count' => $count];
+                if (count($companies) >= 300) break;
+            }
+
+            $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($matched, $taste, $limit, $seed));
+            $data = [
+                'items' => array_map('ext_feed_public_row', $arranged),
+                'total' => count($matched),
+                'companies' => $companies,
+            ];
             break;
         }
 

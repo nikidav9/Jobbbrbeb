@@ -85,8 +85,8 @@ ZONES = {
 
 # ─── Переходы (выписаны из router.push / router.replace) ────────────────
 EDGES = [
-    ('index', 'register-worker-1', 'Ищу подработку', 'n'),
-    ('index', 'register-employer-1', 'Ищу работника', 'n'),
+    ('index', 'register-worker-1', 'Зарегистрироваться', 'n'),
+    ('index', 'register-employer-1', 'Разместить вакансию', 'n'),
     ('index', 'login', 'Войти', 'n'),
     ('index', 'feed-shift', 'уже вошёл', 'r'),
     ('register-worker-6', 'feed-shift', 'Начать поиск', 'r'),

@@ -359,7 +359,7 @@ try {
         // Поэтому теперь это не измерение, а условие: увидели на экране
         // вошедшего приглашение выбрать роль или окно про документы — значит
         // сломалась сама проверка, и молчать об этом нельзя.
-        const wrongScreen = screen.who && /Ищу работу|Ищу работника|Примите документы/.test(layout.text);
+        const wrongScreen = screen.who && /Постоянная IT-работа в Москве|Примите документы/.test(layout.text);
         delete layout.text;
         checked.push({ key, ...layout });
         if (wrongScreen) {

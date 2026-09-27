@@ -101,6 +101,20 @@ export function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+/**
+ * Имя для показа человеку самому — шапка профиля, приветствие.
+ *
+ * У соискателя, зарегистрированного по короткому пути (решение владельца
+ * 27.09.2026), имени нет: его спросит окно первого отклика. До этого момента
+ * `firstName`/`lastName` пусты, и голое `${firstName} ${lastName}` рисовало бы
+ * один пробел. Часть почты до «@» узнаваемее плейсхолдера.
+ */
+export function displayName(u: { firstName?: string; lastName?: string; email?: string }): string {
+  const full = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
+  if (full) return full;
+  return u.email?.split('@')[0] || 'Без имени';
+}
+
 export function nameColorFromString(str: string): string {
   const colors = ['#FF6B1A', '#2563EB', '#16A34A', '#7C3AED', '#DC2626', '#0CACCA'];
   let hash = 0;

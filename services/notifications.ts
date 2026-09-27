@@ -264,7 +264,7 @@ export async function notifyWorkersNewVacancy(params: {
       + (timeLabel ? ` ${timeLabel}` : '')
       + (metroStation ? `, м. ${metroStation}` : '')
       + (salaryLabel ? `, ${salaryLabel}` : '')
-      + '. Открой и откликнись!';
+      + '. Откройте и откликнитесь!';
 
     const detailsHtml = `\n\n👷 ${title} — ${company}`
       + (dateLabel ? `\n📅 ${dateLabel}${timeLabel ? `, ${timeLabel}` : ''}` : (timeLabel ? `\n🕐 ${timeLabel}` : ''))

@@ -7,7 +7,7 @@
 // кнопками под строкой).
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ import {
   jupiterRequeueLive, dbGetResumeFiles,
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
+import { confirmAsync } from '@/services/confirm';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { buildTimeline, jupiterNeedsSberConsent, jupiterStatus, jupiterVacancyClosed, TimelineStep } from '@/services/jupiterTimeline';
 import { getInitials, nameColorFromString } from '@/services/storage';
@@ -123,15 +124,10 @@ export default function JupiterApplicationScreen() {
   const grantSberConsent = async () => {
     if (!app || !currentUser?.id) return;
     const message = 'Сбер просит согласие на обработку персональных данных. Если продолжить, JobToo передаст Сберу имя, фамилию, телефон, ваш адрес JobToo и выбранное PDF-резюме только для этой вакансии.';
-    // Alert.alert в веб-сборке (сайт и мини-приложение в Телеграме) ничего не
-    // показывает — кнопка выглядела бы мёртвой. На вебе — window.confirm,
-    // как в services/jupiterLive.ts.
-    const approved = Platform.OS === 'web'
-      ? typeof window !== 'undefined' && window.confirm(message)
-      : await new Promise<boolean>(resolve => Alert.alert('Согласие для отклика в Сбер', message, [
-          { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Согласен и отправить', onPress: () => resolve(true) },
-        ], { cancelable: true, onDismiss: () => resolve(false) }));
+    // confirmAsync: на вебе Alert.alert — пустышка, кнопка выглядела бы мёртвой.
+    const approved = await confirmAsync({
+      title: 'Согласие для отклика в Сбер', body: message, confirmLabel: 'Согласен и отправить',
+    });
     if (!approved) return;
     try {
       await jupiterGrantThirdPartyConsent(currentUser.id, app.id, SBER_TERMS_URL);

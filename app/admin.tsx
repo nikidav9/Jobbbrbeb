@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  FlatList, Alert, ActivityIndicator,
+  FlatList, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { getSupabaseClient } from '@/template';
 import { useApp } from '@/hooks/useApp';
+import { confirmAsync } from '@/services/confirm';
 
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
@@ -133,46 +134,18 @@ export default function AdminScreen() {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_blocked: block } : u));
   };
 
+  // confirmAsync: Alert.alert на вебе — пустышка, и кнопки молчали.
+  // «Удалить всех кроме админа» убрана (решение 27.09): при ~500 живых
+  // пользователях одна кнопка стирала всю базу без возврата.
   const deleteUser = async (userId: string) => {
-    Alert.alert(
-      'Удалить пользователя',
-      'Это действие нельзя отменить. Удалить пользователя?',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить',
-          style: 'destructive',
-          onPress: async () => {
-            await sb().from('jm_users').delete().eq('id', userId);
-            setUsers(prev => prev.filter(u => u.id !== userId));
-          },
-        },
-      ]
-    );
-  };
-
-  const deleteAllUsersExceptAdmin = async () => {
-    const nonAdminUsers = users.filter(u => u.phone !== ADMIN_PHONE);
-    if (nonAdminUsers.length === 0) {
-      Alert.alert('Нет пользователей для удаления');
-      return;
-    }
-    Alert.alert(
-      'Удалить всех кроме админа',
-      `Будет удалено ${nonAdminUsers.length} пользователей. Это нельзя отменить.`,
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить всех',
-          style: 'destructive',
-          onPress: async () => {
-            const ids = nonAdminUsers.map(u => u.id);
-            await sb().from('jm_users').delete().in('id', ids);
-            setUsers(prev => prev.filter(u => u.phone === ADMIN_PHONE));
-          },
-        },
-      ]
-    );
+    const ok = await confirmAsync({
+      title: 'Удалить пользователя',
+      body: 'Это действие нельзя отменить. Удалить пользователя?',
+      confirmLabel: 'Удалить', danger: true,
+    });
+    if (!ok) return;
+    await sb().from('jm_users').delete().eq('id', userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
   };
 
   const closeVacancy = async (id: string) => {
@@ -186,17 +159,13 @@ export default function AdminScreen() {
   };
 
   const deletePermVacancy = async (id: string) => {
-    Alert.alert('Удалить вакансию', 'Удалить постоянную вакансию?', [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Удалить',
-        style: 'destructive',
-        onPress: async () => {
-          await sb().from('jm_perm_vacancies').delete().eq('id', id);
-          setPermVacancies(prev => prev.filter(v => v.id !== id));
-        },
-      },
-    ]);
+    const ok = await confirmAsync({
+      title: 'Удалить вакансию', body: 'Удалить постоянную вакансию?',
+      confirmLabel: 'Удалить', danger: true,
+    });
+    if (!ok) return;
+    await sb().from('jm_perm_vacancies').delete().eq('id', id);
+    setPermVacancies(prev => prev.filter(v => v.id !== id));
   };
 
   // ── Renders ────────────────────────────────────────────────────────────────
@@ -421,11 +390,6 @@ export default function AdminScreen() {
         <>
           {tab === 'users' ? (
             <>
-              <View style={styles.bulkActions}>
-                <TouchableOpacity style={styles.bulkBtn} onPress={deleteAllUsersExceptAdmin}>
-                  <Text style={styles.bulkBtnTxt}>Удалить всех кроме админа</Text>
-                </TouchableOpacity>
-              </View>
               <FlatList
                 data={users}
                 keyExtractor={u => u.id}
@@ -521,9 +485,6 @@ const styles = StyleSheet.create({
   deleteBtn: { borderColor: Colors.red },
   actionBtnTxt: { fontSize: rf(13), fontWeight: '600' },
 
-  bulkActions: { padding: rs(16), borderBottomWidth: 1, borderBottomColor: Colors.divider },
-  bulkBtn: { backgroundColor: Colors.red, paddingHorizontal: rs(16), paddingVertical: rs(10), borderRadius: Radius.md, alignItems: 'center' },
-  bulkBtnTxt: { color: 'white', fontSize: rf(14), fontWeight: '600' },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: rs(32) },
   emptyTxt: { fontSize: rf(15), color: Colors.textMuted, textAlign: 'center' },

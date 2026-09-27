@@ -67,8 +67,12 @@ $refreshAt = strpos($screen, 'const onRefresh = async');
 $refresh = $refreshAt === false ? '' : substr($screen, $refreshAt, 1500);
 check('onRefresh переносит свайпы сессии в permSwiped',
     str_contains($refresh, 'permLeftSwipes.current') && str_contains($refresh, 'setPermSwiped('));
-check('разделы не грузятся до чтения с телефона',
-    str_contains($screen, 'sectionsLoadedFor !== currentUser.id'));
+// Разделы из шторки убраны (решение владельца 27.09): лента только IT, и
+// сохранённый когда-то раздел («Лавка») оставлял человека с пустой колодой.
+// Лента больше не читает разделы с телефона и шлёт серверу пустой список.
+check('лента не берёт сохранённые разделы', !str_contains($screen, 'getFeedSections') && !str_contains($screen, 'saveFeedSections'));
+check('лента шлёт серверу фильтры, а не разделы',
+    substr_count($screen, 'dbGetExtFeed(60, toExtFeedFilters(filters))') === 3);
 
 if ($failures) {
     echo "feed sections wiring: ПРОВАЛЫ\n";

@@ -112,11 +112,25 @@ foreach (['app/register-worker.tsx' => 'работник', 'app/register-employe
     $src = (string)file_get_contents(__DIR__ . '/../' . $file);
     check("регистрация {$role}: сбой сети не пропускает дальше",
         !preg_match('~catch\s*(\(\w+\))?\s*\{[\s\S]{0,180}setStep\(2\)~', $src));
-    // С 25.09.2026 первый шаг — почта с кодом: дальше ведёт только onVerified,
-    // то есть сервер подтвердил код.
-    check("регистрация {$role}: дальше — только после подтверждённого кода",
-        str_contains($src, '<EmailCodeStep') && str_contains($src, 'onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}'));
+    if ($file === 'app/register-worker.tsx') {
+        // С 27.09.2026 (решение владельца, «почта → код → сразу лента») у
+        // работника отдельного шага «пароль» больше нет: подтверждённый код
+        // сразу ведёт в finishByEmail, а не setStep(2).
+        check("регистрация {$role}: дальше — только после подтверждённого кода",
+            str_contains($src, '<EmailCodeStep') && str_contains($src, 'void finishByEmail(e, t)'));
+    } else {
+        // Работодатель — прежний путь: первый шаг — почта с кодом, дальше
+        // ведёт только onVerified, то есть сервер подтвердил код.
+        check("регистрация {$role}: дальше — только после подтверждённого кода",
+            str_contains($src, '<EmailCodeStep') && str_contains($src, 'onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}'));
+    }
 }
+// У работника ошибка finishByEmail (устаревшая квитанция, занятая почта)
+// тоже не молчит и не проскакивает дальше — тост и возврат к вводу почты.
+$workerSrc = (string)file_get_contents(__DIR__ . '/../app/register-worker.tsx');
+check('регистрация работник: почтовая ошибка не проглочена',
+    str_contains($workerSrc, "showToast(msg, 'error');")
+    && str_contains($workerSrc, "if (/почт/i.test(msg)) { setEmailCodeSent(false); setEmailStepKey(k => k + 1); }"));
 // Шаг почты: сбой отправки или сверки остаётся на месте и объясняется.
 $step = (string)file_get_contents(__DIR__ . '/../components/feature/EmailCodeStep.tsx');
 check('шаг почты: сбой отправки объяснён, а не проглочен',
@@ -364,11 +378,12 @@ check('согласие: после ошибки есть повтор и вых
 // 17.09 подработка удалена: подсказки «На этот день смен нет» и «На выбранных
 // станциях смен нет» ушли вместе с лентой смен. Проверяем то, что осталось.
 $feed = (string)file_get_contents(__DIR__ . '/../app/(tabs)/feed.tsx');
-// 26.09 подсказка стала действием: «Измените или сбросьте фильтры» и две
-// кнопки — шестерёнки у пустой колоды нет (tests/feed_empty_filters.test.mjs).
+// 27.09 шестерёнка и общая шторка ушли вместе с «Изменить фильтры»: полоса
+// чипов над колодой всегда на экране, у пустой колоды остался только сброс
+// (tests/feed_empty_filters.test.mjs).
 check('подсказка про фильтр осталась',
     str_contains($feed, 'Измените или сбросьте фильтры') &&
-    str_contains($feed, 'testID="empty-edit-filters"'));
+    str_contains($feed, 'testID="empty-reset-filters"'));
 check('обычная пустота осталась', str_contains($feed, 'Нет открытых вакансий'));
 // 17.09 избранное уехало на свой экран (app/saved.tsx), и его пустое
 // состояние вместе с ним. Проверяем там, где оно теперь живёт.

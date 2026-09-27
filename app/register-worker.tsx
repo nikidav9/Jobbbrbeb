@@ -25,15 +25,27 @@ import { firstUnmetRule } from '@/constants/passwordRules';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
-// Steps: 1-Phone, 2-Password, 3-Name, 4-Legal, 5-Metro, 6-Резюме
-const TOTAL = 7;
+// Путь по почте (emailAuthReady, решение владельца 27.09.2026: «почта → код
+// → сразу лента, как у getmatch»): один экран — почта, код и согласия внутри
+// EmailCodeStep, второй его собственный шаг — код. Имя, метро и резюме
+// теперь не спрашиваются: имя и резюме спросит окно первого отклика (не этот
+// экран), метро и вовсе убрано.
+// Путь по телефону (SMTP ещё не готов) — прежние 7 шагов: 1-Телефон,
+// 2-Пароль, 3-Имя, 4-Согласие, 5-Метро, 6-Резюме, 7-О себе.
 
 export default function RegisterWorker() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const { emailAuthReady, registerUser, updateUser, showToast } = useApp();
+  const TOTAL = emailAuthReady ? 2 : 7;
 
   const [step, setStep] = useState(1);
+  // Код отправлен — второй (свой) шаг EmailCodeStep. Только для прогресса в
+  // шапке: сам переход между «почта» и «код» держит компонент у себя.
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
+  // Растёт при ошибке квитанции — пересоздаёт EmailCodeStep, возвращая его
+  // внутреннюю фазу на «почта» (снаружи её не сбросить иначе).
+  const [emailStepKey, setEmailStepKey] = useState(0);
   // Шаг 1 — почта с кодом из письма (решение владельца 25.09.2026, телефон
   // из регистрации убран). Квитанцию предъявляем в самом конце, в registerUser.
   const [email, setEmail] = useState('');
@@ -193,37 +205,137 @@ export default function RegisterWorker() {
     }
   };
 
+  // Почта → код → сразу лента (решение владельца 27.09.2026, как у
+  // getmatch): код подтверждён — регистрируем минимальный профиль без
+  // пароля и без имени. Имя и резюме спросит окно первого отклика.
+  const finishByEmail = async (verifiedEmail: string, ticket: string) => {
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      const id = uid();
+      const user = {
+        id,
+        role: 'worker' as const,
+        phone: '',
+        email: verifiedEmail,
+        emailVerifiedAt: nowISO(),
+        lastName: '',
+        firstName: '',
+        createdAt: nowISO(),
+      };
+      await registerUser(user, ticket, { marketing: adsAgreed });
+      showToast('Добро пожаловать! 👋', 'success');
+      router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
+    } catch (e) {
+      console.error('[RegisterWorker] finishByEmail error', e);
+      const msg = e instanceof Error && e.message ? e.message : 'Ошибка регистрации. Попробуйте ещё раз.';
+      showToast(msg, 'error');
+      // Квитанция устарела или почту успели занять — вернуть на шаг почты:
+      // EmailCodeStep сам такого не умеет, поэтому пересоздаём его через key.
+      if (/почт/i.test(msg)) { setEmailCodeSent(false); setEmailStepKey(k => k + 1); }
+      setFinishing(false);
+    }
+  };
+
+  // Общие для обоих путей: почта (под полем, до отправки кода) и телефон
+  // (отдельный шаг 4) показывают одни и те же три галочки.
+  const renderConsentCheckboxes = () => (
+    <>
+      <TouchableOpacity style={styles.checkRow} onPress={() => setAgreed(v => !v)} activeOpacity={0.8}>
+        <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
+          {agreed ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkLabel}>
+            Я принимаю{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}>
+              Пользовательское соглашение
+            </Text>
+            {' '}и подтверждаю, что ознакомлен(а) с{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
+              Политикой конфиденциальности
+            </Text>
+            {' и '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}>
+              Политикой обработки персональных данных
+            </Text>
+            .
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.checkRow} onPress={() => setPdAgreed(v => !v)} activeOpacity={0.8}>
+        <View style={[styles.checkbox, pdAgreed && styles.checkboxActive]}>
+          {pdAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkLabel}>
+            Отдельно даю{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
+              Согласие на обработку персональных данных
+            </Text>
+            . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.checkRow} onPress={() => setAdsAgreed(v => !v)} activeOpacity={0.8}>
+        <View style={[styles.checkbox, adsAgreed && styles.checkboxActive]}>
+          {adsAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkLabel}>
+            По желанию: даю{' '}
+            <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}>
+              Согласие на получение рекламной рассылки
+            </Text>
+            {' '}о JobToo на почту и в уведомлениях. Можно отключить в настройках.
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </>
+  );
+
   const line = METRO_LINES.find(l => l.id === metroLineId);
+  const displayedStep = emailAuthReady ? (emailCodeSent ? 2 : 1) : step;
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <BackButton onPress={back} />
-        <Text style={styles.stepLabel}>{step} из {TOTAL}</Text>
+        <Text style={styles.stepLabel}>{displayedStep} из {TOTAL}</Text>
         <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
 
       <View style={styles.progress}>
-        <View style={[styles.progressFill, { width: `${(step / TOTAL) * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${(displayedStep / TOTAL) * 100}%` }]} />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
 
-          {/* Step 1: Email + code */}
+          {/* Step 1: Email + code (или Phone — пока почта не готова) */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>{emailAuthReady ? 'Твоя почта' : 'Введи номер телефона'}</Text>
+              <Text style={styles.title}>{emailAuthReady ? 'Регистрация по почте' : 'Введите номер телефона'}</Text>
               <Text style={styles.subtitle}>
                 {emailAuthReady
-                  ? 'Пришлём код — по почте будешь входить и восстанавливать пароль'
+                  ? (finishing ? 'Создаём аккаунт…' : 'Пришлём код — пароль не нужен')
                   : 'Работодатель увидит его только после мэтча'}
               </Text>
               {emailAuthReady ? (
-                <EmailCodeStep
-                  purpose="register"
-                  onVerified={(e, t) => { setEmail(e); setEmailTicket(t); setStep(2); }}
-                />
+                finishing ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <EmailCodeStep
+                    key={emailStepKey}
+                    purpose="register"
+                    disabled={!agreed || !pdAgreed}
+                    belowEmail={renderConsentCheckboxes()}
+                    onSendAttempt={ok => { if (ok) setEmailCodeSent(true); }}
+                    onVerified={(e, t) => { setEmail(e); setEmailTicket(t); void finishByEmail(e, t); }}
+                  />
+                )
               ) : (
                 <>
                   <PhoneInput value={phone} onChange={v => { setPhone(v); setPhoneError(''); }} />
@@ -249,14 +361,14 @@ export default function RegisterWorker() {
           {/* Step 2: Password */}
           {step === 2 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Создай пароль</Text>
-              <Text style={styles.subtitle}>{emailTicket ? 'Забудешь — восстановишь кодом из письма.' : 'Запомни его. Забудешь — пиши на support@jobtoo.ru.'}</Text>
+              <Text style={styles.title}>Придумайте пароль</Text>
+              <Text style={styles.subtitle}>{emailTicket ? 'Забудете — восстановите кодом из письма.' : 'Запомните его. Если забудете — напишите на support@jobtoo.ru.'}</Text>
               <AppInput
                 label="Пароль"
                 value={password}
                 onChangeText={v => { setPassword(v); setPassError(''); }}
                 secureTextEntry
-                placeholder="Придумайте пароль"
+                placeholder="Пароль"
                 autoFocus
               />
               <PasswordRules password={password} />
@@ -281,7 +393,7 @@ export default function RegisterWorker() {
           {/* Step 3: Name */}
           {step === 3 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Как тебя зовут?</Text>
+              <Text style={styles.title}>Как вас зовут?</Text>
               <AppInput value={lastName} onChangeText={setLastName} placeholder="Романов" label="Фамилия" autoFocus />
               <AppInput value={firstName} onChangeText={setFirstName} placeholder="Алексей" label="Имя" />
               <View style={{ marginTop: 12 }}>
@@ -296,58 +408,7 @@ export default function RegisterWorker() {
               <Text style={styles.title}>Согласие</Text>
               <Text style={styles.subtitle}>Для использования сервиса</Text>
 
-              <TouchableOpacity style={styles.checkRow} onPress={() => setAgreed(v => !v)} activeOpacity={0.8}>
-                <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
-                  {agreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    Я принимаю{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}>
-                      Пользовательское соглашение
-                    </Text>
-                    {' '}и подтверждаю, что ознакомлен(а) с{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
-                      Политикой конфиденциальности
-                    </Text>
-                    {' и '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}>
-                      Политикой обработки персональных данных
-                    </Text>
-                    .
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.checkRow} onPress={() => setPdAgreed(v => !v)} activeOpacity={0.8}>
-                <View style={[styles.checkbox, pdAgreed && styles.checkboxActive]}>
-                  {pdAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    Отдельно даю{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'consent' } })}>
-                      Согласие на обработку персональных данных
-                    </Text>
-                    . Это отдельное действие, не являющееся частью принятия Пользовательского соглашения.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.checkRow} onPress={() => setAdsAgreed(v => !v)} activeOpacity={0.8}>
-                <View style={[styles.checkbox, adsAgreed && styles.checkboxActive]}>
-                  {adsAgreed ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkLabel}>
-                    По желанию: даю{' '}
-                    <Text style={styles.link} onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}>
-                      Согласие на получение рекламной рассылки
-                    </Text>
-                    {' '}о JobToo на почту и в уведомлениях. Можно отключить в настройках.
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              {renderConsentCheckboxes()}
 
               <View style={{ marginTop: 16 }}>
                 <PrimaryButton label="Продолжить →" onPress={next} disabled={!agreed || !pdAgreed} />
@@ -359,7 +420,7 @@ export default function RegisterWorker() {
           {step === 5 && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>📍 Ближайшее метро</Text>
-              <Text style={styles.subtitle}>Покажем работу рядом с тобой</Text>
+              <Text style={styles.subtitle}>Покажем работу рядом с вами</Text>
               {metroStation ? (
                 <View style={styles.metroSelected}>
                   <View style={[styles.metroLineDot, { backgroundColor: line?.color ?? Colors.blue }]} />
@@ -393,7 +454,7 @@ export default function RegisterWorker() {
           {/* Step 6: Резюме */}
           {step === 6 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Загрузи резюме</Text>
+              <Text style={styles.title}>Загрузите резюме</Text>
               <Text style={styles.subtitle}>По резюме подберём вакансии. Без резюме откликаться нельзя — его можно загрузить и позже в профиле.</Text>
               {resumeParsing ? (
                 <ActivityIndicator size="small" color={Colors.primary} />
@@ -419,7 +480,7 @@ export default function RegisterWorker() {
                 <PrimaryButton label="Продолжить →" onPress={next} />
               </View>
               <TouchableOpacity style={styles.loginHint} onPress={() => { setResumeFile(null); next(); }}>
-                <Text style={styles.loginHintTxt}>Пропустить — выберу разделы сам</Text>
+                <Text style={styles.loginHintTxt}>Пропустить — загружу позже</Text>
               </TouchableOpacity>
             </View>
           )}

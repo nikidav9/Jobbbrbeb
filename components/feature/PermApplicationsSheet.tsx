@@ -102,7 +102,7 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
         router.push({ pathname: '/chat-room', params: { chatId } });
       }, 300);
     } catch (e) {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось одобрить кандидата. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setActionLoading(null);
     }
@@ -121,7 +121,7 @@ export function PermApplicationsSheet({ vacancyId, onClose }: { vacancyId: strin
       }
       showToast('Отклонено', 'success');
     } catch (e) {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось отклонить кандидата. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setActionLoading(null);
     }

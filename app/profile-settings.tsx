@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  KeyboardAvoidingView, Platform, Linking, ActivityIndicator, Switch, Alert,
+  KeyboardAvoidingView, Platform, Linking, ActivityIndicator, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -15,6 +15,8 @@ import {
   jupiterLiveState, jupiterSetLive,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
+import { forgetJupiterLive } from '@/services/jupiterLive';
+import { confirmAsync } from '@/services/confirm';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -117,16 +119,12 @@ export default function ProfileSettingsScreen() {
     if (!currentUser) return;
     if (!next) {
       const message = 'Выключить автоотклик? Новые отклики не будут отправляться, неотправленные остановятся. Уже отправленные работодателю отозвать через JobToo нельзя.';
-      const confirmed = Platform.OS === 'web'
-        ? typeof window !== 'undefined' && window.confirm(message)
-        : await new Promise<boolean>(resolve => Alert.alert('Автоотклик Юпитера', message, [
-            { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Выключить', style: 'destructive', onPress: () => resolve(true) },
-          ], { cancelable: true, onDismiss: () => resolve(false) }));
+      const confirmed = await confirmAsync({ title: 'Автоотклик Юпитера', body: message, confirmLabel: 'Выключить', danger: true });
       if (!confirmed) return;
     }
     setJupiterBusy(true);
     try {
+      forgetJupiterLive();
       await jupiterSetLive(currentUser.id, next);
       setJupiterLive(next);
     } catch (error) {
@@ -699,6 +697,18 @@ export default function ProfileSettingsScreen() {
               <AppInput label="Новый пароль" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
               <AppInput label="Повторите новый пароль" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
             </View>
+            {/* Аккаунт без пароля (регистрация «почта → код») никогда не
+                пройдёт проверку текущего пароля — сервер отвечает
+                wrong_password намеренно. Путь такому человеку — код из письма. */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowPassword(false); setOldPassword(''); setNewPassword(''); setConfirmPassword('');
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
             <View style={s.sheetActions}>
               <PrimaryButton label="Сохранить" onPress={savePassword} disabled={savingPassword} />
               <PrimaryButton label="Отмена" onPress={() => setShowPassword(false)} secondary />
@@ -730,6 +740,17 @@ export default function ProfileSettingsScreen() {
                 placeholder="Подтвердите пароль"
               />
             </View>
+            {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
+                аккаунта «почта → код» пароля может не быть вовсе. */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowDelete(false); setDeletePassword('');
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
             <View style={s.sheetActions}>
               <PrimaryButton label={deleting ? 'Удаление…' : 'Удалить аккаунт'} onPress={deleteAccount} disabled={deleting || !deletePassword.trim()} />
               <PrimaryButton label="Отмена" onPress={() => setShowDelete(false)} secondary />
@@ -851,6 +872,10 @@ const s = StyleSheet.create({
     marginTop: rs(8),
   },
   form: { gap: rs(10), marginTop: rs(18) },
+  noPasswordLink: {
+    fontSize: rf(12.5), fontWeight: '600', color: Colors.primary,
+    textAlign: 'center', marginTop: rs(12),
+  },
   notificationStatus: {
     marginTop: rs(18),
     minHeight: rs(64),
