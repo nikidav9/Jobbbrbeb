@@ -12,6 +12,9 @@ test('согласие на обработку ПДн ставится толь�
   const text = 'Я даю согласие на обработку персональных данных';
   assert.equal(core.jtConsentDecision(text, true).action, 'check');
   assert.equal(core.jtConsentDecision(text, false).action, 'ask');
+  // Падеж не мешает: основы фразы ищутся по отдельности.
+  assert.equal(core.jtConsentDecision('Я соглашаюсь с политикой конфиденциальности', true).action, 'check');
+  assert.equal(core.jtConsentDecision('Принимаю условия пользовательского соглашения', true).action, 'check');
 });
 
 test('реклама, кадровый резерв, третьи лица, трансграничная передача — никогда', () => {
@@ -41,9 +44,11 @@ test('кнопки: «Откликнуться» открывает анкету
   assert.equal(core.jtIsApplyButton('Откликнуться'), true);
   assert.equal(core.jtIsApplyButton('Откликнуться на вакансию'), true);
   assert.equal(core.jtIsApplyButton('Заполнить анкету'), true);
+  assert.equal(core.jtIsApplyButton('Хочу работать'), true);
   assert.equal(core.jtIsApplyButton('Все вакансии'), false);
   assert.equal(core.jtIsSubmitButton('Отправить'), true);
   assert.equal(core.jtIsSubmitButton('Отправить резюме'), true);
+  assert.equal(core.jtIsSubmitButton('Оставить заявку'), true);
   assert.equal(core.jtIsSubmitButton('Подписаться на рассылку'), false);
   assert.equal(core.jtIsSubmitButton('Найти'), false);
 });
