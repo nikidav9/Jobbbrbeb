@@ -40,6 +40,7 @@ test('подтверждение достоверности — по поруч�
 test('кнопки: «Откликнуться» открывает анкету, «Подписаться» не отправка', () => {
   assert.equal(core.jtIsApplyButton('Откликнуться'), true);
   assert.equal(core.jtIsApplyButton('Откликнуться на вакансию'), true);
+  assert.equal(core.jtIsApplyButton('Заполнить анкету'), true);
   assert.equal(core.jtIsApplyButton('Все вакансии'), false);
   assert.equal(core.jtIsSubmitButton('Отправить'), true);
   assert.equal(core.jtIsSubmitButton('Отправить резюме'), true);

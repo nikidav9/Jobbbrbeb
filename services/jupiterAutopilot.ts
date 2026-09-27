@@ -115,7 +115,7 @@ function jtConsentDecision(text, delegated) {
 function jtIsApplyButton(text) {
   var t = jtFlat(text);
   if (!t || t.length > 40) return false;
-  return /^(откликнуться|отклик|откликнуться на вакансию|подать заявку|подать отклик|отправить резюме|оставить заявку|хочу у вас работать|хочу в команду|apply|apply now|respond)$/.test(t);
+  return /^(откликнуться|отклик|откликнуться на вакансию|подать заявку|подать отклик|отправить резюме|оставить заявку|заполнить анкету|заполнить форму|хочу у вас работать|хочу в команду|apply|apply now|respond)$/.test(t);
 }
 
 // Кнопка отправки анкеты.
@@ -223,6 +223,13 @@ ${AUTOPILOT_CORE}
     el.blur && el.blur();
   }
   function controls(root) { return root.querySelectorAll('input, textarea, select'); }
+  // Пусто ли поле. Маска вида «+7 (___) ___ __ __» — это ещё не номер:
+  // в ней нет цифр, кроме кода страны.
+  function isEmpty(el) {
+    var v = String(el.value == null ? '' : el.value);
+    if (!v.trim()) return true;
+    return v.indexOf('_') !== -1 && v.replace(/^\s*\+?7/, '').replace(/\D/g, '').length === 0;
+  }
   function keyOf(el) {
     var type = el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : (el.getAttribute('type') || 'text').toLowerCase();
     return jtKeyForField(textOf(el).toLowerCase(), type, el.name || el.id || '');
@@ -236,7 +243,15 @@ ${AUTOPILOT_CORE}
     for (var i = 0; i < roots.length; i++) {
       var score = 0, els = controls(roots[i]);
       for (var j = 0; j < els.length; j++) {
-        if (!visible(els[j]) && els[j].type !== 'file') continue;
+        if (!visible(els[j])) {
+          // Скрытое поле файла — норма (сайты прячут его под своей кнопкой),
+          // но только внутри видимой формы: поле нераскрытой анкеты не делает
+          // анкетой всю страницу (iFellow: подписка в подвале + скрытый файл).
+          if (els[j].type !== 'file' || roots[i] === document.body || !visible(roots[i])) continue;
+        }
+        // Вся страница считает только поля вне <form>: иначе две разные
+        // формы (анкета и её дубль-виджет) сливались бы в одну.
+        if (roots[i] === document.body && els[j].closest && els[j].closest('form')) continue;
         var k = keyOf(els[j]);
         if (k === 'email' || k === 'phone' || k === 'first_name' || k === 'last_name' || k === 'full_name') score++;
         if (els[j].type === 'file') score++;
@@ -269,7 +284,7 @@ ${AUTOPILOT_CORE}
       var el = els[i], tag = el.tagName, type = (el.getAttribute('type') || 'text').toLowerCase();
       if (tag === 'INPUT' && ['hidden', 'password', 'file', 'checkbox', 'radio', 'submit', 'button', 'image', 'reset'].indexOf(type) !== -1) continue;
       if (!visible(el) || el.disabled || el.readOnly) continue;
-      if (el.value && String(el.value).trim()) continue;
+      if (!isEmpty(el)) continue;
       var key = keyOf(el);
       if (!key) continue;
       var v = CFG.profile[key];
@@ -321,7 +336,7 @@ ${AUTOPILOT_CORE}
       if (d.action === 'check') {
         if (!box.checked) box.click();
         if (!box.checked) { box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); }
-        result.checked = result.checked.concat(d.kinds);
+        for (var c = 0; c < d.kinds.length; c++) if (result.checked.indexOf(d.kinds[c]) === -1) result.checked.push(d.kinds[c]);
       } else if (d.action === 'ask' && (box.required || box.getAttribute('aria-required') === 'true')) {
         result.missing.push('согласие: ' + d.kinds.join('+'));
         return false;
@@ -346,7 +361,9 @@ ${AUTOPILOT_CORE}
     var els = form.querySelectorAll('input, img');
     for (var j = 0; j < els.length; j++) {
       var t = (els[j].name || '') + ' ' + (els[j].id || '') + ' ' + (els[j].className || '') + ' ' + (els[j].getAttribute('src') || '') + ' ' + (els[j].getAttribute('placeholder') || '');
-      if (/captcha|капч/i.test(t) && visible(els[j])) { any = true; visibleChallenge = true; }
+      // Картинка-капча часто подписана только классом обёртки (captcha-flex).
+      var wrapped = els[j].closest && els[j].closest('[class*="captcha"],[id*="captcha"],[class*="капч"]');
+      if ((/captcha|капч/i.test(t) || wrapped) && visible(els[j])) { any = true; visibleChallenge = true; }
     }
     if (document.querySelector('.g-recaptcha, .smart-captcha, .h-captcha, .cf-turnstile, [data-sitekey]')) any = true;
     return visibleChallenge ? 'visible' : any ? 'invisible' : 'none';
@@ -367,7 +384,7 @@ ${AUTOPILOT_CORE}
         continue;
       }
       if (type === 'file') { if (!el.files || !el.files.length) out.push('файл: ' + textOf(el).slice(0, 50)); continue; }
-      if (!el.value || !String(el.value).trim()) out.push(textOf(el).slice(0, 60));
+      if (isEmpty(el)) out.push(textOf(el).slice(0, 60));
     }
     return out;
   }
