@@ -824,7 +824,10 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   раньше). `hasPassword === false` — вместо «Сменить пароль» кнопка «Задать
   пароль» сразу на `/reset-password`; в окне удаления аккаунта вместо поля
   пароля — объяснение и та же кнопка (удаление без пароля по одной сессии
-  не делается). Тесты — `tests/has_password_test.php`, `tests/hasPassword.test.ts`.
+  не делается). `dbGetUsers` отдаёт публичную проекцию без `has_password`,
+  поэтому `refreshUsers` в `contexts/AppContext.tsx` переносит признак из
+  прежней записи, а `registerUser` ставит его сам (`!!u.password`).
+  Тесты — `tests/has_password_test.php`, `tests/hasPassword.test.ts`.
 - **Старые аккаунты по телефону** — `components/EmailRequiredGate.tsx`:
   обязательное окно «Укажите почту» (и после входа, и у уже вошедших). Если
   письмо не ушло или прошла минута — «Напомнить позже» до следующего запуска.

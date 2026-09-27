@@ -225,8 +225,11 @@ export default function UserProfileScreen() {
   // Работодатель короткого пути (почта → код → компания, решение владельца
   // 27.09.2026) регистрируется без имени — оно ему тут не нужно, только
   // название компании. `${firstName} ${lastName}` тогда даёт один пробел;
-  // displayName подставляет часть почты, как и у соискателя короткого пути.
-  const name = `${user.firstName} ${user.lastName}`.trim() || displayName(user);
+  // у работодателя подставляем название компании, иначе displayName (часть
+  // почты; чужая почта сюда не приходит — тогда «Без имени»).
+  const name = `${user.firstName} ${user.lastName}`.trim()
+    || (user.role === 'employer' && user.company ? user.company : '')
+    || displayName(user);
   const initials = getInitials(name);
   const line = METRO_LINES.find(l => l.id === user.metroLineId);
 

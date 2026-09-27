@@ -719,7 +719,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Пароль в кэше профиля на телефоне не храним: он нужен был только для
     // создания аккаунта и дальше уже у сервера (хешем). Почта, если человек
     // регистрировался по ней, подтверждена — окно EmailRequiredGate не нужно.
-    const cached: User = { ...u, password: '' };
+    const cached: User = { ...u, password: '', hasPassword: !!u.password };
     _setCurrentUser(cached);
     await saveSessionUser(cached);
     setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
@@ -857,8 +857,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     saveCache(CACHE_KEYS.users, data).catch(() => {});
     _setCurrentUser(prev => {
       if (!prev) return prev;
-      const fresh = data.find(u => u.id === prev.id);
-      if (!fresh) return prev;
+      const found = data.find(u => u.id === prev.id);
+      if (!found) return prev;
+      // dbGetUsers отдаёт публичную проекцию — has_password в ней нет. Без
+      // этого признак из dbSession/входа стирался бы через 300 мс после старта.
+      const fresh: User = { ...found, hasPassword: found.hasPassword ?? prev.hasPassword };
       saveSessionUser(fresh).catch(() => {});
       return fresh;
     });
