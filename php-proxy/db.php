@@ -879,8 +879,12 @@ function jt_resume_sync_user(string $uid, ?array $row): void {
     ]);
 }
 
-function sb_rpc(string $fn, array $params = []): mixed {
+// $query — необязательные параметры адреса, например ['select' => '...']:
+// PostgREST принимает select у RPC, возвращающей setof (как jm_ext_feed_pool),
+// точно так же, как у обычной таблицы. Без него функция ведёт себя как раньше.
+function sb_rpc(string $fn, array $params = [], array $query = []): mixed {
     $url = SB_URL . '/rest/v1/rpc/' . $fn;
+    if (!empty($query)) $url .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
     $hdrs = ['apikey: ' . SB_KEY, 'Authorization: Bearer ' . SB_KEY, 'Content-Type: application/json'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_HTTPHEADER => $hdrs, CURLOPT_TIMEOUT => 10, CURLOPT_SSL_VERIFYPEER => true]);
@@ -3533,6 +3537,33 @@ function jt_recalc_employer_score(string $uid): array {
     } catch (Throwable $e) {
     }
     return $out;
+}
+
+/**
+ * Дотягивает description_full только для карточек, которые реально уйдут
+ * клиенту (dbGetExtFeed: пул на компанию до 200 строк без описания,
+ * EXT_FEED_POOL_SELECT в ext_feed.php, а отдаётся не больше ~60 после
+ * ext_feed_arrange). Один запрос по списку id вместо тяжёлой колонки в
+ * каждой строке пула. Сбой запроса — не повод ронять ленту: карточки уйдут
+ * без полного описания, ext_feed_public_row тогда оставит короткое.
+ */
+function ext_feed_attach_full_descriptions(array $rows): array {
+    $ids = array_values(array_filter(array_map(
+        fn($r) => (string)($r['id'] ?? ''), $rows,
+    ), fn($id) => $id !== ''));
+    if (!$ids) return $rows;
+    try {
+        $full = sb_select('jm_ext_vacancies', ['id' => sb_in_list($ids)], 'id,description_full');
+    } catch (Throwable $e) {
+        return $rows;
+    }
+    $byId = [];
+    foreach ($full as $f) $byId[(string)($f['id'] ?? '')] = (string)($f['description_full'] ?? '');
+    foreach ($rows as $i => $row) {
+        $id = (string)($row['id'] ?? '');
+        if (isset($byId[$id])) $rows[$i]['description_full'] = $byId[$id];
+    }
+    return $rows;
 }
 
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
@@ -6453,17 +6484,27 @@ try {
             // пустоту. Третий довод передан массивом (объектом из JSON) —
             // старые сборки без него получают прежний ответ-массив.
             $filters = (isset($args[2]) && is_array($args[2])) ? ext_feed_filters($args[2]) : null;
-            // При любом фильтре пул на компанию шире: иначе и выдача, и «Всего N»
-            // упирались бы в те же ~30 свежих карточек каждой компании — у
-            // компании со 100 бэкенд-вакансиями фильтр видел бы только 30.
-            $perCompany = ($filters !== null && ext_feed_filters_active($filters)) ? 200 : 30;
+            // Пул на компанию шире у любого нового клиента (он всегда шлёт третий
+            // довод), а не только когда фильтр реально что-то отсекает: раньше
+            // «Всего N» без включённого фильтра считалось по ≤30 свежим карточкам
+            // каждой компании, а с фильтром — уже по 200, и получалось, что
+            // включение фильтра УВЕЛИЧИВАЕТ N вместо того, чтобы его сужать.
+            // Старый клиент без третьего довода «Всего N» не показывает — ему
+            // прежние 30 достаточно.
+            $perCompany = $filters !== null ? 200 : 30;
             // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
             // вакансии компаний из jm_it_companies (миграция 120). И только
             // Москва, удалёнка и вакансии без города (миграция 121).
+            //
+            // select= — без description_full/described_at/detail_spec
+            // (EXT_FEED_POOL_SELECT в ext_feed.php): пул на компанию доходит до
+            // 200 строк, description_full — КБ на строку, а гость публичный, и
+            // CURLOPT_TIMEOUT в sb_rpc — 10 секунд. Полное описание дотягиваем
+            // ниже только для уже отобранных ≤60 карточек.
             $pool = sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
-            ]);
+            ], ['select' => EXT_FEED_POOL_SELECT]);
             $pool = is_array($pool) ? $pool : [];
             $history = [];
             if ($authUid !== null) {
@@ -6486,7 +6527,7 @@ try {
 
             if ($filters === null) {
                 // Старый клиент без OTA: прежний ответ-массив без изменений.
-                $arranged = ext_feed_arrange($pool, $taste, $limit, $seed);
+                $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($pool, $taste, $limit, $seed));
                 $data = array_map('ext_feed_public_row', $arranged);
                 break;
             }
@@ -6508,7 +6549,7 @@ try {
                 if (count($companies) >= 300) break;
             }
 
-            $arranged = ext_feed_arrange($matched, $taste, $limit, $seed);
+            $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($matched, $taste, $limit, $seed));
             $data = [
                 'items' => array_map('ext_feed_public_row', $arranged),
                 'total' => count($matched),

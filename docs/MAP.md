@@ -560,21 +560,42 @@ https-хоста, «..» не разбирает. Так читаются «Га
 sections, filters])` — объект `{salary_from, specs, levels, formats, companies,
 posted}`; `ext_feed_filters` (нормализация недоверенного ввода) и
 `ext_feed_match` (`php-proxy/ext_feed.php`) фильтруют весь пул
-`jm_ext_feed_pool` до `ext_feed_arrange`, а не уже отданную порцию. Включён
-хоть один фильтр (`ext_feed_filters_active`) — пул на компанию расширяется до
-200 (иначе 30). Ответ —
+`jm_ext_feed_pool` до `ext_feed_arrange`, а не уже отданную порцию. Пул на
+компанию расширяется до 200, как только клиент вообще передал третий довод
+(даже пустой фильтр) — не только когда фильтр реально что-то отсекает: раньше
+включение фильтра само увеличивало «Всего N» (без фильтра N считалось по
+≤30 карточкам компании, с фильтром — уже по 200). Старый клиент без третьего
+довода получает прежний ответ-массив и пул в 30. Ответ —
 `{items, total, companies}`: `total` — честное число совпавших по всему пулу,
 `companies` — счёт по компаниям при остальных фильтрах, кроме самой компании
-(не больше 300). Старый клиент без третьего довода получает прежний голый
-массив. Новый facet «Специализация» (Бэкенд, Фронтенд, DevOps и SRE…) —
+(не больше 300). Новый facet «Специализация» (Бэкенд, Фронтенд, DevOps и SRE…) —
 `vacancySpecs` в `services/vacancyFacets.ts` (там же `vacancyLevel`/
 `vacancyFormat`); серверное зеркало всех трёх — `php-proxy/vacancy_facets.php`
 (`vf_level`/`vf_format`/`vf_specs`), паритет держит общий файл случаев
 `tests/fixtures/vacancy_facets_cases.json` (читают и
-`tests/vacancy-facets.test.ts`, и `tests/vacancy_facets_test.php`). Экран
+`tests/vacancy-facets.test.ts`, и `tests/vacancy_facets_test.php`). Регулярки —
+`(*UTF)...` вместо флага `u`: `u` в PCRE включает ещё и UCP, и тогда `\b`
+считает кириллицу буквой слова, а в JS — никогда, так что склеенные без
+пробела «Pythonразработчик», «MLинженер», «LeadРазработчик» получали
+специализацию/уровень в JS и не получали в PHP; `(*UTF)` даёт только разбор
+UTF-8 и регистронезависимость (кириллица тоже), без UCP. Экран
 (`app/(tabs)/feed.tsx`) шлёт реальный фильтр через `toExtFeedFilters`
 (`services/feedFilters.ts`) и берёт `items`/`total`/`companies` — полоса чипов
 подключена, подробности в разделе про ленту и свайп выше.
+
+**Лёгкий пул, тяжёлое описание — отдельно** (с 27.09.2026). Пул на компанию
+в 200 строк, отдаваемый гостю без входа, раньше тянул `select v.*` —
+`description_full` (полный текст со страницы, КБ на строку) на тысячи строк
+пула при `CURLOPT_TIMEOUT 10` в `sb_rpc`. Теперь `jm_ext_feed_pool` зовётся с
+`?select=` (`sb_rpc($fn, $params, $query)` в db.php умеет третий довод —
+параметры адреса, PostgREST принимает `select` и у RPC, возвращающей `setof`)
+по списку колонок `EXT_FEED_POOL_SELECT` (`php-proxy/ext_feed.php`) — все,
+кроме `description_full`, `described_at`, `detail_spec`. Полное описание
+дотягивается один раз, уже после `ext_feed_arrange`, только для тех ≤60
+карточек, что реально уйдут клиенту: `ext_feed_attach_full_descriptions`
+(db.php) — один `sb_select('jm_ext_vacancies', ['id' => sb_in_list($ids)],
+'id,description_full')`, подмешанный в строки перед `ext_feed_public_row`.
+Сбой дотягивания не роняет ленту — карточки уходят с коротким описанием.
 
 **Расписание забора.** `.github/workflows/career-ingest.yml` зовёт `ingest.php`
 каждые 6 часов (02:30, 08:30, 14:30, 20:30 UTC) — полный круг с гашением и

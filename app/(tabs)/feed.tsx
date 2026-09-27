@@ -1028,7 +1028,16 @@ function WorkerPermMode() {
       setCareerVacancies(res.items);
       setCareerTotal(res.total);
       setCareerCompanies(res.companies);
-    }).catch(() => {}).finally(() => { if (!cancelled) setCareerLoading(false); });
+    }).catch(() => {
+      if (cancelled) return;
+      // Сбой под новыми чипами не должен оставлять колоду и «Всего N» от
+      // прежнего выбора — иначе счётчик и карточки молча врут о том, что
+      // сейчас выбрано. Пустое состояние само предложит обновить.
+      setCareerVacancies([]);
+      setCareerTotal(0);
+      setCareerCompanies([]);
+      showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
+    }).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, filtersKey]);
@@ -1841,9 +1850,15 @@ function WorkerPermMode() {
       <OnboardingTarget targetKey="worker.feed.filter">
         <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} />
       </OnboardingTarget>
-      <Text style={pS.totalTxt} testID="feed-total">
-        {careerLoading ? 'Считаем вакансии…' : `Всего ${totalCount} ${pluralVacancies(totalCount)}`}
-      </Text>
+      {/* Пустая колода без загрузки прячет счётчик: он мог остаться от
+          прежнего выбора чипов (свежий пул ещё не разложился в карточки),
+          и «Всего 120» рядом с «По фильтрам ничего не нашлось» читалось бы
+          как противоречие, а не справка. */}
+      {(swTop || careerLoading) ? (
+        <Text style={pS.totalTxt} testID="feed-total">
+          {careerLoading ? 'Считаем вакансии…' : `Всего ${totalCount} ${pluralVacancies(totalCount)}`}
+        </Text>
+      ) : null}
 
       {backendOffline ? (
         <View style={pS.offlineBar}>

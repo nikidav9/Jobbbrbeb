@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/theme';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
@@ -47,6 +48,7 @@ type Props = {
 export function EmailCodeStep({
   purpose, onVerified, emailLabel = 'Почта', onSendAttempt, verify: customVerify, belowEmail, disabled,
 }: Props) {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [phase, setPhase] = useState<'email' | 'code'>('email');
@@ -129,6 +131,17 @@ export function EmailCodeStep({
           onSubmitEditing={send}
           returnKeyType="send"
         />
+        {/* Регистрация отвечает 409 «Аккаунт с этой почтой уже есть»
+            (dbAuthSendCode) ещё на отправке кода — почта на этом шаге не
+            меняется на другой экран, а человека уводило обратно на ввод
+            почты без объяснений. Ссылка ведёт туда, где есть вход по этой
+            же почте. Только для регистрации: у входа и восстановления такой
+            ошибки не бывает. */}
+        {purpose === 'register' && /уже есть/i.test(error) ? (
+          <TouchableOpacity onPress={() => router.push('/login')} accessibilityRole="button">
+            <Text style={styles.link}>Войти →</Text>
+          </TouchableOpacity>
+        ) : null}
         {belowEmail}
         <View style={styles.btn}>
           {busy

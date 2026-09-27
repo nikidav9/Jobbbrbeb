@@ -66,5 +66,10 @@
   { "title": "Продавец-кассир", "schedule": "5/2", "text": "Работа в офисе у метро Белорусская", "level": null, "format": "office", "specs": [] },
   { "title": "Продавец-кассир", "schedule": "", "text": "Возможна удалённая работа", "level": null, "format": "remote", "specs": [] },
   { "title": "Продавец-кассир", "schedule": "Полный день", "text": "Хорошая команда", "level": null, "format": null, "specs": [] },
-  { "title": "Продавец-кассир", "schedule": null, "text": null, "level": null, "format": null, "specs": [] }
+  { "title": "Продавец-кассир", "schedule": null, "text": null, "level": null, "format": null, "specs": [] },
+  { "title": "Pythonразработчик", "schedule": null, "text": null, "level": null, "format": null, "specs": ["backend"] },
+  { "title": "MLинженер", "schedule": null, "text": null, "level": null, "format": null, "specs": ["data"] },
+  { "title": "DevOpsинженер", "schedule": null, "text": null, "level": null, "format": null, "specs": ["devops"] },
+  { "title": "iOSразработчик", "schedule": null, "text": null, "level": null, "format": null, "specs": ["mobile"] },
+  { "title": "LeadРазработчик", "schedule": null, "text": null, "level": "lead", "format": null, "specs": [] }
 ]

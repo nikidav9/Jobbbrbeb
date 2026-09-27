@@ -1609,6 +1609,19 @@ export default function ProfileScreen() {
               autoCapitalize="none"
             />
             {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+            {/* Регистрация «почта → код» не заводит пароль (решение
+                владельца 27.09.2026) — удаление всё равно обязательно
+                (152-ФЗ), поэтому рядом всегда есть путь мимо забытого/
+                отсутствующего пароля через код на почту. */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowConfirmDelete(false); setDeletePassword(''); setDeleteError('');
+                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
             <View style={styles.confirmBtns}>
               <TouchableOpacity
                 style={styles.cancelBtn}
@@ -1699,6 +1712,18 @@ export default function ProfileScreen() {
                 placeholder="Повторите новый пароль"
               />
             </View>
+            {/* Аккаунт без пароля (регистрация «почта → код») никогда не
+                примет здесь «текущий пароль» — сервер намеренно отвечает
+                wrong_password. Путь такому человеку — код из письма. */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowSettings(false); setCurPassword(''); setNewPassword(''); setConfirmPassword('');
+                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
             <View style={{ marginTop: 8, gap: 10 }}>
               <PrimaryButton
                 label={savingPassword ? 'Сохранение...' : 'Сохранить пароль'}
@@ -2579,6 +2604,10 @@ const styles = StyleSheet.create({
   },
   deleteError: {
     marginTop: rs(8), fontSize: rf(13), color: Colors.red,
+    textAlign: 'center',
+  },
+  noPasswordLink: {
+    marginTop: rs(4), fontSize: rf(13), color: Colors.primary, fontWeight: '600',
     textAlign: 'center',
   },
   confirmBtns: { flexDirection: 'row', gap: rs(12), marginTop: rs(8) },

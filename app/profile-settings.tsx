@@ -699,6 +699,18 @@ export default function ProfileSettingsScreen() {
               <AppInput label="Новый пароль" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
               <AppInput label="Повторите новый пароль" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
             </View>
+            {/* Аккаунт без пароля (регистрация «почта → код») никогда не
+                пройдёт проверку текущего пароля — сервер отвечает
+                wrong_password намеренно. Путь такому человеку — код из письма. */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowPassword(false); setOldPassword(''); setNewPassword(''); setConfirmPassword('');
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
             <View style={s.sheetActions}>
               <PrimaryButton label="Сохранить" onPress={savePassword} disabled={savingPassword} />
               <PrimaryButton label="Отмена" onPress={() => setShowPassword(false)} secondary />
@@ -730,6 +742,17 @@ export default function ProfileSettingsScreen() {
                 placeholder="Подтвердите пароль"
               />
             </View>
+            {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
+                аккаунта «почта → код» пароля может не быть вовсе. */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowDelete(false); setDeletePassword('');
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
             <View style={s.sheetActions}>
               <PrimaryButton label={deleting ? 'Удаление…' : 'Удалить аккаунт'} onPress={deleteAccount} disabled={deleting || !deletePassword.trim()} />
               <PrimaryButton label="Отмена" onPress={() => setShowDelete(false)} secondary />
@@ -851,6 +874,10 @@ const s = StyleSheet.create({
     marginTop: rs(8),
   },
   form: { gap: rs(10), marginTop: rs(18) },
+  noPasswordLink: {
+    fontSize: rf(12.5), fontWeight: '600', color: Colors.primary,
+    textAlign: 'center', marginTop: rs(12),
+  },
   notificationStatus: {
     marginTop: rs(18),
     minHeight: rs(64),

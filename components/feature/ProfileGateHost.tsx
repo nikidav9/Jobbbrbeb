@@ -31,7 +31,16 @@ export function ProfileGateHost() {
     if (!user) return Promise.resolve(hasResume);
     const step = decideProfileGateStep(hasResume, user.firstName, user.lastName);
     if (step === 'skip') return Promise.resolve(true);
-    return new Promise<boolean>(resolve => setRequest({ step, resolve }));
+    return new Promise<boolean>(resolve => {
+      // Повторный open, пока окно уже открыто, раньше просто затирал
+      // request: промис первого вызова не разрешался никогда. Прежний
+      // запрос разрешаем false — как отказ — перед тем, как встать на его
+      // место.
+      setRequest(prev => {
+        prev?.resolve(false);
+        return { step, resolve };
+      });
+    });
   }, []);
 
   useEffect(() => {

@@ -22,12 +22,17 @@ test('«изменить фильтры» из пустого экрана уб�
   assert.doesNotMatch(empty, /'Попробуйте изменить фильтры'/);
 });
 
-test('полоса чипов и подпись «Всего N» рисуются и при пустой, и при загружающейся колоде', () => {
-  // FilterChipsBar и feed-total стоят раньше ветки {!swTop ? (...)} в разметке —
-  // то есть до раннего выхода из-под колоды, а не внутри одной из её веток.
+test('полоса чипов рисуется и при пустой, и при загружающейся колоде', () => {
+  // FilterChipsBar стоит раньше ветки {!swTop ? (...)} в разметке — то есть
+  // до раннего выхода из-под колоды, а не внутри одной из её веток.
   const beforeEmpty = src.slice(0, src.indexOf('{!swTop ? ('));
   assert.match(beforeEmpty, /<FilterChipsBar/);
   assert.match(beforeEmpty, /testID="feed-total"/);
+});
+
+test('подпись «Всего N» прячется у пустой недогружающейся колоды — иначе спорит с «ничего не нашлось»', () => {
+  const beforeEmpty = src.slice(0, src.indexOf('{!swTop ? ('));
+  assert.match(beforeEmpty, /\(swTop \|\| careerLoading\) \? \(/);
 });
 
 test('шторка и сброс применяют фильтры одной функцией', () => {

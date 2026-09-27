@@ -118,6 +118,21 @@ function ext_feed_score(array $row, array $taste, float $jitter): float
 }
 
 /**
+ * Колонки jm_ext_vacancies для пула ленты — все, КРОМЕ трёх тяжёлых:
+ * description_full (полный текст со страницы, КБ на строку), described_at и
+ * detail_spec (служебные для describe.php, клиенту не нужны и подавно). Пул
+ * на компанию доходит до 200 строк (dbGetExtFeed в db.php), а до клиента из
+ * него доезжает не больше ~60 — тянуть КБ описания для всех 200 на каждый
+ * заход в ленту означало бы десятки МБ JSON на гостевой запрос. Полное
+ * описание дотягивается отдельно, только для уже отобранных карточек, —
+ * db.php делает это одним sb_select после ext_feed_arrange.
+ */
+const EXT_FEED_POOL_SELECT = 'id,source_id,external_id,title,company,metro_station,'
+    . 'metro_station_norm,metro_line_id,work_type,address,lat,lng,kind,date,'
+    . 'time_start,time_end,salary,pay_period,schedule,description,url,dedupe_key,'
+    . 'active,first_seen_at,last_seen_at,section';
+
+/**
  * Строка вакансии для отдачи клиенту: description_full (миграция 117, полное
  * описание со структурой — заголовки разделов, списки) занимает место
  * description, если он заполнен. Саму колонку description_full и described_at
@@ -180,13 +195,6 @@ function ext_feed_filters($raw): array
         'companies' => $companies,
         'posted' => $posted,
     ];
-}
-
-/** Включён ли хоть один фильтр (нормализованный ext_feed_filters). */
-function ext_feed_filters_active(array $f): bool
-{
-    return $f['salary_from'] > 0 || $f['specs'] || $f['levels'] || $f['formats']
-        || $f['companies'] || $f['posted'] !== 'all';
 }
 
 /**

@@ -97,14 +97,39 @@ check('posted — мусор превращается в all', $junkFilters['pos
 
 $emptyFilters = ext_feed_filters('мусор не массив');
 check('нестроковый мусор целиком — пустой фильтр', $emptyFilters === ext_feed_filters([]));
-check('пустой фильтр — не включён', !ext_feed_filters_active($emptyFilters));
-foreach ([['salary_from' => 150000], ['specs' => ['qa']], ['levels' => ['senior']], ['formats' => ['remote']],
-          ['companies' => ['Сбер']], ['posted' => 'day']] as $one) {
-    check('включён фильтр ' . array_key_first($one), ext_feed_filters_active(ext_feed_filters($one)));
-}
-check('dbGetExtFeed расширяет пул при любом фильтре',
-    str_contains((string)file_get_contents(__DIR__ . '/../php-proxy/db.php'), 'ext_feed_filters_active($filters)) ? 200 : 30'));
 check('пустой фильтр не сужает: salary_from 0', $emptyFilters['salary_from'] === 0);
+
+// ── Б1: пул шире при любом третьем доводе, а не только при активном фильтре ─
+// Раньше «Всего N» без фильтра считалось по ≤30 карточкам на компанию, а с
+// фильтром — по 200, и включение фильтра само по себе УВЕЛИЧИВАЛО N. Проверка
+// по исходнику db.php — как и раньше в этом файле: dbGetExtFeed читает
+// сессию и авторизацию, самим запуском в node:test/php CLI без базы его не
+// вызвать.
+$dbSrc = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
+check('dbGetExtFeed расширяет пул до 200 при любом переданном (даже пустом) фильтре, не только при активном',
+    str_contains($dbSrc, '$perCompany = $filters !== null ? 200 : 30;'));
+check('расширение пула больше не зависит от ext_feed_filters_active', !str_contains($dbSrc, 'ext_feed_filters_active'));
+
+// ── Б1: пул зовётся с select без тяжёлых колонок ────────────────────────────
+check('EXT_FEED_POOL_SELECT не тянет description_full', !str_contains(EXT_FEED_POOL_SELECT, 'description_full'));
+check('EXT_FEED_POOL_SELECT не тянет described_at', !str_contains(EXT_FEED_POOL_SELECT, 'described_at'));
+check('EXT_FEED_POOL_SELECT не тянет detail_spec', !str_contains(EXT_FEED_POOL_SELECT, 'detail_spec'));
+// Нужные карточке колонки на месте (services/db.ts: toExtVacancy, ext_feed_score/match).
+foreach (['id', 'title', 'company', 'schedule', 'description', 'salary', 'first_seen_at', 'section',
+          'metro_station_norm', 'url'] as $col) {
+    check("EXT_FEED_POOL_SELECT содержит $col", in_array($col, explode(',', EXT_FEED_POOL_SELECT), true));
+}
+check('dbGetExtFeed зовёт пул с select=EXT_FEED_POOL_SELECT',
+    str_contains($dbSrc, "sb_rpc('jm_ext_feed_pool', [") && str_contains($dbSrc, "['select' => EXT_FEED_POOL_SELECT]"));
+
+// ── Б1: дотягивание description_full только для отданных карточек ──────────
+check('ext_feed_attach_full_descriptions дотягивает description_full одним sb_select по id',
+    str_contains($dbSrc, "function ext_feed_attach_full_descriptions")
+    && str_contains($dbSrc, "sb_select('jm_ext_vacancies', ['id' => sb_in_list(\$ids)], 'id,description_full')"));
+check('обе ветки dbGetExtFeed дотягивают описание перед ext_feed_public_row',
+    substr_count($dbSrc, 'ext_feed_attach_full_descriptions(ext_feed_arrange(') === 2);
+check('сбой дотягивания не роняет ленту — try/catch вокруг sb_select',
+    (bool)preg_match('~try\s*\{\s*\$full = sb_select\(\'jm_ext_vacancies\'.*?catch \(Throwable \$e\) \{\s*return \$rows;~s', $dbSrc));
 
 check('posted принимает month (30 суток)', ext_feed_filters(['posted' => 'month'])['posted'] === 'month');
 
