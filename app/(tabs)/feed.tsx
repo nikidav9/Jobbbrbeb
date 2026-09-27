@@ -811,14 +811,12 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
   return null;
 }
 
-// Шапка ленты: марка, поиск и счётчик открытых вакансий.
-//
-// Поиск здесь, а не в шторке фильтров, потому что это самое частое действие:
-// человек приходит с названием должности в голове. Шторка осталась для
-// всего остального — станции, зарплаты, графика.
-function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
-  value: string;
-  onChange: (t: string) => void;
+// Шапка ленты: марка и счётчик открытых вакансий. Поиск убран 27.09.2026
+// (решение владельца, вместе с шестерёнкой и общей шторкой) — фильтрация
+// теперь идёт через полосу чипов под шапкой, а не по слову. Освободившееся
+// место не растягиваем пустотой: марка слева, кнопки справа, между ними
+// гибкий пробел.
+function FeedSearchHeader({ energy, onUndo, onEnergyPress }: {
   /** Сколько свайпов осталось на сегодня. */
   energy: number;
   /** Вернуть последнюю пролистанную вакансию. null — возвращать нечего. */
@@ -835,28 +833,8 @@ function FeedSearchHeader({ value, onChange, energy, onUndo, onEnergyPress }: {
         />
       </View>
 
-      <View style={fh.search}>
-        <Ionicons name="search" size={20} color={Colors.textMuted} />
-        <TextInput
-          style={fh.input}
-          value={value}
-          onChangeText={onChange}
-          placeholder="Должность, компания или ключевое слово"
-          placeholderTextColor={Colors.textMuted}
-          returnKeyType="search"
-          accessibilityLabel="Поиск вакансий"
-        />
-        {value ? (
-          <TouchableOpacity onPress={() => onChange('')} accessibilityLabel="Очистить поиск" hitSlop={8}>
-            <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <View style={fh.spacer} />
 
-      {/* Возврат появляется, только когда есть что вернуть, и тогда поиск
-          сужается сам: у него flex, а кнопка своей ширины. Держать её всегда
-          и гасить серым — значит всё время отнимать место у поиска ради
-          действия, которого в первую минуту работы ленты ещё не существует. */}
       {onUndo ? (
         <TouchableOpacity
           style={fh.undo}
@@ -896,20 +874,14 @@ const fh = StyleSheet.create({
     width: rs(40), height: rs(46), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
   },
-  // Точный логотип, присланный владельцем. Уменьшен вдвое,
-  // при этом остаётся выровнен по центру относительно поисковой строки.
+  // Точный логотип, присланный владельцем. Уменьшен вдвое, выровнен по
+  // центру относительно кнопок счётчика и возврата.
   logoImage: {
     width: rs(40), height: rs(26),
   },
-  search: {
-    flex: 1, minWidth: 0, overflow: 'hidden',
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    backgroundColor: '#FFFFFF', borderRadius: rs(24),
-    paddingHorizontal: rs(14), height: rs(46),
-  },
-  // Высота задана контейнеру: на Android TextInput со своим padding
-  // раздувает строку и шапка перестаёт совпадать с макетом.
-  input: { flex: 1, minWidth: 0, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  // Раньше это место занимал поиск (flex: 1); без него пробел растягивается
+  // тем же способом — марка не липнет к кнопкам справа.
+  spacer: { flex: 1, minWidth: rs(8) },
   undo: {
     width: rs(46), height: rs(46), borderRadius: rs(23), flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
@@ -951,17 +923,12 @@ function WorkerPermMode() {
   };
 
   const [refreshing, setRefreshing] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [filterStations, setFilterStations] = useState<string[]>([]);
-  // Доп. фильтры постоянной работы (см. PermFilterSheet).
-  const [searchIn, setSearchIn] = useState<('title' | 'desc')[]>([]);
-  const [posted, setPosted] = useState<'all' | 'week' | '3days'>('all');
-  const [schedules, setSchedules] = useState<string[]>([]);
-  const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
-  const [levels, setLevels] = useState<VacancyLevel[]>([]);
-  const [formats, setFormats] = useState<VacancyFormat[]>([]);
-  const [sortMode, setSortMode] = useState<PermFilters['sort']>('default');
-  const [permFilterOpen, setPermFilterOpen] = useState(false);
+  // Полоса чипов над колодой (решение владельца 27.09) заменяет шестерёнку и
+  // общую шторку PermFilterSheet: один объект фильтров, шторка открывается
+  // под конкретный чип. Поиск по слову, метро, график, разделы и сортировка
+  // убраны совсем — решение владельца.
+  const [filters, setFilters] = useState<FeedFilters>(EMPTY_FEED_FILTERS);
+  const [openSheet, setOpenSheet] = useState<FilterSheetKind | null>(null);
   // Дневной запас свайпов и плашка «на сегодня всё».
   const energy = useEnergy();
   const [limitOpen, setLimitOpen] = useState(false);
@@ -980,35 +947,21 @@ function WorkerPermMode() {
   const updateMoreBelow = useCallback((offsetY: number) => {
     setMoreBelow(cardContentH.current - cardViewH.current - offsetY > rs(24));
   }, []);
-  const [filterPicker, setFilterPicker] = useState(false);
-  const [minSalary, setMinSalary] = useState(0);
   const [applying, setApplying] = useState<string | null>(null);
   // Вакансия, по которой человек сейчас пишет отклик (null — окно закрыто)
   const [permApplyFor, setPermApplyFor] = useState<PermVacancy | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
-  // Разделы ленты: пусто — подбираем сами. Сохраняются на телефоне и
-  // переживают перезапуск (services/storage.ts).
-  const [sections, setSections] = useState<JobSection[]>([]);
   const [careerVacancies, setCareerVacancies] = useState<ExtVacancy[]>([]);
+  // Сервер знает весь пул, а не только пришедшую порцию — «Всего N» и список
+  // компаний в шторке считаются от него, не от того, что успело загрузиться.
+  const [careerTotal, setCareerTotal] = useState(0);
+  const [careerCompanies, setCareerCompanies] = useState<{ company: string; count: number }[]>([]);
   const [careerLoading, setCareerLoading] = useState(false);
   // Свои вакансии, смахнутые влево и записанные на сервере, — их колода
   // больше не показывает (та же идея, что у extLeftSwipes ниже).
   const [permSwiped, setPermSwiped] = useState<Set<string>>(new Set());
   const swDecisionPending = useRef(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
-
-  // Для кого разделы уже прочитаны с телефона. Пока не прочитаны, карьерную
-  // ленту не грузим: иначе человек с выбранными разделами сперва получал бы
-  // колоду без них, а через мгновение — другую, и верхняя карта мигала бы.
-  const [sectionsLoadedFor, setSectionsLoadedFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    const id = currentUser.id;
-    // Лента только IT: сохранённые раньше разделы («Склад», «Продажи»)
-    // больше не применяем — с ними колода была бы пустой.
-    setSections([]);
-    setSectionsLoadedFor(id);
-  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!currentUser?.id || currentUser.isGuest) return;
@@ -1020,32 +973,44 @@ function WorkerPermMode() {
     return () => { cancelled = true; };
   }, [currentUser?.id, currentUser?.isGuest]);
 
-  const permCompanyOptions = useMemo(() => {
+  // Счёт компаний для шторки: свои (клиент) + карьерные (сервер, весь пул),
+  // слитые по имени. Свои считаются при всех фильтрах, КРОМЕ самой компании —
+  // иначе выбор одной компании убрал бы остальные из списка, как раньше было
+  // с картой станций.
+  const ownCompanyCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const applied = new Set(permApplications.filter(a => a.workerId === currentUser?.id).map(a => a.vacancyId));
+    const now = Date.now();
+    const filtersNoCompany: FeedFilters = { ...filters, companies: [] };
     // Свои — только те, что колода может показать: IT, не отклик и не свайп
     // влево. Иначе в списке оставались работодатели с не-IT вакансиями
     // (жалоба 26.09: «выбрал Лавку — пусто»), выбор давал пустую колоду.
     permVacancies.forEach(v => {
       const shown = v.status === 'open' && sectionOfPerm(v.workType) === 'it'
-        && !applied.has(v.id) && !permSwiped.has(v.id);
+        && !applied.has(v.id) && !permSwiped.has(v.id)
+        && matchOwnVacancy(v, filtersNoCompany, now);
       const name = shown ? v.company.trim() : '';
       if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
     });
-    // Карьерные компании — в тех же счётчиках: выбор в фильтре один список.
-    careerVacancies.forEach(v => {
-      const name = v.company.trim();
-      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    return counts;
+  }, [permVacancies, permApplications, currentUser?.id, permSwiped, filters]);
+
+  const permCompanyOptions = useMemo(() => {
+    const counts = new Map(ownCompanyCounts);
+    careerCompanies.forEach(({ company, count }) => {
+      const name = company.trim();
+      if (!name) return;
+      counts.set(name, (counts.get(name) ?? 0) + count);
     });
     return Array.from(counts, ([name, count]) => ({ name, count }))
       .filter(item => item.count > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [permVacancies, careerVacancies, permApplications, currentUser?.id, permSwiped]);
+  }, [ownCompanyCounts, careerCompanies]);
 
   // Вакансии для карты: метка — это адрес, станция остаётся для фильтра
   const permMapItems: MapListItem[] = useMemo(
     () => (permVacancies as PermVacancy[])
-      .filter((v: PermVacancy) => v.status === 'open' && (filterCompanies.length === 0 || filterCompanies.includes(v.company)) && (!!v.metroStation || !!v.address))
+      .filter((v: PermVacancy) => v.status === 'open' && (filters.companies.length === 0 || filters.companies.includes(v.company)) && (!!v.metroStation || !!v.address))
       .map((v: PermVacancy) => ({
         id: v.id,
         station: (v.metroStation ?? '') as string,
@@ -1057,23 +1022,27 @@ function WorkerPermMode() {
         lat: v.lat,
         lng: v.lng,
       })),
-    [permVacancies, filterCompanies],
+    [permVacancies, filters.companies],
   );
 
-  // Карьерная лента грузится всегда, не только по флагу «показать источник»:
-  // разделов теперь по умолчанию нет, и обе колоды всегда идут вместе.
-  // Ключ по строке, а не по массиву: массив — новая ссылка на каждый рендер,
+  // Карьерная лента фильтруется на сервере (php-proxy/ext_feed.php) — клиент
+  // только передаёт текущий выбор и заменяет колоду целиком под ответ. Ключ —
+  // строка, а не объект: объект фильтров новая ссылка на каждый рендер,
   // эффект гонял бы запрос без остановки.
-  const sectionsKey = sections.join(',');
+  const filtersKey = JSON.stringify(filters);
   useEffect(() => {
-    if (!currentUser?.id || sectionsLoadedFor !== currentUser.id) return;
+    if (!currentUser?.id) return;
     let cancelled = false;
     setCareerLoading(true);
-    dbGetExtFeed(60, { salaryFrom: 0, specs: [], levels: [], formats: [], companies: [], posted: 'all' }).then(res => {
-      if (!cancelled) setCareerVacancies(res.items);
+    dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
+      if (cancelled) return;
+      setCareerVacancies(res.items);
+      setCareerTotal(res.total);
+      setCareerCompanies(res.companies);
     }).catch(() => {}).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
-  }, [sectionsKey, currentUser?.id, sectionsLoadedFor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, filtersKey]);
 
   const onRefresh = async () => {
     if (refreshing) return;
@@ -1081,8 +1050,10 @@ function WorkerPermMode() {
     try {
       const promises: Promise<void>[] = [
         refreshPermVacancies(), refreshPermApplications(),
-        dbGetExtFeed(60, { salaryFrom: 0, specs: [], levels: [], formats: [], companies: [], posted: 'all' }).then(res => {
+        dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
           setCareerVacancies(res.items);
+          setCareerTotal(res.total);
+          setCareerCompanies(res.companies);
           // swSkipped обнуляется, поэтому смахнутые за сессию свои переносим в
           // permSwiped — иначе они вернулись бы в колоду. Не при самом свайпе:
           // тогда своя пропадала бы из чередования и следующая своя вставала
@@ -1146,7 +1117,7 @@ function WorkerPermMode() {
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
     if (left > 5) return;
     careerRefilling.current = true;
-    dbGetExtFeed(60, { salaryFrom: 0, specs: [], levels: [], formats: [], companies: [], posted: 'all' })
+    dbGetExtFeed(60, toExtFeedFilters(filters))
       .then(res => setCareerVacancies(cur => {
         const seen = new Set(cur.map(v => v.id));
         const add = res.items.filter(v => !seen.has(v.id));
@@ -1154,117 +1125,52 @@ function WorkerPermMode() {
       }))
       .catch(() => {})
       .finally(() => { careerRefilling.current = false; });
-  }, [careerVacancies, swSkipped, sections]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [careerVacancies, swSkipped, filtersKey]);
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
   const myAppVacIds = new Set(myApps.map(a => a.vacancyId));
+  const permFiltersActive = isFilterActive(filters);
 
-  // Текущие применённые фильтры одним объектом — так их удобно и применять,
-  // и считать «Показать N» для черновика в шторке.
-  const permF: PermFilters = { query: searchText, searchIn, posted, stations: filterStations, salaryFrom: minSalary > 0 ? String(minSalary) : '', schedules, companies: filterCompanies, sections, levels, formats, sort: sortMode };
-  const permFiltersActive = filterStations.length > 0 || !!searchText || minSalary > 0 || searchIn.length > 0 || posted !== 'all' || schedules.length > 0 || filterCompanies.length > 0 || sections.length > 0
-    || levels.length > 0 || formats.length > 0 || sortMode !== 'default';
-
-  const applyPermFilters = (f: PermFilters) => {
-    setSearchText(f.query);
-    setSearchIn(f.searchIn);
-    setPosted(f.posted);
-    setFilterStations(f.stations);
-    setMinSalary(parseInt(f.salaryFrom || '0', 10) || 0);
-    setSchedules(f.schedules);
-    setFilterCompanies(f.companies);
-    setLevels(f.levels);
-    setFormats(f.formats);
-    setSortMode(f.sort);
-    setSections(f.sections);
-    if (currentUser?.id) saveFeedSections(currentUser.id, f.sections);
-  };
-
-  const permMatchesQuery = (title: string, company: string, desc: string, f: PermFilters) => {
-    if (!f.query) return true;
-    const q = f.query.toLowerCase();
-    const inTitle = title.toLowerCase().includes(q) || company.toLowerCase().includes(q);
-    const inDesc = desc.toLowerCase().includes(q);
-    if (f.searchIn.length === 0) return inTitle || inDesc;
-    return (f.searchIn.includes('title') && inTitle) || (f.searchIn.includes('desc') && inDesc);
-  };
-  const permMatchesMeta = (station: string | undefined, salary: number, created: string | undefined, schedule: string | undefined, f: PermFilters) => {
-    if (f.stations.length && !f.stations.includes(station ?? '')) return false;
-    const from = parseInt(f.salaryFrom || '0', 10);
-    if (from > 0 && salary < from) return false;
-    if (!postedWithin(created, f.posted)) return false;
-    if (f.schedules.length && !f.schedules.some(s => (schedule ?? '').toLowerCase().includes(s.toLowerCase()))) return false;
-    return true;
-  };
-
-  const permMatchesCompany = (company: string | undefined, f: PermFilters) =>
-    f.companies.length === 0 || (!!company && f.companies.includes(company));
-  // Уровень и формат: без признака в тексте вакансия выбранный фильтр не
-  // проходит — выдавать её за «Senior» или «удалёнку» было бы враньём.
-  const permMatchesFacets = (title: string, schedule: string | undefined, desc: string, f: PermFilters) => {
-    if (f.levels.length) {
-      const lv = vacancyLevel(title);
-      if (!lv || !f.levels.includes(lv)) return false;
+  const openFilterSheet = (kind: FilterSheetKind) => setOpenSheet(kind);
+  const applyFilters = (next: FeedFilters) => setFilters(next);
+  // «×» на включённом чипе сбрасывает ровно этот фильтр, не открывая шторку.
+  const clearFilter = (kind: FilterSheetKind) => setFilters(f => {
+    switch (kind) {
+      case 'salary': return { ...f, salaryFrom: 0 };
+      case 'spec': return { ...f, specs: [] };
+      case 'level': return { ...f, levels: [] };
+      case 'format': return { ...f, formats: [] };
+      case 'company': return { ...f, companies: [] };
+      case 'posted': return { ...f, posted: 'all' };
     }
-    if (f.formats.length) {
-      const fm = vacancyFormat(schedule, desc);
-      if (!fm || !f.formats.includes(fm)) return false;
-    }
-    return true;
-  };
-  const matchesSearch = (v: PermVacancy) => permMatchesQuery(v.title, v.company, v.description ?? '', permF);
-  // Свои вакансии JobToo — тоже только IT (решение владельца 26.09.2026).
-  const matchesFilters = (v: PermVacancy) => sectionOfPerm(v.workType) === 'it'
-    && permMatchesCompany(v.company, permF)
-    && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, permF)
-    && permMatchesFacets(v.title, v.schedule, v.description ?? '', permF)
-    && (permF.sections.length === 0 || permF.sections.includes(sectionOfPerm(v.workType)));
-  // Карьерная вакансия проходит те же фильтры: раздел у неё уже размечен
-  // сервером при приёме (php-proxy/job_sections.php), а не выводится из вида работ.
-  const matchesExtFilters = (v: ExtVacancy, f: PermFilters) =>
-    permMatchesQuery(v.title, v.company, v.description ?? '', f)
-    && permMatchesCompany(v.company, f)
-    && permMatchesMeta(v.metroStation ?? undefined, v.salary ?? 0, v.firstSeenAt, v.schedule ?? undefined, f)
-    && permMatchesFacets(v.title, v.schedule ?? undefined, v.description ?? '', f)
-    && (f.sections.length === 0 || (!!v.section && f.sections.includes(v.section)));
+  });
 
   // Лента показывает только открытые вакансии, на которые человек ещё не
   // откликался и не свайпнул влево. Свои отклики и избранное живут на экране
   // «Отклики»: колода здесь одна, и выбирать между списками больше не из чего.
-  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id) && matchesSearch(v) && matchesFilters(v));
-
-  // «Показать N» в шторке фильтров под выбранный черновик: свои + уже
-  // загруженные карьерные (карьерные не перезапрашиваются под черновик —
-  // только под применённый выбор разделов).
-  const countPermLocal = (f: PermFilters) => {
-    const ownCount = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id)
-      && sectionOfPerm(v.workType) === 'it'
-      && permMatchesCompany(v.company, f)
-      && permMatchesQuery(v.title, v.company, v.description ?? '', f)
-      && permMatchesMeta(v.metroStation, v.salary, v.createdAt, v.schedule, f)
-      && permMatchesFacets(v.title, v.schedule, v.description ?? '', f)
-      && (f.sections.length === 0 || f.sections.includes(sectionOfPerm(v.workType)))).length;
-    const extCount = careerVacancies.filter(v => matchesExtFilters(v, f)).length;
-    return ownCount + extCount;
-  };
+  // Свои вакансии JobToo — тоже только IT (решение владельца 26.09.2026);
+  // фильтры (зарплата, специализация, уровень, формат, компания, дата) —
+  // одной чистой функцией из services/feedFilters.ts, той же, что тестируется
+  // node:test-ом отдельно от React.
+  const now = Date.now();
+  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id)
+    && sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now));
 
   // Своя лента ранжируется под вкус (виды работ, метро) и чередуется с
   // карьерной — «своя, карьерная, карьерная, своя, …» (services/feedMix.ts).
+  // Карьерную сервер уже отфильтровал под тот же выбор (php-proxy/ext_feed.php)
+  // — повторная фильтрация на клиенте дублировала бы его правила.
   const ownRanked = rankOwn(openVacancies, {
     sections: (currentUser.workTypes ?? []).map(wt => SECTION_BY_WORK_TYPE[wt]),
     metro: currentUser.metroStation ?? null,
   });
-  const openCareerVacancies = careerVacancies.filter(v => matchesExtFilters(v, permF));
-  const mixedCards: FeedCard[] = interleaveDeck(ownRanked, openCareerVacancies).map(x =>
+  const feedCards: FeedCard[] = interleaveDeck(ownRanked, careerVacancies).map(x =>
     x.own ? { _ext: false as const, v: x.v } : { _ext: true as const, v: x.v });
-  // «Сначала новые» — по дате появления, без подбора под вкус: так человек
-  // видит свежее первым, как у Cofinder. Сортировка устойчивая, равные даты
-  // сохраняют порядок подбора.
-  const cardTime = (c: FeedCard) => Date.parse((c._ext ? c.v.firstSeenAt : c.v.createdAt) || '') || 0;
-  const feedCards: FeedCard[] = sortMode === 'new'
-    ? [...mixedCards].sort((a, b) => cardTime(b) - cardTime(a))
-    : mixedCards;
+  // «Всего N вакансий» под полосой чипов: свои — тот же счёт, что и в колоде,
+  // карьерные — честный счёт сервера по всему пулу, а не по пришедшей порции.
+  const totalCount = openVacancies.length + careerTotal;
 
   const applyToExt = async (ev: ExtVacancy): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
@@ -1766,16 +1672,6 @@ function WorkerPermMode() {
             </TouchableOpacity>
           </OnboardingTarget>
 
-          <OnboardingTarget targetKey="worker.feed.filter">
-            <FlashButton
-              accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
-              style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
-              onPress={() => setPermFilterOpen(true)}
-            >
-              <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
-            </FlashButton>
-          </OnboardingTarget>
-
           <OnboardingTarget targetKey="worker.feed.apply">
             <TouchableOpacity
               accessibilityLabel="Откликнуться на вакансию"
@@ -1919,13 +1815,6 @@ function WorkerPermMode() {
             >
               <Ionicons name="close" size={34} color={Colors.red} />
             </TouchableOpacity>
-            <FlashButton
-              accessibilityLabel={permFiltersActive ? 'Фильтры включены, настроить' : 'Настроить фильтры'}
-              style={[styles.deckFloatingAction, styles.deckFloatingChat, permFiltersActive && styles.deckFloatingChatActive]}
-              onPress={() => setPermFilterOpen(true)}
-            >
-              <Ionicons name="settings-sharp" size={24} color={permFiltersActive ? '#FFFFFF' : Colors.textSecondary} />
-            </FlashButton>
             <TouchableOpacity
               accessibilityLabel="Подать заявку через Jupiter"
               style={[styles.deckFloatingAction, styles.deckFloatingWant]}
@@ -2881,8 +2770,6 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.10, shadowRadius: 12, elevation: 16,
   },
   deckFloatingSkip: { backgroundColor: '#FFFFFF' },
-  deckFloatingChat: { width: rs(54), height: rs(54), borderRadius: rs(27), backgroundColor: '#FFFFFF' },
-  deckFloatingChatActive: { backgroundColor: Colors.primary },
   deckFloatingWant: { width: rs(68), height: rs(68), borderRadius: rs(34), backgroundColor: Colors.primary, borderColor: Colors.primary },
   // Плавающие кнопки сменной колоды + подсказка «Свайпай» — как в «Работе» и на
   // образце. Колонка: ряд кнопок сверху, подсказка снизу, прижата к низу карточки.
