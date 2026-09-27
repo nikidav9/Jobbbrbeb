@@ -195,89 +195,208 @@ const mp = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
   },
   checkOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  emptyWrap: { padding: rs(24), alignItems: 'center' },
+  emptyTxt: { fontSize: rf(14), color: Colors.textMuted },
 });
 
 
 type VacancyCompanyOption = { name: string; count: number };
 
+type FeedCard =
+  | { _ext: false; v: PermVacancy }
+  | { _ext: true;  v: ExtVacancy };
 
-// Смена проходит фильтр по времени, если её начало попадает в один из
-// выбранных «начать»-диапазонов, а конец — в один из «закончить». Пустой
-// набор диапазонов ничего не ограничивает.
+// ─────────────────────────────────────────────────
+// Полоса чипов над колодой (решение владельца 27.09.2026 вместо шестерёнки
+// и общей шторки PermFilterSheet). Один компонент шторки на все шесть
+// фильтров — ниже, FilterSheet; полоса только показывает текущий выбор и
+// открывает нужную шторку.
+// ─────────────────────────────────────────────────
+type FilterSheetKind = 'salary' | 'spec' | 'level' | 'format' | 'company' | 'posted';
 
+const FILTER_SHEET_TITLES: Record<FilterSheetKind, string> = {
+  salary: 'Зарплата',
+  spec: 'Специализация',
+  level: 'Уровень',
+  format: 'Формат работы',
+  company: 'Компания',
+  posted: 'Дата публикации',
+};
+
+const SALARY_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'Любая' },
+  { value: 100000, label: 'от 100 000' },
+  { value: 150000, label: 'от 150 000' },
+  { value: 200000, label: 'от 200 000' },
+  { value: 250000, label: 'от 250 000' },
+  { value: 350000, label: 'от 350 000' },
+];
+
+const POSTED_OPTIONS: { id: FeedFilters['posted']; label: string }[] = [
+  { id: 'all', label: 'За всё время' },
+  { id: 'day', label: 'За сутки' },
+  { id: '3days', label: 'За 3 дня' },
+  { id: 'week', label: 'За неделю' },
+  { id: 'month', label: 'За месяц' },
+];
+
+/** «150 тыс.» — короткая подпись зарплаты для включённого чипа. */
+function salaryShort(n: number): string {
+  return n > 0 && n % 1000 === 0 ? `${n / 1000} тыс.` : n.toLocaleString('ru-RU');
+}
+
+/** Подпись и состояние одного чипа под текущий фильтр — значение или счётчик. */
+function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string; active: boolean } {
+  switch (kind) {
+    case 'salary':
+      return f.salaryFrom > 0
+        ? { label: `Зарплата от ${salaryShort(f.salaryFrom)}`, active: true }
+        : { label: 'Зарплата', active: false };
+    case 'spec': {
+      const n = f.specs.length;
+      if (!n) return { label: 'Специализация', active: false };
+      const one = VACANCY_SPECS.find(s => s.id === f.specs[0])?.label ?? '';
+      return { label: n === 1 ? one : `Специализация · ${n}`, active: true };
+    }
+    case 'level': {
+      const n = f.levels.length;
+      if (!n) return { label: 'Уровень', active: false };
+      const one = VACANCY_LEVELS.find(l => l.id === f.levels[0])?.label ?? '';
+      return { label: n === 1 ? one : `Уровень · ${n}`, active: true };
+    }
+    case 'format': {
+      const n = f.formats.length;
+      if (!n) return { label: 'Формат работы', active: false };
+      const one = VACANCY_FORMATS.find(v => v.id === f.formats[0])?.label ?? '';
+      return { label: n === 1 ? one : `Формат работы · ${n}`, active: true };
+    }
+    case 'company': {
+      const n = f.companies.length;
+      if (!n) return { label: 'Компания', active: false };
+      return { label: n === 1 ? f.companies[0] : `Компания · ${n}`, active: true };
+    }
+    case 'posted': {
+      if (f.posted === 'all') return { label: 'Дата публикации', active: false };
+      return { label: POSTED_OPTIONS.find(p => p.id === f.posted)?.label ?? '', active: true };
+    }
+  }
+}
+
+const FILTER_CHIP_KINDS: FilterSheetKind[] = ['salary', 'spec', 'level', 'format', 'company', 'posted'];
+
+/**
+ * Прокрутка вбок отдельная от свайпа карточки: полоса стоит НАД карточкой,
+ * между шапкой и колодой, а не внутри неё — жесты не делят одну площадь.
+ * Нажатие на чип открывает его шторку, «×» на включённом чипе сбрасывает
+ * фильтр сразу, не открывая шторку.
+ */
+function FilterChipsBar({ filters, onOpen, onClear }: {
+  filters: FeedFilters;
+  onOpen: (kind: FilterSheetKind) => void;
+  onClear: (kind: FilterSheetKind) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={fb.row}
+      testID="filter-bar"
+    >
+      {FILTER_CHIP_KINDS.map(kind => {
+        const { label, active } = filterChipInfo(kind, filters);
+        return (
+          <View key={kind} style={[fb.chip, active && fb.chipActive]}>
+            <TouchableOpacity
+              style={fb.chipBody}
+              activeOpacity={0.8}
+              onPress={() => onOpen(kind)}
+              testID={`filter-chip-${kind}`}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+            >
+              <Text style={[fb.chipTxt, active && fb.chipTxtActive]} numberOfLines={1}>{label}</Text>
+            </TouchableOpacity>
+            {active ? (
+              <TouchableOpacity
+                style={fb.chipClear}
+                hitSlop={8}
+                onPress={() => onClear(kind)}
+                testID={`filter-chip-clear-${kind}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Сбросить фильтр «${label}»`}
+              >
+                <Ionicons name="close" size={13} color={Colors.textMuted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+const fb = StyleSheet.create({
+  row: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(13), paddingVertical: rs(10) },
+  chip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: rs(100),
+    borderWidth: 1, borderColor: Colors.inputBorder,
+  },
+  chipActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
+  chipBody: { paddingHorizontal: rs(13), paddingVertical: rs(8) },
+  chipTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.textPrimary },
+  chipTxtActive: { color: Colors.primary },
+  chipClear: { paddingRight: rs(10), paddingLeft: rs(2), paddingVertical: rs(8) },
+});
 
 const fst = StyleSheet.create({
-  reset: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted, marginLeft: 'auto', marginRight: rs(14) },
   label: { fontSize: rf(13.5), fontWeight: '800', color: Colors.textMuted, paddingHorizontal: rs(16), paddingTop: rs(14), paddingBottom: rs(8) },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), paddingHorizontal: rs(16) },
   chip: { paddingHorizontal: rs(13), paddingVertical: rs(9), borderRadius: rs(100), backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.divider },
   chipOn: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryBorder },
   chipTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.textPrimary },
   chipTxtOn: { color: Colors.primary },
-  rowSel: { marginHorizontal: rs(16), borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: rs(14), paddingHorizontal: rs(14), paddingVertical: rs(13), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  rowSelName: { fontSize: rf(14.5), fontWeight: '600', color: Colors.textPrimary },
-  rowSelHint: { fontSize: rf(13), color: Colors.textMuted, fontWeight: '600' },
-  lineDot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
   cta: { margin: rs(16), backgroundColor: Colors.primary, borderRadius: rs(16), alignItems: 'center', paddingVertical: rs(15) },
   ctaTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
 });
 
-// ─────────────────────────────────────────────────
-// Фильтр постоянной работы: поиск / где искать / время публикации /
-// регион+метро / доход / график. Только поля, что реально есть у вакансий.
-// ─────────────────────────────────────────────────
-export type PermFilters = {
-  query: string;
-  searchIn: ('title' | 'desc')[]; // пусто = и там, и там
-  posted: 'all' | 'week' | '3days';
-  stations: string[];
-  salaryFrom: string; // сырой ввод из поля «От»
-  schedules: string[];
-  companies: string[];
-  sections: JobSection[];
-  // Как у Cofinder: уровень и формат вычисляются из текста вакансии
-  // (services/vacancyFacets.ts), сортировка — «как подобрали» или по свежести.
-  levels: VacancyLevel[];
-  formats: VacancyFormat[];
-  sort: 'default' | 'new';
-};
-export const EMPTY_PERM_FILTERS: PermFilters = { query: '', searchIn: [], posted: 'all', stations: [], salaryFrom: '', schedules: [], companies: [], sections: [], levels: [], formats: [], sort: 'default' };
+const pfl = StyleSheet.create({
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    marginHorizontal: rs(16), marginTop: rs(12), marginBottom: rs(4),
+    backgroundColor: Colors.surface, borderRadius: rs(12),
+    paddingHorizontal: rs(12), paddingVertical: rs(11),
+    borderWidth: 1, borderColor: Colors.inputBorder,
+  },
+  searchInput: { flex: 1, fontSize: rf(15), color: Colors.textPrimary, padding: 0 },
+});
 
-type FeedCard =
-  | { _ext: false; v: PermVacancy }
-  | { _ext: true;  v: ExtVacancy };
-
-const postedWithin = (iso: string | undefined, p: PermFilters['posted']) => {
-  if (p === 'all' || !iso) return true;
-  const days = p === 'week' ? 7 : 3;
-  return Date.now() - new Date(iso).getTime() <= days * 86400000;
-};
-
-
-function CompanyPicker({ visible, options, selected, onChange, onClose }: {
-  visible: boolean;
-  options: VacancyCompanyOption[];
-  selected: string[];
-  onChange: (companies: string[]) => void;
+/**
+ * Одна шторка на все шесть фильтров: заголовок и тело меняются по kind,
+ * низ — общая кнопка «Применить». Черновик применяется только по ней; тап
+ * по затемнению закрывает без применения — тот же приём, что был у
+ * PermFilterSheet (styles.filterOverlay, fst.*), плюс общая ручка шторки
+ * и смахивание вниз из components/ui/Sheet — раньше своя шторка их не звала.
+ */
+function FilterSheet({
+  kind, initial, companyOptions, onApply, onClose, bottomInset,
+}: {
+  kind: FilterSheetKind;
+  initial: FeedFilters;
+  companyOptions: VacancyCompanyOption[];
+  onApply: (f: FeedFilters) => void;
   onClose: () => void;
+  bottomInset: number;
 }) {
-  const [query, setQuery] = useState('');
-  const [draft, setDraft] = useState(selected[0] ?? '');
-  const insets = useSafeAreaInsets();
+  const [draft, setDraft] = useState<FeedFilters>(initial);
+  const [companyQuery, setCompanyQuery] = useState('');
+  const swipe = useSwipeToDismiss(onClose);
 
-  useEffect(() => {
-    if (visible) {
-      setQuery('');
-      setDraft(selected[0] ?? '');
-    }
-  }, [visible, selected]);
-
-  const rows = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase('ru-RU');
-    return q ? options.filter(x => x.name.toLocaleLowerCase('ru-RU').includes(q)) : options;
-  }, [options, query]);
-
-  if (!visible) return null;
+  const companyRows = useMemo(() => {
+    const q = companyQuery.trim().toLocaleLowerCase('ru-RU');
+    return q ? companyOptions.filter(x => x.name.toLocaleLowerCase('ru-RU').includes(q)) : companyOptions;
+  }, [companyOptions, companyQuery]);
 
   const Check = ({ on }: { on: boolean }) => (
     <View style={[mp.check, on && mp.checkOn]}>
@@ -285,99 +404,9 @@ function CompanyPicker({ visible, options, selected, onChange, onClose }: {
     </View>
   );
 
-  return (
-    <View style={styles.filterOverlay}>
-      <View style={[styles.filterSheet, { maxHeight: '90%' }]}>
-        <View style={styles.filterSheetHeader}>
-          <View style={{ width: rs(22) }} />
-          <Text style={styles.filterSheetTitle}>Компания</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={metroPickerSt.searchRow}>
-          <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
-          <TextInput
-            style={metroPickerSt.searchInput}
-            placeholder="Название компании"
-            placeholderTextColor={Colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            clearButtonMode="while-editing"
-          />
-        </View>
-
-        <FlatList
-          data={rows}
-          keyExtractor={item => item.name}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          ListHeaderComponent={(
-            <TouchableOpacity
-              style={[mp.card, draft === '' && mp.cardOn]}
-              onPress={() => setDraft('')}
-              activeOpacity={0.8}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[mp.name, { fontWeight: '700' }]}>Все компании</Text>
-                <Text style={mp.sub}>{options.reduce((sum, item) => sum + item.count, 0)} вакансий</Text>
-              </View>
-              <Check on={draft === ''} />
-            </TouchableOpacity>
-          )}
-          renderItem={({ item }) => {
-            const on = draft === item.name;
-            return (
-              <TouchableOpacity
-                style={[mp.card, on && mp.cardOn]}
-                onPress={() => setDraft(item.name)}
-                activeOpacity={0.8}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={mp.name} numberOfLines={1}>{item.name}</Text>
-                  <Text style={mp.sub}>{item.count} вакансий</Text>
-                </View>
-                <Check on={on} />
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={<View style={metroPickerSt.empty}><Text style={metroPickerSt.emptyTxt}>Компания не найдена</Text></View>}
-        />
-
-        <View style={[mp.footer, { paddingBottom: insets.bottom + rs(84) }]}>
-          <TouchableOpacity style={mp.save} onPress={() => { onChange(draft ? [draft] : []); onClose(); }} activeOpacity={0.85}>
-            <Text style={mp.saveTxt}>Сохранить</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={mp.reset} onPress={() => setDraft('')} activeOpacity={0.85}>
-            <Text style={mp.resetTxt}>Сбросить</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function PermFilterSheet({
-  initial, companyOptions, count, onApply, onClose, onOpenMap, bottomInset,
-}: {
-  initial: PermFilters;
-  companyOptions: VacancyCompanyOption[];
-  count: (f: PermFilters) => number;
-  onApply: (f: PermFilters) => void;
-  onClose: () => void;
-  onOpenMap: () => void;
-  bottomInset: number;
-}) {
-  const [draft, setDraft] = useState<PermFilters>(initial);
-  const [metroOpen, setMetroOpen] = useState(false);
-  const [companyOpen, setCompanyOpen] = useState(false);
-
-  const toggleSearchIn = (id: 'title' | 'desc') => setDraft(d => ({
-    ...d, searchIn: d.searchIn.includes(id) ? d.searchIn.filter(x => x !== id) : [...d.searchIn, id],
-  }));
-
-  const n = count(draft);
+  function toggled<T>(list: T[], id: T): T[] {
+    return list.includes(id) ? list.filter(x => x !== id) : [...list, id];
+  }
 
   return (
     // Как у Sorce: фон затемняется, шторка выезжает снизу и уезжает обратно
@@ -388,230 +417,144 @@ function PermFilterSheet({
       exiting={FadeOut.duration(160)}
       style={[styles.filterOverlay, { bottom: bottomInset }]}
     >
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтры" />
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтр" />
       <Reanimated.View
         entering={SlideInDown.springify().damping(20).stiffness(180)}
         exiting={SlideOutDown.duration(200)}
-        style={[styles.filterSheet, { maxHeight: '92%' }]}
+        style={[styles.filterSheet, { maxHeight: '80%' }]}
+        testID="filter-sheet"
       >
-        <View style={styles.filterSheetHandle} />
-        <View style={styles.filterSheetHeader}>
-          <Text style={styles.filterSheetTitle}>Фильтры</Text>
-          <TouchableOpacity onPress={() => setDraft(EMPTY_PERM_FILTERS)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={fst.reset}>Сбросить</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
+        <Animated.View style={swipe.animStyle}>
+          <View {...swipe.panHandlers}>
+            <SheetHandle />
+            <View style={styles.filterSheetHeader}>
+              <Text style={styles.filterSheetTitle}>{FILTER_SHEET_TITLES[kind]}</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.filterClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: rs(12) }}>
-          {/* «Разделы» убраны 26.09.2026: лента только IT, и выбор «Склад» или
-              «Продажи» давал бы пустую колоду. */}
-          <Text style={fst.label}>Компания</Text>
-          <TouchableOpacity style={fst.rowSel} onPress={() => setCompanyOpen(true)} activeOpacity={0.8}>
-            <Text style={fst.rowSelName} numberOfLines={1}>{draft.companies[0] ?? 'Все компании'}</Text>
-            <Text style={fst.rowSelHint}>{draft.companies.length ? 'изменить ›' : 'выбрать ›'}</Text>
-          </TouchableOpacity>
-
-          <View style={pfl.searchWrap}>
-            <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
-            <TextInput
-              style={pfl.searchInput}
-              placeholder="Должность, ключевые слова"
-              placeholderTextColor={Colors.textMuted}
-              value={draft.query}
-              onChangeText={t => setDraft(d => ({ ...d, query: t }))}
-              returnKeyType="search"
+          {kind === 'salary' ? (
+            <>
+              <Text style={fst.label}>₽ в месяц на руки</Text>
+              <View style={[fst.chipsWrap, { paddingBottom: rs(8) }]}>
+                {SALARY_OPTIONS.map(({ value, label }) => {
+                  const on = draft.salaryFrom === value;
+                  return (
+                    <TouchableOpacity key={value} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
+                      onPress={() => setDraft(d => ({ ...d, salaryFrom: value }))}>
+                      <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          ) : kind === 'level' ? (
+            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
+              {VACANCY_LEVELS.map(({ id, label }) => {
+                const on = draft.levels.includes(id);
+                return (
+                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
+                    onPress={() => setDraft(d => ({ ...d, levels: toggled(d.levels, id) }))}>
+                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : kind === 'format' ? (
+            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
+              {VACANCY_FORMATS.map(({ id, label }) => {
+                const on = draft.formats.includes(id);
+                return (
+                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
+                    onPress={() => setDraft(d => ({ ...d, formats: toggled(d.formats, id) }))}>
+                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : kind === 'posted' ? (
+            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
+              {POSTED_OPTIONS.map(({ id, label }) => {
+                const on = draft.posted === id;
+                return (
+                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
+                    onPress={() => setDraft(d => ({ ...d, posted: id }))}>
+                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : kind === 'spec' ? (
+            <FlatList
+              data={VACANCY_SPECS}
+              keyExtractor={s => s.id}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingTop: rs(8), paddingBottom: rs(12) }}
+              renderItem={({ item }) => {
+                const on = draft.specs.includes(item.id);
+                return (
+                  <TouchableOpacity style={[mp.card, on && mp.cardOn]} activeOpacity={0.8}
+                    onPress={() => setDraft(d => ({ ...d, specs: toggled(d.specs, item.id) }))}>
+                    <Ionicons name={item.icon as any} size={20} color={on ? Colors.primary : Colors.textSecondary} />
+                    <Text style={[mp.name, { flex: 1 }]}>{item.label}</Text>
+                    <Check on={on} />
+                  </TouchableOpacity>
+                );
+              }}
             />
-          </View>
+          ) : (
+            <>
+              <View style={pfl.searchWrap}>
+                <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
+                <TextInput
+                  style={pfl.searchInput}
+                  placeholder="Название компании"
+                  placeholderTextColor={Colors.textMuted}
+                  value={companyQuery}
+                  onChangeText={setCompanyQuery}
+                  clearButtonMode="while-editing"
+                />
+              </View>
+              <FlatList
+                data={companyRows}
+                keyExtractor={item => item.name}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: rs(12) }}
+                renderItem={({ item }) => {
+                  const on = draft.companies.includes(item.name);
+                  return (
+                    <TouchableOpacity style={[mp.card, on && mp.cardOn]} activeOpacity={0.8}
+                      onPress={() => setDraft(d => ({ ...d, companies: toggled(d.companies, item.name) }))}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={mp.name} numberOfLines={1}>{item.name}</Text>
+                        <Text style={mp.sub}>{item.count} вакансий</Text>
+                      </View>
+                      <Check on={on} />
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={<View style={mp.emptyWrap}><Text style={mp.emptyTxt}>Компания не найдена</Text></View>}
+              />
+            </>
+          )}
 
-          <Text style={fst.label}>Искать только</Text>
-          <View style={fst.chipsWrap}>
-            {([['title', 'В названии вакансии'], ['desc', 'В описании вакансии']] as const).map(([id, lbl]) => {
-              const on = draft.searchIn.includes(id);
-              return (
-                <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} onPress={() => toggleSearchIn(id)} activeOpacity={0.8}>
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{lbl}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Уровень</Text>
-          <View style={fst.chipsWrap}>
-            {VACANCY_LEVELS.map(({ id, label }) => {
-              const on = draft.levels.includes(id);
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[fst.chip, on && fst.chipOn]}
-                  onPress={() => setDraft(d => ({ ...d, levels: on ? d.levels.filter(x => x !== id) : [...d.levels, id] }))}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Формат</Text>
-          <View style={fst.chipsWrap}>
-            {VACANCY_FORMATS.map(({ id, label }) => {
-              const on = draft.formats.includes(id);
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[fst.chip, on && fst.chipOn]}
-                  onPress={() => setDraft(d => ({ ...d, formats: on ? d.formats.filter(x => x !== id) : [...d.formats, id] }))}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Сортировка</Text>
-          <View style={fst.chipsWrap}>
-            {([['default', 'По умолчанию'], ['new', 'Сначала новые']] as const).map(([id, lbl]) => {
-              const on = draft.sort === id;
-              return (
-                <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} onPress={() => setDraft(d => ({ ...d, sort: id }))} activeOpacity={0.8}>
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{lbl}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Время публикации</Text>
-          <View style={fst.chipsWrap}>
-            {([['all', 'За всё время'], ['week', 'За неделю'], ['3days', 'За три дня']] as const).map(([id, lbl]) => {
-              const on = draft.posted === id;
-              return (
-                <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} onPress={() => setDraft(d => ({ ...d, posted: id }))} activeOpacity={0.8}>
-                  <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{lbl}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={fst.label}>Регион</Text>
-          <View style={[fst.rowSel, { opacity: 0.6 }]}>
-            <Text style={fst.rowSelName}>Москва</Text>
-            <Text style={fst.rowSelHint}>единственный регион</Text>
-          </View>
-          <TouchableOpacity style={[fst.rowSel, { marginTop: rs(8) }]} onPress={() => setMetroOpen(true)} activeOpacity={0.8}>
-            <Text style={fst.rowSelName} numberOfLines={1}>
-              {draft.stations.length === 0 ? 'Добавить метро'
-                : draft.stations.length <= 2 ? draft.stations.map(s => `м. ${s}`).join(', ')
-                : `Выбрано станций: ${draft.stations.length}`}
-            </Text>
-            <Text style={fst.rowSelHint}>{draft.stations.length ? 'изменить ›' : '+'}</Text>
+          <TouchableOpacity
+            style={[fst.cta, { marginBottom: rs(16) }]}
+            activeOpacity={0.85}
+            testID="filter-apply"
+            onPress={() => { onApply(draft); onClose(); }}
+          >
+            <Text style={fst.ctaTxt}>Применить</Text>
           </TouchableOpacity>
-          {/* Карта жила отдельной кнопкой в полосе над колодой; полосу убрали
-              ради высоты карточки, а карта — тот же выбор станции, только
-              глазами. Место ей рядом со списком станций, а не над лентой. */}
-          <TouchableOpacity style={[fst.rowSel, { marginTop: rs(8) }]} onPress={onOpenMap} activeOpacity={0.8}>
-            <Text style={fst.rowSelName}>Выбрать на карте</Text>
-            <Ionicons name="map-outline" size={16} color={Colors.textMuted} />
-          </TouchableOpacity>
-
-          <Text style={fst.label}>Уровень дохода</Text>
-          <View style={pfl.salaryRow}>
-            <TextInput
-              style={pfl.salaryInput}
-              placeholder="От"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="numeric"
-              value={draft.salaryFrom}
-              onChangeText={t => setDraft(d => ({ ...d, salaryFrom: t.replace(/[^0-9]/g, '') }))}
-            />
-            <View style={pfl.rub}><Text style={pfl.rubTxt}>₽</Text></View>
-          </View>
-        </ScrollView>
-
-        <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onApply(draft); onClose(); }}>
-          <Text style={fst.ctaTxt}>{n > 0 ? `Показать ${n}` : 'Показать вакансии'}</Text>
-        </TouchableOpacity>
+        </Animated.View>
       </Reanimated.View>
-
-      <MetroPicker
-        visible={metroOpen}
-        selected={draft.stations}
-        onChange={stations => setDraft(d => ({ ...d, stations }))}
-        onClose={() => setMetroOpen(false)}
-      />
-      <CompanyPicker
-        visible={companyOpen}
-        options={companyOptions}
-        selected={draft.companies}
-        onChange={companies => setDraft(d => ({ ...d, companies }))}
-        onClose={() => setCompanyOpen(false)}
-      />
     </Reanimated.View>
   );
 }
-
-/**
- * Круглая кнопка нижнего ряда с откликом на нажатие, как у Sorce: под пальцем
- * кнопка чуть сжимается и светлеет, после отпускания пружинит обратно, и
- * только потом открывается шторка — иначе вспышку никто не успевает увидеть.
- * Всё на Reanimated, на потоке интерфейса.
- */
-function FlashButton({ onPress, style, accessibilityLabel, children }: {
-  onPress: () => void;
-  style: any;
-  accessibilityLabel: string;
-  children: React.ReactNode;
-}) {
-  const pressed = useSharedValue(0);
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - pressed.value * 0.1 }],
-  }));
-  const flashStyle = useAnimatedStyle(() => ({ opacity: pressed.value * 0.35 }));
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPressIn={() => { pressed.value = withTiming(1, { duration: 90 }); }}
-      onPressOut={() => { pressed.value = withSpring(0, { damping: 12, stiffness: 260 }); }}
-      onPress={() => setTimeout(onPress, 110)}
-    >
-      <Reanimated.View style={[style, animStyle]}>
-        {children}
-        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, flashBtn.flash, flashStyle]} />
-      </Reanimated.View>
-    </Pressable>
-  );
-}
-
-const flashBtn = StyleSheet.create({
-  flash: { backgroundColor: '#FFFFFF', borderRadius: 999 },
-});
-
-const pfl = StyleSheet.create({
-  searchWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), marginTop: rs(12),
-    backgroundColor: Colors.surface, borderRadius: rs(12),
-    paddingHorizontal: rs(12), paddingVertical: rs(11),
-    borderWidth: 1, borderColor: Colors.inputBorder,
-  },
-  searchInput: { flex: 1, fontSize: rf(15), color: Colors.textPrimary, padding: 0 },
-  salaryRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(16) },
-  salaryInput: {
-    flex: 1, fontSize: rf(15), color: Colors.textPrimary,
-    backgroundColor: Colors.surface, borderRadius: rs(12), borderWidth: 1, borderColor: Colors.inputBorder,
-    paddingHorizontal: rs(14), paddingVertical: rs(12),
-  },
-  rub: {
-    width: rs(48), alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.surface, borderRadius: rs(12), borderWidth: 1, borderColor: Colors.inputBorder,
-    paddingVertical: rs(12),
-  },
-  rubTxt: { fontSize: rf(16), fontWeight: '700', color: Colors.textSecondary },
-});
 
 
 // ─────────────────────────────────────────────────
