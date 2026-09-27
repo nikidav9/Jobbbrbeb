@@ -10,18 +10,17 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { ScoreCard } from '@/components/feature/ScoreCard';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
-import { getInitials, nameColorFromString } from '@/services/storage';
+import { getInitials, nameColorFromString, displayName } from '@/services/storage';
 import {
   dbGetRatingsForUser, dbChangePassword, dbDeleteAccount,
   dbGetConsent,
-  dbGetResumeFiles, dbSaveResumeFile, dbSelectResumeFile, dbDeleteResumeFile,
+  dbGetResumeFiles, dbSelectResumeFile, dbDeleteResumeFile,
   dbSignResumeFile, UserRating, type ResumeVaultItem,
   dbSetContactPhone,
 } from '@/services/db';
@@ -34,7 +33,7 @@ import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
 import { PersonalDetails, ResumeProfile, User } from '@/constants/types';
-import { extractResumePdf, mergeResumeIntoUser } from '@/services/resumeImport';
+import { mergeResumeIntoUser, pickAndImportResume } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
@@ -797,7 +796,7 @@ export default function ProfileScreen() {
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
   if (currentUser.isGuest) return <GuestGate title="Профиль — после регистрации" subtitle="Заведите аккаунт, чтобы заполнить анкету и откликаться на вакансии." />;
 
-  const initials = getInitials(`${currentUser.firstName} ${currentUser.lastName}`);
+  const initials = getInitials(displayName(currentUser));
   const avatarColor = nameColorFromString(currentUser.id);
   const line = METRO_LINES.find(l => l.id === currentUser.metroLineId);
 
@@ -956,24 +955,17 @@ export default function ProfileScreen() {
 
   const importResume = async () => {
     if (importingResume) return;
+    setImportingResume(true);
     try {
-      const picked = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (picked.canceled || !picked.assets[0]) return;
-      setImportingResume(true);
-
-      const asset = picked.assets[0];
-      const { resume, identity, bytes } = await extractResumePdf(asset);
-      // Сначала сохраняем исходный PDF в приватный сейф. Сервер делает его
-      // активным и синхронизирует структурированное резюме с jm_users.
-      const saved = await dbSaveResumeFile(asset.name || resume.sourceFileName || 'resume.pdf', bytes, resume);
+      // Выбор файла, распознавание и сохранение в сейф — общий шаг с окном
+      // первого отклика (services/resumeImport.ts). Здесь остаются только
+      // свои для профиля стейты, тосты и переключение вкладки.
+      const picked = await pickAndImportResume(currentUser);
+      if (!picked) return;
 
       // Локальный контекст обновляем теми же данными, чтобы вкладки
       // «Резюме» и «Личные» поменялись сразу, без перезапуска приложения.
-      await updateUser(mergeResumeIntoUser(currentUser, saved.resume, identity));
+      await updateUser(picked.updatedUser);
 
       try {
         setResumeFiles(await dbGetResumeFiles());
@@ -1173,7 +1165,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <View style={styles.userInfo}>
-            <Text style={styles.fullName}>{currentUser.firstName} {currentUser.lastName}</Text>
+            <Text style={styles.fullName}>{displayName(currentUser)}</Text>
             <View style={styles.roleBadge}>
               <Text style={styles.roleText}>{currentUser.role === 'worker' ? 'Работник' : 'Работодатель'}</Text>
             </View>
