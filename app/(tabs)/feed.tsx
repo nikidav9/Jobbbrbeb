@@ -25,6 +25,7 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
+import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
 import {
@@ -61,7 +62,6 @@ import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '@/components/ui/Chip';
-import { DescriptionBlocks } from '@/components/ui/DescriptionBlocks';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
@@ -175,6 +175,16 @@ function cleanDescription(text?: string): string {
     }
   }
   return text;
+}
+
+// Превью описания на карточке — вступление до первого раздела (`## `), как
+// «О команде» на макете; нет вступления — первые строки без разметки.
+// Дальше текст обрезает сама карточка.
+function previewText(text: string): string {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const cut = lines.findIndex(l => l.startsWith('## '));
+  const intro = cut > 0 ? lines.slice(0, cut) : lines;
+  return intro.map(l => l.replace(/^(## |• |- |\* )/, '')).join(' ');
 }
 
 // Строка с галочкой — общий вид для списков множественного выбора в
@@ -352,15 +362,16 @@ function FilterChipsBar({ filters, onOpen, onClear, onOpenAll }: {
 const fb = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(20), paddingVertical: rs(10) },
   allBtn: {
-    width: rs(46), height: rs(36), borderRadius: rs(14),
+    width: rs(44), height: rs(36), borderRadius: rs(18),
     backgroundColor: JT.ink, alignItems: 'center', justifyContent: 'center',
   },
   chip: {
     flexDirection: 'row', alignItems: 'center', height: rs(36),
-    borderRadius: rs(18), borderWidth: 2, borderColor: JT.borderSoft,
-    backgroundColor: 'transparent',
+    borderRadius: rs(18), borderWidth: 1.5, borderColor: JT.borderSoft,
+    backgroundColor: JT.surface,
   },
-  chipActive: { backgroundColor: JT.accent, borderColor: JT.ink },
+  // Активный — оранжевый с контуром 2, как на доске «Лента вакансий».
+  chipActive: { backgroundColor: JT.accent, borderColor: JT.ink, borderWidth: 2 },
   chipBody: { paddingHorizontal: rs(14), height: '100%', justifyContent: 'center' },
   chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
   chipTxtActive: { color: JT.ink },
@@ -1260,6 +1271,20 @@ function WorkerPermMode() {
   const [swLastSkipped, setSwLastSkipped] = useState<string | null>(null);
   const swWantRef = useRef<(vx?: number) => void>(() => {});
   const swSkipRef = useRef<(vx?: number) => void>(() => {});
+  // Возврат с «Вакансии подробно»: ✕ и «Откликнуться» там работают как свайп
+  // (README макета). Смахиваем ту же карточку, если она всё ещё сверху;
+  // пауза — чтобы анимация шла уже на видимом экране, а не под переходом.
+  const topDeckIdRef = useRef<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const act = takeDeckAction();
+      if (!act || topDeckIdRef.current !== act.id) return;
+      const t = setTimeout(() => {
+        if (act.action === 'want') swWantRef.current(0.5); else swSkipRef.current(0.5);
+      }, 280);
+      return () => clearTimeout(t);
+    }, []),
+  );
   // Тот же хук, что у колоды смен: свайп должен ощущаться одинаково на обеих
   // вкладках, а не жить двумя похожими копиями, которые разойдутся.
   const swDeck = useSwipeDeck({
@@ -1632,6 +1657,8 @@ function WorkerPermMode() {
   swWantRef.current = swWant;
   swSkipRef.current = swSkip;
 
+  topDeckIdRef.current = deckCards[0]?.v.id ?? null;
+
   // Ряд ↺ / ✕ / ♥ / закладка стоит над таббаром с зазором, карточка — над
   // рядом с запасом под края двух «призраков» колоды (до 17pt), как в макете.
   const deckActionGap = rs(12);
@@ -1912,9 +1939,6 @@ function WorkerPermMode() {
     // линейного персонала, а старые строки базы угадывали его по названию
     // («Старший разработчик» → «Старший смены»).
     const description = cleanDescription(ev.description ?? undefined);
-    const metroLine = ev.metroStation
-      ? METRO_LINES.find(l => l.stations.includes(ev.metroStation!)) ?? null
-      : null;
     const posted = agoRu(ev.firstSeenAt);
     const levelId = vacancyLevel(ev.title);
     const level = levelId ? VACANCY_LEVELS.find(x => x.id === levelId)?.label ?? null : null;
@@ -1922,7 +1946,13 @@ function WorkerPermMode() {
     const format = formatId ? VACANCY_FORMATS.find(x => x.id === formatId)?.label ?? null : null;
     // Лента только по Москве (миграция 121): без метро место — «Москва».
     const place = ev.metroStation ? `м. ${ev.metroStation}` : 'Москва';
-    const expanded = expandedDescriptionId === ev.id;
+    // «Подробнее» — на отдельный экран (макет «JT-auth-and-details» 04):
+    // карточка сама не прокручивается, как на макете ленты.
+    const openDetails = () => {
+      if (swDeck.wasSwipe()) return;
+      openExtVacancy(ev);
+      router.push({ pathname: '/ext-vacancy', params: { id: ev.id } });
+    };
     return (
       <View style={[styles.cardArea, { paddingBottom: deckBottomReserve }]}>
         {deckCards[2] ? <View style={[styles.ghost2, { bottom: deckBottomReserve }]} /> : null}
@@ -1930,136 +1960,63 @@ function WorkerPermMode() {
         <View style={styles.cardViewportShell}>
           <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
           <View style={styles.cardSticker} pointerEvents="none" />
-          <GHScrollView
-            ref={cardScrollRef}
-            style={styles.cardViewportClip}
-            contentContainerStyle={{ flexGrow: 1 }}
-            showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onLayout={e => { cardViewH.current = e.nativeEvent.layout.height; updateMoreBelow(0); }}
-            onContentSizeChange={(_w, h) => { cardContentH.current = h; updateMoreBelow(0); }}
-            onScroll={e => updateMoreBelow(e.nativeEvent.contentOffset.y)}
-            refreshControl={<GHRefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />}
-          >
           <GestureDetector gesture={swDeck.gesture}>
-            <Reanimated.View style={styles.cardAnimated}>
-              <View style={styles.card}>
-                <View style={styles.cardBody}>
-                  <View style={jt.head}>
-                    <CompanyMark company={displayCompany} size={rs(44)} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={jt.company} numberOfLines={1}>{displayCompany}</Text>
-                      <Text style={jt.meta} numberOfLines={1}>
-                        {posted ? `Карьерный сайт · ${posted}` : 'Карьерный сайт'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={jt.title} numberOfLines={expanded ? undefined : 3}>{ev.title}</Text>
-
-                  <View style={jt.tags}>
-                    <View style={jt.tag}>
-                      <Ionicons name="location-outline" size={rs(16)} color={JT.ink} />
-                      <Text style={jt.tagTxt} numberOfLines={1}>{place}</Text>
-                    </View>
-                    {format ? <View style={jt.tag}><Text style={jt.tagTxt}>{format}</Text></View> : null}
-                    {level ? <View style={jt.tag}><Text style={jt.tagTxt}>{level}</Text></View> : null}
-                    <View style={[jt.tag, jt.tagSalary]}>
-                      <Text style={jt.tagTxt} numberOfLines={1}>
-                        {salary > 0
-                          ? `${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`
-                          : 'з/п не указана'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {expanded ? (
-                    <View style={jt.full}>
-                      {description ? (
-                        <View style={pS.sectionBlock}>
-                          <View style={pS.blockHead}>
-                            <Ionicons name="document-text-outline" size={16} color={JT.ink} />
-                            <Text style={pS.descTitle}>Описание вакансии</Text>
-                          </View>
-                          <DescriptionBlocks text={description} />
-                        </View>
-                      ) : null}
-                      {(ev.metroStation || ev.address) ? (
-                        <View style={pS.sectionBlock}>
-                          <View style={pS.blockHead}>
-                            <Ionicons name="location-outline" size={16} color={JT.ink} />
-                            <Text style={pS.descTitle}>Расположение</Text>
-                          </View>
-                          {ev.metroStation ? (
-                            <View style={pS.locRow}>
-                              {metroLine ? (
-                                <View style={[pS.metroDot, { backgroundColor: metroLine.color }]} />
-                              ) : (
-                                <Ionicons name="subway-outline" size={16} color={Colors.textMuted} />
-                              )}
-                              <View style={{ flex: 1 }}>
-                                {metroLine ? <Text style={pS.metroLineName}>{metroLine.name}</Text> : null}
-                                <Text style={pS.locValue}>{ev.metroStation}</Text>
-                              </View>
-                            </View>
-                          ) : null}
-                          {ev.address ? (
-                            <View style={pS.locRow}>
-                              <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
-                              <Text style={[pS.locValue, { flex: 1 }]}>{ev.address}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      ) : null}
-                      <TouchableOpacity
-                        style={jt.moreBtn}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          if (swDeck.wasSwipe()) return;
-                          setExpandedDescriptionId(null);
-                          resetCardScroll();
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Свернуть вакансию"
-                      >
-                        <Text style={jt.moreTxt}>Свернуть</Text>
-                        <Ionicons name="chevron-up" size={rs(18)} color={JT.ink} />
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <>
-                      {description ? (
-                        <View style={jt.previewWrap}>
-                          <Text style={jt.preview} numberOfLines={5}>{description}</Text>
-                          <LinearGradient
-                            colors={['rgba(255,255,255,0)', JT.surface]}
-                            style={jt.previewFade}
-                            pointerEvents="none"
-                          />
-                        </View>
-                      ) : null}
-                      <View style={{ flexGrow: 1 }} />
-                      <TouchableOpacity
-                        style={jt.moreBtn}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          if (swDeck.wasSwipe()) return;
-                          setExpandedDescriptionId(ev.id);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Подробнее о вакансии"
-                        testID="card-more"
-                      >
-                        <Text style={jt.moreTxt}>Подробнее</Text>
-                        <Ionicons name="chevron-down" size={rs(18)} color={JT.ink} />
-                      </TouchableOpacity>
-                    </>
-                  )}
+            <View style={styles.cardViewportClip}>
+              <View style={jt.head}>
+                <CompanyMark company={displayCompany} size={rs(44)} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={jt.company} numberOfLines={1}>{displayCompany}</Text>
+                  <Text style={jt.meta} numberOfLines={1}>
+                    {posted ? `Карьерный сайт · ${posted}` : 'Карьерный сайт'}
+                  </Text>
                 </View>
               </View>
-            </Reanimated.View>
+
+              <Text style={jt.title} numberOfLines={3}>{ev.title}</Text>
+
+              <View style={jt.tags}>
+                <View style={jt.tag}>
+                  <Ionicons name="location-outline" size={rs(16)} color={JT.ink} />
+                  <Text style={jt.tagTxt} numberOfLines={1}>{place}</Text>
+                </View>
+                {format ? <View style={jt.tag}><Text style={jt.tagTxt}>{format}</Text></View> : null}
+                {level ? <View style={jt.tag}><Text style={jt.tagTxt}>{level}</Text></View> : null}
+                <View style={[jt.tag, jt.tagSalary]}>
+                  <Text style={jt.tagTxt} numberOfLines={1}>
+                    {salary > 0
+                      ? `${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`
+                      : 'з/п не указана'}
+                  </Text>
+                </View>
+              </View>
+
+              {description ? (
+                <Text style={jt.preview}>{previewText(description)}</Text>
+              ) : null}
+
+              {/* Низ карточки по макету: растворение 84 pt и «Подробнее» поверх —
+                  остаток описания обрезается карточкой, а не прокручивается. */}
+              <View style={jt.moreDock}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0)', JT.surface, JT.surface]}
+                  locations={[0, 0.62, 1]}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+                />
+                <TouchableOpacity
+                  style={jt.moreBtn}
+                  activeOpacity={0.8}
+                  onPress={openDetails}
+                  accessibilityRole="button"
+                  accessibilityLabel="Подробнее о вакансии"
+                  testID="card-more"
+                >
+                  <Text style={jt.moreTxt}>Подробнее</Text>
+                  <Ionicons name="chevron-down" size={rs(14)} color={JT.ink} />
+                </TouchableOpacity>
+              </View>
+            </View>
           </GestureDetector>
-          </GHScrollView>
 
           <Reanimated.View pointerEvents="none" style={[styles.wantOverlay, swDeck.wantStyle]}>
             <Text style={styles.wantText}>ОТКЛИК ♥</Text>
@@ -2069,19 +2026,6 @@ function WorkerPermMode() {
           </Reanimated.View>
           </Reanimated.View>
         </View>
-
-        {moreBelow ? (
-          <View style={[pS.scrollHintWrap, { bottom: deckBottomReserve }]} pointerEvents="none">
-            <LinearGradient
-              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.92)', JT.surface]}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={pS.scrollHint}>
-              <Ionicons name="chevron-down" size={14} color={Colors.textSecondary} />
-              <Text style={pS.scrollHintTxt}>Листайте вниз</Text>
-            </View>
-          </View>
-        ) : null}
 
         <DeckActions
           bottom={deckActionBottom}
@@ -2565,34 +2509,39 @@ export default function HomeScreen() {
 // Permanent mode styles
 // ─────────────────────────────────────────────────
 // Карьерная карточка — макет JT-design.
+// Карточка карьерной вакансии — размеры из макета ленты (04-vacancy-feed):
+// поля 20, теги 30 pt со скруглением 10, растворение низа 84 pt.
 const jt = StyleSheet.create({
   head: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
     paddingHorizontal: rs(20), paddingTop: rs(20),
   },
-  company: { fontFamily: JT_FONT.bold, fontSize: rf(17), color: JT.ink },
-  meta: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(2) },
+  company: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink },
+  meta: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(2) },
   title: {
     fontFamily: JT_FONT.head, fontSize: rf(21), lineHeight: rf(25), letterSpacing: -0.2,
-    color: JT.ink, paddingHorizontal: rs(20), marginTop: rs(14),
+    color: JT.ink, paddingHorizontal: rs(20), marginTop: rs(16),
   },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), paddingHorizontal: rs(20), marginTop: rs(14) },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6), paddingHorizontal: rs(20), marginTop: rs(14) },
   tag: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    backgroundColor: JT.background, borderRadius: rs(12),
-    paddingHorizontal: rs(12), paddingVertical: rs(7), maxWidth: '100%',
+    flexDirection: 'row', alignItems: 'center', gap: rs(5), height: rs(30),
+    backgroundColor: JT.background, borderRadius: rs(10),
+    paddingHorizontal: rs(11), maxWidth: '100%',
   },
   tagSalary: { backgroundColor: JT.accentSoft },
-  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink, flexShrink: 1 },
-  previewWrap: { paddingHorizontal: rs(20), marginTop: rs(14) },
-  preview: { fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(22), color: JT.textBody },
-  previewFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: rf(26) },
-  full: { paddingHorizontal: rs(20), paddingTop: rs(16), gap: rs(16) },
+  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink, flexShrink: 1 },
+  preview: {
+    fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(22), color: JT.textBody,
+    paddingHorizontal: rs(20), marginTop: rs(14),
+  },
+  moreDock: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: rs(84),
+    alignItems: 'center', justifyContent: 'flex-end', paddingBottom: rs(14),
+  },
   moreBtn: {
-    alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    height: rs(40), paddingHorizontal: rs(18), borderRadius: rs(20),
-    borderWidth: 2, borderColor: JT.borderSoft,
-    marginTop: rs(14), marginBottom: rs(18),
+    flexDirection: 'row', alignItems: 'center', gap: rs(6),
+    height: rs(36), paddingHorizontal: rs(16), borderRadius: rs(18),
+    borderWidth: 1.5, borderColor: JT.borderSoft, backgroundColor: JT.surface,
   },
   moreTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
 });
@@ -2669,8 +2618,8 @@ const pS = StyleSheet.create({
   // «Всего N вакансий» под полосой чипов — мелко и серо, это справка, а не
   // заголовок. Во время загрузки карьерной части — «Считаем вакансии…».
   totalTxt: {
-    fontSize: rf(12), color: Colors.textMuted,
-    paddingHorizontal: rs(16), paddingBottom: rs(6),
+    fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary,
+    paddingHorizontal: rs(20), paddingBottom: rs(6),
   },
 
   offlineBar: {
@@ -2956,8 +2905,11 @@ const styles = StyleSheet.create({
   // Колода — макет JT-design: карточка-«наклейка», под ней края двух
   // следующих (stack-1 / stack-2 с тем же чёрным контуром).
   cardArea: { flex: 1, flexDirection: 'column', paddingHorizontal: rs(20), paddingTop: rs(8), paddingBottom: 0 },
-  ghost1: { position: 'absolute', left: rs(20), right: rs(25), top: rs(8), bottom: 0, backgroundColor: JT.stack1, borderRadius: rs(26), borderWidth: 2, borderColor: JT.ink, transform: [{ translateY: rs(9) }, { scaleX: 0.95 }], zIndex: 0 },
-  ghost2: { position: 'absolute', left: rs(20), right: rs(25), top: rs(8), bottom: 0, backgroundColor: JT.stack2, borderRadius: rs(26), borderWidth: 2, borderColor: JT.ink, transform: [{ translateY: rs(17) }, { scaleX: 0.88 }], zIndex: 0 },
+  // Геометрия макета: следующие карточки уже на 12 и 24 с каждой стороны и
+  // ниже на 10 и 20. Ниж. край задаётся резервом (bottom), а карточка стоит
+  // на 5 выше резерва (место под тень) — поэтому сдвиг на 5 меньше макетного.
+  ghost1: { position: 'absolute', left: rs(20) + 12, right: rs(25) + 12, top: rs(8), bottom: 0, backgroundColor: JT.stack1, borderRadius: rs(26), borderWidth: 2, borderColor: JT.ink, transform: [{ translateY: 5 }], zIndex: 0 },
+  ghost2: { position: 'absolute', left: rs(20) + 24, right: rs(25) + 24, top: rs(8), bottom: 0, backgroundColor: JT.stack2, borderRadius: rs(26), borderWidth: 2, borderColor: JT.ink, transform: [{ translateY: 15 }], zIndex: 0 },
   // Скругление принадлежит viewport, а не прокручиваемому содержимому.
   // Поэтому верх и низ карточки остаются закруглёнными на любой позиции скролла.
   cardViewportShell: {

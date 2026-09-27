@@ -47,6 +47,22 @@ check('карточку есть чем листать', str_contains($feed, 're
 $deck = (string)file_get_contents(__DIR__ . '/../hooks/useSwipeDeck.ts');
 check('вертикаль отменяет свайп', str_contains($deck, '.failOffsetY([-20, 20])'));
 
+// ── Карьерная карточка — как на макете ленты (решение владельца 27.09) ───────
+// Не прокручивается и без подсказки «Листайте вниз»: «Подробнее» закреплена
+// внизу поверх растворения и ведёт на «Вакансию подробно», где ✕ и
+// «Откликнуться» работают как свайп.
+$extStart = strpos($feed, 'const renderExtDeckCard = (ev: ExtVacancy) => {');
+$extBody = $extStart !== false ? substr($feed, $extStart, 6000) : '';
+check('карьерная карточка найдена', $extBody !== '');
+check('карьерная карточка не прокручивается', !str_contains($extBody, '<GHScrollView'));
+check('на карьерной карточке нет «Листайте вниз»', !str_contains($extBody, 'Листайте вниз'));
+check('«Подробнее» ведёт на экран вакансии',
+    str_contains($extBody, 'testID="card-more"') && str_contains($extBody, "pathname: '/ext-vacancy'"));
+$detail = (string)file_get_contents(__DIR__ . '/../app/ext-vacancy.tsx');
+check('✕ и «Откликнуться» на экране — как свайп',
+    str_contains($detail, "act('skip')") && str_contains($detail, "act('want')") && str_contains($detail, 'setDeckAction('));
+check('лента забирает решение экрана', str_contains($feed, 'takeDeckAction()'));
+
 // ── Плашки «Отвечает в N из M» нет (решение владельца 25.09) ─────────────────
 $perm = (string)file_get_contents(__DIR__ . '/../app/perm-vacancy-detail.tsx');
 check('на карточке нет плашки отзывчивости', !str_contains($feed, 'ReplyBadge'));

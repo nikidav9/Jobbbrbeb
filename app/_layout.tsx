@@ -270,6 +270,7 @@ export default function RootLayout() {
             <Stack.Screen name="user-profile" />
             <Stack.Screen name="create-perm-vacancy" />
             <Stack.Screen name="perm-vacancy-detail" />
+            <Stack.Screen name="ext-vacancy" />
             <Stack.Screen name="invite" />
             <Stack.Screen name="saved" />
             {/* Шторкой: тест — короткий заход из профиля, а не место, куда
