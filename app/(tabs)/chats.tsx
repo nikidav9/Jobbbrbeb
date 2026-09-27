@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, Alert,
+  TextInput,
 } from 'react-native';
 // Список и потягивание берём из gesture-handler, а не из react-native. Обычный
 // FlatList лежит ВНЕ разбора жестов: отпустить касание, когда палец пошёл
@@ -29,6 +29,7 @@ import { rs, rf } from '@/constants/scale';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { messagePreview } from '@/services/messagePreview';
 import { BackButton } from '@/components/ui/BackButton';
+import { confirmAsync } from '@/services/confirm';
 
 const DELETE_THRESHOLD = -80;
 // Ширина кнопки удаления: на столько строка и отъезжает. Раньше число -120
@@ -122,29 +123,25 @@ function ChatRow({ item, currentUser, users, onPress, onDelete, first, last: isL
   const unread = currentUser.role === 'worker' ? item.unreadWorker : item.unreadEmployer;
   const last = item.messages[item.messages.length - 1];
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Удалить переписку?',
-      'Переписка будет удалена только у вас.',
-      [
-        { text: 'Отмена', style: 'cancel', onPress: close },
-        {
-          text: 'Удалить', style: 'destructive', onPress: async () => {
-            if (deleting) return;
-            setDeleting(true);
-            try {
-              // Строка исчезает только после подтверждённого удаления на сервере.
-              // Иначе любой обрыв связи выглядел как успешно удалённый чат.
-              await onDelete();
-              setDeleted(true);
-            } catch {
-              setDeleting(false);
-              close();
-            }
-          },
-        },
-      ]
-    );
+  // confirmAsync, а не Alert.alert: на вебе тот ничего не показывал, и
+  // кнопка «Удалить» на сайте и в Телеграме молча не работала.
+  const handleDelete = async () => {
+    const ok = await confirmAsync({
+      title: 'Удалить переписку?', body: 'Переписка будет удалена только у вас.',
+      confirmLabel: 'Удалить', danger: true,
+    });
+    if (!ok) { close(); return; }
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      // Строка исчезает только после подтверждённого удаления на сервере.
+      // Иначе любой обрыв связи выглядел как успешно удалённый чат.
+      await onDelete();
+      setDeleted(true);
+    } catch {
+      setDeleting(false);
+      close();
+    }
   };
 
   if (deleted) return null;

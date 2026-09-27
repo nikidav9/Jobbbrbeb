@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable, Alert,
+  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
 } from 'react-native';
 import {
   GestureDetector,
@@ -52,6 +52,7 @@ import {
 } from '@/services/db';
 import { fillHostFor, jupiterManualEligible } from '@/services/jupiterFill';
 import { ensureResumeForApply } from '@/services/resumeGate';
+import { confirmAsync } from '@/services/confirm';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1579,8 +1580,12 @@ function WorkerPermMode() {
   // предлагаем открыть анкету: Юпитер заполнит её на глазах, отправит
   // человек сам (app/jupiter-fill.tsx). Не чаще раза в 2 минуты — листать
   // ленту это не должно мешать; остальные ждут в «Откликах».
+  // На вебе (сайт, Телеграм) встроенного браузера нет: jupiter-fill открывает
+  // анкету компании в новой вкладке, и заполнить её придётся самому — поэтому
+  // и текст другой. Раньше на вебе подсказки не было вовсе, и заявка молча
+  // ждала в «Откликах».
   const followUpApplication = (applicationId: string, company?: string | null) => {
-    if (Platform.OS === 'web' || !currentUser) return;
+    if (!currentUser) return;
     const userId = currentUser.id;
     setTimeout(async () => {
       if (Date.now() - lastFollowUp.current < 120000) return;
@@ -1588,14 +1593,15 @@ function WorkerPermMode() {
         const own = (await jupiterMyApplications(userId)).find(a => a.id === applicationId);
         if (!own || own.state !== 'action_required' || !jupiterManualEligible(own) || !fillHostFor(own.vacancyUrl)) return;
         lastFollowUp.current = Date.now();
-        Alert.alert(
-          company || 'Отклик',
-          'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
-          [
-            { text: 'Позже', style: 'cancel' },
-            { text: 'Открыть', onPress: () => router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } }) },
-          ],
-        );
+        const open = await confirmAsync({
+          title: company || 'Отклик',
+          body: Platform.OS === 'web'
+            ? 'Сайт компании не принимает отклик от Юпитера. Откройте анкету и отправьте отклик сами — это пара минут.'
+            : 'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
+          confirmLabel: 'Открыть',
+          cancelLabel: 'Позже',
+        });
+        if (open) router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } });
       } catch { /* не вышло — заявка ждёт в «Откликах» */ }
     }, 40000);
   };

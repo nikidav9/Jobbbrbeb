@@ -10,12 +10,13 @@ interface Props {
   title: string;
   body: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   danger?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-export function ConfirmDialog({ visible, title, body, confirmLabel = 'Подтвердить', danger, onCancel, onConfirm }: Props) {
+export function ConfirmDialog({ visible, title, body, confirmLabel = 'Подтвердить', cancelLabel = 'Отмена', danger, onCancel, onConfirm }: Props) {
   return (
     <Modal statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
@@ -24,7 +25,7 @@ export function ConfirmDialog({ visible, title, body, confirmLabel = 'Подтв
           <Text style={styles.body}>{body}</Text>
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
-              <PrimaryButton label="Отмена" onPress={onCancel} secondary small={false} />
+              <PrimaryButton label={cancelLabel} onPress={onCancel} secondary small={false} />
             </View>
             <View style={{ flex: 1 }}>
               <PrimaryButton label={confirmLabel} onPress={onConfirm} danger={danger} small={false} />

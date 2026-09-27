@@ -1140,7 +1140,7 @@ function EmployerMatches() {
         router.push({ pathname: '/(tabs)/chats' });
       }
     } catch {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось одобрить отклик. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setLoading(null);
     }
@@ -1154,7 +1154,7 @@ function EmployerMatches() {
       refreshAll().catch(() => {});
       showToast('Отклонено', 'success');
     } catch {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось отклонить отклик. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setLoading(null);
     }
@@ -1200,7 +1200,7 @@ function EmployerMatches() {
         });
       }
     } catch {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось отметить итог смены. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setLoading(null);
     }
@@ -1230,7 +1230,7 @@ function EmployerMatches() {
       showToast('Одобрено! Чат открыт 🎉', 'match');
       router.push({ pathname: '/chat-room', params: { chatId } });
     } catch {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось одобрить кандидата. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setLoading(null);
     }
@@ -1249,7 +1249,7 @@ function EmployerMatches() {
       }
       showToast('Отклонено', 'success');
     } catch {
-      showToast('Ошибка', 'error');
+      showToast('Не удалось отклонить кандидата. Проверьте связь и попробуйте ещё раз.', 'error');
     } finally {
       setLoading(null);
     }
