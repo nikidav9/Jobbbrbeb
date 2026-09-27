@@ -9,6 +9,12 @@ import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
+} from '@expo-google-fonts/unbounded';
+import {
+  Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
+} from '@expo-google-fonts/onest';
 import { AlertProvider } from '@/template';
 import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
@@ -211,12 +217,17 @@ export default function RootLayout() {
   // Шрифты макета JT-design (27.09.2026): Unbounded — крупные заголовки,
   // Manrope — остальной текст. Лицензия SIL OFL. TTF собраны из woff2 макета
   // (кириллица + латиница в одном файле): woff2 на телефоне не читается.
+  // Unbounded/Onest из @expo-google-fonts — для профиля соискателя
+  // (constants/profileTheme.ts, эталон docs/design/profile). Загрузка не
+  // блокирует показ экрана: пока шрифт не готов, текст рисуется системным.
   const [fontsLoaded] = useFonts({
     ...Ionicons.font,
     'Unbounded-700': require('../assets/fonts/Unbounded-700.ttf'),
     'Manrope-500': require('../assets/fonts/Manrope-500.ttf'),
     'Manrope-700': require('../assets/fonts/Manrope-700.ttf'),
     'Manrope-800': require('../assets/fonts/Manrope-800.ttf'),
+    Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
+    Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
   });
   useOTAUpdates();
 

@@ -32,7 +32,7 @@ import GuestGate from '@/components/GuestGate';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
-import { PersonalDetails, ResumeProfile, User } from '@/constants/types';
+import { PersonalDetails } from '@/constants/types';
 import { mergeResumeIntoUser, pickAndImportResume } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
@@ -43,6 +43,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { rs, rf } from '@/constants/scale';
 import { forgetResumeCheck } from '@/services/resumeGate';
 import { confirmAsync } from '@/services/confirm';
+import { PERSONAL_FIELD_LABELS, PERSONAL_MULTILINE, PERSONAL_FIELD_CHOICES, PERSONAL_FIELD_PLACEHOLDERS, normalizePersonalChoiceValue } from '@/lib/personalFieldChoices';
+import { ProfileHeader } from '@/components/profile/ProfileHeader';
+import { ProfileTabs } from '@/components/profile/ProfileTabs';
+import { ResumeTabContent } from '@/components/profile/ResumeTabContent';
+import { PersonalTabContent } from '@/components/profile/PersonalTabContent';
+import { FilesTabContent } from '@/components/profile/FilesTabContent';
+import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
+import { ProfileColors } from '@/constants/profileTheme';
 
 const COMPANY_OPTIONS = ['Лавка'] as const;
 type CompanyOption = typeof COMPANY_OPTIONS[number];
@@ -266,437 +274,6 @@ const rmS = StyleSheet.create({
 
 
 type PersonalFieldKey = keyof PersonalDetails;
-
-const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
-  middleName: 'Отчество',
-  preferredName: 'Как к вам обращаться',
-  // Legacy-поле из старой US-анкеты. Сохраняем совместимость с данными,
-  // но отдельный пункт «Обращение» в русской анкете больше не показываем.
-  title: 'Форма обращения',
-  contactEmail: 'Email',
-  links: 'Ссылки',
-  citizenship: 'Гражданство',
-  workAuthorization: 'Статус разрешения на работу',
-  location: 'Местоположение',
-  workAvailability: 'Когда вы готовы работать',
-  relocation: 'Готовы к переезду?',
-  driversLicense: 'Есть водительские права?',
-  employmentRestrictions: 'Ограничения по трудоустройству',
-};
-
-const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
-  'links',
-  'employmentRestrictions',
-]);
-
-type PersonalChoice = { label: string; value: string };
-
-const PERSONAL_FIELD_CHOICES: Partial<Record<PersonalFieldKey, PersonalChoice[]>> = {
-  workAuthorization: [
-    { label: 'Есть разрешение', value: 'Есть разрешение' },
-    { label: 'Не требуется', value: 'Не требуется' },
-    { label: 'Нет', value: 'Нет' },
-  ],
-  relocation: [
-    { label: 'Да', value: 'Да' },
-    { label: 'Нет', value: 'Нет' },
-    { label: 'Готов(а) рассмотреть', value: 'Готов(а) рассмотреть' },
-  ],
-  driversLicense: [
-    { label: 'Да', value: 'Да' },
-    { label: 'Нет', value: 'Нет' },
-  ],
-};
-
-const PERSONAL_FIELD_PLACEHOLDERS: Partial<Record<PersonalFieldKey, string>> = {
-  middleName: 'Например, Сергеевич',
-  preferredName: 'Например, Никита',
-  contactEmail: 'name@example.com',
-  links: 'Ссылка на портфолио, сайт или профиль',
-  citizenship: 'Например, Россия',
-  location: 'Например, Москва',
-  workAvailability: 'Например, полная занятость, будни',
-  employmentRestrictions: 'Опишите ограничение, если оно есть',
-};
-
-function normalizePersonalChoiceValue(field: PersonalFieldKey, value?: string): string | undefined {
-  if (!value) return undefined;
-  const v = value.trim().toLowerCase();
-  if (['yes', 'true'].includes(v)) return 'Да';
-  if (['no', 'false'].includes(v)) return 'Нет';
-  return value;
-}
-
-function PersonalRow({
-  label, value, onPress, last = false,
-}: {
-  label: string;
-  value?: string;
-  onPress?: () => void;
-  last?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[personalS.row, !last && personalS.rowBorder]}
-      onPress={onPress}
-      disabled={!onPress}
-      activeOpacity={0.72}
-    >
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={personalS.rowLabel}>{label}</Text>
-        <Text style={[personalS.rowValue, !value && personalS.rowValueEmpty]} numberOfLines={3}>
-          {value || 'Не указано'}
-        </Text>
-      </View>
-      {onPress ? <Ionicons name="create-outline" size={rf(18)} color={Colors.primary} /> : null}
-    </TouchableOpacity>
-  );
-}
-
-function PersonalAddCard({
-  icon, title, subtitle, onPress,
-}: {
-  icon: IoniconName;
-  title: string;
-  subtitle: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={personalS.addCard} onPress={onPress} activeOpacity={0.75}>
-      <View style={personalS.addIcon}>
-        <Ionicons name={icon} size={rf(21)} color={Colors.primary} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={personalS.addTitle}>{title}</Text>
-        <Text style={personalS.addSubtitle}>{subtitle}</Text>
-      </View>
-      <View style={personalS.plusCircle}>
-        <Ionicons name="add" size={rf(19)} color="#FFFFFF" />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function PersonalSection({
-  title, children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={personalS.section}>
-      <Text style={personalS.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
-
-function PersonalTab({
-  user,
-  onEditCore,
-  onEditField,
-  onEditMetro,
-}: {
-  user: User;
-  onEditCore: () => void;
-  onEditField: (field: PersonalFieldKey) => void;
-  onEditMetro: () => void;
-}) {
-  const p = user.personalDetails ?? {};
-  const resume = user.resume;
-
-  const contactEmail = p.contactEmail || resume?.email;
-  const citizenship = p.citizenship || resume?.citizenship;
-  const workAuthorization = p.workAuthorization || resume?.workPermit;
-  const location = p.location || resume?.city;
-  const workAvailability = p.workAvailability
-    || [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
-  const relocationFromResume = resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
-  const relocation = p.relocation || relocationFromResume;
-
-  return (
-    <View style={personalS.content}>
-      <PersonalSection title="Основная информация">
-        <View style={personalS.card}>
-          <PersonalRow label="Имя" value={user.firstName} onPress={onEditCore} />
-          <PersonalRow label="Отчество" value={p.middleName} onPress={() => onEditField('middleName')} />
-          <PersonalRow label="Фамилия" value={user.lastName} onPress={onEditCore} />
-          <PersonalRow label="Как к вам обращаться" value={p.preferredName} onPress={() => onEditField('preferredName')} />
-          <PersonalRow label="Возраст" value={user.age ? `${user.age} лет` : undefined} onPress={onEditCore} last />
-        </View>
-      </PersonalSection>
-
-      <PersonalSection title="Контактная информация">
-        <View style={personalS.card}>
-          <PersonalRow label="Email" value={contactEmail} onPress={() => onEditField('contactEmail')} />
-          <PersonalRow label="Почта для входа" value={user.email} />
-          <PersonalRow label="Телефон для связи" value={user.phone || undefined} onPress={onEditCore} last />
-        </View>
-      </PersonalSection>
-
-      <PersonalSection title="Ссылки">
-        {p.links ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Ссылки" value={p.links} onPress={() => onEditField('links')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="link-outline"
-            title="Добавить ссылки"
-            subtitle="Портфолио, профиль или другой профессиональный ресурс."
-            onPress={() => onEditField('links')}
-          />
-        )}
-      </PersonalSection>
-
-      <PersonalSection title="Разрешение на работу">
-        <View style={personalS.card}>
-          <PersonalRow label="Гражданство" value={citizenship} onPress={() => onEditField('citizenship')} />
-          <PersonalRow label="Статус разрешения на работу" value={normalizePersonalChoiceValue('workAuthorization', workAuthorization)} onPress={() => onEditField('workAuthorization')} last />
-        </View>
-      </PersonalSection>
-
-      <PersonalSection title="Местоположение">
-        <View style={personalS.card}>
-          <PersonalRow label="Город" value={location} onPress={() => onEditField('location')} />
-          <PersonalRow label="Метро" value={user.metroStation} onPress={onEditMetro} last />
-        </View>
-      </PersonalSection>
-
-      <PersonalSection title="Доступность к работе">
-        {workAvailability ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Условия" value={workAvailability} onPress={() => onEditField('workAvailability')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="calendar-outline"
-            title="Добавить доступность"
-            subtitle="Когда и в каком формате вы готовы работать."
-            onPress={() => onEditField('workAvailability')}
-          />
-        )}
-      </PersonalSection>
-
-      <PersonalSection title="Переезд">
-        {relocation ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Готовы к переезду?" value={normalizePersonalChoiceValue('relocation', relocation)} onPress={() => onEditField('relocation')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="airplane-outline"
-            title="Добавить готовность к переезду"
-            subtitle="Укажите, готовы ли вы переехать ради работы."
-            onPress={() => onEditField('relocation')}
-          />
-        )}
-      </PersonalSection>
-
-      <PersonalSection title="Водительские права">
-        {p.driversLicense ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Есть водительские права?" value={normalizePersonalChoiceValue('driversLicense', p.driversLicense)} onPress={() => onEditField('driversLicense')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="car-outline"
-            title="Добавить водительские права"
-            subtitle="Категории и наличие личного автомобиля."
-            onPress={() => onEditField('driversLicense')}
-          />
-        )}
-      </PersonalSection>
-
-      <PersonalSection title="Ограничения по трудоустройству">
-        {p.employmentRestrictions ? (
-          <View style={personalS.card}>
-            <PersonalRow label="Ограничения" value={p.employmentRestrictions} onPress={() => onEditField('employmentRestrictions')} last />
-          </View>
-        ) : (
-          <PersonalAddCard
-            icon="document-text-outline"
-            title="Добавить ограничения"
-            subtitle="Обязательства или договорённости, которые могут повлиять на следующую работу."
-            onPress={() => onEditField('employmentRestrictions')}
-          />
-        )}
-      </PersonalSection>
-    </View>
-  );
-}
-
-function ResumeVaultTab({
-  items,
-  loading,
-  loadFailed,
-  legacyResume,
-  busyId,
-  importing,
-  onAdd,
-  onOpen,
-  onSelect,
-  onDelete,
-}: {
-  items: ResumeVaultItem[];
-  loading: boolean;
-  loadFailed: boolean;
-  legacyResume?: ResumeProfile;
-  busyId: string | null;
-  importing: boolean;
-  onAdd: () => void;
-  onOpen: (item: ResumeVaultItem) => void;
-  onSelect: (item: ResumeVaultItem) => void;
-  onDelete: (item: ResumeVaultItem) => void;
-}) {
-  const active = items.find(item => item.selected) ?? null;
-
-  return (
-    <View style={filesS.content}>
-      <View style={filesS.intro}>
-        <View style={filesS.introIcon}>
-          <Ionicons name="folder-open-outline" size={rf(22)} color={Colors.primary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={filesS.introTitle}>Сейф резюме</Text>
-          <Text style={filesS.introText}>
-            Храните несколько PDF и выбирайте активное. Выбранное резюме сразу синхронизируется с профилем.
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={filesS.addCard}
-        onPress={onAdd}
-        disabled={importing}
-        activeOpacity={0.78}
-      >
-        <View style={filesS.addIcon}>
-          {importing
-            ? <ActivityIndicator size="small" color="#FFFFFF" />
-            : <Ionicons name="add" size={rf(24)} color="#FFFFFF" />}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={filesS.addTitle}>{importing ? 'Добавляем PDF…' : 'Добавить резюме'}</Text>
-          <Text style={filesS.addSub}>PDF до 10 МБ · файл сохранится приватно</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
-      </TouchableOpacity>
-
-      {loading ? (
-        <View style={filesS.state}>
-          <ActivityIndicator size="small" color={Colors.primary} />
-          <Text style={filesS.stateText}>Загружаем ваши резюме…</Text>
-        </View>
-      ) : loadFailed ? (
-        <View style={filesS.state}>
-          <Ionicons name="cloud-offline-outline" size={rf(22)} color={Colors.textMuted} />
-          <Text style={filesS.stateText}>Не удалось загрузить сейф. Откройте вкладку ещё раз.</Text>
-        </View>
-      ) : items.length === 0 ? (
-        <View style={filesS.state}>
-          <Ionicons name="document-text-outline" size={rf(26)} color={Colors.textMuted} />
-          <Text style={filesS.stateTitle}>В сейфе пока нет PDF</Text>
-          <Text style={filesS.stateText}>
-            {legacyResume
-              ? 'Текущее резюме было загружено до появления сейфа. Добавьте PDF ещё раз — после этого его можно будет смотреть и переключать здесь.'
-              : 'Добавьте первое резюме — оно автоматически станет активным в профиле.'}
-          </Text>
-        </View>
-      ) : (
-        <>
-          {active ? (
-            <View style={filesS.activeCard}>
-              <View style={filesS.activeTop}>
-                <View style={filesS.pdfIcon}>
-                  <Text style={filesS.pdfText}>PDF</Text>
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={filesS.activeLabel}>Сейчас в профиле</Text>
-                  <Text style={filesS.fileName} numberOfLines={2}>{active.fileName}</Text>
-                  <Text style={filesS.position} numberOfLines={1}>
-                    {active.resume.desiredPosition ?? 'Должность не указана'}
-                  </Text>
-                </View>
-                <View style={filesS.selectedPill}>
-                  <Ionicons name="checkmark-circle" size={rf(15)} color="#FFFFFF" />
-                  <Text style={filesS.selectedPillText}>Выбрано</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={filesS.previewButton}
-                onPress={() => onOpen(active)}
-                disabled={busyId === active.id}
-                activeOpacity={0.78}
-              >
-                {busyId === active.id
-                  ? <ActivityIndicator size="small" color={Colors.primary} />
-                  : <Ionicons name="eye-outline" size={rf(17)} color={Colors.primary} />}
-                <Text style={filesS.previewButtonText}>Посмотреть PDF</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          <View style={filesS.listHeader}>
-            <Text style={filesS.listTitle}>Все резюме</Text>
-            <Text style={filesS.listCount}>{items.length}</Text>
-          </View>
-
-          {items.map(item => {
-            const selected = item.selected;
-            const busy = busyId === item.id;
-            const date = item.importedAt ? new Date(item.importedAt).toLocaleDateString('ru-RU') : '';
-            return (
-              <View key={item.id} style={[filesS.rowCard, selected && filesS.rowCardSelected]}>
-                <TouchableOpacity
-                  style={filesS.rowMain}
-                  onPress={() => onOpen(item)}
-                  disabled={busy}
-                  activeOpacity={0.76}
-                >
-                  <View style={[filesS.smallPdf, selected && filesS.smallPdfSelected]}>
-                    <Ionicons name="document-text-outline" size={rf(22)} color={selected ? Colors.primary : Colors.textSecondary} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={filesS.rowName} numberOfLines={2}>{item.fileName}</Text>
-                    <Text style={filesS.rowMeta} numberOfLines={1}>
-                      {[item.resume.desiredPosition, date].filter(Boolean).join(' · ') || 'PDF-резюме'}
-                    </Text>
-                  </View>
-                  <Ionicons name="eye-outline" size={rf(18)} color={Colors.textMuted} />
-                </TouchableOpacity>
-
-                <View style={filesS.rowActions}>
-                  <TouchableOpacity
-                    style={[filesS.selectButton, selected && filesS.selectButtonActive]}
-                    onPress={() => onSelect(item)}
-                    disabled={selected || busy}
-                    activeOpacity={0.78}
-                  >
-                    {busy
-                      ? <ActivityIndicator size="small" color={selected ? '#FFFFFF' : Colors.primary} />
-                      : <Ionicons name={selected ? 'checkmark' : 'swap-horizontal'} size={rf(15)} color={selected ? '#FFFFFF' : Colors.primary} />}
-                    <Text style={[filesS.selectText, selected && filesS.selectTextActive]}>
-                      {selected ? 'Активное' : 'Выбрать'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={filesS.deleteButton}
-                    onPress={() => onDelete(item)}
-                    disabled={busy}
-                    activeOpacity={0.75}
-                  >
-                    <Ionicons name="trash-outline" size={rf(17)} color={Colors.red} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
-        </>
-      )}
-    </View>
-  );
-}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -1093,51 +670,129 @@ export default function ProfileScreen() {
     // Navigation is handled by <Redirect href="/" /> in (tabs)/_layout.tsx
   };
 
+  const isWorker = currentUser.role === 'worker';
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <TabHeader
-        left={
-          <TouchableOpacity
-            onPress={() => router.push('/support')}
-            style={styles.helpHeaderBtn}
-            activeOpacity={0.72}
-            accessibilityRole="button"
-            accessibilityLabel="Помощь"
-          >
-            <Ionicons name="help-circle-outline" size={18} color={Colors.textPrimary} />
-            <Text style={styles.helpHeaderText}>Помощь</Text>
-          </TouchableOpacity>
-        }
-        right={
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setShowNotifications(true)} style={styles.headerBtn}>
-            <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
-            {unreadCount > 0 && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push('/profile-settings')}
-            style={styles.headerBtn}
-            activeOpacity={0.72}
-          >
-            <Ionicons name="settings-outline" size={23} color={Colors.textPrimary} />
-          </TouchableOpacity>
-        </View>
-        }
-      />
+    <SafeAreaView
+      style={[styles.safe, isWorker && { backgroundColor: ProfileColors.bg }]}
+      edges={['top', 'left', 'right']}
+    >
+      {/* Работодатель — прежняя общая шапка вкладок (не трогаем, решение по
+          объёму задачи 27.09: редизайн только профиля соискателя). У
+          соискателя вся верхняя строка — часть ProfileHeader внутри
+          прокрутки, как в эталоне (`docs/design/profile/screens/*.html`,
+          логотип+кнопки там не закреплены отдельным слоем). */}
+      {!isWorker ? (
+        <TabHeader
+          left={
+            <TouchableOpacity
+              onPress={() => router.push('/support')}
+              style={styles.helpHeaderBtn}
+              activeOpacity={0.72}
+              accessibilityRole="button"
+              accessibilityLabel="Помощь"
+            >
+              <Ionicons name="help-circle-outline" size={18} color={Colors.textPrimary} />
+              <Text style={styles.helpHeaderText}>Помощь</Text>
+            </TouchableOpacity>
+          }
+          right={
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => setShowNotifications(true)} style={styles.headerBtn}>
+              <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
+              {unreadCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('/profile-settings')}
+              style={styles.headerBtn}
+              activeOpacity={0.72}
+            >
+              <Ionicons name="settings-outline" size={23} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          }
+        />
+      ) : null}
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView
         // The profile now scrolls to the physical bottom under the floating
         // navigation, but its last section can still clear the pill on scroll.
-        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + rs(16) }]}
+        contentContainerStyle={[
+          isWorker ? workerS.scroll : styles.scroll,
+          { paddingBottom: tabBarHeight + rs(16) },
+        ]}
         showsVerticalScrollIndicator={false}
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
       >
 
+        {isWorker ? (
+          <>
+            <ProfileHeader
+              onHelp={() => router.push('/support')}
+              onNotifications={() => setShowNotifications(true)}
+              onSettings={() => router.push('/profile-settings')}
+              hasUnread={unreadCount > 0}
+              name={displayName(currentUser)}
+              roleLabel="Работник"
+              email={currentUser.email || currentUser.phone}
+              avatarUrl={currentUser.avatarUrl}
+              initials={initials}
+              uploading={uploadingPhoto}
+              onAvatarPress={pickAndUploadPhoto}
+              ratingAvg={currentUser.avgRating ?? 0}
+              ratingCount={currentUser.ratingCount ?? 0}
+              onRatingsPress={() => setProfileTab('reviews')}
+            />
+
+            <ProfileTabs value={profileTab} onChange={setProfileTab} filesCount={resumeFiles.length} />
+
+            {profileTab === 'resume' ? (
+              <ResumeTabContent
+                resume={currentUser.resume}
+                importing={importingResume}
+                onImport={() => { void importResume(); }}
+              />
+            ) : null}
+
+            {profileTab === 'personal' ? (
+              <PersonalTabContent
+                user={currentUser}
+                onEditCore={() => openEdit('personal')}
+                onEditField={openPersonalField}
+                onEditMetro={() => openEdit('metro')}
+              />
+            ) : null}
+
+            {profileTab === 'files' ? (
+              <FilesTabContent
+                items={resumeFiles}
+                loading={resumeFilesLoading}
+                loadFailed={resumeFilesLoadFailed}
+                legacyResume={currentUser.resume}
+                busyId={resumeFileBusyId}
+                importing={importingResume}
+                onAdd={() => { void importResume(); }}
+                onOpen={(item) => { void openResumePdf(item); }}
+                onSelect={(item) => { void selectResumeFromVault(item); }}
+                onDelete={deleteResumeFromVault}
+              />
+            ) : null}
+
+            {profileTab === 'reviews' ? (
+              <ReviewsTabContent
+                userId={currentUser.id}
+                users={users}
+                scoreShifts={currentUser.scoreShifts ?? 0}
+              />
+            ) : null}
+          </>
+        ) : (
+        <>
         {/* User card — horizontal layout */}
         <View style={styles.userCard}>
           <TouchableOpacity onPress={pickAndUploadPhoto} activeOpacity={0.8} style={styles.avatarWrapper}>
@@ -1167,7 +822,7 @@ export default function ProfileScreen() {
           <View style={styles.userInfo}>
             <Text style={styles.fullName}>{displayName(currentUser)}</Text>
             <View style={styles.roleBadge}>
-              <Text style={styles.roleText}>{currentUser.role === 'worker' ? 'Работник' : 'Работодатель'}</Text>
+              <Text style={styles.roleText}>Работодатель</Text>
             </View>
             <Text style={styles.phone}>{currentUser.email || currentUser.phone}</Text>
             <StarRating
@@ -1180,48 +835,13 @@ export default function ProfileScreen() {
           {/* Без стрелки: редактирование — через «Личные данные» ниже */}
         </View>
 
-        {currentUser.role === 'worker' ? (
-          <ProfileTabs value={profileTab} onChange={setProfileTab} />
-        ) : null}
-
-        {currentUser.role === 'worker' && profileTab === 'resume' ? (
-          <ResumeTab
-            resume={currentUser.resume}
-            importing={importingResume}
-            onImport={() => { void importResume(); }}
-          />
-        ) : null}
-
         {/* Рейтинг сразу под шапкой: человеку важно видеть, что у него
-            накопилось, а не искать это в конце длинной анкеты. У компании
-            он тоже есть — и по нему работники решают, идти ли к ней. */}
-        {(currentUser.role === 'employer' || profileTab === 'reviews') ? <View style={{ marginBottom: rs(12) }}>
+            накопилось, а не искать это в конце длинной анкеты. */}
+        <View style={{ marginBottom: rs(12) }}>
           <ScoreCard user={currentUser} own />
-        </View> : null}
-
-        {currentUser.role === 'worker' && profileTab === 'personal' ? (
-          <PersonalTab
-            user={currentUser}
-            onEditCore={() => openEdit('personal')}
-            onEditField={openPersonalField}
-            onEditMetro={() => openEdit('metro')}
-          />
-        ) : null}
-
-        {currentUser.role === 'worker' && profileTab === 'files' ? (
-          <ResumeVaultTab
-            items={resumeFiles}
-            loading={resumeFilesLoading}
-            loadFailed={resumeFilesLoadFailed}
-            legacyResume={currentUser.resume}
-            busyId={resumeFileBusyId}
-            importing={importingResume}
-            onAdd={() => { void importResume(); }}
-            onOpen={(item) => { void openResumePdf(item); }}
-            onSelect={(item) => { void selectResumeFromVault(item); }}
-            onDelete={deleteResumeFromVault}
-          />
-        ) : null}
+        </View>
+        </>
+        )}
 
         {currentUser.role === 'employer' ? (
           <>
@@ -1803,335 +1423,6 @@ export default function ProfileScreen() {
   );
 }
 
-// Свёрнутая секция — одна строка: иконка, название и короткая сводка.
-// Раскрывается по нажатию; одновременно открыта только одна (см. openSection).
-function ProfileTabs({ value, onChange }: { value: ProfileTab; onChange: (tab: ProfileTab) => void }) {
-  const tabs: { key: ProfileTab; label: string; icon: IoniconName }[] = [
-    { key: 'resume', label: 'Резюме', icon: 'document-text-outline' },
-    { key: 'personal', label: 'Личные', icon: 'person-outline' },
-    { key: 'files', label: 'Файлы', icon: 'folder-outline' },
-    { key: 'reviews', label: 'Отзывы', icon: 'chatbox-ellipses-outline' },
-  ];
-  return (
-    <View style={resumeS.tabs}>
-      {tabs.map(tab => {
-        const active = value === tab.key;
-        return (
-          <TouchableOpacity
-            key={tab.key}
-            style={[resumeS.tab, active && resumeS.tabActive]}
-            onPress={() => onChange(tab.key)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name={tab.icon} size={rf(17)} color={active ? Colors.primary : Colors.textMuted} />
-            <Text style={[resumeS.tabText, active && resumeS.tabTextActive]}>{tab.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-function ResumeCard({ icon, title, children }: { icon: IoniconName; title: string; children: React.ReactNode }) {
-  return (
-    <View style={resumeS.card}>
-      <View style={resumeS.cardHeader}>
-        <View style={resumeS.cardIcon}><Ionicons name={icon} size={rf(17)} color={Colors.primary} /></View>
-        <Text style={resumeS.cardTitle}>{title}</Text>
-      </View>
-      {children}
-    </View>
-  );
-}
-
-function ResumeMoreButton({
-  total, shown, expanded, onPress,
-}: {
-  total: number;
-  shown: number;
-  expanded: boolean;
-  onPress: () => void;
-}) {
-  if (total <= shown) return null;
-  return (
-    <TouchableOpacity style={resumeS.moreButton} onPress={onPress} activeOpacity={0.75}>
-      <Text style={resumeS.moreButtonText}>
-        {expanded ? 'Скрыть' : `Показать ещё ${total - shown}`}
-      </Text>
-      <Ionicons
-        name={expanded ? 'chevron-up' : 'chevron-down'}
-        size={rf(15)}
-        color={Colors.primary}
-      />
-    </TouchableOpacity>
-  );
-}
-
-function ExpandableResumeDescription({ text, collapsedLines = 6 }: { text: string; collapsedLines?: number }) {
-  const [expanded, setExpanded] = useState(false);
-  const canExpand = text.trim().length > 220;
-  return (
-    <View>
-      <Text
-        style={resumeS.entryDescription}
-        numberOfLines={canExpand && !expanded ? collapsedLines : undefined}
-      >
-        {text}
-      </Text>
-      {canExpand ? (
-        <TouchableOpacity
-          style={resumeS.descriptionToggle}
-          onPress={() => setExpanded(value => !value)}
-          activeOpacity={0.75}
-        >
-          <Text style={resumeS.descriptionToggleText}>
-            {expanded ? 'Свернуть' : 'Показать полностью'}
-          </Text>
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={rf(14)}
-            color={Colors.primary}
-          />
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  );
-}
-
-function ResumeTab({ resume, importing, onImport }: {
-  resume?: ResumeProfile;
-  importing: boolean;
-  onImport: () => void;
-}) {
-  const experience = resume?.experience ?? [];
-  const education = resume?.education ?? [];
-  const projects = resume?.projects ?? [];
-  const exams = resume?.exams ?? [];
-  const languages = resume?.languages ?? [];
-  const skills = resume?.skills ?? [];
-  const interests = resume?.interests ?? [];
-  const certifications = resume?.certifications ?? [];
-  const awards = resume?.awards ?? [];
-  const coursework = resume?.coursework ?? [];
-  const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
-
-  const isExpanded = (key: string) => !!expandedLists[key];
-  const toggleList = (key: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.create(
-      180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity,
-    ));
-    setExpandedLists(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-  const visibleItems = <T,>(key: string, items: T[], limit: number): T[] =>
-    isExpanded(key) ? items : items.slice(0, limit);
-
-  const empty = <Text style={resumeS.sectionEmpty}>Не найдено в загруженном PDF</Text>;
-
-  return (
-    <View style={resumeS.content}>
-      <TouchableOpacity style={resumeS.importCard} onPress={onImport} disabled={importing} activeOpacity={0.8}>
-        <View style={resumeS.importIcon}>
-          {importing
-            ? <ActivityIndicator size="small" color="#FFFFFF" />
-            : <Ionicons name="cloud-upload-outline" size={rf(21)} color="#FFFFFF" />}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={resumeS.importTitle}>{resume ? 'Обновить резюме' : 'Загрузить резюме'}</Text>
-          <Text style={resumeS.importSub}>
-            {importing ? 'Распознаём разделы…' : 'PDF до 10 МБ · данные заполнятся автоматически'}
-          </Text>
-        </View>
-        <Ionicons name="add-circle" size={rf(22)} color={Colors.primary} />
-      </TouchableOpacity>
-
-      {!resume ? (
-        <View style={resumeS.empty}>
-          <Ionicons name="document-text-outline" size={rf(34)} color={Colors.textMuted} />
-          <Text style={resumeS.emptyTitle}>Резюме пока не заполнено</Text>
-          <Text style={resumeS.emptyText}>
-            Загрузите PDF — опыт, образование, языки, навыки и дополнительные разделы появятся автоматически.
-          </Text>
-        </View>
-      ) : (
-        <>
-          <View style={resumeS.headline}>
-            <Text style={resumeS.headlineTitle}>{resume.desiredPosition ?? 'Желаемая должность не указана'}</Text>
-            {resume.salary ? <Text style={resumeS.salary}>{resume.salary}</Text> : null}
-            <View style={resumeS.metaRow}>
-              {resume.employmentType ? <Text style={resumeS.meta}>{resume.employmentType}</Text> : null}
-              {resume.workFormat ? <Text style={resumeS.meta}>{resume.workFormat}</Text> : null}
-              {resume.city ? <Text style={resumeS.meta}>{resume.city}</Text> : null}
-            </View>
-            {resume.summary ? <Text style={resumeS.summaryText}>{resume.summary}</Text> : null}
-          </View>
-
-          <ResumeCard icon="briefcase-outline" title={`Опыт работы (${experience.length})`}>
-            {experience.length === 0 ? empty : (
-              <>
-                {visibleItems('experience', experience, 3).map((item, index) => (
-                  <View key={`${item.company}-${item.position}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.position || 'Должность не указана'}</Text>
-                    {item.company ? <Text style={resumeS.entryCompany}>{item.company}</Text> : null}
-                    <Text style={resumeS.entryPeriod}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
-                    {item.description ? <ExpandableResumeDescription text={item.description} collapsedLines={6} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={experience.length} shown={3} expanded={isExpanded('experience')} onPress={() => toggleList('experience')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="school-outline" title={`Образование (${education.length})`}>
-            {education.length === 0 ? empty : (
-              <>
-                {visibleItems('education', education, 3).map((item, index) => (
-                  <View key={`${item.institution ?? item.level}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.institution ?? item.level ?? 'Образование'}</Text>
-                    {item.level && item.institution ? <Text style={resumeS.entryCompany}>{item.level}</Text> : null}
-                    {item.specialty ? <Text style={resumeS.entryCompany}>{item.specialty}</Text> : null}
-                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={education.length} shown={3} expanded={isExpanded('education')} onPress={() => toggleList('education')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="hammer-outline" title={`Проекты (${projects.length})`}>
-            {projects.length === 0 ? empty : (
-              <>
-                {visibleItems('projects', projects, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.role ? <Text style={resumeS.entryCompany}>{item.role}</Text> : null}
-                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                    {item.url ? <Text style={resumeS.entryLink}>{item.url}</Text> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={projects.length} shown={3} expanded={isExpanded('projects')} onPress={() => toggleList('projects')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="document-outline" title={`Экзамены (${exams.length})`}>
-            {exams.length === 0 ? empty : (
-              <>
-                {visibleItems('exams', exams, 4).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={resumeS.languageName}>{item.name}</Text>
-                      {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
-                    </View>
-                    {item.score ? <Text style={resumeS.languageLevel}>{item.score}</Text> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={exams.length} shown={4} expanded={isExpanded('exams')} onPress={() => toggleList('exams')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="language-outline" title={`Языки (${languages.length})`}>
-            {languages.length === 0 ? empty : (
-              <>
-                {visibleItems('languages', languages, 4).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.languageRow, index === 0 && resumeS.firstRow]}>
-                    <Text style={resumeS.languageName}>{item.name}</Text>
-                    <Text style={resumeS.languageLevel}>{item.level}</Text>
-                  </View>
-                ))}
-                <ResumeMoreButton total={languages.length} shown={4} expanded={isExpanded('languages')} onPress={() => toggleList('languages')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="sparkles-outline" title={`Навыки (${skills.length})`}>
-            {skills.length === 0 ? empty : (
-              <View style={resumeS.chips}>
-                {visibleItems('skills', skills, 12).map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
-              </View>
-            )}
-            {skills.length > 0 ? (
-              <ResumeMoreButton total={skills.length} shown={12} expanded={isExpanded('skills')} onPress={() => toggleList('skills')} />
-            ) : null}
-          </ResumeCard>
-
-          {resume.specializations.length > 0 ? (
-            <ResumeCard icon="compass-outline" title="Специализации">
-              <View style={resumeS.chips}>
-                {visibleItems('specializations', resume.specializations, 8).map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
-              </View>
-              <ResumeMoreButton total={resume.specializations.length} shown={8} expanded={isExpanded('specializations')} onPress={() => toggleList('specializations')} />
-            </ResumeCard>
-          ) : null}
-
-          <ResumeCard icon="heart-outline" title={`Интересы (${interests.length})`}>
-            {interests.length === 0 ? empty : (
-              <View style={resumeS.chips}>
-                {visibleItems('interests', interests, 8).map((item, index) => <View key={`${item}-${index}`} style={resumeS.chip}><Text style={resumeS.chipText}>{item}</Text></View>)}
-              </View>
-            )}
-            {interests.length > 0 ? (
-              <ResumeMoreButton total={interests.length} shown={8} expanded={isExpanded('interests')} onPress={() => toggleList('interests')} />
-            ) : null}
-          </ResumeCard>
-
-          <ResumeCard icon="ribbon-outline" title={`Лицензии и сертификаты (${certifications.length})`}>
-            {certifications.length === 0 ? empty : (
-              <>
-                {visibleItems('certifications', certifications, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}{item.expiration ? ` — ${item.expiration}` : ''}</Text> : null}
-                    {item.credentialId ? <Text style={resumeS.entryDescription}>ID: {item.credentialId}</Text> : null}
-                    {item.credentialUrl ? <Text style={resumeS.entryLink}>{item.credentialUrl}</Text> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={certifications.length} shown={3} expanded={isExpanded('certifications')} onPress={() => toggleList('certifications')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="trophy-outline" title={`Награды (${awards.length})`}>
-            {awards.length === 0 ? empty : (
-              <>
-                {visibleItems('awards', awards, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.issuer ? <Text style={resumeS.entryCompany}>{item.issuer}</Text> : null}
-                    {item.date ? <Text style={resumeS.entryPeriod}>{item.date}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={awards.length} shown={3} expanded={isExpanded('awards')} onPress={() => toggleList('awards')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <ResumeCard icon="book-outline" title={`Курсы (${coursework.length})`}>
-            {coursework.length === 0 ? empty : (
-              <>
-                {visibleItems('coursework', coursework, 3).map((item, index) => (
-                  <View key={`${item.name}-${index}`} style={[resumeS.entry, index > 0 && resumeS.entryBorder]}>
-                    <Text style={resumeS.entryTitle}>{item.name}</Text>
-                    {item.institution ? <Text style={resumeS.entryCompany}>{item.institution}</Text> : null}
-                    {item.period ? <Text style={resumeS.entryPeriod}>{item.period}</Text> : null}
-                    {item.description ? <ExpandableResumeDescription text={item.description} /> : null}
-                  </View>
-                ))}
-                <ResumeMoreButton total={coursework.length} shown={3} expanded={isExpanded('coursework')} onPress={() => toggleList('coursework')} />
-              </>
-            )}
-          </ResumeCard>
-
-          <Text style={resumeS.importedAt}>Импортировано из {resume.sourceFileName}</Text>
-        </>
-      )}
-    </View>
-  );
-}
-
 function SectionCard({
   iconName, iconBg, title, summary, open, onToggle, onEdit,
   rows, chips, placeholder, children,
@@ -2203,263 +1494,11 @@ function SectionCard({
   );
 }
 
-const filesS = StyleSheet.create({
-  content: { gap: rs(14) },
-  intro: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: rs(12),
-    padding: rs(16),
-    borderRadius: rs(18),
-    backgroundColor: Colors.bg,
-    ...Shadow.card,
-  },
-  introIcon: {
-    width: rs(44),
-    height: rs(44),
-    borderRadius: rs(14),
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  introTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
-  introText: {
-    fontSize: rf(12.5),
-    lineHeight: rf(18),
-    color: Colors.textSecondary,
-    marginTop: rs(4),
-  },
-  addCard: {
-    minHeight: rs(76),
-    borderRadius: rs(17),
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#FFD0BA',
-    backgroundColor: '#FFF8F4',
-    paddingHorizontal: rs(14),
-    paddingVertical: rs(13),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(12),
-  },
-  addIcon: {
-    width: rs(42),
-    height: rs(42),
-    borderRadius: rs(13),
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addTitle: { fontSize: rf(14.5), fontWeight: '800', color: Colors.textPrimary },
-  addSub: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
-  state: {
-    padding: rs(22),
-    borderRadius: rs(16),
-    backgroundColor: Colors.bg,
-    alignItems: 'center',
-    gap: rs(7),
-    ...Shadow.card,
-  },
-  stateTitle: { fontSize: rf(14.5), fontWeight: '800', color: Colors.textPrimary },
-  stateText: {
-    fontSize: rf(12.5),
-    lineHeight: rf(18),
-    color: Colors.textMuted,
-    textAlign: 'center',
-  },
-  activeCard: {
-    padding: rs(16),
-    borderRadius: rs(18),
-    backgroundColor: Colors.bg,
-    borderWidth: 1.5,
-    borderColor: '#B9E9C3',
-    ...Shadow.card,
-  },
-  activeTop: { flexDirection: 'row', alignItems: 'center', gap: rs(11) },
-  pdfIcon: {
-    width: rs(50),
-    height: rs(62),
-    borderRadius: rs(12),
-    backgroundColor: '#FFF1EA',
-    borderWidth: 1,
-    borderColor: '#FFD4C0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pdfText: { fontSize: rf(11.5), fontWeight: '900', color: Colors.primary, letterSpacing: 0.6 },
-  activeLabel: { fontSize: rf(10.5), fontWeight: '800', color: Colors.green, textTransform: 'uppercase' },
-  fileName: { fontSize: rf(14.5), lineHeight: rf(18.5), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(2) },
-  position: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(4) },
-  selectedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(4),
-    paddingHorizontal: rs(9),
-    paddingVertical: rs(6),
-    borderRadius: rs(100),
-    backgroundColor: Colors.green,
-  },
-  selectedPillText: { fontSize: rf(10.5), color: '#FFFFFF', fontWeight: '800' },
-  previewButton: {
-    marginTop: rs(14),
-    minHeight: rs(42),
-    borderRadius: rs(12),
-    backgroundColor: Colors.primaryLight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: rs(7),
-  },
-  previewButtonText: { fontSize: rf(12.5), color: Colors.primary, fontWeight: '800' },
-  listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rs(2) },
-  listTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
-  listCount: { fontSize: rf(12), color: Colors.textMuted, fontWeight: '700' },
-  rowCard: {
-    borderRadius: rs(16),
-    backgroundColor: Colors.bg,
-    borderWidth: 1,
-    borderColor: '#ECEEF2',
-    overflow: 'hidden',
-    ...Shadow.card,
-  },
-  rowCardSelected: { borderColor: '#B9E9C3' },
-  rowMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(11),
-    paddingHorizontal: rs(14),
-    paddingVertical: rs(13),
-  },
-  smallPdf: {
-    width: rs(42),
-    height: rs(50),
-    borderRadius: rs(11),
-    backgroundColor: '#F4F5F7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  smallPdfSelected: { backgroundColor: '#F1FFF4' },
-  rowName: { fontSize: rf(13.5), lineHeight: rf(17.5), fontWeight: '800', color: Colors.textPrimary },
-  rowMeta: { fontSize: rf(11.2), color: Colors.textMuted, marginTop: rs(4) },
-  rowActions: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    padding: rs(10),
-    flexDirection: 'row',
-    gap: rs(8),
-  },
-  selectButton: {
-    flex: 1,
-    minHeight: rs(38),
-    borderRadius: rs(11),
-    backgroundColor: Colors.primaryLight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: rs(6),
-  },
-  selectButtonActive: { backgroundColor: Colors.green },
-  selectText: { fontSize: rf(12), color: Colors.primary, fontWeight: '800' },
-  selectTextActive: { color: '#FFFFFF' },
-  deleteButton: {
-    width: rs(42),
-    minHeight: rs(38),
-    borderRadius: rs(11),
-    backgroundColor: '#FFF3F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
+// Стили выбора варианта в модалке редактирования (workAuthorization,
+// relocation, driversLicense) — раньше жили в общем personalS вместе со
+// старой вёрсткой вкладки «Личные», та ушла в components/profile/, а этот
+// кусочек остался: он рисует не саму вкладку, а общую для ролей модалку.
 const personalS = StyleSheet.create({
-  content: { gap: rs(20) },
-  section: { gap: rs(9) },
-  sectionTitle: {
-    fontSize: rf(17),
-    lineHeight: rf(22),
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    paddingHorizontal: rs(2),
-  },
-  card: {
-    backgroundColor: Colors.bg,
-    borderRadius: rs(16),
-    overflow: 'hidden',
-    ...Shadow.card,
-  },
-  row: {
-    minHeight: rs(70),
-    paddingHorizontal: rs(16),
-    paddingVertical: rs(13),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(12),
-  },
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-  },
-  rowLabel: {
-    fontSize: rf(14),
-    lineHeight: rf(18),
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  rowValue: {
-    fontSize: rf(13),
-    lineHeight: rf(18),
-    color: Colors.textSecondary,
-    marginTop: rs(5),
-  },
-  rowValueEmpty: { color: Colors.textMuted },
-  addCard: {
-    minHeight: rs(116),
-    paddingHorizontal: rs(16),
-    paddingVertical: rs(17),
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#D8DCE3',
-    borderRadius: rs(16),
-    backgroundColor: '#F6F7F8',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(13),
-  },
-  addIcon: {
-    width: rs(44),
-    height: rs(44),
-    borderRadius: rs(22),
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addTitle: {
-    fontSize: rf(14.5),
-    lineHeight: rf(19),
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  addSubtitle: {
-    fontSize: rf(12.5),
-    lineHeight: rf(17),
-    color: Colors.textSecondary,
-    marginTop: rs(4),
-  },
-  plusCircle: {
-    width: rs(25),
-    height: rs(25),
-    borderRadius: rs(13),
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  privateHint: {
-    fontSize: rf(11.5),
-    lineHeight: rf(16),
-    color: Colors.textMuted,
-    paddingHorizontal: rs(4),
-  },
   choiceList: { gap: rs(8) },
   choiceRow: {
     minHeight: rs(52),
@@ -2501,52 +1540,6 @@ const personalS = StyleSheet.create({
   choiceTextSelected: { color: Colors.primary, fontWeight: '800' },
 });
 
-const resumeS = StyleSheet.create({
-  tabs: { flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: rs(15), paddingHorizontal: rs(4), ...Shadow.card },
-  tab: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: rs(3), paddingTop: rs(10), paddingBottom: rs(8), borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: Colors.primary },
-  tabText: { fontSize: rf(10.5), color: Colors.textMuted, fontWeight: '600' },
-  tabTextActive: { color: Colors.primary, fontWeight: '800' },
-  content: { gap: rs(12) },
-  importCard: { flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14), borderRadius: rs(16), backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: '#FFD7C4' },
-  importIcon: { width: rs(42), height: rs(42), borderRadius: rs(13), backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  importTitle: { fontSize: rf(14.5), fontWeight: '800', color: Colors.textPrimary },
-  importSub: { fontSize: rf(11.5), lineHeight: rf(16), color: Colors.textMuted, marginTop: rs(2) },
-  empty: { alignItems: 'center', paddingHorizontal: rs(24), paddingVertical: rs(32), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
-  emptyTitle: { fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(10) },
-  emptyText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textMuted, textAlign: 'center', marginTop: rs(5) },
-  headline: { padding: rs(16), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
-  headlineTitle: { fontSize: rf(20), lineHeight: rf(25), fontWeight: '800', color: Colors.textPrimary },
-  summaryText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(10) },
-  salary: { fontSize: rf(15), fontWeight: '800', color: Colors.primary, marginTop: rs(7) },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7), marginTop: rs(10) },
-  meta: { fontSize: rf(11.5), color: Colors.textSecondary, backgroundColor: '#F2F3F5', paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
-  card: { padding: rs(16), borderRadius: rs(16), backgroundColor: Colors.bg, ...Shadow.card },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: rs(9), marginBottom: rs(10) },
-  cardIcon: { width: rs(32), height: rs(32), borderRadius: rs(10), alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryLight },
-  cardTitle: { flex: 1, fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary },
-  entry: { paddingTop: rs(3) },
-  entryBorder: { borderTopWidth: 1, borderTopColor: Colors.divider, marginTop: rs(13), paddingTop: rs(13) },
-  entryTitle: { fontSize: rf(14), fontWeight: '800', color: Colors.textPrimary },
-  entryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
-  entryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
-  entryDescription: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(8) },
-  descriptionToggle: { flexDirection: 'row', alignItems: 'center', gap: rs(4), alignSelf: 'flex-start', marginTop: rs(7), paddingVertical: rs(3) },
-  descriptionToggleText: { fontSize: rf(11.5), color: Colors.primary, fontWeight: '700' },
-  moreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5), marginTop: rs(12), paddingVertical: rs(9), borderRadius: rs(11), backgroundColor: Colors.primaryLight },
-  moreButtonText: { fontSize: rf(12.5), color: Colors.primary, fontWeight: '800' },
-  entryLink: { fontSize: rf(11.5), lineHeight: rf(16), color: Colors.primary, marginTop: rs(6) },
-  sectionEmpty: { fontSize: rf(12.5), color: Colors.textMuted, fontStyle: 'italic', paddingVertical: rs(5) },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
-  chip: { paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100), backgroundColor: '#F2F3F5' },
-  chipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontWeight: '600' },
-  languageRow: { flexDirection: 'row', justifyContent: 'space-between', gap: rs(12), paddingVertical: rs(9), borderTopWidth: 1, borderTopColor: Colors.divider },
-  firstRow: { borderTopWidth: 0 },
-  languageName: { fontSize: rf(13.5), fontWeight: '700', color: Colors.textPrimary },
-  languageLevel: { flex: 1, fontSize: rf(12.5), color: Colors.textMuted, textAlign: 'right' },
-  importedAt: { fontSize: rf(10.5), color: Colors.textMuted, textAlign: 'center', paddingHorizontal: rs(12) },
-});
-
 const sS = StyleSheet.create({
   card: { backgroundColor: Colors.bg, borderRadius: rs(16), ...Shadow.card, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: rs(10), paddingHorizontal: rs(16), paddingVertical: rs(14) },
@@ -2575,6 +1568,12 @@ const sS = StyleSheet.create({
   chipText: { fontSize: rf(13), fontWeight: '600', color: Colors.primary },
   bioText: { fontSize: rf(14), color: Colors.textPrimary, lineHeight: rf(20), paddingTop: rs(8) },
   placeholder: { fontSize: rf(13), color: Colors.textMuted, fontStyle: 'italic', paddingTop: rs(4) },
+});
+
+// Отступы страницы у соискателя — из эталона (14 16 0, gap 14 между всеми
+// прямыми блоками столбца), у работодателя вёрстка прежняя (styles.scroll).
+const workerS = StyleSheet.create({
+  scroll: { paddingHorizontal: 16, paddingTop: 14, gap: 14 },
 });
 
 const styles = StyleSheet.create({

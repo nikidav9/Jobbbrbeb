@@ -265,10 +265,16 @@ check('отзывы и личные: сервисные карточки скр�
     !str_contains($profileForFooter, "(currentUser.role === 'employer' || profileTab === 'personal')"));
 check('личные: старое поле «Обращение» больше не показывается отдельной строкой',
     !str_contains($profileForFooter, '<PersonalRow label="Обращение"'));
+// Справочник вариантов выбора (driversLicense/relocation/…) переехал в
+// lib/personalFieldChoices.ts — общий для экрана и для
+// components/profile/PersonalTabContent.tsx (редизайн профиля соискателя,
+// решение владельца 27.09), чтобы оба не тянули его друг у друга и не
+// заводили циклический импорт. Смотрим на оба файла.
+$personalFieldChoices = (string)file_get_contents(__DIR__ . '/../lib/personalFieldChoices.ts');
 check('личные: рабочие вопросы используют варианты выбора, а лишние поля удалены',
     str_contains($profileForFooter, 'PERSONAL_FIELD_CHOICES') &&
-    str_contains($profileForFooter, "driversLicense: [") &&
-    str_contains($profileForFooter, "relocation: [") &&
+    str_contains($personalFieldChoices, "driversLicense: [") &&
+    str_contains($personalFieldChoices, "relocation: [") &&
     !str_contains($profileForFooter, 'disabilityStatus') &&
     !str_contains($profileForFooter, 'veteranStatus') &&
     !str_contains($profileForFooter, 'gender') &&
@@ -280,6 +286,17 @@ check('личные: рабочие вопросы используют вари
     !str_contains($profileForFooter, 'militaryService') &&
     !str_contains($profileForFooter, 'securityClearance') &&
     !str_contains($profileForFooter, 'birthday') &&
+    !str_contains($personalFieldChoices, 'disabilityStatus') &&
+    !str_contains($personalFieldChoices, 'veteranStatus') &&
+    !str_contains($personalFieldChoices, 'gender') &&
+    !str_contains($personalFieldChoices, 'pronouns') &&
+    !str_contains($personalFieldChoices, 'race') &&
+    !str_contains($personalFieldChoices, 'sexualOrientation') &&
+    !str_contains($personalFieldChoices, 'emergencyContact') &&
+    !str_contains($personalFieldChoices, 'professionalReferences') &&
+    !str_contains($personalFieldChoices, 'militaryService') &&
+    !str_contains($personalFieldChoices, 'securityClearance') &&
+    !str_contains($personalFieldChoices, 'birthday') &&
     !str_contains($profileForFooter, 'placeholder="Укажите значение"'));
 check('профиль: кнопка помощи в шапке открывает поддержку',
     str_contains($profileForFooter, "router.push('/support')") &&
