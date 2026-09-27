@@ -30,10 +30,13 @@ const s = StyleSheet.create({
   chip: {
     borderWidth: HAIRLINE, borderColor: ProfileColors.ink, borderRadius: ProfileRadius.chip,
     paddingHorizontal: 11, paddingVertical: 6, backgroundColor: ProfileColors.surface,
+    // Длинный навык (разбор резюме иногда склеивает несколько в одну строку)
+    // не должен вылезать за карточку: чип не шире ряда, текст переносится.
+    maxWidth: '100%', flexShrink: 1,
   },
   accent: { backgroundColor: ProfileColors.accent },
   muted: { borderColor: ProfileColors.chipBorder },
-  text: { fontFamily: ProfileFonts.textSemi, fontSize: 12.5, color: ProfileColors.ink },
+  text: { fontFamily: ProfileFonts.textSemi, fontSize: 12.5, color: ProfileColors.ink, flexShrink: 1 },
   textAccent: { fontFamily: ProfileFonts.textBold },
   textMuted: { fontFamily: ProfileFonts.textSemi, color: ProfileColors.muted },
 });
