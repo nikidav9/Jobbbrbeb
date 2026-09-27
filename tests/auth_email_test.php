@@ -464,6 +464,13 @@ check('шаг с кодом даёт подменить проверку (нуж
     str_contains($stepSrc, 'verify?: (email: string, code: string) => Promise<void>;')
     && str_contains($stepSrc, 'if (customVerify) {'));
 
+// Аккаунт без пароля (регистрация почта → код): смена пароля не должна
+// пропускать пустой «старый пароль» — иначе чужая сессия ставит свой пароль.
+$dbSrcCp = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
+$cpAt = strpos($dbSrcCp, "case 'dbChangePassword'");
+$cpBody = $cpAt === false ? '' : substr($dbSrcCp, $cpAt, 1500);
+check('смена пароля отказывает аккаунту без пароля', str_contains($cpBody, "\$ok = \$stored !== '' && ("));
+
 if ($failures) {
     echo "auth email: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

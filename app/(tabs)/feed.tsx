@@ -485,6 +485,10 @@ function FilterSheet({
             <FlatList
               data={VACANCY_SPECS}
               keyExtractor={s => s.id}
+              // Список длиннее, чем помещается над кнопкой «Применить»: без
+              // ограничения по высоте FlatList растягивается по содержимому
+              // и сама кнопка уезжает за пределы видимой части шторки.
+              style={{ maxHeight: rs(340) }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingTop: rs(8), paddingBottom: rs(12) }}
@@ -516,6 +520,10 @@ function FilterSheet({
               <FlatList
                 data={companyRows}
                 keyExtractor={item => item.name}
+                // Компаний может быть много больше, чем помещается над
+                // кнопкой «Применить» — тот же приём, что и у списка
+                // специализаций: список скроллится внутри своей высоты.
+                style={{ maxHeight: rs(300) }}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ paddingBottom: rs(12) }}

@@ -3817,7 +3817,12 @@ try {
             if (!$row || $new === '') { $data = ['ok' => false, 'reason' => 'not_found']; break; }
 
             $stored = (string)($row['password'] ?? '');
-            $ok = is_bcrypt($stored) ? password_verify($old, $stored) : hash_equals($stored, $old);
+            // Аккаунт без пароля (регистрация почта → код, 27.09): сверять
+            // «старый пароль» не с чем, и hash_equals('', '') пропустил бы
+            // любого, у кого есть сессия, — он поставил бы свой пароль и
+            // выбил владельца. Пароль такому аккаунту задают только через код
+            // из письма (dbAuthResetPassword).
+            $ok = $stored !== '' && (is_bcrypt($stored) ? password_verify($old, $stored) : hash_equals($stored, $old));
             if (!$ok) { $data = ['ok' => false, 'reason' => 'wrong_password']; break; }
 
             // Вместе с паролем гасим выданные токены: смена пароля затем и
