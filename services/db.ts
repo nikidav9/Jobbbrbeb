@@ -1811,6 +1811,12 @@ export async function jupiterMailList(userId: string): Promise<JupiterEmail[]> {
   return proxy('jupiterMailList', [userId]);
 }
 
+/** Сколько непрочитанных писем на почте JobToo для откликов (для точки на конверте). */
+export async function jupiterMailUnread(userId: string): Promise<number> {
+  const r = await proxy<{ unread?: number }>('jupiterMailUnread', [userId]);
+  return typeof r?.unread === 'number' ? r.unread : 0;
+}
+
 export async function jupiterMailRead(userId: string, id: string): Promise<void> {
   await proxy('jupiterMailRead', [userId, id]);
 }

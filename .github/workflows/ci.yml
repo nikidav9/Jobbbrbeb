@@ -97,6 +97,9 @@ jobs:
       - name: Закладки карьерных вакансий — только свои, таблица закрыта RLS
         run: php tests/ext_saved_test.php
 
+      - name: Точка на конверте — непрочитанные письма почты для откликов
+        run: php tests/mail_unread_dot_test.php
+
       - name: Уровень, формат и специализация вакансии — паритет PHP и TS
         run: php tests/vacancy_facets_test.php
 

@@ -289,7 +289,7 @@ $selfArgFns = [
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
-    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
+    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
     'jupiterApplicationEvents' => 0,
     // Свайпы по карьерным вакансиям: только свои.
@@ -6686,6 +6686,17 @@ try {
             $data = sb_select('jm_jupiter_emails', [
                 'user_id' => 'eq.' . (string)$args[0], 'limit' => '100',
             ], 'id,sender,subject,body,received_at,read_at', 'received_at.desc');
+            break;
+        }
+
+        // Точка на конверте в «Откликах»: сколько непрочитанных писем на почте
+        // JobToo для откликов. Только число, без тел писем, — её зовут при
+        // каждом возврате на экран. Не больше 99: больше точке не нужно.
+        case 'jupiterMailUnread': {
+            $rows = sb_select('jm_jupiter_emails', [
+                'user_id' => 'eq.' . (string)$args[0], 'read_at' => 'is.null', 'limit' => '99',
+            ], 'id');
+            $data = ['unread' => count($rows)];
             break;
         }
 
