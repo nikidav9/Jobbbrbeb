@@ -1,117 +1,68 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  ScrollView, Dimensions, Platform,
+  ScrollView, Dimensions, Platform, AccessibilityInfo,
 } from 'react-native';
 import { Image } from 'expo-image';
-import Svg, { Circle, Line, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useApp } from '@/hooks/useApp';
-import { Colors } from '@/constants/theme';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import SplashLoader, { useLoadingPercent, bootElapsed, SPLASH_MIN_MS } from '@/components/SplashLoader';
-import Constants from 'expo-constants';
 import { hideWebSplash, setWebSplashProgress } from '@/lib/webSplash';
 
 import { rs } from '@/constants/scale';
-import { dbCountUsers, dbRecordGuestEvent } from '@/services/db';
-import { LegalLinks } from '@/components/LegalLinks';
-
-const USER_COUNT_KEY = 'cached_user_count';
+import { dbRecordGuestEvent } from '@/services/db';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const sc = Math.min(SW / 390, SH / 844);
 const r = (n: number) => Math.round(n * sc);
 
 /**
- * Карусель на входе — как в getmatch: пролистай, узнай суть за три экрана.
- * Первый слайд — фото персонажа (уже есть в ресурсах), второй и третий —
- * тот же персонаж и та же оранжевая «таблетка»-бейдж, что и в остальном
- * интерфейсе: иначе слайды 2–3 читаются как значки от другого приложения.
- * Неразрывные пробелы — чтобы на 320 px не повисало одно слово на строке.
+ * Первый экран — макет владельца «JT-design» (27.09.2026), 1:1: три слайда
+ * листаются пальцем и сами каждые 5 секунд; меняются только иллюстрация,
+ * заголовок и подзаголовок, кнопки и ссылки стоят на месте.
+ * Цвета и размеры — из README макета (экран 390×844, всё масштабируется r()).
  */
+const JT = {
+  accent: '#FF6B1A',
+  ink: '#141414',
+  background: '#F5EFE6',
+  surface: '#FFFFFF',
+  muted: '#D9CFC2',
+  textSecondary: '#5C554D',
+  textTertiary: '#6B645C',
+};
+const FONT_HEAD = 'Unbounded-700';
+const FONT_MEDIUM = 'Manrope-500';
+const FONT_BOLD = 'Manrope-700';
+
+const AUTO_ADVANCE_MS = 5000;
+
+// Неразрывные пробелы — как в макете, чтобы на узком экране предлог не
+// повисал в конце строки. Подзаголовок третьего слайда без «или ссылкой»:
+// импорта резюме по ссылке пока нет (docs/очередь-задач.md), обещать его нельзя.
 const SLIDES = [
-  { key: 'swipe', title: 'Постоянная IT-работа в Москве — одним свайпом' },
-  { key: 'sites', title: 'Вакансии прямо с сайтов компаний' },
-  { key: 'apply', title: 'Отклик на сайт компании отправим за вас' },
+  {
+    key: 'swipes',
+    image: require('@/assets/images/onboarding-1-swipes.png'),
+    title: 'Свайпай\nIT-вакансии',
+    subtitle: 'Вправо\u00A0— откликнуться, влево\u00A0— пропустить. Поиск работы за\u00A0пару минут в\u00A0день',
+  },
+  {
+    key: 'only-it',
+    image: require('@/assets/images/onboarding-2-only-it.png'),
+    title: 'Только IT и\u00A0ничего лишнего',
+    subtitle: 'Разработка, QA, дизайн, аналитика\u00A0— от\u00A0стажёра до\u00A0тимлида',
+  },
+  {
+    key: 'profile',
+    image: require('@/assets/images/onboarding-3-profile.png'),
+    title: 'Профиль за\u00A0секунды',
+    subtitle: 'Загрузите резюме\u00A0— стек и\u00A0опыт подтянем сами',
+  },
 ] as const;
-
-// Бейдж-«таблетка» поверх картинки — общий акцент для 2 и 3 слайда, тот же
-// оранжевый и та же белая обводка, что и у кнопок ниже.
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
-function ArtBadge({ size, icon, style }: { size: number; icon: IconName; style?: object }) {
-  return (
-    <View style={[{
-      position: 'absolute',
-      width: size, height: size, borderRadius: size / 2,
-      backgroundColor: Colors.primary,
-      borderWidth: size * 0.09, borderColor: '#FFFFFF',
-      alignItems: 'center', justifyContent: 'center',
-    }, style]}
-    >
-      <Ionicons name={icon} size={size * 0.46} color="#FFFFFF" />
-    </View>
-  );
-}
-
-// Слайд 2: карточка браузера со списком вакансий — «берём напрямую с сайтов».
-// Насыщенные цвета и тёмный контур — тот же визуальный вес, что у персонажа.
-function SitesArt({ size }: { size: number }) {
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} viewBox="0 0 160 160">
-        <Rect x={12} y={14} width={136} height={132} rx={18} fill="#FFFFFF" stroke="#171717" strokeWidth={2.5} />
-        <Circle cx={27} cy={31} r={4} fill={Colors.primary} />
-        <Circle cx={40} cy={31} r={4} fill={Colors.textMuted} />
-        <Circle cx={53} cy={31} r={4} fill={Colors.textMuted} />
-        <Line x1={12} y1={46} x2={148} y2={46} stroke={Colors.divider} strokeWidth={2} />
-        {[68, 98, 128].map(cy => (
-          <React.Fragment key={cy}>
-            <Circle cx={31} cy={cy} r={10} fill={Colors.primary} />
-            <Rect x={50} y={cy - 7} width={76} height={7} rx={3.5} fill={Colors.textSecondary} />
-            <Rect x={50} y={cy + 5} width={50} height={5} rx={2.5} fill={Colors.divider} />
-          </React.Fragment>
-        ))}
-      </Svg>
-      <ArtBadge size={size * 0.32} icon="business" style={{ right: -size * 0.03, bottom: -size * 0.03 }} />
-    </View>
-  );
-}
-
-// Слайд 3: тот же персонаж, что на слайде 1, + бейдж-самолётик у телефона —
-// «отправим отклик за вас».
-function ApplyArt({ size }: { size: number }) {
-  const artW = size * 0.77;
-  return (
-    <View style={{ width: artW, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Image
-        source={require('@/assets/images/char-worker-crop.png')}
-        style={{ width: artW, height: size }}
-        contentFit="contain"
-        transition={200}
-      />
-      <ArtBadge size={size * 0.32} icon="paper-plane" style={{ left: -size * 0.05, top: size * 0.06 }} />
-    </View>
-  );
-}
-
-function SlideArt({ index, size }: { index: number; size: number }) {
-  if (index === 0) {
-    return (
-      <Image
-        source={require('@/assets/images/char-worker-crop.png')}
-        style={{ width: size * 0.77, height: size, alignSelf: 'center' }}
-        contentFit="contain"
-        transition={200}
-      />
-    );
-  }
-  if (index === 1) return <SitesArt size={size} />;
-  return <ApplyArt size={size} />;
-}
 
 export default function RootScreen() {
   const router = useRouter();
@@ -132,8 +83,6 @@ export default function RootScreen() {
       toValue: 1, duration: 420, delay: 80, useNativeDriver: true,
     }).start();
   }, [ready]);
-  const [userCount, setUserCount] = useState<number | null>(null);
-  const [userCountReady, setUserCountReady] = useState(false);
   // Always holds latest currentUser — avoids stale closure inside animation callback
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
@@ -146,14 +95,37 @@ export default function RootScreen() {
   // Картинка занимает большую часть высоты слайда, но не съедает место
   // подписи под ней и не раздувается на высоком экране.
   const artSize = slideHeight > 0
-    ? Math.max(r(90), Math.min(r(230), slideHeight * 0.6, slideHeight - r(66)))
-    : r(140);
+    ? Math.max(r(110), Math.min(r(300), slideHeight - r(150)))
+    : r(220);
 
+  // Куда листаем программно: пока прокрутка до него не доехала, onScroll не
+  // трогает точку — иначе на полпути она мигала обратно на прежний слайд.
+  const scrollTarget = useRef<number | null>(null);
   const goToSlide = (index: number) => {
     const clamped = Math.max(0, Math.min(SLIDES.length - 1, index));
+    scrollTarget.current = clamped;
     setActiveSlide(clamped);
     if (slideWidth > 0) carouselRef.current?.scrollTo({ x: clamped * slideWidth, animated: true });
   };
+
+  // Автолистание каждые 5 с, по кругу. Любое листание рукой меняет
+  // activeSlide — таймер перезапускается от него, а пока палец держит
+  // карусель, не листаем вовсе. С «уменьшить движение» в системе — только руками.
+  const dragging = useRef(false);
+  // Отпустил палец на том же слайде — activeSlide не сменился, и без этого
+  // счётчика автолистание так бы и не возобновилось.
+  const [dragTick, setDragTick] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!ready || reduceMotion || slideWidth <= 0) return;
+    const t = setTimeout(() => {
+      if (!dragging.current) goToSlide((activeSlide + 1) % SLIDES.length);
+    }, AUTO_ADVANCE_MS);
+    return () => clearTimeout(t);
+  }, [ready, reduceMotion, slideWidth, activeSlide, dragTick]);
 
   useEffect(() => {
     // Мышь на вебе не тянет ScrollView сама — тач и колесо работают, а
@@ -195,26 +167,6 @@ export default function RootScreen() {
       window.removeEventListener('mouseup', onUp);
     };
   }, [slideWidth]);
-
-  useEffect(() => {
-    // Показываем кэшированное значение сразу
-    AsyncStorage.getItem(USER_COUNT_KEY).then(cached => {
-      if (cached) { setUserCount(Number(cached)); setUserCountReady(true); }
-    }).catch(() => {});
-    // Затем обновляем свежими данными.
-    // Через прокси, а не напрямую в базу: с закрытием базы прямой запрос стал
-    // получать отказ, и экран навсегда застревал на числе из кэша телефона —
-    // в дашборде было 357, а здесь 351.
-    dbCountUsers()
-      .then(count => {
-        if (count > 0) {
-          setUserCount(count);
-          setUserCountReady(true);
-          AsyncStorage.setItem(USER_COUNT_KEY, String(count)).catch(() => {});
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     // Post-logout: loading was already false when we mounted — skip splash, show screen now
@@ -280,234 +232,217 @@ export default function RootScreen() {
     return <SplashLoader percent={bootPercent} />;
   }
 
+  const enterAsGuest = () => {
+    void dbRecordGuestEvent('guest_started');
+    enterGuest();
+    router.replace('/(tabs)');
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        {/* ── Лого ── */}
-        <Animated.View style={[styles.logoRow, { opacity: introFade }]}>
-          <Text style={styles.logo}>
-            <Text style={styles.logoDark}>Job</Text>
-            <Text style={styles.logoOrange}>Too</Text>
-          </Text>
-        </Animated.View>
-
-        {/* ── Карусель: три слайда, как в getmatch ── */}
-        {/* Растягивается на всё, что осталось между лого и кнопками: картинка
-            подстраивается под доступную высоту (см. artSize), а не наоборот. */}
-        <Animated.View style={[styles.carouselWrap, { opacity: introFade }]}>
-          <View
-            style={styles.carouselBox}
-            onLayout={e => {
-              setSlideWidth(e.nativeEvent.layout.width);
-              setSlideHeight(e.nativeEvent.layout.height);
-            }}
+      <Animated.View style={[styles.screen, { opacity: introFade }]}>
+        {/* Крестик — пропустить знакомство и смотреть вакансии гостем.
+            Любое действие внутри ленты попросит зарегистрироваться. */}
+        <View style={styles.topRow}>
+          <TouchableOpacity
+            style={styles.closeBtn}
+            activeOpacity={0.7}
+            onPress={enterAsGuest}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            testID="entry-guest"
+            accessibilityRole="button"
+            accessibilityLabel="Пропустить и смотреть вакансии без регистрации"
           >
-            {slideWidth > 0 && slideHeight > 0 && (
-              <ScrollView
-                ref={carouselRef}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                bounces={false}
-                onMomentumScrollEnd={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
-                onScrollEndDrag={e => setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / slideWidth))}
-              >
-                {SLIDES.map((slide, i) => (
-                  <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
-                    <View style={styles.slideArt}>
-                      <SlideArt index={i} size={artSize} />
-                    </View>
-                    <Text style={styles.slideTitle}>{slide.title}</Text>
+            <Ionicons name="close" size={r(22)} color={JT.ink} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Меняются только картинка, заголовок и подзаголовок. */}
+        <View
+          style={styles.carouselBox}
+          onLayout={e => {
+            setSlideWidth(e.nativeEvent.layout.width);
+            setSlideHeight(e.nativeEvent.layout.height);
+          }}
+        >
+          {slideWidth > 0 && slideHeight > 0 && (
+            <ScrollView
+              ref={carouselRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              bounces={false}
+              // Слайд считаем по ходу прокрутки, а не в конце: на iOS
+              // onMomentumScrollEnd внутри вертикального списка приходил не
+              // всегда, и на всех слайдах горела первая точка.
+              scrollEventThrottle={32}
+              onScroll={e => {
+                const x = e.nativeEvent.contentOffset.x;
+                const target = scrollTarget.current;
+                if (target !== null) {
+                  if (Math.abs(x - target * slideWidth) > 2) return;
+                  scrollTarget.current = null;
+                }
+                const i = Math.max(0, Math.min(SLIDES.length - 1, Math.round(x / slideWidth)));
+                setActiveSlide(prev => (prev === i ? prev : i));
+              }}
+              onScrollBeginDrag={() => { dragging.current = true; scrollTarget.current = null; }}
+              onScrollEndDrag={() => { dragging.current = false; setDragTick(t => t + 1); }}
+            >
+              {SLIDES.map(slide => (
+                <View key={slide.key} style={[styles.slide, { width: slideWidth }]}>
+                  <View style={styles.artBox}>
+                    <Image
+                      source={slide.image}
+                      style={{ width: artSize, height: artSize }}
+                      contentFit="contain"
+                      transition={150}
+                      accessibilityIgnoresInvertColors
+                    />
                   </View>
-                ))}
-              </ScrollView>
-            )}
-          </View>
+                  <Text style={styles.title}>{slide.title}</Text>
+                  <Text style={styles.subtitle}>{slide.subtitle}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
 
-          <View style={styles.dotsRow}>
-            {SLIDES.map((slide, i) => (
-              <TouchableOpacity
-                key={slide.key}
-                onPress={() => goToSlide(i)}
-                hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-                accessibilityLabel={`Слайд ${i + 1} из ${SLIDES.length}`}
-                testID={`entry-dot-${i}`}
-              >
-                <View style={[styles.dot, i === activeSlide && styles.dotActive]} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Animated.View>
+        <View style={styles.dotsRow}>
+          {SLIDES.map((slide, i) => (
+            <TouchableOpacity
+              key={slide.key}
+              onPress={() => goToSlide(i)}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Слайд ${i + 1} из ${SLIDES.length}`}
+              testID={`entry-dot-${i}`}
+            >
+              <View style={[styles.dot, i === activeSlide && styles.dotActive]} />
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        {/* ── Счётчик пользователей: социальное доказательство рядом с призывом ── */}
-        <Animated.View style={[styles.userCountCard, { opacity: introFade }]}>
-          <Text style={styles.userCountTxt}>
-            {userCountReady && userCount != null
-              ? <>Более <Text style={styles.userCountNum}>{userCount.toLocaleString('ru')}</Text> пользователей уже с нами!</>
-              : 'Сообщество JobToo растёт'
-            }
-          </Text>
-        </Animated.View>
-
-        <View style={{ height: r(14) }} />
-
-        {/* ══ Главное действие: зарегистрироваться ══ */}
-        <Animated.View style={{ opacity: introFade, width: '100%' }}>
+        <View style={styles.buttons}>
           <TouchableOpacity
             style={styles.registerBtn}
             activeOpacity={0.85}
             onPress={() => router.push('/register-worker')}
             testID="entry-register"
+            accessibilityRole="button"
             accessibilityLabel="Зарегистрироваться"
           >
-            <Text style={styles.registerBtnTxt}>Зарегистрироваться</Text>
+            <Text style={styles.btnTxt}>Зарегистрироваться</Text>
           </TouchableOpacity>
-
-          {/* ── Уже есть аккаунт ── */}
           <TouchableOpacity
             style={styles.loginBtn}
             activeOpacity={0.7}
             onPress={() => router.push('/login')}
             testID="entry-login"
+            accessibilityRole="button"
             accessibilityLabel="Уже есть аккаунт"
           >
-            <Text style={styles.loginBtnTxt}>Уже есть аккаунт</Text>
+            <Text style={styles.btnTxt}>Уже есть аккаунт</Text>
           </TouchableOpacity>
+        </View>
 
-          {/* ══ Посмотреть без регистрации ══ */}
-          {/* Снимаем стену регистрации: даём заглянуть в ленту вакансий как
-              гость. Любое действие внутри попросит зарегистрироваться. */}
-          <TouchableOpacity
-            style={styles.guestLink}
-            activeOpacity={0.6}
-            onPress={() => {
-              void dbRecordGuestEvent('guest_started');
-              enterGuest();
-              router.replace('/(tabs)');
-            }}
-            testID="entry-guest"
-            accessibilityLabel="Смотреть вакансии без регистрации"
+        <Text style={styles.employer}>
+          IT-компания?{' '}
+          <Text
+            style={styles.employerLink}
+            onPress={() => router.push('/register-employer')}
+            testID="entry-employer"
+            accessibilityRole="link"
           >
-            <Text style={styles.guestLinkTxt}>Смотреть вакансии без регистрации</Text>
-          </TouchableOpacity>
+            Найти разработчиков
+          </Text>
+        </Text>
 
-          {/* ── Работодателям ── */}
-          <View style={styles.employerRow}>
-            <Text style={styles.employerGray}>Работодатель? </Text>
-            <TouchableOpacity
-              onPress={() => router.push('/register-employer')}
-              testID="entry-employer"
-              accessibilityLabel="Разместить вакансию"
-            >
-              <Text style={styles.employerLink}>Разместить вакансию</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Документы доступны до регистрации — прямо со стартового экрана. */}
-          <View style={{ marginTop: r(10) }}>
-            <LegalLinks />
-          </View>
-
-          <Text style={styles.version}>JobToo v{Constants.expoConfig?.version ?? '1.4.0'}</Text>
-        </Animated.View>
-      </ScrollView>
+        <Text style={styles.legal}>
+          Пользуясь приложением, вы принимаете{' '}
+          <Text
+            style={styles.legalLink}
+            onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}
+            accessibilityRole="link"
+          >
+            Условия пользования сервисом
+          </Text>
+          {' '}и{' '}
+          <Text
+            style={styles.legalLink}
+            onPress={() => router.push({ pathname: '/legal', params: { doc: 'dataPolicy' } })}
+            accessibilityRole="link"
+          >
+            Политику обработки персональных данных
+          </Text>
+        </Text>
+      </Animated.View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // Тёплый фон — как в ленте: экран продаёт одно действие, а не читается.
-  safe: { flex: 1, backgroundColor: Colors.bgWarm },
-
-  scroll: {
-    flexGrow: 1,
-    alignItems: 'center',
-    paddingHorizontal: r(24),
-    paddingTop: r(10),
-    paddingBottom: r(12),
-    maxWidth: rs(430),
-    width: '100%',
-    alignSelf: 'center',
+  // Фон макета #F5EFE6 и у safe area — без белой полосы под часами.
+  safe: { flex: 1, backgroundColor: JT.background },
+  screen: {
+    flex: 1,
+    width: '100%', maxWidth: rs(430), alignSelf: 'center',
+    paddingHorizontal: r(24), paddingTop: r(8), paddingBottom: r(16),
   },
 
-  logoRow: { marginBottom: r(6) },
-  logo: { fontSize: r(24), fontWeight: '800', letterSpacing: -0.6 },
-  logoDark: { color: '#111111' },
-  logoOrange: { color: Colors.primary },
+  topRow: { flexDirection: 'row', justifyContent: 'flex-end' },
+  closeBtn: {
+    width: r(44), height: r(44), borderRadius: r(22),
+    backgroundColor: JT.surface,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: JT.ink, shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
 
-  // Карусель — спокойная, без теней и градиентов: аудитория на дешёвых
-  // телефонах, лишние эффекты там же и тормозят. flex: 1 — забирает всё
-  // место между лого и кнопками, картинка масштабируется под него (artSize).
-  carouselWrap: { flex: 1, width: '100%', marginBottom: r(6) },
   carouselBox: { flex: 1, width: '100%' },
-  slide: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: r(4),
+  slide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  artBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  title: {
+    fontFamily: FONT_HEAD, fontSize: r(31), lineHeight: r(35), letterSpacing: -0.3,
+    color: JT.ink, textAlign: 'center',
   },
-  slideArt: { alignItems: 'center', justifyContent: 'center' },
-  slideTitle: {
-    fontSize: r(21), fontWeight: '800', color: '#111111', lineHeight: r(27),
-    textAlign: 'center', marginTop: r(10), minHeight: r(58),
+  subtitle: {
+    fontFamily: FONT_MEDIUM, fontSize: r(16), lineHeight: r(23),
+    color: JT.textSecondary, textAlign: 'center',
+    marginTop: r(14), marginHorizontal: r(12),
   },
 
   dotsRow: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    gap: r(8), marginTop: r(4),
+    gap: r(8), marginVertical: r(24),
   },
-  dot: {
-    width: r(7), height: r(7), borderRadius: r(4),
-    // Тёмный и полупрозрачный — иначе на тёплом фоне не видно вовсе.
-    backgroundColor: 'rgba(17,17,17,0.25)',
-  },
-  dotActive: { width: r(18), backgroundColor: Colors.primary },
+  dot: { width: r(8), height: r(8), borderRadius: r(4), backgroundColor: JT.muted },
+  dotActive: { width: r(28), backgroundColor: JT.accent },
 
-  userCountCard: {
-    alignSelf: 'center',
-    marginTop: r(4),
-    paddingVertical: r(6), paddingHorizontal: r(14),
-    borderRadius: r(20),
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    backgroundColor: '#FFFFFF',
-  },
-  userCountTxt: { fontSize: r(12), color: Colors.textSecondary },
-  userCountNum: { fontWeight: '800', color: Colors.primary },
-
-  // ── Главное действие ──
+  buttons: { gap: r(12) },
+  // Текст на оранжевом — чёрный: белый на этом оранжевом читается плохо (README макета).
   registerBtn: {
-    width: '100%', height: r(52), borderRadius: rs(100),
-    backgroundColor: Colors.primary,
+    height: r(58), borderRadius: r(18), backgroundColor: JT.accent,
     alignItems: 'center', justifyContent: 'center',
   },
-  registerBtnTxt: { fontSize: r(16), fontWeight: '800', color: '#fff' },
-
   loginBtn: {
-    width: '100%', height: r(52), borderRadius: rs(100),
-    marginTop: r(10),
-    borderWidth: 1.5, borderColor: Colors.primary,
-    backgroundColor: '#FFFFFF',
+    height: r(58), borderRadius: r(18), borderWidth: 2, borderColor: JT.ink,
     alignItems: 'center', justifyContent: 'center',
   },
-  loginBtnTxt: { fontSize: r(16), fontWeight: '800', color: Colors.primary },
+  btnTxt: { fontFamily: FONT_BOLD, fontSize: r(18), color: JT.ink },
 
-  // Снимаем стену регистрации: даём заглянуть в ленту как гость —
-  // текстовая ссылка, а не кнопка, чтобы не спорить с двумя выше.
-  guestLink: {
-    alignSelf: 'center', marginTop: r(14),
-    paddingVertical: r(6), paddingHorizontal: r(8),
+  employer: {
+    fontFamily: FONT_MEDIUM, fontSize: r(15), color: JT.ink,
+    textAlign: 'center', marginTop: r(20),
   },
-  guestLinkTxt: { fontSize: r(14), fontWeight: '700', color: Colors.textSecondary },
-
-  employerRow: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    marginTop: r(14),
+  employerLink: {
+    fontFamily: FONT_BOLD,
+    textDecorationLine: 'underline', textDecorationColor: JT.accent,
   },
-  employerGray: { fontSize: r(13), color: Colors.textSecondary },
-  employerLink: { fontSize: r(13), fontWeight: '800', color: Colors.primary },
-
-  version: { textAlign: 'center', fontSize: r(11), color: Colors.textMuted, marginTop: r(8) },
+  legal: {
+    fontFamily: FONT_MEDIUM, fontSize: r(12), lineHeight: r(18),
+    color: JT.textTertiary, textAlign: 'center', marginTop: r(16),
+  },
+  legalLink: { textDecorationLine: 'underline' },
 });

@@ -214,12 +214,17 @@ function useOTAUpdates() {
 }
 
 export default function RootLayout() {
-  // Unbounded/Onest — только для нового дизайна профиля соискателя
-  // (constants/profileTheme.ts). Как и раньше с Ionicons: загрузка не
-  // блокирует показ экрана — пока шрифт не готов, текст рисуется системным
-  // и подменяется, когда подгрузится.
+  // Шрифты макета JT-design (27.09.2026): Unbounded — крупные заголовки,
+  // Manrope — остальной текст. Лицензия SIL OFL. TTF собраны из woff2 макета
+  // (кириллица + латиница в одном файле): woff2 на телефоне не читается.
+  // Unbounded/Onest из @expo-google-fonts — для профиля соискателя
+  // (constants/profileTheme.ts, эталон docs/design/profile). Загрузка не
+  // блокирует показ экрана: пока шрифт не готов, текст рисуется системным.
   const [fontsLoaded] = useFonts({
     ...Ionicons.font,
+    'Unbounded-700': require('../assets/fonts/Unbounded-700.ttf'),
+    'Manrope-500': require('../assets/fonts/Manrope-500.ttf'),
+    'Manrope-700': require('../assets/fonts/Manrope-700.ttf'),
     Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
     Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
   });

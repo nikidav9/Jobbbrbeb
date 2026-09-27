@@ -49,14 +49,15 @@ for (const url of urls) {
     const req = route.request();
     if (req.resourceType() === 'document' && !['GET', 'HEAD'].includes(req.method())) {
       out.blocked_submits++;
-      return route.abort();
+      return route.abort().catch(() => {});
     }
     // В облачном контейнере Chromium не доверяет сертификату прокси; тогда
     // запросы страницы выполняет Node-сторона Playwright (AUTOPILOT_NODE_FETCH=1).
     if (process.env.AUTOPILOT_NODE_FETCH === '1') {
-      return route.fetch().then(r => route.fulfill({ response: r })).catch(() => route.abort());
+      // Контекст мог закрыться раньше ответа — тогда запрос уже никому не нужен.
+      return route.fetch().then(r => route.fulfill({ response: r })).catch(() => route.abort().catch(() => {}));
     }
-    return route.continue();
+    return route.continue().catch(() => {});
   });
   const page = await context.newPage();
   let resolveResult;

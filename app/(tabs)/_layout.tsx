@@ -8,9 +8,9 @@ import { bottomSafe } from '@/lib/androidInsets';
 import { StackActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/theme';
+import { JT, JT_FONT } from '@/constants/jt';
 import { useApp } from '@/hooks/useApp';
 import NotificationPermissionSheet from '@/components/NotificationPermissionSheet';
 import CompleteProfileSheet from '@/components/CompleteProfileSheet';
@@ -22,9 +22,10 @@ import { rs, rf } from '@/constants/scale';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-const FLOATING_TAB_HEIGHT = rs(62);
-const FLOATING_TAB_SIDE = rs(40);
-const FLOATING_TAB_RADIUS = rs(31);
+// Размеры нижнего меню — макет JT-design: высота 64, скругление 32, по бокам 20.
+const FLOATING_TAB_HEIGHT = rs(64);
+const FLOATING_TAB_SIDE = rs(20);
+const FLOATING_TAB_RADIUS = rs(32);
 const FLOATING_TAB_SAFE_OVERLAP = rs(13);
 const FLOATING_TAB_MIN_BOTTOM = rs(8);
 
@@ -66,7 +67,7 @@ function FloatingTabBar({
   // Fade the scrolled page under the floating bar, rather than inserting an
   // opaque dock. Each tab fades into its own background (orange / white / gray).
   const fadeColors: [string, string, string] = surfaceRoute === 'feed'
-    ? ['rgba(255,212,181,0)', 'rgba(255,212,181,0.10)', 'rgba(255,212,181,0.46)']
+    ? ['rgba(245,239,230,0)', 'rgba(245,239,230,0.40)', 'rgba(245,239,230,0.92)']
     : surfaceRoute === 'profile' || surfaceRoute === 'company'
       ? ['rgba(245,245,245,0)', 'rgba(245,245,245,0.12)', 'rgba(245,245,245,0.48)']
       : ['rgba(255,255,255,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.45)'];
@@ -82,55 +83,48 @@ function FloatingTabBar({
         // visible all the way through the iOS home-indicator area.
         style={[fS.bottomFade, { height: tabBottom + FLOATING_TAB_HEIGHT + rs(36) }]}
       />
-      {/* Shadow sits on top of the fade. The page stays visible behind both. */}
-      <View style={[fS.pillShadow, { bottom: tabBottom }]}>
-      {/* Inner: clips blur to rounded shape */}
-      <View style={fS.pillClip}>
-        {/* Frosted glass background */}
-        <BlurView intensity={72} tint="light" style={StyleSheet.absoluteFill} />
-        {/* Semi-transparent overlay for contrast on dark content */}
-        <View style={fS.pillTint} />
-
-        {/* Вкладки: простое нажатие. Активная выделяется цветом иконки и
-            подписи — без плашки-подсветки вокруг кнопки и без плавного
-            «переезда» индикатора. */}
+      {/* Нижнее меню по макету JT-design: чёрная «таблетка», активный раздел —
+          оранжевая пилюля с чёрным текстом, остальные — белым. Оранжевая точка
+          у раздела — там есть обновления (число — в подписи для чтения экрана). */}
+      <View style={[fS.pill, { bottom: tabBottom }]}>
         <View style={fS.tabsRow}>
           {tabs.map((tab) => {
             const focused = activeRoute === tab.route;
+            const hasBadge = !!tab.badge && tab.badge > 0;
             return (
               <TouchableOpacity
                 key={tab.route}
                 style={fS.tabItem}
                 activeOpacity={0.7}
                 onPress={() => { if (!focused) onTabPress(tab.route); }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: focused }}
+                accessibilityLabel={hasBadge ? `${tab.label}, новых: ${tab.badge}` : tab.label}
               >
                 <OnboardingTarget
                   targetKey={`tab.${tab.route}`}
-                  style={fS.tabCell}
+                  style={[fS.tabCell, focused && fS.tabCellActive]}
                 >
-                  <View>
-                    <Ionicons
-                      name={focused ? tab.iconFilled : tab.iconOutline}
-                      size={22}
-                      color={Colors.primary}
-                      style={focused ? undefined : fS.iconIdle}
-                    />
-                    {tab.badge && tab.badge > 0 ? (
-                      <View style={fS.badge}>
-                        <Text style={fS.badgeText}>{tab.badge > 9 ? '9+' : tab.badge}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={[fS.label, focused && fS.labelActive]}>
+                  <Ionicons
+                    name={focused ? tab.iconFilled : tab.iconOutline}
+                    size={rs(18)}
+                    color={focused ? JT.ink : JT.surface}
+                  />
+                  <Text
+                    style={[fS.label, focused && fS.labelActive]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
                     {tab.label}
                   </Text>
+                  {hasBadge ? <View style={fS.badgeDot} /> : null}
                 </OnboardingTarget>
               </TouchableOpacity>
             );
           })}
         </View>
       </View>
-    </View>
     </View>
   );
 }
@@ -224,7 +218,7 @@ export default function TabLayout() {
     <View style={{
       flex: 1,
       backgroundColor: surfaceRoute === 'feed'
-        ? Colors.bgWarm
+        ? JT.background
         : surfaceRoute === 'profile' || surfaceRoute === 'company' ? Colors.outerBg : Colors.bg,
     }}>
       {/* Keep the navigator free of a tab-bar footer so cards and text can
@@ -274,71 +268,59 @@ const fS = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  // Outer view: carries the shadow (can't use overflow:hidden here on Android)
-  pillShadow: {
+  pill: {
     position: 'absolute',
     left: FLOATING_TAB_SIDE,
     right: FLOATING_TAB_SIDE,
     height: FLOATING_TAB_HEIGHT,
     borderRadius: FLOATING_TAB_RADIUS,
+    backgroundColor: JT.ink,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.13,
-    shadowRadius: 20,
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
     elevation: 12,
   },
-  // Inner view: clips blur + indicator to pill shape
-  pillClip: {
-    flex: 1,
-    borderRadius: FLOATING_TAB_RADIUS,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.75)',
-  },
-  pillTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.82)',
-  },
-  // Row of tab items
   tabsRow: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: rs(6),
+    paddingHorizontal: rs(5),
+    gap: 0,
   },
+  // Ширина — по содержимому, а не поровну: иначе «Вакансии» в оранжевой
+  // пилюле обрезаются до «Ваканс…» на экране в 390pt.
   tabItem: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     alignSelf: 'stretch',
-    alignItems: 'center',
     justifyContent: 'center',
   },
   tabCell: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: rs(3),
+    gap: rs(5),
+    height: FLOATING_TAB_HEIGHT - rs(12),
+    borderRadius: (FLOATING_TAB_HEIGHT - rs(12)) / 2,
+    paddingHorizontal: rs(8),
   },
-  // Неактивная иконка притушена — так активная читается без плашки-подсветки.
-  iconIdle: { opacity: 0.4 },
+  tabCellActive: { backgroundColor: JT.accent },
   label: {
-    fontSize: rf(10),
-    fontWeight: '600',
-    color: Colors.primary,
-    opacity: 0.45,
+    flexShrink: 1,
+    fontFamily: JT_FONT.bold,
+    fontSize: rf(14),
+    color: JT.surface,
   },
-  labelActive: {
-    opacity: 1,
-  },
-  badge: {
+  labelActive: { color: JT.ink },
+  badgeDot: {
     position: 'absolute',
-    top: rs(-4),
-    right: rs(-8),
-    backgroundColor: Colors.primary,
-    borderRadius: rs(100),
-    minWidth: rs(16),
-    height: rs(16),
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: rs(3),
+    top: rs(8),
+    right: rs(4),
+    width: rs(8),
+    height: rs(8),
+    borderRadius: rs(4),
+    backgroundColor: JT.accent,
   },
-  badgeText: { color: '#fff', fontSize: rf(9), fontWeight: '700' },
 });

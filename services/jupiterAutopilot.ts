@@ -119,7 +119,7 @@ function jtConsentDecision(text, delegated) {
 function jtIsApplyButton(text) {
   var t = jtFlat(text);
   if (!t || t.length > 40) return false;
-  return /^(откликнуться|отклик|откликнуться на вакансию|подать заявку|подать отклик|отправить резюме|оставить заявку|заполнить анкету|заполнить форму|хочу у вас работать|хочу работать|хочу работать у вас|хочу в команду|apply|apply now|respond)$/.test(t);
+  return /^(откликнуться|отклик|откликнуться на вакансию|подать заявку|подать отклик|отправить резюме|оставить резюме|прикрепить резюме|оставить заявку|заполнить анкету|заполнить форму|хочу у вас работать|хочу работать|хочу работать у вас|хочу в команду|apply|apply now|respond)$/.test(t);
 }
 
 // Кнопка отправки анкеты.
@@ -478,7 +478,9 @@ ${AUTOPILOT_CORE}
     var form = findForm();
     if (!form) {
       if (attempt < 2 && clickApply()) { later(function() { run(attempt + 1); }, 2500); return; }
-      if (attempt < 4) { later(function() { run(attempt + 1); }, 1500); return; }
+      // Медленные SPA и собственная проверка сайта «не бот» рисуют анкету
+      // через 10–15 с (ОТП Банк): ждём до ~20 с, укладываясь в срок скрипта.
+      if (attempt < 10) { later(function() { run(attempt + 1); }, 1800); return; }
       // Отклик только после входа в аккаунт сайта — это к человеку, и
       // причина должна быть понятна («Войти и откликнуться» у Яндекса).
       var btns = document.querySelectorAll('a, button, [role=button]');
