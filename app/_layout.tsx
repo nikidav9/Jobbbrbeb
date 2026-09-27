@@ -216,6 +216,7 @@ export default function RootLayout() {
     'Unbounded-700': require('../assets/fonts/Unbounded-700.ttf'),
     'Manrope-500': require('../assets/fonts/Manrope-500.ttf'),
     'Manrope-700': require('../assets/fonts/Manrope-700.ttf'),
+    'Manrope-800': require('../assets/fonts/Manrope-800.ttf'),
   });
   useOTAUpdates();
 
@@ -247,7 +248,7 @@ export default function RootLayout() {
             />
             <Stack.Screen name="register-worker" />
             <Stack.Screen name="register-employer" />
-            <Stack.Screen name="login" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="login" />
             <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
             <Stack.Screen name="legal" />
             <Stack.Screen name="candidates" />

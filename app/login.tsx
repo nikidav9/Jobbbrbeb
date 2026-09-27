@@ -1,23 +1,25 @@
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
+  View, Text, Image, StyleSheet, TouchableOpacity, ScrollView,
+  KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Colors, Radius } from '@/constants/theme';
-import { AppInput } from '@/components/ui/AppInput';
-import { PrimaryButton } from '@/components/ui/PrimaryButton';
+import { Ionicons } from '@expo/vector-icons';
 import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
+import { BackButton } from '@/components/ui/BackButton';
+import { JTButton, JTInput, JTLink, jtBackStyle } from '@/components/ui/jt';
+import { JT, JT_FONT } from '@/constants/jt';
 import { dbAuthLoginByCode } from '@/services/db';
 import { useApp } from '@/hooks/useApp';
-import { LegalLinks } from '@/components/LegalLinks';
 
 import { rs, rf } from '@/constants/scale';
 
 // Вход — по коду из письма, пароль остаётся запасным (решение владельца
 // 27.09.2026). Старые аккаунты, заведённые по телефону, кода не получают —
 // им годится только вход по паролю, поэтому ссылка на него остаётся всегда.
+// Вид — макет «JT-auth-and-details» 01-login (27.09.2026): полный экран,
+// иллюстрация «дверь», на шаге кода её сменяет «письмо» из EmailCodeStep.
 const looksLikeLogin = (v: string) => /@/.test(v) ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) : v.replace(/\D/g, '').length >= 10;
 
 export default function Login() {
@@ -35,6 +37,8 @@ export default function Login() {
   const [phoneError, setPhoneError] = useState('');
   const [passError, setPassError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Шаг кода рисует свою шапку («Введите код»), наша на нём прячется.
+  const [codePhase, setCodePhase] = useState(false);
 
   const goInside = () => {
     showToast('Добро пожаловать! 👋', 'success');
@@ -83,23 +87,41 @@ export default function Login() {
     router.push(returnTo ? { pathname: '/reset-password', params: { returnTo } } : '/reset-password');
   };
 
+  const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  const toRegister = () => router.push('/register-worker');
+  const showHead = mode === 'password' || !codePhase;
+
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1, justifyContent: 'center' }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        <View style={styles.sheet}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          <View style={styles.topRow}>
+            <BackButton onPress={close} style={jtBackStyle} />
+          </View>
 
-        <Text style={styles.title}>Войти</Text>
+          {showHead ? (
+            <>
+              <Image
+                source={require('@/assets/images/auth-login-door.png')}
+                style={styles.hero}
+                resizeMode="contain"
+                accessibilityLabel="Открытая дверь и карточка профиля"
+              />
+              <Text style={styles.title}>Вход</Text>
+              <Text style={styles.subtitle}>
+                {mode === 'code'
+                  ? 'Пришлём код на почту — пароль не нужен'
+                  : 'Почта и пароль. Регистрировались по номеру — введите номер'}
+              </Text>
+            </>
+          ) : null}
 
-        {mode === 'code' ? (
-          <>
-            <Text style={styles.subtitle}>Пришлём код на почту</Text>
-            <View testID="login-code-mode">
+          {mode === 'code' ? (
+            <View testID="login-code-mode" style={[styles.form, codePhase && styles.grow]}>
               <EmailCodeStep
                 purpose="login"
+                hero
+                onPhaseChange={p => setCodePhase(p === 'code')}
                 onVerified={() => {}}
                 verify={async (email, code) => {
                   const user = await dbAuthLoginByCode(email, code);
@@ -107,124 +129,92 @@ export default function Login() {
                   goInside();
                 }}
               />
+              {!codePhase ? (
+                <Text style={styles.switchRow}>
+                  <JTLink testID="login-password-link" onPress={() => setManualMode('password')}>Войти по паролю</JTLink>
+                </Text>
+              ) : null}
             </View>
-
-            <Text style={styles.hint}>
-              Письма нет? Проверьте «Спам». Если аккаунта с этой почтой нет —{' '}
-              <Text style={styles.hintLink} onPress={() => router.push('/register-worker')}>
-                Зарегистрироваться
+          ) : (
+            <View style={styles.form}>
+              <JTInput
+                label="Почта или телефон"
+                value={login}
+                onChangeText={v => { setLogin(v); setPhoneError(''); }}
+                placeholder="name@mail.ru"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="username"
+                textContentType="username"
+                accessibilityLabel="Почта или телефон"
+                error={phoneError}
+              />
+              <JTInput
+                label="Пароль"
+                value={password}
+                onChangeText={v => { setPassword(v); setPassError(''); }}
+                secureTextEntry
+                placeholder="Ваш пароль"
+                accessibilityLabel="Пароль"
+                error={passError}
+                onSubmitEditing={handleLogin}
+              />
+              <JTButton
+                label="Войти"
+                onPress={handleLogin}
+                busy={loading}
+                disabled={!looksLikeLogin(login) || !password.trim()}
+              />
+              <Text style={styles.switchRow}>
+                Забыли пароль?{' '}
+                <JTLink onPress={openReset}>{emailAuthReady ? 'Восстановить по почте' : 'Напишите на support@jobtoo.ru'}</JTLink>
               </Text>
-            </Text>
-
-            <TouchableOpacity
-              testID="login-password-link"
-              style={styles.switchRow}
-              onPress={() => setManualMode('password')}
-              accessibilityRole="button"
-            >
-              <Text style={styles.switchText}>Войти по паролю</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <Text style={styles.subtitle}>Почта и пароль. Регистрировались по номеру — введите номер</Text>
-
-            <AppInput
-              label="Почта или телефон"
-              value={login}
-              onChangeText={v => { setLogin(v); setPhoneError(''); }}
-              placeholder="name@mail.ru"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="username"
-              textContentType="username"
-              accessibilityLabel="Почта или телефон"
-              error={phoneError}
-            />
-
-            <AppInput
-              label="Пароль"
-              value={password}
-              onChangeText={v => { setPassword(v); setPassError(''); }}
-              secureTextEntry
-              placeholder="Ваш пароль"
-            />
-            {passError ? <Text style={styles.errText}>{passError}</Text> : null}
-
-            <View style={{ marginTop: 8 }}>
-              {loading ? (
-                <ActivityIndicator color={Colors.primary} />
-              ) : (
-                <PrimaryButton
-                  label="Войти →"
-                  onPress={handleLogin}
-                  disabled={!looksLikeLogin(login) || !password.trim()}
-                />
+              {emailAuthReady && (
+                <Text style={styles.switchRow}>
+                  <JTLink testID="login-code-link" onPress={() => setManualMode('code')}>Войти по коду из письма</JTLink>
+                </Text>
               )}
             </View>
+          )}
 
-            {/* Порядок внизу: сначала подсказка про почту, «Отмена» — последней.
-                Раньше подсказка стояла над кнопкой «Войти» и перебивала её. */}
-            <TouchableOpacity style={styles.forgotRow} onPress={openReset} activeOpacity={0.8} accessibilityRole="button">
-              <View style={styles.forgotBanner}>
-                <Text style={styles.forgotText}>
-                  Забыли пароль?{' '}
-                  <Text style={styles.forgotLink}>{emailAuthReady ? 'Восстановить по почте' : 'Напишите на support@jobtoo.ru'}</Text>
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {emailAuthReady && (
-              <TouchableOpacity
-                testID="login-code-link"
-                style={styles.switchRow}
-                onPress={() => setManualMode('code')}
-                accessibilityRole="button"
-              >
-                <Text style={styles.switchText}>Войти по коду из письма</Text>
+          {showHead ? (
+            <>
+              <View style={styles.grow} />
+              <Text style={styles.bottomTxt}>
+                Нет аккаунта? <JTLink onPress={toRegister}>Зарегистрироваться</JTLink>
+              </Text>
+              <TouchableOpacity style={styles.docs} onPress={() => router.push('/legal')} accessibilityRole="link">
+                <Ionicons name="document-outline" size={rs(16)} color={JT.textTertiary} />
+                <Text style={styles.docsTxt}>Все документы</Text>
               </TouchableOpacity>
-            )}
-          </>
-        )}
-
-        <TouchableOpacity style={styles.cancel} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
-          <Text style={styles.cancelText}>Отмена</Text>
-        </TouchableOpacity>
-
-        <LegalLinks style={{ marginTop: rs(4) }} />
-        </View>
+            </>
+          ) : null}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: 'transparent', justifyContent: 'center' },
-  // Раньше это была шторка, прижатая к низу: скруглялись только верхние углы.
-  // Теперь окно стоит по центру, поэтому скругление круговое и есть поля по бокам.
-  sheet: {
-    backgroundColor: Colors.bg,
-    borderRadius: rs(24),
-    marginHorizontal: rs(16),
-    padding: rs(24),
-    gap: rs(14),
-    // Sheet adapts to keyboard via parent KeyboardAvoidingView
+  safe: { flex: 1, backgroundColor: JT.background },
+  body: { flexGrow: 1, paddingHorizontal: rs(24), paddingTop: rs(12), paddingBottom: rs(28) },
+  grow: { flexGrow: 1 },
+  topRow: { height: rs(44), flexDirection: 'row', alignItems: 'center' },
+  hero: { width: rs(230), height: rs(200), alignSelf: 'center', marginTop: rs(4) },
+  title: {
+    fontFamily: JT_FONT.head, fontSize: rf(31), lineHeight: rf(35), letterSpacing: -0.3,
+    color: JT.ink, textAlign: 'center', marginTop: rs(20),
   },
-  title: { fontSize: rf(22), fontWeight: '700', color: Colors.textPrimary },
-  subtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(-6), lineHeight: rf(20) },
-  errText: { fontSize: rf(13), color: Colors.red, marginTop: rs(-6) },
-  hint: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18) },
-  hintLink: { color: Colors.primary, fontWeight: '600' },
-  switchRow: { marginTop: rs(-4) },
-  switchText: { fontSize: rf(13), color: Colors.primary, fontWeight: '600' },
-  forgotRow: { marginTop: rs(-4) },
-  forgotBanner: {
-    backgroundColor: '#F0F4FF', borderRadius: rs(10), padding: rs(12),
-    borderWidth: 1, borderColor: '#BFCBF5',
+  subtitle: {
+    fontFamily: JT_FONT.medium, fontSize: rf(16), lineHeight: rf(23),
+    color: JT.textSecondary, textAlign: 'center', marginTop: rs(10),
   },
-  forgotText: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18) },
-  forgotLink: { color: Colors.primary, fontWeight: '600' },
-  cancel: { alignItems: 'center', marginTop: rs(4) },
-  cancelText: { fontSize: rf(15), color: Colors.textMuted, fontWeight: '500' },
+  form: { marginTop: rs(26), gap: rs(14) },
+  switchRow: {
+    fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink, textAlign: 'center', marginTop: rs(6),
+  },
+  bottomTxt: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: JT.ink, textAlign: 'center', marginTop: rs(24) },
+  docs: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6), marginTop: rs(16), minHeight: rs(32) },
+  docsTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
 });
