@@ -29,7 +29,7 @@ import { BackButton } from '@/components/ui/BackButton';
 
 type FillStatus =
   | 'loading' | 'filling' | 'ready' | 'captcha' | 'missing' | 'consent'
-  | 'no_form' | 'no_submit' | 'submitting' | 'unknown' | 'error';
+  | 'no_form' | 'no_submit' | 'login' | 'submitting' | 'unknown' | 'error';
 
 // Резюме больше 8 МБ в анкету не вкладываем: base64 внутри скрипта страницы
 // раздуется ещё на треть, а сайты такие файлы всё равно не принимают.
@@ -61,6 +61,7 @@ function statusText(status: FillStatus, result: AutopilotResult | null): string 
     case 'missing': return `Заполните на странице то, чего нет в профиле, и нажмите «Отправить отклик».${missing}`;
     case 'consent': return 'Сайт просит согласие, которое вместе с обязательным включает рекламу или что-то ещё. Решите сами на странице, затем «Отправить отклик».';
     case 'no_form': return 'Анкету не нашли. Нажмите «Откликнуться» на странице — Юпитер заполнит её.';
+    case 'login': return 'Сайт принимает отклик только после входа в свой аккаунт. Войдите на странице — Юпитер заполнит анкету, когда она откроется.';
     case 'no_submit': return 'Не нашли кнопку отправки. Нажмите «Отправить» на самой странице, затем «Я отправил».';
     case 'submitting': return 'Отправляем и ждём подтверждения от сайта…';
     case 'unknown': return 'Сайт не показал подтверждения. Если на странице видно «спасибо» — нажмите «Я отправил».';
@@ -175,7 +176,7 @@ export default function JupiterFillScreen() {
     if (msg.outcome === 'submitted') { void onSubmitted(); return; }
     if (msg.outcome === 'ready') { setStatus('ready'); return; }
     if (msg.outcome === 'needs_user') {
-      const map: Record<string, FillStatus> = { captcha: 'captcha', missing: 'missing', consent: 'consent', no_submit: 'no_submit' };
+      const map: Record<string, FillStatus> = { captcha: 'captcha', missing: 'missing', consent: 'consent', no_submit: 'no_submit', login_required: 'login' };
       setStatus(map[msg.reason] ?? 'missing');
       return;
     }

@@ -23,6 +23,7 @@ const PROFILE = {
   full_name: 'Проверкин Тест Иванович', phone: '+79990000000',
   email: 'jupiter-test@jobtoo.ru', city: 'Москва', citizenship: 'Россия',
   desired_role: 'Разработчик',
+  cover_letter: 'Здравствуйте! Интересна ваша вакансия, резюме прилагаю.',
 };
 // Минимальный корректный PDF: страница без содержимого.
 const PDF = Buffer.from('%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 300]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n').toString('base64');
