@@ -9,6 +9,12 @@ import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
+} from '@expo-google-fonts/unbounded';
+import {
+  Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
+} from '@expo-google-fonts/onest';
 import { AlertProvider } from '@/template';
 import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
@@ -208,7 +214,15 @@ function useOTAUpdates() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({ ...Ionicons.font });
+  // Unbounded/Onest — только для нового дизайна профиля соискателя
+  // (constants/profileTheme.ts). Как и раньше с Ionicons: загрузка не
+  // блокирует показ экрана — пока шрифт не готов, текст рисуется системным
+  // и подменяется, когда подгрузится.
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+    Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
+    Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
+  });
   useOTAUpdates();
 
   useEffect(() => { markWebBundleMounted(); }, []);
