@@ -161,7 +161,7 @@ export default function ExtVacancyScreen() {
         <View style={s.tags}>
           <View style={s.tag}>
             <Ionicons name="location-outline" size={rs(15)} color={JT.ink} />
-            <Text style={s.tagTxt}>{place}</Text>
+            <Text style={s.tagTxt} numberOfLines={1}>{place}</Text>
           </View>
           {format ? <View style={s.tag}><Text style={s.tagTxt}>{format}</Text></View> : null}
           {level ? <View style={s.tag}><Text style={s.tagTxt}>{level}</Text></View> : null}
@@ -287,9 +287,9 @@ const s = StyleSheet.create({
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6), marginTop: rs(14) },
   tag: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5), height: rs(30), paddingHorizontal: rs(11),
-    borderRadius: rs(10), backgroundColor: JT.surface,
+    borderRadius: rs(10), backgroundColor: JT.surface, maxWidth: '100%',
   },
-  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink },
+  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink, flexShrink: 1 },
 
   salaryWrap: { marginTop: rs(18), marginRight: rs(4), marginBottom: rs(4) },
   salaryShadow: {
@@ -322,11 +322,12 @@ const s = StyleSheet.create({
   bullet: { flexDirection: 'row', gap: rs(10) },
   dot: { width: rs(8), height: rs(8), borderRadius: 2, marginTop: rs(8) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6) },
+  // Чип не шире карточки: навык длиннее строки переносится, а не вылезает.
   chip: {
-    height: rs(32), paddingHorizontal: rs(12), borderRadius: rs(16), borderWidth: 1.5, borderColor: JT.ink,
-    alignItems: 'center', justifyContent: 'center',
+    minHeight: rs(32), paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: rs(16),
+    borderWidth: 1.5, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center', maxWidth: '100%',
   },
-  chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink },
+  chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink, flexShrink: 1 },
 
   linkCard: {
     marginTop: rs(12), flexDirection: 'row', alignItems: 'center', gap: rs(12),
