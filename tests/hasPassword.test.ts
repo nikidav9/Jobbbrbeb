@@ -20,7 +20,7 @@ function block(source: string, start: string, end: string): string {
 test('rowToUser прокидывает hasPassword с сервера', () => {
   const rowToUser = block(dbts, 'function rowToUser(r: any): User {', 'function userToRow(u: User)');
   assert.ok(rowToUser, 'rowToUser не найден');
-  assert.ok(rowToUser.includes('hasPassword: r.has_password ?? undefined,'));
+  assert.ok(rowToUser.includes("hasPassword: typeof r.has_password === 'boolean' ? r.has_password : undefined,"));
 });
 
 test('rowToUser не читает и не пробрасывает сам хеш пароля с сервера в hasPassword', () => {

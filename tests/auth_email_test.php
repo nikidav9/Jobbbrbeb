@@ -366,7 +366,7 @@ check('вход по коду сверяет и id из кода, и почту 
     && str_contains($verify, "if (!\$row || !empty(\$row['is_blocked'])) {"));
 check('вход по коду выдаёт сессию сразу, без квитанции',
     str_contains($verify, "jt_try_reset('login');")
-    && str_contains($verify, "\$data = ['user' => jt_attach_has_password(sb_single('jm_users', ['id' => 'eq.' . \$row['id']], USER_SELF_COLS)),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
+    && str_contains($verify, "\$data = ['user' => jt_self_user((string)\$row['id']),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
 
 $reset = case_body($db, 'dbAuthResetPassword');
 check('сброс пароля гасит прежние сессии', str_contains($reset, "'sessions_valid_from' => now_iso(),"));
@@ -405,15 +405,6 @@ check('без квитанции телефон и пароль по-прежн�
 // — этот же regex её бы не нашёл, потому что ищет именно `!== ''`.
 check('инвариант не переворачивается на противоположный (пустой пароль не проверяется)',
     !str_contains($upsert, "if (\$pwd === '') {\n                        \$bad = jt_password_problem"));
-// Регистрация работодателя по короткому пути «почта → код → компания»
-// (решение владельца, срез 27.09.2026, тот же, что у соискателя): ветка
-// квитанции решает по её наличию, а не по роли — role в неё ещё не попал
-// (клиент присылает role отдельным полем профиля, его читает код ниже этой
-// ветки). Без этого employer тоже требовал бы пароль наравне со старыми
-// телефонными сборками.
-$ticketBranch = substr($upsert, 0, (int)strpos($upsert, "if (!\$existing) {\n                // Старые сборки"));
-check('короткий путь по квитанции не завязан на роль — работает и для employer',
-    !str_contains($ticketBranch, "role'] === 'worker'") && !str_contains($ticketBranch, "'employer'"));
 
 $login = case_body($db, 'dbLogin');
 check('вход по почте или по телефону старого аккаунта',

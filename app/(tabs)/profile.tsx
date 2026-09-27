@@ -1381,7 +1381,7 @@ export default function ProfileScreen() {
                   // «Сменить пароль» для такого аккаунта бессмысленно, он
                   // всегда отвечает «неверный пароль».
                   if (currentUser.hasPassword === false) {
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
                   } else {
                     setShowSettings(true);
                   }
@@ -1639,7 +1639,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   onPress={() => {
                     setShowConfirmDelete(false); setDeletePassword(''); setDeleteError('');
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
                   }}
                   accessibilityRole="button"
                 >
@@ -1659,7 +1659,7 @@ export default function ProfileScreen() {
                   style={styles.setPasswordBtn}
                   onPress={() => {
                     setShowConfirmDelete(false);
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
                   }}
                 >
                   <Text style={styles.setPasswordText}>Задать пароль</Text>
@@ -1755,7 +1755,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               onPress={() => {
                 setShowSettings(false); setCurPassword(''); setNewPassword(''); setConfirmPassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile' } });
+                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
               }}
               accessibilityRole="button"
             >

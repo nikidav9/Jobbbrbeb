@@ -26,7 +26,9 @@ const SUPPORT_EMAIL = 'support@jobtoo.ru';
 
 export default function ResetPassword() {
   const router = useRouter();
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const { returnTo, mode } = useLocalSearchParams<{ returnTo?: string; mode?: string }>();
+  // mode=set — из настроек у аккаунта без пароля: не «восстановить», а «задать».
+  const setting = mode === 'set';
   const { signInAs, showToast } = useApp();
 
   const [ticket, setTicket] = useState('');
@@ -44,7 +46,7 @@ export default function ResetPassword() {
     try {
       const user = await dbAuthResetPassword(ticket, password);
       await signInAs(user);
-      showToast('Пароль изменён. Добро пожаловать! 👋', 'success');
+      showToast(setting ? 'Пароль задан' : 'Пароль изменён. Добро пожаловать! 👋', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Не удалось сменить пароль';
@@ -61,7 +63,7 @@ export default function ResetPassword() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.sheet}>
-            <Text style={styles.title}>Восстановить пароль</Text>
+            <Text style={styles.title}>{setting ? 'Задать пароль' : 'Восстановить пароль'}</Text>
 
             {!ticket ? (
               <>

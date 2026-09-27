@@ -112,6 +112,12 @@ export interface User {
   email?: string;
   /** Когда почта подтверждена кодом; пусто — старый аккаунт без почты. */
   emailVerifiedAt?: string;
+  /**
+   * Задан ли пароль — только в своём профиле, сервер отдаёт признак, а не сам
+   * пароль. false — аккаунт создан по коду из письма; undefined — неизвестно
+   * (старый ответ сервера или кэш).
+   */
+  hasPassword?: boolean;
   lastName: string;
   firstName: string;
   age?: number;
@@ -121,12 +127,6 @@ export interface User {
   company?: string;
   createdAt: string;
   password?: string;
-  /**
-   * Есть ли у аккаунта пароль — вычисляет сервер, сам хеш сюда не входит.
-   * Регистрация «почта → код» (с 27.09.2026) пароль не заводит. undefined —
-   * старый кэш/ответ без поля, «не знаем»: ведём себя как раньше.
-   */
-  hasPassword?: boolean;
   isBlocked?: boolean;
   avatarUrl?: string;
   avgRating?: number;

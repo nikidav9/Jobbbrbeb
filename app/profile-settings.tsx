@@ -449,6 +449,8 @@ export default function ProfileSettingsScreen() {
             icon="notifications-outline"
             onPress={openNotificationSettings}
           />
+          {/* Аккаунт по коду из письма пароля не имеет: «Сменить» с полем
+              «текущий пароль» ему не пройти. Такому сразу — задать по коду. */}
           <SettingsRow
             label={currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
             icon="key-outline"
@@ -457,7 +459,7 @@ export default function ProfileSettingsScreen() {
               // «Сменить пароль» на таком аккаунте всегда отвечал бы «неверный
               // пароль». Ведём сразу туда, откуда пароль реально берётся.
               if (currentUser.hasPassword === false) {
-                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
               } else {
                 setShowPassword(true);
               }
@@ -712,7 +714,7 @@ export default function ProfileSettingsScreen() {
             <TouchableOpacity
               onPress={() => {
                 setShowPassword(false); setOldPassword(''); setNewPassword(''); setConfirmPassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
               }}
               accessibilityRole="button"
             >
@@ -762,7 +764,7 @@ export default function ProfileSettingsScreen() {
                 <TouchableOpacity
                   onPress={() => {
                     setShowDelete(false); setDeletePassword('');
-                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
                   }}
                   accessibilityRole="button"
                 >
@@ -776,7 +778,7 @@ export default function ProfileSettingsScreen() {
                   label="Задать пароль"
                   onPress={() => {
                     setShowDelete(false);
-                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings' } });
+                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
                   }}
                 />
               ) : (
