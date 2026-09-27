@@ -11,9 +11,24 @@ import { dbGetResumeFiles } from '@/services/db';
  * Возвращает true, если у человека выбрано резюме с сохранённым PDF.
  * Иначе показывает диалог с переходом в «Профиль → Файлы» и возвращает false.
  */
+// Удачная проверка живёт 10 минут: иначе каждый свайп вправо ждал запроса
+// к серверу, и колода замирала после каждого отклика. Запоминаем только
+// «резюме есть» — отказ переспрашивается, чтобы загрузка сразу засчиталась.
+// Профиль сбрасывает память сам, когда резюме удаляют или меняют.
+const RESUME_OK_TTL = 10 * 60 * 1000;
+let resumeOkUntil = 0;
+
+export function forgetResumeCheck(): void {
+  resumeOkUntil = 0;
+}
+
 export async function ensureResumeForApply(): Promise<boolean> {
+  if (Date.now() < resumeOkUntil) return true;
   const hasResume = (await dbGetResumeFiles()).some(file => file.selected && !!file.storagePath);
-  if (hasResume) return true;
+  if (hasResume) {
+    resumeOkUntil = Date.now() + RESUME_OK_TTL;
+    return true;
+  }
 
   const prompt = 'Откликаться можно только с резюме. Загрузите PDF в профиль — это займёт минуту. Перейти к загрузке?';
   const openFiles = Platform.OS === 'web'

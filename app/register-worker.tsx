@@ -11,14 +11,12 @@ import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
 import { PhoneInput } from '@/components/feature/PhoneInput';
-import { MetroPicker } from '@/components/feature/MetroPicker';
 import { AboutYouStep, isAboutYouComplete } from '@/components/feature/AboutYouStep';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { useApp } from '@/hooks/useApp';
 import { uid, nowISO, isPhoneComplete, extractPhoneDigits } from '@/services/storage';
 import { dbCheckPhoneExists, dbWarmup, dbSaveResumeFile } from '@/services/db';
 import { extractResumePdf, mergeResumeIntoUser } from '@/services/resumeImport';
-import { METRO_LINES } from '@/constants/metro';
 import { PasswordRules } from '@/components/ui/PasswordRules';
 import { firstUnmetRule } from '@/constants/passwordRules';
 
@@ -26,7 +24,7 @@ import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 // Steps: 1-Phone, 2-Password, 3-Name, 4-Legal, 5-Metro, 6-Резюме
-const TOTAL = 7;
+const TOTAL = 6;
 
 export default function RegisterWorker() {
   const router = useRouter();
@@ -47,15 +45,11 @@ export default function RegisterWorker() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [metroLineId, setMetroLineId] = useState('');
-  const [metroLineName, setMetroLineName] = useState('');
-  const [metroStation, setMetroStation] = useState('');
   const [resumeFile, setResumeFile] = useState<Awaited<ReturnType<typeof extractResumePdf>> & { fileName: string } | null>(null);
   const [resumeParsing, setResumeParsing] = useState(false);
   const [age, setAge] = useState('');
   const [bio, setBio] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [metroPicker, setMetroPicker] = useState(false);
   const [passError, setPassError] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [pdAgreed, setPdAgreed] = useState(false);
@@ -156,8 +150,10 @@ export default function RegisterWorker() {
         password,
         lastName,
         firstName,
-        metroLineId,
-        metroStation,
+        // Шага с метро больше нет: лента только IT по Москве, и станция
+        // ни на что в ней не влияла. Указать её можно позже в профиле.
+        metroLineId: '',
+        metroStation: '',
         workTypes: [],
         age: Number(age),
         bio: bio.trim(),
@@ -193,8 +189,6 @@ export default function RegisterWorker() {
     }
   };
 
-  const line = METRO_LINES.find(l => l.id === metroLineId);
-
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -213,10 +207,10 @@ export default function RegisterWorker() {
           {/* Step 1: Email + code */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>{emailAuthReady ? 'Твоя почта' : 'Введи номер телефона'}</Text>
+              <Text style={styles.title}>{emailAuthReady ? 'Ваша почта' : 'Введите номер телефона'}</Text>
               <Text style={styles.subtitle}>
                 {emailAuthReady
-                  ? 'Пришлём код — по почте будешь входить и восстанавливать пароль'
+                  ? 'Пришлём код — по почте вы будете входить и восстанавливать пароль'
                   : 'Работодатель увидит его только после мэтча'}
               </Text>
               {emailAuthReady ? (
@@ -249,14 +243,14 @@ export default function RegisterWorker() {
           {/* Step 2: Password */}
           {step === 2 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Создай пароль</Text>
-              <Text style={styles.subtitle}>{emailTicket ? 'Забудешь — восстановишь кодом из письма.' : 'Запомни его. Забудешь — пиши на support@jobtoo.ru.'}</Text>
+              <Text style={styles.title}>Придумайте пароль</Text>
+              <Text style={styles.subtitle}>{emailTicket ? 'Забудете — восстановите кодом из письма.' : 'Запомните его. Если забудете — напишите на support@jobtoo.ru.'}</Text>
               <AppInput
                 label="Пароль"
                 value={password}
                 onChangeText={v => { setPassword(v); setPassError(''); }}
                 secureTextEntry
-                placeholder="Придумайте пароль"
+                placeholder="Пароль"
                 autoFocus
               />
               <PasswordRules password={password} />
@@ -281,7 +275,7 @@ export default function RegisterWorker() {
           {/* Step 3: Name */}
           {step === 3 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Как тебя зовут?</Text>
+              <Text style={styles.title}>Как вас зовут?</Text>
               <AppInput value={lastName} onChangeText={setLastName} placeholder="Романов" label="Фамилия" autoFocus />
               <AppInput value={firstName} onChangeText={setFirstName} placeholder="Алексей" label="Имя" />
               <View style={{ marginTop: 12 }}>
@@ -355,45 +349,10 @@ export default function RegisterWorker() {
             </View>
           )}
 
-          {/* Step 5: Metro */}
+          {/* Step 5: Резюме */}
           {step === 5 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>📍 Ближайшее метро</Text>
-              <Text style={styles.subtitle}>Покажем работу рядом с тобой</Text>
-              {metroStation ? (
-                <View style={styles.metroSelected}>
-                  <View style={[styles.metroLineDot, { backgroundColor: line?.color ?? Colors.blue }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.metroLineName}>{metroLineName}</Text>
-                    <Text style={styles.metroStName}>{metroStation}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setMetroPicker(true)}>
-                    <Text style={styles.changeLink}>Изменить</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={styles.metroField} onPress={() => setMetroPicker(true)} activeOpacity={0.8}>
-                  <Text style={styles.metroFieldText}>🚇 Выбрать станцию</Text>
-                  <Text style={styles.arrow}>›</Text>
-                </TouchableOpacity>
-              )}
-              <View style={{ marginTop: 28 }}>
-                <PrimaryButton label="Продолжить →" onPress={next} disabled={!metroStation} />
-              </View>
-              <MetroPicker
-                visible={metroPicker}
-                onClose={() => setMetroPicker(false)}
-                onSelect={(lid, lname, st) => { setMetroLineId(lid); setMetroLineName(lname); setMetroStation(st); setMetroPicker(false); }}
-                selectedLineId={metroLineId}
-                selectedStation={metroStation}
-              />
-            </View>
-          )}
-
-          {/* Step 6: Резюме */}
-          {step === 6 && (
-            <View style={styles.stepContent}>
-              <Text style={styles.title}>Загрузи резюме</Text>
+              <Text style={styles.title}>Загрузите резюме</Text>
               <Text style={styles.subtitle}>По резюме подберём вакансии. Без резюме откликаться нельзя — его можно загрузить и позже в профиле.</Text>
               {resumeParsing ? (
                 <ActivityIndicator size="small" color={Colors.primary} />
@@ -419,13 +378,13 @@ export default function RegisterWorker() {
                 <PrimaryButton label="Продолжить →" onPress={next} />
               </View>
               <TouchableOpacity style={styles.loginHint} onPress={() => { setResumeFile(null); next(); }}>
-                <Text style={styles.loginHintTxt}>Пропустить — выберу разделы сам</Text>
+                <Text style={styles.loginHintTxt}>Пропустить — загружу позже</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Step 7: О себе — фото, возраст, описание */}
-          {step === 7 && (
+          {/* Step 6: О себе — фото, возраст, описание */}
+          {step === 6 && (
             <View style={styles.stepContent}>
               <AboutYouStep
                 role="worker"
@@ -475,7 +434,6 @@ const styles = StyleSheet.create({
   metroFieldText: { fontSize: rf(15), color: Colors.textPrimary },
   arrow: { fontSize: rf(20), color: Colors.textMuted },
   metroSelected: { flexDirection: 'row', alignItems: 'center', gap: rs(12), borderWidth: 1.5, borderColor: Colors.primary, borderRadius: Radius.md, padding: rs(16), backgroundColor: Colors.primaryLight },
-  metroLineDot: { width: rs(12), height: rs(12), borderRadius: rs(6) },
   metroLineName: { fontSize: rf(12), color: Colors.textMuted },
   metroStName: { fontSize: rf(15), fontWeight: '600', color: Colors.textPrimary, marginTop: rs(2) },
   changeLink: { color: Colors.primary, fontSize: rf(13), fontWeight: '600' },

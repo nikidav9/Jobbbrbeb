@@ -15,6 +15,7 @@ import {
   jupiterLiveState, jupiterSetLive,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
+import { forgetJupiterLive } from '@/services/jupiterLive';
 import { AppInput } from '@/components/ui/AppInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -127,6 +128,7 @@ export default function ProfileSettingsScreen() {
     }
     setJupiterBusy(true);
     try {
+      forgetJupiterLive();
       await jupiterSetLive(currentUser.id, next);
       setJupiterLive(next);
     } catch (error) {
