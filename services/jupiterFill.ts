@@ -59,6 +59,8 @@ function jtKeyForField(text, type, name) {
   // Чужие для кандидата поля: мессенджер (\"tel\" внутри \"telegram\"
   // дал бы телефон), компания и ИНН (форма для клиентов), рекомендатель.
   var all = text + ' ' + nameLower;
+  // «Telegram или телефон» — составное поле: номер туда вписать честно.
+  if (/telegram|телеграм/.test(all) && /телефон|phone/.test(all)) return 'phone';
   if (/telegram|телеграм|компани|company|организац|(^|[^а-яё])инн([^а-яё]|$)|\\binn\\b|referr|рекомендат/.test(all)) return null;
 
   function classify(t) {
@@ -70,7 +72,7 @@ function jtKeyForField(text, type, name) {
 
     if (/mail|почт/.test(t)) return 'email';
     if (/phone|tel|телефон/.test(t)) return 'phone';
-    if (/отчеств|middle|patronymic/.test(t)) return 'patronymic';
+    if (/отчеств|otchestvo|middle|patronymic/.test(t)) return 'patronymic';
     if (/фамил|surname|last/.test(t)) return 'last_name';
     if (/им(я|ени)|first|\\bname\\b/.test(t)) return 'first_name';
     if (/город|city|town/.test(t)) return 'city';
@@ -78,7 +80,7 @@ function jtKeyForField(text, type, name) {
     if (/гражданств|citizenship/.test(t)) return 'citizenship';
     // «роль» — только словом: иначе «контроль» и «пароль» стали бы должностью.
     if (/должност|position|vacancy|(^|[^а-яё])роль/.test(t)) return 'desired_role';
-    if (/сопроводит|о себе|комментар|comment|message|cover/.test(t)) return 'cover_letter';
+    if (/сопроводит|о себе|комментар|сообщени|comment|message|cover/.test(t)) return 'cover_letter';
     return null;
   }
 

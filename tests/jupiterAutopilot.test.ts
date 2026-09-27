@@ -45,6 +45,7 @@ test('кнопки: «Откликнуться» открывает анкету
   assert.equal(core.jtIsApplyButton('Откликнуться на вакансию'), true);
   assert.equal(core.jtIsApplyButton('Заполнить анкету'), true);
   assert.equal(core.jtIsApplyButton('Хочу работать'), true);
+  assert.equal(core.jtIsApplyButton('Оставить резюме'), true);
   assert.equal(core.jtIsApplyButton('Все вакансии'), false);
   assert.equal(core.jtIsSubmitButton('Отправить'), true);
   assert.equal(core.jtIsSubmitButton('Отправить резюме'), true);
