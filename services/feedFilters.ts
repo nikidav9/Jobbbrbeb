@@ -22,6 +22,10 @@ export type FeedFilters = {
   formats: VacancyFormat[];
   companies: string[];
   posted: PostedFilter;
+  /** «Только с указанной зарплатой» — экран «Зарплата», по умолчанию выкл. */
+  salaryKnown: boolean;
+  /** «Скрыть просмотренные» — по умолчанию вкл (решение владельца 27.09.2026). */
+  hideSeen: boolean;
 };
 
 export const EMPTY_FEED_FILTERS: FeedFilters = {
@@ -31,12 +35,15 @@ export const EMPTY_FEED_FILTERS: FeedFilters = {
   formats: [],
   companies: [],
   posted: 'all',
+  salaryKnown: false,
+  hideSeen: true,
 };
 
 /** Хоть один фильтр включён — используется и для «пустой экран» текста. */
 export function isFilterActive(f: FeedFilters): boolean {
   return f.salaryFrom > 0 || f.specs.length > 0 || f.levels.length > 0
-    || f.formats.length > 0 || f.companies.length > 0 || f.posted !== 'all';
+    || f.formats.length > 0 || f.companies.length > 0 || f.posted !== 'all'
+    || f.salaryKnown || !f.hideSeen;
 }
 
 /** Сколько из шести групп фильтров включено — не сумма выбранных значений. */
@@ -48,6 +55,8 @@ export function activeCount(f: FeedFilters): number {
     f.formats.length > 0,
     f.companies.length > 0,
     f.posted !== 'all',
+    f.salaryKnown,
+    !f.hideSeen,
   ].filter(Boolean).length;
 }
 
@@ -81,6 +90,7 @@ export function matchOwnVacancy(v: OwnVacancyLike, f: FeedFilters, now: number):
     const s = typeof v.salary === 'number' ? v.salary : 0;
     if (s <= 0 || s < f.salaryFrom) return false;
   }
+  if (f.salaryKnown && !(typeof v.salary === 'number' && v.salary > 0)) return false;
   if (f.specs.length && !vacancySpecs(v.title).some(s => f.specs.includes(s))) return false;
   if (f.levels.length) {
     const lv = vacancyLevel(v.title);
@@ -104,6 +114,8 @@ export function toExtFeedFilters(f: FeedFilters): ExtFeedFilters {
     formats: f.formats,
     companies: f.companies,
     posted: f.posted,
+    salaryKnown: f.salaryKnown,
+    hideSeen: f.hideSeen,
   };
 }
 

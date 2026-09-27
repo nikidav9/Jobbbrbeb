@@ -78,10 +78,27 @@ test('activeCount считает включённые группы, а не чи
 });
 
 test('toExtFeedFilters отдаёт форму dbGetExtFeed без изменений значений', () => {
-  const f = { salaryFrom: 150000, specs: ['qa' as const], levels: [], formats: ['remote' as const], companies: ['Тинькофф'], posted: 'week' as const };
+  const f = {
+    salaryFrom: 150000, specs: ['qa' as const], levels: [], formats: ['remote' as const], companies: ['Тинькофф'],
+    posted: 'week' as const, salaryKnown: true, hideSeen: false,
+  };
   assert.deepEqual(toExtFeedFilters(f), {
     salaryFrom: 150000, specs: ['qa'], levels: [], formats: ['remote'], companies: ['Тинькофф'], posted: 'week',
+    salaryKnown: true, hideSeen: false,
   });
+});
+
+test('переключатели экрана фильтров: по умолчанию «скрыть просмотренные» вкл, «только с зарплатой» выкл', () => {
+  assert.equal(EMPTY_FEED_FILTERS.hideSeen, true);
+  assert.equal(EMPTY_FEED_FILTERS.salaryKnown, false);
+  assert.equal(isFilterActive({ ...EMPTY_FEED_FILTERS, hideSeen: false }), true);
+  assert.equal(activeCount({ ...EMPTY_FEED_FILTERS, salaryKnown: true, hideSeen: false }), 2);
+});
+
+test('«только с указанной зарплатой» скрывает свою вакансию без суммы', () => {
+  const f = { ...EMPTY_FEED_FILTERS, salaryKnown: true };
+  assert.equal(matchOwnVacancy({ ...base, salary: null }, f, NOW), false);
+  assert.equal(matchOwnVacancy({ ...base, salary: 120000 }, f, NOW), true);
 });
 
 test('склонение «вакансия»', () => {
