@@ -26,6 +26,7 @@ import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
 import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
+import { JTBolt } from '@/components/ui/JTBolt';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
@@ -995,7 +996,7 @@ function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
         accessibilityRole="button"
         accessibilityLabel={`Откликов осталось на сегодня: ${energy}`}
       >
-        <Ionicons name="flash" size={rs(20)} color={energy > 0 ? JT.accent : JT.muted} />
+        <JTBolt size={rs(20)} fill={energy > 0 ? JT.accent : JT.muted} />
         <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
       </TouchableOpacity>
     </View>
@@ -2165,7 +2166,7 @@ function WorkerPermMode() {
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLimitOpen(false)} />
           <View style={[pS.limitCard, { marginBottom: tabBarHeight + rs(16) }]}>
             <View style={pS.limitIcon}>
-              <Ionicons name="flash" size={26} color={Colors.primary} />
+              <JTBolt size={26} />
             </View>
             {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
                 ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
