@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable, Alert,
+  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
 } from 'react-native';
 import {
   GestureDetector,
@@ -55,6 +55,7 @@ import {
 } from '@/services/db';
 import { fillHostFor, jupiterManualEligible } from '@/services/jupiterFill';
 import { ensureResumeForApply } from '@/services/resumeGate';
+import { confirmAsync } from '@/services/confirm';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1180,8 +1181,12 @@ function WorkerPermMode() {
   // предлагаем открыть анкету: Юпитер заполнит её на глазах, отправит
   // человек сам (app/jupiter-fill.tsx). Не чаще раза в 2 минуты — листать
   // ленту это не должно мешать; остальные ждут в «Откликах».
+  // На вебе (сайт, Телеграм) встроенного браузера нет: jupiter-fill открывает
+  // анкету компании в новой вкладке, и заполнить её придётся самому — поэтому
+  // и текст другой. Раньше на вебе подсказки не было вовсе, и заявка молча
+  // ждала в «Откликах».
   const followUpApplication = (applicationId: string, company?: string | null) => {
-    if (Platform.OS === 'web' || !currentUser) return;
+    if (!currentUser) return;
     const userId = currentUser.id;
     setTimeout(async () => {
       if (Date.now() - lastFollowUp.current < 120000) return;
@@ -1189,24 +1194,40 @@ function WorkerPermMode() {
         const own = (await jupiterMyApplications(userId)).find(a => a.id === applicationId);
         if (!own || own.state !== 'action_required' || !jupiterManualEligible(own) || !fillHostFor(own.vacancyUrl)) return;
         lastFollowUp.current = Date.now();
-        Alert.alert(
-          company || 'Отклик',
-          'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
-          [
-            { text: 'Позже', style: 'cancel' },
-            { text: 'Открыть', onPress: () => router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } }) },
-          ],
-        );
+        const open = await confirmAsync({
+          title: company || 'Отклик',
+          body: Platform.OS === 'web'
+            ? 'Сайт компании не принимает отклик от Юпитера. Откройте анкету и отправьте отклик сами — это пара минут.'
+            : 'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
+          confirmLabel: 'Открыть',
+          cancelLabel: 'Позже',
+        });
+        if (open) router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } });
       } catch { /* не вышло — заявка ждёт в «Откликах» */ }
     }, 40000);
   };
 
-  const applyToExt = async (ev: ExtVacancy): Promise<boolean> => {
+  // Отклик на карьерную вакансию — в два шага. Сначала то, что может
+  // остановить отклик диалогом: резюме и поручение Юпитеру. Обе проверки
+  // помнят успех 10 минут, поэтому после первого свайпа они мгновенные.
+  // Затем заявка уходит в фоне, а колода уже показывает следующую карточку:
+  // раньше она стояла, пока шли четыре запроса подряд.
+  const prepareExtApply = async (): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
-    setApplying(ev.id);
     try {
       if (!await ensureResumeForApply()) return false;
-      if (!await requestJupiterLive(currentUser.id)) return false;
+      return await requestJupiterLive(currentUser.id);
+    } catch (e: any) {
+      const msg = e?.message ?? '';
+      console.warn('[prepareExtApply]', msg);
+      showToast(msg || 'Не удалось проверить резюме. Проверьте связь.', 'error');
+      return false;
+    }
+  };
+
+  const sendExtApply = async (ev: ExtVacancy): Promise<boolean> => {
+    if (!currentUser) return false;
+    try {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
       showToast(application.state === 'queued'
         ? 'Юпитер готовит и отправляет отклик. Статус — в «Откликах».'
@@ -1215,11 +1236,10 @@ function WorkerPermMode() {
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';
-      console.warn('[applyToExt]', msg);
-      showToast(msg || 'Не удалось создать заявку', 'error');
+      console.warn('[sendExtApply]', msg);
+      const company = ev.company ? ` в ${ev.company}` : '';
+      showToast(`Отклик${company} не отправлен${msg ? `: ${msg}` : ''}. Нажмите «Вернуть», чтобы попробовать ещё раз.`, 'error');
       return false;
-    } finally {
-      setApplying(null);
     }
   };
 
@@ -1346,16 +1366,29 @@ function WorkerPermMode() {
     swDecisionPending.current = true;
     swFly('right', vx, () => {
       if (c._ext) {
-        void applyToExt(c.v).then(accepted => {
-          if (accepted) {
-            resetCardScroll();
-            setSwSkipped(s => new Set(s).add(c.v.id));
-            setSwLastSkipped(null);
-            dbExtSwipe(currentUser.id, c.v.id, 1).catch(() => {});
-          } else {
+        const ev = c.v;
+        void prepareExtApply().then(ready => {
+          if (!ready) {
             energy.refundOne();
             swDeck.snapBack();
+            return;
           }
+          resetCardScroll();
+          setSwSkipped(s => new Set(s).add(ev.id));
+          setSwLastSkipped(null);
+          // Колода уже свободна; заявка догоняет в фоне. Не дошла — молния
+          // возвращается, а карточку можно достать кнопкой «Вернуть» (отклика
+          // не было, возвращать есть что). Свайп записываем только после
+          // успеха: иначе сервер спрятал бы вакансию, на которую никто не
+          // откликнулся.
+          void sendExtApply(ev).then(sent => {
+            if (sent) {
+              dbExtSwipe(currentUser.id, ev.id, 1).catch(() => {});
+            } else {
+              energy.refundOne();
+              setSwLastSkipped(ev.id);
+            }
+          });
         }).finally(() => { swDecisionPending.current = false; });
       } else if (currentUser.isGuest) {
         // Гостя applyTo сам отправит на регистрацию — резюме у него ещё нет

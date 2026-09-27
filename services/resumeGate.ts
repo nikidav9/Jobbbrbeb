@@ -1,6 +1,6 @@
-import { Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { dbGetResumeFiles } from '@/services/db';
+import { confirmAsync } from '@/services/confirm';
 
 /**
  * Решение владельца 25.09.2026: откликаться можно только с загруженным
@@ -24,6 +24,17 @@ export function registerProfileGateOpener(opener: GateOpener | null) {
   gateOpener = opener;
 }
 
+// Удачная проверка живёт 10 минут: иначе каждый свайп вправо ждал запроса
+// к серверу, и колода замирала после каждого отклика. Запоминаем только
+// «резюме есть» — отказ переспрашивается, чтобы загрузка сразу засчиталась.
+// Профиль сбрасывает память сам, когда резюме удаляют или меняют.
+const RESUME_OK_TTL = 10 * 60 * 1000;
+let resumeOkUntil = 0;
+
+export function forgetResumeCheck(): void {
+  resumeOkUntil = 0;
+}
+
 /**
  * Возвращает true, если у человека выбрано резюме с сохранённым PDF и
  * заполнено имя. Иначе открывает окно (или, если хост не смонтирован, —
@@ -31,17 +42,24 @@ export function registerProfileGateOpener(opener: GateOpener | null) {
  * false, если человек не довёл дело до конца.
  */
 export async function ensureResumeForApply(): Promise<boolean> {
+  if (Date.now() < resumeOkUntil) return true;
   const hasResume = (await dbGetResumeFiles()).some(file => file.selected && !!file.storagePath);
-  if (gateOpener) return gateOpener(hasResume);
-  if (hasResume) return true;
+  if (gateOpener) {
+    const ok = await gateOpener(hasResume);
+    // Запоминаем только полный успех: резюме было и окно не понадобилось
+    // или человек довёл его до конца.
+    if (ok && hasResume) resumeOkUntil = Date.now() + RESUME_OK_TTL;
+    return ok;
+  }
+  if (hasResume) {
+    resumeOkUntil = Date.now() + RESUME_OK_TTL;
+    return true;
+  }
 
   const prompt = 'Откликаться можно только с резюме. Загрузите PDF в профиль — это займёт минуту. Перейти к загрузке?';
-  const openFiles = Platform.OS === 'web'
-    ? typeof window !== 'undefined' && window.confirm(prompt)
-    : await new Promise<boolean>(resolve => Alert.alert('Нужно резюме', prompt, [
-        { text: 'Позже', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Загрузить', onPress: () => resolve(true) },
-      ], { cancelable: true, onDismiss: () => resolve(false) }));
+  const openFiles = await confirmAsync({
+    title: 'Нужно резюме', body: prompt, confirmLabel: 'Загрузить', cancelLabel: 'Позже',
+  });
   if (openFiles) router.push({ pathname: '/(tabs)/profile', params: { tab: 'files' } });
   return false;
 }

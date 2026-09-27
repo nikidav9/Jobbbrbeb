@@ -426,7 +426,7 @@ $mig = (string)file_get_contents(__DIR__ . '/../supabase/migrations/119_email_au
 check('почта стирается при удалении аккаунта', str_contains($mig, 'new.email := null;'));
 check('таблица кодов закрыта от anon', str_contains($mig, 'revoke all on public.jm_auth_codes from anon, authenticated;'));
 
-$mig127 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/127_auth_code_login.sql');
+$mig127 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/128_auth_code_login.sql');
 check('миграция входа расширяет цель кода идемпотентно',
     str_contains($mig127, 'drop constraint if exists jm_auth_codes_purpose_check;')
     && str_contains($mig127, "check (purpose in ('register', 'attach', 'reset', 'login'));"));

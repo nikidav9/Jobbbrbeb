@@ -317,7 +317,7 @@ export default function RegisterWorker() {
           {/* Step 1: Email + code (или Phone — пока почта не готова) */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>{emailAuthReady ? 'Регистрация по почте' : 'Введи номер телефона'}</Text>
+              <Text style={styles.title}>{emailAuthReady ? 'Регистрация по почте' : 'Введите номер телефона'}</Text>
               <Text style={styles.subtitle}>
                 {emailAuthReady
                   ? (finishing ? 'Создаём аккаунт…' : 'Пришлём код — пароль не нужен')
@@ -361,14 +361,14 @@ export default function RegisterWorker() {
           {/* Step 2: Password */}
           {step === 2 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Создай пароль</Text>
-              <Text style={styles.subtitle}>{emailTicket ? 'Забудешь — восстановишь кодом из письма.' : 'Запомни его. Забудешь — пиши на support@jobtoo.ru.'}</Text>
+              <Text style={styles.title}>Придумайте пароль</Text>
+              <Text style={styles.subtitle}>{emailTicket ? 'Забудете — восстановите кодом из письма.' : 'Запомните его. Если забудете — напишите на support@jobtoo.ru.'}</Text>
               <AppInput
                 label="Пароль"
                 value={password}
                 onChangeText={v => { setPassword(v); setPassError(''); }}
                 secureTextEntry
-                placeholder="Придумайте пароль"
+                placeholder="Пароль"
                 autoFocus
               />
               <PasswordRules password={password} />
@@ -393,7 +393,7 @@ export default function RegisterWorker() {
           {/* Step 3: Name */}
           {step === 3 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Как тебя зовут?</Text>
+              <Text style={styles.title}>Как вас зовут?</Text>
               <AppInput value={lastName} onChangeText={setLastName} placeholder="Романов" label="Фамилия" autoFocus />
               <AppInput value={firstName} onChangeText={setFirstName} placeholder="Алексей" label="Имя" />
               <View style={{ marginTop: 12 }}>
@@ -420,7 +420,7 @@ export default function RegisterWorker() {
           {step === 5 && (
             <View style={styles.stepContent}>
               <Text style={styles.title}>📍 Ближайшее метро</Text>
-              <Text style={styles.subtitle}>Покажем работу рядом с тобой</Text>
+              <Text style={styles.subtitle}>Покажем работу рядом с вами</Text>
               {metroStation ? (
                 <View style={styles.metroSelected}>
                   <View style={[styles.metroLineDot, { backgroundColor: line?.color ?? Colors.blue }]} />
@@ -454,7 +454,7 @@ export default function RegisterWorker() {
           {/* Step 6: Резюме */}
           {step === 6 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Загрузи резюме</Text>
+              <Text style={styles.title}>Загрузите резюме</Text>
               <Text style={styles.subtitle}>По резюме подберём вакансии. Без резюме откликаться нельзя — его можно загрузить и позже в профиле.</Text>
               {resumeParsing ? (
                 <ActivityIndicator size="small" color={Colors.primary} />
@@ -480,7 +480,7 @@ export default function RegisterWorker() {
                 <PrimaryButton label="Продолжить →" onPress={next} />
               </View>
               <TouchableOpacity style={styles.loginHint} onPress={() => { setResumeFile(null); next(); }}>
-                <Text style={styles.loginHintTxt}>Пропустить — выберу разделы сам</Text>
+                <Text style={styles.loginHintTxt}>Пропустить — загружу позже</Text>
               </TouchableOpacity>
             </View>
           )}

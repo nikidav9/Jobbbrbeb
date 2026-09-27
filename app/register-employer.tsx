@@ -161,7 +161,7 @@ export default function RegisterEmployer() {
           {/* Step 1: Email + code */}
           {step === 1 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>{emailAuthReady ? 'Рабочая почта' : 'Введи номер телефона'}</Text>
+              <Text style={styles.title}>{emailAuthReady ? 'Рабочая почта' : 'Введите номер телефона'}</Text>
               <Text style={styles.subtitle}>
                 {emailAuthReady
                   ? 'Пришлём код — по почте будете входить и восстанавливать пароль'
@@ -197,14 +197,14 @@ export default function RegisterEmployer() {
           {/* Step 2: Password */}
           {step === 2 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Создай пароль</Text>
+              <Text style={styles.title}>Придумайте пароль</Text>
               <Text style={styles.subtitle}>{emailTicket ? 'Забудете — восстановите кодом из письма.' : 'Запомните его. Забудете — пишите на support@jobtoo.ru.'}</Text>
               <AppInput
                 label="Пароль"
                 value={password}
                 onChangeText={v => { setPassword(v); setPassError(''); }}
                 secureTextEntry
-                placeholder="Придумайте пароль"
+                placeholder="Пароль"
                 autoFocus
               />
               <PasswordRules password={password} />
@@ -229,7 +229,7 @@ export default function RegisterEmployer() {
           {/* Step 3: Name + Company */}
           {step === 3 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>Как тебя зовут?</Text>
+              <Text style={styles.title}>Как вас зовут?</Text>
               <AppInput value={lastName} onChangeText={setLastName} placeholder="Иванов" label="Фамилия" autoFocus />
               <AppInput value={firstName} onChangeText={setFirstName} placeholder="Дмитрий" label="Имя" />
               <Text style={[styles.subtitle, { marginTop: 8 }]}>Название компании</Text>
