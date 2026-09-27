@@ -21,6 +21,17 @@
 import { FILL_CORE } from './jupiterFill.ts';
 import type { JupiterFillProfile } from '@/services/db';
 
+/**
+ * Скрипт для injectJavaScript по кнопке «Отправить отклик» — нажатие делает
+ * человек, скрипт лишь передаёт его на кнопку сайта (см. window.__jtSubmit).
+ */
+export const SUBMIT_BY_USER_SCRIPT = 'window.__jtSubmit && window.__jtSubmit(); true;';
+
+/** Повторный прогон автопилота на той же странице («Заполнить ещё раз»). */
+export function rerunAutopilotScript(script: string): string {
+  return 'window.__jtAutopilot = false; ' + script;
+}
+
 /** Что автопилот сообщает приложению в конце. */
 export type AutopilotOutcome =
   | 'submitted'   // сайт подтвердил приём
@@ -115,10 +126,11 @@ function jtIsSubmitButton(text) {
   return /отправ|откликнуться|отклик|подать|submit|apply|send|готово/.test(t);
 }
 
-// Сайт подтвердил приём отклика.
+// Сайт подтвердил приём отклика. «Мы рассмотрим / свяжемся» сюда не входит:
+// эти слова стоят и на странице вакансии до отправки.
 function jtSuccessText(text) {
   var t = jtFlat(text);
-  return /спасибо за (отклик|заявк|интерес|резюме)|(отклик|заявка|резюме|анкета)( успешно)? (отправлен|принят|получен)|ваш(е|а)? (отклик|заявка|резюме)( успешно)? (отправлен|принят|получен)|мы (свяжемся|рассмотрим|изучим)|благодарим за (отклик|заявк|интерес)|thank you for (applying|your application|your interest)|application (has been )?(received|submitted|sent)/.test(t);
+  return /спасибо за (отклик|заявк|интерес|резюме)|(отклик|заявка|резюме|анкета)( успешно)? (отправлен|принят|получен)|ваш(е|а)? (отклик|заявка|резюме)( успешно)? (отправлен|принят|получен)|благодарим за (отклик|заявк|интерес)|thank you for (applying|your application|your interest)|application (has been )?(received|submitted|sent)/.test(t);
 }
 
 // Видимая проверка «я не робот» — только для человека.
@@ -176,7 +188,9 @@ ${AUTOPILOT_CORE}
     post(result);
   }
   function later(fn, ms) { setTimeout(function() { try { fn(); } catch (e) { finish('error', String(e && e.message || e).slice(0, 120)); } }, ms); }
-  setTimeout(function() { finish(result.outcome === 'error' ? 'unknown' : result.outcome, 'deadline'); }, CFG.deadline);
+  // «Отправить» уже нажато — исход неизвестен, повторять нельзя; иначе просто не успели.
+  var clicked = false;
+  var deadlineTimer = setTimeout(function() { finish(clicked ? 'unknown' : 'error', 'deadline'); }, CFG.deadline);
 
   function visible(el) {
     if (!el || !el.getBoundingClientRect) return false;
@@ -389,6 +403,23 @@ ${AUTOPILOT_CORE}
     later(function() { watchOutcome(form, tries - 1); }, 1000);
   }
 
+  // Отправка по нажатию человека (submit=false): приложение вызывает
+  // window.__jtSubmit, когда человек нажал «Отправить отклик». Сам скрипт её
+  // не вызывает никогда. Форму ищем заново: человек мог открыть анкету сам.
+  function submitByUser() {
+    var form = findForm() || document.body;
+    var btn = submitButton(form);
+    clearTimeout(deadlineTimer);
+    done = false;
+    if (!btn) { finish('needs_user', 'no_submit'); return; }
+    bodyBefore = document.body ? document.body.innerText || '' : '';
+    post({ type: 'jt-autopilot-submitting' });
+    clicked = true;
+    btn.click();
+    later(function() { watchOutcome(form, 14); }, 1000);
+  }
+  if (!CFG.submit) window.__jtSubmit = function() { try { submitByUser(); } catch (e) { done = false; finish('error', 'submit_failed'); } };
+
   function run(attempt) {
     if (done) return;
     var form = findForm();
@@ -413,6 +444,7 @@ ${AUTOPILOT_CORE}
       if (!CFG.submit) { finish('ready', 'dry_run'); return; }
       bodyBefore = document.body ? document.body.innerText || '' : '';
       post({ type: 'jt-autopilot-submitting' });
+      clicked = true;
       btn.click();
       later(function() { watchOutcome(form, 14); }, 1000);
     }, 800);

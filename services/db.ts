@@ -1823,6 +1823,13 @@ export type JupiterFillProfile = {
   city: string | null;
   citizenship: string | null;
   desired_role: string | null;
+  /**
+   * Подписанная ссылка на выбранное PDF-резюме и имя файла — чтобы экран
+   * «Ждут вас» приложил его к анкете сам. В страницу работодателя ссылка не
+   * передаётся: приложение скачивает файл и вкладывает его содержимое.
+   */
+  resume_url?: string | null;
+  resume_name?: string | null;
 };
 
 export async function jupiterFillProfile(userId: string): Promise<JupiterFillProfile> {
