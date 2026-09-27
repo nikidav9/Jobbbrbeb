@@ -362,15 +362,16 @@ function FilterChipsBar({ filters, onOpen, onClear, onOpenAll }: {
 const fb = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(20), paddingVertical: rs(10) },
   allBtn: {
-    width: rs(46), height: rs(36), borderRadius: rs(14),
+    width: rs(44), height: rs(36), borderRadius: rs(18),
     backgroundColor: JT.ink, alignItems: 'center', justifyContent: 'center',
   },
   chip: {
     flexDirection: 'row', alignItems: 'center', height: rs(36),
-    borderRadius: rs(18), borderWidth: 2, borderColor: JT.borderSoft,
-    backgroundColor: 'transparent',
+    borderRadius: rs(18), borderWidth: 1.5, borderColor: JT.borderSoft,
+    backgroundColor: JT.surface,
   },
-  chipActive: { backgroundColor: JT.accent, borderColor: JT.ink },
+  // Активный — оранжевый с контуром 2, как на доске «Лента вакансий».
+  chipActive: { backgroundColor: JT.accent, borderColor: JT.ink, borderWidth: 2 },
   chipBody: { paddingHorizontal: rs(14), height: '100%', justifyContent: 'center' },
   chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
   chipTxtActive: { color: JT.ink },
@@ -2617,8 +2618,8 @@ const pS = StyleSheet.create({
   // «Всего N вакансий» под полосой чипов — мелко и серо, это справка, а не
   // заголовок. Во время загрузки карьерной части — «Считаем вакансии…».
   totalTxt: {
-    fontSize: rf(12), color: Colors.textMuted,
-    paddingHorizontal: rs(16), paddingBottom: rs(6),
+    fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary,
+    paddingHorizontal: rs(20), paddingBottom: rs(6),
   },
 
   offlineBar: {
