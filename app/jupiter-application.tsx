@@ -108,6 +108,16 @@ export default function JupiterApplicationScreen() {
     Linking.openURL(app?.thirdPartyTermsUrl || SBER_TERMS_URL)
       .catch(() => showToast('Не удалось открыть условия Сбера', 'error'));
   };
+  // Условия и политика работодателя — в каждой карточке (Соглашение п. 8.4).
+  // Точный адрес знаем не для всех сайтов; иначе — сам сайт работодателя.
+  const openEmployerTerms = () => {
+    if (!app) return;
+    let url = app.thirdPartyTermsUrl || '';
+    if (!url) {
+      try { url = new URL(app.vacancyUrl).origin; } catch { url = app.vacancyUrl; }
+    }
+    Linking.openURL(url).catch(() => showToast('Не удалось открыть сайт работодателя', 'error'));
+  };
   // Перенесено из matches.tsx без изменения поведения: те же вызовы, та же
   // проверка резюме и тот же текст согласия.
   const grantSberConsent = async () => {
@@ -215,6 +225,17 @@ export default function JupiterApplicationScreen() {
             </View>
           ) : null}
 
+          <View style={s.delegation}>
+            <Text style={s.consentText}>
+              {app.thirdPartyConsentAt
+                ? `Согласия, без которых работодатель не принимает отклик, Юпитер дал от вашего имени ${when(app.thirdPartyConsentAt)} — по поручению из Пользовательского соглашения, п. 8.2. Рекламу, кадровый резерв и передачу третьим лицам Юпитер не отмечает никогда.`
+                : 'Если работодатель попросит согласие на обработку данных или подтверждение анкеты, Юпитер даст его от вашего имени по поручению из Пользовательского соглашения, п. 8.2.'}
+            </Text>
+            <TouchableOpacity onPress={openEmployerTerms} accessibilityLabel="Условия и политика работодателя">
+              <Text style={s.consentLink}>Условия и политика работодателя ↗</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={s.card}>
             {closed ? (
               <View style={s.step}>
@@ -307,6 +328,7 @@ const s = StyleSheet.create({
   },
   consentTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
   consentText: { fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(3), lineHeight: rf(18) },
+  delegation: { marginTop: rs(12), paddingHorizontal: rs(4) },
   consentLink: { fontSize: rf(13), fontWeight: '600', color: Colors.primary, marginTop: rs(8) },
   consentBtn: {
     backgroundColor: Colors.primary, borderRadius: Radius.md, paddingVertical: rs(11),

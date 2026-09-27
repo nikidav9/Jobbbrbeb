@@ -128,6 +128,13 @@ class RemoteTaskQueue:
         if not isinstance(result, dict) or result.get("ok") is not True:
             raise RuntimeError("Submission authorization could not be verified")
 
+    def requeue_site_ready(self, hosts: list[str]) -> int:
+        """Отклики со SITE_NOT_VERIFIED на эти хосты — обратно в очередь."""
+        if not hosts:
+            return 0
+        result = self._call("jupiterRequeueSiteReady", [hosts])
+        return int(result.get("moved", 0)) if isinstance(result, dict) else 0
+
     def checkpoint(self, task_id: str, state: str, data: dict[str, Any]) -> None:
         if self._worker is None:
             return

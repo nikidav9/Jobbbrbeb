@@ -87,6 +87,44 @@ foreach (['jupiterLiveStatus', 'jupiterSetLive'] as $fn) {
 check('миграция добавляет jupiter_live_revoked_at',
     str_contains($migration, 'add column if not exists jupiter_live_revoked_at timestamptz'));
 
+// ── Согласия работодателю по поручению (редакция 2026-09-26-2) ─────────────
+// Граница — вся версия, не дата: `2026-09-26` (без поручения) не пускает.
+$legal = (string)file_get_contents(__DIR__ . '/../constants/legal.ts');
+check('константа редакции с согласиями работодателю есть',
+    str_contains($db, "define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');"));
+check('клиентская редакция не ниже серверной границы',
+    (bool)preg_match("~consent: \\{\\s*title: '[^']+',\\s*version: '2026-09-26-2',\\s*consentVersion: '2026-09-26-2'~", $legal));
+$employerOk = fn_body($db, 'jt_employer_stamp_ok');
+check('jt_employer_stamp_ok найдена', $employerOk !== '');
+if ($employerOk !== '') {
+    eval("define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');\n" . $employerOk . "\n}\n");
+    check('редакция 2026-09-26 не даёт согласий работодателю',
+        jt_employer_stamp_ok('terms:2026-09-26|privacy:2026-09-26|consent:2026-09-26') === false);
+    check('редакция 2026-09-26-2 даёт',
+        jt_employer_stamp_ok('terms:2026-09-26-2|privacy:2026-09-26-2|consent:2026-09-26-2') === true);
+    check('более поздняя дата даёт',
+        jt_employer_stamp_ok('terms:2026-10-01|privacy:2026-10-01|consent:2026-10-01') === true);
+    check('одного terms мало', jt_employer_stamp_ok('terms:2026-09-26-2|consent:2026-09-25') === false);
+    check('мусор не даёт', jt_employer_stamp_ok('x') === false);
+}
+$enqueue = substr($db, strpos($db, "case 'jupiterEnqueue': {"), 9000);
+check('свайп ставит согласие только при боевом режиме и принятой редакции',
+    str_contains($enqueue, '$delegated = $live && jt_employer_delegated($uidArg);'));
+check('новая заявка несёт согласие',
+    str_contains($enqueue, '$row += jt_employer_consent_fields($url, now_iso());'));
+check('повторный свайп снимает CONSENT_REQUIRED',
+    str_contains($enqueue, "(string)(\$existing['reason_code'] ?? '') === 'CONSENT_REQUIRED'"));
+check('принятие редакции снимает с паузы ждущие согласия',
+    substr_count($db, 'jt_employer_requeue_consent($uid, $stamp);') === 2);
+check('снятие с паузы — только заявки без согласия',
+    str_contains(fn_body($db, 'jt_employer_requeue_consent'), "'third_party_consent_at' => 'is.null'"));
+check('Сбер получает свои условия',
+    str_contains($db, "const JT_EMPLOYER_TERMS = ['rabota.sber.ru' => 'https://rabota.sber.ru/terms'];"));
+$adminBlock = substr($db, strpos($db, '$adminFns = ['), strpos($db, '];', strpos($db, "'jupiterLease', 'jupiterHeartbeat'")) - strpos($db, '$adminFns = ['));
+check('снятие SITE_NOT_VERIFIED — только воркеру', str_contains($adminBlock, "'jupiterRequeueSiteReady'"));
+check('Соглашение называет исключения поручения',
+    str_contains($legal, 'не даёт согласий на рекламную и иную рассылку, на включение в кадровый резерв'));
+
 if ($failures) {
     echo "jupiter_live_consent: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";

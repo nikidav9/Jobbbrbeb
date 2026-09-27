@@ -1356,6 +1356,652 @@
     }
   },
   {
+    "url": "https://careers.bitrix24.ru/jobs/development/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/jobs/development/",
+      "link_regex": "~^/jobs/development/[a-z0-9-]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "1С-Битрикс"
+    },
+    "company_hint": "1С-Битрикс"
+  },
+  {
+    "url": "https://coral.tech/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/",
+      "link_regex": "~^/(?!referral$|news$|policy$|it-main$)[a-z0-9_-]+$~",
+      "min_title": 5,
+      "company_const": "Coral"
+    },
+    "company_hint": "Coral"
+  },
+  {
+    "url": "https://ptsecurity.com/ru-ru/about/vacancy/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/ru-ru/about/vacancy/",
+      "link_regex": "~^/ru-ru/about/vacancy/(?!page-)[^/]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "Positive Technologies"
+    },
+    "company_hint": "Positive Technologies"
+  },
+  {
+    "url": "https://store.tildaapi.com/api/getproductslist/?storepartuid=505121791162&recid=1025388406&getparts=true&getoptions=true&slice=1&size=200",
+    "map": {
+      "list": "products",
+      "title": "title",
+      "id": "uid",
+      "url": "url",
+      "address": "characteristics.0.value",
+      "description": "text",
+      "company_const": "Selecty"
+    },
+    "company_hint": "Selecty"
+  },
+  {
+    "url": "https://www.simbirsoft.com/career/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "link_regex": "~^/vacancies/(?!tag/|search/)[A-Za-z0-9-]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "SimbirSoft"
+    },
+    "company_hint": "SimbirSoft"
+  },
+  {
+    "company_hint": "t2",
+    "url": "https://msk.t2.ru/about/career/vacancies",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy/",
+      "link_regex": "~^/vacancy/\\d+$~",
+      "min_title": 8,
+      "company_const": "t2"
+    }
+  },
+  {
+    "url": "https://galaktika.ru/wp-json/wp/v2/jobs?job-city=26",
+    "map": {
+      "list": "",
+      "id": "id",
+      "title": "title.rendered",
+      "url": "link",
+      "description": "content.rendered",
+      "description_sections": {
+        "Описание": "content.rendered"
+      },
+      "company_const": "Галактика"
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 100,
+      "limit_param": "per_page",
+      "max_pages": 3
+    },
+    "company_hint": "Галактика"
+  },
+  {
+    "url": "https://garda.ai/vacancies",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "link_regex": "~^/vacancies/[a-z0-9-]+/?$~",
+      "min_title": 3,
+      "title_from_card": true,
+      "company_const": "Гарда Технологии"
+    },
+    "company_hint": "Гарда Технологии"
+  },
+  {
+    "url": "https://www.greenatom.ru/vacancy/get_json.php?org=6169977fa878bbf9b0477ef5&page=1",
+    "mode": "html_links",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 20,
+      "max_pages": 5
+    },
+    "map": {
+      "link_path": "rosatom-career.ru/vacancies/",
+      "min_title": 5,
+      "company_const": "Гринатом"
+    },
+    "company_hint": "Гринатом"
+  },
+  {
+    "url": "https://career.domclick.ru/api/v1/vacancy/?area_id=1",
+    "paging": {
+      "type": "offset",
+      "param": "offset",
+      "start": 0,
+      "limit": 100,
+      "limit_param": "limit",
+      "max_pages": 5
+    },
+    "map": {
+      "list": "result",
+      "title": "title",
+      "id": "slug",
+      "url_template": "https://career.domclick.ru/vacancy/{slug}",
+      "address": "area.name",
+      "description_sections": {
+        "Чем предстоит заниматься": "snippet_responsibility",
+        "Требования": "snippet_requirement"
+      },
+      "detail_url_template": "https://career.domclick.ru/api/v1/vacancy/detail/{slug}/",
+      "detail_list": "result",
+      "detail_sections": {
+        "": "vacancycontent.description"
+      },
+      "company_const": "Домклик"
+    },
+    "company_hint": "Домклик"
+  },
+  {
+    "url": "https://job.lanit.ru/_vti_bin/Lanit.Job.Redesign/WebService.svc/GetVacancyForWidget",
+    "map": {
+      "list": "",
+      "id": "Id",
+      "title": "Title",
+      "url": "Url",
+      "address": "City",
+      "description": "JobResponsibilities",
+      "description_sections": {
+        "О компании": "ActivityDescription",
+        "Обязанности": "JobResponsibilities",
+        "Требования": "Requirements",
+        "Условия": "SocialPackage"
+      },
+      "company_const": "ЛАНИТ"
+    },
+    "company_hint": "ЛАНИТ"
+  },
+  {
+    "url": "https://www.nspk.ru/rest/v1/vacancies",
+    "paging": {
+      "type": "offset",
+      "param": "offset",
+      "limit": 100,
+      "limit_param": "limit",
+      "max_pages": 5
+    },
+    "map": {
+      "list": "data",
+      "title": "name",
+      "id": "id",
+      "url_template": "https://www.nspk.ru/vacancies/{id}",
+      "company_const": "НСПК"
+    },
+    "company_hint": "НСПК"
+  },
+  {
+    "url": "https://tensor.ru/service/?method=Jobs.VacancyList&protocol=6&params=eyLQpNC40LvRjNGC0YAiOnsiZCI6W10sInMiOltdLCJfdHlwZSI6InJlY29yZCJ9LCLQodC%2B0YDRgtC40YDQvtCy0LrQsCI6bnVsbCwi0J3QsNCy0LjQs9Cw0YbQuNGPIjp7ImQiOlt0cnVlLDUwMCwwXSwicyI6W3sibiI6ItCV0YHRgtGM0JXRidC1IiwidCI6ItCb0L7Qs9C40YfQtdGB0LrQvtC1In0seyJuIjoi0KDQsNC30LzQtdGA0KHRgtGA0LDQvdC40YbRiyIsInQiOiLQp9C40YHQu9C%2BINGG0LXQu9C%2B0LUifSx7Im4iOiLQodGC0YDQsNC90LjRhtCwIiwidCI6ItCn0LjRgdC70L4g0YbQtdC70L7QtSJ9XSwiX3R5cGUiOiJyZWNvcmQifSwi0JTQvtC%2F0J%2FQvtC70Y8iOltdfQ%3D%3D&id=0",
+    "map": {
+      "list": "result.d",
+      "id": "0",
+      "title": "1",
+      "pay": "2",
+      "description": "4",
+      "address": "10.d.0.1",
+      "url_template": "https://tensor.ru/vacancies/{0}",
+      "company_const": "Тензор"
+    },
+    "company_hint": "Тензор"
+  },
+  {
+    "url": "https://store.tildaapi.com/api/getproductslist/?storepartuid=488841863731",
+    "paging": {
+      "type": "page",
+      "param": "slice",
+      "start": 1,
+      "limit": 100,
+      "limit_param": "size",
+      "max_pages": 3
+    },
+    "map": {
+      "list": "products",
+      "title": "title",
+      "id": "uid",
+      "url": "url",
+      "description": "descr",
+      "company_const": "ЮMoney"
+    },
+    "company_hint": "ЮMoney"
+  },
+  {
+    "url": "https://job.goldapple.ru/api/search-page/vacancies",
+    "mode": "json",
+    "method": "POST",
+    "body": {
+      "query": "",
+      "pageIndex": 1,
+      "pageSize": 200,
+      "filters": [
+        {
+          "key": "departments",
+          "type": "multipleSelectionType",
+          "values": [
+            "63c8db37d659941ad9742543"
+          ]
+        },
+        {
+          "key": "cities",
+          "type": "multipleSelectionType",
+          "values": [
+            "639811c45773c0a791fb490b"
+          ]
+        }
+      ]
+    },
+    "map": {
+      "list": "data.items",
+      "title": "title",
+      "id": "id",
+      "url_template": "https://job.goldapple.ru/vacancy/{transliterationId}",
+      "address": "address",
+      "pay": "salary.salaryFrom",
+      "schedule": "schedule",
+      "company_const": "Золотое Яблоко"
+    },
+    "company_hint": "Золотое Яблоко"
+  },
+  {
+    "url": "https://job-site-backend.dodo-ai-platform.io/api/v1/vacancies?filter%5Bspeciality.name%5D=Engineering",
+    "map": {
+      "list": "data.0.items",
+      "title": "position",
+      "id": "id",
+      "url_template": "https://dodoteam.ru/vacancy?vacancyId={id}",
+      "address": "vacancy_location",
+      "schedule": "work_format",
+      "detail_url_template": "https://job-site-backend.dodo-ai-platform.io/api/v1/pages/vacancy/{id}",
+      "detail_list": "data.page.content",
+      "detail_sections": {
+        "": "1.data.text",
+        "Мы ожидаем": "3.data.text",
+        "Тебе предстоит": "4.data.text",
+        "Мы предлагаем": "5.data.text"
+      },
+      "company_const": "Додо Пицца"
+    },
+    "company_hint": "Додо Пицца"
+  },
+  {
+    "url": "https://job.ertelecom.ru/api/vacancy/list/?city=296&scope_activity=43",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 100,
+      "limit_param": "page_size",
+      "max_pages": 5
+    },
+    "map": {
+      "list": "results",
+      "title": "name",
+      "id": "id",
+      "url_template": "https://job.ertelecom.ru/vacancies/vacancy{id}",
+      "schedule": "employment.0.name",
+      "detail_url_template": "https://job.ertelecom.ru/api/vacancy/{id}/",
+      "detail_sections": {
+        "": "content"
+      },
+      "company_const": "ЭР-Телеком (Дом.ру)"
+    },
+    "company_hint": "ЭР-Телеком"
+  },
+  {
+    "url": "https://www.b1.ru/vacancies/?napravlenie%5B%5D=1425&napravlenie%5B%5D=1426",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/vacancies/",
+      "link_regex": "~^/vacancies/vacancies/[a-z0-9_-]+/?$~",
+      "min_title": 5,
+      "title_from_card": true,
+      "company_const": "Б1"
+    },
+    "company_hint": "Б1"
+  },
+  {
+    "url": "https://job.mtsbank.ru/api/career/vacancies/compact?specializationId%5B0%5D=295&specializationId%5B1%5D=296&specializationId%5B2%5D=319&specializationId%5B3%5D=367&specializationId%5B4%5D=404&specializationId%5B5%5D=405&specializationId%5B6%5D=365&specializationId%5B7%5D=403&specializationId%5B8%5D=299&specializationId%5B9%5D=300&specializationId%5B10%5D=297&specializationId%5B11%5D=411&locationId=138&sort=publishedAt%3Adesc",
+    "paging": {
+      "type": "offset",
+      "param": "pagination[start]",
+      "limit_param": "pagination[limit]",
+      "limit": 100,
+      "max_pages": 5
+    },
+    "map": {
+      "list": "data",
+      "id": "id",
+      "title": "name",
+      "url_template": "https://job.mtsbank.ru/vacancies/{id}",
+      "address": "location.fullName",
+      "pay": "salaryFrom",
+      "detail_url_template": "https://job.mtsbank.ru/api/career/vacancies/compact/{id}",
+      "detail_sections": {
+        "О компании": "introduction",
+        "Обязанности": "duties",
+        "Требования": "requirements",
+        "Условия": "conditions"
+      },
+      "company_const": "МТС Банк"
+    },
+    "company_hint": "МТС Банк"
+  },
+  {
+    "map": {
+      "link_path": "/hr/vacancies/",
+      "min_title": 4,
+      "company_const": "Туту"
+    },
+    "url": "https://c.tutu.ru/hr/vacancies",
+    "mode": "html_links",
+    "company_hint": "Туту"
+  },
+  {
+    "map": {
+      "link_path": "/job/vacancy/",
+      "min_title": 8,
+      "title_from_card": true,
+      "company_const": "Информзащита"
+    },
+    "url": "https://www.infosec.ru/job/vacancy/",
+    "mode": "html_links",
+    "company_hint": "Информзащита"
+  },
+  {
+    "map": {
+      "id": "id",
+      "list": "props.pageProps.allJobsData",
+      "title": "title",
+      "address": "location",
+      "description": "todo_ru",
+      "url_template": "https://wunderfund.io/jobs/{id}",
+      "company_const": "Wunder Fund"
+    },
+    "url": "https://wunderfund.io",
+    "mode": "embedded",
+    "company_hint": "Wunder Fund"
+  },
+  {
+    "url": "https://it2bsns.ru/wp-json/wp/v2/vacancies",
+    "map": {
+      "list": "",
+      "id": "id",
+      "title": "title.rendered",
+      "url": "link",
+      "description": "content.rendered",
+      "company_const": "Айтуби"
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "limit_param": "per_page",
+      "limit": 100,
+      "start": 1,
+      "max_pages": 5
+    },
+    "company_hint": "Айтуби"
+  },
+  {
+    "map": {
+      "link_path": "/career/detail/",
+      "min_title": 8,
+      "company_const": "БФТ-Холдинг"
+    },
+    "url": "https://bft.ru/career/list/",
+    "mode": "html_links",
+    "company_hint": "БФТ-Холдинг"
+  },
+  {
+    "map": {
+      "link_path": "/vacancies/moscow/",
+      "min_title": 3,
+      "title_from_card": true,
+      "title_class": "vacancy__text",
+      "company_const": "Синимекс"
+    },
+    "url": "https://www.cinimex.ru/vacancies/moscow/",
+    "mode": "html_links",
+    "company_hint": "Синимекс"
+  },
+  {
+    "map": {
+      "link_path": "/careers/",
+      "min_title": 5,
+      "company_const": "Поехали"
+    },
+    "url": "https://poehali.dev/careers",
+    "mode": "html_links",
+    "company_hint": "Поехали"
+  },
+  {
+    "map": {
+      "list": "*.vacancies",
+      "id": "id",
+      "title": "title",
+      "url": "url",
+      "open": "available",
+      "address": "tags.remotely",
+      "description": "description",
+      "state_script_id": "data",
+      "company_const": "Яндекс Крауд"
+    },
+    "url": "https://crowd.yandex.ru/vacancies",
+    "mode": "embedded",
+    "company_hint": "Яндекс Крауд"
+  },
+  {
+    "url": "https://www.neuro-city.ru/",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "vacancy",
+      "title_class": "vacancy__title",
+      "min_title": 4,
+      "company_const": "NeuroCity"
+    },
+    "company_hint": "NeuroCity"
+  },
+  {
+    "url": "https://palindrome.media/career/",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "accordion-item",
+      "title_class": "accordion-item__title",
+      "company_const": "Палиндром"
+    },
+    "company_hint": "Палиндром"
+  },
+  {
+    "url": "https://itnovation.pro/vacancies",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "t585__wrapper",
+      "title_class": "t585__title",
+      "min_title": 3,
+      "company_const": "Айти Новация"
+    },
+    "company_hint": "Айти Новация"
+  },
+  {
+    "mode": "html_blocks",
+    "url": "https://www.extyl-pro.ru/vacancy/",
+    "map": {
+      "block_class": "faq__item",
+      "title_class": "faq__head",
+      "min_title": 3,
+      "company_const": "Extyl"
+    },
+    "company_hint": "Extyl"
+  },
+  {
+    "mode": "html_links",
+    "url": "https://company.tilda.ru/ru",
+    "map": {
+      "link_path": "/ru/",
+      "link_regex": "~^/ru/(?!otzyvy$|madeontilda/?$|privacy$)[a-z0-9-]+/?$~",
+      "min_title": 4,
+      "company_const": "Tilda Publishing"
+    },
+    "company_hint": "Tilda Publishing"
+  },
+  {
+    "url": "https://smartdec.net/ru/hiring/",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "card",
+      "title_class": "hiring-pos-name",
+      "min_title": 4,
+      "company_const": "SmartDec"
+    },
+    "company_hint": "SmartDec"
+  },
+  {
+    "company_hint": "SharpLase",
+    "mode": "html_blocks",
+    "url": "https://sharplase.ru/o-kompanii/job/",
+    "map": {
+      "block_class": "career-vacancy-item",
+      "title_class": "career-vacancy-head__text",
+      "min_title": 3,
+      "company_const": "SharpLase"
+    }
+  },
+  {
+    "mode": "html_links",
+    "url": "https://yoloprice.com/career",
+    "map": {
+      "link_path": "yoloprice.com/",
+      "link_regex": "~^/(?!career$|en$)[a-z]{2,}$~",
+      "min_title": 6,
+      "company_const": "YoloPrice"
+    },
+    "company_hint": "YoloPrice"
+  },
+  {
+    "url": "https://talkbank.io/vacansy",
+    "mode": "html_blocks",
+    "map": {
+      "block_class": "t-card__col",
+      "title_class": "t-card__title",
+      "min_title": 4,
+      "company_const": "TalkBank"
+    },
+    "company_hint": "TalkBank"
+  },
+  {
+    "url": "https://www.eduson.tv/vacancy-account-manager",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancy-",
+      "link_regex": "~^/vacancy-[a-z-]+$~",
+      "min_title": 5,
+      "company_const": "Eduson"
+    },
+    "company_hint": "Eduson"
+  },
+  {
+    "url": "https://proscom.ru/strapi/api/jobs",
+    "mode": "json",
+    "map": {
+      "list": "data",
+      "title": "attributes.title",
+      "url_template": "https://proscom.ru/vacancies/{attributes.slug}",
+      "id": "id",
+      "description": "attributes.content",
+      "company_const": "Proscom"
+    },
+    "company_hint": "Proscom"
+  },
+  {
+    "map": {
+      "state_script_id": "__next_f",
+      "list": "**.vacancies",
+      "id": "id",
+      "title": "title",
+      "url_template": "https://www.setters.agency/job?vacancy={slug}",
+      "description": "tabs",
+      "company_const": "SETTERS"
+    },
+    "url": "https://www.setters.agency/job",
+    "mode": "embedded",
+    "company_hint": "SETTERS"
+  },
+  {
+    "map": {
+      "state_script_id": "__next_f",
+      "list": "**.items",
+      "id": "id",
+      "title": "title",
+      "url_template": "https://upside.pro{permalink}",
+      "description": "summary",
+      "company_const": "UPSIDE"
+    },
+    "url": "https://upside.pro/vacancies",
+    "mode": "embedded",
+    "company_hint": "UPSIDE"
+  },
+  {
+    "url": "https://rosatom-career.ru/api/vacancies/vacancies/search/",
+    "method": "POST",
+    "body": {
+      "page_size": 100,
+      "page_number": 1,
+      "functional_areas": [
+        "60f981b519480429d955432b"
+      ],
+      "cities": [
+        "60f9778e135b2dd05a554041"
+      ]
+    },
+    "map": {
+      "list": "items",
+      "title": "vacancy_name",
+      "id": "hire_request_id",
+      "url_template": "https://rosatom-career.ru/vacancies/{vacancy_id}?hire_request_id={hire_request_id}",
+      "address": "city.name",
+      "pay": "salary",
+      "description": "job_responsibilities",
+      "description_sections": {
+        "Обязанности": "job_responsibilities",
+        "Требования": "employee_requirements",
+        "Условия": "work_conditions",
+        "О проекте": "work_projects"
+      },
+      "company_const": "Росатом"
+    },
+    "company_hint": "Росатом"
+  },
+  {
+    "url": "https://careers.delret.ru/entryPoint/ReferalPageEntryPoint?action=list&drt_city_ids%5B%5D=019380c3-a968-7b49-b7b1-db80d8d8cdd2",
+    "paging": {
+      "type": "offset",
+      "param": "offset",
+      "limit_param": "limit",
+      "limit": 25,
+      "max_pages": 10
+    },
+    "map": {
+      "list": "hrpac_published_vacancy",
+      "title": "name",
+      "id": "id",
+      "url_template": "https://careers.delret.ru/referal-page/vacancy/{id}",
+      "company_const": "ДРТ"
+    },
+    "company_hint": "ДРТ"
+  },
+  {
     "url": "https://emex.huntflow.io/api/vacancy",
     "paging": {
       "type": "page",
@@ -1563,29 +2209,6 @@
   },
   {
     "map": {
-      "link_path": "/vacancies/",
-      "min_title": 4,
-      "title_from_card": true,
-      "link_regex": "~^/vacancies/[a-zA-Z0-9-]+/?$~",
-      "company_const": "Гарда"
-    },
-    "url": "https://garda.ai/vacancies",
-    "mode": "html_links",
-    "company_hint": "Гарда"
-  },
-  {
-    "url": "https://galaktika.ru/wp-json/wp/v2/jobs?per_page=100",
-    "map": {
-      "list": "",
-      "title": "title.rendered",
-      "url": "link",
-      "id": "id",
-      "company_const": "Галактика"
-    },
-    "company_hint": "Галактика"
-  },
-  {
-    "map": {
       "link_path": "/vacancy/",
       "min_title": 8,
       "company_const": "IXcellerate"
@@ -1633,16 +2256,6 @@
       "company_const": "Нетология"
     },
     "company_hint": "Нетология"
-  },
-  {
-    "url": "https://c.tutu.ru/hr/vacancies",
-    "mode": "html_links",
-    "map": {
-      "link_path": "/hr/vacancies/",
-      "min_title": 6,
-      "company_const": "Туту"
-    },
-    "company_hint": "Туту"
   },
   {
     "url": "https://huntflow.ru/career/",

@@ -26,6 +26,7 @@ function cf_unit_from_endpoint(array $e): ?array
     $post = strtoupper((string)($e['method'] ?? 'GET')) === 'POST';
     $kind = 'json';
     if ($mode === 'html_links') $kind = 'html_links';
+    if ($mode === 'html_blocks') $kind = 'html_blocks';
     if ($mode === 'embedded')   $kind = 'embedded';
     return [
         'url'    => $e['url'],
@@ -187,9 +188,13 @@ function cf_fetch_unit(array $unit, int $sub): array
 
     if ($unit['kind'] === 'embedded') {
         // Данные приехали внутри страницы, отдельного запроса за ними нет.
-        $data = cf_embedded_state($body);
+        $data = cf_embedded_state($body, (string)($unit['map']['state_script_id'] ?? ''));
         if ($data === null) return $fail('в странице нет встроенного состояния');
         $items = cf_json_items($data, $unit['map'], $pageUrl, time());
+        $more = false;
+    } elseif ($unit['kind'] === 'html_blocks') {
+        // Все вакансии на одной странице — листать нечего.
+        $items = cf_html_blocks($body, $pageUrl, $unit['map'], time());
         $more = false;
     } elseif ($unit['kind'] === 'html_links') {
         $items = cf_html_links($body, $pageUrl, $unit['map'], time());

@@ -23,12 +23,20 @@ import time
 from agent import CandidateProfile, JupiterAgent
 from handoff import HandoffStore
 from remote_tasks import RemoteTaskQueue
-from site_compat import live_ready
+from site_compat import AUDITED_SITES, live_ready, recon_ok_hosts
 from submission import ReceiptStore
 from tasks import ApplicationTask
 import worker
 
 log = logging.getLogger("jupiter")
+
+DELEGATED_CONSENTS = (
+    "personal_data_consent", "privacy_consent", "terms_consent",
+    "data_accuracy_confirmation",
+)
+# Раз в столько секунд воркер снимает с паузы отклики на сайты, которые
+# разведка успела подключить (SITE_NOT_VERIFIED → queued).
+REQUEUE_EVERY = 3600
 
 _stop = False
 
@@ -83,8 +91,14 @@ def main() -> int:
         profile = queue.fetch_profile(task.candidate_id)
         # Third-party legal consent is intentionally scoped to one application
         # row. It is never copied from JobToo's own consent or reused globally.
+        # Поручение (Соглашение п. 8.3) покрывает только то, без чего отклик
+        # не рассмотреть: обработку ПДн работодателем, его политику и правила
+        # сайта, подтверждение достоверности анкеты. Реклама, кадровый резерв,
+        # передача третьим лицам, трансграничная передача и особые категории
+        # сюда не входят никогда — их ключей здесь нет.
         if task.third_party_consent_at:
-            profile.values["personal_data_consent"] = True
+            for key in DELEGATED_CONSENTS:
+                profile.values[key] = True
         return profile
 
     def agent_factory(task: ApplicationTask) -> JupiterAgent:
@@ -104,7 +118,19 @@ def main() -> int:
         worker_id, base_url,
     )
 
+    last_requeue = 0.0
     while not _stop:
+        if time.monotonic() - last_requeue > REQUEUE_EVERY:
+            last_requeue = time.monotonic()
+            try:
+                hosts = sorted(set(recon_ok_hosts()) | {
+                    h for site in AUDITED_SITES if site.live_ready for h in site.hosts
+                })
+                moved = queue.requeue_site_ready(hosts)
+                if moved:
+                    log.info("сняты с паузы %d откликов на подключённых сайтах", moved)
+            except Exception:
+                log.exception("не удалось снять с паузы отклики SITE_NOT_VERIFIED")
         try:
             result = worker.run_once(
                 queue, profile_factory, agent_factory, worker_id,

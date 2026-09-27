@@ -94,22 +94,45 @@ const JT_RU_CA_HOSTS = ['tbank.ru', 'alfabank.ru', 'tochka.com'];
 /** Нужен ли для этого адреса сертификат Минцифры. */
 function jt_needs_ru_ca(string $url): bool
 {
+    return jt_host_in($url, JT_RU_CA_HOSTS);
+}
+
+/**
+ * Сайты, которые отдают свой сертификат без промежуточного GlobalSign GCC R3
+ * DV TLS CA 2020 (решение владельца 26.09.2026): Росатом и Гринатом на
+ * rosatom-career.ru, ДРТ на careers.delret.ru. Им доверяем корню GlobalSign
+ * R3 вместе с этим промежуточным — и только им, только в сборщике.
+ */
+const JT_GS_CA_HOSTS = ['rosatom-career.ru', 'careers.delret.ru'];
+
+/** Точное совпадение домена или его поддомен. */
+function jt_host_in(string $url, array $suffixes): bool
+{
     $host = strtolower((string)(parse_url($url, PHP_URL_HOST) ?: ''));
     if ($host === '') return false;
-    foreach (JT_RU_CA_HOSTS as $suffix) {
+    foreach ($suffixes as $suffix) {
         if ($host === $suffix || str_ends_with($host, '.' . $suffix)) return true;
     }
     return false;
 }
 
+/** Нужна ли для этого адреса цепочка GlobalSign GCC R3. */
+function jt_needs_gs_ca(string $url): bool
+{
+    return jt_host_in($url, JT_GS_CA_HOSTS);
+}
+
 /**
- * Для сайтов из JT_RU_CA_HOSTS доверяем ТОЛЬКО сертификату Минцифры (он
- * заменяет системный список, а не дополняет), для остальных ничего не
- * меняем. Проверка сертификата и имени хоста остаётся включённой.
+ * Для сайтов из JT_RU_CA_HOSTS доверяем ТОЛЬКО сертификату Минцифры, для
+ * JT_GS_CA_HOSTS — только цепочке GlobalSign GCC R3 (набор заменяет
+ * системный список, а не дополняет), для остальных ничего не меняем.
+ * Проверка сертификата и имени хоста остаётся включённой.
  */
 function jt_apply_ru_ca($ch, string $url): void
 {
-    if (!jt_needs_ru_ca($url)) return;
-    $pem = require __DIR__ . '/ru_trusted_ca.php';
-    curl_setopt($ch, CURLOPT_CAINFO_BLOB, $pem);
+    if (jt_needs_ru_ca($url)) {
+        curl_setopt($ch, CURLOPT_CAINFO_BLOB, require __DIR__ . '/ru_trusted_ca.php');
+    } elseif (jt_needs_gs_ca($url)) {
+        curl_setopt($ch, CURLOPT_CAINFO_BLOB, require __DIR__ . '/globalsign_gcc_ca.php');
+    }
 }

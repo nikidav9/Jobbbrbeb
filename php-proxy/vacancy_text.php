@@ -344,6 +344,48 @@ function vt_extract_embedded_state(string $html): string
     return mb_strlen($text) >= 120 ? $text : '';
 }
 
+/**
+ * c. Next.js App Router: текст вакансии — в дереве вёрстки внутри
+ * self.__next_f (у UPSIDE разделы — ["$","section",…] с h2 «Обязанности» и
+ * списком li). Берём только секции, чей заголовок похож на раздел вакансии
+ * (VT_HEADING_WORDS): меню, подвал и переводы интерфейса в них не попадают.
+ */
+function vt_extract_next_flight(string $html): string
+{
+    $rows = cf_next_flight($html);
+    if (!$rows) return '';
+    $render = function ($node) use (&$render): string {
+        if (is_string($node)) return str_starts_with($node, '$') ? '' : $node;
+        if (!is_array($node)) return '';
+        if (($node[0] ?? null) === '$' && is_string($node[1] ?? null)) {
+            $tag = $node[1];
+            $inner = $render($node[3]['children'] ?? '');
+            if ($inner === '') return '';
+            if (preg_match('/^h[1-6]$/', $tag)) return "\n## " . trim($inner) . "\n";
+            // Маркер пункта бывает отдельным span («*» у UPSIDE) — он не текст.
+            if ($tag === 'li') return "\n- " . preg_replace('/^[*•·–—\-\s]+/u', '', trim($inner));
+            if (in_array($tag, ['p', 'div', 'ul', 'ol', 'section'], true)) return "\n" . $inner . "\n";
+            return $inner;
+        }
+        return implode('', array_map($render, $node));
+    };
+    $sections = [];
+    $walk = function ($node) use (&$walk, &$sections, $render): void {
+        if (!is_array($node)) return;
+        if (($node[0] ?? null) === '$' && ($node[1] ?? null) === 'section') {
+            $text = trim(preg_replace("/\n{3,}/", "\n\n", $render($node)) ?? '');
+            if (preg_match('/^## ([^\n]+)/u', $text, $h) && preg_match(VT_HEADING_WORDS, $h[1])) {
+                $sections[] = $text;
+                return;
+            }
+        }
+        foreach ($node as $child) $walk($child);
+    };
+    foreach ($rows as $row) $walk($row);
+    $text = trim(implode("\n\n", array_unique($sections)));
+    return mb_strlen($text) >= 120 ? $text : '';
+}
+
 /** Узел содержит другой узел (проверка по цепочке родителей). */
 function vt_contains(DOMNode $ancestor, DOMNode $node): bool
 {
@@ -486,6 +528,7 @@ function vt_extract(string $html): string
     foreach ([
         fn() => vt_extract_job_posting($html),
         fn() => vt_extract_embedded_state($html),
+        fn() => vt_extract_next_flight($html),
         fn() => vt_extract_plain_html($html),
     ] as $attempt) {
         $text = vt_dedupe_blocks($attempt());

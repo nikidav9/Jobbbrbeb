@@ -1696,6 +1696,38 @@ class JupiterNativeE2E(unittest.TestCase):
             "consent",
         )
 
+    def test_fresh_recon_dry_run_ok_opens_live_submission_by_itself(self):
+        # Решение владельца 26.09.2026: сайт, где разведка прошла анкету до
+        # конца, подключается без ручного флага. Протухший итог — не в счёт.
+        import os
+        import site_compat
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "recon.json"
+            path.write_text(json.dumps([
+                {"name": "A", "url": "https://www.career.a-corp.example/jobs", "start_url": "https://career.a-corp.example/jobs", "klass": "dry_run_ok"},
+                {"name": "B", "url": "https://b-corp.example/jobs", "start_url": "https://b-corp.example/jobs", "klass": "captcha"},
+            ]), encoding="utf-8")
+            old = site_compat.RECON_FILE
+            site_compat.RECON_FILE = str(path)
+            try:
+                self.assertTrue(live_ready("https://career.a-corp.example/vacancy/7"))
+                self.assertFalse(live_ready("https://b-corp.example/vacancy/1"))
+                self.assertFalse(live_ready("https://unknown.example/job"))
+                stale = path.stat().st_mtime - site_compat.RECON_MAX_AGE - 60
+                os.utime(path, (stale, stale))
+                self.assertFalse(live_ready("https://career.a-corp.example/vacancy/7"))
+                # Флаг владельца от разведки не зависит.
+                self.assertTrue(live_ready("https://rabota.sber.ru/search/123"))
+                path.write_text("not json", encoding="utf-8")
+                self.assertFalse(live_ready("https://career.a-corp.example/vacancy/7"))
+            finally:
+                site_compat.RECON_FILE = old
+            site_compat.RECON_FILE = str(Path(tmp) / "missing.json")
+            try:
+                self.assertEqual(site_compat.recon_ok_hosts(), frozenset())
+            finally:
+                site_compat.RECON_FILE = old
+
     def test_read_only_engine_blocks_direct_post_even_outside_agent(self):
         engine = JupiterWebEngine({"127.0.0.1"}, read_only=True)
         with self.assertRaises(EngineSecurityError):

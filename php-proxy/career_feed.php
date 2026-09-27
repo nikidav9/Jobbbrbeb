@@ -240,11 +240,66 @@ function cf_items(string $html, string $pageUrl, int $now): array
 function cf_dig($data, string $path)
 {
     if ($path === '') return $data;
-    foreach (explode('.', $path) as $key) {
+    $keys = explode('.', $path);
+    foreach ($keys as $i => $key) {
+        // «*» — каждый элемент списка: вакансии, разложенные по группам
+        // (у Яндекс Крауда — [{direction, vacancies: [...]}, ...]), путь
+        // «*.vacancies» собирает в один список. Пустые ветки пропускаются.
+        // «**» — ключ на любой глубине: у Next.js (App Router) список лежит
+        // глубоко в дереве вёрстки, путь к нему меняется от выкладки к
+        // выкладке. «**.vacancies» — первый найденный список по этому ключу.
+        if ($key === '**') {
+            $next = $keys[$i + 1] ?? '';
+            if ($next === '') return null;
+            $rest = implode('.', array_slice($keys, $i + 2));
+            $found = cf_dig_deep($data, $next);
+            return $found === null ? null : cf_dig($found, $rest);
+        }
+        if ($key === '*') {
+            if (!is_array($data)) return null;
+            $rest = implode('.', array_slice($keys, $i + 1));
+            $out = [];
+            foreach ($data as $el) {
+                $v = cf_dig($el, $rest);
+                if (is_array($v) && array_is_list($v)) array_push($out, ...$v);
+                elseif ($v !== null) $out[] = $v;
+            }
+            return $out;
+        }
         if (!is_array($data) || !array_key_exists($key, $data)) return null;
         $data = $data[$key];
     }
     return $data;
+}
+
+/** Первое значение-список по ключу на любой глубине (обход в глубину, до 40 уровней). */
+function cf_dig_deep($data, string $key, int $depth = 0)
+{
+    if (!is_array($data) || $depth > 40) return null;
+    if (array_key_exists($key, $data) && is_array($data[$key]) && array_is_list($data[$key])) return $data[$key];
+    foreach ($data as $child) {
+        $found = cf_dig_deep($child, $key, $depth + 1);
+        if ($found !== null) return $found;
+    }
+    return null;
+}
+
+/**
+ * Текст из вложенной структуры: все строки по порядку, каждая с новой строки.
+ * Описание у сайтов бывает деревом (у SETTERS — вкладки
+ * [{label, paragraphs: [...]}]); cf_name из такого взял бы одно название.
+ */
+function cf_flat_text($value): string
+{
+    if (!is_array($value)) return cf_text($value);
+    $parts = [];
+    array_walk_recursive($value, function ($v, $k) use (&$parts) {
+        if (!is_string($v) || str_starts_with($v, '$')) return;
+        if (in_array((string)$k, ['id', 'slug', 'href', 'url', 'status', 'kind', 'createdAt'], true)) return;
+        $t = cf_text($v);
+        if ($t !== '') $parts[] = $t;
+    });
+    return implode("\n", $parts);
 }
 
 /**
@@ -254,7 +309,8 @@ function cf_dig($data, string $path)
  *   list  — путь к массиву вакансий («items», «data», «» для голого массива);
  *   title — поле с названием (обязательно);
  *   url   — поле с готовой ссылкой ИЛИ url_template с «{поле}» внутри;
- *   id, company, address, pay, description, schedule, closed — необязательные.
+ *   id, company, address, pay, description, schedule, closed, open — необязательные.
+ *   В list можно «*»: «*.vacancies» — вакансии из всех групп одним списком.
  *
  * Правило про ссылку то же, что и для разметки: без пути к первоисточнику
  * вакансию не берём. Это не формальность — именно этим мы отличаемся от
@@ -280,6 +336,10 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
         if ($url === '') continue;
 
         // Закрытую вакансию не берём: человек поедет туда, где его не ждут.
+        // Бывает и обратный флаг — «открыта» (у Яндекс Крауда available):
+        // тогда берём только те, где он истинный.
+        $openField = (string)($map['open'] ?? '');
+        if ($openField !== '' && empty(cf_dig($row, $openField))) continue;
         $closedField = (string)($map['closed'] ?? '');
         if ($closedField !== '') {
             $closed = cf_dig($row, $closedField);
@@ -299,8 +359,15 @@ function cf_json_items($data, array $map, string $pageUrl, int $now): array
                   'description' => 'description', 'schedule' => 'schedule'] as $to => $_) {
             $field = (string)($map[$to] ?? '');
             if ($field === '') continue;
-            $value = cf_name(cf_dig($row, $field));
+            $raw = cf_dig($row, $field);
+            // Описание-дерево (вкладки, абзацы) — весь текст, а не первое имя.
+            $value = $to === 'description' && is_array($raw) ? cf_flat_text($raw) : cf_name($raw);
             if ($value !== '') $item[$to] = $value;
+            // Дерево — это уже полный текст (вкладки SETTERS), а не анонс:
+            // сразу в description_full, страницу вакансии не дочитываем.
+            if ($to === 'description' && is_array($raw) && mb_strlen($value) >= 200) {
+                $item['description_full'] = $value;
+            }
         }
 
         // Полное описание разделами прямо из списка (Сбер отдаёт обязанности,
@@ -559,8 +626,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         // Без этого в ленту лезли «Все вакансии», «Все города», «Кандидатам» —
         // ссылки на разделы, у которых после `/vacancy/` ничего нет. Замерено
         // на живых страницах СИБУРа, МегаФона и Контура.
-        $tail = substr($href, strpos($href, $needle) + strlen($needle));
-        $tail = trim(explode('?', explode('#', $tail)[0])[0], '/');
+        $tail = cf_link_tail($href, $needle);
         if ($tail === '') continue;
         // Хвост, который сам является названием раздела, — не вакансия.
         // У Яндекса все 68 «вакансий» оказались ссылками вида
@@ -576,7 +642,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         if (!empty($map['title_from_card'])
             && (mb_strlen($title) < $minTitle || cf_title_is_noise($title))) {
             $card = cf_link_card($a, $needle);
-            if ($card !== null) $title = cf_link_title($card, true);
+            if ($card !== null) $title = cf_link_title($card, true, trim((string)($map['title_class'] ?? '')));
         }
         if (mb_strlen($title) < $minTitle) continue;
         if (preg_match(CF_COUNT_LABEL, $title)) continue;
@@ -655,6 +721,75 @@ function cf_title_is_noise(string $title): bool
  * уровней), в котором ссылки на вакансии ведут в одно место. Выше него уже
  * список из нескольких вакансий, и заголовок оттуда был бы чужим.
  */
+/** Хвост пути после link_path без запроса и якоря: пусто — ссылка на сам список или фильтр. */
+/**
+ * Вакансии, у которых нет своих страниц: все одним списком на странице,
+ * каждая — блок с названием и полным текстом (решение владельца 26.09.2026:
+ * берём, ссылка — якорь на странице списка). Так у NeuroCity, Палиндрома,
+ * Айти Новации, Extyl.
+ *
+ * $map: block_class — класс блока одной вакансии (обязателен, точное слово
+ * из class); title_class — класс названия внутри блока (без него — первый
+ * h1–h6). Текст вакансии — весь текст блока без названия. Якорь — id блока,
+ * а без него номер блока: vacancy-1, vacancy-2… Без block_class — ноль
+ * вакансий, а не весь текст страницы.
+ */
+function cf_html_blocks(string $html, string $pageUrl, array $map, int $now): array
+{
+    $blockClass = trim((string)($map['block_class'] ?? ''));
+    if ($blockClass === '') return [];
+    $titleClass = trim((string)($map['title_class'] ?? ''));
+    $doc = cf_dom($html);
+    if ($doc === null) return [];
+    $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
+    $hasClass = fn(DOMElement $el, string $c): bool =>
+        in_array($c, preg_split('/\s+/', $el->getAttribute('class')), true);
+    $base = explode('#', $pageUrl)[0];
+
+    $items = [];
+    $n = 0;
+    foreach ($doc->getElementsByTagName('*') as $block) {
+        if (count($items) >= 200) break;
+        if (!$hasClass($block, $blockClass)) continue;
+        $n++;
+        $titleEl = null;
+        foreach ($block->getElementsByTagName('*') as $el) {
+            $isTitle = $titleClass !== ''
+                ? $hasClass($el, $titleClass)
+                : preg_match('/^h[1-6]$/', $el->nodeName) === 1;
+            if ($isTitle && $clean($el->textContent ?? '') !== '') { $titleEl = $el; break; }
+        }
+        if ($titleEl === null) continue;
+        $title = $clean($titleEl->textContent ?? '');
+        if (mb_strlen($title) < max(3, (int)($map['min_title'] ?? 4)) || cf_title_is_noise($title)) continue;
+
+        $text = $clean(str_replace($title, '', $clean($block->textContent ?? '')));
+        $id = trim($block->getAttribute('id'));
+        $url = $base . '#' . ($id !== '' ? rawurlencode($id) : 'vacancy-' . $n);
+        $item = [
+            'id' => substr(hash('sha256', $url), 0, 24),
+            'title' => $title,
+            'kind' => 'permanent',
+            'url' => $url,
+            'company' => (string)($map['company_const'] ?? '') ?: null,
+            'active' => true,
+            'seen_at' => $now,
+        ];
+        if ($text !== '') {
+            $item['description'] = mb_substr($text, 0, 20000);
+            $item['description_full'] = $item['description'];
+        }
+        $items[] = $item;
+    }
+    return $items;
+}
+
+function cf_link_tail(string $href, string $needle): string
+{
+    $tail = substr($href, strpos($href, $needle) + strlen($needle));
+    return trim(explode('?', explode('#', $tail)[0])[0], '/');
+}
+
 function cf_link_card(DOMElement $a, string $needle): ?DOMElement
 {
     $own = trim($a->getAttribute('href'));
@@ -664,7 +799,9 @@ function cf_link_card(DOMElement $a, string $needle): ?DOMElement
         $hrefs = [];
         foreach ($node->getElementsByTagName('a') as $link) {
             $h = trim($link->getAttribute('href'));
-            if ($h !== '' && str_contains($h, $needle)) $hrefs[$h] = true;
+            // Теги-фильтры списка (/job/vacancy/?tag=…) в карточке не мешают:
+            // это не другая вакансия, а ссылка на тот же список (Информзащита).
+            if ($h !== '' && str_contains($h, $needle) && cf_link_tail($h, $needle) !== '') $hrefs[$h] = true;
         }
         if (count($hrefs) !== 1 || !isset($hrefs[$own])) break;
         $card = $node;
@@ -672,9 +809,21 @@ function cf_link_card(DOMElement $a, string $needle): ?DOMElement
     return $card;
 }
 
-function cf_link_title(DOMElement $a, bool $headingOnly = false): string
+function cf_link_title(DOMElement $a, bool $headingOnly = false, string $titleClass = ''): string
 {
     $clean = fn(string $t): string => trim(preg_replace('/\s+/u', ' ', $t));
+
+    // Название в блоке с «чужим» классом (у CINIMEX — div.vacancy__text рядом с
+    // пустой ссылкой-оверлеем): запись источника называет этот класс сама
+    // (map.title_class), угадывать по общим словам вроде «vacancy» опасно —
+    // так же называются блоки с зарплатой и городом.
+    if ($titleClass !== '') {
+        foreach ($a->getElementsByTagName('*') as $el) {
+            if (!in_array($titleClass, preg_split('/\s+/', $el->getAttribute('class')), true)) continue;
+            $text = $clean($el->textContent ?? '');
+            if ($text !== '' && cq_title_problem($text) === null) return $text;
+        }
+    }
 
     // Кандидатов берём по порядку и возвращаем первого, кто похож на должность.
     // Раньше брался просто первый: у С-Терры блок «…item__subtitle» с городом
@@ -726,8 +875,46 @@ function cf_link_title(DOMElement $a, bool $headingOnly = false): string
  * Twinby — у них никакого отдельного запроса за вакансиями нет вовсе, всё
  * приезжает первой же страницей.
  */
-function cf_embedded_state(string $html): ?array
+/**
+ * Данные Next.js App Router (RSC): куски строки из self.__next_f.push([1,"…"])
+ * склеиваются, режутся на строки «id:JSON», из каждой берётся JSON. Строки
+ * другого вида (I[…] — ссылки на модули, T… — текст) пропускаются: вакансий в
+ * них нет. Возвращает список разобранных значений, пустой — если данных нет.
+ */
+function cf_next_flight(string $html): array
 {
+    if (!preg_match_all('~self\.__next_f\.push\((\[.*?\])\)\s*</script>~s', $html, $m)) return [];
+    $stream = '';
+    foreach ($m[1] as $chunk) {
+        $piece = json_decode($chunk, true);
+        if (is_array($piece) && ($piece[0] ?? null) === 1 && is_string($piece[1] ?? null)) $stream .= $piece[1];
+    }
+    $rows = [];
+    foreach (explode("\n", $stream) as $line) {
+        if (!preg_match('~^[0-9a-f]+:([\[{].*)$~s', $line, $mm)) continue;
+        $value = json_decode($mm[1], true);
+        if (is_array($value)) $rows[] = $value;
+    }
+    return $rows;
+}
+
+function cf_embedded_state(string $html, string $scriptId = ''): ?array
+{
+    // Свой скрипт с JSON, который называет запись источника
+    // (map.state_script_id): у Яндекс Крауда — <script id="data"
+    // type="application/json">. Только по точному id, чтобы не схватить
+    // чужой блок разметки (JSON-LD, настройки аналитики).
+    // «__next_f» — данные Next.js App Router: не один JSON, а поток строк
+    // «id:значение» в нескольких self.__next_f.push([1,"…"]).
+    if ($scriptId === '__next_f') {
+        $rows = cf_next_flight($html);
+        return $rows ?: null;
+    }
+    if ($scriptId !== '') {
+        if (!preg_match('~<script[^>]+id="' . preg_quote($scriptId, '~') . '"[^>]*>(.*?)</script>~s', $html, $m)) return null;
+        $data = json_decode(trim($m[1]), true);
+        return is_array($data) ? $data : null;
+    }
     if (preg_match('~<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>~s', $html, $m)) {
         $data = json_decode(trim($m[1]), true);
         if (is_array($data)) return $data;

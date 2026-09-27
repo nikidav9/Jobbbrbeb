@@ -470,3 +470,88 @@ Spirit. Fitness	https://career.spiritfit.ru/
 ВДНХ	https://vdnh.ru/
 Лужники	https://www.luzhniki.ru/
 Крокус	https://crocus-group.ru/
+
+# budu.jobs (26.09.2026): сверка каталога budu.jobs/companies (3549 компаний)
+# с нашим списком. У budu взяты только названия и сайты; вакансии — с сайтов
+# самих компаний. Три первые собираются (career-endpoints.json), остальные —
+# живые российские компании со страницей вакансий, но без разбираемого
+# источника или без текста вакансий: их ищет еженедельная разведка.
+Туту	https://c.tutu.ru/hr/vacancies
+Информзащита	https://www.infosec.ru/job/vacancy/
+Wunder Fund	https://wunderfund.io/
+Proscom	https://proscom.ru/vacancies
+UPSIDE	https://upside.pro/vacancies
+MedEQ	https://medeq.ru/vacancies
+NeuroCity	https://www.neuro-city.ru/
+ИТЭЛМА	https://www.itelma.ru/karera/
+Палиндром	https://palindrome.media/career/
+SETTERS	https://www.setters.agency/job
+Weborama	https://wbrm.ru/vacancies/
+Holy Corn	https://holycorn.ru/work
+H2O	https://h2oclean.ru/vacancies
+Beget	https://beget.com/ru
+Targem Games	https://targem.ru/job/
+SmartDec	https://smartdec.net/ru/hiring/
+
+# Хабр Карьера и arbihunter (26.09.2026): компании с открытыми вакансиями на
+# career.habr.com (166, из них 45 уже были у нас) и чистые IT/SaaS-работодатели
+# arbihunter (гемблинг, беттинг, нутра, форекс и фермы аккаунтов исключены —
+# решение владельца). Вакансии Хабра и arbihunter не перепечатываем — только
+# сайты самих компаний. Четыре первые собираются, остальные — для разведки.
+Айтуби	https://it2bsns.ru/vacancies/
+БФТ-Холдинг	https://bft.ru/career/list/
+Синимекс	https://www.cinimex.ru/vacancies/moscow/
+Поехали	https://poehali.dev/careers
+Карма Групп	https://www.karma-group.ru/about/vacancies/
+СберЗдоровье	https://sberhealth.ru/
+Extyl	https://www.extyl-pro.ru/vacancy/
+MIND Software	https://mindsw.io/career/vacancies
+Айти Новация	https://itnovation.pro/vacancies
+YoloPrice	https://yoloprice.com/career
+Банк Синара	https://sinara.ru/vacancii
+Яндекс Крауд	https://crowd.yandex.ru/vacancies
+
+# Не открылись из облачной проверки 26.09.2026 (прокси проверяющей среды
+# отклонял соединение, 502/000, «VPN обнаружен»): российские компании из
+# сверки budu.jobs и Хабр Карьеры. Проверить их может только разведка на
+# сервере — ставим главную, раздел вакансий ищет она; мёртвые получат «закрыт».
+Умназия	https://umnazia.ru/
+Marks Academy	https://marks-academy.ru/
+ВБЦ	https://vbankcenter.ru/
+Pandy	https://pandy.mobi/
+MadMed.Media	https://madmed.media/
+volna.digital	https://volna.digital/
+Magic Factory Animation	https://magicfactory.ru/
+Kefir	https://kefirgames.ru/
+История будущего	https://futurehistory.ru/
+Azoft	https://www.azoft.ru/
+Ранколл	https://runcall.ru/
+shishki.collective	https://shishki.co/
+Институт «Стрелка»	https://strelka.com/ru
+R.S.V.P	https://rsvp-agency.com/
+Gossip Inc.	https://thegossip.app/
+Экономический Олимп	https://economolymp.ru/
+IBS Appline	https://www.appline.ru/
+Югория-Жизнь	https://ugorialife.ru/
+Advert School	https://advert.school/
+Тактика	https://www.taktikagames.ru/
+КБК «Черёмушки»	https://www.kf-tort.ru/
+NX Studio	https://studionx.ru/
+Cool.Club	https://cool.club/
+English Yo	https://englishyopta.com/
+UMA	https://umastyle.app/
+TIQUM	https://techinform.pro/
+Когнитивные системы	https://cogsys.company/ru/
+EgeHack	https://egehack.com/
+ТТК Диджитал	https://tattelecom.digital/
+РТК-ЦОД	https://rt-dc.ru/
+Базис	https://basistech.ru/
+Oxygen	https://oxygen.cloud/
+Simple	https://simple.ru/
+
+# Проход 3 (26.09.2026): компании, которые раньше не прошли из-за разбора, —
+# собраны режимами html_blocks, Next.js (__next_f) и Strapi REST.
+Tilda Publishing	https://company.tilda.ru/ru
+SharpLase	https://sharplase.ru/o-kompanii/job/
+TalkBank	https://talkbank.io/vacansy
+Eduson	https://www.eduson.tv/vacancy-account-manager

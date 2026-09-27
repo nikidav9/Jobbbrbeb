@@ -107,6 +107,27 @@ class ConsentDecisions(unittest.TestCase):
         ):
             self.assertEqual(decide_consent(self.MIXED, values).action, "ask", values)
 
+    def test_data_accuracy_is_a_delegated_confirmation(self):
+        # Соглашение п. 8.3 (редакция 2026-09-26-2): подтверждение
+        # достоверности даётся по поручению, как и согласие на обработку.
+        text = "Подтверждаю достоверность указанных данных"
+        self.assertEqual(consent_kinds(text)[0].key, "data_accuracy_confirmation")
+        self.assertEqual(decide_consent(text, {}).action, "ask")
+        self.assertEqual(
+            decide_consent(text, {"data_accuracy_confirmation": True}).action, "check")
+
+    def test_crossborder_and_special_categories_are_never_delegated(self):
+        delegated = {
+            "personal_data_consent": True, "privacy_consent": True,
+            "terms_consent": True, "data_accuracy_confirmation": True,
+        }
+        for text in (
+            "Согласен на трансграничную передачу персональных данных",
+            "Согласен на обработку биометрических данных",
+            "Даю согласие на обработку сведений о состоянии здоровья",
+        ):
+            self.assertNotEqual(decide_consent(text, delegated).action, "check", text)
+
     def test_ordinary_checkbox_is_left_to_the_usual_field_mapping(self):
         self.assertEqual(decide_consent("Готов к командировкам", {}).action, "skip")
         self.assertEqual(decide_consent("Готов к командировкам", {}).kinds, [])

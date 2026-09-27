@@ -191,6 +191,18 @@ class TestWorkerLoop(unittest.TestCase):
 class TestProfileFactory(unittest.TestCase):
     """Проверяем, что worker.run_once вызывает фабрику профиля с задачей."""
 
+    def test_delegated_consents_are_exactly_the_documented_ones(self):
+        # Поручение (Соглашение п. 8.3) — только это; ни рекламы, ни резерва,
+        # ни третьих лиц, ни трансграничной передачи.
+        import run_worker
+        self.assertEqual(set(run_worker.DELEGATED_CONSENTS), {
+            "personal_data_consent", "privacy_consent", "terms_consent",
+            "data_accuracy_confirmation",
+        })
+        for key in ("marketing_consent", "talent_pool_consent", "third_party_consent",
+                    "crossborder_consent", "special_category_consent"):
+            self.assertNotIn(key, run_worker.DELEGATED_CONSENTS)
+
     def test_profile_factory_called_with_task(self):
         import worker as worker_mod
 
