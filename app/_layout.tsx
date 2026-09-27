@@ -208,7 +208,15 @@ function useOTAUpdates() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({ ...Ionicons.font });
+  // Шрифты макета JT-design (27.09.2026): Unbounded — крупные заголовки,
+  // Manrope — остальной текст. Лицензия SIL OFL. TTF собраны из woff2 макета
+  // (кириллица + латиница в одном файле): woff2 на телефоне не читается.
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+    'Unbounded-700': require('../assets/fonts/Unbounded-700.ttf'),
+    'Manrope-500': require('../assets/fonts/Manrope-500.ttf'),
+    'Manrope-700': require('../assets/fonts/Manrope-700.ttf'),
+  });
   useOTAUpdates();
 
   useEffect(() => { markWebBundleMounted(); }, []);
