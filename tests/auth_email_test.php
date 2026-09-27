@@ -366,7 +366,7 @@ check('вход по коду сверяет и id из кода, и почту 
     && str_contains($verify, "if (!\$row || !empty(\$row['is_blocked'])) {"));
 check('вход по коду выдаёт сессию сразу, без квитанции',
     str_contains($verify, "jt_try_reset('login');")
-    && str_contains($verify, "\$data = ['user' => sb_single('jm_users', ['id' => 'eq.' . \$row['id']], USER_SELF_COLS),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
+    && str_contains($verify, "\$data = ['user' => jt_attach_has_password(sb_single('jm_users', ['id' => 'eq.' . \$row['id']], USER_SELF_COLS)),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
 
 $reset = case_body($db, 'dbAuthResetPassword');
 check('сброс пароля гасит прежние сессии', str_contains($reset, "'sessions_valid_from' => now_iso(),"));

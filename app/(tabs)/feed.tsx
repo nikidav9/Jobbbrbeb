@@ -398,6 +398,10 @@ function FilterSheet({
   // Reanimated уже видит exiting=undefined.
   const [swipedAway, setSwipedAway] = useState(false);
   const swipe = useSwipeToDismiss(() => setSwipedAway(true));
+  // Звать onClose ровно один раз, когда свайп долистал до закрытия, а не при
+  // каждой смене ссылки на сам onClose (проп пересоздаётся в родителе на
+  // каждый рендер).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (swipedAway) onClose(); }, [swipedAway]);
 
   const companyRows = useMemo(() => {
