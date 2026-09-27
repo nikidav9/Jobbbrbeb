@@ -39,9 +39,17 @@ test('подпись «Всего N» прячется у пустой недо�
 test('фильтры — отдельные экраны, а не шторка поверх ленты (макет «JT-filters»)', () => {
   assert.doesNotMatch(src, /<FilterSheet\b|<AllFiltersSheet\b/);
   assert.match(src, /router\.push\(\{ pathname: `\/filters\/\$\{kind\}`, params: \{ from: 'feed' \} \}\)/);
-  for (const screen of ['index', 'spec', 'format', 'salary']) {
+  for (const screen of ['index', 'spec', 'format', 'salary', 'level', 'posted']) {
     assert.ok(fs.existsSync(path.resolve(import.meta.dirname, `../app/filters/${screen}.tsx`)), screen);
   }
+});
+
+test('у «Грейда» и «Даты публикации» свои экраны, как у остальных фильтров (решение владельца)', () => {
+  for (const screen of ['level', 'posted']) {
+    assert.ok(fs.existsSync(path.resolve(import.meta.dirname, `../app/filters/${screen}.tsx`)), screen);
+  }
+  const open = src.slice(src.indexOf('const openFilterSheet = '), src.indexOf('const openAllFilters = '));
+  assert.doesNotMatch(open, /openAllFilters\(/);
 });
 
 test('фильтра по компании больше нет (решение владельца)', () => {
