@@ -28,11 +28,11 @@ DEFAULT_CHROMIUM = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 
 def heavy_page() -> str:
-    """~6000 узлов, картинки-заглушки, JS держит ~50 МБ массивов, анкета без <form>."""
+    """~2500 узлов, картинки-заглушки, JS держит ~50 МБ массивов, анкета без <form>."""
     rows = "".join(
         f'<div class="row"><span>Строка {i}</span><a href="#r{i}">ссылка {i}</a>'
         f'<img alt="" width="8" height="8" src="/img/{i}.png"></div>'
-        for i in range(2000)
+        for i in range(600)
     )
     return f"""<!doctype html><meta charset="utf-8"><title>Тяжёлая вакансия</title>
 <style>.row{{padding:2px;border-bottom:1px solid #ccc}}</style>
@@ -212,7 +212,7 @@ def main() -> int:
 
     meminfo = bl.parse_meminfo(Path("/proc/meminfo").read_text())
     print(f"Хост: MemTotal {meminfo['MemTotal'] // 1024} МБ, доступно {bl.read_available_mb()} МБ, "
-          f"CPU {os.cpu_count()}; страница {len(Handler.page) // 1024} КБ, 2000 строк + 2000 img, ~50 МБ JS-массивов")
+          f"CPU {os.cpu_count()}; страница {len(Handler.page) // 1024} КБ, 600 строк + 600 img, ~50 МБ JS-массивов")
     print(f"Задача = запуск движка + open + snapshot + close; прогонов на воркер: {args.runs}\n")
 
     head = ["сценарий", "паралл.", "задач", "сред,с", "макс,с", "с/задачу(wall)",
