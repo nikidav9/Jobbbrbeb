@@ -108,10 +108,12 @@ if ($employerOk !== '') {
     check('мусор не даёт', jt_employer_stamp_ok('x') === false);
 }
 $enqueue = substr($db, strpos($db, "case 'jupiterEnqueue': {"), 9000);
-// С 28.09.2026 отклик отправляет сам человек на сайте компании: согласия
-// работодателю он даёт там же, поручение на них при свайпе не ставится.
-check('свайп не ставит поручение на согласия',
-    !str_contains($enqueue, 'jt_employer_consent_fields') && !str_contains($enqueue, '$delegated'));
+check('свайп ставит согласие только при боевом режиме и принятой редакции',
+    str_contains($enqueue, '$delegated = $live && jt_employer_delegated($uidArg);'));
+check('новая заявка несёт согласие',
+    str_contains($enqueue, '$row += jt_employer_consent_fields($url, now_iso());'));
+check('повторный свайп снимает CONSENT_REQUIRED',
+    str_contains($enqueue, "(string)(\$existing['reason_code'] ?? '') === 'CONSENT_REQUIRED'"));
 check('принятие редакции снимает с паузы ждущие согласия',
     substr_count($db, 'jt_employer_requeue_consent($uid, $stamp);') === 2);
 check('снятие с паузы — только заявки без согласия',

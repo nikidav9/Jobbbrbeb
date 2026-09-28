@@ -18,6 +18,7 @@ import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
+import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy } from '@/constants/types';
 import { SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
@@ -58,8 +59,11 @@ import {
   dbPermUnswipe,
   dbGetPermSwipes,
   jupiterEnqueue,
+  jupiterMyApplications,
 } from '@/services/db';
+import { fillHostFor, jupiterManualEligible } from '@/services/jupiterFill';
 import { ensureResumeForApply } from '@/services/resumeGate';
+import { confirmAsync } from '@/services/confirm';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1010,6 +1014,8 @@ function WorkerPermMode() {
   // тихо берём следующую. Сервер уже не отдаёт свайпнутое, а на случай
   // гонки (свайп ещё не записан) повторы отсекаются по id.
   const careerRefilling = useRef(false);
+  // Когда последний раз предлагали открыть отложенную анкету (см. followUpApplication).
+  const lastFollowUp = useRef(0);
   useEffect(() => {
     if (careerRefilling.current || careerVacancies.length === 0) return;
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
@@ -1089,14 +1095,42 @@ function WorkerPermMode() {
   // предлагаем открыть анкету: Юпитер заполнит её на глазах, отправит
   // человек сам (app/jupiter-fill.tsx). Не чаще раза в 2 минуты — листать
   // ленту это не должно мешать; остальные ждут в «Откликах».
-  // Отклик на карьерную вакансию — через телефон (решение владельца
-  // 28.09.2026): свайп только копит заявку в «Нужны вы», анкеты потом
-  // заполняются пачкой в app/jupiter-fill.tsx. Перед свайпом — лишь проверка
-  // резюме; заявка уходит в фоне, колода уже показывает следующую карточку.
+  // На вебе (сайт, Телеграм) встроенного браузера нет: jupiter-fill открывает
+  // анкету компании в новой вкладке, и заполнить её придётся самому — поэтому
+  // и текст другой. Раньше на вебе подсказки не было вовсе, и заявка молча
+  // ждала в «Откликах».
+  const followUpApplication = (applicationId: string, company?: string | null) => {
+    if (!currentUser) return;
+    const userId = currentUser.id;
+    setTimeout(async () => {
+      if (Date.now() - lastFollowUp.current < 120000) return;
+      try {
+        const own = (await jupiterMyApplications(userId)).find(a => a.id === applicationId);
+        if (!own || own.state !== 'action_required' || !jupiterManualEligible(own) || !fillHostFor(own.vacancyUrl)) return;
+        lastFollowUp.current = Date.now();
+        const open = await confirmAsync({
+          title: company || 'Отклик',
+          body: Platform.OS === 'web'
+            ? 'Сайт компании не принимает отклик от Юпитера. Откройте анкету и отправьте отклик сами — это пара минут.'
+            : 'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
+          confirmLabel: 'Открыть',
+          cancelLabel: 'Позже',
+        });
+        if (open) router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } });
+      } catch { /* не вышло — заявка ждёт в «Откликах» */ }
+    }, 40000);
+  };
+
+  // Отклик на карьерную вакансию — в два шага. Сначала то, что может
+  // остановить отклик диалогом: резюме и поручение Юпитеру. Обе проверки
+  // помнят успех 10 минут, поэтому после первого свайпа они мгновенные.
+  // Затем заявка уходит в фоне, а колода уже показывает следующую карточку:
+  // раньше она стояла, пока шли четыре запроса подряд.
   const prepareExtApply = async (): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
     try {
-      return await ensureResumeForApply();
+      if (!await ensureResumeForApply()) return false;
+      return await requestJupiterLive(currentUser.id);
     } catch (e: any) {
       const msg = e?.message ?? '';
       console.warn('[prepareExtApply]', msg);
@@ -1109,9 +1143,10 @@ function WorkerPermMode() {
     if (!currentUser) return false;
     try {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
-      showToast(application.reasonCode === 'PHONE_FILL'
-        ? 'Сохранено в «Нужны вы» — отправите пачкой в «Откликах».'
+      showToast(application.state === 'queued'
+        ? 'Юпитер готовит и отправляет отклик. Статус — в «Откликах».'
         : 'Заявка уже есть. Статус — в «Откликах».', 'success');
+      if (application.state === 'queued') followUpApplication(application.id, ev.company);
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';

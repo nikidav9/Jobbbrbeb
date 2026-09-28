@@ -169,6 +169,22 @@ check('счёт — по пулу без потолка на компанию',
     && str_contains($dbSrc, "'total' => \$total,"));
 check('счёт без потолка сохраняет фильтры IT и «рабочих» разделов',
     str_contains($mig134, "c.section not in ('warehouse', 'delivery', 'transport', 'retail',"));
+// Отклик в один свайп (28.09.2026): лента, её счёт и дашборд — только сайты,
+// куда Юпитер подаёт сам (jm_jupiter_ready_hosts, миграция 135).
+$mig135 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/135_feed_ready_hosts_only.sql');
+check('лента и счёт — только сайты автоотклика',
+    substr_count($dbSrc, "'p_it_only' => true, 'p_moscow_only' => true, 'p_ready_only' => true,") === 2);
+check('миграция 135: фильтр по jm_jupiter_ready_hosts и засев флагами владельца',
+    str_contains($mig135, 'p_ready_only boolean default false')
+    && str_contains($mig135, "where h.host = public.jm_url_host(c.url)")
+    && str_contains($mig135, "('rabota.sber.ru')")
+    && str_contains($mig135, 'drop function if exists public.jm_ext_feed_pool(text, int, text[], boolean, boolean, boolean);')
+    && str_contains($mig135, 'to service_role'));
+check('миграция 135: таблица хостов закрыта от клиентов',
+    str_contains($mig135, 'revoke all on public.jm_jupiter_ready_hosts from anon, authenticated;'));
+check('воркер синхронизирует хосты и возвращает PHONE_FILL серверу',
+    str_contains($dbSrc, "sb('POST', 'jm_jupiter_ready_hosts'")
+    && str_contains($dbSrc, "'reason_code' => 'in.(SITE_NOT_VERIFIED,PHONE_FILL)'"));
 $mig130 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/130_feed_hide_seen.sql');
 check('миграция 130: старая перегрузка снята', str_contains($mig130, 'drop function if exists public.jm_ext_feed_pool(text, int, text[], boolean, boolean);'));
 check('миграция 130: выключено — возвращаются только смахнутые влево', str_contains($mig130, 'and (p_hide_seen or s.dir = 1)'));

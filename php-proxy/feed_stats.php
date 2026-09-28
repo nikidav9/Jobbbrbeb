@@ -35,12 +35,22 @@ function fs_is_moscow(array $r): bool
 /**
  * Счётчики по строкам {company, section, address, metro_station_norm}.
  * it_feed_total — IT без учёта города, feed_total — то, что реально в ленте
- * (IT и Москва). Чистая функция — её проверяет
+ * (IT, Москва и сайты, куда Юпитер подаёт сам). Чистая функция — её проверяет
  * tests/feed_stats_test.php без базы.
  */
-function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = []): array
+/** Хост как у воркера (site_compat.normalize_host) и jm_url_host: без www. */
+function fs_url_host(string $url): string
+{
+    $h = strtolower((string)(parse_url($url, PHP_URL_HOST) ?: ''));
+    return str_starts_with($h, 'www.') ? substr($h, 4) : $h;
+}
+
+function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [], ?array $readyHosts = null): array
 {
     $itSet = array_flip($itCompanies);
+    // null — старый вызов без фильтра; массив — лента только с сайтов, куда
+    // Юпитер подаёт сам (миграция 135), feed_total считает так же.
+    $readySet = $readyHosts === null ? null : array_flip($readyHosts);
     $feed = 0;
     $feedMoscow = 0;
     $bySection = [];
@@ -56,7 +66,8 @@ function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [])
         // «рабочих» разделов (миграция 132).
         if ($section === 'it' || (isset($itSet[$company]) && !in_array($section, JOB_SECTIONS_BLUE_COLLAR, true))) {
             $feed++;
-            if (fs_is_moscow($r)) $feedMoscow++;
+            $ready = $readySet === null || isset($readySet[fs_url_host((string)($r['url'] ?? ''))]);
+            if ($ready && fs_is_moscow($r)) $feedMoscow++;
         }
     }
     arsort($bySection);
@@ -89,13 +100,14 @@ if (!defined('FEED_STATS_LIBRARY_ONLY')) {
             'order' => 'id.asc',
             'limit' => (string)FS_PAGE,
             'offset' => (string)$offset,
-        ], 'company,section,address,metro_station_norm');
+        ], 'company,section,address,metro_station_norm,url');
         $rows = array_merge($rows, $page);
         if (count($page) < FS_PAGE) break;
     }
 
     $itCompanies = array_column(sb_select('jm_it_companies', [], 'company'), 'company');
-    $json = json_encode(fs_aggregate($rows, gmdate('Y-m-d\TH:i:s\Z'), $itCompanies), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    $readyHosts = array_column(sb_select('jm_jupiter_ready_hosts', [], 'host'), 'host');
+    $json = json_encode(fs_aggregate($rows, gmdate('Y-m-d\TH:i:s\Z'), $itCompanies, $readyHosts), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     @file_put_contents($cache, $json, LOCK_EX);
     echo $json;
 }

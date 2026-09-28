@@ -87,8 +87,7 @@ check('поручение Юпитеру помнит успех', str_contains(
 $profile = (string)file_get_contents(__DIR__ . '/../app/(tabs)/profile.tsx');
 $settings = (string)file_get_contents(__DIR__ . '/../app/profile-settings.tsx');
 check('смена резюме сбрасывает память', substr_count($profile, 'forgetResumeCheck()') >= 2);
-// Переключателя автоотклика нет с 28.09.2026: отклик отправляет человек.
-check('переключателя автоотклика в настройках нет', !str_contains($settings, 'Автоотклик Юпитера'));
+check('переключатель автоотклика сбрасывает память', str_contains($settings, 'forgetJupiterLive()'));
 
 // ── Счётчик в шапке показывает запас, а не что-нибудь ещё ───────────────────
 // Раньше там было число вакансий в подборке. Если проводку перепутать
