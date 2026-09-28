@@ -19,7 +19,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from playwright.sync_api import Error as PlaywrightError
+try:
+    from playwright.sync_api import Error as PlaywrightError
+except ImportError:  # pragma: no cover - без браузера модуль только импортируется
+    PlaywrightError = Exception  # type: ignore[assignment,misc]
 
 CUSTOM_SELECTOR = "[data-jt-cs]"
 MAX_OPTIONS = 200
