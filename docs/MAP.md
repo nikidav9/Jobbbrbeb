@@ -1326,8 +1326,9 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 `jupiter/test_browser_engine.py`, отдельная задача CI `jupiter-browser`
 (Playwright ставится только там).
 
-Модули браузерного движка (28.09.2026; пока отдельные, в `browser_engine.py`
-подключаются следующим шагом): `browser_frames.py` — анкеты в iframe;
+Модули браузерного движка (28.09.2026; в `browser_engine.py` уже подключены
+`browser_guard` и `browser_overlays`, остальные — следующим шагом; «зоопарк» из
+8 тяжёлых синтетических сайтов — `jupiter/test_browser_zoo.py`): `browser_frames.py` — анкеты в iframe;
 `browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
 все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`)
 и поля с маской; `browser_success.py` — успех по ответу API и тостам;

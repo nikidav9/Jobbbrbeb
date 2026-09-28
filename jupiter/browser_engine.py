@@ -46,6 +46,8 @@ from engine import (
     PageState,
     _SemanticParser,
 )
+import browser_guard
+from browser_overlays import dismiss_overlays
 from policy import NetworkPolicy, PolicyError, is_blocked_address, literal_loopback
 
 try:  # pragma: no cover - наличие зависит от окружения
@@ -92,6 +94,10 @@ SNAPSHOT_JS = r"""
     const tag = el.tagName.toLowerCase();
     const type = (el.type || '').toLowerCase();
     if (tag === 'input' && !['checkbox', 'radio', 'file'].includes(type)) c.setAttribute('value', el.value || '');
+    // У полей SPA часто нет name — агент тогда не отличит шаг визарда от
+    // следующего (подпись шага строится по именам полей).
+    if (!c.getAttribute('name') && type !== 'radio' && tag !== 'button')
+      c.setAttribute('name', el.id || ('jt-' + c.getAttribute('data-jt-ref')));
     if (type === 'checkbox' || type === 'radio') {
       if (el.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
     }
@@ -238,7 +244,7 @@ class JupiterBrowserEngine:
             self._browser = self._pw.chromium.launch(
                 headless=headless,
                 executable_path=executable_path or os.environ.get("JUPITER_CHROMIUM") or None,
-                args=["--disable-dev-shm-usage", "--no-first-run"],
+                args=browser_guard.CHROMIUM_SAFE_ARGS,
             )
             probe = self._browser.new_page()
             ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
@@ -247,7 +253,7 @@ class JupiterBrowserEngine:
                 user_agent=ua + UA_SUFFIX,
                 locale="ru-RU",
                 viewport={"width": 1280, "height": 900},
-                accept_downloads=False,
+                **browser_guard.CONTEXT_SAFE_OPTIONS,
                 # Только для облачной лаборатории, где TLS подменяет прокси.
                 # На сервере — всегда проверка сертификатов.
                 ignore_https_errors=ignore_https_errors,
@@ -255,6 +261,10 @@ class JupiterBrowserEngine:
             self._context.set_default_timeout(self.timeout_ms)
             self._context.route("**/*", self._route)
             self._tab = self._context.new_page()
+            # После маршрута движка — значит срабатывает раньше него: попапы,
+            # диалоги, загрузки, схемы вроде file://.
+            browser_guard.install_guards(self._context, self._tab, self.allowed_hosts, [],
+                                         journal=self.actions)
         except Exception:
             self.close()
             raise
@@ -311,8 +321,7 @@ class JupiterBrowserEngine:
             reason = "scheme"
         elif not self._public_host(host):
             reason = "internal_address"
-        elif request.is_navigation_request() and request.frame == self._tab.main_frame \
-                and host not in self.allowed_hosts:
+        elif self._main_navigation(request) and host not in self.allowed_hosts:
             reason = "host_not_allowed"
         elif self.read_only and request.method.upper() not in SAFE_METHODS:
             reason = "read_only"
@@ -325,6 +334,15 @@ class JupiterBrowserEngine:
             route.abort("blockedbyclient")
             return
         route.continue_()
+
+    def _main_navigation(self, request) -> bool:  # pragma: no cover - вызывает браузер
+        try:
+            return request.is_navigation_request() and request.frame == self._tab.main_frame
+        except PlaywrightError:
+            return False  # первый запрос попапа: фрейма ещё нет, его ведёт browser_guard
+
+    def _dismiss_overlays(self) -> None:
+        self.actions.extend(dismiss_overlays(self._tab))
 
     # ── Снимок страницы ────────────────────────────────────────────────────
     def _settle(self) -> None:
@@ -369,6 +387,7 @@ class JupiterBrowserEngine:
             mark = self._tab.evaluate(FIND_APPLY_JS, APPLY_TEXT_RE)
             if not mark:
                 return page
+            self._dismiss_overlays()  # баннер мог появиться с задержкой и перехватить клик
             target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
             label = (target.inner_text(timeout=2000) or "").strip()[:60]
             try:
@@ -398,6 +417,7 @@ class JupiterBrowserEngine:
         except EngineSecurityError:
             raise
         self._settle()
+        self._dismiss_overlays()
         return self._reveal_form(self._snapshot())
 
     def load_html(self, html_text: str, logical_url: str) -> PageState:
