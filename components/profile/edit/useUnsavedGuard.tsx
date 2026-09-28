@@ -57,7 +57,8 @@ export function useUnsavedGuard({
 
   const handleSave = async () => {
     setVisible(false);
-    await onSave();
+    // false — сохранение не удалось (экран сам показал ошибку): остаёмся.
+    if ((await onSave()) === false) return;
     leave();
   };
 
@@ -73,5 +74,7 @@ export function useUnsavedGuard({
     />
   );
 
-  return { requestClose, dialog };
+  // leave — уход без вопроса: экран зовёт его после успешного «Сохранить»
+  // внизу, пока dirty ещё true (иначе beforeRemove снова спросил бы).
+  return { requestClose, dialog, leave };
 }
