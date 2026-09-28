@@ -60,6 +60,30 @@ function formatSalary(amount?: number, net?: boolean): string | undefined {
   return sum;
 }
 
+/**
+ * Достаёт сумму из легаси-строки `salary` вида «150 000 ₽ на руки»,
+ * «от 120000 руб.», «200 000–250 000 ₽» (берёт первое число). Строка могла
+ * прийти из парсера резюме (`lib/resumeParser.ts`) с неразрывными пробелами
+ * между разрядами — их тоже считаем разделителем.
+ */
+export function parseSalaryAmount(salary?: string): number | undefined {
+  if (!salary) return undefined;
+  const match = salary.match(/\d[\d\s ]*/);
+  if (!match) return undefined;
+  const digits = match[0].replace(/[\s ]/g, '');
+  if (!digits) return undefined;
+  const amount = Number(digits);
+  return Number.isFinite(amount) && amount > 0 ? amount : undefined;
+}
+
+/** «На руки» → true, «до вычета» → false, без уточнения — неизвестно. */
+export function parseSalaryNet(salary?: string): boolean | undefined {
+  if (!salary) return undefined;
+  if (/на руки/i.test(salary)) return true;
+  if (/до вычета/i.test(salary)) return false;
+  return undefined;
+}
+
 function syncResumeLegacy(resume: ResumeProfile): ResumeProfile {
   const synced: ResumeProfile = { ...resume };
 
@@ -67,10 +91,12 @@ function syncResumeLegacy(resume: ResumeProfile): ResumeProfile {
     const formatted = formatSalary(synced.salaryAmount, synced.salaryNet);
     if (formatted) synced.salary = formatted;
   }
-  if (synced.employmentTypes && synced.employmentTypes.length > 0) {
+  // Массив задан (в том числе пустой — «стёрли последний вариант») —
+  // легаси-поле пересчитывается; не задан вовсе — не трогаем.
+  if (synced.employmentTypes !== undefined) {
     synced.employmentType = synced.employmentTypes[0];
   }
-  if (synced.workFormats && synced.workFormats.length > 0) {
+  if (synced.workFormats !== undefined) {
     synced.workFormat = synced.workFormats[0];
   }
 
@@ -103,8 +129,12 @@ function formatLink(link: PersonalLink): string {
 function syncPersonalLegacy(personal: PersonalDetails): PersonalDetails {
   const synced: PersonalDetails = { ...personal };
 
-  if (synced.linksList && synced.linksList.length > 0) {
-    synced.links = synced.linksList.map(formatLink).join('\n');
+  // Массив задан (в том числе пустой — «удалили последнюю ссылку/страну») —
+  // легаси-поле пересчитывается; не задан вовсе — не трогаем.
+  if (synced.linksList !== undefined) {
+    synced.links = synced.linksList.length > 0
+      ? synced.linksList.map(formatLink).join('\n')
+      : undefined;
   }
   if (synced.drivingCategories) {
     synced.driversLicense = synced.drivingCategories.length > 0 ? 'Да' : 'Нет';
@@ -112,8 +142,10 @@ function syncPersonalLegacy(personal: PersonalDetails): PersonalDetails {
   if (synced.hasEmploymentRestrictions === false) {
     synced.employmentRestrictions = undefined;
   }
-  if (synced.workAuthorizationCountries && synced.workAuthorizationCountries.length > 0) {
-    synced.workAuthorization = synced.workAuthorizationCountries.join(', ');
+  if (synced.workAuthorizationCountries !== undefined) {
+    synced.workAuthorization = synced.workAuthorizationCountries.length > 0
+      ? synced.workAuthorizationCountries.join(', ')
+      : undefined;
   }
 
   return synced;
@@ -140,6 +172,55 @@ export function patchPersonal(user: User, patch: Partial<PersonalDetails>): User
     next.resume = { ...user.resume, city: patch.location || undefined };
   }
   return next;
+}
+
+/**
+ * Добавляет `https://` по умолчанию и проверяет, что ссылка http/https
+ * и ведёт на хост с точкой (не `http://localhost`, не `javascript:...`).
+ * Пустая строка — не ошибка: экраны ссылок делают поле необязательным.
+ */
+export function normalizeHttpUrl(raw: string): { url?: string; error?: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  const SCHEME_ERROR = 'Ссылка должна начинаться с http:// или https://';
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+  const withScheme = hasScheme ? trimmed : `https://${trimmed}`;
+  const scheme = withScheme.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/)?.[1].toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') return { error: SCHEME_ERROR };
+  let host = '';
+  try {
+    host = new URL(withScheme).hostname;
+  } catch {
+    return { error: SCHEME_ERROR };
+  }
+  if (!host.includes('.')) return { error: SCHEME_ERROR };
+  return { url: withScheme };
+}
+
+/**
+ * Слияние публичной строки из `dbGetUsers` со своим текущим профилем: та
+ * проекция (`USER_PUBLIC_COLS` в `php-proxy/db.php`) не содержит self-only
+ * колонки (`USER_SELF_COLS`) — их нужно сохранить из `prev`, иначе следующий
+ * `updateUser` отправит `personal_data: {}` и сотрёт их на сервере.
+ */
+export function mergeSelfUser(prev: User, fresh: User): User {
+  return {
+    ...prev,
+    ...fresh,
+    phone: prev.phone,
+    email: prev.email,
+    emailVerifiedAt: prev.emailVerifiedAt,
+    hasPassword: fresh.hasPassword ?? prev.hasPassword,
+    personalDetails: prev.personalDetails,
+    resume: fresh.resume
+      ? {
+        ...fresh.resume,
+        email: prev.resume?.email,
+        sourceFileName: prev.resume?.sourceFileName ?? '',
+        importedAt: prev.resume?.importedAt ?? '',
+      }
+      : prev.resume,
+  };
 }
 
 /** Ставит/заменяет элемент списка: `index` задан — заменяет, не задан — добавляет в конец. */

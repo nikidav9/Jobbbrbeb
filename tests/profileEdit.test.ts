@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import type { User } from '../constants/types.ts';
 import {
-  emptyResume, patchPersonal, patchResume, removeAt, upsertAt,
+  emptyResume, mergeSelfUser, normalizeHttpUrl, parseSalaryAmount, parseSalaryNet,
+  patchPersonal, patchResume, removeAt, upsertAt,
 } from '../lib/profileEdit.ts';
 import { normalizeSkill, POPULAR_IT_SKILLS, searchSkills, SKILLS } from '../constants/skills.ts';
 
@@ -199,4 +200,128 @@ test('patchPersonal: город из «Город и метро» попадае
   assert.equal(moved.personalDetails?.location, 'Казань');
   assert.equal(moved.resume?.city, 'Казань');
   assert.equal(patchPersonal(makeUser(), { location: 'Казань' }).resume, undefined);
+});
+
+// ── очистка legacy-строк пустыми массивами ──────────────────────────────
+
+test('patchPersonal: пустой linksList очищает links', () => {
+  const withLinks = patchPersonal(makeUser(), {
+    linksList: [{ type: 'github', url: 'https://github.com/x' }],
+  });
+  assert.equal(withLinks.personalDetails?.links, 'https://github.com/x');
+  const cleared = patchPersonal(withLinks, { linksList: [] });
+  assert.equal(cleared.personalDetails?.links, undefined);
+});
+
+test('patchPersonal: пустой workAuthorizationCountries очищает workAuthorization', () => {
+  const withCountries = patchPersonal(makeUser(), { workAuthorizationCountries: ['Россия', 'Беларусь'] });
+  assert.equal(withCountries.personalDetails?.workAuthorization, 'Россия, Беларусь');
+  const cleared = patchPersonal(withCountries, { workAuthorizationCountries: [] });
+  assert.equal(cleared.personalDetails?.workAuthorization, undefined);
+});
+
+test('patchResume: пустой employmentTypes очищает employmentType', () => {
+  const withTypes = patchResume(makeUser(), { employmentTypes: ['Частичная'] });
+  assert.equal(withTypes.resume?.employmentType, 'Частичная');
+  const cleared = patchResume(withTypes, { employmentTypes: [] });
+  assert.equal(cleared.resume?.employmentType, undefined);
+});
+
+test('patchResume: пустой workFormats очищает workFormat', () => {
+  const withFormats = patchResume(makeUser(), { workFormats: ['Удалённо'] });
+  assert.equal(withFormats.resume?.workFormat, 'Удалённо');
+  const cleared = patchResume(withFormats, { workFormats: [] });
+  assert.equal(cleared.resume?.workFormat, undefined);
+});
+
+// ── parseSalaryAmount / parseSalaryNet ──────────────────────────────────
+
+test('parseSalaryAmount вытаскивает число из разных форматов строки', () => {
+  assert.equal(parseSalaryAmount('150 000 ₽ на руки'), 150000);
+  assert.equal(parseSalaryAmount('от 120000 руб.'), 120000);
+  assert.equal(parseSalaryAmount('200 000–250 000 ₽'), 200000);
+  assert.equal(parseSalaryAmount('150 000 ₽'), 150000);
+  assert.equal(parseSalaryAmount(''), undefined);
+  assert.equal(parseSalaryAmount(undefined), undefined);
+  assert.equal(parseSalaryAmount('Договорная'), undefined);
+});
+
+test('parseSalaryNet распознаёт «на руки» и «до вычета»', () => {
+  assert.equal(parseSalaryNet('150 000 ₽ на руки'), true);
+  assert.equal(parseSalaryNet('150 000 ₽ до вычета налогов'), false);
+  assert.equal(parseSalaryNet('150 000 ₽'), undefined);
+  assert.equal(parseSalaryNet(undefined), undefined);
+});
+
+// ── normalizeHttpUrl ─────────────────────────────────────────────────────
+
+test('normalizeHttpUrl: пустая строка — не ошибка', () => {
+  assert.deepEqual(normalizeHttpUrl(''), {});
+  assert.deepEqual(normalizeHttpUrl('   '), {});
+});
+
+test('normalizeHttpUrl: без схемы добавляет https://', () => {
+  assert.deepEqual(normalizeHttpUrl('github.com/x'), { url: 'https://github.com/x' });
+});
+
+test('normalizeHttpUrl: javascript: отклоняется', () => {
+  const result = normalizeHttpUrl('javascript:alert(1)');
+  assert.equal(result.url, undefined);
+  assert.ok(result.error);
+});
+
+test('normalizeHttpUrl: ftp:// отклоняется', () => {
+  const result = normalizeHttpUrl('ftp://files.example.com');
+  assert.equal(result.url, undefined);
+  assert.ok(result.error);
+});
+
+test('normalizeHttpUrl: хост без точки отклоняется', () => {
+  const result = normalizeHttpUrl('http://localhost');
+  assert.equal(result.url, undefined);
+  assert.ok(result.error);
+});
+
+test('normalizeHttpUrl: валидный http:// принимается как есть', () => {
+  assert.deepEqual(normalizeHttpUrl('http://example.com/path'), { url: 'http://example.com/path' });
+});
+
+// ── mergeSelfUser ────────────────────────────────────────────────────────
+
+test('mergeSelfUser: сохраняет self-only поля из prev, обновляет публичные', () => {
+  const prev = makeUser({
+    firstName: 'Иван',
+    phone: '+79990000000',
+    email: 'ivan@example.com',
+    emailVerifiedAt: '2026-01-01T00:00:00.000Z',
+    hasPassword: true,
+    personalDetails: { middleName: 'Сергеевич' },
+    resume: {
+      ...emptyResume(),
+      desiredPosition: 'Курьер',
+      email: 'resume@example.com',
+      sourceFileName: 'cv.pdf',
+      importedAt: '2026-01-02T00:00:00.000Z',
+    },
+  });
+  // Публичная проекция dbGetUsers: без phone/email/personalDetails и без
+  // resume.email/sourceFileName/importedAt, зато с изменившимся именем.
+  const publicRow = makeUser({
+    firstName: 'Иван-обновлённый',
+    phone: '',
+    resume: { ...emptyResume(), desiredPosition: 'Курьер-обновлённый' },
+  });
+
+  const merged = mergeSelfUser(prev, publicRow);
+
+  assert.equal(merged.firstName, 'Иван-обновлённый');
+  assert.equal(merged.phone, '+79990000000');
+  assert.equal(merged.email, 'ivan@example.com');
+  assert.equal(merged.emailVerifiedAt, '2026-01-01T00:00:00.000Z');
+  assert.equal(merged.hasPassword, true);
+  assert.deepEqual(merged.personalDetails, { middleName: 'Сергеевич' });
+  assert.equal(merged.resume?.desiredPosition, 'Курьер-обновлённый');
+  assert.equal(merged.resume?.email, 'resume@example.com');
+  assert.equal(merged.resume?.sourceFileName, 'cv.pdf');
+  assert.equal(merged.resume?.importedAt, '2026-01-02T00:00:00.000Z');
 });
