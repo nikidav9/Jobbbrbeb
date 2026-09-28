@@ -9,10 +9,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Colors, Radius } from '@/constants/theme';
 import type { JupiterApplication } from '@/constants/types';
 import { useApp } from '@/hooks/useApp';
 import {
@@ -22,31 +21,117 @@ import {
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { confirmAsync } from '@/services/confirm';
 import { jupiterManualEligible } from '@/services/jupiterFill';
-import { buildTimeline, jupiterNeedsSberConsent, jupiterStatus, jupiterVacancyClosed, TimelineStep } from '@/services/jupiterTimeline';
+import {
+  buildTimeline, jupiterBadge, jupiterNeedsSberConsent, jupiterRowSummary, jupiterStatus, jupiterVacancyClosed,
+  TimelineStep,
+} from '@/services/jupiterTimeline';
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
-import { rf, rs } from '@/constants/scale';
-import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
+import { EditColors, EditFonts } from '@/constants/profileEditTheme';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
+import { BackIcon, CloseIcon } from '@/components/profile/edit/icons';
+import {
+  CheckMarkIcon, ClockIcon, ExternalLinkIcon, HandIcon, LockIcon, SendIcon, ShieldCheckIcon,
+} from '@/components/response/icons';
 
 const SBER_TERMS_URL = 'https://rabota.sber.ru/terms';
-
-const TONE: Record<TimelineStep['tone'], { icon: React.ComponentProps<typeof Ionicons>['name']; fg: string; bg: string }> = {
-  done: { icon: 'checkmark', fg: '#047857', bg: '#D1FAE5' },
-  wait: { icon: 'hand-left-outline', fg: '#B45309', bg: '#FEF3C7' },
-  fail: { icon: 'close', fg: '#DC2626', bg: '#FEE2E2' },
-  info: { icon: 'time-outline', fg: '#1D4ED8', bg: '#DBEAFE' },
-};
 
 function hostOf(url: string): string {
   return url.replace(/^https?:\/\//, '').split(/[/?#]/)[0].replace(/^www\./, '');
 }
 
+const MONTHS = ['янв.', 'февр.', 'марта', 'апр.', 'мая', 'июня', 'июля', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
+
+// «27 сент., 12:01» — как в макете; toLocaleString у разных движков даёт «в» и другие сокращения.
 function when(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ru-RU', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-  });
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const C = EditColors;
+const F = EditFonts;
+
+/** Ссылка с оранжевым подчёркиванием 2 px — из макета (textDecorationColor есть не везде, поэтому рамка). */
+function UnderlinedLink({ children, onPress, label, color = C.ink, underline = C.accent, trailing, style }: {
+  children: string; onPress: () => void; label: string; color?: string; underline?: string;
+  trailing?: React.ReactNode; style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <TouchableOpacity onPress={onPress} accessibilityRole="link" accessibilityLabel={label} style={style}>
+      <View style={s.linkRow}>
+        <View style={{ borderBottomWidth: 2, borderBottomColor: underline, paddingBottom: 1, flexShrink: 1 }}>
+          <Text style={[s.linkTxt, { color }]} numberOfLines={1}>{children}</Text>
+        </View>
+        {trailing}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+/** Главная оранжевая кнопка с жёсткой тенью 4/4. */
+function PrimaryButton({ label, onPress, arrow }: { label: string; onPress: () => void; arrow?: boolean }) {
+  return (
+    <HardShadowBox style={s.primaryWrap} offset={4} radius={29}>
+      <TouchableOpacity style={s.primaryBtn} onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
+        <Text style={s.primaryTxt}>{label}</Text>
+        {arrow ? <ExternalLinkIcon size={18} /> : null}
+      </TouchableOpacity>
+    </HardShadowBox>
+  );
+}
+
+type Row = {
+  key: string;
+  circle: 'active' | 'hand' | 'clock' | 'check' | 'send' | 'fail' | 'dots' | 'lock';
+  title: string;
+  note?: string;
+  at?: string;
+  muted?: boolean;
+};
+
+function Circle({ kind }: { kind: Row['circle'] }) {
+  switch (kind) {
+    case 'active':
+      return (
+        <HardShadowBox offset={3} radius={20}>
+          <View style={[s.dot, { backgroundColor: C.accent, borderWidth: 2, borderColor: C.ink }]}>
+            <HandIcon size={19} strokeWidth={2.3} />
+          </View>
+        </HardShadowBox>
+      );
+    case 'hand':
+      return <View style={[s.dot, { backgroundColor: C.surface, borderWidth: 2, borderColor: C.ink }]}><HandIcon size={19} strokeWidth={2.3} /></View>;
+    case 'clock':
+      return <View style={[s.dot, { backgroundColor: C.accentSoft }]}><ClockIcon /></View>;
+    case 'check':
+      return <View style={[s.dot, { backgroundColor: C.ink }]}><CheckMarkIcon color={C.accent} /></View>;
+    case 'send':
+      return <View style={[s.dot, { backgroundColor: C.ink }]}><SendIcon color={C.accent} /></View>;
+    case 'fail':
+      return <View style={[s.dot, { backgroundColor: C.surface, borderWidth: 2, borderColor: C.danger }]}><CloseIcon size={18} color={C.danger} /></View>;
+    case 'lock':
+      return <View style={[s.dot, s.dotDashed]}><LockIcon size={18} color={C.textTertiary} strokeWidth={2.3} /></View>;
+    default:
+      return (
+        <View style={[s.dot, s.dotDashed, { flexDirection: 'row', gap: 3 }]}>
+          {[0, 1, 2].map(n => <View key={n} style={s.miniDot} />)}
+        </View>
+      );
+  }
+}
+
+function circleFor(kind: TimelineStep['kind'], active: boolean): Row['circle'] {
+  switch (kind) {
+    case 'action_required':
+    case 'ready_to_submit': return active ? 'active' : 'hand';
+    case 'queued': case 'submission_unknown': case 'retryable_failed': case 'duplicate': return 'clock';
+    case 'submitted': return 'send';
+    case 'failed': return 'fail';
+    default: return 'check';
+  }
 }
 
 export default function JupiterApplicationScreen() {
@@ -155,128 +240,168 @@ export default function JupiterApplicationScreen() {
     }
   };
 
+  const badge = app ? jupiterBadge(app) : null;
+  const needsAction = canFill || needsRequeue || needsSberConsent;
+  const summary = app ? jupiterRowSummary(app) : '';
+  const manualSent = app?.state === 'submitted' && app.reasonCode === 'MANUAL_WEBVIEW';
+
+  // Бейдж по тону jupiterBadge: три состояния из макета плюс «в работе» и «не получилось».
+  const badgeView = (() => {
+    if (!badge) return null;
+    switch (badge.tone) {
+      case 'needs_you':
+        return { label: 'Нужны вы · отклик сохранён', box: s.badgeNeeds, color: C.ink, icon: <HandIcon /> };
+      case 'sent':
+        return {
+          label: manualSent ? 'Отправлено вами' : 'Отправлено', box: s.badgeSent, color: '#FFFFFF',
+          icon: <CheckMarkIcon size={14} color={C.accent} strokeWidth={3.4} />,
+        };
+      case 'closed':
+        return { label: 'Вакансия закрыта работодателем', box: s.badgeClosed, color: C.label, icon: <LockIcon color={C.label} /> };
+      case 'failed':
+        return { label: 'Не получилось отправить', box: s.badgeFailed, color: C.danger, icon: null };
+      default:
+        return { label: status?.label || 'Юпитер обрабатывает', box: s.badgeWorking, color: C.ink, icon: <ClockIcon size={15} strokeWidth={2.4} /> };
+    }
+  })();
+  // Пояснение — как в макете: у «Отправлено» и «Закрыта» под бейджем текста нет.
+  const showSummary = !!badge && badge.tone !== 'sent' && badge.tone !== 'closed';
+
+  const rows: Row[] = [];
+  if (closed) {
+    rows.push({ key: 'closed', circle: 'lock', title: 'Работодатель закрыл вакансию', muted: true,
+      note: 'Отклик не отправлен — отправлять его уже некуда' });
+  }
+  if (waiting) {
+    rows.push({ key: 'waiting', circle: 'dots', title: 'Ждём ответа работодателя', muted: true,
+      note: 'Ответ придёт в раздел «Почта»' });
+  }
+  steps.forEach((step, i) => {
+    rows.push({
+      key: `${step.at}-${i}`, circle: circleFor(step.kind, i === 0 && needsAction),
+      title: step.title, note: step.note, at: step.at,
+    });
+  });
+
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
+      {/* Высоты у шапки нет: safe-area сверху даёт SafeAreaView, иначе они складывались и шапка наезжала. */}
       <View style={s.header}>
-        <BackButton />
-        <Text style={s.headerTitle}>Отклик</Text>
-        <View style={{ width: BACK_BUTTON_SIZE }} />
+        <TouchableOpacity
+          style={s.back}
+          onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/matches'); }}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+          accessibilityLabel="Назад к откликам"
+          testID="back-button"
+        >
+          <BackIcon />
+        </TouchableOpacity>
+        <Text style={s.headerTitle} pointerEvents="none">Отклик</Text>
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: rs(40) }} color={Colors.primary} />
+        <ActivityIndicator style={{ marginTop: 40 }} color={C.accent} />
       ) : !app ? (
         <Text style={s.error}>{error || 'Отклик не найден'}</Text>
       ) : (
         <ScrollView contentContainerStyle={s.content}>
-          <View style={s.hero}>
-            {companyLogo(company) ? <CompanyMark company={company} size={rs(56)} /> : (
-              <View style={[s.logo, { backgroundColor: nameColorFromString(company) }]}>
-                <Text style={s.logoTxt}>{getInitials(company)}</Text>
+          {/* Карточка вакансии: у закрытой — приглушённый контур без тени. */}
+          <HardShadowBox offset={closed ? 0 : 5} radius={24} style={s.cardWrap}>
+            <View style={[s.hero, closed && { borderColor: C.border }]}>
+              <View style={closed ? { opacity: 0.5 } : undefined}>
+                {companyLogo(company) ? <CompanyMark company={company} size={64} /> : (
+                  <View style={[s.logo, { backgroundColor: nameColorFromString(company) }]}>
+                    <Text style={s.logoTxt}>{getInitials(company)}</Text>
+                  </View>
+                )}
               </View>
-            )}
-            {vacancyTitle ? <Text style={s.vacancyTitle} numberOfLines={2}>{vacancyTitle}</Text> : null}
-            <Text style={vacancyTitle ? s.companySub : s.company} numberOfLines={2}>{company}</Text>
-            <TouchableOpacity onPress={openSite} accessibilityLabel="Открыть сайт вакансии">
-              <Text style={s.host} numberOfLines={1}>{hostOf(app.vacancyUrl)} ↗</Text>
-            </TouchableOpacity>
-            {status ? (
-              <View style={[s.pill, { backgroundColor: status.bg }]}>
-                <Text style={[s.pillTxt, { color: status.fg }]}>{status.label}</Text>
-              </View>
-            ) : null}
-          </View>
+              {vacancyTitle ? (
+                <Text style={[s.vacancyTitle, closed && { color: C.label }]}>{vacancyTitle}</Text>
+              ) : null}
+              <Text style={vacancyTitle ? s.company : s.vacancyTitle} numberOfLines={2}>{company}</Text>
+              <UnderlinedLink
+                onPress={openSite}
+                label="Открыть сайт вакансии"
+                color={closed ? C.label : C.ink}
+                underline={closed ? C.border : C.accent}
+                style={{ marginTop: 6 }}
+                trailing={<ExternalLinkIcon color={closed ? C.label : C.ink} />}
+              >
+                {hostOf(app.vacancyUrl)}
+              </UnderlinedLink>
 
-          {canFill ? (
-            <TouchableOpacity style={s.primaryBtn} onPress={openForm} activeOpacity={0.85}>
-              <Text style={s.primaryBtnTxt}>Открыть анкету и отправить</Text>
-            </TouchableOpacity>
-          ) : null}
+              {badgeView ? (
+                <View style={[s.badge, badgeView.box]}>
+                  {badgeView.icon}
+                  <Text style={[s.badgeTxt, { color: badgeView.color }]}>{badgeView.label}</Text>
+                </View>
+              ) : null}
+              {showSummary ? <Text style={s.summary}>{summary}</Text> : null}
 
-          {needsRequeue ? (
-            <TouchableOpacity style={s.requeueBtn} onPress={() => void requeueLive()} activeOpacity={0.85}>
-              <Text style={s.requeueBtnTxt}>Отправить через Юпитер</Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {/* Согласие для Сбера — в стиле «Add experience» у Sorce: мягкая
-              подложка, иконка слева, пояснение и основная кнопка. */}
-          {needsSberConsent ? (
-            <View style={s.consentCard}>
-              <View style={s.consentIcon}>
-                <Ionicons name="shield-checkmark-outline" size={20} color={Colors.textSecondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.consentTitle}>Сбер просит ваше согласие</Text>
-                <Text style={s.consentText}>
-                  Без него Сбер не примет отклик. Юпитер отправит его сразу после согласия.
-                </Text>
-                <TouchableOpacity onPress={openSberTerms} accessibilityLabel="Условия Сбера">
-                  <Text style={s.consentLink}>Условия Сбера</Text>
+              {canFill ? <PrimaryButton label="Открыть анкету и отправить" onPress={openForm} arrow /> : null}
+              {needsRequeue ? <PrimaryButton label="Отправить через Юпитер" onPress={() => void requeueLive()} /> : null}
+              {needsSberConsent ? (
+                <>
+                  <PrimaryButton label="Согласиться и отправить" onPress={() => void grantSberConsent()} />
+                  <UnderlinedLink
+                    onPress={openSberTerms}
+                    label="Условия Сбера"
+                    style={{ marginTop: 14 }}
+                    trailing={<ExternalLinkIcon />}
+                  >
+                    Условия Сбера
+                  </UnderlinedLink>
+                </>
+              ) : null}
+              {closed ? (
+                <TouchableOpacity
+                  style={s.secondaryBtn}
+                  onPress={() => router.push('/(tabs)/feed')}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                >
+                  <Text style={s.secondaryTxt}>Смотреть похожие вакансии</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.consentBtn} onPress={() => void grantSberConsent()} activeOpacity={0.85}>
-                  <Text style={s.consentBtnTxt}>Согласиться и отправить</Text>
-                </TouchableOpacity>
-              </View>
+              ) : null}
             </View>
-          ) : null}
+          </HardShadowBox>
 
           <View style={s.delegation}>
-            <Text style={s.consentText}>
-              {app.thirdPartyConsentAt
-                ? `Согласия, без которых работодатель не принимает отклик, Юпитер дал от вашего имени ${when(app.thirdPartyConsentAt)} — по поручению из Пользовательского соглашения, п. 8.2. Рекламу, кадровый резерв и передачу третьим лицам Юпитер не отмечает никогда.`
-                : 'Если работодатель попросит согласие на обработку данных или подтверждение анкеты, Юпитер даст его от вашего имени по поручению из Пользовательского соглашения, п. 8.2.'}
-            </Text>
-            <TouchableOpacity onPress={openEmployerTerms} accessibilityLabel="Условия и политика работодателя">
-              <Text style={s.consentLink}>Условия и политика работодателя ↗</Text>
-            </TouchableOpacity>
+            <View style={{ marginTop: 1 }}><ShieldCheckIcon /></View>
+            <View style={{ flex: 1, gap: 8 }}>
+              <Text style={s.delegationTxt}>
+                {app.thirdPartyConsentAt
+                  ? `Согласия, без которых работодатель не принимает отклик, Юпитер дал от вашего имени ${when(app.thirdPartyConsentAt)} — по поручению из Пользовательского соглашения, п. 8.2. Рекламу, кадровый резерв и передачу третьим лицам Юпитер не отмечает никогда.`
+                  : 'Если работодатель попросит согласие на обработку данных или подтверждение анкеты, Юпитер даст его от вашего имени по поручению из Пользовательского соглашения, п. 8.2.'}
+              </Text>
+              <UnderlinedLink
+                onPress={openEmployerTerms}
+                label="Условия и политика работодателя"
+                style={{ alignSelf: 'flex-start' }}
+              >
+                Условия и политика работодателя ↗
+              </UnderlinedLink>
+            </View>
           </View>
 
-          <View style={s.card}>
-            {closed ? (
-              <View style={s.step}>
-                <View style={s.rail}>
-                  <View style={[s.dot, s.dotPending]}><Ionicons name="lock-closed-outline" size={13} color="#6B7280" /></View>
-                  <View style={s.line} />
-                </View>
-                <View style={s.stepBody}>
-                  <Text style={[s.stepTitle, { color: '#4B5563' }]}>Работодатель закрыл вакансию</Text>
-                  <Text style={s.stepNote}>Отклик не отправлен — отправлять его уже некуда</Text>
-                </View>
-              </View>
-            ) : null}
-            {waiting ? (
-              <View style={s.step}>
-                <View style={s.rail}>
-                  <View style={[s.dot, s.dotPending]}><Ionicons name="ellipsis-horizontal" size={14} color="#9CA3AF" /></View>
-                  <View style={s.line} />
-                </View>
-                <View style={s.stepBody}>
-                  <Text style={[s.stepTitle, { color: '#6B7280' }]}>Ждём ответа работодателя</Text>
-                  <Text style={s.stepNote}>Письма придут в «Почту JobToo»</Text>
-                </View>
-              </View>
-            ) : null}
-            {steps.length === 0 ? (
+          <Text style={s.historyTitle}>История отклика</Text>
+          <View style={s.history}>
+            {rows.length === 0 ? (
               <Text style={s.empty}>Истории пока нет — она появится со следующим шагом.</Text>
-            ) : steps.map((step, i) => {
-              const tone = TONE[step.tone];
-              return (
-                <View key={`${step.at}-${i}`} style={s.step}>
-                  <View style={s.rail}>
-                    <View style={[s.dot, { backgroundColor: tone.bg }]}>
-                      <Ionicons name={tone.icon} size={14} color={tone.fg} />
-                    </View>
-                    {i < steps.length - 1 ? <View style={s.line} /> : null}
-                  </View>
-                  <View style={s.stepBody}>
-                    <Text style={s.stepTitle}>{step.title}</Text>
-                    {step.note ? <Text style={s.stepNote}>{step.note}</Text> : null}
-                    <Text style={s.stepAt}>{when(step.at)}</Text>
-                  </View>
+            ) : rows.map((row, i) => (
+              <View key={row.key} style={s.step}>
+                <View style={s.rail}>
+                  <Circle kind={row.circle} />
+                  {i < rows.length - 1 ? <View style={s.line} /> : null}
                 </View>
-              );
-            })}
+                <View style={[s.stepBody, { paddingTop: row.note ? 2 : 9 }]}>
+                  <Text style={[s.stepTitle, row.muted && { color: C.label }]}>{row.title}</Text>
+                  {row.note ? <Text style={s.stepNote}>{row.note}</Text> : null}
+                  {row.at ? <Text style={s.stepAt}>{when(row.at)}</Text> : null}
+                </View>
+              </View>
+            ))}
           </View>
         </ScrollView>
       )}
@@ -285,61 +410,76 @@ export default function JupiterApplicationScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: C.bg },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(16), paddingVertical: rs(10),
+    height: 44, marginTop: 12, marginHorizontal: 20, justifyContent: 'center', alignItems: 'flex-start',
   },
-  headerTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
-  content: { padding: rs(16), paddingBottom: rs(40) },
-  error: { margin: rs(20), color: '#B91C1C', textAlign: 'center' },
-  hero: { alignItems: 'center', marginBottom: rs(16) },
-  logo: { width: rs(56), height: rs(56), borderRadius: rs(14), alignItems: 'center', justifyContent: 'center' },
-  logoTxt: { color: '#fff', fontWeight: '800', fontSize: rf(20) },
-  vacancyTitle: { fontSize: rf(20), fontWeight: '700', color: Colors.textPrimary, marginTop: rs(10), textAlign: 'center' },
-  company: { fontSize: rf(20), fontWeight: '700', color: Colors.textPrimary, marginTop: rs(10), textAlign: 'center' },
-  companySub: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(3), textAlign: 'center' },
-  host: { fontSize: rf(13), color: Colors.primary, marginTop: rs(4) },
-  pill: { marginTop: rs(10), borderRadius: 999, paddingHorizontal: rs(12), paddingVertical: rs(5) },
-  pillTxt: { fontSize: rf(12), fontWeight: '700' },
+  back: {
+    width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: C.ink, backgroundColor: C.surface,
+    alignItems: 'center', justifyContent: 'center', zIndex: 1,
+  },
+  headerTitle: {
+    position: 'absolute', left: 0, right: 0, textAlign: 'center',
+    fontFamily: F.heading, fontSize: 18, color: C.ink,
+  },
+  content: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 40 },
+  error: { margin: 20, color: C.danger, textAlign: 'center', fontFamily: F.text700, fontSize: 15 },
+  cardWrap: {},
+  hero: {
+    paddingTop: 24, paddingBottom: 20, paddingHorizontal: 18, borderRadius: 24, backgroundColor: C.surface,
+    borderWidth: 2, borderColor: C.ink, alignItems: 'center',
+  },
+  logo: { width: 64, height: 64, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  logoTxt: { color: '#FFFFFF', fontFamily: F.heading, fontSize: 26 },
+  vacancyTitle: {
+    marginTop: 16, fontFamily: F.heading, fontSize: 20, lineHeight: 25, color: C.ink, textAlign: 'center',
+  },
+  company: { marginTop: 6, fontFamily: F.text700, fontSize: 15, color: C.textTertiary, textAlign: 'center' },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  linkTxt: { fontFamily: F.text800, fontSize: 14 },
+  badge: {
+    marginTop: 16, height: 32, paddingHorizontal: 14, borderRadius: 16, flexDirection: 'row',
+    alignItems: 'center', gap: 6, maxWidth: '100%',
+  },
+  badgeTxt: { fontFamily: F.text800, fontSize: 13, flexShrink: 1 },
+  badgeNeeds: { backgroundColor: C.accent, borderWidth: 2, borderColor: C.ink },
+  badgeSent: { backgroundColor: C.ink },
+  badgeClosed: { backgroundColor: '#EDE6DC', borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.placeholder },
+  badgeWorking: { backgroundColor: C.accentSoft, borderWidth: 1.5, borderColor: C.ink },
+  badgeFailed: { backgroundColor: C.surface, borderWidth: 2, borderColor: C.danger },
+  summary: {
+    marginTop: 14, fontFamily: F.text600, fontSize: 14, lineHeight: 20, color: C.label, textAlign: 'center',
+  },
+  primaryWrap: { marginTop: 16, alignSelf: 'stretch' },
   primaryBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.md, paddingVertical: rs(13),
-    alignItems: 'center', marginBottom: rs(16),
+    height: 58, borderRadius: 29, borderWidth: 2, borderColor: C.ink, backgroundColor: C.accent,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
   },
-  primaryBtnTxt: { color: '#fff', fontWeight: '800', fontSize: rf(15) },
-  requeueBtn: {
-    borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.primary, paddingVertical: rs(12),
-    alignItems: 'center', marginBottom: rs(16),
+  primaryTxt: { fontFamily: F.text800, fontSize: 17, color: C.ink },
+  secondaryBtn: {
+    marginTop: 18, alignSelf: 'stretch', height: 54, borderRadius: 27, borderWidth: 2, borderColor: C.ink,
+    backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center',
   },
-  requeueBtnTxt: { color: Colors.primary, fontWeight: '800', fontSize: rf(15) },
-  // Как «Add experience» у Sorce: мягкая серая подложка, а не яркая плашка —
-  // это подсказка, а не ошибка.
-  consentCard: {
-    flexDirection: 'row', gap: rs(12), backgroundColor: Colors.surface,
-    borderRadius: Radius.lg, padding: rs(16), marginBottom: rs(16),
+  secondaryTxt: { fontFamily: F.text800, fontSize: 16, color: C.ink },
+  delegation: {
+    marginTop: 16, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 18, backgroundColor: C.surface,
+    flexDirection: 'row', gap: 12,
   },
-  consentIcon: {
-    width: rs(36), height: rs(36), borderRadius: rs(10), backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  delegationTxt: { fontFamily: F.text600, fontSize: 13, lineHeight: 19.5, color: C.label },
+  historyTitle: { marginTop: 24, fontFamily: F.heading, fontSize: 15, color: C.ink },
+  history: {
+    marginTop: 12, paddingTop: 18, paddingHorizontal: 16, paddingBottom: 4, borderRadius: 22,
+    backgroundColor: C.surface,
   },
-  consentTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  consentText: { fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(3), lineHeight: rf(18) },
-  delegation: { marginTop: rs(12), paddingHorizontal: rs(4) },
-  consentLink: { fontSize: rf(13), fontWeight: '600', color: Colors.primary, marginTop: rs(8) },
-  consentBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.md, paddingVertical: rs(11),
-    alignItems: 'center', marginTop: rs(10),
-  },
-  consentBtnTxt: { color: '#fff', fontWeight: '800', fontSize: rf(14) },
-  card: { backgroundColor: '#fff', borderRadius: Radius.lg, padding: rs(16) },
-  empty: { color: '#6B7280', fontSize: rf(13) },
-  step: { flexDirection: 'row' },
-  rail: { width: rs(32), alignItems: 'center' },
-  dot: { width: rs(28), height: rs(28), borderRadius: rs(14), alignItems: 'center', justifyContent: 'center' },
-  dotPending: { borderWidth: 1, borderStyle: 'dashed', borderColor: '#D1D5DB', backgroundColor: '#fff' },
-  line: { width: 2, flex: 1, minHeight: rs(14), backgroundColor: '#E5E7EB', marginVertical: rs(2) },
-  stepBody: { flex: 1, paddingLeft: rs(10), paddingBottom: rs(16) },
-  stepTitle: { fontSize: rf(15), fontWeight: '600', color: Colors.textPrimary },
-  stepNote: { fontSize: rf(13), color: '#4B5563', marginTop: rs(2) },
-  stepAt: { fontSize: rf(12), color: '#9CA3AF', marginTop: rs(2) },
+  empty: { fontFamily: F.text600, fontSize: 14, color: C.textTertiary, paddingBottom: 14 },
+  step: { flexDirection: 'row', gap: 14 },
+  rail: { width: 40, alignItems: 'center' },
+  dot: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  dotDashed: { borderWidth: 2, borderStyle: 'dashed', borderColor: C.placeholder, backgroundColor: C.surface },
+  miniDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.textTertiary },
+  line: { width: 2, flexGrow: 1, minHeight: 14, marginVertical: 6, backgroundColor: C.borderSoft },
+  stepBody: { flex: 1, paddingBottom: 18, gap: 3 },
+  stepTitle: { fontFamily: F.text800, fontSize: 16, color: C.ink },
+  stepNote: { fontFamily: F.text600, fontSize: 14, lineHeight: 19.6, color: C.label },
+  stepAt: { fontFamily: F.text600, fontSize: 13, color: C.textTertiary },
 });

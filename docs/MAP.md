@@ -389,6 +389,13 @@
   строке и в карточке — `vacancyTitle` (`JupiterApplication`), сервер
   подтягивает его в `jupiterMyApplications` вторым запросом к
   `jm_ext_vacancies` по `vacancy_url`.
+  Вид — по эталону `docs/design/response-status/` (3 состояния): бейдж по
+  `jupiterBadge(app).tone` (needs_you / sent / closed из макета, working и
+  failed — в его стиле), закрытая вакансия — приглушённая карточка без тени и
+  кнопка «Смотреть похожие вакансии» (лента без фильтра). Кружки таймлайна
+  выбираются по `TimelineStep.kind` (тип события); иконки —
+  `components/response/icons.tsx`, тени — `HardShadowBox`, токены —
+  `constants/profileEditTheme.ts`.
 
 ### Избранное (`app/saved.tsx`)
 - Отдельный экран со своей кнопкой «назад», а не раздел внутри «Откликов».
