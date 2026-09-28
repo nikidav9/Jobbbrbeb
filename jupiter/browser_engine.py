@@ -1,0 +1,538 @@
+"""Браузерный движок Юпитера: настоящий Chromium вместо HTTP-клиента.
+
+Решение владельца 28.09.2026: карьерные сайты всё чаще — одностраничные
+приложения, анкета появляется после нажатия «Откликнуться», поля живут без
+<form>, отправка идёт через fetch. HTTP-движок (engine.py) до такой анкеты не
+доходит. Разовый замер (scripts/browser-probe.mjs) на 185 сложных сайтах: 121 —
+анкету без действий на странице не найти, 26 — открыта и без капчи.
+
+Образец — открытые браузерные агенты (browser-use и др.), но код свой и
+устроен иначе: у движка тот же интерфейс, что у JupiterWebEngine (open, submit,
+load_html, allowed_hosts, read_only, куки), поэтому вся логика агента
+(agent.py) — смысл полей, согласия по поручению, «не выдумывать факты»,
+проверка успеха, повтор и чеки — работает без изменений. Движок только:
+
+1. открывает страницу в Chromium и сам нажимает «Откликнуться», если анкеты
+   не видно;
+2. снимает отрисованную страницу и отдаёт её тому же разборщику (_SemanticParser):
+   невидимые поля убраны, поля без <form> обёрнуты в виртуальную
+   форму, каждому элементу дана метка data-jt-ref;
+3. при отправке переносит выбранные агентом значения в живую страницу по
+   меткам и нажимает кнопку — отправляет сам сайт, как у человека.
+
+Инварианты не меняются:
+- read_only (dry-run) блокирует отправку в submit() И обрывает в браузере
+  любой не-GET запрос — даже если скрипт сайта захочет что-то послать сам;
+- переходы — только на разрешённые хосты, внутренние адреса (SSRF) закрыты
+  так же, как у HTTP-движка (policy.NetworkPolicy / is_blocked_address);
+- капчу движок не трогает: агент её видит и передаёт человеку.
+
+Playwright — необязательная зависимость: без него модуль импортируется, а
+при создании движка объясняет, чего не хватает. Остальной Юпитер работает на
+stdlib, как и раньше.
+"""
+from __future__ import annotations
+
+import os
+import urllib.parse
+from typing import Any
+
+from engine import (
+    ControlState,
+    EngineError,
+    EngineSecurityError,
+    EngineTransportError,
+    FormState,
+    PageState,
+    _SemanticParser,
+)
+from policy import NetworkPolicy, PolicyError, is_blocked_address, literal_loopback
+
+try:  # pragma: no cover - наличие зависит от окружения
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import sync_playwright
+except ImportError:  # pragma: no cover
+    PlaywrightError = Exception  # type: ignore[assignment,misc]
+    sync_playwright = None  # type: ignore[assignment]
+
+
+# Честная подпись: обычный Chrome плюс кто мы. Без «HeadlessChrome» — его
+# режут как бота, но и не выдаём себя за человека.
+UA_SUFFIX = " JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)"
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Кнопки, открывающие анкету. Порядок — от самых точных.
+APPLY_TEXT_RE = (
+    r"откликнуться|отправить резюме|подать заявку|отклик на вакансию|"
+    r"хочу у вас работать|хочу в команду|respond|apply( now)?$|^apply"
+)
+SUBMIT_TEXT_RE = r"отправ|откликн|подать|далее|продолжить|submit|apply|send|next"
+
+# Снимок отрисованной страницы. Живой DOM не меняем, кроме меток data-jt-ref:
+# по ним submit() находит элементы. Всё остальное — в клоне.
+SNAPSHOT_JS = r"""
+(submitReSrc) => {
+  const sel = 'input,select,textarea,button';
+  const live = Array.from(document.querySelectorAll(sel));
+  live.forEach((el, i) => el.setAttribute('data-jt-ref', String(i)));
+  const visible = el => {
+    if (el.type === 'hidden') return true;
+    const st = getComputedStyle(el);
+    if (st.display === 'none' || st.visibility === 'hidden') return false;
+    return el.getClientRects().length > 0;
+  };
+  // Файловые поля и галочки сайты прячут и рисуют вместо них свои кнопки —
+  // заполнять их всё равно надо. Прочее невидимое агенту не показываем.
+  const keepHidden = el => ['file', 'checkbox', 'radio'].includes((el.type || '').toLowerCase());
+  const clone = document.documentElement.cloneNode(true);
+  const byRef = new Map();
+  clone.querySelectorAll('[data-jt-ref]').forEach(c => byRef.set(c.getAttribute('data-jt-ref'), c));
+  for (const el of live) {
+    const c = byRef.get(el.getAttribute('data-jt-ref'));
+    if (!c) continue;
+    const tag = el.tagName.toLowerCase();
+    const type = (el.type || '').toLowerCase();
+    if (tag === 'input' && !['checkbox', 'radio', 'file'].includes(type)) c.setAttribute('value', el.value || '');
+    if (type === 'checkbox' || type === 'radio') {
+      if (el.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
+    }
+    if (tag === 'textarea') c.textContent = el.value || '';
+    if (tag === 'select') {
+      Array.from(el.options).forEach((o, i) => {
+        const co = c.options ? c.options[i] : null;
+        if (!co) return;
+        if (o.selected) co.setAttribute('selected', ''); else co.removeAttribute('selected');
+      });
+    }
+    // Невидимое поле убираем из клона совсем: атрибут hidden разборщик
+    // учитывает только для текста, а на пустом <input> ещё и «прячет»
+    // остаток страницы.
+    if (!visible(el) && !keepHidden(el)) c.remove();
+  }
+  // Формы с action="javascript:…" отправляет браузер нажатием кнопки —
+  // агенту такой адрес не нужен и только мешает.
+  clone.querySelectorAll('form').forEach(f => {
+    if ((f.getAttribute('action') || '').trim().toLowerCase().startsWith('javascript:')) {
+      f.setAttribute('action', location.href);
+    }
+  });
+  // Поля без <form> (так устроены SPA) — в виртуальную форму вокруг их
+  // общего предка. Кнопки type=button с «отправить/далее» в ней — submit:
+  // иначе агент не узнает в них отправку.
+  const submitRe = new RegExp(submitReSrc, 'i');
+  const loose = live.filter(el => {
+    if (el.form || el.hasAttribute('form')) return false;
+    const tag = el.tagName.toLowerCase();
+    const type = (el.type || '').toLowerCase();
+    if (tag === 'button') return false;
+    if (type === 'hidden' || type === 'search' || type === 'submit' || type === 'button') return false;
+    return visible(el) || keepHidden(el);
+  });
+  let virtualForm = false;
+  if (loose.length) {
+    const buttons = live.filter(el => !el.form && visible(el)
+      && (el.tagName === 'BUTTON' || ['submit', 'button'].includes((el.type || '').toLowerCase()))
+      && submitRe.test((el.innerText || el.value || '').trim()));
+    const nodes = loose.concat(buttons).map(el => byRef.get(el.getAttribute('data-jt-ref'))).filter(Boolean);
+    const ancestors = n => { const out = []; for (let x = n; x; x = x.parentElement) out.push(x); return out; };
+    let lca = null;
+    if (nodes.length) {
+      const first = ancestors(nodes[0]);
+      lca = first.find(a => nodes.every(n => a.contains(n))) || null;
+    }
+    if (lca) {
+      const doc = clone.ownerDocument;
+      const form = doc.createElement('form');
+      form.setAttribute('data-jt-virtual', '1');
+      form.setAttribute('method', 'post');
+      form.setAttribute('action', location.href);
+      const tag = lca.tagName.toLowerCase();
+      if (tag === 'html' || tag === 'body') {
+        const body = clone.querySelector('body') || lca;
+        while (body.firstChild) form.appendChild(body.firstChild);
+        body.appendChild(form);
+      } else {
+        lca.parentNode.insertBefore(form, lca);
+        form.appendChild(lca);
+      }
+      form.querySelectorAll('button[type=button], input[type=button]').forEach(b => {
+        if (submitRe.test((b.textContent || b.getAttribute('value') || '').trim())) b.setAttribute('type', 'submit');
+      });
+      virtualForm = true;
+    }
+  }
+  return { html: '<!doctype html>' + clone.outerHTML, url: location.href, virtualForm };
+}
+"""
+
+# Кнопка «Откликнуться»: видимая, текст по APPLY_TEXT_RE. Возвращает метку
+# или null. Ссылки на другие сайты не жмём — туда агент пойдёт сам, по политике.
+FIND_APPLY_JS = r"""
+(re) => {
+  const rx = new RegExp(re, 'i');
+  const els = Array.from(document.querySelectorAll('a,button,[role=button],input[type=button],input[type=submit]'));
+  const visible = el => { const st = getComputedStyle(el); return st.display !== 'none' && st.visibility !== 'hidden' && el.getClientRects().length > 0; };
+  let i = 0;
+  for (const el of els) {
+    const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
+    if (!text || text.length > 60 || !rx.test(text) || !visible(el)) continue;
+    if (el.tagName === 'A') {
+      const href = el.getAttribute('href') || '';
+      try {
+        const u = new URL(href, location.href);
+        if (u.host && u.host !== location.host && !href.startsWith('#')) continue;
+      } catch (e) {}
+    }
+    const mark = 'apply-' + (i++);
+    el.setAttribute('data-jt-apply', mark);
+    return mark;
+  }
+  return null;
+}
+"""
+
+
+class JupiterBrowserEngine:
+    """Chromium с интерфейсом JupiterWebEngine."""
+
+    def __init__(
+        self,
+        allowed_hosts: set[str],
+        *,
+        read_only: bool = False,
+        timeout: float = 30.0,
+        headless: bool = True,
+        executable_path: str | None = None,
+        allow_private_addresses: bool | None = None,
+        settle_ms: int = 800,
+        max_apply_clicks: int = 2,
+        ignore_https_errors: bool = False,
+    ):
+        if sync_playwright is None:
+            raise EngineError(
+                "Браузерному движку нужен Playwright: pip install playwright "
+                "(и Chromium — JUPITER_CHROMIUM или playwright install chromium)"
+            )
+        self.allowed_hosts = {h.lower() for h in allowed_hosts}
+        self.allow_private_addresses = (
+            any(
+                literal_loopback(host) or is_blocked_address(host.strip("[]"))
+                for host in self.allowed_hosts
+            )
+            if allow_private_addresses is None
+            else allow_private_addresses
+        )
+        self.read_only = read_only
+        self.timeout_ms = int(timeout * 1000)
+        self.settle_ms = settle_ms
+        self.max_apply_clicks = max_apply_clicks
+        self.page: PageState | None = None
+        self.script_history: list[dict[str, str]] = []
+        self.last_submit_mode = "none"
+        # Что движок сделал сам (нажал «Откликнуться», оборвал запрос) —
+        # для журнала и отладки; агент ведёт свою траекторию отдельно.
+        self.actions: list[dict[str, Any]] = []
+        self._host_ok: dict[str, bool] = {}
+        self._last_status = 200
+        self._pw = sync_playwright().start()
+        try:
+            self._browser = self._pw.chromium.launch(
+                headless=headless,
+                executable_path=executable_path or os.environ.get("JUPITER_CHROMIUM") or None,
+                args=["--disable-dev-shm-usage", "--no-first-run"],
+            )
+            probe = self._browser.new_page()
+            ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
+            probe.close()
+            self._context = self._browser.new_context(
+                user_agent=ua + UA_SUFFIX,
+                locale="ru-RU",
+                viewport={"width": 1280, "height": 900},
+                accept_downloads=False,
+                # Только для облачной лаборатории, где TLS подменяет прокси.
+                # На сервере — всегда проверка сертификатов.
+                ignore_https_errors=ignore_https_errors,
+            )
+            self._context.set_default_timeout(self.timeout_ms)
+            self._context.route("**/*", self._route)
+            self._tab = self._context.new_page()
+        except Exception:
+            self.close()
+            raise
+
+    # ── Политика сети ──────────────────────────────────────────────────────
+    def _policy(self) -> NetworkPolicy:
+        return NetworkPolicy(self.allowed_hosts, allow_private=self.allow_private_addresses)
+
+    def assert_allowed(self, url: str) -> None:
+        try:
+            self._policy().check_url(url, resolve=False)
+        except PolicyError as exc:
+            raise EngineSecurityError(str(exc)) from exc
+
+    def assert_reachable(self, url: str) -> None:
+        try:
+            self._policy().check_url(url, resolve=True)
+        except PolicyError as exc:
+            raise EngineSecurityError(str(exc)) from exc
+
+    def _public_host(self, host: str) -> bool:
+        """Любой запрос браузера (скрипт, картинка, fetch) — только наружу.
+
+        Имя резолвим сами и не пускаем во внутренние сети: иначе чужая
+        страница заставила бы наш сервер ходить на 169.254.169.254.
+        """
+        if host in self._host_ok:
+            return self._host_ok[host]
+        literal = host.strip("[]")
+        if is_blocked_address(literal) or literal_loopback(host):
+            ok = self.allow_private_addresses
+        else:
+            try:
+                addresses = NetworkPolicy.resolve(host)
+            except Exception:
+                addresses = []
+            ok = bool(addresses) and (
+                self.allow_private_addresses
+                or not any(is_blocked_address(a) for a in addresses)
+            )
+        self._host_ok[host] = ok
+        return ok
+
+    def _route(self, route, request) -> None:  # pragma: no cover - вызывает браузер
+        url = request.url
+        parsed = urllib.parse.urlparse(url)
+        scheme = (parsed.scheme or "").lower()
+        if scheme in {"data", "blob", "about"}:
+            route.continue_()
+            return
+        host = (parsed.hostname or "").lower()
+        reason = ""
+        if scheme not in {"http", "https"} or not host:
+            reason = "scheme"
+        elif not self._public_host(host):
+            reason = "internal_address"
+        elif request.is_navigation_request() and request.frame == self._tab.main_frame \
+                and host not in self.allowed_hosts:
+            reason = "host_not_allowed"
+        elif self.read_only and request.method.upper() not in SAFE_METHODS:
+            reason = "read_only"
+        elif request.resource_type in {"media", "font"}:
+            route.abort()
+            return
+        if reason:
+            self.actions.append({"action": "blocked_request", "url": url[:300], "reason": reason,
+                                 "method": request.method})
+            route.abort("blockedbyclient")
+            return
+        route.continue_()
+
+    # ── Снимок страницы ────────────────────────────────────────────────────
+    def _settle(self) -> None:
+        try:
+            self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
+        except PlaywrightError:
+            pass  # долгие опросы и счётчики — не повод ждать дальше
+        self._tab.wait_for_timeout(self.settle_ms)
+
+    def _snapshot(self) -> PageState:
+        try:
+            data = self._tab.evaluate(SNAPSHOT_JS, SUBMIT_TEXT_RE)
+        except PlaywrightError as exc:
+            raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
+        parser = _SemanticParser(data["url"])
+        parser.feed(data["html"])
+        parser.close()
+        page = parser.finish(
+            data["html"], self._last_status, {"content-type": "text/html; charset=utf-8"}
+        )
+        # Скрипты страницы уже отработали по-настоящему: эвристики HTTP-движка
+        # для JS («нужен браузер») здесь не нужны.
+        page.has_script = False
+        page.script_unsupported = False
+        self.page = page
+        return page
+
+    @staticmethod
+    def _has_candidate_form(page: PageState) -> bool:
+        text_like = {"text", "email", "tel", "file", ""}
+        return any(
+            c.form_index is not None and c.tag in {"input", "textarea"}
+            and c.type in text_like and not c.disabled
+            for c in page.controls
+        )
+
+    def _reveal_form(self, page: PageState) -> PageState:
+        """Анкеты не видно — нажать «Откликнуться» (до max_apply_clicks раз)."""
+        for _ in range(self.max_apply_clicks):
+            if self._has_candidate_form(page):
+                return page
+            mark = self._tab.evaluate(FIND_APPLY_JS, APPLY_TEXT_RE)
+            if not mark:
+                return page
+            target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
+            label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            try:
+                target.click(timeout=5000)
+            except PlaywrightError:
+                try:
+                    target.click(timeout=5000, force=True)
+                except PlaywrightError as exc:
+                    self.actions.append({"action": "apply_click_failed", "label": label, "error": str(exc)[:200]})
+                    return page
+            self.actions.append({"action": "apply_click", "label": label})
+            self._settle()
+            page = self._snapshot()
+        return page
+
+    # ── Интерфейс JupiterWebEngine ─────────────────────────────────────────
+    def open(self, url: str) -> PageState:
+        self.assert_reachable(url)
+        try:
+            response = self._tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+        except PlaywrightError as exc:
+            raise EngineTransportError(f"Страница не открылась: {exc}") from exc
+        self._last_status = response.status if response is not None else 200
+        final = self._tab.url
+        try:
+            self.assert_allowed(final)
+        except EngineSecurityError:
+            raise
+        self._settle()
+        return self._reveal_form(self._snapshot())
+
+    def load_html(self, html_text: str, logical_url: str) -> PageState:
+        """Готовый HTML — для тестов и разбора сохранённых страниц."""
+        self.assert_allowed(logical_url)
+        self._tab.set_content(html_text, wait_until="domcontentloaded")
+        self._last_status = 200
+        self._settle()
+        page = self._snapshot()
+        page.url = logical_url
+        return page
+
+    def _locator(self, control: ControlState):
+        if not control.dom_ref:
+            return None
+        return self._tab.locator(f'[data-jt-ref="{control.dom_ref}"]').first
+
+    def _apply_values(self, page: PageState, form: FormState) -> None:
+        for index in form.control_indices:
+            control = page.controls[index]
+            if control.disabled or control.readonly or control.tag == "button":
+                continue
+            if control.type in {"submit", "image", "button", "reset", "hidden"}:
+                continue
+            loc = self._locator(control)
+            if loc is None:
+                continue
+            try:
+                if control.type == "file":
+                    paths = control.file_paths or ([control.file_path] if control.file_path else [])
+                    if paths:
+                        loc.set_input_files(paths)
+                elif control.type in {"checkbox", "radio"}:
+                    if loc.is_checked() != control.checked:
+                        loc.set_checked(control.checked, force=True)
+                elif control.tag == "select":
+                    values = control.selected_values
+                    if values:
+                        loc.select_option(values, force=True)
+                else:
+                    current = loc.input_value()
+                    if control.value and current != control.value:
+                        loc.fill(control.value, force=True)
+                        # Маски телефона переписывают ввод — тогда печатаем по символу.
+                        if loc.input_value() != control.value and control.type == "tel":
+                            loc.fill("", force=True)
+                            loc.press_sequentially(control.value, delay=30)
+            except PlaywrightError as exc:
+                raise EngineTransportError(
+                    f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"
+                ) from exc
+
+    def submit(
+        self,
+        page: PageState,
+        form: FormState,
+        submit_control: ControlState | None = None,
+    ) -> PageState:
+        if self.read_only:
+            raise EngineSecurityError("Read-only Jupiter engine blocked form submission")
+        self._apply_values(page, form)
+        before = self._tab.url
+        try:
+            button = self._locator(submit_control) if submit_control is not None else None
+            if button is not None:
+                try:
+                    button.click(timeout=8000)
+                except PlaywrightError:
+                    button.click(timeout=8000, force=True)
+                self.last_submit_mode = "browser_click"
+            else:
+                # Кнопки нет — отправка формы средствами самой страницы.
+                refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
+                if not refs:
+                    raise EngineError("Нечем отправить форму: ни кнопки, ни полей")
+                self._tab.locator(f'[data-jt-ref="{refs[-1]}"]').first.press("Enter")
+                self.last_submit_mode = "browser_enter"
+        except PlaywrightError as exc:
+            raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
+        self._settle()
+        if self._tab.url != before:
+            try:
+                self.assert_allowed(self._tab.url)
+            except EngineSecurityError:
+                raise
+        return self._snapshot()
+
+    def export_cookies(self) -> list[dict[str, str]]:
+        return [
+            {"name": c["name"], "value": c.get("value", ""), "domain": c.get("domain", ""),
+             "path": c.get("path", "/")}
+            for c in self._context.cookies()
+        ]
+
+    def import_cookies(self, items: list[dict[str, str]]) -> None:
+        cookies = []
+        for item in items or []:
+            name = str(item.get("name") or "")
+            domain = str(item.get("domain") or "")
+            if not name or not domain:
+                continue
+            cookies.append({"name": name, "value": str(item.get("value") or ""),
+                            "domain": domain, "path": str(item.get("path") or "/")})
+        if cookies:
+            self._context.add_cookies(cookies)
+
+    def semantic_snapshot(self) -> dict:
+        if not self.page:
+            return {"script_history": []}
+        snapshot = self.page.snapshot()
+        snapshot["script_history"] = []
+        snapshot["browser_actions"] = list(self.actions)
+        return snapshot
+
+    def screenshot(self, path: str) -> None:
+        """Снимок экрана — для отладки и будущей передачи капчи человеку."""
+        self._tab.screenshot(path=path, full_page=False)
+
+    def close(self) -> None:
+        for name in ("_context", "_browser"):
+            obj = getattr(self, name, None)
+            if obj is not None:
+                try:
+                    obj.close()
+                except Exception:
+                    pass
+        pw = getattr(self, "_pw", None)
+        if pw is not None:
+            try:
+                pw.stop()
+            except Exception:
+                pass
+
+    def __enter__(self) -> "JupiterBrowserEngine":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()

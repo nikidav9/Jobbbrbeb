@@ -253,7 +253,7 @@ jobs:
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
           pip install quickjs
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
@@ -311,6 +311,27 @@ jobs:
               raise SystemExit('missing app assets: ' + ', '.join(missing))
           print(f'complete shell: {len(parser.urls)} referenced assets')
           PY
+
+  # Браузерный движок Юпитера (решение владельца 28.09.2026): Chromium через
+  # Python-Playwright. Отдельная задача — основной Юпитер остаётся на stdlib,
+  # а браузер ставится только здесь. Версия закреплена.
+  jupiter-browser:
+    name: Jupiter browser engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright + Chromium
+        run: |
+          pip install playwright==1.63.0
+          python -m playwright install --with-deps chromium
+      - name: Browser engine on a synthetic heavy career site
+        env:
+          JUPITER_BROWSER_TESTS: '1'
+        run: cd jupiter && python3 test_browser_engine.py -v
 
   dashboard:
     name: Dashboard build
