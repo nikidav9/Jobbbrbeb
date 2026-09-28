@@ -10,6 +10,8 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
+import { BookmarkIcon, MailIcon, SearchIcon } from '@/components/profile/icons';
+import { ProfileColors, ProfileFonts, HAIRLINE } from '@/constants/profileTheme';
 import { JT, JT_FONT } from '@/constants/jt';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useApp } from '@/hooks/useApp';
@@ -564,10 +566,11 @@ function WorkerMatches() {
     );
   };
 
-  const headBtn = (icon: React.ComponentProps<typeof Ionicons>['name'], label: string, onPress: () => void, dot = false, on = false) => (
-    <TouchableOpacity style={[wm.headBtn, on && wm.headBtnOn]} onPress={onPress} activeOpacity={0.8}
+  // Кнопки шапки — как в «Профиле» (ProfileHeader): 40, тонкий контур, тонкие иконки 18.
+  const headBtn = (Icon: (p: { size?: number; color?: string }) => React.ReactElement, label: string, onPress: () => void, dot = false, on = false) => (
+    <TouchableOpacity style={[wm.headBtn, on && wm.headBtnOn]} onPress={onPress} activeOpacity={0.72}
       accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={rs(20)} color={JT.ink} />
+      <Icon size={18} color={JT.ink} />
       {dot ? <View style={wm.headDot} /> : null}
     </TouchableOpacity>
   );
@@ -578,20 +581,20 @@ function WorkerMatches() {
           новые), лупа (поиск по откликам). */}
       <View style={wm.header}>
         <Image
-          source={require('@/assets/images/jt-logo-wide.png')}
+          source={require('@/assets/images/header-jt-logo.png')}
           style={wm.logo}
           contentFit="contain"
           accessibilityLabel="JobToo"
         />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
-            {headBtn('bookmark-outline', 'Сохранённые вакансии', () => router.push('/saved'))}
+            {headBtn(BookmarkIcon, 'Сохранённые вакансии', () => router.push('/saved'))}
           </OnboardingTarget>
           <OnboardingTarget targetKey="matches.chats">
-            {headBtn('mail-outline', unreadChats.length + unreadMail > 0 ? 'Сообщения, есть новые' : 'Сообщения',
+            {headBtn(MailIcon, unreadChats.length + unreadMail > 0 ? 'Сообщения, есть новые' : 'Сообщения',
               () => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats'), unreadChats.length + unreadMail > 0)}
           </OnboardingTarget>
-          {headBtn('search', searchOpen ? 'Закрыть поиск' : 'Поиск по откликам',
+          {headBtn(SearchIcon, searchOpen ? 'Закрыть поиск' : 'Поиск по откликам',
             () => { setSearchOpen(o => !o); if (searchOpen) setSearch(''); }, false, searchOpen)}
         </View>
       </View>
@@ -757,27 +760,31 @@ function WorkerMatches() {
 // логотип 44/12, бейдж 26/13, заголовок дня 12/800 капсом.
 const wm = StyleSheet.create({
   safe: { flex: 1, backgroundColor: JT.background },
+  // Шапка, заголовок и подпись — один в один с «Профилем» (ProfileHeader и
+  // workerS.scroll: поля 16, верх 14, ряд 44, заголовок Unbounded 800 28/32,
+  // подпись Onest 13) — логотип и заголовки на одной линии (просьба владельца
+  // 28.09.2026).
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(20), paddingTop: rs(10), height: rs(54),
+    paddingHorizontal: 16, marginTop: 14, height: 44,
   },
-  logo: { width: rs(47), height: rs(30) },
-  headerActions: { flexDirection: 'row', gap: rs(8) },
+  logo: { width: 40, height: 26 },
+  headerActions: { flexDirection: 'row', gap: 8 },
   headBtn: {
-    width: rs(44), height: rs(44), borderRadius: rs(22), borderWidth: 2, borderColor: JT.ink,
-    backgroundColor: JT.surface, alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20, borderWidth: HAIRLINE, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center',
   },
   headBtnOn: { backgroundColor: JT.accent },
   headDot: {
-    position: 'absolute', top: -3, right: -3, width: 12, height: 12, borderRadius: 6,
-    backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.background,
+    position: 'absolute', top: 6, right: 7, width: 9, height: 9, borderRadius: 5,
+    backgroundColor: JT.accent, borderWidth: HAIRLINE, borderColor: JT.background,
   },
-  list: { paddingHorizontal: rs(20) },
+  list: { paddingHorizontal: 16 },
   title: {
-    fontFamily: JT_FONT.head, fontSize: rf(25), lineHeight: rf(29), letterSpacing: -0.25,
-    color: JT.ink, marginTop: rs(20),
+    fontFamily: ProfileFonts.headingExtra, fontSize: 28, lineHeight: 32, letterSpacing: -0.5,
+    color: JT.ink, marginTop: 14,
   },
-  subtitle: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6) },
+  subtitle: { fontFamily: ProfileFonts.textRegular, fontSize: 13, color: ProfileColors.muted, marginTop: 4 },
   note: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(6) },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(14),

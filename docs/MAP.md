@@ -156,6 +156,10 @@
   уведомлений на `BottomSheet`), `app/support.tsx` (чат + шторка FAQ из
   `jm_support_knowledge`; `BottomSheet` умеет `height`/`backgroundColor`),
   модалка «Молния» — в `app/(tabs)/feed.tsx` (`limitOpen`).
+- Шапка «Откликов» (`app/(tabs)/matches.tsx`, стили `wm.header/title/subtitle`)
+  повторяет `components/profile/ProfileHeader.tsx` один в один: поля 16, ряд 44,
+  кнопки 40 с контуром 1,5 и иконками `components/profile/icons.tsx`, заголовок
+  Unbounded 800 28. Меняешь одну — поменяй и другую.
 - Гостевой режим — `components/GuestGate.tsx` (заглушка «… — после регистрации»
   для Откликов, Чатов, Профиля) в стиле JT: карточка-наклейка, Unbounded.
   Документы `app/legal.tsx` — шрифтами JT (Unbounded/Manrope), кремовый фон.
