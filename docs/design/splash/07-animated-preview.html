@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JT — Splash: живой превью анимации</title>
+<link rel="stylesheet" href="assets/splash.css">
+</head>
+<body>
+<div class="screen">
+<style>
+  /* Весь цикл 4.4 с, повторяется. % = время / 4400 мс */
+  .a-plate{animation:plate 4.4s cubic-bezier(.2,.8,.2,1) infinite;transform-origin:center}
+  .a-logo{animation:logo 4.4s cubic-bezier(.3,1.4,.5,1) infinite}
+  .a-below{animation:below 4.4s ease-out infinite}
+  .a-tag{animation:tag 4.4s ease-out infinite}
+  .a-prog{animation:prog 4.4s ease-out infinite}
+  .a-fill{animation:fill 4.4s cubic-bezier(.4,0,.2,1) infinite}
+  .a-skel{position:absolute;inset:0;animation:skel 4.4s ease-out infinite}
+  @keyframes plate{
+    0%  {transform:translate(0,0) scale(0);border-radius:70px;background:#FF6B1A;box-shadow:0 0 0 #141414;opacity:1}
+    7%  {transform:translate(0,0) scale(.13);border-radius:70px;background:#FF6B1A;box-shadow:0 0 0 #141414}
+    14% {transform:translate(0,0) scale(1);border-radius:36px;background:#FFFFFF;box-shadow:0 0 0 #141414}
+    20% {box-shadow:0 0 0 #141414}
+    25% {transform:translate(0,0) scale(1);box-shadow:6px 6px 0 #141414;opacity:1}
+    55% {transform:translate(0,0) scale(1);box-shadow:6px 6px 0 #141414;opacity:1;background:#FFFFFF}
+    64% {transform:translate(-152px,-302px) scale(.33);box-shadow:0 0 0 #141414;opacity:0;background:#F5EFE6}
+    100%{transform:translate(-152px,-302px) scale(.33);opacity:0}
+  }
+  @keyframes logo{
+    0%,14%{transform:scale(.6);opacity:0}
+    19% {transform:scale(1.08);opacity:1}
+    23% {transform:scale(1);opacity:1}
+    100%{transform:scale(1);opacity:1}
+  }
+  @keyframes tag{0%,23%{opacity:0;transform:translateY(10px)}30%,55%{opacity:1;transform:translateY(0)}60%,100%{opacity:0}}
+  @keyframes prog{0%,29%{opacity:0}33%,55%{opacity:1}60%,100%{opacity:0}}
+  @keyframes fill{0%,31%{width:0}55%,100%{width:100%}}
+  @keyframes skel{0%,58%{opacity:0;transform:translateY(12px)}66%,94%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){.a-plate,.a-logo,.a-tag,.a-prog,.a-fill,.a-skel{animation:none}.a-skel{opacity:0}}
+</style>
+<div class="a-skel"><div class="skel">
+  <div class="skel__head">
+    <img class="skel__logo" src="assets/logo.png" alt="Job Tools">
+    <span class="sk" style="flex-grow:1;height:44px"></span>
+    <span class="sk" style="width:84px;height:44px"></span>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:8px"><span class="sk" style="width:44px;height:36px;border-radius:18px;background:#141414"></span><span class="sk" style="width:96px;height:36px;border-radius:18px"></span><span class="sk" style="width:140px;height:36px;border-radius:18px"></span></div>
+  <div class="skel__card">
+    <div style="display:flex;gap:12px;align-items:center"><span class="sk" style="width:44px;height:44px;border-radius:12px"></span><span style="display:flex;flex-direction:column;gap:8px"><span class="sk" style="width:120px;height:14px;border-radius:7px"></span><span class="sk" style="width:170px;height:12px;border-radius:6px"></span></span></div>
+    <span class="sk" style="width:90%;height:22px;border-radius:8px"></span>
+    <span class="sk" style="width:60%;height:22px;border-radius:8px"></span>
+    <div style="display:flex;gap:6px"><span class="sk" style="width:90px;height:30px;border-radius:10px"></span><span class="sk" style="width:70px;height:30px;border-radius:10px"></span><span class="sk" style="width:70px;height:30px;border-radius:10px"></span></div>
+    <span class="sk" style="width:100%;height:12px;border-radius:6px;margin-top:6px"></span>
+    <span class="sk" style="width:94%;height:12px;border-radius:6px"></span>
+    <span class="sk" style="width:80%;height:12px;border-radius:6px"></span>
+  </div>
+</div>
+<div class="skel__nav"></div></div>
+<div class="slot"><div class="plate a-plate"><img class="logo a-logo" src="assets/logo.png" alt="Job Tools"></div></div>
+<div class="below"><p class="tagline a-tag">Работа в IT — свайпом</p><div class="progress a-prog" aria-label="Загрузка"><span class="a-fill"></span></div><p class="caption a-prog">Подбираем вакансии…</p></div>
+</div>
+</body>
+</html>
