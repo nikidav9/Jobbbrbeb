@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job2 — Место работы</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+  /* Экран под ширину 390 (iPhone 14/15). Тёмный фон вокруг — только для просмотра в браузере. */
+  html,body{margin:0}
+  body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif}
+  .screen{border-radius:40px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  a{color:#141414} a:hover{color:#C2410C}
+  input::placeholder,textarea::placeholder{color:#9A9086}
+</style>
+</head>
+<body>
+<div class="screen">
+<div style="width: 390px; height: 1080px; box-sizing: border-box; position: relative; background: #F5EFE6; color: #141414; font-family: 'Manrope', system-ui, sans-serif; overflow: hidden">
+<div style="padding: 56px 20px 0; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 14px; height: 44px">
+<a href="#" aria-label="Назад в профиль" style="flex-shrink: 0; width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></a>
+<h1 style="margin: 0; flex-grow: 1; min-width: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.01em">Место работы</h1>
+<button style="flex-shrink: 0; height: 44px; padding: 0 4px; border: none; background: transparent; font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 15px; color: #C2410C; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; cursor: pointer">Удалить</button>
+</div>
+
+<div style="margin-top: 24px; display: flex; flex-direction: column; gap: 20px">
+<label style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Должность</span>
+<input value="Супервайзер" style="height: 56px; box-sizing: border-box; padding: 0 16px; border-radius: 16px; border: 2px solid #141414; background: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 700; color: #141414; outline: none">
+</label>
+<label style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Компания</span>
+<input value="ООО «Яндекс Лавка»" style="height: 56px; box-sizing: border-box; padding: 0 16px; border-radius: 16px; border: 2px solid #141414; background: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 700; color: #141414; outline: none">
+</label>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Период работы</span>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<button style="height: 56px; box-sizing: border-box; padding: 0 12px 0 14px; border-radius: 16px; border: 2px solid #141414; background: #FFFFFF; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; font-family: 'Manrope', sans-serif; color: #141414; cursor: pointer"><span style="font-size: 11px; font-weight: 700; color: #6B645C">Начало</span><span style="font-size: 15px; font-weight: 800">Август 2022</span></button>
+<button style="height: 56px; box-sizing: border-box; padding: 0 12px 0 14px; border-radius: 16px; border: 1.5px solid #E3D9CC; background: #EFE7DC; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; font-family: 'Manrope', sans-serif; color: #6B645C; cursor: default" disabled><span style="font-size: 11px; font-weight: 700">Окончание</span><span style="font-size: 15px; font-weight: 800">Сейчас</span></button>
+</div>
+<label style="margin-top: 4px; display: flex; align-items: center; gap: 10px; cursor: pointer">
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 8px; border: 2px solid #141414; background: #FF6B1A; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l9-10"/></svg></span>
+<span style="font-size: 15px; font-weight: 700">Работаю здесь сейчас</span>
+</label>
+</div>
+
+<label style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Обязанности и достижения</span>
+<textarea rows="6" placeholder="Чем занимались и каких результатов добились. Например: сократил время обработки заказа на 15%" style="box-sizing: border-box; padding: 14px 16px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 600; line-height: 1.5; color: #141414; outline: none; resize: none"></textarea>
+<span style="align-self: flex-end; font-size: 12px; font-weight: 700; color: #6B645C">0 / 2000</span>
+</label>
+
+<div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #FFFFFF">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B645C" stroke-width="2.2" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+<span style="font-size: 13px; line-height: 1.45; font-weight: 600; color: #4A443D">Этот же экран открывается по кнопке «+ Добавить место работы» — тогда поля пустые, а «Удалить» скрыто</span>
+</div>
+</div>
+</div>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; height: 130px; background: linear-gradient(rgba(245,239,230,0), #F5EFE6 50%)"></div>
+<button style="position: absolute; left: 20px; right: 20px; bottom: 32px; height: 60px; border-radius: 30px; border: 2px solid #141414; background: #FF6B1A; box-shadow: 4px 4px 0 #141414; font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #141414; cursor: pointer">Сохранить</button>
+</div>
+</div>
+</body>
+</html>

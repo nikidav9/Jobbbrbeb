@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job2 — Город и метро</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+  /* Экран под ширину 390 (iPhone 14/15). Тёмный фон вокруг — только для просмотра в браузере. */
+  html,body{margin:0}
+  body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif}
+  .screen{border-radius:40px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  a{color:#141414} a:hover{color:#C2410C}
+  input::placeholder,textarea::placeholder{color:#9A9086}
+</style>
+</head>
+<body>
+<div class="screen">
+<div style="width: 390px; height: 1000px; box-sizing: border-box; position: relative; background: #F5EFE6; color: #141414; font-family: 'Manrope', system-ui, sans-serif; overflow: hidden">
+<div style="padding: 56px 20px 0; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 14px; height: 44px">
+<a href="#" aria-label="Назад в профиль" style="flex-shrink: 0; width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></a>
+<h1 style="margin: 0; flex-grow: 1; min-width: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.01em">Город и метро</h1>
+</div>
+
+<div style="margin-top: 24px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Город</span>
+<label style="height: 56px; box-sizing: border-box; padding: 0 8px 0 16px; border-radius: 16px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; gap: 10px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+<input value="Москва" aria-label="Город" style="flex-grow: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 700; color: #141414">
+<button aria-label="Очистить" style="width: 36px; height: 36px; border: none; border-radius: 18px; background: #F5EFE6; display: flex; align-items: center; justify-content: center; cursor: pointer"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</label>
+</div>
+
+<div style="margin-top: 24px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Метро <span style="font-weight: 600; color: #6B645C">· до 3 станций</span></span>
+<label style="height: 56px; box-sizing: border-box; padding: 0 16px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; display: flex; align-items: center; gap: 10px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+<input placeholder="Найти станцию" aria-label="Найти станцию метро" style="flex-grow: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 600; color: #141414">
+</label>
+</div>
+
+<span style="margin-top: 18px; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; color: #6B645C">РЯДОМ С ВЫБРАННОЙ</span>
+<div style="margin-top: 10px; padding: 4px 16px; border-radius: 22px; background: #FFFFFF; display: flex; flex-direction: column">
+<label style="height: 60px; display: flex; align-items: center; gap: 12px; border-bottom: 1.5px solid #EFE7DC; cursor: pointer">
+<span style="flex-shrink: 0; width: 14px; height: 14px; border-radius: 7px; background: #0072BA"></span>
+<span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 16px; font-weight: 800">Строгино</span><span style="font-size: 12px; font-weight: 600; color: #6B645C">Арбатско-Покровская</span></span>
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 8px; border: 2px solid #141414; background: #FF6B1A; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l9-10"/></svg></span>
+</label>
+<label style="height: 60px; display: flex; align-items: center; gap: 12px; border-bottom: 1.5px solid #EFE7DC; cursor: pointer">
+<span style="flex-shrink: 0; width: 14px; height: 14px; border-radius: 7px; background: #0072BA"></span>
+<span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 16px; font-weight: 700">Мякинино</span><span style="font-size: 12px; font-weight: 600; color: #6B645C">Арбатско-Покровская</span></span>
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 8px; border: 2px solid #141414; background: #FFFFFF"></span>
+</label>
+<label style="height: 60px; display: flex; align-items: center; gap: 12px; border-bottom: 1.5px solid #EFE7DC; cursor: pointer">
+<span style="flex-shrink: 0; width: 14px; height: 14px; border-radius: 7px; background: #0072BA"></span>
+<span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 16px; font-weight: 700">Крылатское</span><span style="font-size: 12px; font-weight: 600; color: #6B645C">Арбатско-Покровская</span></span>
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 8px; border: 2px solid #141414; background: #FFFFFF"></span>
+</label>
+<label style="height: 60px; display: flex; align-items: center; gap: 12px; border-bottom: 1.5px solid #EFE7DC; cursor: pointer">
+<span style="flex-shrink: 0; width: 14px; height: 14px; border-radius: 7px; background: #943E90"></span>
+<span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 16px; font-weight: 700">Щукинская</span><span style="font-size: 12px; font-weight: 600; color: #6B645C">Таганско-Краснопресненская</span></span>
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 8px; border: 2px solid #141414; background: #FFFFFF"></span>
+</label>
+<label style="height: 60px; display: flex; align-items: center; gap: 12px; cursor: pointer">
+<span style="flex-shrink: 0; width: 14px; height: 14px; border-radius: 7px; background: #943E90"></span>
+<span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 16px; font-weight: 700">Тушинская</span><span style="font-size: 12px; font-weight: 600; color: #6B645C">Таганско-Краснопресненская</span></span>
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 8px; border: 2px solid #141414; background: #FFFFFF"></span>
+</label>
+</div>
+</div>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; height: 130px; background: linear-gradient(rgba(245,239,230,0), #F5EFE6 50%)"></div>
+<button style="position: absolute; left: 20px; right: 20px; bottom: 32px; height: 60px; border-radius: 30px; border: 2px solid #141414; background: #FF6B1A; box-shadow: 4px 4px 0 #141414; font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #141414; cursor: pointer">Сохранить</button>
+</div>
+</div>
+</body>
+</html>
