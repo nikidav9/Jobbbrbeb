@@ -17,6 +17,7 @@ header('Cache-Control: public, max-age=600');
 header('Access-Control-Allow-Origin: *');
 
 require_once __DIR__ . '/sb_lite.php';
+require_once __DIR__ . '/job_sections.php';
 
 const FS_TTL_SEC = 600;
 const FS_PAGE = 1000;
@@ -51,8 +52,9 @@ function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [])
         $byCompany[$company] ??= ['company' => $company, 'total' => 0, 'it' => 0];
         $byCompany[$company]['total']++;
         if ($section === 'it') $byCompany[$company]['it']++;
-        // То, что реально видит соискатель: раздел it или IT-компания целиком.
-        if ($section === 'it' || isset($itSet[$company])) {
+        // То, что реально видит соискатель: раздел it или IT-компания без
+        // «рабочих» разделов (миграция 132).
+        if ($section === 'it' || (isset($itSet[$company]) && !in_array($section, JOB_SECTIONS_BLUE_COLLAR, true))) {
             $feed++;
             if (fs_is_moscow($r)) $feedMoscow++;
         }

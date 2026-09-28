@@ -3478,6 +3478,49 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
 }
 
 /**
+ * Поручительство за приглашённого, которого работодатель нанял на постоянную
+ * работу (отклик переведён в 'hired'). Смен больше нет, поэтому это единственный
+ * итог, который сейчас растит referral_worked.
+ *
+ * Строка в журнале одна на приглашённого (уникальный индекс по invitee_id):
+ * если уже есть любая — старый выход на смену, невыход или прошлый найм, —
+ * второй не заводим. Повторный 'hired' и смена статусов счётчик не удваивают.
+ * Как и в jt_referral_on_outcome, считается только итог, который отметил
+ * работодатель этого отклика ($byUserId — из подписанной сессии).
+ */
+function jt_referral_on_hire(string $workerId, string $employerId, ?string $byUserId): void
+{
+    try {
+        $workerId = trim($workerId);
+        $employerId = trim($employerId);
+        if ($workerId === '' || $employerId === '') return;
+        if ($byUserId === null || $byUserId === '' || $byUserId !== $employerId) return;
+        if ($employerId === $workerId) return;
+
+        $worker = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'id,invited_by');
+        $invitedBy = trim((string)($worker['invited_by'] ?? ''));
+        if ($invitedBy === '' || $invitedBy === $workerId) return;
+        // Пригласивший не может сам нанимать приглашённого: замкнутый круг.
+        if ($invitedBy === $employerId) return;
+
+        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
+        if ($existing !== null) return;
+
+        sb_insert('jm_referral_rewards', [
+            'id' => uid(),
+            'inviter_id' => $invitedBy,
+            'invitee_id' => $workerId,
+            'like_id' => null,
+            'outcome' => 'hired',
+            'qualified_at' => now_iso(),
+        ]);
+        jt_referral_bump($invitedBy, 1);
+    } catch (Throwable $e) {
+        // Смена статуса отклика важнее начисления.
+    }
+}
+
+/**
  * Подвинуть счётчик поручительств на карточке приглашающего.
  *
  * Зачем счётчик вообще нужен: карточку кандидата работодатель видит списком,
@@ -3728,6 +3771,10 @@ try {
                     ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.worked']),
                 'noShow' => sb_count('jm_referral_rewards',
                     ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.no_show']),
+                // Приглашённые, которых наняли (миграция 131). Смен больше нет,
+                // поэтому это главное число; старые worked считаются отдельно.
+                'hired' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.hired']),
             ];
             break;
         }
@@ -6672,8 +6719,9 @@ try {
             // Старый клиент без третьего довода «Всего N» не показывает — ему
             // прежние 30 достаточно.
             $perCompany = $filters !== null ? 200 : 30;
-            // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
-            // вакансии компаний из jm_it_companies (миграция 120). И только
+            // Лента только IT (решение владельца 26.09.2026): раздел it плюс
+            // вакансии компаний из jm_it_companies (миграция 120), кроме
+            // «рабочих» разделов (миграция 132, 28.09.2026). И только
             // Москва, удалёнка и вакансии без города (миграция 121).
             //
             // select= — без description_full/described_at/detail_spec
@@ -7659,6 +7707,10 @@ try {
             sb_update('jm_perm_applications', ['id' => 'eq.' . $appId], ['status' => $status]);
             // Повторное нажатие не шлёт второго уведомления.
             if ($wasStatus !== $status) jt_perm_app_announce($app, $status);
+            // Устроился — поручительство тому, кто его позвал (один раз на человека).
+            if ($status === 'hired' && $wasStatus !== 'hired') {
+                jt_referral_on_hire((string)($app['worker_id'] ?? ''), (string)($app['employer_id'] ?? ''), (string)$authUid);
+            }
             break;
         }
 
