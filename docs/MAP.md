@@ -259,6 +259,28 @@
   новые ключи внутри `resume_data`/`personal_data` не фильтрует (это JSON-
   колонки целиком) — фильтр в `php-proxy/db.php` только по списку колонок
   верхнего уровня строки.
+- **Сами экраны редактирования** — `app/profile-edit/*.tsx` (18 маршрутов:
+  `desired-position`, `work-place`, `languages`, `skills`, `education`, `exam`,
+  `certificate`, `course`, `award`, `interests`, `basic`, `work-permit`,
+  `city-metro`, `work-conditions`, `links`, `relocation`, `driving-license`,
+  `restrictions`) + шторки `components/profile/edit/sheets/{Email,Phone}Sheet.tsx`.
+  Записи списков открываются с `?index=N` (нет/неверный — новая запись),
+  «Основное» — с `?focus=firstName|middleName|lastName|title|age`. Какая кнопка
+  профиля куда ведёт — таблица в `docs/design/profile-edit/README.md`; кнопки
+  подключены в `ResumeTabContent`/`PersonalTabContent` (у разделов-списков в
+  шапке `SectionCard` «+» через `onAdd`, запись — тапом по строке).
+  `app/profile-edit/_layout.tsx` не пускает на экраны, пока `loading` в
+  `AppContext`: экран один раз берёт начальные значения из `currentUser`, и
+  при прямой ссылке/обновлении страницы урезанный кэш затёр бы данные.
+  Сохранение — обычный `updateUser`. Решения: дата рождения не хранится
+  (только возраст — миграция 103); занятость/формат/график живут в резюме;
+  город с «Город и метро» копируется и в `resume.city`; телефон без SMS-кода
+  (`dbSetContactPhone`); вложение файла к сертификату убрано — `dbUploadFile`
+  пускает только аватар в публичный бакет, для документов нужен приватный;
+  переключатели «Показывать возраст/номер» скрыты — сервер их не учитывает.
+- **`refreshUsers` не затирает свою строку** — `dbGetUsers` отдаёт публичную
+  проекцию без `personal_data`/телефона/почты, и раньше следующее сохранение
+  профиля стирало их на сервере. Слияние — `mergeSelfUser` в `lib/profileEdit.ts`.
 - **Загрузка резюме на регистрации** — только на запасном пути по телефону
   (`app/register-worker.tsx`, шаг 6 из 7, необязательный, решение владельца
   25.09); по почте регистрация — «почта → код → лента», резюме и имя спросит

@@ -80,7 +80,9 @@ export default function WorkPlaceScreen() {
 
   const initialStart = useMemo(() => parsePeriod(existing?.start), [existing]);
   const initialEnd = useMemo(() => parsePeriod(existing?.end), [existing]);
-  const initialCurrent = existing?.current ?? false;
+  // У записей из PDF флага current нет — только строка end («Сейчас», «по настоящее время»).
+  const initialCurrent = existing?.current
+    ?? /^(сейчас|по\s+настоящее\s+время|настоящее\s+время|н\.\s*в\.?|present|now)/i.test((existing?.end ?? '').trim());
   const initialPosition = existing?.position ?? '';
   const initialCompany = existing?.company ?? '';
   const initialDescription = existing?.description ?? '';
