@@ -1315,9 +1315,16 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 
 ### Jupiter — агент подачи откликов (`jupiter/`)
 
-Свой движок, не Playwright и не Selenium: HTTP-клиент, cookie jar, разбор
-HTML и форм, политика переходов, отправка и проверка успеха написаны здесь.
-Только stdlib Python, браузер не ставится.
+Свой движок: HTTP-клиент, cookie jar, разбор HTML и форм, политика переходов,
+отправка и проверка успеха написаны здесь, stdlib Python. С 28.09.2026 —
+второй, браузерный движок `jupiter/browser_engine.py` (Chromium через
+Python-Playwright, тот же интерфейс `open/submit/load_html`): сам жмёт
+«Откликнуться», снимает отрисованный DOM для того же `_SemanticParser`
+(невидимые поля убраны, поля без `<form>` — в виртуальной форме `data-jt-virtual`,
+метки `data-jt-ref` → `ControlState.dom_ref`), при отправке переносит значения
+агента в живую страницу. В read_only обрывает любой не-GET запрос. Тест —
+`jupiter/test_browser_engine.py`, отдельная задача CI `jupiter-browser`
+(Playwright ставится только там).
 
 | Файл | Что внутри |
 |---|---|
