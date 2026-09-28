@@ -10,16 +10,54 @@ import {
 } from '@/components/profile/edit';
 import { EditColors, EditFonts, EditRadius } from '@/constants/profileEditTheme';
 
-/** Разбирает «Август 2022» → { month: 'Август', year: '2022' }. Не парсится — пустые поля. */
-function parsePeriod(value: string | undefined): { month: string; year: string } {
-  const match = value?.trim().match(/^(\S+)\s+(\d{4})$/);
-  if (!match) return { month: '', year: '' };
-  const month = MONTHS.find((m) => m.toLowerCase() === match[1].toLowerCase()) ?? '';
-  return month ? { month, year: match[2] } : { month: '', year: '' };
+/** Сокращения месяцев из PDF-импорта: «авг» → «Август» и т.п. (первые 3 буквы). */
+const MONTH_ABBREVIATIONS: Record<string, string> = MONTHS.reduce((acc, m) => {
+  acc[m.slice(0, 3).toLowerCase()] = m;
+  return acc;
+}, {} as Record<string, string>);
+
+function resolveMonth(raw: string): string {
+  const lower = raw.toLowerCase();
+  const full = MONTHS.find((m) => m.toLowerCase() === lower);
+  if (full) return full;
+  return MONTH_ABBREVIATIONS[lower.slice(0, 3)] ?? '';
 }
 
+/**
+ * Разбирает дату из формы или PDF-импорта: «Август 2022», «08.2022», «2022»,
+ * «авг 2022», «август 2022». Год без месяца — валидное начало (месяц пуст,
+ * год есть). Не парсится — пустые поля.
+ */
+function parsePeriod(value: string | undefined): { month: string; year: string } {
+  const trimmed = value?.trim();
+  if (!trimmed) return { month: '', year: '' };
+
+  // «Месяц год» или «мес год»
+  const wordMatch = trimmed.match(/^(\S+)\s+(\d{4})$/);
+  if (wordMatch) {
+    const month = resolveMonth(wordMatch[1]);
+    return month ? { month, year: wordMatch[2] } : { month: '', year: wordMatch[2] };
+  }
+
+  // «08.2022» или «08/2022»
+  const numericMatch = trimmed.match(/^(\d{1,2})[./](\d{4})$/);
+  if (numericMatch) {
+    const monthNum = Number(numericMatch[1]);
+    const month = monthNum >= 1 && monthNum <= 12 ? MONTHS[monthNum - 1] : '';
+    return { month, year: numericMatch[2] };
+  }
+
+  // «2022» — только год, начало допустимо без месяца
+  const yearOnlyMatch = trimmed.match(/^(\d{4})$/);
+  if (yearOnlyMatch) return { month: '', year: yearOnlyMatch[1] };
+
+  return { month: '', year: '' };
+}
+
+/** Год без месяца — валидная запись начала (см. `parsePeriod`), хранится как есть. */
 function formatPeriod(month: string, year: string): string {
-  return month && year ? `${month} ${year}` : '';
+  if (month && year) return `${month} ${year}`;
+  return year || '';
 }
 
 type PickerState = { target: 'start' | 'end'; step: 'month' | 'year' } | null;
@@ -63,11 +101,13 @@ export default function WorkPlaceScreen() {
     return Array.from({ length: currentYear - 1960 + 1 }, (_, i) => String(currentYear - i));
   }, []);
 
-  const startFilled = !!startMonth && !!startYear;
+  // Месяц опционален: «только год» — валидное начало (см. `parsePeriod`).
+  const startFilled = !!startYear;
   const endFilled = current || (!!endMonth && !!endYear);
   const periodOrderValid = (() => {
     if (!startFilled || current || !endFilled) return true;
-    const startIndex = MONTHS.indexOf(startMonth) + Number(startYear) * 12;
+    // Месяц начала мог не разобраться (только год) — считаем январём для сравнения.
+    const startIndex = Math.max(MONTHS.indexOf(startMonth), 0) + Number(startYear) * 12;
     const endIndex = MONTHS.indexOf(endMonth) + Number(endYear) * 12;
     return endIndex >= startIndex;
   })();
@@ -94,13 +134,21 @@ export default function WorkPlaceScreen() {
       const item: ResumeExperience = {
         position: position.trim(),
         company: company.trim(),
-        start: formatPeriod(startMonth, startYear),
-        end: current ? 'Сейчас' : formatPeriod(endMonth, endYear),
+        // Дату не трогали в пикере — сохраняем исходную строку как есть (не теряем формат PDF-импорта).
+        start: (startMonth === initialStart.month && startYear === initialStart.year && existing?.start)
+          ? existing.start
+          : formatPeriod(startMonth, startYear),
+        end: current
+          ? 'Сейчас'
+          : (endMonth === initialEnd.month && endYear === initialEnd.year && existing?.end)
+            ? existing.end
+            : formatPeriod(endMonth, endYear),
         current,
         ...(existing?.duration ? { duration: existing.duration } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
       };
-      await updateUser(patchResume(currentUser, { experience: upsertAt(experienceList, idx, item) }));
+      const experience = upsertAt(experienceList, isNew ? undefined : idx, item);
+      await updateUser(patchResume(currentUser, { experience }));
       showToast('Сохранено');
       return true;
     } catch {
@@ -119,10 +167,10 @@ export default function WorkPlaceScreen() {
   };
 
   const handleDelete = async () => {
-    if (!currentUser || idx === undefined) return;
+    if (!currentUser || isNew) return;
     try {
       setBusy(true);
-      await updateUser(patchResume(currentUser, { experience: removeAt(experienceList, idx) }));
+      await updateUser(patchResume(currentUser, { experience: removeAt(experienceList, idx as number) }));
       showToast('Удалено');
       leave();
     } catch {

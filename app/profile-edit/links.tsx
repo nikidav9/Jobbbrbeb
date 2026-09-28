@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
 import type { LinkType, PersonalLink } from '@/constants/types';
-import { patchPersonal, LINK_TYPES, upsertAt, removeAt } from '@/lib/profileEdit';
+import { patchPersonal, LINK_TYPES, upsertAt, removeAt, normalizeHttpUrl } from '@/lib/profileEdit';
 import {
   EditScreen, FieldLabel, Field, Chip, ChipGroup, InfoNote, useUnsavedGuard, LinkIcon,
 } from '@/components/profile/edit';
@@ -17,19 +17,6 @@ function parseLegacyLinks(links: string | undefined): PersonalLink[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((url) => ({ type: 'other' as LinkType, url }));
-}
-
-/** Добавляет схему по умолчанию и проверяет, что она http/https. */
-function normalizeUrl(raw: string): { url: string; error?: string } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { url: '', error: 'Укажите ссылку' };
-  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
-  const withScheme = hasScheme ? trimmed : `https://${trimmed}`;
-  const scheme = withScheme.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/)?.[1].toLowerCase();
-  if (scheme !== 'http' && scheme !== 'https') {
-    return { url: withScheme, error: 'Ссылка должна начинаться с http:// или https://' };
-  }
-  return { url: withScheme };
 }
 
 export default function LinksScreen() {
@@ -50,7 +37,7 @@ export default function LinksScreen() {
   const [busy, setBusy] = useState(false);
   const [urlTouched, setUrlTouched] = useState(false);
 
-  const normalized = normalizeUrl(urlText);
+  const normalized = normalizeHttpUrl(urlText);
   const urlError = urlTouched && urlText.trim().length > 0 ? normalized.error : undefined;
 
   const dirty = type !== (existing?.type ?? null)
@@ -62,7 +49,7 @@ export default function LinksScreen() {
     if (!currentUser || !valid || !type) return false;
     try {
       setBusy(true);
-      const item: PersonalLink = { type, url: normalized.url, label: label.trim() || undefined };
+      const item: PersonalLink = { type, url: normalized.url ?? urlText.trim(), label: label.trim() || undefined };
       const nextList = upsertAt(baseList, index != null && existing ? index : undefined, item);
       await updateUser(patchPersonal(currentUser, { linksList: nextList }));
       showToast('Сохранено');

@@ -24,6 +24,12 @@ export function BottomSheet({
 }) {
   const translateY = useRef(new Animated.Value(0)).current;
 
+  // PanResponder создаётся один раз — держим актуальный onClose в ref, иначе
+  // замыкание навсегда получает onClose первого рендера (закрывает шторку
+  // без вопроса о несохранённом, если onClose с тех пор сменился на requestClose).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
@@ -34,7 +40,7 @@ export function BottomSheet({
         if (gesture.dy > 100 || gesture.vy > 1) {
           Animated.timing(translateY, { toValue: 600, duration: 180, useNativeDriver: true }).start(() => {
             translateY.setValue(0);
-            onClose();
+            onCloseRef.current();
           });
         } else {
           Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();

@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
-import { patchResume, upsertAt, removeAt } from '@/lib/profileEdit';
+import { patchResume, upsertAt, removeAt, normalizeHttpUrl } from '@/lib/profileEdit';
 import { ResumeCoursework } from '@/constants/types';
 import {
   EditScreen, Field, SelectField, OptionSheet, FieldLabel, useUnsavedGuard,
 } from '@/components/profile/edit';
+import { EditColors, EditFonts } from '@/constants/profileEditTheme';
 
 const CURRENT_YEAR = 2026;
 const YEARS = Array.from({ length: CURRENT_YEAR - 1960 + 1 }, (_, i) => String(CURRENT_YEAR - i));
@@ -38,7 +39,8 @@ export default function CourseScreen() {
     || endYear !== (existing?.endYear != null ? String(existing.endYear) : '')
     || duration !== (existing?.duration ?? '')
     || credentialUrl !== (existing?.credentialUrl ?? '');
-  const valid = name.trim().length > 0;
+  const credentialUrlError = credentialUrl.trim() ? normalizeHttpUrl(credentialUrl).error : undefined;
+  const valid = name.trim().length > 0 && !credentialUrlError;
 
   const yearOptions = useMemo(() => YEARS.map((y) => ({ label: y, value: y })), []);
 
@@ -49,7 +51,7 @@ export default function CourseScreen() {
     institution: institution.trim() || undefined,
     endYear: endYear ? Number(endYear) : undefined,
     duration: duration.trim() || undefined,
-    credentialUrl: credentialUrl.trim() || undefined,
+    credentialUrl: normalizeHttpUrl(credentialUrl).url,
   });
 
   const save = async (): Promise<boolean> => {
@@ -137,6 +139,7 @@ export default function CourseScreen() {
           onChangeText={setCredentialUrl}
           placeholder="https://"
         />
+        {credentialUrlError ? <Text style={s.error}>{credentialUrlError}</Text> : null}
       </EditScreen>
 
       <OptionSheet
@@ -152,3 +155,7 @@ export default function CourseScreen() {
     </>
   );
 }
+
+const s = StyleSheet.create({
+  error: { fontFamily: EditFonts.text600, fontSize: 13, color: EditColors.danger },
+});

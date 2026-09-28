@@ -25,7 +25,9 @@ export function useUnsavedGuard({
   const leave = () => {
     leavingRef.current = true;
     setVisible(false);
-    router.back();
+    // Открыли экран прямой ссылкой/обновили страницу на вебе — назад некуда,
+    // тогда ведём в профиль вместо отказа `router.back()`.
+    if (router.canGoBack()) router.back(); else router.replace('/(tabs)/profile');
   };
 
   const requestClose = () => {

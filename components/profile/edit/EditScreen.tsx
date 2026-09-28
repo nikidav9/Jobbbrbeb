@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, ActivityIndicator,
 } from 'react-native';
@@ -23,7 +23,7 @@ export function EditScreen({
   onDelete?: () => void;
   primaryLabel: string;
   primaryDisabled?: boolean;
-  onPrimary: () => void;
+  onPrimary: () => void | Promise<void>;
   busy?: boolean;
   children?: React.ReactNode;
   scroll?: boolean;
@@ -31,6 +31,19 @@ export function EditScreen({
 }) {
   const insets = useSafeAreaInsets();
   const disabled = !!primaryDisabled || !!busy;
+  // `busy` включается только после ререндера — двойное нажатие до него зовёт
+  // onPrimary дважды (второй save/leave уводит с экрана). Флаг синхронный.
+  const inFlightRef = useRef(false);
+
+  const handlePrimary = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      await onPrimary();
+    } finally {
+      inFlightRef.current = false;
+    }
+  };
 
   const content = (
     <>
@@ -89,7 +102,7 @@ export function EditScreen({
       <View style={[s.buttonWrap, { bottom: Math.max(insets.bottom, 12) + 20 }]}>
         {!disabled ? <View pointerEvents="none" style={s.buttonShadow} /> : null}
         <TouchableOpacity
-          onPress={onPrimary}
+          onPress={handlePrimary}
           disabled={disabled}
           activeOpacity={0.85}
           style={[s.button, disabled && s.buttonDisabled]}
