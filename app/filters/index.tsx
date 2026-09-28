@@ -4,9 +4,9 @@
  * Правит черновик (services/feedFilterStore.ts): лента меняется только по
  * «Показать N вакансий», число пересчитывается на сервере при каждом изменении.
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
   FilterScaffold, SectionTitle, Chips, FChip, ToggleRow, Chevron,
   SALARY_CHIPS, GRADES, FORMATS, POSTED, toggleIn,
@@ -23,10 +23,7 @@ const SPEC_SHORT: Record<string, string> = { management: 'Product, Project', dev
 
 export default function AllFilters() {
   const router = useRouter();
-  const { section } = useLocalSearchParams<{ section?: string }>();
   const f = useDraft();
-  const scrollRef = useRef<ScrollView>(null);
-  const gradeY = useRef(0);
   const [count, setCount] = useState<number | null>(null);
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'));
@@ -51,7 +48,6 @@ export default function AllFilters() {
       title="Фильтры"
       onBack={close}
       onReset={() => setDraft(EMPTY_FEED_FILTERS)}
-      scrollRef={scrollRef}
       button={{
         label: count === null ? 'Показать вакансии' : `Показать ${count.toLocaleString('ru-RU')} ${pluralVacancies(count)}`,
         onPress: () => { commitDraft(); close(); },
@@ -98,10 +94,7 @@ export default function AllFilters() {
         {custom ? <FChip label={`от ${f.salaryFrom.toLocaleString('ru-RU')}`} on onPress={() => router.push({ pathname: '/filters/salary', params: { from: 'all' } })} /> : null}
       </Chips>
 
-      <View onLayout={e => {
-        gradeY.current = e.nativeEvent.layout.y;
-        if (section === 'level') scrollRef.current?.scrollTo({ y: Math.max(0, gradeY.current - rs(40)), animated: false });
-      }}>
+      <View>
         <SectionTitle title="Грейд" />
         <Chips>
           {GRADES.map(g => (

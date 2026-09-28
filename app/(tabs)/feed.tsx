@@ -1037,19 +1037,16 @@ function WorkerPermMode() {
   // Поиск считается фильтром: «по вашим фильтрам», «ничего не нашлось», сброс.
   const permFiltersActive = isFilterActive(filters) || searchQuery !== '';
 
-  // Чип открывает свой экран (README макета): зарплата, специализация и
-  // формат — отдельные экраны; грейд и дата — «Все фильтры» (у грейда своего
-  // экрана нет, прокрутка к разделу).
+  // Каждый чип открывает свой отдельный экран: зарплата, специализация,
+  // формат (макет), грейд и дата публикации (решение владельца 28.09.2026 —
+  // как у остальных фильтров). Чёрная кнопка — «Фильтры» со всем сразу.
   const openFilterSheet = (kind: FilterSheetKind) => {
-    if (kind === 'salary' || kind === 'spec' || kind === 'format') {
-      router.push({ pathname: `/filters/${kind}`, params: { from: 'feed' } });
-      return;
-    }
-    openAllFilters(kind === 'level' ? 'level' : undefined);
+    if (kind === 'company') return;
+    router.push({ pathname: `/filters/${kind}`, params: { from: 'feed' } });
   };
-  const openAllFilters = (section?: string) => {
+  const openAllFilters = () => {
     beginDraft();
-    router.push(section ? { pathname: '/filters', params: { section } } : '/filters');
+    router.push('/filters');
   };
   const applyFilters = (next: FeedFilters) => setFilters(next);
   // «×» на включённом чипе сбрасывает ровно этот фильтр, не открывая шторку.
