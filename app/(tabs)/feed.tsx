@@ -11,6 +11,7 @@ import {
 } from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
@@ -2164,31 +2165,8 @@ function EmployerHome() {
 function WorkerCareer() {
   const { currentUser } = useApp();
 
-  // В установленной iOS PWA цвет системной зоны (время / сеть / батарея)
-  // берётся из theme-color. На экране вакансий он должен продолжать тёплую
-  // подложку, а при уходе на другие вкладки — возвращаться к светлому фону.
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-      const meta = document.querySelector('meta[name="theme-color"]');
-      const previousTheme = meta?.getAttribute('content') ?? null;
-      const previousHtmlBg = document.documentElement.style.backgroundColor;
-      const previousBodyBg = document.body.style.backgroundColor;
-
-      // iOS standalone PWA берёт фон зоны со временем из подложки документа,
-      // а не только из theme-color. Поэтому красим и HTML/BODY, пока активна
-      // вкладка вакансий. Родительский Stack для tabs прозрачный (см. _layout).
-      if (meta) meta.setAttribute('content', JT.background);
-      document.documentElement.style.backgroundColor = JT.background;
-      document.body.style.backgroundColor = JT.background;
-
-      return () => {
-        if (meta) meta.setAttribute('content', previousTheme || '#F5F7FA');
-        document.documentElement.style.backgroundColor = previousHtmlBg;
-        document.body.style.backgroundColor = previousBodyBg;
-      };
-    }, [])
-  );
+  // Тёплая зона со временем в iOS PWA — общий хук, тот же на других вкладках.
+  useWarmSystemBar();
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: JT.background }} />;
 

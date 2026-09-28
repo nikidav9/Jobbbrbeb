@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { JupiterApplication } from '@/constants/types';
 import { useApp } from '@/hooks/useApp';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
   jupiterApplicationEvents, jupiterMyApplications, jupiterGrantThirdPartyConsent,
   jupiterRequeueLive, dbGetResumeFiles,
@@ -135,6 +136,7 @@ function circleFor(kind: TimelineStep['kind'], active: boolean): Row['circle'] {
 }
 
 export default function JupiterApplicationScreen() {
+  useWarmSystemBar(true, EditColors.bg);
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { currentUser, showToast } = useApp();

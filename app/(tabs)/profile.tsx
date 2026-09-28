@@ -6,6 +6,7 @@ import {
   ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -282,6 +283,7 @@ export default function ProfileScreen() {
   const { tab } = useLocalSearchParams<{ tab?: string }>();
   const tabBarHeight = useBottomTabBarHeight();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
+  useWarmSystemBar(currentUser?.role === 'worker', ProfileColors.bg);
   // Шторки «Email для связи» и «Телефон» вкладки «Личные» (docs/design/profile-edit, 12–13).
   const [contactSheet, setContactSheet] = useState<'email' | 'phone' | null>(null);
   const [editSection, setEditSection] = useState<EditSection>(null);

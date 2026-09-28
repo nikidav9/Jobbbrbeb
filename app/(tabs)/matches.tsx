@@ -4,6 +4,7 @@ import {
   TouchableOpacity, ActivityIndicator, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -341,6 +342,7 @@ type RespItem = {
 };
 
 function WorkerMatches() {
+  useWarmSystemBar();
   const router = useRouter();
   const {
     currentUser, permApplications, permVacancies, users, chats,
