@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useApp } from '@/hooks/useApp';
 import { dbSetContactPhone } from '@/services/db';
+import { patchPersonal } from '@/lib/profileEdit';
 import { EditColors, EditFonts, EditRadius } from '@/constants/profileEditTheme';
 import { BottomSheet } from '../BottomSheet';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { Toggle } from '../Toggle';
 import { PhoneIcon, CloseIcon, ChevronDownIcon } from '../icons';
 
 /** Только цифры, без ведущей «7» — то, что человек набирает после кода страны. */
@@ -35,7 +37,9 @@ function formatDigits(d: string): string {
 export function PhoneSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { currentUser, updateUser, showToast } = useApp();
   const initialDigits = digitsOf(currentUser?.phone);
+  const initialShowPhone = currentUser?.personalDetails?.showPhone ?? true;
   const [digits, setDigits] = useState(initialDigits);
+  const [showPhone, setShowPhone] = useState(initialShowPhone);
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -43,12 +47,15 @@ export function PhoneSheet({ visible, onClose }: { visible: boolean; onClose: ()
   useEffect(() => {
     if (visible) {
       setDigits(initialDigits);
+      setShowPhone(initialShowPhone);
       setServerError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const dirty = digits !== initialDigits;
+  const dirtyPhone = digits !== initialDigits;
+  const dirtyShowPhone = showPhone !== initialShowPhone;
+  const dirty = dirtyPhone || dirtyShowPhone;
   const valid = digits.length === 10;
 
   const save = async (): Promise<boolean> => {
@@ -56,8 +63,15 @@ export function PhoneSheet({ visible, onClose }: { visible: boolean; onClose: ()
     setServerError(null);
     try {
       setBusy(true);
-      const newPhone = await dbSetContactPhone(currentUser.id, `7${digits}`);
-      await updateUser({ ...currentUser, phone: newPhone ?? '' });
+      let updated = currentUser;
+      if (dirtyPhone) {
+        const newPhone = await dbSetContactPhone(currentUser.id, `7${digits}`);
+        updated = { ...updated, phone: newPhone ?? '' };
+      }
+      if (dirtyShowPhone) {
+        updated = patchPersonal(updated, { showPhone });
+      }
+      await updateUser(updated);
       showToast('Сохранено');
       return true;
     } catch (e) {
@@ -112,8 +126,11 @@ export function PhoneSheet({ visible, onClose }: { visible: boolean; onClose: ()
           </View>
         </View>
 
-        {/* Переключатель «Показывать номер работодателям» скрыт: сервер showPhone
-            не учитывает, включённый тумблер ничего бы не менял. */}
+        <Toggle
+          value={showPhone}
+          onValueChange={setShowPhone}
+          label="Показывать номер работодателям"
+        />
 
         {serverError ? <Text style={s.error}>{serverError}</Text> : null}
 

@@ -5,7 +5,7 @@ import { useApp } from '@/hooks/useApp';
 import { patchPersonal, ADDRESS_FORMS, MONTHS } from '@/lib/profileEdit';
 import { User } from '@/constants/types';
 import {
-  EditScreen, Field, BottomSheet, Chip, ChipGroup, useUnsavedGuard,
+  EditScreen, Field, BottomSheet, Chip, ChipGroup, Toggle, useUnsavedGuard,
 } from '@/components/profile/edit';
 import { CalendarIcon } from '@/components/profile/edit/icons';
 import { EditColors, EditFonts, EditRadius } from '@/constants/profileEditTheme';
@@ -141,8 +141,7 @@ export default function BasicScreen() {
   // Дату рождения не храним (миграция 103 намеренно удалила birthday, 152-ФЗ):
   // она живёт только на экране, в базу уходит лишь посчитанный возраст.
   const [birthDate, setBirthDate] = useState('');
-  // «Показывать возраст» скрыт: сервер showAge не учитывает, обещание о ПДн
-  // без исполнения хуже отсутствия переключателя.
+  const [showAge, setShowAge] = useState(p.showAge ?? true);
 
   const firstNameRef = useRef<TextInput>(null);
   const middleNameRef = useRef<TextInput>(null);
@@ -166,7 +165,8 @@ export default function BasicScreen() {
     || lastName !== (currentUser?.lastName ?? '')
     || addressForm !== initialAddressForm
     || customAddress !== (legacyCustomAddress ?? p.preferredName ?? '')
-    || birthDate !== '';
+    || birthDate !== ''
+    || showAge !== (p.showAge ?? true);
 
   const valid = firstName.trim().length > 0 && lastName.trim().length > 0;
 
@@ -180,6 +180,7 @@ export default function BasicScreen() {
         middleName: middleName.trim() || undefined,
         title: addressForm || undefined,
         preferredName: addressForm === 'Свой вариант' ? (customAddress.trim() || undefined) : undefined,
+        showAge,
       });
       const next: User = {
         ...patched,
@@ -278,6 +279,13 @@ export default function BasicScreen() {
             </TouchableOpacity>
             <Text style={s.hint}>Возраст посчитаем сами. Дату не храним — работодатели видят только возраст</Text>
           </View>
+
+          <Toggle
+            label="Показывать возраст"
+            subtitle="Видят только работодатели"
+            value={showAge}
+            onValueChange={setShowAge}
+          />
         </View>
       </EditScreen>
 

@@ -1319,6 +1319,34 @@ export async function dbSignResumeFile(id: string): Promise<string> {
   return res.url;
 }
 
+/**
+ * Сохранить файл сертификата в закрытом бакете `resume-files`
+ * (`certificate/<uid>/<id>.<ext>`). Тип определяет сервер по байтам.
+ */
+export async function dbSaveCertificateFile(
+  fileName: string,
+  base64: string,
+): Promise<{ path: string; fileName: string }> {
+  const res = await proxy<{ path?: string; fileName?: string; error?: string }>('dbSaveCertificateFile', [
+    fileName,
+    base64,
+  ]);
+  if (!res?.path) throw new Error(res?.error || 'Не удалось сохранить файл');
+  return { path: res.path, fileName: res.fileName ?? fileName };
+}
+
+/** Короткоживущая приватная ссылка на файл сертификата — открывает только сам соискатель. */
+export async function dbSignCertificateFile(path: string): Promise<string> {
+  const res = await proxy<{ url?: string; error?: string }>('dbSignCertificateFile', [path]);
+  if (!res?.url) throw new Error(res?.error || 'Не удалось открыть файл');
+  return res.url;
+}
+
+/** Удалить файл сертификата из закрытого бакета. */
+export async function dbDeleteCertificateFile(path: string): Promise<void> {
+  await proxy<{ ok?: boolean; error?: string }>('dbDeleteCertificateFile', [path]);
+}
+
 // ─── Chats ────────────────────────────────────────────────────────────────────
 
 function rowToChat(r: any, messages: Message[] = []): Chat {

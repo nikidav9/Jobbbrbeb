@@ -741,6 +741,37 @@ define('USER_PUBLIC_COLS', implode(',', [
 
 define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,email,email_verified_at,resume_email,resume_file_name,resume_imported_at,personal_data');
 
+// Решение владельца (28.09): «Показывать возраст» — по умолчанию включено
+// (отсутствие флага = показывать, для существующих людей ничего не меняется),
+// showAge === false прячет age от всех, кроме самого человека.
+//
+// Один дополнительный запрос — только тех, кто скрыл возраст (их единицы), без
+// списка id: dbGetUsers отдаёт всех, и `id=in.(…)` на сотни uuid вылез бы за
+// предел длины URL — упал бы старт приложения у всех. Тянем только id:
+// personal_data наружу не уходит. $viewerUid — свой возраст видно всегда.
+function jt_mask_hidden_age(array $rows, ?string $viewerUid = null): array {
+    if (empty($rows)) return $rows;
+    try {
+        $hidden = sb_select_all('jm_users', ['personal_data->>showAge' => 'eq.false'], 'id');
+        $hideSet = array_flip(array_column($hidden, 'id'));
+        $hideAll = false;
+    } catch (Throwable $e) {
+        // Не узнали, кто скрыл возраст, — прячем у всех чужих: ни раскрыть
+        // скрытое, ни уронить dbGetUsers (а с ним старт приложения) нельзя.
+        error_log('[jt_mask_hidden_age] ' . $e->getMessage());
+        $hideSet = [];
+        $hideAll = true;
+    }
+    if (!$hideAll && empty($hideSet)) return $rows;
+    foreach ($rows as &$r) {
+        $id = $r['id'] ?? null;
+        if ($id === null || $id === $viewerUid || !array_key_exists('age', $r)) continue;
+        if ($hideAll || isset($hideSet[$id])) $r['age'] = null;
+    }
+    unset($r);
+    return $rows;
+}
+
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
 // Версии три — $2a$, $2b$, $2y$: приложение хеширует библиотекой bcryptjs
 // и даёт $2b$, PHP даёт $2y$, и проверить чужой хеш умеет каждый из них
@@ -813,7 +844,10 @@ function sb_delete(string $t, array $f): void {
 }
 
 // ─── Приватное хранилище PDF-резюме ───────────────────────────────────────
-function jt_resume_storage_upload(string $path, string $bytes): void {
+// $contentType по умолчанию — application/pdf, как было: старые вызовы
+// (резюме) продолжают слать PDF без изменений. Сертификаты используют тот
+// же бакет и ту же функцию, но кладут ещё и JPEG/PNG.
+function jt_resume_storage_upload(string $path, string $bytes, string $contentType = 'application/pdf'): void {
     $ch = curl_init(SB_URL . '/storage/v1/object/resume-files/' . $path);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -823,7 +857,7 @@ function jt_resume_storage_upload(string $path, string $bytes): void {
         CURLOPT_HTTPHEADER => [
             'apikey: ' . SB_KEY,
             'Authorization: Bearer ' . SB_KEY,
-            'Content-Type: application/pdf',
+            'Content-Type: ' . $contentType,
             'x-upsert: false',
         ],
     ]);
@@ -873,6 +907,70 @@ function jt_resume_signed_url(string $path): string {
         throw new RuntimeException('Не удалось открыть PDF');
     }
     return SB_URL . '/storage/v1' . $dec['signedURL'];
+}
+
+// Имена объектов в папке закрытого бакета (без самой папки в имени).
+function jt_resume_storage_list(string $prefix): array {
+    $names = [];
+    for ($offset = 0; ; $offset += 1000) {
+        $ch = curl_init(SB_URL . '/storage/v1/object/list/resume-files');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['prefix' => $prefix, 'limit' => 1000, 'offset' => $offset]),
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => [
+                'apikey: ' . SB_KEY,
+                'Authorization: Bearer ' . SB_KEY,
+                'Content-Type: application/json',
+            ],
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $rows = json_decode($resp ?: 'null', true);
+        if ($code < 200 || $code >= 300 || !is_array($rows)) {
+            throw new RuntimeException('хранилище не отдало список ' . $prefix . ': ' . $code);
+        }
+        foreach ($rows as $r) if (!empty($r['name'])) $names[] = (string)$r['name'];
+        if (count($rows) < 1000) break;
+    }
+    return $names;
+}
+
+// Всё, что лежит в Storage на человека: PDF-резюме (по jm_resume_files) и
+// файлы сертификатов (только по префиксу — в таблицах их нет). Зовётся перед
+// jm_delete_account: каскад БД стирает строки, но не объекты в бакете.
+function jt_purge_user_storage(string $uid): void {
+    if ($uid === '') return;
+    try {
+        $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
+        foreach ($resumeRows as $resumeRow) {
+            jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
+        }
+    } catch (Throwable $e) {
+        // Совместимость с сервером до миграции 100: отсутствие таблицы
+        // не должно ломать удаление аккаунта.
+    }
+    $prefix = 'certificate/' . $uid;
+    try {
+        foreach (jt_resume_storage_list($prefix) as $name) {
+            $path = $prefix . '/' . $name;
+            if (jt_certificate_path_owned($path, $uid)) jt_resume_storage_delete($path);
+        }
+    } catch (Throwable $e) {
+        error_log('[jt_purge_user_storage] ' . $e->getMessage());
+    }
+}
+
+// Путь сертификата обязан лежать в папке самого соискателя и никуда за её
+// пределы: без этой проверки чужой путь в аргументе открывал бы чужой файл
+// (path traversal через "..", чужой uid в пути). При пустом $authUid regex
+// всё равно не совпадёт ни с одним путём, потому что сегмент id обязателен
+// и непуст.
+function jt_certificate_path_owned(string $path, string $uid): bool {
+    if ($uid === '') return false;
+    return (bool)preg_match('#^certificate/' . preg_quote($uid, '#') . '/[A-Za-z0-9_-]+\.(pdf|jpg|png)$#', $path);
 }
 
 function jt_resume_sync_user(string $uid, ?array $row): void {
@@ -2039,14 +2137,21 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
 
             $lines = ["📥 <b>Новая заявка на «{$vTitle}»</b>", ''];
             if (jt_has_crossborder_consent($workerId)) {
-                $w = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'first_name,last_name,age,metro_station,phone,avg_rating,rating_count');
+                $w = sb_single('jm_users', ['id' => 'eq.' . $workerId],
+                    'first_name,last_name,age,metro_station,phone,avg_rating,rating_count,personal_data');
+                // personal_data нужен только для чтения этих двух флагов — сам
+                // он в карточку не идёт. Отсутствие флага = показывать: для
+                // 500 людей, заведённых до переключателей, ничего не меняется.
+                $personal = is_array($w['personal_data'] ?? null) ? $w['personal_data'] : [];
+                $showAge = ($personal['showAge'] ?? true) !== false;
+                $showPhone = ($personal['showPhone'] ?? true) !== false;
                 $name = trim(($w['first_name'] ?? '') . ' ' . ($w['last_name'] ?? '')) ?: 'Кандидат';
-                $lines[] = '👤 ' . $name . (!empty($w['age']) ? ", {$w['age']} лет" : '');
+                $lines[] = '👤 ' . $name . ($showAge && !empty($w['age']) ? ", {$w['age']} лет" : '');
                 if (!empty($w['metro_station'])) $lines[] = '🚇 м. ' . $w['metro_station'];
                 if (!empty($w['avg_rating']) && (float)$w['avg_rating'] > 0) {
                     $lines[] = '⭐ Рейтинг ' . $w['avg_rating'] . (!empty($w['rating_count']) ? " ({$w['rating_count']} оценок)" : '');
                 }
-                if (!empty($w['phone'])) $lines[] = '📞 +' . ltrim($w['phone'], '+');
+                if ($showPhone && !empty($w['phone'])) $lines[] = '📞 +' . ltrim($w['phone'], '+');
             } else {
                 $lines[] = '👤 Новый кандидат — данные анкеты доступны только в JobToo.';
             }
@@ -3627,11 +3732,18 @@ try {
             break;
         }
 
-        case 'dbGetUserById':
-            $data = sb_single('jm_users', ['id' => 'eq.' . $args[0]], USER_PUBLIC_COLS); break;
+        case 'dbGetUserById': {
+            $row = sb_single('jm_users', ['id' => 'eq.' . $args[0]], USER_PUBLIC_COLS);
+            if ($row) [$row] = jt_mask_hidden_age([$row], (string)$authUid);
+            $data = $row; break;
+        }
 
         case 'dbGetUsers':
-            $data = sb_select('jm_users', [], USER_PUBLIC_COLS, 'created_at.asc'); break;
+            $data = jt_mask_hidden_age(
+                sb_select('jm_users', [], USER_PUBLIC_COLS, 'created_at.asc'),
+                (string)$authUid
+            );
+            break;
 
         // Только число для приветственного экрана. Раньше он считал сам,
         // напрямую из базы публичным ключом, — и после закрытия базы получал
@@ -3952,17 +4064,9 @@ try {
             $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
             if (!$ok) { $data = ['error' => 'Неверный пароль']; break; }
 
-            // PDF лежат не в таблице, а в Storage: каскад БД удалит метаданные,
-            // но сами объекты без этой уборки остались бы навсегда.
-            try {
-                $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
-                foreach ($resumeRows as $resumeRow) {
-                    jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
-                }
-            } catch (Throwable $e) {
-                // Совместимость с сервером до миграции 100: отсутствие таблицы
-                // не должно ломать удаление аккаунта.
-            }
+            // Резюме и сертификаты лежат не в таблице, а в Storage: каскад БД
+            // удалит метаданные, но сами объекты без этой уборки остались бы навсегда.
+            jt_purge_user_storage($uid);
 
             $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
             break;
@@ -4306,6 +4410,8 @@ try {
         // Осталось для дашборда: там удаляет администратор, и пароля
         // человека у него нет. Проверка прав — на входе в дашборд.
         case 'dbDeleteUser':
+            // Файлы в Storage — той же уборкой, что и при удалении самим человеком.
+            jt_purge_user_storage((string)$args[0]);
             $data = sb_rpc('jm_delete_account', ['uid' => (string)$args[0]]); break;
 
         // Проверка «этот номер уже занят» нужна форме регистрации, но ею же
@@ -6248,6 +6354,61 @@ try {
             ], 'storage_path') : null;
             if (!$row) { $data = ['error' => 'Резюме не найдено']; break; }
             $data = ['url' => jt_resume_signed_url((string)$row['storage_path'])];
+            break;
+        }
+
+        // ── Сертификаты соискателя ─────────────────────────────────────────────
+        // Решение владельца (28.09): открывает ТОЛЬКО сам соискатель. Тот же
+        // закрытый бакет resume-files, что и у резюме, — своя папка
+        // certificate/<uid>/. Путь строит сервер из $authUid, а не клиент:
+        // в аргументах пути нет, есть только имя файла.
+        case 'dbSaveCertificateFile': {
+            $fileName = trim((string)($args[0] ?? ''));
+            $b64 = (string)($args[1] ?? '');
+            if ($fileName === '' || mb_strlen($fileName) > 180) {
+                $data = ['error' => 'Некорректное имя файла']; break;
+            }
+            $bytes = base64_decode($b64, true);
+            if ($bytes === false || $bytes === '') {
+                $data = ['error' => 'Пустой файл']; break;
+            }
+            if (strlen($bytes) > 10 * 1024 * 1024) {
+                $data = ['error' => 'Файл больше 10 МБ']; break;
+            }
+            // Тип определяет сервер по сигнатуре байтов, а не по заявленному
+            // расширению или Content-Type — их несложно подделать.
+            if (substr($bytes, 0, 4) === '%PDF') {
+                $ext = 'pdf'; $contentType = 'application/pdf';
+            } elseif (substr($bytes, 0, 3) === "\xFF\xD8\xFF") {
+                $ext = 'jpg'; $contentType = 'image/jpeg';
+            } elseif (substr($bytes, 0, 8) === "\x89PNG\x0D\x0A\x1A\x0A") {
+                $ext = 'png'; $contentType = 'image/png';
+            } else {
+                $data = ['error' => 'Можно загрузить только PDF, JPEG или PNG']; break;
+            }
+
+            $path = 'certificate/' . (string)$authUid . '/' . uid() . '.' . $ext;
+            jt_resume_storage_upload($path, $bytes, $contentType);
+            $data = ['path' => $path, 'fileName' => $fileName];
+            break;
+        }
+
+        case 'dbSignCertificateFile': {
+            $path = trim((string)($args[0] ?? ''));
+            if (!jt_certificate_path_owned($path, (string)$authUid)) {
+                $data = ['error' => 'Файл не найден']; break;
+            }
+            $data = ['url' => jt_resume_signed_url($path)];
+            break;
+        }
+
+        case 'dbDeleteCertificateFile': {
+            $path = trim((string)($args[0] ?? ''));
+            if (!jt_certificate_path_owned($path, (string)$authUid)) {
+                $data = ['error' => 'Файл не найден']; break;
+            }
+            jt_resume_storage_delete($path);
+            $data = ['ok' => true];
             break;
         }
 

@@ -51,6 +51,10 @@ export interface ResumeCertification {
   credentialUrl?: string;
   /** Прикреплённый файл сертификата (URL после загрузки) — `resume/07-certificate.html`. */
   fileUrl?: string;
+  /** Путь файла в закрытом бакете `resume-files` (`certificate/<uid>/<id>.<ext>`) — без подписи сервером бесполезен. */
+  filePath?: string;
+  /** Имя файла, как его назвал человек при загрузке. */
+  fileName?: string;
   /** «Бессрочно»: `expiration` не задан осознанно, а не просто не заполнен. */
   noExpiration?: boolean;
 }
