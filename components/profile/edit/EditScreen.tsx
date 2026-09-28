@@ -120,8 +120,13 @@ export function EditScreen({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: EditColors.bg },
+  // Без фиксированной высоты: сверху добавляется отступ под вырез телефона
+  // (insets.top, ~59 на iPhone), и при height: 56 кнопка «назад» и заголовок
+  // вываливались ниже шапки — прокрутка рисовала поля поверх них. Свой фон и
+  // zIndex — контент уходит под шапку, а не налезает на неё.
   header: {
-    paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 14, height: 44 + 12,
+    paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 14,
+    minHeight: 44, backgroundColor: EditColors.bg, zIndex: 1,
   },
   backBtn: {
     width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: EditColors.ink,
