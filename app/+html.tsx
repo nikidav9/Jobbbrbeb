@@ -99,8 +99,11 @@ export default function Root({ children }: PropsWithChildren) {
             display: flex; align-items: center; justify-content: center;
             animation: jt-plate 600ms cubic-bezier(.2,.8,.2,1) both, jt-sticker 400ms ease-out 900ms both;
           }
-          #splash-logo { width: 96px; height: auto; display: block;
-            animation: jt-logo 400ms cubic-bezier(.3,1.4,.5,1) 600ms both; }
+          /* Логотип впрыгивает, только когда картинка загружена: на медленной
+             сети она приходила позже анимации, и плашка стояла пустой, а потом
+             логотип появлялся рывком. Задержку ставит скрипт ниже. */
+          #splash-logo { width: 96px; height: auto; display: block; opacity: 0; }
+          #splash-logo.in { animation: jt-logo 400ms cubic-bezier(.3,1.4,.5,1) both; }
           #splash-below { position: absolute; left: 0; right: 0; top: calc(45% + 106px);
             display: flex; flex-direction: column; align-items: center; padding: 0 16px; }
           #splash-tag { margin: 0; font: 700 18px/1.2 'JTSplashUnbounded', -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -137,7 +140,8 @@ export default function Root({ children }: PropsWithChildren) {
             transition: transform 500ms cubic-bezier(.2,.8,.2,1), opacity 500ms ease, box-shadow 300ms ease;
           }
           @media (prefers-reduced-motion: reduce) {
-            #splash-plate, #splash-logo, #splash-tag, #splash-bar, #splash-cap { animation: none; }
+            #splash-plate, #splash-logo.in, #splash-tag, #splash-bar, #splash-cap { animation: none; }
+            #splash-logo.in { opacity: 1; }
             #splash.leave #splash-plate { transform: none; transition: opacity 200ms ease; }
             #splash { transition: background-color 200ms ease; }
           }
@@ -187,6 +191,17 @@ export default function Root({ children }: PropsWithChildren) {
             var MIN_MS = 1300;
             var shownAt = (window.performance && performance.now) ? performance.now() : 0;
             function now() { return (window.performance && performance.now) ? performance.now() : shownAt + MIN_MS; }
+            // По макету логотип впрыгивает на 600-й мс; пришёл позже — сразу.
+            var logo = document.getElementById('splash-logo');
+            function logoIn() {
+              if (!logo || logo.classList.contains('in')) return;
+              logo.style.animationDelay = Math.max(0, 600 - (now() - shownAt)) + 'ms';
+              logo.classList.add('in');
+            }
+            if (logo) {
+              if (logo.complete && logo.naturalWidth) logoIn();
+              else logo.addEventListener('load', logoIn);
+            }
             // Пока bundle скачивается, плавно идём до 30 %. Дальше каждая
             // граница открывается только реальным этапом приложения:
             // HTML/download=1..30, bundle=35, boot=45, session=55,
