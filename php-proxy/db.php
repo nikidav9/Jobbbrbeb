@@ -752,7 +752,7 @@ define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,email,email_verified_at,resu
 function jt_mask_hidden_age(array $rows, ?string $viewerUid = null): array {
     if (empty($rows)) return $rows;
     try {
-        $hidden = sb_select('jm_users', ['personal_data->>showAge' => 'eq.false'], 'id');
+        $hidden = sb_select_all('jm_users', ['personal_data->>showAge' => 'eq.false'], 'id');
         $hideSet = array_flip(array_column($hidden, 'id'));
         $hideAll = false;
     } catch (Throwable $e) {
@@ -907,6 +907,60 @@ function jt_resume_signed_url(string $path): string {
         throw new RuntimeException('Не удалось открыть PDF');
     }
     return SB_URL . '/storage/v1' . $dec['signedURL'];
+}
+
+// Имена объектов в папке закрытого бакета (без самой папки в имени).
+function jt_resume_storage_list(string $prefix): array {
+    $names = [];
+    for ($offset = 0; ; $offset += 1000) {
+        $ch = curl_init(SB_URL . '/storage/v1/object/list/resume-files');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['prefix' => $prefix, 'limit' => 1000, 'offset' => $offset]),
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => [
+                'apikey: ' . SB_KEY,
+                'Authorization: Bearer ' . SB_KEY,
+                'Content-Type: application/json',
+            ],
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $rows = json_decode($resp ?: 'null', true);
+        if ($code < 200 || $code >= 300 || !is_array($rows)) {
+            throw new RuntimeException('хранилище не отдало список ' . $prefix . ': ' . $code);
+        }
+        foreach ($rows as $r) if (!empty($r['name'])) $names[] = (string)$r['name'];
+        if (count($rows) < 1000) break;
+    }
+    return $names;
+}
+
+// Всё, что лежит в Storage на человека: PDF-резюме (по jm_resume_files) и
+// файлы сертификатов (только по префиксу — в таблицах их нет). Зовётся перед
+// jm_delete_account: каскад БД стирает строки, но не объекты в бакете.
+function jt_purge_user_storage(string $uid): void {
+    if ($uid === '') return;
+    try {
+        $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
+        foreach ($resumeRows as $resumeRow) {
+            jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
+        }
+    } catch (Throwable $e) {
+        // Совместимость с сервером до миграции 100: отсутствие таблицы
+        // не должно ломать удаление аккаунта.
+    }
+    $prefix = 'certificate/' . $uid;
+    try {
+        foreach (jt_resume_storage_list($prefix) as $name) {
+            $path = $prefix . '/' . $name;
+            if (jt_certificate_path_owned($path, $uid)) jt_resume_storage_delete($path);
+        }
+    } catch (Throwable $e) {
+        error_log('[jt_purge_user_storage] ' . $e->getMessage());
+    }
 }
 
 // Путь сертификата обязан лежать в папке самого соискателя и никуда за её
@@ -4010,17 +4064,9 @@ try {
             $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
             if (!$ok) { $data = ['error' => 'Неверный пароль']; break; }
 
-            // PDF лежат не в таблице, а в Storage: каскад БД удалит метаданные,
-            // но сами объекты без этой уборки остались бы навсегда.
-            try {
-                $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
-                foreach ($resumeRows as $resumeRow) {
-                    jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
-                }
-            } catch (Throwable $e) {
-                // Совместимость с сервером до миграции 100: отсутствие таблицы
-                // не должно ломать удаление аккаунта.
-            }
+            // Резюме и сертификаты лежат не в таблице, а в Storage: каскад БД
+            // удалит метаданные, но сами объекты без этой уборки остались бы навсегда.
+            jt_purge_user_storage($uid);
 
             $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
             break;
@@ -4364,6 +4410,8 @@ try {
         // Осталось для дашборда: там удаляет администратор, и пароля
         // человека у него нет. Проверка прав — на входе в дашборд.
         case 'dbDeleteUser':
+            // Файлы в Storage — той же уборкой, что и при удалении самим человеком.
+            jt_purge_user_storage((string)$args[0]);
             $data = sb_rpc('jm_delete_account', ['uid' => (string)$args[0]]); break;
 
         // Проверка «этот номер уже занят» нужна форме регистрации, но ею же

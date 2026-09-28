@@ -125,6 +125,22 @@ check('возраст в карточке зависит от showAge',
 check('телефон в карточке зависит от showPhone',
     str_contains($card, "if (\$showPhone && !empty(\$w['phone']))"));
 
+// ── Скрытые возрасты берутся все, не первая тысяча ─────────────────────────
+check('скрывшие возраст берутся постранично (sb_select_all), а не первые 1000',
+    str_contains($ageHelper, "sb_select_all('jm_users', ['personal_data->>showAge' => 'eq.false'], 'id')"));
+
+// ── Удаление аккаунта стирает файлы сертификатов ────────────────────────────
+$purge = fn_body($db, 'jt_purge_user_storage');
+check('уборка хранилища есть', $purge !== '');
+check('уборка стирает папку certificate/<uid>',
+    str_contains($purge, "'certificate/' . \$uid") && str_contains($purge, 'jt_resume_storage_list('));
+check('уборка удаляет только пути владельца',
+    str_contains($purge, 'jt_certificate_path_owned($path, $uid)'));
+check('удаление аккаунта самим человеком зовёт уборку',
+    str_contains(case_body($db, 'dbDeleteAccount'), 'jt_purge_user_storage($uid)'));
+check('удаление аккаунта администратором зовёт уборку',
+    str_contains(case_body($db, 'dbDeleteUser'), 'jt_purge_user_storage('));
+
 if ($failures) {
     echo "profile privacy: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
