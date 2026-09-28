@@ -153,6 +153,7 @@ export default function SupportScreen() {
           activeOpacity={0.72}
           accessibilityRole="button"
           accessibilityLabel="Назад"
+          testID="back-button"
         >
           <BackIcon size={20} />
         </TouchableOpacity>

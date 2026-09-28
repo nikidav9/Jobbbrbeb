@@ -142,6 +142,7 @@ export default function InviteScreen() {
           activeOpacity={0.75}
           accessibilityRole="button"
           accessibilityLabel="Назад"
+          testID="back-button"
         >
           <BackIcon size={20} />
         </TouchableOpacity>
