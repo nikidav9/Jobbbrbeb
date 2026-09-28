@@ -47,6 +47,8 @@ import { PERSONAL_FIELD_LABELS, PERSONAL_MULTILINE, PERSONAL_FIELD_CHOICES, PERS
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { ProfileTabs } from '@/components/profile/ProfileTabs';
 import { ResumeTabContent } from '@/components/profile/ResumeTabContent';
+import { EmailSheet } from '@/components/profile/edit/sheets/EmailSheet';
+import { PhoneSheet } from '@/components/profile/edit/sheets/PhoneSheet';
 import { PersonalTabContent } from '@/components/profile/PersonalTabContent';
 import { FilesTabContent } from '@/components/profile/FilesTabContent';
 import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
@@ -280,6 +282,8 @@ export default function ProfileScreen() {
   const { tab } = useLocalSearchParams<{ tab?: string }>();
   const tabBarHeight = useBottomTabBarHeight();
   const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
+  // Шторки «Email для связи» и «Телефон» вкладки «Личные» (docs/design/profile-edit, 12–13).
+  const [contactSheet, setContactSheet] = useState<'email' | 'phone' | null>(null);
   const [editSection, setEditSection] = useState<EditSection>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
   useEffect(() => { if (tab === 'files') setProfileTab('files'); }, [tab]);
@@ -379,21 +383,6 @@ export default function ProfileScreen() {
   const avatarColor = nameColorFromString(currentUser.id);
   const line = METRO_LINES.find(l => l.id === currentUser.metroLineId);
 
-  const personalFallback = (field: PersonalFieldKey): string => {
-    const resume = currentUser.resume;
-    if (field === 'contactEmail') return resume?.email ?? '';
-    if (field === 'citizenship') return resume?.citizenship ?? '';
-    if (field === 'workAuthorization') return resume?.workPermit ?? '';
-    if (field === 'location') return resume?.city ?? '';
-    if (field === 'workAvailability') {
-      return [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
-    }
-    if (field === 'relocation') {
-      return resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0] ?? '';
-    }
-    return '';
-  };
-
   const toggleSection = (key: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.create(
       200, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity,
@@ -416,15 +405,6 @@ export default function ProfileScreen() {
     setEditAge(currentUser.age ? String(currentUser.age) : '');
   };
 
-  const openPersonalField = (field: PersonalFieldKey) => {
-    setEditSection(null);
-    setPersonalField(field);
-    setPersonalEditValue(
-      (currentUser.personalDetails?.[field] as string | undefined)
-      ?? personalFallback(field)
-      ?? '',
-    );
-  };
 
   const saveEdit = async () => {
     if (savingEdit) return;
@@ -762,9 +742,8 @@ export default function ProfileScreen() {
             {profileTab === 'personal' ? (
               <PersonalTabContent
                 user={currentUser}
-                onEditCore={() => openEdit('personal')}
-                onEditField={openPersonalField}
-                onEditMetro={() => openEdit('metro')}
+                onEditEmail={() => setContactSheet('email')}
+                onEditPhone={() => setContactSheet('phone')}
               />
             ) : null}
 
@@ -1082,6 +1061,9 @@ export default function ProfileScreen() {
           onClose={() => setShowRatings(false)}
         />
       ) : null}
+
+      <EmailSheet visible={contactSheet === 'email'} onClose={() => setContactSheet(null)} />
+      <PhoneSheet visible={contactSheet === 'phone'} onClose={() => setContactSheet(null)} />
 
       {/* Edit modal */}
       <Modal statusBarTranslucent navigationBarTranslucent visible={!!editSection || !!personalField} animationType="slide" transparent>

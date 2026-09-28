@@ -29,7 +29,6 @@ export const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   // Новые структурные поля — экраны docs/design/profile-edit/personal/*.html
   // (lib/profileEdit.ts). Подписи здесь не показываются напрямую (экраны
   // используют свои заголовки), но нужны для полноты Record<PersonalFieldKey>.
-  birthDate: 'Дата рождения',
   showAge: 'Показывать возраст',
   showPhone: 'Показывать номер телефона',
   workAuthorizationCountries: 'Где можете работать без визы',

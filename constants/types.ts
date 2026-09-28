@@ -103,8 +103,6 @@ export interface PersonalDetails {
   relocation?: string;
   driversLicense?: string;
   employmentRestrictions?: string;
-  /** Дата рождения ДД.ММ.ГГГГ — по ней считается `User.age`, экран `personal/11-basic.html`. */
-  birthDate?: string;
   /** Показывать возраст в профиле работодателю. */
   showAge?: boolean;
   /** Показывать номер телефона работодателям — экран `personal/13-phone.html`. */

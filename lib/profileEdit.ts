@@ -91,6 +91,8 @@ function syncResumeLegacy(resume: ResumeProfile): ResumeProfile {
 export function patchResume(user: User, patch: Partial<ResumeProfile>): User {
   const base = user.resume ?? emptyResume();
   const merged = syncResumeLegacy({ ...base, ...patch });
+  // Зарплату стёрли на экране — старая строка salary не должна пережить это.
+  if ('salaryAmount' in patch && !(Number(patch.salaryAmount) > 0)) merged.salary = undefined;
   return { ...user, resume: merged };
 }
 
@@ -131,6 +133,11 @@ export function patchPersonal(user: User, patch: Partial<PersonalDetails>): User
     const first: MetroStationChoice | undefined = patch.metroStations[0];
     next.metroStation = first?.station;
     next.metroLineId = first?.lineId;
+  }
+  // Город один на профиль: экран «Город и метро» пишет location, а блок
+  // «Желаемая должность» и работодатель читают resume.city.
+  if ('location' in patch && user.resume) {
+    next.resume = { ...user.resume, city: patch.location || undefined };
   }
   return next;
 }

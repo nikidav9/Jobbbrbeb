@@ -1,13 +1,16 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
 import { EditableRow } from './EditableRow';
 import { AddRow } from './AddRow';
 import { SkillChip } from './SkillChip';
 import { EditIcon, MailIcon, PhoneIcon, LockIcon, LinkIcon, PinIcon, CarIcon, ShieldIcon } from './icons';
 import { ProfileColors, ProfileFonts, HAIRLINE, ProfileRadius } from '@/constants/profileTheme';
-import type { PersonalDetails, User } from '@/constants/types';
+import type { User } from '@/constants/types';
+import { ADDRESS_FORMS, LINK_TYPES } from '@/lib/profileEdit';
 
-type PersonalFieldKey = keyof PersonalDetails;
+/** Поле «Основного», на котором экран basic откроется с фокусом. */
+type BasicFocus = 'firstName' | 'middleName' | 'lastName' | 'title' | 'age';
 
 /** «24 года» / «21 год» / «25 лет» — простое согласование числительного. */
 function ageLabel(age: number): string {
@@ -47,21 +50,31 @@ function AboutRow({
         <Text style={s.aboutTitle}>{title}</Text>
         <Text style={s.aboutValue}>{value}</Text>
       </View>
-      <TouchableOpacity onPress={onEdit} style={s.editBtn} activeOpacity={0.72} accessibilityLabel={`Изменить: ${title}`}>
+      <TouchableOpacity onPress={onEdit} style={s.editBtn} activeOpacity={0.72} accessibilityRole="button" accessibilityLabel={`Изменить: ${title}`}>
         <EditIcon size={15} color={ProfileColors.ink} />
       </TouchableOpacity>
     </View>
   );
 }
 
+/**
+ * Кнопки вкладки ведут на экраны редактирования — таблица «Вкладка «Личные»»
+ * в docs/design/profile-edit/README.md. Email и телефон — нижние шторки,
+ * их держит экран профиля (onEditEmail/onEditPhone).
+ */
 export function PersonalTabContent({
-  user, onEditCore, onEditField, onEditMetro,
+  user, onEditEmail, onEditPhone,
 }: {
   user: User;
-  onEditCore: () => void;
-  onEditField: (field: PersonalFieldKey) => void;
-  onEditMetro: () => void;
+  onEditEmail: () => void;
+  onEditPhone: () => void;
 }) {
+  const router = useRouter();
+  const go = (pathname: Href) => router.push(pathname);
+  const basic = (focus: BasicFocus) => router.push({ pathname: '/profile-edit/basic' as never, params: { focus } });
+  const editLink = (index?: number) => (index == null
+    ? router.push('/profile-edit/links' as Href)
+    : router.push({ pathname: '/profile-edit/links' as never, params: { index: String(index) } }));
   const p = user.personalDetails ?? {};
   const resume = user.resume;
 
@@ -70,29 +83,42 @@ export function PersonalTabContent({
   const workAuthorization = p.workAuthorization || resume?.workPermit;
   const location = p.location || resume?.city;
   const relocationFromResume = resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0];
-  const relocation = p.relocation || relocationFromResume;
+  const relocationBase = p.relocation || relocationFromResume;
+  const relocation = relocationBase && p.relocationCities?.length
+    ? `${relocationBase}: ${p.relocationCities.join(', ')}` : relocationBase;
+  const metro = p.metroStations?.length
+    ? p.metroStations.map(m => m.station).join(', ')
+    : user.metroStation;
+  const employment = p.employmentTypes?.length ? p.employmentTypes : (resume?.employmentType ? [resume.employmentType] : []);
+  const formats = p.workFormats?.length ? p.workFormats : (resume?.workFormat ? [resume.workFormat] : []);
+  const conditions = [...employment, ...formats, ...(p.schedule ?? [])];
+  const driving = p.drivingCategories?.length
+    ? `Категории ${p.drivingCategories.join(', ')}${p.hasOwnCar ? ' · есть автомобиль' : ''}`
+    : p.driversLicense;
+  const restrictions = p.hasEmploymentRestrictions === false ? 'Нет' : p.employmentRestrictions;
+  const linkLabel = (type: string) => LINK_TYPES.find(t => t.value === type)?.label ?? 'Ссылка';
 
   return (
     <View style={s.content}>
       <View style={s.section}>
         <Eyebrow>ОСНОВНОЕ</Eyebrow>
         <Card>
-          <EditableRow label="Имя" value={user.firstName} onEdit={onEditCore} />
-          <EditableRow label="Отчество" value={p.middleName} onEdit={() => onEditField('middleName')} />
-          <EditableRow label="Фамилия" value={user.lastName} onEdit={onEditCore} />
+          <EditableRow label="Имя" value={user.firstName} onEdit={() => basic('firstName')} />
+          <EditableRow label="Отчество" value={p.middleName} onEdit={() => basic('middleName')} />
+          <EditableRow label="Фамилия" value={user.lastName} onEdit={() => basic('lastName')} />
           <EditableRow
-            label="Как к вам обращаться" value={p.preferredName} ctaLabel="Указать"
-            onEdit={() => onEditField('preferredName')}
+            label="Как к вам обращаться" value={p.preferredName || (p.title && p.title !== 'Свой вариант' && ADDRESS_FORMS.includes(p.title) ? p.title : undefined)} ctaLabel="Указать"
+            onEdit={() => basic('title')}
           />
-          <EditableRow label="Возраст" value={user.age ? ageLabel(user.age) : undefined} onEdit={onEditCore} last />
+          <EditableRow label="Возраст" value={user.age ? ageLabel(user.age) : undefined} onEdit={() => basic('age')} last />
         </Card>
       </View>
 
       <View style={s.section}>
         <Eyebrow>КОНТАКТЫ</Eyebrow>
         <Card>
-          <EditableRow icon={<MailIcon size={17} color={ProfileColors.ink} />} label="Email для связи" value={contactEmail} onEdit={() => onEditField('contactEmail')} />
-          <EditableRow icon={<PhoneIcon size={17} color={ProfileColors.ink} />} label="Телефон" value={user.phone || undefined} onEdit={onEditCore} />
+          <EditableRow icon={<MailIcon size={17} color={ProfileColors.ink} />} label="Email для связи" value={contactEmail} onEdit={onEditEmail} />
+          <EditableRow icon={<PhoneIcon size={17} color={ProfileColors.ink} />} label="Телефон" value={user.phone || undefined} onEdit={onEditPhone} />
           <EditableRow icon={<LockIcon size={17} color={ProfileColors.ink} />} label="Почта для входа" value={user.email} last />
         </Card>
       </View>
@@ -104,32 +130,31 @@ export function PersonalTabContent({
       <View style={s.section}>
         <Eyebrow>РАЗРЕШЕНИЕ НА РАБОТУ</Eyebrow>
         <Card>
-          <EditableRow label="Гражданство" value={citizenship} onEdit={() => onEditField('citizenship')} />
-          <EditableRow label="Статус разрешения на работу" value={workAuthorization} onEdit={() => onEditField('workAuthorization')} last />
+          <EditableRow label="Гражданство" value={citizenship} onEdit={() => go('/profile-edit/work-permit')} />
+          <EditableRow label="Статус разрешения на работу" value={workAuthorization} onEdit={() => go('/profile-edit/work-permit')} last />
         </Card>
       </View>
 
       <View style={s.section}>
         <Eyebrow>МЕСТОПОЛОЖЕНИЕ</Eyebrow>
         <Card>
-          <EditableRow label="Город" value={location} onEdit={() => onEditField('location')} />
-          <EditableRow label="Метро" value={user.metroStation} onEdit={onEditMetro} last />
+          <EditableRow label="Город" value={location} onEdit={() => go('/profile-edit/city-metro')} />
+          <EditableRow label="Метро" value={metro} onEdit={() => go('/profile-edit/city-metro')} last />
         </Card>
       </View>
 
       <View style={s.section}>
         <Eyebrow>УСЛОВИЯ РАБОТЫ</Eyebrow>
-        {(resume?.employmentType || resume?.workFormat) ? (
+        {conditions.length ? (
           <View style={s.conditionsCard}>
             <View style={s.conditionsHead}>
               <Text style={s.conditionsLabel}>Занятость и формат</Text>
-              <TouchableOpacity onPress={() => onEditField('workAvailability')} style={s.editBtn} activeOpacity={0.72} accessibilityLabel="Изменить условия">
+              <TouchableOpacity onPress={() => go('/profile-edit/work-conditions')} style={s.editBtn} activeOpacity={0.72} accessibilityRole="button" accessibilityLabel="Изменить условия">
                 <EditIcon size={15} color={ProfileColors.ink} />
               </TouchableOpacity>
             </View>
             <View style={s.chips}>
-              {resume?.employmentType ? <SkillChip label={resume.employmentType} tone="accent" /> : null}
-              {resume?.workFormat ? <SkillChip label={resume.workFormat} tone="accent" /> : null}
+              {conditions.map(c => <SkillChip key={c} label={c} tone="accent" />)}
             </View>
           </View>
         ) : (
@@ -139,7 +164,7 @@ export function PersonalTabContent({
             iconSize={40}
             title="Добавить условия работы"
             subtitle="Занятость и формат, в котором вам удобно работать"
-            onPress={() => onEditField('workAvailability')}
+            onPress={() => go('/profile-edit/work-conditions')}
             last
           />
         )}
@@ -148,25 +173,42 @@ export function PersonalTabContent({
       <View style={s.section}>
         <Eyebrow>ЕЩЁ О СЕБЕ</Eyebrow>
         <Card>
-          <AboutRow
-            icon={<LinkIcon size={18} color={ProfileColors.ink} />}
-            title="Ссылки" subtitle="Портфолио, профиль или другой профессиональный ресурс"
-            value={p.links} onEdit={() => onEditField('links')}
-          />
+          {p.linksList?.length ? (
+            <>
+              {p.linksList.map((link, i) => (
+                <AboutRow
+                  key={`${link.url}-${i}`}
+                  icon={<LinkIcon size={18} color={ProfileColors.ink} />}
+                  title={link.label || linkLabel(link.type)} subtitle=""
+                  value={link.url} onEdit={() => editLink(i)}
+                />
+              ))}
+              <AddRow
+                icon={<LinkIcon size={18} color={ProfileColors.ink} />} iconBg={ProfileColors.peach} iconSize={40}
+                title="Добавить ссылку" subtitle="GitHub, LinkedIn, портфолио" onPress={() => editLink()}
+              />
+            </>
+          ) : (
+            <AboutRow
+              icon={<LinkIcon size={18} color={ProfileColors.ink} />}
+              title="Ссылки" subtitle="Портфолио, профиль или другой профессиональный ресурс"
+              value={p.links} onEdit={() => editLink(p.links ? 0 : undefined)}
+            />
+          )}
           <AboutRow
             icon={<PinIcon size={18} color={ProfileColors.ink} />}
             title="Готовность к переезду" subtitle="Готовы ли вы переехать ради работы"
-            value={relocation} onEdit={() => onEditField('relocation')}
+            value={relocation} onEdit={() => go('/profile-edit/relocation')}
           />
           <AboutRow
             icon={<CarIcon size={18} color={ProfileColors.ink} />}
             title="Водительские права" subtitle="Категории и наличие личного автомобиля"
-            value={p.driversLicense} onEdit={() => onEditField('driversLicense')}
+            value={driving} onEdit={() => go('/profile-edit/driving-license')}
           />
           <AboutRow
             icon={<ShieldIcon size={18} color={ProfileColors.ink} />}
             title="Ограничения по трудоустройству" subtitle="Обязательства или договорённости, которые могут повлиять на новую работу"
-            value={p.employmentRestrictions} onEdit={() => onEditField('employmentRestrictions')}
+            value={restrictions} onEdit={() => go('/profile-edit/restrictions')}
             last
           />
         </Card>

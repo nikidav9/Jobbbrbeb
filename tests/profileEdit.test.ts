@@ -185,3 +185,18 @@ test('removeAt с индексом вне диапазона список не �
   assert.deepEqual(removeAt(list, 5), list);
   assert.deepEqual(removeAt(list, -1), list);
 });
+
+test('patchResume: стёртая зарплата убирает и старую строку salary', () => {
+  const withSalary = patchResume(makeUser(), { salaryAmount: 150000, salaryNet: true });
+  assert.equal(withSalary.resume?.salary, '150 000 ₽ на руки');
+  const cleared = patchResume(withSalary, { salaryAmount: undefined });
+  assert.equal(cleared.resume?.salary, undefined);
+});
+
+test('patchPersonal: город из «Город и метро» попадает и в resume.city', () => {
+  const withResume = patchResume(makeUser(), { desiredPosition: 'Аналитик' });
+  const moved = patchPersonal(withResume, { location: 'Казань' });
+  assert.equal(moved.personalDetails?.location, 'Казань');
+  assert.equal(moved.resume?.city, 'Казань');
+  assert.equal(patchPersonal(makeUser(), { location: 'Казань' }).resume, undefined);
+});
