@@ -140,8 +140,8 @@
   фильтры» (`empty-reset-filters`). Охрана — `tests/feed_empty_filters.test.mjs`,
   `tests/ext_feed_test.php`, `tests/feed_filters.test.ts`.
 - `hooks/useSwipeDeck.ts` — физика свайпа, общая для обеих колод.
-- `hooks/useWarmSystemBar.ts` — кремовая зона статус-бара в iOS PWA (meta theme-color + фон html/body, пока экран в фокусе). Стоит на Вакансиях, Откликах, Профиле соискателя, `profile-edit/_layout`, `jupiter-application`; новый тёплый экран — добавь туда же.
   Жест на gesture-handler, значения на Reanimated, всё на потоке интерфейса.
+- `hooks/useWarmSystemBar.ts` — кремовая зона статус-бара в iOS PWA (meta theme-color + фон html/body, пока экран в фокусе). Стоит на Вакансиях, Откликах, Профиле соискателя, `profile-edit/_layout`, `jupiter-application`; новый тёплый экран — добавь туда же.
 - **Карточка листается вниз.** Длинная вакансия не обрезается: карточка растёт
   по содержимому (`cardAnimated` — `flexGrow`, не `flex`), а прокручивает её тот
   же список, что держит «потяните вниз».
