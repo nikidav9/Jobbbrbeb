@@ -159,7 +159,16 @@ check('«только с зарплатой»: с суммой проходит'
 check('hide_seen уходит в jm_ext_feed_pool', str_contains($dbSrc, "'p_hide_seen' => \$filters['hide_seen'] ?? true,"));
 check('счётчик «Показать N» — без карточек и публичный',
     str_contains($dbSrc, "case 'dbCountExtFeed':") && str_contains($dbSrc, "'dbGetExtFeed', 'dbCountExtFeed',")
-    && str_contains($dbSrc, "\$data = ['total' => count(array_filter(\$pool, fn(\$row) => ext_feed_match(\$row, \$f)))];"));
+    && str_contains($dbSrc, "\$data = ['total' => count(array_filter(\$countPool, fn(\$row) => ext_feed_match(\$row, \$countFor)))];"));
+// «Всего N» не сходился с дашбордом (28.09.2026): счёт шёл по пулу выдачи с
+// потолком 200 на компанию. Теперь — отдельный пул без потолка.
+$mig134 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/134_ext_feed_count_uncapped.sql');
+check('счёт — по пулу без потолка на компанию',
+    str_contains($dbSrc, "'p_per_company' => 5000")
+    && str_contains($mig134, 'least(p_per_company, 5000)')
+    && str_contains($dbSrc, "'total' => \$total,"));
+check('счёт без потолка сохраняет фильтры IT и «рабочих» разделов',
+    str_contains($mig134, "c.section not in ('warehouse', 'delivery', 'transport', 'retail',"));
 $mig130 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/130_feed_hide_seen.sql');
 check('миграция 130: старая перегрузка снята', str_contains($mig130, 'drop function if exists public.jm_ext_feed_pool(text, int, text[], boolean, boolean);'));
 check('миграция 130: выключено — возвращаются только смахнутые влево', str_contains($mig130, 'and (p_hide_seen or s.dir = 1)'));

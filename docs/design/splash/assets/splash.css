@@ -1,0 +1,35 @@
+/* Job Tools — загрузочный экран (splash). Кадры раскадровки + живой превью анимации */
+@import url("fonts/fonts.css");
+
+:root{
+  --accent:#FF6B1A; --ink:#141414; --bg:#F5EFE6; --surface:#FFFFFF;
+  --accent-soft:#FFE2CC; --muted:#E8DED1; --text-3:#6B645C;
+}
+html,body{margin:0}
+body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif;color:var(--ink)}
+*{box-sizing:border-box}
+
+/* Экран 390×844; рамка и тень — только для просмотра в браузере */
+.screen{width:390px;height:844px;position:relative;overflow:hidden;background:var(--bg);border-radius:40px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+
+/* Центр композиции: плашка 140×140, левый верх (125, 310) — её центр в точке (195, 380) */
+.slot{position:absolute;left:125px;top:310px;width:140px;height:140px}
+.dot{position:absolute;left:61px;top:61px;width:18px;height:18px;border-radius:9px;background:var(--accent);border:2px solid var(--ink)}
+.plate{width:140px;height:140px;border-radius:36px;background:var(--surface);border:2px solid var(--ink);display:flex;align-items:center;justify-content:center}
+.plate--shadow{box-shadow:6px 6px 0 var(--ink)}
+.logo{width:96px;height:auto;display:block}
+
+/* Подпись и загрузка — под плашкой, позиция фиксирована, чтобы плашка не «прыгала» */
+.below{position:absolute;left:0;right:0;top:486px;display:flex;flex-direction:column;align-items:center}
+.tagline{margin:0;font-family:'Unbounded',sans-serif;font-weight:700;font-size:18px;letter-spacing:-.01em}
+.progress{margin-top:26px;width:180px;height:14px;border:2px solid var(--ink);border-radius:7px;background:var(--surface);overflow:hidden}
+.progress>span{display:block;height:100%;background:var(--accent);border-right:2px solid var(--ink)}
+.caption{margin:10px 0 0;font-size:13px;font-weight:700;color:var(--text-3)}
+
+/* Скелетон ленты (кадр перехода) */
+.skel{position:absolute;inset:0;padding:56px 20px 0}
+.skel__head{display:flex;align-items:center;gap:10px;height:44px}
+.skel__logo{height:30px;width:auto}
+.sk{background:var(--muted);border-radius:22px}
+.skel__card{margin-top:28px;height:520px;border-radius:26px;background:var(--surface);border:2px solid var(--ink);box-shadow:5px 5px 0 var(--ink);padding:20px;display:flex;flex-direction:column;gap:14px}
+.skel__nav{position:absolute;left:20px;right:20px;bottom:20px;height:64px;border-radius:32px;background:var(--ink)}

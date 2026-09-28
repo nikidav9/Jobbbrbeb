@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Redirect, Stack } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { EditColors } from '@/constants/profileEditTheme';
 
 /**
@@ -13,6 +14,7 @@ import { EditColors } from '@/constants/profileEditTheme';
  */
 export default function ProfileEditLayout() {
   const { loading, currentUser } = useApp();
+  useWarmSystemBar(true, EditColors.bg);
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: EditColors.bg, alignItems: 'center', justifyContent: 'center' }}>

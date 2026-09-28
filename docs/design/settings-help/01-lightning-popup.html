@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JT — Молния — это отклик</title>
+<link rel="stylesheet" href="assets/jt.css">
+</head>
+<body>
+<div class="screen">
+<!-- Лента вакансий под затемнением (упрощённо) -->
+<div class="page" aria-hidden="true">
+  <div style="display:flex;align-items:center;gap:10px;height:44px">
+    <img src="assets/logo.png" alt="" style="height:30px;width:auto">
+    <span style="flex-grow:1;height:44px;border-radius:22px;border:2px solid #141414;background:#FFFFFF"></span>
+    <span style="height:44px;padding:0 14px 0 10px;border-radius:22px;border:2px solid #141414;background:#FFFFFF;display:flex;align-items:center;gap:6px;font-weight:800;font-size:17px"><svg width="20" height="20" viewBox="0 0 24 24" fill="#FF6B1A" stroke="#141414" stroke-width="1.8" stroke-linejoin="round"><path d="M14 2L4 14h7l-2 8l10-12h-7z"/></svg>40</span>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:8px"><span style="width:44px;height:36px;border-radius:18px;background:#141414"></span><span style="width:100px;height:36px;border-radius:18px;background:#FFFFFF"></span><span style="width:140px;height:36px;border-radius:18px;background:#FFFFFF"></span></div>
+  <div class="card card--sticker" style="margin-top:36px;height:520px;padding:20px">
+    <div style="display:flex;gap:12px;align-items:center"><span style="width:44px;height:44px;border-radius:12px;background:#141414;color:#FFF;display:flex;align-items:center;justify-content:center;font-family:'Unbounded',sans-serif;font-weight:700">K</span><span style="font-weight:800;font-size:16px">Kaspersky</span></div>
+    <h2 class="title-u" style="margin-top:16px;font-size:21px">Developer C++ (KESM)</h2>
+  </div>
+</div>
+<div style="position:absolute;left:20px;right:20px;bottom:20px;height:64px;border-radius:32px;background:#141414" aria-hidden="true"></div>
+<div class="overlay"></div>
+
+<div class="modal" role="dialog" aria-label="Молния — это отклик">
+  <span style="width:76px;height:76px;border-radius:38px;background:#FFE2CC;border:2px solid #141414;display:flex;align-items:center;justify-content:center"><svg data-icon="bolt" width="36" height="36" viewBox="0 0 24 24" fill="#FF6B1A" stroke="#141414" stroke-width="1.6" stroke-linejoin="round"><path d="M14 2L4 14h7l-2 8l10-12h-7z"/></svg></span>
+  <h2 class="title-u" style="margin-top:18px;font-size:22px">Молния — это отклик</h2>
+  <p class="txt" style="margin-top:12px">Каждый отклик тратит одну молнию, а пропуск вакансии — бесплатный. Завтра снова будет 40 — запас не копится.</p>
+
+  <div style="margin-top:18px;align-self:stretch;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+    <div style="padding:12px;border-radius:16px;background:#F5EFE6;display:flex;flex-direction:column;align-items:center;gap:2px">
+      <span style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:24px">40</span>
+      <span class="txt-sm" style="font-weight:700">осталось сегодня</span>
+    </div>
+    <div style="padding:12px;border-radius:16px;background:#F5EFE6;display:flex;flex-direction:column;align-items:center;gap:2px">
+      <span style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:24px">00:00</span>
+      <span class="txt-sm" style="font-weight:700">снова 40</span>
+    </div>
+  </div>
+
+  <a href="#" class="btn btn--primary" style="margin-top:20px">Посмотреть свои отклики</a>
+  <button class="btn btn--ghost" style="margin-top:4px">Закрыть</button>
+</div>
+</div>
+</body>
+</html>

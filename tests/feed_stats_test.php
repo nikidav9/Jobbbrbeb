@@ -31,6 +31,9 @@ check('у Сбера посчитаны и все, и IT', in_array(['company' =
 check('лента IT: раздел it плюс IT-компания целиком',
     fs_aggregate([['company' => 'Яндекс', 'section' => 'marketing'], ['company' => 'Сбер', 'section' => 'it'],
                   ['company' => 'Сбер', 'section' => 'sales']], 'x', ['Яндекс'])['it_feed_total'] === 2);
+check('рабочие вакансии IT-компании в ленту не идут',
+    fs_aggregate([['company' => 'Яндекс', 'section' => 'warehouse'], ['company' => 'Яндекс', 'section' => 'office'],
+                  ['company' => 'Яндекс', 'section' => 'it']], 'x', ['Яндекс'])['it_feed_total'] === 2);
 check('пустая таблица', fs_aggregate([], 'x')['total'] === 0 && fs_aggregate([], 'x')['it_total'] === 0);
 
 check('в ленту по Москве не идут другие города',

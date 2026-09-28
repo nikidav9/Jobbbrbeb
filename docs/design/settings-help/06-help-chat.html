@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JT — Помощь</title>
+<link rel="stylesheet" href="assets/jt.css">
+</head>
+<body>
+<div class="screen">
+<div class="page" style="padding-bottom:12px;border-bottom:1.5px solid #EFE7DC">
+  <div class="hdr">
+    <a href="03-settings.html" class="btn-round" aria-label="Назад в настройки"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></a>
+    <h1 class="h-title">Помощь</h1>
+    <a href="07-faq.html" class="pill" style="text-decoration:none"><svg data-icon="question" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2-2.4 3.6M12 17h.01"/></svg>FAQ</a>
+  </div>
+</div>
+
+<div class="chat">
+  <span style="align-self:center;height:26px;padding:0 12px;border-radius:13px;background:#E8DED1;font-size:12px;font-weight:800;color:#4A443D;display:flex;align-items:center">Сегодня</span>
+
+  <div class="msg msg--me">Привет</div>
+  <div><p class="msg__who">JobToo · бот</p><div class="msg msg--bot">Оператора позвал. Диалог уже появился у поддержки — ответ придёт сюда.</div></div>
+  <div><p class="msg__who">Оператор JobToo</p><div class="msg msg--operator">Спасибо, что написали! Обращение закрыто — если вопрос вернётся или появится новый, пишите сюда же.</div></div>
+
+  <button class="btn btn--outline" style="height:52px;font-size:16px;margin-top:4px"><svg data-icon="operator" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M3 21c1.2-3.8 3.8-6 7-6s5.8 2.2 7 6"/><path d="M19 6v6M16 9h6"/></svg>Позвать оператора</button>
+</div>
+
+<div class="composer">
+  <textarea class="composer__input" rows="1" placeholder="Сообщение" aria-label="Сообщение"></textarea>
+  <button class="send" aria-label="Отправить" disabled><svg data-icon="send-up" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9A9086" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6l6 6"/></svg></button>
+</div>
+</div>
+</body>
+</html>

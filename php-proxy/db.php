@@ -3478,6 +3478,49 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
 }
 
 /**
+ * Поручительство за приглашённого, которого работодатель нанял на постоянную
+ * работу (отклик переведён в 'hired'). Смен больше нет, поэтому это единственный
+ * итог, который сейчас растит referral_worked.
+ *
+ * Строка в журнале одна на приглашённого (уникальный индекс по invitee_id):
+ * если уже есть любая — старый выход на смену, невыход или прошлый найм, —
+ * второй не заводим. Повторный 'hired' и смена статусов счётчик не удваивают.
+ * Как и в jt_referral_on_outcome, считается только итог, который отметил
+ * работодатель этого отклика ($byUserId — из подписанной сессии).
+ */
+function jt_referral_on_hire(string $workerId, string $employerId, ?string $byUserId): void
+{
+    try {
+        $workerId = trim($workerId);
+        $employerId = trim($employerId);
+        if ($workerId === '' || $employerId === '') return;
+        if ($byUserId === null || $byUserId === '' || $byUserId !== $employerId) return;
+        if ($employerId === $workerId) return;
+
+        $worker = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'id,invited_by');
+        $invitedBy = trim((string)($worker['invited_by'] ?? ''));
+        if ($invitedBy === '' || $invitedBy === $workerId) return;
+        // Пригласивший не может сам нанимать приглашённого: замкнутый круг.
+        if ($invitedBy === $employerId) return;
+
+        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
+        if ($existing !== null) return;
+
+        sb_insert('jm_referral_rewards', [
+            'id' => uid(),
+            'inviter_id' => $invitedBy,
+            'invitee_id' => $workerId,
+            'like_id' => null,
+            'outcome' => 'hired',
+            'qualified_at' => now_iso(),
+        ]);
+        jt_referral_bump($invitedBy, 1);
+    } catch (Throwable $e) {
+        // Смена статуса отклика важнее начисления.
+    }
+}
+
+/**
  * Подвинуть счётчик поручительств на карточке приглашающего.
  *
  * Зачем счётчик вообще нужен: карточку кандидата работодатель видит списком,
@@ -3728,6 +3771,10 @@ try {
                     ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.worked']),
                 'noShow' => sb_count('jm_referral_rewards',
                     ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.no_show']),
+                // Приглашённые, которых наняли (миграция 131). Смен больше нет,
+                // поэтому это главное число; старые worked считаются отдельно.
+                'hired' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.hired']),
             ];
             break;
         }
@@ -6672,8 +6719,9 @@ try {
             // Старый клиент без третьего довода «Всего N» не показывает — ему
             // прежние 30 достаточно.
             $perCompany = $filters !== null ? 200 : 30;
-            // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
-            // вакансии компаний из jm_it_companies (миграция 120). И только
+            // Лента только IT (решение владельца 26.09.2026): раздел it плюс
+            // вакансии компаний из jm_it_companies (миграция 120), кроме
+            // «рабочих» разделов (миграция 132, 28.09.2026). И только
             // Москва, удалёнка и вакансии без города (миграция 121).
             //
             // select= — без description_full/described_at/detail_spec
@@ -6681,15 +6729,32 @@ try {
             // 200 строк, description_full — КБ на строку, а гость публичный, и
             // CURLOPT_TIMEOUT в sb_rpc — 10 секунд. Полное описание дотягиваем
             // ниже только для уже отобранных ≤60 карточек.
-            $pool = sb_rpc('jm_ext_feed_pool', [
+            // «Показать N» в шторке фильтров считает только число — выдача не нужна.
+            $pool = $fn === 'dbCountExtFeed' ? [] : sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
                 'p_hide_seen' => $filters['hide_seen'] ?? true,
             ], ['select' => EXT_FEED_POOL_SELECT]);
             $pool = is_array($pool) ? $pool : [];
+            // Счёт «Всего N» и компаний шторки — по ВСЕМ вакансиям, а не по
+            // пулу выдачи: у пула потолок на компанию (200), и у Сбера,
+            // Яндекса, МТС лишнее молча выпадало — приложение показывало
+            // ~2000 при 3200 в ленте (28.09.2026). Отдельный лёгкий запрос:
+            // без потолка (миграция 134) и только с полями ext_feed_match;
+            // описание — лишь когда его читает фильтр (формат, поиск).
+            $countFor = $filters ?? ext_feed_filters([]);
+            $countPool = null;
+            if ($fn === 'dbCountExtFeed' || $filters !== null) {
+                $needDesc = !empty($countFor['formats']) || !empty($countFor['query']);
+                $countPool = sb_rpc('jm_ext_feed_pool', [
+                    'p_user' => $authUid, 'p_per_company' => 5000, 'p_sections' => $sections,
+                    'p_it_only' => true, 'p_moscow_only' => true,
+                    'p_hide_seen' => $countFor['hide_seen'] ?? true,
+                ], ['select' => 'company,title,salary,schedule,first_seen_at' . ($needDesc ? ',description' : '')]);
+                $countPool = is_array($countPool) ? $countPool : [];
+            }
             if ($fn === 'dbCountExtFeed') {
-                $f = $filters ?? ext_feed_filters([]);
-                $data = ['total' => count(array_filter($pool, fn($row) => ext_feed_match($row, $f)))];
+                $data = ['total' => count(array_filter($countPool, fn($row) => ext_feed_match($row, $countFor)))];
                 break;
             }
             $history = [];
@@ -6719,10 +6784,11 @@ try {
             }
 
             $matched = array_values(array_filter($pool, fn($row) => ext_feed_match($row, $filters)));
+            $total = count(array_filter($countPool, fn($row) => ext_feed_match($row, $filters)));
             // Счёт по компаниям — при всех фильтрах, КРОМЕ самой компании:
             // иначе выбор одной компании убрал бы остальные из списка шторки.
             $companyCounts = [];
-            foreach ($pool as $row) {
+            foreach ($countPool as $row) {
                 if (!ext_feed_match($row, $filters, true)) continue;
                 $c = trim((string)($row['company'] ?? ''));
                 if ($c === '') continue;
@@ -6738,7 +6804,7 @@ try {
             $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($matched, $taste, $limit, $seed));
             $data = [
                 'items' => array_map('ext_feed_public_row', $arranged),
-                'total' => count($matched),
+                'total' => $total,
                 'companies' => $companies,
             ];
             break;
@@ -7207,61 +7273,19 @@ try {
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
-            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
-            $live = !empty($user['jupiter_live_enabled_at']);
-            // Поручение на согласия работодателю (Соглашение п. 8.3) — только
-            // вместе с боевой подачей: без неё согласия никому не нужны.
-            $delegated = $live && jt_employer_delegated($uidArg);
+            // Отклик — через телефон (решение владельца 28.09.2026). Свайп
+            // только копит заявку в «Нужны вы»: анкету заполняет автопилот во
+            // встроенном браузере (app/jupiter-fill.tsx), «Отправить» жмёт
+            // человек. Серверный Юпитер берёт лишь queued/retryable_failed
+            // (jupiter_lease_task), а PHONE_FILL не снимают ни
+            // jupiterRequeueSiteReady, ни jt_employer_requeue_consent — они
+            // смотрят на свои причины. Поэтому без разрешения на автоотправку
+            // и без поручения на согласия: их даёт сам человек на сайте.
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) {
-                // A second swipe after live mode was enabled is an explicit
-                // authorization for this vacancy. Reuse the existing row
-                // (the unique index still prevents duplicate employer
-                // submissions), but do not leave an old dry-run row stuck
-                // forever with submission_authorized_at = null.
-                $canAuthorizeExisting = $live
-                    && empty($existing['submission_authorized_at'])
-                    && empty($existing['lease_owner'])
-                    && in_array((string)($existing['state'] ?? ''), ['queued', 'ready_to_submit'], true);
-                // Повторный свайп по отклику, который ждал согласия, — то же
-                // поручение: если теперь оно есть, отклик идёт дальше сам.
-                $canResumeConsent = $delegated
-                    && empty($existing['third_party_consent_at'])
-                    && empty($existing['lease_owner'])
-                    && (string)($existing['state'] ?? '') === 'action_required'
-                    && (string)($existing['reason_code'] ?? '') === 'CONSENT_REQUIRED';
-                if ($canAuthorizeExisting || $canResumeConsent) {
-                    $now = now_iso();
-                    $filters = [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                        'lease_owner' => 'is.null',
-                    ];
-                    if ($canAuthorizeExisting) {
-                        $filters['submission_authorized_at'] = 'is.null';
-                    } else {
-                        $filters['state'] = 'eq.action_required';
-                    }
-                    $patch = [
-                        'state' => 'queued',
-                        'submission_authorized_at' => !empty($existing['submission_authorized_at'])
-                            ? $existing['submission_authorized_at'] : $now,
-                        'reason_code' => null,
-                        'not_before' => null,
-                        'updated_at' => $now,
-                    ];
-                    if ($delegated && empty($existing['third_party_consent_at'])) {
-                        $patch += jt_employer_consent_fields((string)$existing['vacancy_url'], $now);
-                    }
-                    sb_update('jm_jupiter_applications', $filters, $patch);
-                    $existing = sb_single('jm_jupiter_applications', [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                    ]);
-                }
                 $data = $existing;
                 break;
             }
@@ -7271,14 +7295,12 @@ try {
                 'vacancy_url' => mb_substr($url, 0, 2048),
                 'canonical_url' => $canonical,
                 'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
-                'state' => 'queued',
-                'submission_authorized_at' => $live ? now_iso() : null,
+                'state' => 'action_required',
+                'reason_code' => 'PHONE_FILL',
+                'submission_authorized_at' => null,
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
-            if ($delegated) {
-                $row += jt_employer_consent_fields($url, now_iso());
-            }
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.
@@ -7659,6 +7681,10 @@ try {
             sb_update('jm_perm_applications', ['id' => 'eq.' . $appId], ['status' => $status]);
             // Повторное нажатие не шлёт второго уведомления.
             if ($wasStatus !== $status) jt_perm_app_announce($app, $status);
+            // Устроился — поручительство тому, кто его позвал (один раз на человека).
+            if ($status === 'hired' && $wasStatus !== 'hired') {
+                jt_referral_on_hire((string)($app['worker_id'] ?? ''), (string)($app['employer_id'] ?? ''), (string)$authUid);
+            }
             break;
         }
 

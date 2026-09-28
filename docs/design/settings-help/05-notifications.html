@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JT — Уведомления</title>
+<link rel="stylesheet" href="assets/jt.css">
+</head>
+<body>
+<div class="screen">
+<div class="page" aria-hidden="true">
+  <div class="hdr hdr--center">
+    <span class="btn-round"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></span>
+    <h1 class="h-title">Настройки</h1>
+  </div>
+  <h2 class="section-label" style="margin-top:28px">Аккаунт</h2>
+  <div class="card" style="height:196px"></div>
+  <h2 class="section-label">JobToo</h2>
+  <div class="card" style="height:132px"></div>
+</div>
+<div class="overlay"></div>
+
+<div class="sheet" role="dialog" aria-label="Уведомления">
+  <span class="handle"></span>
+  <div style="margin-top:16px;display:flex;align-items:center;gap:12px">
+    <span class="tile tile--accent" style="width:44px;height:44px;border-radius:13px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></span>
+    <h2 class="title-u" style="flex-grow:1;font-size:19px">Уведомления</h2>
+    <button class="btn-round" aria-label="Закрыть" style="width:40px;height:40px;border:1.5px solid #CFC4B6"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <div style="margin-top:20px;padding:16px;border-radius:18px;background:#F5EFE6;display:flex;gap:14px;align-items:center">
+    <span style="flex-shrink:0;width:40px;height:40px;border-radius:20px;background:#141414;display:flex;align-items:center;justify-content:center"><svg data-icon="check" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B1A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l9-10"/></svg></span>
+    <span style="display:flex;flex-direction:column;gap:3px">
+      <span style="font-size:16px;font-weight:800">Уведомления включены</span>
+      <span class="txt-sm">Push подключён — сообщим об ответах работодателей и о том, где нужны вы</span>
+    </span>
+  </div>
+
+  <button class="btn btn--outline" style="margin-top:22px">Отключить уведомления</button>
+  <button class="btn btn--ghost" style="margin-top:4px">Закрыть</button>
+</div>
+</div>
+</body>
+</html>

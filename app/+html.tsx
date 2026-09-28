@@ -22,16 +22,17 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="manifest" href="/manifest.json" />
 
         {/* Theme color */}
-        <meta name="theme-color" content="#FF6B1A" />
+        <meta name="theme-color" content="#F5EFE6" />
 
         {/* iOS Add to Home Screen */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="JobToo" />
-        <link rel="apple-touch-icon" href="/jt-logo.jpg" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
         {/* Favicon */}
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 
         <ScrollViewStyleReset />
 
@@ -64,88 +65,96 @@ export default function Root({ children }: PropsWithChildren) {
           }
         `}</style>
 
-        {/* Static splash — same visual as the native loader (components/SplashLoader.tsx):
-            корзина рисуется белой линией на фирменном оранжевом, в неё плавно
-            опускаются продукты, снизу — название и счётчик. Пути и тайминги
-            совпадают с нативной версией один в один, поэтому веб/Telegram
-            Mini App и приложение читаются как один экран. */}
+        {/* Загрузочный экран — макет «JT-splash» (28.09.2026), 1:1 с нативным
+            components/SplashLoader.tsx: оранжевая точка раскрывается в белую
+            плашку, впрыгивает логотип, появляется тень-наклейка и подпись,
+            полоса загрузки идёт по реальным этапам приложения. На выходе
+            плашка улетает на место логотипа в шапке ленты. Шрифты — свои
+            копии из макета: шрифты приложения приходят позже, с бандлом. */}
+        <link rel="preload" href="/splash/logo.png" as="image" />
         <style>{`
+          @font-face { font-family: 'JTSplashUnbounded'; font-weight: 700; font-display: swap;
+            src: url('/splash/unbounded-cyrillic-700-normal.woff2') format('woff2');
+            unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+          @font-face { font-family: 'JTSplashUnbounded'; font-weight: 700; font-display: swap;
+            src: url('/splash/unbounded-latin-700-normal.woff2') format('woff2');
+            unicode-range: U+0000-00FF, U+2000-206F, U+2212; }
+          @font-face { font-family: 'JTSplashManrope'; font-weight: 700; font-display: swap;
+            src: url('/splash/manrope-cyrillic-700-normal.woff2') format('woff2');
+            unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+          @font-face { font-family: 'JTSplashManrope'; font-weight: 700; font-display: swap;
+            src: url('/splash/manrope-latin-700-normal.woff2') format('woff2');
+            unicode-range: U+0000-00FF, U+2000-206F, U+2212; }
           #splash {
-            position: fixed; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            background: #FF6B1A; z-index: 9999;
-            transition: opacity 0.35s ease;
+            position: fixed; inset: 0; z-index: 9999;
+            background: #F5EFE6; color: #141414;
+            transition: background-color 0.3s ease 0.2s;
           }
-          #splash.hidden { opacity: 0; pointer-events: none; }
-          #splash-art { width: min(62vw, 30vh); }
-          #splash-art svg { width: 100%; height: auto; display: block; }
-          .sp {
-            fill: none; stroke: #fff;
-            stroke-linecap: round; stroke-linejoin: round;
-            stroke-dasharray: var(--l); stroke-dashoffset: var(--l);
-            animation: sp-draw var(--d) linear var(--dl) forwards;
+          /* Центр плашки — на 45 % высоты, как (195, 380) на экране 844 */
+          #splash-slot { position: absolute; left: 50%; top: 45%; width: 140px; height: 140px; margin: -70px 0 0 -70px; }
+          #splash-plate {
+            width: 140px; height: 140px; box-sizing: border-box;
+            border: 2px solid #141414; border-radius: 36px; background: #FFFFFF;
+            box-shadow: 6px 6px 0 #141414;
+            display: flex; align-items: center; justify-content: center;
+            animation: jt-plate 600ms cubic-bezier(.2,.8,.2,1) both, jt-sticker 400ms ease-out 900ms both;
           }
-          @keyframes sp-draw { to { stroke-dashoffset: 0; } }
-          /* товары опускаются в корзину */
-          .pr { opacity: 0; animation: sp-fall 260ms cubic-bezier(.22,.61,.36,1) var(--dl) forwards; }
-          .pr path { fill: none; stroke: #fff; stroke-linecap: round; stroke-linejoin: round; }
-          @keyframes sp-fall {
-            from { opacity: 0; transform: translateY(-46px); }
-            to   { opacity: 1; transform: translateY(0); }
+          #splash-logo { width: 96px; height: auto; display: block;
+            animation: jt-logo 400ms cubic-bezier(.3,1.4,.5,1) 600ms both; }
+          #splash-below { position: absolute; left: 0; right: 0; top: calc(45% + 106px);
+            display: flex; flex-direction: column; align-items: center; padding: 0 16px; }
+          #splash-tag { margin: 0; font: 700 18px/1.2 'JTSplashUnbounded', -apple-system, 'Segoe UI', Roboto, sans-serif;
+            letter-spacing: -0.01em; text-align: center; animation: jt-tag 400ms ease-out 900ms both; }
+          #splash-bar { margin-top: 26px; width: 180px; height: 14px; box-sizing: border-box;
+            border: 2px solid #141414; border-radius: 7px; background: #FFFFFF; overflow: hidden;
+            animation: jt-fade 300ms ease-out 1300ms both; }
+          #splash-fill { display: block; height: 100%; width: 0; background: #FF6B1A;
+            box-sizing: border-box; transition: width 200ms cubic-bezier(.4,0,.2,1); }
+          #splash-fill.on { border-right: 2px solid #141414; }
+          #splash-cap { margin: 10px 0 0; font: 700 13px/1.3 'JTSplashManrope', -apple-system, 'Segoe UI', Roboto, sans-serif;
+            color: #6B645C; text-align: center; animation: jt-fade 300ms ease-out 1300ms both; }
+          #splash-retry { display: none; margin-top: 12px; padding: 10px 22px; border: 2px solid #141414;
+            border-radius: 22px; background: #FF6B1A; color: #141414; box-shadow: 3px 3px 0 #141414;
+            font: 700 14px 'JTSplashManrope', -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }
+          #splash.slow #splash-retry { display: block; }
+          @keyframes jt-plate {
+            0%   { transform: scale(0); border-radius: 70px; background: #FF6B1A; }
+            50%  { transform: scale(.13); border-radius: 70px; background: #FF6B1A; }
+            100% { transform: scale(1); border-radius: 36px; background: #FFFFFF; }
           }
-          #splash-bottom {
-            display: flex; flex-direction: column; align-items: center;
-            margin-top: 24px;
-          }
-          @keyframes sp-fade { to { opacity: 1; } }
-          #splash-name {
-            font-size: 32px; font-weight: 800; letter-spacing: -0.8px;
-            color: #fff; opacity: 0;
-            animation: sp-fade 0.45s ease 760ms forwards;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          }
-          /* Счётчик виден с первого кадра — отсчёт начинается с единицы */
-          #splash-pct {
-            margin-top: 10px; font-size: 17px; font-weight: 700;
-            font-style: italic; letter-spacing: 1.5px;
-            color: rgba(255,255,255,0.85);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          @keyframes jt-sticker { from { box-shadow: 0 0 0 #141414; } to { box-shadow: 6px 6px 0 #141414; } }
+          @keyframes jt-logo { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+          @keyframes jt-tag { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+          @keyframes jt-fade { from { opacity: 0; } to { opacity: 1; } }
+          /* Переход в ленту: подпись и полоса гаснут, плашка уменьшается и
+             улетает в левый верх — на место логотипа шапки (44, 78). */
+          #splash.leave { background-color: rgba(245,239,230,0); pointer-events: none; }
+          #splash.leave #splash-below { opacity: 0; transition: opacity 150ms ease; }
+          #splash.leave #splash-plate {
+            animation: none;
+            transform: translate(calc(44px - 50vw), calc(78px - 45vh)) scale(.33);
+            opacity: 0; box-shadow: 0 0 0 #141414;
+            transition: transform 500ms cubic-bezier(.2,.8,.2,1), opacity 500ms ease, box-shadow 300ms ease;
           }
           @media (prefers-reduced-motion: reduce) {
-            .sp { animation: none; stroke-dashoffset: 0; }
-            .pr { animation: none; opacity: 1; transform: none; }
-            #splash-name { animation: none; opacity: 1; }
+            #splash-plate, #splash-logo, #splash-tag, #splash-bar, #splash-cap { animation: none; }
+            #splash.leave #splash-plate { transform: none; transition: opacity 200ms ease; }
+            #splash { transition: background-color 200ms ease; }
           }
         `}</style>
       </head>
       <body>
         <div id="splash">
-          <div
-            id="splash-art"
-            dangerouslySetInnerHTML={{ __html: `<svg viewBox="0 0 200 250" xmlns="http://www.w3.org/2000/svg">
-<g transform="translate(32 60)"><g class="pr" style="--dl:500ms"><path d="M 6 48 L 4 24 Q 3 17 8 14 L 8 4 L 22 4 L 22 14 Q 27 17 26 24 L 24 48 Q 15 52 6 48 Z" transform="rotate(-16 14 28)" stroke-width="3"/><path d="M 8 10 L 22 10" transform="rotate(-16 14 28)" stroke-width="2.4"/></g></g>
-<g transform="translate(80 26)"><g class="pr" style="--dl:650ms"><path d="M 20 14 A 18 18 0 1 1 19.99 14" stroke-width="3"/><path d="M 20 15 L 23 2" stroke-width="2.6"/><path d="M 23 6 Q 35 0 37 10 Q 27 14 23 6 Z" stroke-width="2.6"/></g></g>
-<g transform="translate(132 72)"><g class="pr" style="--dl:800ms"><path d="M 4 22 Q 2 4 22 2 Q 42 4 40 22 Q 38 32 22 32 Q 6 32 4 22 Z" transform="rotate(14 22 14)" stroke-width="3"/><path d="M 13 11 L 19 17" transform="rotate(14 22 14)" stroke-width="2.4"/><path d="M 24 9 L 30 15" transform="rotate(14 22 14)" stroke-width="2.4"/></g></g>
-<path class="sp" d="M 68 148 Q 70 100 100 98 Q 130 100 132 148" stroke-width="3.4" style="--l:136;--d:90ms;--dl:0ms"/>
-<path class="sp" d="M 28 150 Q 100 137 172 150" stroke-width="3.4" style="--l:150;--d:90ms;--dl:77ms"/>
-<path class="sp" d="M 28 150 Q 100 163 172 150" stroke-width="3.4" style="--l:150;--d:77ms;--dl:154ms"/>
-<path class="sp" d="M 34 153 L 55 231 Q 57 240 67 240 L 133 240 Q 143 240 145 231 L 166 153" stroke-width="3.4" style="--l:264;--d:205ms;--dl:218ms"/>
-<path class="sp" d="M 60 160 L 70 236" stroke-width="2.4" style="--l:78;--d:58ms;--dl:403ms"/>
-<path class="sp" d="M 86 158 L 90 239" stroke-width="2.4" style="--l:82;--d:58ms;--dl:429ms"/>
-<path class="sp" d="M 114 158 L 110 239" stroke-width="2.4" style="--l:82;--d:58ms;--dl:454ms"/>
-<path class="sp" d="M 140 160 L 130 236" stroke-width="2.4" style="--l:78;--d:58ms;--dl:480ms"/>
-<path class="sp" d="M 44 196 Q 100 205 156 196" stroke-width="2.4" style="--l:116;--d:115ms;--dl:525ms"/>
-<path class="sp" d="M 22 116 L 12 106" stroke-width="2.6" style="--l:15;--d:60ms;--dl:1060ms"/>
-<path class="sp" d="M 178 114 L 188 104" stroke-width="2.6" style="--l:15;--d:60ms;--dl:1090ms"/>
-<path class="sp" d="M 100 18 L 100 8" stroke-width="2.6" style="--l:11;--d:60ms;--dl:1120ms"/>
-<path class="sp" d="M 58 40 L 51 32" stroke-width="2.6" style="--l:11;--d:60ms;--dl:1150ms"/>
-<path class="sp" d="M 146 38 L 154 30" stroke-width="2.6" style="--l:11;--d:80ms;--dl:1180ms"/>
-</svg>` }}
-          />
-          <div id="splash-bottom">
-            <div id="splash-name">JobToo</div>
-            <div id="splash-pct">1%</div>
+          <div id="splash-slot">
+            <div id="splash-plate"><img id="splash-logo" src="/splash/logo.png" alt="JobToo" /></div>
+          </div>
+          <div id="splash-below">
+            <p id="splash-tag">Работа в IT — свайпом</p>
+            <div id="splash-bar" role="progressbar" aria-label="Загрузка" aria-valuemin={0} aria-valuemax={100}>
+              <span id="splash-fill" />
+            </div>
+            <p id="splash-cap">Подбираем вакансии…</p>
+            <button id="splash-retry" type="button">Повторить</button>
           </div>
         </div>
         {children}
@@ -168,24 +177,39 @@ export default function Root({ children }: PropsWithChildren) {
           })();
           (function() {
             var splash = document.getElementById('splash');
-            var pctEl = document.getElementById('splash-pct');
+            var fill = document.getElementById('splash-fill');
+            var bar = document.getElementById('splash-bar');
+            var cap = document.getElementById('splash-cap');
+            var retry = document.getElementById('splash-retry');
             var done = false, finishRequested = false, pct = 1;
+            // Анимация не обрывается: экран держится минимум до конца кадра 4
+            // (макет: 1,3 с), даже если данные пришли раньше.
+            var MIN_MS = 1300;
+            var shownAt = (window.performance && performance.now) ? performance.now() : 0;
+            function now() { return (window.performance && performance.now) ? performance.now() : shownAt + MIN_MS; }
             // Пока bundle скачивается, плавно идём до 30 %. Дальше каждая
-            // граница открывается только реальным этапом приложения.
-            var target = Math.max(30, window.__jobtooSplashPendingProgress || 1);
-
-            // Не перескакиваем десятками: показываем каждое целое значение.
+            // граница открывается только реальным этапом приложения:
             // HTML/download=1..30, bundle=35, boot=45, session=55,
             // cache=70, API=80, ready=100.
-            var tick = setInterval(function() {
-              if (pct < target) pct += 1;
-              if (pctEl) pctEl.textContent = pct + '%';
-              if (finishRequested && pct >= 100) {
-                clearInterval(tick);
-                // 100 % означает готовность: только короткий кадр для чтения.
-                setTimeout(hide, 100);
+            var target = Math.max(30, window.__jobtooSplashPendingProgress || 1);
+
+            function paint() {
+              if (fill) {
+                fill.style.width = pct + '%';
+                if (pct > 0 && pct < 100) fill.classList.add('on'); else fill.classList.remove('on');
               }
+              if (bar) bar.setAttribute('aria-valuenow', String(pct));
+            }
+            var tick = setInterval(function() {
+              if (finishRequested) {
+                // Данные готовы: бар быстро добегает до 100 % (200 мс в CSS).
+                if (pct < 100) { pct = 100; paint(); }
+                if (now() - shownAt >= MIN_MS) { clearInterval(tick); setTimeout(hide, 220); }
+                return;
+              }
+              if (pct < target) { pct += 1; paint(); }
             }, 25);
+            paint();
 
             window.__setSplashProgress = function(value) {
               var next = Math.max(1, Math.min(100, Number(value) || 1));
@@ -199,16 +223,16 @@ export default function Root({ children }: PropsWithChildren) {
 
             function hide() {
               clearInterval(tick);
-              // Полоса браузера была в цвет загрузочного экрана; дальше
-              // интерфейс светлый, поэтому возвращаем светлый цвет —
-              // иначе сверху висит оранжевая плашка на белом экране
+              // Полоса браузера была в цвет загрузочного экрана. Экран, который
+              // красит её сам (useWarmSystemBar ставит фон html inline), уже
+              // решил за нас; иначе возвращаем светлый цвет интерфейса.
               var tc = document.querySelector('meta[name="theme-color"]');
-              if (tc && tc.getAttribute('content') === '#FF6B1A') {
+              if (tc && tc.getAttribute('content') === '#F5EFE6' && !document.documentElement.style.backgroundColor) {
                 tc.setAttribute('content', '#F5F7FA');
               }
               if (splash) {
-                splash.classList.add('hidden');
-                setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
+                splash.classList.add('leave');
+                setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 560);
               }
             }
 
@@ -234,19 +258,13 @@ export default function Root({ children }: PropsWithChildren) {
 
             // Не перезагружаем страницу автоматически: именно эта страховка
             // раньше создавала второй загрузочный экран на медленной сети.
-            // Если bundle действительно не стартовал, оставляем заставку и
-            // предлагаем осознанный повтор вместо белого экрана.
+            // Дольше 8 с (макет) — честно говорим и даём осознанный повтор.
+            if (retry) retry.onclick = function() { location.reload(); };
             setTimeout(function() {
-              if (done) return;
-              // React уже работает и может просто ждать сеть: не перезагружаем
-              // его и не показываем пользователю второй загрузочный экран.
-              if (window.__jobtooBundleMounted) return;
-              if (pctEl) {
-                pctEl.textContent = 'Нажмите, чтобы повторить';
-                pctEl.style.cursor = 'pointer';
-                pctEl.onclick = function() { location.reload(); };
-              }
-            }, 12000);
+              if (done || !splash) return;
+              if (cap) cap.textContent = 'Долго грузится… Проверьте интернет';
+              splash.classList.add('slow');
+            }, 8000);
           })();
         `}</script>
       </body>

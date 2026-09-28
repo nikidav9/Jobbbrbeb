@@ -49,6 +49,7 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   if (a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED') return { label: 'Автоотклик выключен · не отправлено', ...WAIT };
   if (jupiterNeedsSberConsent(a)) return { label: 'Нужно согласие Сбера · не отправлено', ...WAIT };
   if (a.reasonCode === 'UNSUPPORTED_SCRIPT') return { label: 'Нужен браузер · отклик не отправлен', ...WAIT };
+  if (a.reasonCode === 'PHONE_FILL') return { label: 'Ждёт отправки · анкета заполнится сама', ...WAIT };
   if (a.reasonCode === 'SITE_NOT_VERIFIED') return { label: 'Сайт ещё подключаем · отклик сохранён', ...INFO };
   if (a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW') return { label: 'Отправлено вами', ...DONE };
   return stateStatus(a.state);
@@ -92,7 +93,13 @@ export type JupiterEvent = {
   created_at: string;
 };
 
+/** Тип события базы — по нему экран выбирает кружок шага. */
+export type TimelineKind =
+  | 'created' | 'consent' | 'queued' | 'ready_to_submit' | 'submitted' | 'submitted_manual'
+  | 'action_required' | 'duplicate' | 'submission_unknown' | 'retryable_failed' | 'failed';
+
 export type TimelineStep = {
+  kind: TimelineKind;
   title: string;
   note?: string;
   at: string;
@@ -128,6 +135,7 @@ export function fillNote(detail: JupiterEvent['detail']): string | undefined {
 
 const ACTION_REASONS: Record<string, string> = {
   CAPTCHA_REQUIRED: 'Сайт просит проверку «я не робот» — отправьте сами',
+  PHONE_FILL: 'Анкету заполним за вас — останется нажать «Отправить»',
   SITE_NOT_VERIFIED: 'Сайт ещё подключаем — отклик можно отправить самому',
   CONSENT_REQUIRED: 'Работодатель просит согласие на обработку данных',
   UNSUPPORTED_SCRIPT: 'Сайту нужен браузер — отправьте сами',
@@ -138,24 +146,25 @@ const ACTION_REASONS: Record<string, string> = {
 function stepFor(e: JupiterEvent): TimelineStep | null {
   const at = e.created_at;
   switch (e.kind) {
-    case 'created': return { title: 'Вы откликнулись', at, tone: 'done' };
-    case 'consent': return { title: 'Вы дали согласие работодателю', at, tone: 'done' };
-    case 'queued': return { title: 'В очереди Юпитера', at, tone: 'info' };
-    case 'ready_to_submit': return { title: 'Анкета заполнена, ждёт отправки', note: fillNote(e.detail), at, tone: 'wait' };
+    case 'created': return { kind: 'created', title: 'Вы откликнулись', at, tone: 'done' };
+    case 'consent': return { kind: 'consent', title: 'Вы дали согласие работодателю', at, tone: 'done' };
+    case 'queued': return { kind: 'queued', title: 'В очереди Юпитера', at, tone: 'info' };
+    case 'ready_to_submit': return { kind: 'ready_to_submit', title: 'Анкета заполнена, ждёт отправки', note: fillNote(e.detail), at, tone: 'wait' };
     case 'submitted':
       return e.reason_code === 'MANUAL_WEBVIEW'
-        ? { title: 'Вы отправили отклик', at, tone: 'done' }
-        : { title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
+        ? { kind: 'submitted_manual', title: 'Вы отправили отклик', at, tone: 'done' }
+        : { kind: 'submitted', title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
     case 'action_required':
       return {
+        kind: 'action_required',
         title: 'Нужны вы',
         note: ACTION_REASONS[e.reason_code ?? ''] ?? 'Юпитер не смог закончить сам',
         at, tone: 'wait',
       };
-    case 'duplicate': return { title: 'Вы уже откликались на эту вакансию', at, tone: 'info' };
-    case 'submission_unknown': return { title: 'Сайт не подтвердил отправку', at, tone: 'wait' };
-    case 'retryable_failed': return { title: 'Не получилось — Юпитер попробует ещё раз', at, tone: 'wait' };
-    case 'failed': return { title: 'Не получилось отправить', at, tone: 'fail' };
+    case 'duplicate': return { kind: 'duplicate', title: 'Вы уже откликались на эту вакансию', at, tone: 'info' };
+    case 'submission_unknown': return { kind: 'submission_unknown', title: 'Сайт не подтвердил отправку', at, tone: 'wait' };
+    case 'retryable_failed': return { kind: 'retryable_failed', title: 'Не получилось — Юпитер попробует ещё раз', at, tone: 'wait' };
+    case 'failed': return { kind: 'failed', title: 'Не получилось отправить', at, tone: 'fail' };
     default: return null;
   }
 }

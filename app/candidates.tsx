@@ -215,7 +215,7 @@ export default function CandidatesScreen() {
                       числом, а не «привёл N человек»: склонение при любом N
                       здесь ничего не добавляет, а сломаться может. */}
                   {(worker.referralWorked ?? 0) > 0 ? (
-                    <Text style={styles.workerVouch}>🤝 Привёл на смену: {worker.referralWorked}</Text>
+                    <Text style={styles.workerVouch}>🤝 Привёл, устроились: {worker.referralWorked}</Text>
                   ) : null}
                 </View>
                 <Text style={styles.profileArrow}>Профиль ›</Text>

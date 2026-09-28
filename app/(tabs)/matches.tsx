@@ -4,6 +4,7 @@ import {
   TouchableOpacity, ActivityIndicator, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +18,7 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterLiveStatus, jupiterMailUnread,
+  jupiterMailUnread,
 } from '@/services/db';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
@@ -341,6 +342,7 @@ type RespItem = {
 };
 
 function WorkerMatches() {
+  useWarmSystemBar();
   const router = useRouter();
   const {
     currentUser, permApplications, permVacancies, users, chats,
@@ -354,7 +356,6 @@ function WorkerMatches() {
   const [search, setSearch] = useState('');
   const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
   const [jupiterError, setJupiterError] = useState(false);
-  const [jupiterLive, setJupiterLive] = useState(false);
   // Непрочитанные письма на почте JobToo для откликов — точка на конверте.
   const [unreadMail, setUnreadMail] = useState(0);
   const tabBarHeight = useBottomTabBarHeight();
@@ -363,11 +364,7 @@ function WorkerMatches() {
   const loadJupiter = useCallback(async () => {
     if (!currentUserId || currentUser?.isGuest) return;
     try {
-      const [apps, live] = await Promise.all([
-        jupiterMyApplications(currentUserId), jupiterLiveStatus(currentUserId),
-      ]);
-      setJupiterApps(apps);
-      setJupiterLive(live);
+      setJupiterApps(await jupiterMyApplications(currentUserId));
       setJupiterError(false);
     } catch (error) {
       console.warn('[jupiterMyApplications]', error);
@@ -612,11 +609,6 @@ function WorkerMatches() {
             {todayCount} {plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня
             {jupiterApps.length > 0 ? ' · Юпитер, внешние вакансии' : ''}
           </Text>
-          {!jupiterLive && jupiterApps.length > 0 ? (
-            <TouchableOpacity onPress={() => router.push('/profile-settings')} style={wm.noteRow}>
-              <Text style={wm.note}>Автоотклик выключен · <Text style={wm.noteLink}>включить в настройках</Text></Text>
-            </TouchableOpacity>
-          ) : null}
           {jupiterError ? <Text style={wm.note}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
 
           {searchOpen ? (
@@ -786,9 +778,7 @@ const wm = StyleSheet.create({
     color: JT.ink, marginTop: rs(20),
   },
   subtitle: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6) },
-  noteRow: { marginTop: rs(6) },
   note: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(6) },
-  noteLink: { color: JT.ink, textDecorationLine: 'underline', textDecorationColor: JT.accent },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(14),
     height: rs(44), paddingHorizontal: rs(12), borderRadius: rs(22),

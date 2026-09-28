@@ -11,13 +11,13 @@ import {
 } from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
-import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy } from '@/constants/types';
 import { SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
@@ -29,6 +29,7 @@ import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
 import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
 import { FORMATS, GRADES } from '@/components/filters/kit';
 import { JTBolt } from '@/components/ui/JTBolt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
@@ -57,11 +58,8 @@ import {
   dbPermUnswipe,
   dbGetPermSwipes,
   jupiterEnqueue,
-  jupiterMyApplications,
 } from '@/services/db';
-import { fillHostFor, jupiterManualEligible } from '@/services/jupiterFill';
 import { ensureResumeForApply } from '@/services/resumeGate';
-import { confirmAsync } from '@/services/confirm';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1012,8 +1010,6 @@ function WorkerPermMode() {
   // тихо берём следующую. Сервер уже не отдаёт свайпнутое, а на случай
   // гонки (свайп ещё не записан) повторы отсекаются по id.
   const careerRefilling = useRef(false);
-  // Когда последний раз предлагали открыть отложенную анкету (см. followUpApplication).
-  const lastFollowUp = useRef(0);
   useEffect(() => {
     if (careerRefilling.current || careerVacancies.length === 0) return;
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
@@ -1093,42 +1089,14 @@ function WorkerPermMode() {
   // предлагаем открыть анкету: Юпитер заполнит её на глазах, отправит
   // человек сам (app/jupiter-fill.tsx). Не чаще раза в 2 минуты — листать
   // ленту это не должно мешать; остальные ждут в «Откликах».
-  // На вебе (сайт, Телеграм) встроенного браузера нет: jupiter-fill открывает
-  // анкету компании в новой вкладке, и заполнить её придётся самому — поэтому
-  // и текст другой. Раньше на вебе подсказки не было вовсе, и заявка молча
-  // ждала в «Откликах».
-  const followUpApplication = (applicationId: string, company?: string | null) => {
-    if (!currentUser) return;
-    const userId = currentUser.id;
-    setTimeout(async () => {
-      if (Date.now() - lastFollowUp.current < 120000) return;
-      try {
-        const own = (await jupiterMyApplications(userId)).find(a => a.id === applicationId);
-        if (!own || own.state !== 'action_required' || !jupiterManualEligible(own) || !fillHostFor(own.vacancyUrl)) return;
-        lastFollowUp.current = Date.now();
-        const open = await confirmAsync({
-          title: company || 'Отклик',
-          body: Platform.OS === 'web'
-            ? 'Сайт компании не принимает отклик от Юпитера. Откройте анкету и отправьте отклик сами — это пара минут.'
-            : 'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
-          confirmLabel: 'Открыть',
-          cancelLabel: 'Позже',
-        });
-        if (open) router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } });
-      } catch { /* не вышло — заявка ждёт в «Откликах» */ }
-    }, 40000);
-  };
-
-  // Отклик на карьерную вакансию — в два шага. Сначала то, что может
-  // остановить отклик диалогом: резюме и поручение Юпитеру. Обе проверки
-  // помнят успех 10 минут, поэтому после первого свайпа они мгновенные.
-  // Затем заявка уходит в фоне, а колода уже показывает следующую карточку:
-  // раньше она стояла, пока шли четыре запроса подряд.
+  // Отклик на карьерную вакансию — через телефон (решение владельца
+  // 28.09.2026): свайп только копит заявку в «Нужны вы», анкеты потом
+  // заполняются пачкой в app/jupiter-fill.tsx. Перед свайпом — лишь проверка
+  // резюме; заявка уходит в фоне, колода уже показывает следующую карточку.
   const prepareExtApply = async (): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
     try {
-      if (!await ensureResumeForApply()) return false;
-      return await requestJupiterLive(currentUser.id);
+      return await ensureResumeForApply();
     } catch (e: any) {
       const msg = e?.message ?? '';
       console.warn('[prepareExtApply]', msg);
@@ -1141,10 +1109,9 @@ function WorkerPermMode() {
     if (!currentUser) return false;
     try {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
-      showToast(application.state === 'queued'
-        ? 'Юпитер готовит и отправляет отклик. Статус — в «Откликах».'
+      showToast(application.reasonCode === 'PHONE_FILL'
+        ? 'Сохранено в «Нужны вы» — отправите пачкой в «Откликах».'
         : 'Заявка уже есть. Статус — в «Откликах».', 'success');
-      if (application.state === 'queued') followUpApplication(application.id, ev.company);
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';
@@ -1811,33 +1778,46 @@ function WorkerPermMode() {
           предлагаем: обещать покупку, которой не существует, нельзя. */}
       {limitOpen ? (
         <View style={pS.limitOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLimitOpen(false)} />
-          <View style={[pS.limitCard, { marginBottom: tabBarHeight + rs(16) }]}>
-            <View style={pS.limitIcon}>
-              <JTBolt size={26} />
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setLimitOpen(false)} />
+          <HardShadowBox style={pS.limitWrap} offset={6} radius={rs(28)}>
+            <View style={pS.limitCard}>
+              <View style={pS.limitIcon}>
+                <JTBolt size={rs(36)} />
+              </View>
+              {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
+                  ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
+              <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
+              <Text style={pS.limitBody}>
+                {energy.left > 0
+                  ? 'Каждый отклик тратит одну молнию, а пропуск вакансии — бесплатный. '
+                  : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
+                    + 'сейчас — это молнии не тратит. '}
+                Завтра снова будет {DAILY_ENERGY} — запас не копится.
+              </Text>
+              <View style={pS.limitStats}>
+                <View style={pS.limitStat}>
+                  <Text style={pS.limitStatNum}>{energy.left}</Text>
+                  <Text style={pS.limitStatLbl}>осталось сегодня</Text>
+                </View>
+                <View style={pS.limitStat}>
+                  <Text style={pS.limitStatNum}>00:00</Text>
+                  <Text style={pS.limitStatLbl}>снова {DAILY_ENERGY}</Text>
+                </View>
+              </View>
+              <HardShadowBox style={pS.limitBtnWrap} offset={4} radius={rs(29)}>
+                <TouchableOpacity
+                  style={pS.limitBtn}
+                  onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
+                </TouchableOpacity>
+              </HardShadowBox>
+              <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
+                <Text style={pS.limitCloseTxt}>Закрыть</Text>
+              </TouchableOpacity>
             </View>
-            {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
-                ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
-            <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
-            <Text style={pS.limitBody}>
-              {energy.left > 0
-                ? `Осталось ${energy.left} на сегодня. Каждый отклик тратит одну молнию, `
-                  + 'а пропуск вакансии — бесплатный. '
-                : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
-                  + 'сейчас — это молнии не тратит. '}
-              Завтра снова будет {DAILY_ENERGY} — запас не копится.
-            </Text>
-            <TouchableOpacity
-              style={pS.limitBtn}
-              onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
-              activeOpacity={0.85}
-            >
-              <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
-              <Text style={pS.limitCloseTxt}>Закрыть</Text>
-            </TouchableOpacity>
-          </View>
+          </HardShadowBox>
         </View>
       ) : null}
 
@@ -2164,31 +2144,8 @@ function EmployerHome() {
 function WorkerCareer() {
   const { currentUser } = useApp();
 
-  // В установленной iOS PWA цвет системной зоны (время / сеть / батарея)
-  // берётся из theme-color. На экране вакансий он должен продолжать тёплую
-  // подложку, а при уходе на другие вкладки — возвращаться к светлому фону.
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-      const meta = document.querySelector('meta[name="theme-color"]');
-      const previousTheme = meta?.getAttribute('content') ?? null;
-      const previousHtmlBg = document.documentElement.style.backgroundColor;
-      const previousBodyBg = document.body.style.backgroundColor;
-
-      // iOS standalone PWA берёт фон зоны со временем из подложки документа,
-      // а не только из theme-color. Поэтому красим и HTML/BODY, пока активна
-      // вкладка вакансий. Родительский Stack для tabs прозрачный (см. _layout).
-      if (meta) meta.setAttribute('content', JT.background);
-      document.documentElement.style.backgroundColor = JT.background;
-      document.body.style.backgroundColor = JT.background;
-
-      return () => {
-        if (meta) meta.setAttribute('content', previousTheme || '#F5F7FA');
-        document.documentElement.style.backgroundColor = previousHtmlBg;
-        document.body.style.backgroundColor = previousBodyBg;
-      };
-    }, [])
-  );
+  // Тёплая зона со временем в iOS PWA — общий хук, тот же на других вкладках.
+  useWarmSystemBar();
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: JT.background }} />;
 
@@ -2357,24 +2314,41 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(13), paddingVertical: rs(8), ...Shadow.card,
   },
   scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
-  limitOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end', zIndex: 50 },
+  limitOverlay: {
+    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.5)',
+    justifyContent: 'center', paddingHorizontal: rs(20), zIndex: 50,
+  },
+  limitWrap: { alignSelf: 'stretch' },
   limitCard: {
-    backgroundColor: Colors.bg, borderRadius: rs(24), marginHorizontal: rs(16),
-    padding: rs(22), alignItems: 'center', gap: rs(8), ...Shadow.strong,
+    backgroundColor: JT.surface, borderRadius: rs(28), borderWidth: 2, borderColor: JT.ink,
+    paddingTop: rs(28), paddingHorizontal: rs(22), paddingBottom: rs(18), alignItems: 'center',
   },
   limitIcon: {
-    width: rs(56), height: rs(56), borderRadius: rs(28),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryLight,
+    width: rs(76), height: rs(76), borderRadius: rs(38), borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: JT.accentSoft,
   },
-  limitTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(4) },
-  limitBody: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
+  limitTitle: {
+    fontFamily: JT_FONT.head, fontSize: rf(22), color: JT.ink, marginTop: rs(18), textAlign: 'center',
+  },
+  limitBody: {
+    fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textSecondary,
+    textAlign: 'center', lineHeight: rf(22), marginTop: rs(12),
+  },
+  limitStats: { flexDirection: 'row', gap: rs(8), alignSelf: 'stretch', marginTop: rs(18) },
+  limitStat: {
+    flex: 1, paddingVertical: rs(12), paddingHorizontal: rs(12), borderRadius: rs(16),
+    backgroundColor: JT.background, alignItems: 'center', gap: rs(2),
+  },
+  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink },
+  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
+  limitBtnWrap: { alignSelf: 'stretch', marginTop: rs(20) },
   limitBtn: {
-    alignSelf: 'stretch', marginTop: rs(8), backgroundColor: Colors.primary,
-    borderRadius: rs(14), paddingVertical: rs(13), alignItems: 'center',
+    height: rs(58), borderRadius: rs(29), borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.accent, alignItems: 'center', justifyContent: 'center',
   },
-  limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-  limitClose: { paddingVertical: rs(8) },
-  limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
+  limitBtnTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink },
+  limitClose: { height: rs(48), marginTop: rs(4), alignItems: 'center', justifyContent: 'center' },
+  limitCloseTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(15), color: JT.textTertiary },
   deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
   deckCompanyLogoOverlay: {
     position: 'absolute',
