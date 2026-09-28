@@ -1339,7 +1339,9 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 `browser_guard.py` — DNS-пиннинг, попапы, загрузки, разрешения, WebRTC, service
 worker, изоляция контекстов; `browser_planner.py` + `yandex_gpt.py` — сопоставление
 полей через YandexGPT без данных кандидата (`redact`); `ats_hosts.py` — домены
-ATS-платформ, куда вакансия может увести анкету; `recon_browser.py` — разведка
+ATS-платформ, куда вакансия может увести анкету; `browser_limits.py` — пределы ресурсов (сколько браузеров
+по памяти, сторож задачи, добивание своих зависших Chromium; замер —
+`scripts/browser-bench.py`); `recon_browser.py` — разведка
 браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало».
 Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
 `run_worker.py`; служба `infra/jupiter-browser-run.sh`, включается флагом

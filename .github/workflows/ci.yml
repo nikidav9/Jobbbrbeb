@@ -256,7 +256,7 @@ jobs:
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
           pip install quickjs
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py jupiter/yandex_gpt.py jupiter/ats_hosts.py jupiter/browser_frames.py jupiter/browser_planner.py jupiter/browser_success.py jupiter/browser_sessions.py jupiter/browser_overlays.py jupiter/browser_captcha.py jupiter/browser_custom_controls.py jupiter/browser_guard.py jupiter/recon_browser.py jupiter/test_browser_zoo.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py jupiter/yandex_gpt.py jupiter/ats_hosts.py jupiter/browser_frames.py jupiter/browser_planner.py jupiter/browser_success.py jupiter/browser_sessions.py jupiter/browser_overlays.py jupiter/browser_captcha.py jupiter/browser_custom_controls.py jupiter/browser_guard.py jupiter/recon_browser.py jupiter/test_browser_zoo.py jupiter/browser_limits.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
@@ -274,6 +274,7 @@ jobs:
           (cd jupiter && python3 test_js_engine.py)
           (cd jupiter && python3 test_yandex_gpt.py)
           (cd jupiter && python3 test_ats_hosts.py)
+          (cd jupiter && python3 test_browser_limits.py)
           python3 tests/jupiter_private_lab_infra_test.py
           python3 tests/jupiter_browser_infra_test.py
           bash tests/nginx_config_test.sh
