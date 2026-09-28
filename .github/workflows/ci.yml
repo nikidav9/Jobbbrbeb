@@ -97,6 +97,9 @@ jobs:
       - name: Почта JobToo — читаемый адрес, повтор получает цифру
         run: php tests/jupiter_mail_address_test.php
 
+      - name: Капча человеку — права, срок, длина ответа, чужая заявка
+        run: php tests/jupiter_captcha_test.php
+
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
 
@@ -253,7 +256,7 @@ jobs:
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
           pip install quickjs
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py jupiter/yandex_gpt.py jupiter/ats_hosts.py jupiter/browser_frames.py jupiter/browser_planner.py jupiter/browser_success.py jupiter/browser_sessions.py jupiter/browser_overlays.py jupiter/browser_captcha.py jupiter/browser_custom_controls.py jupiter/browser_guard.py jupiter/recon_browser.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
@@ -269,7 +272,10 @@ jobs:
           (cd jupiter && python3 test_e2e.py)
           (cd jupiter && python3 test_recon.py)
           (cd jupiter && python3 test_js_engine.py)
+          (cd jupiter && python3 test_yandex_gpt.py)
+          (cd jupiter && python3 test_ats_hosts.py)
           python3 tests/jupiter_private_lab_infra_test.py
+          python3 tests/jupiter_browser_infra_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build
@@ -331,7 +337,13 @@ jobs:
       - name: Browser engine on a synthetic heavy career site
         env:
           JUPITER_BROWSER_TESTS: '1'
-        run: cd jupiter && python3 test_browser_engine.py -v
+        run: |
+          cd jupiter
+          for t in test_browser_engine test_browser_frames test_browser_planner test_browser_success \
+                   test_browser_sessions test_browser_overlays test_browser_captcha \
+                   test_browser_custom_controls test_browser_guard test_recon_browser; do
+            echo "== $t"; python3 $t.py
+          done
 
   dashboard:
     name: Dashboard build

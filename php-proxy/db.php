@@ -190,6 +190,8 @@ $adminFns = [
     'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
     'jupiterGetCandidateProfile', 'jupiterSubmitGuard', 'jupiterMailIngest',
     'jupiterRequeueSiteReady',
+    // Капча человеку: воркер кладёт картинку, забирает ответ, сообщает итог.
+    'jupiterCaptchaPost', 'jupiterCaptchaPoll', 'jupiterCaptchaResult',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -292,6 +294,8 @@ $selfArgFns = [
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
     'jupiterApplicationEvents' => 0,
+    // Капча человеку: видит и отвечает только владелец заявки.
+    'jupiterCaptchaGet' => 0, 'jupiterCaptchaAnswer' => 0,
     // Свайпы по карьерным вакансиям: только свои.
     'dbExtSwipe' => 0, 'dbExtUnswipe' => 0,
     // Свайпы по своим вакансиям JobToo: только свои.
@@ -7489,6 +7493,122 @@ try {
             }
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
             jt_respond(['ok' => true]); exit;
+        }
+
+        // Капча человеку. Воркер кладёт картинку (base64 PNG до 200 КБ), заявка
+        // встаёт в «Нужны вы» с CAPTCHA_HUMAN, человеку уходит пуш. Прежние
+        // ждущие капчи этой заявки закрываются: живёт одна.
+        case 'jupiterCaptchaPost': {
+            $appId = (string)($args[0] ?? '');
+            $img = (string)($args[1] ?? '');
+            if ($appId === '' || $img === '' || strlen($img) > 200000) {
+                jt_respond(['error' => 'Нужна картинка до 200 КБ'], 400); exit;
+            }
+            $bin = base64_decode($img, true);
+            if ($bin === false || strncmp($bin, "\x89PNG", 4) !== 0) {
+                jt_respond(['error' => 'Ожидается PNG в base64'], 400); exit;
+            }
+            $app = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $appId], 'id,user_id,company');
+            if (!$app) { jt_respond(['error' => 'Заявка не найдена'], 404); exit; }
+            $now = now_iso();
+            sb_update('jm_jupiter_captcha', [
+                'application_id' => 'eq.' . $appId, 'status' => 'in.(pending,answered)',
+            ], ['status' => 'expired']);
+            $rows = sb_insert('jm_jupiter_captcha', [
+                'application_id' => $appId,
+                'user_id' => (string)$app['user_id'],
+                'image_png' => $img,
+                'status' => 'pending',
+                'created_at' => $now,
+                'expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 600),
+            ], true);
+            sb_update('jm_jupiter_applications', ['id' => 'eq.' . $appId], [
+                'state' => 'action_required',
+                'reason_code' => 'CAPTCHA_HUMAN',
+                'updated_at' => $now,
+            ]);
+            $company = trim((string)($app['company'] ?? ''));
+            if ($company === '') $company = 'компанию';
+            try {
+                notify_user((string)$app['user_id'], 'Нужна капча',
+                    'Введите слово, чтобы отклик в ' . $company . ' ушёл',
+                    'jupiter_captcha', ['application_id' => $appId]);
+            } catch (Throwable $e) { /* Пуш не должен ронять запись капчи. */ }
+            $data = ['ok' => true, 'id' => $rows[0]['id'] ?? null];
+            break;
+        }
+
+        // Последняя ждущая и не просроченная капча заявки владельца.
+        case 'jupiterCaptchaGet': {
+            $row = sb_single('jm_jupiter_captcha', [
+                'user_id' => 'eq.' . (string)($args[0] ?? ''),
+                'application_id' => 'eq.' . (string)($args[1] ?? ''),
+                'status' => 'eq.pending',
+                'order' => 'created_at.desc',
+            ], 'id,image_png,expires_at');
+            if ($row && strtotime((string)$row['expires_at']) <= time()) $row = null;
+            $data = $row ? [
+                'id' => $row['id'], 'image_png' => $row['image_png'],
+                'expires_at' => $row['expires_at'],
+            ] : null;
+            break;
+        }
+
+        // Ответ человека: только своя, ждущая, не просроченная; до 64 символов.
+        case 'jupiterCaptchaAnswer': {
+            $uidArg = (string)($args[0] ?? '');
+            $appId = (string)($args[1] ?? '');
+            $answer = trim((string)($args[2] ?? ''));
+            if ($answer === '' || mb_strlen($answer) > 64) {
+                jt_respond(['error' => 'Ответ: от 1 до 64 символов'], 400); exit;
+            }
+            $row = sb_single('jm_jupiter_captcha', [
+                'user_id' => 'eq.' . $uidArg,
+                'application_id' => 'eq.' . $appId,
+                'status' => 'eq.pending',
+                'order' => 'created_at.desc',
+            ], 'id,expires_at');
+            if (!$row || strtotime((string)$row['expires_at']) <= time()) {
+                jt_respond(['error' => 'Капча устарела'], 409); exit;
+            }
+            sb_update('jm_jupiter_captcha', [
+                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uidArg, 'status' => 'eq.pending',
+            ], ['status' => 'answered', 'answer' => $answer, 'answered_at' => now_iso()]);
+            $data = ['ok' => true];
+            break;
+        }
+
+        // Воркер забирает ответ. Просроченная ждущая капча закрывается здесь.
+        case 'jupiterCaptchaPoll': {
+            $row = sb_single('jm_jupiter_captcha', [
+                'application_id' => 'eq.' . (string)($args[0] ?? ''),
+                'order' => 'created_at.desc',
+            ], 'id,status,answer,expires_at');
+            if (!$row) { $data = ['status' => 'none', 'answer' => null]; break; }
+            if ($row['status'] === 'pending' && strtotime((string)$row['expires_at']) <= time()) {
+                sb_update('jm_jupiter_captcha', ['id' => 'eq.' . $row['id'], 'status' => 'eq.pending'],
+                    ['status' => 'expired']);
+                $row['status'] = 'expired';
+            }
+            $data = [
+                'status' => $row['status'],
+                'answer' => $row['status'] === 'answered' ? $row['answer'] : null,
+            ];
+            break;
+        }
+
+        // Итог от воркера: ответ подошёл (solved) или нет (failed).
+        case 'jupiterCaptchaResult': {
+            $appId = (string)($args[0] ?? '');
+            $result = (string)($args[1] ?? '');
+            if (!in_array($result, ['solved', 'failed'], true)) {
+                jt_respond(['error' => 'Unknown result'], 400); exit;
+            }
+            sb_update('jm_jupiter_captcha', [
+                'application_id' => 'eq.' . $appId, 'status' => 'eq.answered',
+            ], ['status' => $result, 'answer' => null]);
+            $data = ['ok' => true];
+            break;
         }
 
         case 'jupiterGetCandidateProfile': {

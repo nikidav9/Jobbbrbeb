@@ -41,7 +41,9 @@ with required(table_name) as (
     -- security`. jm_resume_files — резюме людей, там персональные данные.
     ('jm_guest_events'), ('jm_referral_rewards'), ('jm_resume_files'),
     -- Закладки карьерных вакансий (миграция 129).
-    ('jm_ext_saved')
+    ('jm_ext_saved'),
+    -- Капча человеку для Jupiter (миграция 135).
+    ('jm_jupiter_captcha')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r

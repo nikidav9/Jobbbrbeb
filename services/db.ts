@@ -2471,3 +2471,24 @@ export async function dbSupportEscalate(userId: string, reason = ''): Promise<{ 
 export async function dbSupportSend(userId: string, text: string): Promise<void> {
   await proxy('supportSend', [userId, text]);
 }
+
+/** Ждущая капча заявки (картинка PNG в base64) или null, если её нет/просрочена. */
+export async function jupiterCaptchaGet(
+  userId: string,
+  applicationId: string,
+): Promise<{ id: string; image_png: string; expires_at: string } | null> {
+  const r = await proxy<{ id: string; image_png: string; expires_at: string } | null>(
+    'jupiterCaptchaGet',
+    [userId, applicationId],
+  );
+  return r ?? null;
+}
+
+/** Ответ на капчу заявки (до 64 символов). Просроченная даст ошибку 409. */
+export async function jupiterCaptchaAnswer(
+  userId: string,
+  applicationId: string,
+  answer: string,
+): Promise<void> {
+  await proxy('jupiterCaptchaAnswer', [userId, applicationId, answer]);
+}

@@ -846,7 +846,7 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 страница-проверка. Только чтение: без ввода, переход не GET обрывается,
 подпись честная. Итог — `/jupiter-browser-probe.json`, ход —
 `/jupiter-browser-probe-status.json`; сторож — `tests/jupiter_private_lab_infra_test.py`.
-Сам Jupiter браузера по-прежнему не содержит.
+С 28.09.2026 в Jupiter есть браузерный движок — см. раздел Jupiter.
 
 **Разведка сама находит и включает новые источники.** Недельный таймер
 `jt-career-discover` (вс 03:10, `infra/bootstrap.sh`) запускает
@@ -1326,6 +1326,26 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 `jupiter/test_browser_engine.py`, отдельная задача CI `jupiter-browser`
 (Playwright ставится только там).
 
+Модули браузерного движка (28.09.2026; пока отдельные, в `browser_engine.py`
+подключаются следующим шагом): `browser_frames.py` — анкеты в iframe;
+`browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
+все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`)
+и поля с маской; `browser_success.py` — успех по ответу API и тостам;
+`browser_sessions.py` — парковка сессии на время капчи; `browser_captcha.py` —
+найти капчу, вырезать только её картинку, ввести ответ человека (не решает сам);
+`browser_guard.py` — DNS-пиннинг, попапы, загрузки, разрешения, WebRTC, service
+worker, изоляция контекстов; `browser_planner.py` + `yandex_gpt.py` — сопоставление
+полей через YandexGPT без данных кандидата (`redact`); `ats_hosts.py` — домены
+ATS-платформ, куда вакансия может увести анкету; `recon_browser.py` — разведка
+браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало».
+Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
+`run_worker.py`; служба `infra/jupiter-browser-run.sh`, включается флагом
+`/etc/jobtoo/jupiter-browser.enabled` (`bootstrap.sh`). Капча человеку —
+миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
+`jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
+(`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`. Юридическая сверка —
+`docs/jupiter-browser-legal.md`.
+
 | Файл | Что внутри |
 |---|---|
 | `jupiter/engine.py` | HTTP, cookie, разбор HTML в семантическую модель (`PageState`/`FormState`/`ControlState`), сборка и отправка формы; для tbank.ru, alfabank.ru, tochka.com — доверие только центру Минцифры (`ru_trusted_ca.pem`) |
@@ -1489,7 +1509,7 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 Раздел «Внешние вакансии» (`/external`, `fetchExternal`): каталог — из открытого `/api/feed_stats.php` (там же правило IT-ленты и Москвы, отдаёт CORS `*`), свайпы `jm_ext_swipes` и отклики Jupiter `jm_jupiter_applications` за 90 дней, здоровье сбора — поля `last_*` в `jm_ext_sources`. Показы карточек не пишутся (события сняты в 096), воронка начинается со свайпа вправо.
 Раздел «Юпитер» (`dashboard/app/jupiter/page.tsx`) — замер автооткликов по сайтам
 компаний за 7/30 дней: отправил сам, подтверждено сайтом, ждут человека, «сайт ещё
-подключаем», частая причина остановки. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
+подключаем», частая причина остановки. Карточка «По движку» — HTTP/браузер из `checkpoint.summary.engine`, капча ждали/решена. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
 людей панель у базы не просит (`JUPITER_COLUMNS`), охрана — `tests/jupiter_stats.test.ts`.
 Выкладка — отдельная, через релизы GitHub; сервер тянет их сам.
 

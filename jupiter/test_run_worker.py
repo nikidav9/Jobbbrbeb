@@ -188,6 +188,106 @@ class TestWorkerLoop(unittest.TestCase):
                     os.environ[key] = value
 
 
+class TestEngineChoice(unittest.TestCase):
+    """JUPITER_ENGINE: http по умолчанию, browser — с закрытием после задачи."""
+
+    KEYS = ("JOBTOO_URL", "JOBTOO_ADMIN_TOKEN", "EXPO_PUBLIC_APP_SECRET",
+            "JUPITER_POLL_INTERVAL", "JUPITER_ENGINE", "JUPITER_CHROMIUM")
+
+    def setUp(self):
+        import run_worker
+        import worker as worker_mod
+        self.rw = run_worker
+        self.wm = worker_mod
+        self.old_run = worker_mod.run_once
+        self.old_env = {k: os.environ.get(k) for k in self.KEYS}
+        self.old_pw = run_worker.browser_engine.sync_playwright
+        self.old_cls = run_worker.browser_engine.JupiterBrowserEngine
+        os.environ.update({"JOBTOO_URL": "https://example.com", "JOBTOO_ADMIN_TOKEN": "tok",
+                           "EXPO_PUBLIC_APP_SECRET": "app", "JUPITER_POLL_INTERVAL": "0"})
+        os.environ.pop("JUPITER_ENGINE", None)
+        os.environ.pop("JUPITER_CHROMIUM", None)
+        run_worker._stop = False
+
+    def tearDown(self):
+        self.wm.run_once = self.old_run
+        self.rw.browser_engine.sync_playwright = self.old_pw
+        self.rw.browser_engine.JupiterBrowserEngine = self.old_cls
+        self.rw._stop = False
+        for k, v in self.old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_http_is_default_and_creates_no_browser(self):
+        from engine import JupiterWebEngine
+
+        def boom(*a, **k):
+            raise AssertionError("браузер не нужен в режиме http")
+        self.rw.browser_engine.JupiterBrowserEngine = boom
+        agents = []
+
+        def fake_run_once(queue, pf, factory, wid, site_gate=None):
+            agents.append(factory(ApplicationTask(id="t", candidate_id="u",
+                                                  vacancy_url="https://example.com/j")))
+            self.rw._stop = True
+            return None
+        self.wm.run_once = fake_run_once
+        self.assertEqual(self.rw.main(), 0)
+        self.assertIsInstance(agents[0].engine, JupiterWebEngine)
+
+    def test_browser_engine_created_and_closed_after_task(self):
+        created = []
+
+        class FakeEngine:
+            def __init__(self, allowed_hosts, *, read_only=False, executable_path=None, **kw):
+                self.allowed_hosts = set(allowed_hosts)
+                self.read_only = read_only
+                self.executable_path = executable_path
+                self.closed = False
+                created.append(self)
+
+            def close(self):
+                self.closed = True
+
+        self.rw.browser_engine.sync_playwright = object()
+        self.rw.browser_engine.JupiterBrowserEngine = FakeEngine
+        os.environ["JUPITER_ENGINE"] = "browser"
+        os.environ["JUPITER_CHROMIUM"] = "/usr/bin/chromium"
+        seen = []
+
+        def fake_run_once(queue, pf, factory, wid, site_gate=None):
+            agent = factory(ApplicationTask(id="t", candidate_id="u",
+                                            vacancy_url="https://example.com/j"))
+            seen.append(agent)
+            self.assertFalse(created[0].closed)
+            self.rw._stop = True
+            raise RuntimeError("падение задачи")  # закрытие и при ошибке
+        self.wm.run_once = fake_run_once
+        self.assertEqual(self.rw.main(), 0)
+        self.assertEqual(len(created), 1)
+        self.assertIs(seen[0].engine, created[0])
+        self.assertTrue(created[0].read_only)
+        self.assertEqual(created[0].executable_path, "/usr/bin/chromium")
+        self.assertTrue(created[0].closed)
+
+    def test_browser_without_playwright_fails_at_startup(self):
+        self.rw.browser_engine.sync_playwright = None
+        os.environ["JUPITER_ENGINE"] = "browser"
+        called = []
+        self.wm.run_once = lambda *a, **k: called.append(1)
+        with self.assertRaises(SystemExit) as raised:
+            self.rw.main()
+        self.assertIn("Playwright", str(raised.exception))
+        self.assertEqual(called, [])
+
+    def test_unknown_engine_exits(self):
+        os.environ["JUPITER_ENGINE"] = "selenium"
+        with self.assertRaises(SystemExit):
+            self.rw.main()
+
+
 class TestProfileFactory(unittest.TestCase):
     """Проверяем, что worker.run_once вызывает фабрику профиля с задачей."""
 

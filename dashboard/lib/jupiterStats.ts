@@ -11,9 +11,14 @@
  * node, без сборки панели.
  */
 
-export const JUPITER_COLUMNS = 'state,reason_code,canonical_url,vacancy_url,company,created_at,submitted_at,verified_at'
+// engine — путь в JSON сводки прогона (checkpoint.summary.engine), а не сам
+// checkpoint: в нём лежат токены возобновления, панели нужна одна строка.
+export const JUPITER_COLUMNS = 'id,state,reason_code,canonical_url,vacancy_url,company,created_at,submitted_at,verified_at,engine:checkpoint->summary->>engine'
 
 export type JupiterRow = {
+  id?: string
+  /** Движок последнего прогона: jupiter-web-engine | jupiter-browser-engine. */
+  engine?: string | null
   state: string
   reason_code: string | null
   canonical_url: string | null
@@ -170,10 +175,89 @@ export function buildReport(rows: JupiterRow[], days: number, now: Date = new Da
   return { totals, sites, days: Array.from(byDay.values()) }
 }
 
+/** Ждала ли заявка капчу человека: CAPTCHA_HUMAN (браузерный движок) или CAPTCHA_REQUIRED (HTTP). */
+export const CAPTCHA_REASONS = ['CAPTCHA_HUMAN', 'CAPTCHA_REQUIRED']
+
+/** Событие истории отклика с капчей (jm_jupiter_events, без user_id). */
+export type CaptchaEvent = { application_id: string; reason_code: string | null; engine?: string | null }
+
+export type EngineKey = 'http' | 'browser' | 'unknown'
+
+export const ENGINE_LABEL: Record<EngineKey, string> = {
+  http: 'HTTP (jupiter-web-engine)',
+  browser: 'Браузер (jupiter-browser-engine)',
+  unknown: 'Движок не записан',
+}
+
+export function engineOf(name: string | null | undefined): EngineKey {
+  if (name === 'jupiter-web-engine') return 'http'
+  if (name === 'jupiter-browser-engine') return 'browser'
+  return 'unknown'
+}
+
+export type EngineStat = {
+  engine: EngineKey
+  total: number
+  auto: number
+  verified: number
+  /** Заявок, дошедших до капчи человека. */
+  captchaWaited: number
+  /** Из них уже отправлено. */
+  captchaSolved: number
+  /** Три самые частые причины остановки (не для отправленных). */
+  topReasons: { code: string; count: number }[]
+}
+
+/**
+ * Разрез по движку за последние `days` дней (0 — всё время).
+ * Движок берём из строки заявки, а если там пусто — из события с капчей.
+ */
+export function buildEngineReport(
+  rows: JupiterRow[], events: CaptchaEvent[], days: number, now: Date = new Date(),
+): EngineStat[] {
+  const from = days ? lastDays(days, now)[0] : ''
+  const evByApp = new Map<string, CaptchaEvent[]>()
+  for (const e of events) {
+    const list = evByApp.get(e.application_id)
+    if (list) list.push(e); else evByApp.set(e.application_id, [e])
+  }
+  const acc = new Map<EngineKey, EngineStat & { reasons: Map<string, number> }>()
+  for (const r of rows) {
+    if (from && moscowDay(r.created_at) < from) continue
+    const evs = (r.id && evByApp.get(r.id)) || []
+    const key = engineOf(r.engine ?? evs.find(e => e.engine)?.engine)
+    let s = acc.get(key)
+    if (!s) {
+      s = { engine: key, total: 0, auto: 0, verified: 0, captchaWaited: 0, captchaSolved: 0, topReasons: [], reasons: new Map() }
+      acc.set(key, s)
+    }
+    const b = bucketOf(r)
+    s.total++
+    if (b === 'auto') { s.auto++; if (r.verified_at) s.verified++ }
+    if (b !== 'auto' && b !== 'manual' && r.reason_code) {
+      s.reasons.set(r.reason_code, (s.reasons.get(r.reason_code) ?? 0) + 1)
+    }
+    const waited = CAPTCHA_REASONS.includes(r.reason_code ?? '') || evs.length > 0
+    if (waited) {
+      s.captchaWaited++
+      if (r.state === 'submitted') s.captchaSolved++
+    }
+  }
+  const order: EngineKey[] = ['http', 'browser', 'unknown']
+  return order.filter(k => acc.has(k)).map(k => {
+    const { reasons, ...s } = acc.get(k)!
+    const topReasons = Array.from(reasons.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 3).map(([code, count]) => ({ code, count }))
+    return { ...s, topReasons }
+  })
+}
+
 /** Причины остановки — теми же словами, что видит человек в «Откликах». */
 export const REASON_LABEL: Record<string, string> = {
   SITE_NOT_VERIFIED: 'Сайт ещё подключаем',
   CAPTCHA_REQUIRED: 'Капча',
+  CAPTCHA_HUMAN: 'Капча — ждём человека',
   CONSENT_REQUIRED: 'Нужно согласие',
   UNSUPPORTED_SCRIPT: 'Нужен браузер',
   MISSING_PROFILE_FIELD: 'Вопрос без ответа в профиле',
