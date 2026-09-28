@@ -1327,7 +1327,9 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 (Playwright ставится только там).
 
 Модули браузерного движка (28.09.2026; в `browser_engine.py` уже подключены
-`browser_guard` и `browser_overlays`, остальные — следующим шагом; «зоопарк» из
+`browser_guard`, `browser_overlays`, `browser_custom_controls` (списки — в снимке
+`<select data-jt-custom>`) и `browser_frames` (анкету из iframe открывает
+страницей, если хост разрешён); капча, успех по API и планировщик — следующим шагом; «зоопарк» из
 8 тяжёлых синтетических сайтов — `jupiter/test_browser_zoo.py`): `browser_frames.py` — анкеты в iframe;
 `browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
 все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`)

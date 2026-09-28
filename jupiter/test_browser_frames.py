@@ -88,7 +88,7 @@ class FramesTest(unittest.TestCase):
 
     def test_snapshot_of_both_frames_has_fields_and_refs(self):
         for f in find_application_frames(self.tab, {"127.0.0.1"}):
-            data = snapshot_frame(f.frame, SNAPSHOT_JS, SUBMIT_TEXT_RE)
+            data = snapshot_frame(f.frame, SNAPSHOT_JS, [SUBMIT_TEXT_RE, []])
             self.assertIn('id="fn"', data["html"])
             self.assertIn('id="ph"', data["html"])
             self.assertIn("data-jt-ref", data["html"])

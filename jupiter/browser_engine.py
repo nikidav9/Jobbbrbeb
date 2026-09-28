@@ -47,6 +47,10 @@ from engine import (
     _SemanticParser,
 )
 import browser_guard
+from browser_custom_controls import (
+    CLONE_HOOK_JS, apply_custom_select, discover_custom_selects, fill_masked,
+)
+from browser_frames import find_application_frames
 from browser_overlays import dismiss_overlays
 from policy import NetworkPolicy, PolicyError, is_blocked_address, literal_loopback
 
@@ -61,6 +65,7 @@ except ImportError:  # pragma: no cover
 # Честная подпись: обычный Chrome плюс кто мы. Без «HeadlessChrome» — его
 # режут как бота, но и не выдаём себя за человека.
 UA_SUFFIX = " JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)"
+CUSTOM_WIDGETS = "[role=combobox]:not(select),[role=listbox]:not(select),[aria-haspopup=listbox]:not(select)"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Кнопки, открывающие анкету. Порядок — от самых точных.
 APPLY_TEXT_RE = (
@@ -72,8 +77,8 @@ SUBMIT_TEXT_RE = r"отправ|откликн|подать|далее|прод�
 # Снимок отрисованной страницы. Живой DOM не меняем, кроме меток data-jt-ref:
 # по ним submit() находит элементы. Всё остальное — в клоне.
 SNAPSHOT_JS = r"""
-(submitReSrc) => {
-  const sel = 'input,select,textarea,button';
+([submitReSrc, customSpecs]) => {
+  const sel = 'input,select,textarea,button,[data-jt-cs]';
   const live = Array.from(document.querySelectorAll(sel));
   live.forEach((el, i) => el.setAttribute('data-jt-ref', String(i)));
   const visible = el => {
@@ -166,9 +171,12 @@ SNAPSHOT_JS = r"""
       virtualForm = true;
     }
   }
+  // Самописные списки (role=combobox) — в клоне обычный <select> с их
+  // вариантами. После виртуальной формы: та опирается на узлы клона.
+  (__CUSTOM_HOOK__)(clone, customSpecs);
   return { html: '<!doctype html>' + clone.outerHTML, url: location.href, virtualForm };
 }
-"""
+""".replace("__CUSTOM_HOOK__", CLONE_HOOK_JS.strip())
 
 # Кнопка «Откликнуться»: видимая, текст по APPLY_TEXT_RE. Возвращает метку
 # или null. Ссылки на другие сайты не жмём — туда агент пойдёт сам, по политике.
@@ -354,7 +362,7 @@ class JupiterBrowserEngine:
 
     def _snapshot(self) -> PageState:
         try:
-            data = self._tab.evaluate(SNAPSHOT_JS, SUBMIT_TEXT_RE)
+            data = self._tab.evaluate(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
         except PlaywrightError as exc:
             raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
         parser = _SemanticParser(data["url"])
@@ -370,6 +378,15 @@ class JupiterBrowserEngine:
         self.page = page
         return page
 
+    def _custom_specs(self) -> list[dict]:
+        # discover раскрывает каждый список кликом — только если такие есть.
+        try:
+            if not self._tab.locator(CUSTOM_WIDGETS).count():
+                return []
+            return [c.as_dict() for c in discover_custom_selects(self._tab)]
+        except PlaywrightError:
+            return []
+
     @staticmethod
     def _has_candidate_form(page: PageState) -> bool:
         text_like = {"text", "email", "tel", "file", ""}
@@ -380,6 +397,31 @@ class JupiterBrowserEngine:
         )
 
     def _reveal_form(self, page: PageState) -> PageState:
+        page = self._click_apply(page)
+        if self._has_candidate_form(page):
+            return page
+        return self._open_frame_form(page)
+
+    def _open_frame_form(self, page: PageState) -> PageState:
+        """Анкета во iframe (Huntflow, Potok и самописные) — открыть её адрес
+        страницей, если хост разрешён. Один уровень, без рекурсии."""
+        try:
+            frames = find_application_frames(self._tab, self.allowed_hosts)
+        except PlaywrightError:
+            return page
+        for item in frames:
+            url = item.direct_url or (item.url if item.same_origin and item.url.startswith("http") else "")
+            host = (urllib.parse.urlparse(url).hostname or "").lower()
+            if not url or host not in self.allowed_hosts:
+                self.actions.append({"action": "frame_form_skipped", "url": item.url[:200]})
+                continue
+            self.actions.append({"action": "frame_open", "url": url[:200]})
+            self._goto(url)
+            self._dismiss_overlays()
+            return self._click_apply(self._snapshot())
+        return page
+
+    def _click_apply(self, page: PageState) -> PageState:
         """Анкеты не видно — нажать «Откликнуться» (до max_apply_clicks раз)."""
         for _ in range(self.max_apply_clicks):
             if self._has_candidate_form(page):
@@ -403,20 +445,19 @@ class JupiterBrowserEngine:
             page = self._snapshot()
         return page
 
-    # ── Интерфейс JupiterWebEngine ─────────────────────────────────────────
-    def open(self, url: str) -> PageState:
+    def _goto(self, url: str) -> None:
         self.assert_reachable(url)
         try:
             response = self._tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
         except PlaywrightError as exc:
             raise EngineTransportError(f"Страница не открылась: {exc}") from exc
         self._last_status = response.status if response is not None else 200
-        final = self._tab.url
-        try:
-            self.assert_allowed(final)
-        except EngineSecurityError:
-            raise
+        self.assert_allowed(self._tab.url)
         self._settle()
+
+    # ── Интерфейс JupiterWebEngine ─────────────────────────────────────────
+    def open(self, url: str) -> PageState:
+        self._goto(url)
         self._dismiss_overlays()
         return self._reveal_form(self._snapshot())
 
@@ -453,6 +494,11 @@ class JupiterBrowserEngine:
                 elif control.type in {"checkbox", "radio"}:
                     if loc.is_checked() != control.checked:
                         loc.set_checked(control.checked, force=True)
+                elif control.tag == "select" and loc.get_attribute("data-jt-cs") is not None:
+                    chosen = next((o.label for o in control.options if o.selected and o.value), "")
+                    if chosen and not apply_custom_select(self._tab, control.dom_ref, chosen):
+                        raise EngineTransportError(
+                            f"Не выбран вариант {chosen!r} в списке {control.label or control.name!r}")
                 elif control.tag == "select":
                     values = control.selected_values
                     if values:
@@ -463,8 +509,7 @@ class JupiterBrowserEngine:
                         loc.fill(control.value, force=True)
                         # Маски телефона переписывают ввод — тогда печатаем по символу.
                         if loc.input_value() != control.value and control.type == "tel":
-                            loc.fill("", force=True)
-                            loc.press_sequentially(control.value, delay=30)
+                            fill_masked(self._tab, loc, control.value)
             except PlaywrightError as exc:
                 raise EngineTransportError(
                     f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"

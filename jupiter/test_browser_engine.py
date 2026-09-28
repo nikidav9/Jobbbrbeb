@@ -14,6 +14,7 @@ import os
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -70,14 +71,86 @@ fetch('/api/track', { method: 'POST', body: 'open' }).catch(() => {});
 </script>
 """
 
+# Самописный список городов и телефон с маской — как в React-анкетах.
+COMBO_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Аналитик — Карьера</title>
+<h1>Аналитик данных</h1>
+<div id="app">
+  <label>Имя и фамилия <input id="nm"></label>
+  <label>Email <input id="em" type="email"></label>
+  <label>Телефон <input id="ph" type="tel" placeholder="+7 (___) ___-__-__"></label>
+  <span id="city-l">Город</span>
+  <div id="city" role="combobox" aria-labelledby="city-l" aria-required="true"
+       aria-expanded="false" aria-controls="city-list" tabindex="0"
+       style="border:1px solid #999;padding:6px;width:220px">Выберите город</div>
+  <ul id="city-list" role="listbox" style="display:none">
+    <li role="option">Санкт-Петербург</li><li role="option">Москва</li><li role="option">Казань</li>
+  </ul>
+  <button type="button" id="send">Отправить отклик</button>
+</div>
+<script>
+const ph = document.getElementById('ph');
+ph.addEventListener('input', () => {
+  let d = ph.value.replace(/\\D/g, '');
+  if (d.startsWith('8')) d = '7' + d.slice(1);
+  if (!d.startsWith('7')) d = '7' + d;
+  d = d.slice(0, 11);
+  const p = [d.slice(1, 4), d.slice(4, 7), d.slice(7, 9), d.slice(9, 11)];
+  ph.value = '+7 (' + p[0] + (d.length > 4 ? ') ' + p[1] : '') + (d.length > 7 ? '-' + p[2] : '') + (d.length > 9 ? '-' + p[3] : '');
+});
+const box = document.getElementById('city'), list = document.getElementById('city-list');
+box.addEventListener('click', () => {
+  const open = list.style.display === 'none';
+  list.style.display = open ? 'block' : 'none';
+  box.setAttribute('aria-expanded', String(open));
+});
+for (const li of list.querySelectorAll('li')) li.addEventListener('click', () => {
+  box.textContent = li.textContent; box.dataset.value = li.textContent;
+  list.querySelectorAll('li').forEach(x => x.setAttribute('aria-selected', String(x === li)));
+  list.style.display = 'none'; box.setAttribute('aria-expanded', 'false');
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') list.style.display = 'none'; });
+document.getElementById('send').addEventListener('click', async () => {
+  const body = JSON.stringify({ name: document.getElementById('nm').value,
+    email: document.getElementById('em').value, phone: ph.value, city: box.dataset.value || '' });
+  const r = await fetch('/api/apply', { method: 'POST', body });
+  document.getElementById('app').innerHTML = (await r.json()).ok ? '<h2>Спасибо! Ваш отклик получен</h2>' : 'Ошибка';
+});
+</script>
+"""
+
+# Анкета во iframe (так вставляют Huntflow, Potok и самописные виджеты).
+FRAMED_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Тестировщик — Карьера</title>
+<h1>QA-инженер</h1>
+<p>Оставьте отклик в форме ниже.</p>
+<iframe src="/frame-form" width="600" height="500"></iframe>
+"""
+
+FRAME_FORM = """<!doctype html>
+<meta charset="utf-8">
+<form method="post" action="/api/frame-apply">
+  <label>Имя <input name="first_name" required></label>
+  <label>Фамилия <input name="last_name" required></label>
+  <label>Email <input name="email" type="email" required></label>
+  <label>Телефон <input name="phone" type="tel" required></label>
+  <button type="submit">Отправить отклик</button>
+</form>
+"""
+
 
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
     def do_GET(self):
-        if self.path.startswith("/vacancy"):
-            body = SPA_VACANCY.encode("utf-8")
+        pages = {"/vacancy": SPA_VACANCY, "/combo": COMBO_VACANCY,
+                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
+        page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
+        if page is not None:
+            body = page.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -91,9 +164,14 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length)
         self.server.state["posts"].append((self.path, raw))
-        body = json.dumps({"ok": True}).encode()
+        if self.path == "/api/frame-apply":
+            body = "<!doctype html><meta charset=utf-8><h2>Спасибо! Ваш отклик получен</h2>".encode()
+            ctype = "text/html; charset=utf-8"
+        else:
+            body = json.dumps({"ok": True}).encode()
+            ctype = "application/json"
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -105,6 +183,7 @@ PROFILE = {
     "email": "nikita.demo@reply.jobtoo.ru",
     "phone": "+79990000000",
     "consent": True,
+    "city": "Москва",
     "resume_path": "resume.txt",
 }
 
@@ -183,6 +262,30 @@ class BrowserEngineTest(unittest.TestCase):
         form = page.forms[0]
         with self.assertRaises(EngineSecurityError):
             eng.submit(page, form)
+
+    def test_custom_combobox_and_phone_mask_are_filled(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/combo/7", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        applies = [raw for path, raw in self.server.state["posts"] if path == "/api/apply"]
+        self.assertEqual(len(applies), 1, dump)
+        sent = json.loads(applies[0])
+        self.assertEqual(sent["city"], "Москва", sent)
+        self.assertEqual(sent["phone"], "+7 (999) 000-00-00", sent)
+        self.assertEqual(sent["email"], "nikita.demo@reply.jobtoo.ru")
+
+    def test_form_inside_iframe_is_opened_and_submitted(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/framed/3", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        self.assertTrue(any(a.get("action") == "frame_open" for a in eng.actions), eng.actions)
+        applies = [raw for path, raw in self.server.state["posts"] if path == "/api/frame-apply"]
+        self.assertEqual(len(applies), 1, dump)
+        self.assertIn("Давыдов", urllib.parse.unquote_plus(applies[0].decode("utf-8")))
 
     def test_navigation_outside_allowed_hosts_is_refused(self):
         eng = self.engine(read_only=True)
