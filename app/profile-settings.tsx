@@ -11,11 +11,8 @@ import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
   dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
-  jupiterLiveState, jupiterSetLive,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
-import { forgetJupiterLive } from '@/services/jupiterLive';
-import { confirmAsync } from '@/services/confirm';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
@@ -271,35 +268,6 @@ export default function ProfileSettingsScreen() {
   const [notificationState, setNotificationState] = useState<NotificationState>('checking');
   const [notificationBusy, setNotificationBusy] = useState(false);
 
-  const [jupiterLive, setJupiterLive] = useState(false);
-  const [jupiterBusy, setJupiterBusy] = useState(false);
-
-  useEffect(() => {
-    if (!currentUser || currentUser.isGuest || currentUser.role !== 'worker') return;
-    jupiterLiveState(currentUser.id)
-      .then(state => setJupiterLive(state.enabled))
-      .catch(error => console.warn('[jupiterLiveState]', error));
-  }, [currentUser]);
-
-  const toggleJupiterLive = async (next: boolean) => {
-    if (!currentUser) return;
-    if (!next) {
-      const message = 'Выключить автоотклик? Новые отклики не будут отправляться, неотправленные остановятся. Уже отправленные работодателю отозвать через JobToo нельзя.';
-      const confirmed = await confirmAsync({ title: 'Автоотклик Юпитера', body: message, confirmLabel: 'Выключить', danger: true });
-      if (!confirmed) return;
-    }
-    setJupiterBusy(true);
-    try {
-      forgetJupiterLive();
-      await jupiterSetLive(currentUser.id, next);
-      setJupiterLive(next);
-    } catch (error) {
-      console.warn('[jupiterSetLive]', error);
-      showToast('Не удалось изменить автоотклик', 'error');
-    } finally {
-      setJupiterBusy(false);
-    }
-  };
   // Рекламная рассылка (38-ФЗ, ст. 18): переключатель — и способ дать
   // согласие, и способ его отозвать. Показываем то, что записано на сервере.
   const [adsOn, setAdsOn] = useState(false);
@@ -707,16 +675,6 @@ export default function ProfileSettingsScreen() {
                 await resetOnboarding(currentUser.id);
                 router.replace('/(tabs)/feed');
               }}
-            />
-          ) : null}
-          {isWorker ? (
-            <SwitchRow
-              label="Автоотклик Юпитера"
-              ionIcon="rocket-outline"
-              value={jupiterLive}
-              onChange={toggleJupiterLive}
-              disabled={jupiterBusy}
-              hint="Юпитер сам отправляет отклики на вакансии с сайтов компаний. Капчу, коды и согласия, которые компания просит от своего имени, вы проходите сами."
             />
           ) : null}
           <Row

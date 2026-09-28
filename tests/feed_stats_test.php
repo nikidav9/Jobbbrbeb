@@ -34,10 +34,6 @@ check('лента IT: раздел it плюс IT-компания целико�
 check('рабочие вакансии IT-компании в ленту не идут',
     fs_aggregate([['company' => 'Яндекс', 'section' => 'warehouse'], ['company' => 'Яндекс', 'section' => 'office'],
                   ['company' => 'Яндекс', 'section' => 'it']], 'x', ['Яндекс'])['it_feed_total'] === 2);
-check('в ленте — только сайты автоотклика',
-    fs_aggregate([['company' => 'Яндекс', 'section' => 'it', 'url' => 'https://yandex.ru/jobs/1'],
-                  ['company' => 'Сбер', 'section' => 'it', 'url' => 'https://www.rabota.sber.ru/v/2']],
-                 'x', [], ['rabota.sber.ru'])['feed_total'] === 1);
 check('пустая таблица', fs_aggregate([], 'x')['total'] === 0 && fs_aggregate([], 'x')['it_total'] === 0);
 
 check('в ленту по Москве не идут другие города',
@@ -52,10 +48,8 @@ check('«Москва, Санкт-Петербург» — Москва', fs_is_
 
 // Только эти столбцы из базы: ни описаний, ни ссылок, ни чего-либо о людях.
 $src = (string)file_get_contents(__DIR__ . '/../php-proxy/feed_stats.php');
-// url — только ради хоста (сайты автоотклика, миграция 135); ПДн тут нет.
-check('из базы берутся только company, section, место и адрес вакансии', str_contains($src, "], 'company,section,address,metro_station_norm,url');")
-    && substr_count($src, 'sb_select(') === 3 && str_contains($src, "sb_select('jm_it_companies', [], 'company')")
-    && str_contains($src, "sb_select('jm_jupiter_ready_hosts', [], 'host')"));
+check('из базы берутся только company, section и место', str_contains($src, "], 'company,section,address,metro_station_norm');")
+    && substr_count($src, 'sb_select(') === 2 && str_contains($src, "sb_select('jm_it_companies', [], 'company')"));
 
 if ($failures) {
     echo "feed stats: ПРОВАЛЫ\n";

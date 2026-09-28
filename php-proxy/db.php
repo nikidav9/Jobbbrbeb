@@ -6719,8 +6719,6 @@ try {
             // Старый клиент без третьего довода «Всего N» не показывает — ему
             // прежние 30 достаточно.
             $perCompany = $filters !== null ? 200 : 30;
-            // Отклик в один свайп (решение владельца 28.09.2026): только вакансии
-            // сайтов, куда Юпитер подаёт сам (jm_jupiter_ready_hosts, миграция 135).
             // Лента только IT (решение владельца 26.09.2026): раздел it плюс
             // вакансии компаний из jm_it_companies (миграция 120), кроме
             // «рабочих» разделов (миграция 132, 28.09.2026). И только
@@ -6734,7 +6732,7 @@ try {
             // «Показать N» в шторке фильтров считает только число — выдача не нужна.
             $pool = $fn === 'dbCountExtFeed' ? [] : sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
-                'p_it_only' => true, 'p_moscow_only' => true, 'p_ready_only' => true,
+                'p_it_only' => true, 'p_moscow_only' => true,
                 'p_hide_seen' => $filters['hide_seen'] ?? true,
             ], ['select' => EXT_FEED_POOL_SELECT]);
             $pool = is_array($pool) ? $pool : [];
@@ -6750,7 +6748,7 @@ try {
                 $needDesc = !empty($countFor['formats']) || !empty($countFor['query']);
                 $countPool = sb_rpc('jm_ext_feed_pool', [
                     'p_user' => $authUid, 'p_per_company' => 5000, 'p_sections' => $sections,
-                    'p_it_only' => true, 'p_moscow_only' => true, 'p_ready_only' => true,
+                    'p_it_only' => true, 'p_moscow_only' => true,
                     'p_hide_seen' => $countFor['hide_seen'] ?? true,
                 ], ['select' => 'company,title,salary,schedule,first_seen_at' . ($needDesc ? ',description' : '')]);
                 $countPool = is_array($countPool) ? $countPool : [];
@@ -7087,40 +7085,22 @@ try {
                 if (str_starts_with($h, 'www.')) $h = substr($h, 4);
                 if ($h !== '') $hosts[$h] = true;
             }
-            // Лента показывает только вакансии этих хостов (миграция 135):
-            // воркер присылает полный список, таблица за ним повторяет — новые
-            // добавляются, выбывшие (протухла разведка) убираются.
-            if ($hosts) {
-                $now = now_iso();
-                sb('POST', 'jm_jupiter_ready_hosts', ['on_conflict' => 'host'],
-                    array_map(fn($h) => ['host' => $h, 'updated_at' => $now], array_keys($hosts)),
-                    ['Prefer: resolution=merge-duplicates,return=minimal']);
-                sb('DELETE', 'jm_jupiter_ready_hosts', ['updated_at' => 'lt.' . $now], null,
-                    ['Prefer: return=minimal']);
-            }
             $rows = $hosts ? sb_select('jm_jupiter_applications', [
                 'state' => 'eq.action_required',
-                'reason_code' => 'in.(SITE_NOT_VERIFIED,PHONE_FILL)',
+                'reason_code' => 'eq.SITE_NOT_VERIFIED',
                 'lease_owner' => 'is.null',
                 'limit' => '500',
-            ], 'id,user_id,vacancy_url,reason_code') : [];
+            ], 'id,user_id,vacancy_url') : [];
             $moved = 0;
             $now = now_iso();
             foreach ($rows as $row) {
                 $host = strtolower((string)(parse_url((string)$row['vacancy_url'], PHP_URL_HOST) ?: ''));
                 if (str_starts_with($host, 'www.')) $host = substr($host, 4);
                 if (!isset($hosts[$host])) continue;
-                $patch = ['state' => 'queued', 'reason_code' => null, 'not_before' => null, 'updated_at' => $now];
-                // PHONE_FILL ставились без разрешения на автоотправку (28.09.2026) —
-                // даём его, только если поручение у человека включено.
-                if (($row['reason_code'] ?? '') === 'PHONE_FILL') {
-                    $u = sb_single('jm_users', ['id' => 'eq.' . $row['user_id']], 'jupiter_live_enabled_at');
-                    $patch['submission_authorized_at'] = !empty($u['jupiter_live_enabled_at']) ? $now : null;
-                }
                 sb_update('jm_jupiter_applications', [
                     'id' => 'eq.' . $row['id'], 'state' => 'eq.action_required',
-                    'reason_code' => 'eq.' . $row['reason_code'], 'lease_owner' => 'is.null',
-                ], $patch);
+                    'reason_code' => 'eq.SITE_NOT_VERIFIED', 'lease_owner' => 'is.null',
+                ], ['state' => 'queued', 'reason_code' => null, 'not_before' => null, 'updated_at' => $now]);
                 $moved++;
             }
             if ($moved) rt_touch('jm_jupiter_applications');
@@ -7293,61 +7273,19 @@ try {
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
-            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
-            $live = !empty($user['jupiter_live_enabled_at']);
-            // Поручение на согласия работодателю (Соглашение п. 8.3) — только
-            // вместе с боевой подачей: без неё согласия никому не нужны.
-            $delegated = $live && jt_employer_delegated($uidArg);
+            // Отклик — через телефон (решение владельца 28.09.2026). Свайп
+            // только копит заявку в «Нужны вы»: анкету заполняет автопилот во
+            // встроенном браузере (app/jupiter-fill.tsx), «Отправить» жмёт
+            // человек. Серверный Юпитер берёт лишь queued/retryable_failed
+            // (jupiter_lease_task), а PHONE_FILL не снимают ни
+            // jupiterRequeueSiteReady, ни jt_employer_requeue_consent — они
+            // смотрят на свои причины. Поэтому без разрешения на автоотправку
+            // и без поручения на согласия: их даёт сам человек на сайте.
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) {
-                // A second swipe after live mode was enabled is an explicit
-                // authorization for this vacancy. Reuse the existing row
-                // (the unique index still prevents duplicate employer
-                // submissions), but do not leave an old dry-run row stuck
-                // forever with submission_authorized_at = null.
-                $canAuthorizeExisting = $live
-                    && empty($existing['submission_authorized_at'])
-                    && empty($existing['lease_owner'])
-                    && in_array((string)($existing['state'] ?? ''), ['queued', 'ready_to_submit'], true);
-                // Повторный свайп по отклику, который ждал согласия, — то же
-                // поручение: если теперь оно есть, отклик идёт дальше сам.
-                $canResumeConsent = $delegated
-                    && empty($existing['third_party_consent_at'])
-                    && empty($existing['lease_owner'])
-                    && (string)($existing['state'] ?? '') === 'action_required'
-                    && (string)($existing['reason_code'] ?? '') === 'CONSENT_REQUIRED';
-                if ($canAuthorizeExisting || $canResumeConsent) {
-                    $now = now_iso();
-                    $filters = [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                        'lease_owner' => 'is.null',
-                    ];
-                    if ($canAuthorizeExisting) {
-                        $filters['submission_authorized_at'] = 'is.null';
-                    } else {
-                        $filters['state'] = 'eq.action_required';
-                    }
-                    $patch = [
-                        'state' => 'queued',
-                        'submission_authorized_at' => !empty($existing['submission_authorized_at'])
-                            ? $existing['submission_authorized_at'] : $now,
-                        'reason_code' => null,
-                        'not_before' => null,
-                        'updated_at' => $now,
-                    ];
-                    if ($delegated && empty($existing['third_party_consent_at'])) {
-                        $patch += jt_employer_consent_fields((string)$existing['vacancy_url'], $now);
-                    }
-                    sb_update('jm_jupiter_applications', $filters, $patch);
-                    $existing = sb_single('jm_jupiter_applications', [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                    ]);
-                }
                 $data = $existing;
                 break;
             }
@@ -7357,14 +7295,12 @@ try {
                 'vacancy_url' => mb_substr($url, 0, 2048),
                 'canonical_url' => $canonical,
                 'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
-                'state' => 'queued',
-                'submission_authorized_at' => $live ? now_iso() : null,
+                'state' => 'action_required',
+                'reason_code' => 'PHONE_FILL',
+                'submission_authorized_at' => null,
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
-            if ($delegated) {
-                $row += jt_employer_consent_fields($url, now_iso());
-            }
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.
