@@ -192,6 +192,7 @@ export default function Root({ children }: PropsWithChildren) {
             var shownAt = (window.performance && performance.now) ? performance.now() : 0;
             function now() { return (window.performance && performance.now) ? performance.now() : shownAt + MIN_MS; }
             // По макету логотип впрыгивает на 600-й мс; пришёл позже — сразу.
+            // Не загрузился — показываем как есть (подпись alt), а не пустую плашку.
             var logo = document.getElementById('splash-logo');
             function logoIn() {
               if (!logo || logo.classList.contains('in')) return;
@@ -199,8 +200,12 @@ export default function Root({ children }: PropsWithChildren) {
               logo.classList.add('in');
             }
             if (logo) {
-              if (logo.complete && logo.naturalWidth) logoIn();
-              else logo.addEventListener('load', logoIn);
+              // complete — и после успеха, и после ошибки: ждать тут нечего.
+              if (logo.complete) logoIn();
+              else {
+                logo.addEventListener('load', logoIn);
+                logo.addEventListener('error', logoIn);
+              }
             }
             // Пока bundle скачивается, плавно идём до 30 %. Дальше каждая
             // граница открывается только реальным этапом приложения:
