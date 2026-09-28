@@ -26,6 +26,21 @@ export const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   relocation: 'Готовы к переезду?',
   driversLicense: 'Есть водительские права?',
   employmentRestrictions: 'Ограничения по трудоустройству',
+  // Новые структурные поля — экраны docs/design/profile-edit/personal/*.html
+  // (lib/profileEdit.ts). Подписи здесь не показываются напрямую (экраны
+  // используют свои заголовки), но нужны для полноты Record<PersonalFieldKey>.
+  showAge: 'Показывать возраст',
+  showPhone: 'Показывать номер телефона',
+  workAuthorizationCountries: 'Где можете работать без визы',
+  metroStations: 'Станции метро',
+  employmentTypes: 'Занятость',
+  workFormats: 'Формат работы',
+  schedule: 'График работы',
+  linksList: 'Ссылки',
+  relocationCities: 'Города для переезда',
+  drivingCategories: 'Категории водительских прав',
+  hasOwnCar: 'Есть личный автомобиль',
+  hasEmploymentRestrictions: 'Есть ограничения по трудоустройству',
 };
 
 export const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job2 — Ограничения</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+  /* Экран под ширину 390 (iPhone 14/15). Тёмный фон вокруг — только для просмотра в браузере. */
+  html,body{margin:0}
+  body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif}
+  .screen{border-radius:40px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  a{color:#141414} a:hover{color:#C2410C}
+  input::placeholder,textarea::placeholder{color:#9A9086}
+</style>
+</head>
+<body>
+<div class="screen">
+<div style="width: 390px; height: 900px; box-sizing: border-box; position: relative; background: #F5EFE6; color: #141414; font-family: 'Manrope', system-ui, sans-serif; overflow: hidden">
+<div style="padding: 56px 20px 0; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 14px; height: 44px">
+<a href="#" aria-label="Назад в профиль" style="flex-shrink: 0; width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></a>
+<h1 style="margin: 0; flex-grow: 1; min-width: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.01em">Ограничения</h1>
+</div>
+<p style="margin: 10px 0 0; font-size: 14px; line-height: 1.45; font-weight: 600; color: #6B645C">Обязательства или договорённости, которые могут повлиять на новую работу</p>
+
+<div style="margin-top: 22px; display: flex; flex-direction: column; gap: 10px" role="radiogroup" aria-label="Ограничения по трудоустройству">
+<label style="display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; background: #FFFFFF; border: 1.5px solid #E3D9CC; cursor: pointer">
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 13px; border: 2px solid #141414; background: #FFFFFF"></span>
+<span style="font-size: 16px; font-weight: 800">Ограничений нет</span>
+</label>
+<label style="display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; background: #FFFFFF; border: 2px solid #141414; box-shadow: 4px 4px 0 #141414; cursor: pointer">
+<span style="flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box; border-radius: 13px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; justify-content: center"><span style="width: 12px; height: 12px; border-radius: 6px; background: #FF6B1A"></span></span>
+<span style="font-size: 16px; font-weight: 800">Есть ограничения</span>
+</label>
+</div>
+
+<label style="margin-top: 22px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Опишите коротко</span>
+<textarea rows="5" placeholder="Например: соглашение о неконкуренции до марта 2027 или отработка 2 недели" style="box-sizing: border-box; padding: 14px 16px; border-radius: 16px; border: 2px solid #141414; box-shadow: 3px 3px 0 #FF6B1A; background: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 600; line-height: 1.5; color: #141414; outline: none; resize: none"></textarea>
+<span style="align-self: flex-end; font-size: 12px; font-weight: 700; color: #6B645C">0 / 500</span>
+</label>
+
+<div style="margin-top: 8px; display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #FFFFFF">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B645C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+<span style="font-size: 13px; line-height: 1.45; font-weight: 600; color: #4A443D">Видят только работодатели, которым вы откликнулись</span>
+</div>
+</div>
+<button style="position: absolute; left: 20px; right: 20px; bottom: 32px; height: 60px; border-radius: 30px; border: 2px solid #141414; background: #FF6B1A; box-shadow: 4px 4px 0 #141414; font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #141414; cursor: pointer">Сохранить</button>
+</div>
+</div>
+</body>
+</html>

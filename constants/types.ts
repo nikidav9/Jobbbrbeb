@@ -8,6 +8,8 @@ export interface ResumeExperience {
   end: string;
   duration?: string;
   description?: string;
+  /** «Работаю здесь сейчас» — экран `resume/02-work-place.html`. При true `end` синхронизируется в 'Сейчас'. */
+  current?: boolean;
 }
 
 export interface ResumeEducation {
@@ -15,6 +17,8 @@ export interface ResumeEducation {
   institution?: string;
   specialty?: string;
   period?: string;
+  /** Год окончания числом — источник для `period`, экран `resume/05-education.html`. */
+  endYear?: number;
 }
 
 export interface ResumeLanguage {
@@ -34,6 +38,8 @@ export interface ResumeExam {
   name: string;
   score?: string;
   date?: string;
+  /** Кто проводил — экран `resume/06-exam.html`. */
+  issuer?: string;
 }
 
 export interface ResumeCertification {
@@ -43,6 +49,10 @@ export interface ResumeCertification {
   expiration?: string;
   credentialId?: string;
   credentialUrl?: string;
+  /** Прикреплённый файл сертификата (URL после загрузки) — `resume/07-certificate.html`. */
+  fileUrl?: string;
+  /** «Бессрочно»: `expiration` не задан осознанно, а не просто не заполнен. */
+  noExpiration?: boolean;
 }
 
 export interface ResumeAward {
@@ -57,6 +67,27 @@ export interface ResumeCoursework {
   institution?: string;
   period?: string;
   description?: string;
+  /** Год окончания числом — источник для `period`, экран `resume/08-course.html`. */
+  endYear?: number;
+  /** Длительность курса, например «3 месяца». */
+  duration?: string;
+  /** Ссылка на сертификат об окончании. */
+  credentialUrl?: string;
+}
+
+/** Тип ссылки на экране `personal/17-links.html`. */
+export type LinkType = 'github' | 'linkedin' | 'portfolio' | 'behance' | 'telegram' | 'other';
+
+export interface PersonalLink {
+  type: LinkType;
+  url: string;
+  label?: string;
+}
+
+/** Одна станция метро с линией — до 3 штук, экран `personal/15-city-metro.html`. */
+export interface MetroStationChoice {
+  station: string;
+  lineId?: string;
 }
 
 export interface PersonalDetails {
@@ -72,6 +103,30 @@ export interface PersonalDetails {
   relocation?: string;
   driversLicense?: string;
   employmentRestrictions?: string;
+  /** Показывать возраст в профиле работодателю. */
+  showAge?: boolean;
+  /** Показывать номер телефона работодателям — экран `personal/13-phone.html`. */
+  showPhone?: boolean;
+  /** Страны, где можно работать без визы — множественный выбор, `personal/14-work-permit.html`. Легаси `workAuthorization` — join через запятую. */
+  workAuthorizationCountries?: string[];
+  /** До 3 станций метро — `personal/15-city-metro.html`. Первая синхронизируется в `User.metroStation`/`metroLineId`. */
+  metroStations?: MetroStationChoice[];
+  /** Занятость, множественный выбор — экран `personal/16-work-conditions.html`. */
+  employmentTypes?: string[];
+  /** Формат работы, множественный выбор — экран `personal/16-work-conditions.html`. */
+  workFormats?: string[];
+  /** График работы, множественный выбор — экран `personal/16-work-conditions.html`. */
+  schedule?: string[];
+  /** Ссылки списком (до 5) — экран `personal/17-links.html`. Легаси `links` — текстовый список. */
+  linksList?: PersonalLink[];
+  /** Города, куда готов переехать — экран `personal/18-relocation.html`. */
+  relocationCities?: string[];
+  /** Категории водительских прав — экран `personal/19-driving-license.html`. Легаси `driversLicense` — «Да»/«Нет». */
+  drivingCategories?: string[];
+  /** Есть личный автомобиль. */
+  hasOwnCar?: boolean;
+  /** Есть ли ограничения по трудоустройству — экран `personal/20-restrictions.html`. Легаси `employmentRestrictions` хранит описание. */
+  hasEmploymentRestrictions?: boolean;
 }
 
 export interface ResumeProfile {
@@ -86,6 +141,16 @@ export interface ResumeProfile {
   citizenship?: string;
   workPermit?: string;
   businessTrips?: string;
+  /** Зарплата числом — экран `resume/01-desired-position.html`. Легаси `salary` собирается из неё и `salaryNet`. */
+  salaryAmount?: number;
+  /** true — «на руки», false — «до вычета налогов». */
+  salaryNet?: boolean;
+  /** Занятость, множественный выбор — легаси `employmentType` хранит первый вариант. */
+  employmentTypes?: string[];
+  /** Формат работы, множественный выбор — легаси `workFormat` хранит первый вариант. */
+  workFormats?: string[];
+  /** График работы, множественный выбор — экран `personal/16-work-conditions.html` (общий с занятостью/форматом). */
+  schedule?: string[];
   experience: ResumeExperience[];
   education: ResumeEducation[];
   projects: ResumeProject[];

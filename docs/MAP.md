@@ -231,6 +231,56 @@
   нарисованы (там только 4 секции) — добавлены в `PersonalTabContent` тем же
   визуальным языком (эйброу + белая карточка), чтобы не терять
   функциональность старого профиля.
+- **Библиотека для 20 экранов редактирования профиля** (карандаш ✎ и «+» в
+  профиле) — `components/profile/edit/` (`index.ts` реэкспортирует всё):
+  `EditScreen` (шапка «назад»/заголовок/«Удалить», прокрутка, закреплённая
+  кнопка с растворением фона и жёсткой тенью), `Field`/`TextArea`/
+  `SelectField`/`FieldLabel`, `BottomSheet`/`OptionSheet` (нижняя шторка,
+  свайп вниз через `PanResponder` — не reanimated-жесты, чтобы не рисковать
+  вебом), `Chip`/`SuggestChip`/`RemovableChip`/`ChipGroup`, `Checkbox`,
+  `RadioCard`, `Toggle`, `AddDashedButton`, `InfoNote`, `SectionTitle`,
+  `ConfirmDialog` (свой модал — `Alert.alert` на вебе не работает),
+  `useUnsavedGuard` (перехват выхода с несохранёнными правками: кнопка
+  «назад» в шапке + `beforeRemove` навигации + Android `BackHandler`).
+  Токены — `constants/profileEditTheme.ts` (`EditColors`/`EditFonts`,
+  отдельно от `constants/profileTheme.ts` — там Onest и не все те же цвета).
+  Эталон — `docs/design/profile-edit/README.md` и HTML-макеты
+  `resume/`, `personal/`. Иконки экранов — `components/profile/edit/icons.tsx`
+  (react-native-svg, пути 1:1 из `docs/design/profile-edit/assets/icons/`).
+  Шрифт Manrope — `@expo-google-fonts/manrope`, грузится в `app/_layout.tsx`
+  рядом с Unbounded/Onest. Сами 20 экранов (маршруты, сохранение в
+  `services/db.ts`) в эту библиотеку не входят — она только UI-каркас.
+- **Данные для тех же 20 экранов** — `lib/profileEdit.ts`: `emptyResume`,
+  `patchResume`/`patchPersonal` (создают `resume`/`personalDetails`, если их
+  не было, и синхронизируют новые структурные поля в старые строковые —
+  список пар в комментарии файла), `upsertAt`/`removeAt` для списков-карточек,
+  справочники вариантов из макетов. Навыки резюме — `constants/skills.ts`
+  (`SKILLS`, `POPULAR_IT_SKILLS`, `searchSkills`, `normalizeSkill`). Сервер
+  новые ключи внутри `resume_data`/`personal_data` не фильтрует (это JSON-
+  колонки целиком) — фильтр в `php-proxy/db.php` только по списку колонок
+  верхнего уровня строки.
+- **Сами экраны редактирования** — `app/profile-edit/*.tsx` (18 маршрутов:
+  `desired-position`, `work-place`, `languages`, `skills`, `education`, `exam`,
+  `certificate`, `course`, `award`, `interests`, `basic`, `work-permit`,
+  `city-metro`, `work-conditions`, `links`, `relocation`, `driving-license`,
+  `restrictions`) + шторки `components/profile/edit/sheets/{Email,Phone}Sheet.tsx`.
+  Записи списков открываются с `?index=N` (нет/неверный — новая запись),
+  «Основное» — с `?focus=firstName|middleName|lastName|title|age`. Какая кнопка
+  профиля куда ведёт — таблица в `docs/design/profile-edit/README.md`; кнопки
+  подключены в `ResumeTabContent`/`PersonalTabContent` (у разделов-списков в
+  шапке `SectionCard` «+» через `onAdd`, запись — тапом по строке).
+  `app/profile-edit/_layout.tsx` не пускает на экраны, пока `loading` в
+  `AppContext`: экран один раз берёт начальные значения из `currentUser`, и
+  при прямой ссылке/обновлении страницы урезанный кэш затёр бы данные.
+  Сохранение — обычный `updateUser`. Решения: дата рождения не хранится
+  (только возраст — миграция 103); занятость/формат/график живут в резюме;
+  город с «Город и метро» копируется и в `resume.city`; телефон без SMS-кода
+  (`dbSetContactPhone`); вложение файла к сертификату убрано — `dbUploadFile`
+  пускает только аватар в публичный бакет, для документов нужен приватный;
+  переключатели «Показывать возраст/номер» скрыты — сервер их не учитывает.
+- **`refreshUsers` не затирает свою строку** — `dbGetUsers` отдаёт публичную
+  проекцию без `personal_data`/телефона/почты, и раньше следующее сохранение
+  профиля стирало их на сервере. Слияние — `mergeSelfUser` в `lib/profileEdit.ts`.
 - **Загрузка резюме на регистрации** — только на запасном пути по телефону
   (`app/register-worker.tsx`, шаг 6 из 7, необязательный, решение владельца
   25.09); по почте регистрация — «почта → код → лента», резюме и имя спросит
