@@ -49,6 +49,7 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   if (a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED') return { label: 'Автоотклик выключен · не отправлено', ...WAIT };
   if (jupiterNeedsSberConsent(a)) return { label: 'Нужно согласие Сбера · не отправлено', ...WAIT };
   if (a.reasonCode === 'UNSUPPORTED_SCRIPT') return { label: 'Нужен браузер · отклик не отправлен', ...WAIT };
+  if (a.reasonCode === 'PHONE_FILL') return { label: 'Ждёт отправки · анкета заполнится сама', ...WAIT };
   if (a.reasonCode === 'SITE_NOT_VERIFIED') return { label: 'Сайт ещё подключаем · отклик сохранён', ...INFO };
   if (a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW') return { label: 'Отправлено вами', ...DONE };
   return stateStatus(a.state);
@@ -134,6 +135,7 @@ export function fillNote(detail: JupiterEvent['detail']): string | undefined {
 
 const ACTION_REASONS: Record<string, string> = {
   CAPTCHA_REQUIRED: 'Сайт просит проверку «я не робот» — отправьте сами',
+  PHONE_FILL: 'Анкету заполним за вас — останется нажать «Отправить»',
   SITE_NOT_VERIFIED: 'Сайт ещё подключаем — отклик можно отправить самому',
   CONSENT_REQUIRED: 'Работодатель просит согласие на обработку данных',
   UNSUPPORTED_SCRIPT: 'Сайту нужен браузер — отправьте сами',

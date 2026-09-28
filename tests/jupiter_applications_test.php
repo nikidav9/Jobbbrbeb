@@ -109,10 +109,21 @@ check('jupiterFinish принимает только известные сост
 // запросов, уникальный индекс — нет.
 check('уникальность заявки закреплена индексом',
     (bool)preg_match('~create unique index[^;]*jm_jupiter_applications\s*\(user_id, canonical_url\)~s', $sqlCode));
-check('повторный свайп после live-режима разрешает прежнюю dry-run заявку',
-    str_contains($db, '$canAuthorizeExisting')
-    && str_contains($db, "'submission_authorized_at' => now_iso()")
-    && str_contains($db, "'id' => 'eq.' . (string)\$existing['id']"));
+// Отклик через телефон (решение владельца 28.09.2026): свайп копит заявку в
+// «Нужны вы», серверу на автоотправку она не достаётся.
+$enq = substr($db, strpos($db, "case 'jupiterEnqueue': {"), 5000);
+check('свайп кладёт заявку в «Нужны вы», а не в очередь сервера',
+    str_contains($enq, "'state' => 'action_required',")
+    && str_contains($enq, "'reason_code' => 'PHONE_FILL',")
+    && str_contains($enq, "'submission_authorized_at' => null,")
+    && !str_contains($enq, "'state' => 'queued'"));
+check('повторный свайп не переводит заявку в очередь сервера',
+    !str_contains($enq, '$canAuthorizeExisting'));
+$m133 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/133_jupiter_phone_fill.sql');
+check('старая очередь переведена в «Нужны вы», взятое воркером не тронуто',
+    str_contains($m133, "state in ('queued', 'ready_to_submit', 'retryable_failed')")
+    && str_contains($m133, 'lease_owner is null')
+    && str_contains($m133, "reason_code = 'PHONE_FILL'"));
 check('публичные методы Jupiter возвращают data как другие методы db.php',
     str_contains($db, "\$data = \$inserted[0] ?? sb_single('jm_jupiter_applications'")
     && str_contains($db, "case 'jupiterMyApplications': {\n            \$data = sb_select(")

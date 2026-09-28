@@ -7255,61 +7255,19 @@ try {
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
-            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
-            $live = !empty($user['jupiter_live_enabled_at']);
-            // Поручение на согласия работодателю (Соглашение п. 8.3) — только
-            // вместе с боевой подачей: без неё согласия никому не нужны.
-            $delegated = $live && jt_employer_delegated($uidArg);
+            // Отклик — через телефон (решение владельца 28.09.2026). Свайп
+            // только копит заявку в «Нужны вы»: анкету заполняет автопилот во
+            // встроенном браузере (app/jupiter-fill.tsx), «Отправить» жмёт
+            // человек. Серверный Юпитер берёт лишь queued/retryable_failed
+            // (jupiter_lease_task), а PHONE_FILL не снимают ни
+            // jupiterRequeueSiteReady, ни jt_employer_requeue_consent — они
+            // смотрят на свои причины. Поэтому без разрешения на автоотправку
+            // и без поручения на согласия: их даёт сам человек на сайте.
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) {
-                // A second swipe after live mode was enabled is an explicit
-                // authorization for this vacancy. Reuse the existing row
-                // (the unique index still prevents duplicate employer
-                // submissions), but do not leave an old dry-run row stuck
-                // forever with submission_authorized_at = null.
-                $canAuthorizeExisting = $live
-                    && empty($existing['submission_authorized_at'])
-                    && empty($existing['lease_owner'])
-                    && in_array((string)($existing['state'] ?? ''), ['queued', 'ready_to_submit'], true);
-                // Повторный свайп по отклику, который ждал согласия, — то же
-                // поручение: если теперь оно есть, отклик идёт дальше сам.
-                $canResumeConsent = $delegated
-                    && empty($existing['third_party_consent_at'])
-                    && empty($existing['lease_owner'])
-                    && (string)($existing['state'] ?? '') === 'action_required'
-                    && (string)($existing['reason_code'] ?? '') === 'CONSENT_REQUIRED';
-                if ($canAuthorizeExisting || $canResumeConsent) {
-                    $now = now_iso();
-                    $filters = [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                        'lease_owner' => 'is.null',
-                    ];
-                    if ($canAuthorizeExisting) {
-                        $filters['submission_authorized_at'] = 'is.null';
-                    } else {
-                        $filters['state'] = 'eq.action_required';
-                    }
-                    $patch = [
-                        'state' => 'queued',
-                        'submission_authorized_at' => !empty($existing['submission_authorized_at'])
-                            ? $existing['submission_authorized_at'] : $now,
-                        'reason_code' => null,
-                        'not_before' => null,
-                        'updated_at' => $now,
-                    ];
-                    if ($delegated && empty($existing['third_party_consent_at'])) {
-                        $patch += jt_employer_consent_fields((string)$existing['vacancy_url'], $now);
-                    }
-                    sb_update('jm_jupiter_applications', $filters, $patch);
-                    $existing = sb_single('jm_jupiter_applications', [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                    ]);
-                }
                 $data = $existing;
                 break;
             }
@@ -7319,14 +7277,12 @@ try {
                 'vacancy_url' => mb_substr($url, 0, 2048),
                 'canonical_url' => $canonical,
                 'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
-                'state' => 'queued',
-                'submission_authorized_at' => $live ? now_iso() : null,
+                'state' => 'action_required',
+                'reason_code' => 'PHONE_FILL',
+                'submission_authorized_at' => null,
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
-            if ($delegated) {
-                $row += jt_employer_consent_fields($url, now_iso());
-            }
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.
