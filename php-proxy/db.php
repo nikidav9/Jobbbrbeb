@@ -6729,15 +6729,32 @@ try {
             // 200 строк, description_full — КБ на строку, а гость публичный, и
             // CURLOPT_TIMEOUT в sb_rpc — 10 секунд. Полное описание дотягиваем
             // ниже только для уже отобранных ≤60 карточек.
-            $pool = sb_rpc('jm_ext_feed_pool', [
+            // «Показать N» в шторке фильтров считает только число — выдача не нужна.
+            $pool = $fn === 'dbCountExtFeed' ? [] : sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
                 'p_hide_seen' => $filters['hide_seen'] ?? true,
             ], ['select' => EXT_FEED_POOL_SELECT]);
             $pool = is_array($pool) ? $pool : [];
+            // Счёт «Всего N» и компаний шторки — по ВСЕМ вакансиям, а не по
+            // пулу выдачи: у пула потолок на компанию (200), и у Сбера,
+            // Яндекса, МТС лишнее молча выпадало — приложение показывало
+            // ~2000 при 3200 в ленте (28.09.2026). Отдельный лёгкий запрос:
+            // без потолка (миграция 134) и только с полями ext_feed_match;
+            // описание — лишь когда его читает фильтр (формат, поиск).
+            $countFor = $filters ?? ext_feed_filters([]);
+            $countPool = null;
+            if ($fn === 'dbCountExtFeed' || $filters !== null) {
+                $needDesc = !empty($countFor['formats']) || !empty($countFor['query']);
+                $countPool = sb_rpc('jm_ext_feed_pool', [
+                    'p_user' => $authUid, 'p_per_company' => 5000, 'p_sections' => $sections,
+                    'p_it_only' => true, 'p_moscow_only' => true,
+                    'p_hide_seen' => $countFor['hide_seen'] ?? true,
+                ], ['select' => 'company,title,salary,schedule,first_seen_at' . ($needDesc ? ',description' : '')]);
+                $countPool = is_array($countPool) ? $countPool : [];
+            }
             if ($fn === 'dbCountExtFeed') {
-                $f = $filters ?? ext_feed_filters([]);
-                $data = ['total' => count(array_filter($pool, fn($row) => ext_feed_match($row, $f)))];
+                $data = ['total' => count(array_filter($countPool, fn($row) => ext_feed_match($row, $countFor)))];
                 break;
             }
             $history = [];
@@ -6767,10 +6784,11 @@ try {
             }
 
             $matched = array_values(array_filter($pool, fn($row) => ext_feed_match($row, $filters)));
+            $total = count(array_filter($countPool, fn($row) => ext_feed_match($row, $filters)));
             // Счёт по компаниям — при всех фильтрах, КРОМЕ самой компании:
             // иначе выбор одной компании убрал бы остальные из списка шторки.
             $companyCounts = [];
-            foreach ($pool as $row) {
+            foreach ($countPool as $row) {
                 if (!ext_feed_match($row, $filters, true)) continue;
                 $c = trim((string)($row['company'] ?? ''));
                 if ($c === '') continue;
@@ -6786,7 +6804,7 @@ try {
             $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($matched, $taste, $limit, $seed));
             $data = [
                 'items' => array_map('ext_feed_public_row', $arranged),
-                'total' => count($matched),
+                'total' => $total,
                 'companies' => $companies,
             ];
             break;
