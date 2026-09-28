@@ -58,6 +58,9 @@ jobs:
       - name: Смену закрывает её сторона, а не любой вошедший
         run: php tests/shift_authz_test.php
 
+      - name: Скрытые возраст и номер не уходят работодателю, файл сертификата — только владельцу
+        run: php tests/profile_privacy_test.php
+
       - name: Аккаунт без пароля видит «Задать пароль», хеш наружу не уходит
         run: php tests/has_password_test.php
 
