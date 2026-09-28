@@ -28,10 +28,11 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="JobToo" />
-        <link rel="apple-touch-icon" href="/jt-logo.jpg" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
         {/* Favicon */}
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 
         <ScrollViewStyleReset />
 
