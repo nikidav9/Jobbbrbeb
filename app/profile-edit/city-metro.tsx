@@ -61,7 +61,7 @@ export default function CityMetroScreen() {
 
   const initial = useMemo(() => {
     const personal = currentUser?.personalDetails;
-    const location = personal?.location ?? '';
+    const location = personal?.location || currentUser?.resume?.city || (currentUser?.metroStation ? 'Москва' : '');
     let metroStations: MetroStationChoice[] = personal?.metroStations ?? [];
     if (metroStations.length === 0 && currentUser?.metroStation) {
       metroStations = [{ station: currentUser.metroStation, lineId: currentUser.metroLineId }];

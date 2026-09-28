@@ -5,7 +5,7 @@ import { useApp } from '@/hooks/useApp';
 import { patchPersonal, ADDRESS_FORMS, MONTHS } from '@/lib/profileEdit';
 import { User } from '@/constants/types';
 import {
-  EditScreen, Field, BottomSheet, Chip, ChipGroup, Toggle, useUnsavedGuard,
+  EditScreen, Field, BottomSheet, Chip, ChipGroup, useUnsavedGuard,
 } from '@/components/profile/edit';
 import { CalendarIcon } from '@/components/profile/edit/icons';
 import { EditColors, EditFonts, EditRadius } from '@/constants/profileEditTheme';
@@ -129,12 +129,20 @@ export default function BasicScreen() {
   const [firstName, setFirstName] = useState(currentUser?.firstName ?? '');
   const [middleName, setMiddleName] = useState(p.middleName ?? '');
   const [lastName, setLastName] = useState(currentUser?.lastName ?? '');
-  const [addressForm, setAddressForm] = useState(p.title ?? '');
-  const [customAddress, setCustomAddress] = useState(p.preferredName ?? '');
+  // Старая версия экрана писала только preferredName (свободный текст) без
+  // title — без этого форма открывалась пустой, а сохранение стирало имя.
+  // Такой случай трактуем как «Свой вариант» с уже введённым текстом.
+  const legacyCustomAddress = !p.title && p.preferredName ? p.preferredName : undefined;
+  const initialAddressForm = p.title && ADDRESS_FORMS.includes(p.title)
+    ? p.title
+    : (legacyCustomAddress ? 'Свой вариант' : (p.title ?? ''));
+  const [addressForm, setAddressForm] = useState(initialAddressForm);
+  const [customAddress, setCustomAddress] = useState(legacyCustomAddress ?? p.preferredName ?? '');
   // Дату рождения не храним (миграция 103 намеренно удалила birthday, 152-ФЗ):
   // она живёт только на экране, в базу уходит лишь посчитанный возраст.
   const [birthDate, setBirthDate] = useState('');
-  const [showAge, setShowAge] = useState(p.showAge ?? true);
+  // «Показывать возраст» скрыт: сервер showAge не учитывает, обещание о ПДн
+  // без исполнения хуже отсутствия переключателя.
 
   const firstNameRef = useRef<TextInput>(null);
   const middleNameRef = useRef<TextInput>(null);
@@ -156,10 +164,9 @@ export default function BasicScreen() {
   const dirty = firstName !== (currentUser?.firstName ?? '')
     || middleName !== (p.middleName ?? '')
     || lastName !== (currentUser?.lastName ?? '')
-    || addressForm !== (p.title ?? '')
-    || customAddress !== (p.preferredName ?? '')
-    || birthDate !== ''
-    || showAge !== (p.showAge ?? true);
+    || addressForm !== initialAddressForm
+    || customAddress !== (legacyCustomAddress ?? p.preferredName ?? '')
+    || birthDate !== '';
 
   const valid = firstName.trim().length > 0 && lastName.trim().length > 0;
 
@@ -173,7 +180,6 @@ export default function BasicScreen() {
         middleName: middleName.trim() || undefined,
         title: addressForm || undefined,
         preferredName: addressForm === 'Свой вариант' ? (customAddress.trim() || undefined) : undefined,
-        showAge,
       });
       const next: User = {
         ...patched,
@@ -272,12 +278,6 @@ export default function BasicScreen() {
             </TouchableOpacity>
             <Text style={s.hint}>Возраст посчитаем сами. Дату не храним — работодатели видят только возраст</Text>
           </View>
-
-          <Toggle
-            label="Показывать возраст"
-            value={showAge}
-            onValueChange={setShowAge}
-          />
         </View>
       </EditScreen>
 

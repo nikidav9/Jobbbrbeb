@@ -89,9 +89,14 @@ export function PersonalTabContent({
   const metro = p.metroStations?.length
     ? p.metroStations.map(m => m.station).join(', ')
     : user.metroStation;
-  const employment = p.employmentTypes?.length ? p.employmentTypes : (resume?.employmentType ? [resume.employmentType] : []);
-  const formats = p.workFormats?.length ? p.workFormats : (resume?.workFormat ? [resume.workFormat] : []);
-  const conditions = [...employment, ...formats, ...(p.schedule ?? [])];
+  // Занятость/формат/график — резюме, единственный источник (экран
+  // «Условия работы» пишет в него); легаси employmentType/workFormat —
+  // запасной путь для тех, у кого структурные поля ещё не заполнены.
+  const employment = resume?.employmentTypes?.length
+    ? resume.employmentTypes : (resume?.employmentType ? [resume.employmentType] : []);
+  const formats = resume?.workFormats?.length
+    ? resume.workFormats : (resume?.workFormat ? [resume.workFormat] : []);
+  const conditions = [...employment, ...formats, ...(resume?.schedule ?? [])];
   const driving = p.drivingCategories?.length
     ? `Категории ${p.drivingCategories.join(', ')}${p.hasOwnCar ? ' · есть автомобиль' : ''}`
     : p.driversLicense;

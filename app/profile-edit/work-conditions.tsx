@@ -9,7 +9,7 @@ import {
   EditScreen, ChipGroup, Chip, SectionTitle, useUnsavedGuard,
 } from '@/components/profile/edit';
 import { EditColors, EditFonts } from '@/constants/profileEditTheme';
-import { patchPersonal, EMPLOYMENT_TYPES, WORK_FORMATS, SCHEDULES } from '@/lib/profileEdit';
+import { patchResume, EMPLOYMENT_TYPES, WORK_FORMATS, SCHEDULES } from '@/lib/profileEdit';
 
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -19,14 +19,30 @@ function sameSet(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v) => b.includes(v));
 }
 
+/** Значение из PDF-импорта, если оно совпадает со справочником (без регистра). */
+function matchOption(options: string[], value?: string): string | undefined {
+  if (!value) return undefined;
+  return options.find((o) => o.toLowerCase() === value.toLowerCase());
+}
+
 export default function WorkConditionsScreen() {
   const { currentUser, updateUser, showToast } = useApp();
   const [busy, setBusy] = useState(false);
 
+  // Единственный источник — резюме. Легаси employmentType/workFormat (один
+  // вариант) и personalDetails старой версии этого экрана — запасные пути
+  // для тех, у кого resume ещё не заполнен структурно.
+  const resume = currentUser?.resume;
+  const personal = currentUser?.personalDetails;
+  const legacyEmploymentType = matchOption(EMPLOYMENT_TYPES, resume?.employmentType);
+  const legacyWorkFormat = matchOption(WORK_FORMATS, resume?.workFormat);
+
   const initial = {
-    employmentTypes: currentUser?.personalDetails?.employmentTypes ?? [],
-    workFormats: currentUser?.personalDetails?.workFormats ?? [],
-    schedule: currentUser?.personalDetails?.schedule ?? [],
+    employmentTypes: resume?.employmentTypes
+      ?? (legacyEmploymentType ? [legacyEmploymentType] : (personal?.employmentTypes ?? [])),
+    workFormats: resume?.workFormats
+      ?? (legacyWorkFormat ? [legacyWorkFormat] : (personal?.workFormats ?? [])),
+    schedule: resume?.schedule ?? personal?.schedule ?? [],
   };
   const [employmentTypes, setEmploymentTypes] = useState<string[]>(initial.employmentTypes);
   const [workFormats, setWorkFormats] = useState<string[]>(initial.workFormats);
@@ -35,13 +51,13 @@ export default function WorkConditionsScreen() {
   const dirty = !sameSet(employmentTypes, initial.employmentTypes)
     || !sameSet(workFormats, initial.workFormats)
     || !sameSet(schedule, initial.schedule);
-  const valid = employmentTypes.length > 0 && workFormats.length > 0;
+  // Пустой выбор допустим — человек может не хотеть указывать занятость/формат.
 
   const save = async (): Promise<boolean> => {
     if (!currentUser) return false;
     try {
       setBusy(true);
-      await updateUser(patchPersonal(currentUser, { employmentTypes, workFormats, schedule }));
+      await updateUser(patchResume(currentUser, { employmentTypes, workFormats, schedule }));
       showToast('Сохранено');
       return true;
     } catch {
@@ -62,7 +78,7 @@ export default function WorkConditionsScreen() {
         title="Условия работы"
         onBack={requestClose}
         primaryLabel="Сохранить"
-        primaryDisabled={!dirty || !valid}
+        primaryDisabled={!dirty}
         busy={busy}
         onPrimary={async () => { if (await save()) leave(); }}
       >

@@ -11,7 +11,15 @@ import {
 } from '@/components/profile/edit';
 import { ChevronRightIcon } from '@/components/profile/edit/icons';
 import { EditColors, EditFonts, EditRadius } from '@/constants/profileEditTheme';
-import { patchResume, EMPLOYMENT_TYPES, WORK_FORMATS } from '@/lib/profileEdit';
+import {
+  patchResume, parseSalaryAmount, parseSalaryNet, EMPLOYMENT_TYPES, WORK_FORMATS,
+} from '@/lib/profileEdit';
+
+/** Значение из PDF-импорта, если оно совпадает со справочником (без регистра). */
+function matchOption(options: string[], value?: string): string | undefined {
+  if (!value) return undefined;
+  return options.find((o) => o.toLowerCase() === value.toLowerCase());
+}
 
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -36,12 +44,22 @@ export default function DesiredPositionScreen() {
   const [busy, setBusy] = useState(false);
 
   const resume = currentUser?.resume;
+  // У резюме из PDF-импорта числовых salaryAmount/salaryNet может не быть —
+  // только легаси-строка salary, из неё и достаём.
+  const initialSalaryAmount = resume?.salaryAmount ?? parseSalaryAmount(resume?.salary);
+  const initialSalaryNet = resume?.salaryNet ?? parseSalaryNet(resume?.salary);
+  const legacyEmploymentType = matchOption(EMPLOYMENT_TYPES, resume?.employmentType);
+  const legacyWorkFormat = matchOption(WORK_FORMATS, resume?.workFormat);
+  const initialEmploymentTypes = resume?.employmentTypes
+    ?? (legacyEmploymentType ? [legacyEmploymentType] : []);
+  const initialWorkFormats = resume?.workFormats
+    ?? (legacyWorkFormat ? [legacyWorkFormat] : []);
   const initial = {
     desiredPosition: resume?.desiredPosition ?? '',
-    salaryDigits: resume?.salaryAmount != null ? String(Math.round(resume.salaryAmount)) : '',
-    salaryNet: resume?.salaryNet,
-    employmentTypes: resume?.employmentTypes ?? [],
-    workFormats: resume?.workFormats ?? [],
+    salaryDigits: initialSalaryAmount != null ? String(Math.round(initialSalaryAmount)) : '',
+    salaryNet: initialSalaryNet,
+    employmentTypes: initialEmploymentTypes,
+    workFormats: initialWorkFormats,
   };
 
   const [desiredPosition, setDesiredPosition] = useState(initial.desiredPosition);
@@ -64,10 +82,13 @@ export default function DesiredPositionScreen() {
     if (!currentUser) return false;
     try {
       setBusy(true);
+      // salaryAmount/salaryNet кладём в патч только если их правда меняли —
+      // иначе у резюме из PDF (там нет числового salaryAmount, только строка
+      // salary) сохранение любого другого поля стирало бы зарплату.
       await updateUser(patchResume(currentUser, {
         desiredPosition: desiredPosition.trim(),
-        salaryAmount: salaryDigits ? Number(salaryDigits) : undefined,
-        salaryNet,
+        ...(salaryDigits !== initial.salaryDigits ? { salaryAmount: salaryDigits ? Number(salaryDigits) : undefined } : {}),
+        ...(salaryNet !== initial.salaryNet ? { salaryNet } : {}),
         employmentTypes,
         workFormats,
       }));
