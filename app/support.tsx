@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import {
   dbSupportAssistantAsk,
@@ -18,13 +17,18 @@ import {
   SupportMessage,
   SupportState,
 } from '@/services/db';
-import { rs, rf } from '@/constants/scale';
-import { BackButton } from '@/components/ui/BackButton';
+import { JT } from '@/constants/jt';
+import { EditColors, EditFonts } from '@/constants/profileEditTheme';
+import { BottomSheet, HardShadowBox } from '@/components/profile/edit';
+import { BackIcon, ChevronDownIcon } from '@/components/profile/edit/icons';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 
 const EMPTY_STATE: SupportState = { operatorRequestedAt: null, closedAt: null };
 
 export default function SupportScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  useWarmSystemBar();
   const { currentUser, showToast } = useApp();
 
   const [msgs, setMsgs] = useState<SupportMessage[]>([]);
@@ -132,16 +136,26 @@ export default function SupportScreen() {
   const suggestions = knowledge.slice(0, 3);
 
   const senderLabel = (m: SupportMessage) => {
-    if (m.sender === 'assistant') return 'Помощник JobToo';
+    if (m.sender === 'assistant') return 'JobToo · бот';
     if (m.sender === 'operator') return 'Оператор JobToo';
     if (m.sender === 'system') return 'JobToo';
     return '';
   };
 
+  const canSend = !!text.trim() && !sending;
+
   return (
     <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       <View style={s.header}>
-        <BackButton onPress={goBack} />
+        <TouchableOpacity
+          onPress={goBack}
+          style={s.backBtn}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+          accessibilityLabel="Назад"
+        >
+          <BackIcon size={20} />
+        </TouchableOpacity>
 
         <Text style={s.headerTitle}>Помощь</Text>
 
@@ -152,7 +166,7 @@ export default function SupportScreen() {
           accessibilityRole="button"
           accessibilityLabel="Частые вопросы"
         >
-          <Ionicons name="help-circle-outline" size={rf(20)} color={Colors.primary} />
+          <Ionicons name="help-circle-outline" size={20} color={EditColors.ink} />
           <Text style={s.faqText}>FAQ</Text>
         </TouchableOpacity>
       </View>
@@ -160,7 +174,6 @@ export default function SupportScreen() {
       <KeyboardAvoidingView
         style={s.body}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={rs(8)}
       >
         <ScrollView
           ref={scrollRef}
@@ -169,20 +182,19 @@ export default function SupportScreen() {
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
         >
-          <View style={s.assistantHead}>
-            <Ionicons name="sparkles" size={rf(17)} color={Colors.textSecondary} />
-            <Text style={s.assistantHeadText}>Помощник JobToo</Text>
-          </View>
-          <View style={[s.bubble, s.theirs]}>
-            <Text style={s.bubbleTxt}>
-              Привет! Я помощник JobToo. Спросите меня о резюме, откликах,
-              профиле, уведомлениях или аккаунте. Если не помогу — нажмите
-              «Позвать оператора», и весь этот диалог увидит поддержка.
-            </Text>
+          <View style={s.theirWrap}>
+            <Text style={s.senderLabel}>JobToo · бот</Text>
+            <View style={[s.bubble, s.bot]}>
+              <Text style={s.bubbleTxt}>
+                Привет! Я помощник JobToo. Спросите меня о резюме, откликах,
+                профиле, уведомлениях или аккаунте. Если не помогу — нажмите
+                «Позвать оператора», и весь этот диалог увидит поддержка.
+              </Text>
+            </View>
           </View>
 
           {loading && msgs.length === 0 ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginTop: rs(18) }} />
+            <ActivityIndicator color={JT.accent} style={{ marginTop: 18 }} />
           ) : loadFailed && msgs.length === 0 ? (
             <View style={s.errorCard}>
               <Text style={s.errorTitle}>Не удалось загрузить чат</Text>
@@ -191,23 +203,15 @@ export default function SupportScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            msgs.map(m => (
-              <View
-                key={m.id}
-                style={[
-                  s.messageWrap,
-                  m.sender === 'user' ? s.messageMineWrap : s.messageTheirWrap,
-                ]}
-              >
-                {m.sender !== 'user' ? (
-                  <Text style={s.senderLabel}>{senderLabel(m)}</Text>
-                ) : null}
-                <View style={[
-                  s.bubble,
-                  m.sender === 'user' ? s.mine : s.theirs,
-                  m.sender === 'system' && s.systemBubble,
-                ]}>
-                  <Text style={[s.bubbleTxt, m.sender === 'user' && s.mineTxt]}>{m.text}</Text>
+            msgs.map(m => m.sender === 'user' ? (
+              <View key={m.id} style={[s.bubble, s.mine]}>
+                <Text style={[s.bubbleTxt, s.mineTxt]}>{m.text}</Text>
+              </View>
+            ) : (
+              <View key={m.id} style={s.theirWrap}>
+                <Text style={s.senderLabel}>{senderLabel(m)}</Text>
+                <View style={[s.bubble, m.sender === 'operator' ? s.operator : s.bot]}>
+                  <Text style={s.bubbleTxt}>{m.text}</Text>
                 </View>
               </View>
             ))
@@ -237,10 +241,10 @@ export default function SupportScreen() {
           >
             <Ionicons
               name={operatorWaiting ? 'headset' : 'person-add-outline'}
-              size={rf(18)}
-              color={operatorWaiting ? '#FFFFFF' : Colors.primary}
+              size={20}
+              color={EditColors.ink}
             />
-            <Text style={[s.operatorText, operatorWaiting && s.operatorTextActive]}>
+            <Text style={s.operatorText}>
               {operatorWaiting
                 ? 'Оператор уже подключён'
                 : escalating ? 'Подключаем…' : 'Позвать оператора'}
@@ -254,317 +258,290 @@ export default function SupportScreen() {
           ) : null}
         </ScrollView>
 
-        <View style={s.inputRow}>
+        <View style={[s.composer, { paddingBottom: Math.max(insets.bottom, 12) + 4 }]}>
           <TextInput
             style={s.input}
             value={text}
             onChangeText={setText}
             placeholder={operatorWaiting ? 'Сообщение оператору' : 'Сообщение'}
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={EditColors.placeholder}
             multiline
             maxLength={1500}
             returnKeyType="default"
           />
           <TouchableOpacity
-            style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnOff]}
+            style={[s.sendBtn, canSend && s.sendBtnOn]}
             onPress={() => void send()}
-            disabled={!text.trim() || sending}
+            disabled={!canSend}
             activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="Отправить"
           >
             {sending
-              ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Ionicons name="arrow-up" size={rf(21)} color="#FFFFFF" />}
+              ? <ActivityIndicator size="small" color={EditColors.ink} />
+              : <Ionicons name="arrow-up" size={22} color={canSend ? EditColors.ink : EditColors.disabledText} />}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
-      <Modal
+      <BottomSheet
         visible={faqVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setFaqVisible(false)}
+        onClose={() => setFaqVisible(false)}
+        title="Частые вопросы"
+        height="92%"
+        backgroundColor={JT.background}
       >
-        <View style={s.modalOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setFaqVisible(false)}
-          />
-          <SafeAreaView style={s.faqSheet} edges={['bottom']}>
-            <View style={s.sheetHandle} />
-            <View style={s.faqHeader}>
-              <Text style={s.faqTitle}>Частые вопросы</Text>
-              <TouchableOpacity onPress={() => setFaqVisible(false)} style={s.closeBtn}>
-                <Ionicons name="close" size={rf(22)} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              contentContainerStyle={s.faqList}
-              showsVerticalScrollIndicator={false}
-            >
-              {knowledge.length === 0 ? (
-                <Text style={s.faqEmpty}>Список вопросов временно недоступен. Можно спросить в чате.</Text>
-              ) : knowledge.map(item => {
-                const expanded = faqOpen === item.id;
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={s.faqItem}
-                    activeOpacity={0.75}
-                    onPress={() => setFaqOpen(expanded ? null : item.id)}
-                  >
-                    <View style={s.faqQuestionRow}>
-                      <Text style={s.faqQuestion}>{item.question}</Text>
-                      <Ionicons
-                        name={expanded ? 'chevron-up' : 'chevron-down'}
-                        size={rf(18)}
-                        color={Colors.textMuted}
-                      />
-                    </View>
-                    {expanded ? <Text style={s.faqAnswer}>{item.answer}</Text> : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </SafeAreaView>
-        </View>
-      </Modal>
+        <ScrollView
+          contentContainerStyle={s.faqList}
+          showsVerticalScrollIndicator={false}
+        >
+          {knowledge.length === 0 ? (
+            <Text style={s.faqEmpty}>Список вопросов временно недоступен. Можно спросить в чате.</Text>
+          ) : knowledge.map(item => {
+            const expanded = faqOpen === item.id;
+            const card = (
+              <View style={[s.faqItem, expanded && s.faqItemOpen]}>
+                <TouchableOpacity
+                  style={s.faqQuestionRow}
+                  activeOpacity={0.75}
+                  onPress={() => setFaqOpen(expanded ? null : item.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded }}
+                >
+                  <Text style={s.faqQuestion}>{item.question}</Text>
+                  <View style={expanded ? s.chevUp : undefined}>
+                    <ChevronDownIcon size={18} />
+                  </View>
+                </TouchableOpacity>
+                {expanded ? <Text style={s.faqAnswer}>{item.answer}</Text> : null}
+              </View>
+            );
+            return expanded
+              ? <HardShadowBox key={item.id} offset={4} radius={20}>{card}</HardShadowBox>
+              : <View key={item.id}>{card}</View>;
+          })}
+        </ScrollView>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: JT.background },
   header: {
-    minHeight: rs(72),
-    paddingHorizontal: rs(18),
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: rs(12),
-    backgroundColor: '#FFFFFF',
+    gap: 14,
+    backgroundColor: JT.background,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#EFE7DC',
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: JT.ink,
+    backgroundColor: JT.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     flex: 1,
-    fontSize: rf(21),
-    fontWeight: '800',
-    color: Colors.textPrimary,
+    fontFamily: EditFonts.heading,
+    fontSize: 20,
+    letterSpacing: -0.2,
+    color: JT.ink,
   },
   faqBtn: {
-    minHeight: rs(46),
-    borderRadius: rs(23),
-    paddingHorizontal: rs(15),
-    borderWidth: 1,
-    borderColor: Colors.divider,
-    backgroundColor: '#FFFFFF',
+    height: 44,
+    borderRadius: 22,
+    paddingLeft: 12,
+    paddingRight: 16,
+    borderWidth: 2,
+    borderColor: JT.ink,
+    backgroundColor: JT.surface,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: rs(6),
-    ...Shadow.card,
+    gap: 8,
   },
-  faqText: { fontSize: rf(14), fontWeight: '800', color: Colors.primary },
+  faqText: { fontFamily: EditFonts.text800, fontSize: 15, color: JT.ink },
   body: { flex: 1 },
   chat: {
-    paddingHorizontal: rs(18),
-    paddingTop: rs(18),
-    paddingBottom: rs(24),
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 24,
+    gap: 12,
   },
-  assistantHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(7),
-    marginBottom: rs(8),
-    paddingLeft: rs(4),
-  },
-  assistantHeadText: {
-    fontSize: rf(14),
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  messageWrap: { marginTop: rs(10), maxWidth: '88%' },
-  messageMineWrap: { alignSelf: 'flex-end', alignItems: 'flex-end' },
-  messageTheirWrap: { alignSelf: 'flex-start', alignItems: 'flex-start' },
+  theirWrap: { alignSelf: 'flex-start', maxWidth: '84%' },
   senderLabel: {
-    fontSize: rf(11.5),
-    color: Colors.textMuted,
-    marginBottom: rs(4),
-    marginLeft: rs(6),
+    fontFamily: EditFonts.text800,
+    fontSize: 12,
+    color: JT.textTertiary,
+    marginBottom: 6,
+    marginLeft: 4,
   },
   bubble: {
     maxWidth: '100%',
-    borderRadius: rs(18),
-    paddingHorizontal: rs(15),
-    paddingVertical: rs(12),
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
   },
-  theirs: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F3F4F6',
-    borderBottomLeftRadius: rs(6),
+  bot: {
+    backgroundColor: JT.accentSoft,
+    borderBottomLeftRadius: 6,
+  },
+  operator: {
+    backgroundColor: JT.surface,
+    borderWidth: 1.5,
+    borderColor: '#EFE7DC',
+    borderBottomLeftRadius: 6,
   },
   mine: {
     alignSelf: 'flex-end',
-    backgroundColor: Colors.primary,
-    borderBottomRightRadius: rs(6),
-  },
-  systemBubble: {
-    backgroundColor: '#FFF4EC',
-    borderWidth: 1,
-    borderColor: '#FFD9C2',
+    maxWidth: '84%',
+    backgroundColor: JT.accent,
+    borderWidth: 2,
+    borderColor: JT.ink,
+    borderBottomRightRadius: 6,
   },
   bubbleTxt: {
-    fontSize: rf(14.5),
-    lineHeight: rf(20.5),
-    color: Colors.textPrimary,
+    fontFamily: EditFonts.text600,
+    fontSize: 15,
+    lineHeight: 22,
+    color: JT.ink,
   },
-  mineTxt: { color: '#FFFFFF' },
-  suggestions: { gap: rs(9), marginTop: rs(18) },
+  mineTxt: { fontFamily: EditFonts.text700 },
+  suggestions: { gap: 10, marginTop: 6 },
   suggestion: {
     alignSelf: 'flex-start',
     maxWidth: '100%',
-    borderRadius: rs(22),
+    borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: '#FFB487',
-    paddingHorizontal: rs(15),
-    paddingVertical: rs(10),
-    backgroundColor: '#FFFFFF',
+    borderColor: JT.borderSoft,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: JT.surface,
   },
   suggestionText: {
-    fontSize: rf(13.5),
-    lineHeight: rf(18),
-    color: Colors.primary,
+    fontFamily: EditFonts.text700,
+    fontSize: 14,
+    lineHeight: 19,
+    color: JT.ink,
   },
   operatorBtn: {
-    marginTop: rs(18),
-    minHeight: rs(48),
-    borderRadius: rs(24),
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    backgroundColor: '#FFFFFF',
+    marginTop: 4,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: JT.ink,
+    backgroundColor: JT.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: rs(8),
-    paddingHorizontal: rs(16),
+    gap: 8,
+    paddingHorizontal: 16,
   },
-  operatorBtnActive: { backgroundColor: Colors.primary },
-  operatorText: { fontSize: rf(14), fontWeight: '800', color: Colors.primary },
-  operatorTextActive: { color: '#FFFFFF' },
+  operatorBtnActive: { backgroundColor: JT.accentSoft },
+  operatorText: { fontFamily: EditFonts.text700, fontSize: 16, color: JT.ink },
   operatorHint: {
-    marginTop: rs(7),
-    fontSize: rf(11.5),
-    lineHeight: rf(16),
+    fontFamily: EditFonts.text600,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: 'center',
-    color: Colors.textMuted,
+    color: JT.textTertiary,
   },
-  inputRow: {
-    minHeight: rs(70),
-    paddingHorizontal: rs(16),
-    paddingVertical: rs(10),
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    backgroundColor: '#FFFFFF',
+  composer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1.5,
+    borderTopColor: '#EFE7DC',
+    backgroundColor: JT.background,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: rs(9),
+    gap: 10,
   },
   input: {
     flex: 1,
-    minHeight: rs(48),
-    maxHeight: rs(120),
-    borderRadius: rs(24),
-    backgroundColor: '#F4F5F7',
-    paddingHorizontal: rs(17),
-    paddingTop: rs(13),
-    paddingBottom: rs(12),
-    fontSize: rf(14.5),
-    color: Colors.textPrimary,
+    minHeight: 52,
+    maxHeight: 120,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: EditColors.borderSoft,
+    backgroundColor: JT.surface,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
+    fontFamily: EditFonts.text600,
+    fontSize: 16,
+    color: JT.ink,
   },
   sendBtn: {
-    width: rs(48),
-    height: rs(48),
-    borderRadius: rs(24),
-    backgroundColor: Colors.primary,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: JT.stack2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnOff: { opacity: 0.38 },
-  errorCard: { alignItems: 'center', marginTop: rs(24), gap: rs(10) },
-  errorTitle: { fontSize: rf(14), color: Colors.textSecondary },
+  sendBtnOn: {
+    backgroundColor: JT.accent,
+    borderWidth: 2,
+    borderColor: JT.ink,
+  },
+  errorCard: { alignItems: 'center', marginTop: 24, gap: 10 },
+  errorTitle: { fontFamily: EditFonts.text600, fontSize: 14, color: JT.textTertiary },
   retryBtn: {
-    borderRadius: rs(18),
-    backgroundColor: Colors.primary,
-    paddingHorizontal: rs(16),
-    paddingVertical: rs(9),
+    borderRadius: 20,
+    backgroundColor: JT.accent,
+    borderWidth: 2,
+    borderColor: JT.ink,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
   },
-  retryText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '700' },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.26)',
+  retryText: { fontFamily: EditFonts.text700, color: JT.ink, fontSize: 14 },
+  faqList: { paddingTop: 18, paddingBottom: 40, paddingRight: 4, gap: 10 },
+  faqItem: {
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#EFE7DC',
+    backgroundColor: JT.surface,
   },
-  faqSheet: {
-    maxHeight: '82%',
-    backgroundColor: '#F7F7F9',
-    borderTopLeftRadius: rs(26),
-    borderTopRightRadius: rs(26),
-    overflow: 'hidden',
-  },
-  sheetHandle: {
-    width: rs(42),
-    height: rs(5),
-    borderRadius: rs(3),
-    backgroundColor: '#D6D8DE',
-    alignSelf: 'center',
-    marginTop: rs(10),
-  },
-  faqHeader: {
-    paddingHorizontal: rs(18),
-    paddingVertical: rs(14),
+  faqItemOpen: { borderWidth: 2, borderColor: JT.ink },
+  faqQuestionRow: {
+    minHeight: 60,
+    paddingLeft: 18,
+    paddingRight: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  faqTitle: {
-    flex: 1,
-    fontSize: rf(19),
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: rs(38),
-    height: rs(38),
-    borderRadius: rs(19),
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  faqList: { paddingHorizontal: rs(18), paddingBottom: rs(28), gap: rs(9) },
-  faqItem: {
-    borderRadius: rs(16),
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: rs(15),
-    paddingVertical: rs(13),
-    ...Shadow.card,
-  },
-  faqQuestionRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   faqQuestion: {
     flex: 1,
-    fontSize: rf(14),
-    lineHeight: rf(19),
-    fontWeight: '700',
-    color: Colors.textPrimary,
+    fontFamily: EditFonts.text800,
+    fontSize: 16,
+    lineHeight: 22,
+    color: JT.ink,
   },
+  chevUp: { transform: [{ rotate: '180deg' }] },
   faqAnswer: {
-    marginTop: rs(9),
-    fontSize: rf(13),
-    lineHeight: rf(19),
-    color: Colors.textSecondary,
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+    fontFamily: EditFonts.text600,
+    fontSize: 14,
+    lineHeight: 21,
+    color: JT.textBody,
   },
   faqEmpty: {
-    paddingVertical: rs(20),
+    paddingVertical: 20,
     textAlign: 'center',
-    color: Colors.textMuted,
-    fontSize: rf(13),
+    fontFamily: EditFonts.text600,
+    color: JT.textTertiary,
+    fontSize: 13,
   },
 });

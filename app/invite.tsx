@@ -3,36 +3,64 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Share, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import * as Clipboard from 'expo-clipboard';
-import { Colors, Radius } from '@/constants/theme';
+import { JT } from '@/constants/jt';
+import { EditFonts } from '@/constants/profileEditTheme';
 import { useApp } from '@/hooks/useApp';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { dbGetMyReferral, MyReferral } from '@/services/db';
-import { rs, rf } from '@/constants/scale';
-import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
+import { BackIcon } from '@/components/profile/edit/icons';
 
 /**
- * Пригласить друга.
- *
- * Склад — среда с плотными связями: люди зовут знакомых на смены и без нас.
- * Экран не создаёт это поведение, а делает его видимым и чего-то стоящим.
+ * Пригласить друга. Верстка 1:1 по `docs/design/settings-help/02-invite-friend.html`.
  *
  * Денег в программе нет — решение владельца. Экран об этом говорит прямо, а не
  * обходит молчанием: обещание вознаграждения без суммы читается как обман, и
  * один раз обманутый второго знакомого уже не позовёт.
  *
  * Вместо денег — поручительство. Позвать знакомого значит за него поручиться:
- * вышел он на первую смену — это видно работодателям на карточке поручителя,
- * не вышел — тоже записано. Работает это потому, что доверие работодателя на
- * этом рынке дефицитнее денег: из двух одинаковых анкет берут ту, за которой
- * кто-то стоит.
+ * устроился он на работу через JobToo — это видно работодателям на карточке
+ * поручителя. Подработка закрыта, поэтому считаем найм; старые «вышли на
+ * смену» (worked) тоже идут в счёт — они уже записаны и заслужены.
  *
- * Отсюда и три числа вместо одного бодрого. Разрыв между «позвали» и «вышли» и
- * есть весь смысл: считать регистрации — прямой путь Jobr, где платили за
- * каждый отклик, к партнёрам полетели пустые заявки, и партнёры отключились.
+ * Регистрации не считаем: за них платил Jobr, партнёрам полетели пустые
+ * заявки, и партнёры отключились.
  */
+function CopyIcon({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x={8} y={8} width={12} height={12} rx={3} stroke={JT.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke={JT.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 3v12M7 8l5-5l5 5" stroke={JT.ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" stroke={JT.ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function InfoGlyph() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
+      <Circle cx={12} cy={12} r={9} stroke={JT.textTertiary} strokeWidth={2.2} strokeLinecap="round" />
+      <Path d="M12 11v5M12 8h.01" stroke={JT.textTertiary} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function InviteScreen() {
+  useWarmSystemBar();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { currentUser, showToast } = useApp();
 
   const [data, setData] = useState<MyReferral | null>(null);
@@ -55,7 +83,22 @@ export default function InviteScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
   const link = data ? `https://t.me/JobToo_bot/app?startapp=ref_${data.code}` : '';
+
+  const copyText = async (text: string, toast: string) => {
+    if (!text) return;
+    try {
+      await Clipboard.setStringAsync(text);
+      showToast(toast, 'success');
+    } catch {
+      showToast('Не удалось скопировать', 'error');
+    }
+  };
 
   const share = async () => {
     if (!link) return;
@@ -65,6 +108,15 @@ export default function InviteScreen() {
       link,
     ].join('\n');
     try {
+      if (Platform.OS === 'web') {
+        const nav = typeof navigator !== 'undefined' ? (navigator as Navigator) : null;
+        if (nav && typeof nav.share === 'function') {
+          await nav.share({ text: message.replace(`\n${link}`, ''), url: link });
+        } else {
+          await copyText(link, 'Ссылка скопирована');
+        }
+        return;
+      }
       // На iOS ссылка идёт отдельным полем, иначе она уезжает в текст и часть
       // приложений её не распознаёт как ссылку.
       await Share.share(
@@ -77,144 +129,180 @@ export default function InviteScreen() {
     }
   };
 
-  const copy = async () => {
-    if (!link) return;
-    await Clipboard.setStringAsync(link);
-    showToast('Ссылка скопирована', 'success');
-  };
+  // Устроились = найм + старые выходы на смену.
+  const hiredTotal = data ? (data.worked ?? 0) + (data.hired ?? 0) : 0;
 
   return (
-    <SafeAreaView style={s.safe}>
-      <View style={s.header}>
-        <BackButton />
-        <Text style={s.headerTitle}>Пригласить друга</Text>
-        <View style={{ width: BACK_BUTTON_SIZE }} />
+    <View style={s.screen}>
+      {/* Своя шапка с фоном и zIndex: контент уходит под неё, а не налезает. */}
+      <View style={[s.header, { paddingTop: Math.max(insets.top, 16) + 12 }]}>
+        <TouchableOpacity
+          onPress={goBack}
+          style={s.backBtn}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="Назад"
+        >
+          <BackIcon size={20} />
+        </TouchableOpacity>
+        <Text style={s.title} numberOfLines={1}>Пригласить друга</Text>
       </View>
 
-      <ScrollView contentContainerStyle={s.body}>
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={[s.body, { paddingBottom: Math.max(insets.bottom, 12) + 32 }]}
+        showsVerticalScrollIndicator={false}
+      >
         {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: rs(40) }} />
+          <ActivityIndicator color={JT.accent} style={{ marginTop: 40 }} />
         ) : failed || !data ? (
-          <View style={s.card}>
-            <Text style={s.failTitle}>Не получилось загрузить</Text>
-            <Text style={s.failText}>Проверьте связь и попробуйте ещё раз.</Text>
-            <TouchableOpacity style={s.primaryBtn} onPress={() => void load()} activeOpacity={0.85}>
-              <Text style={s.primaryBtnTxt}>Повторить</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
+          <HardShadowBox offset={6} radius={28}>
             <View style={s.card}>
-              <Text style={s.lead}>
-                Позовите знакомого, которому нужна работа. Когда он выйдет на
-                первую смену, это встанет в вашу карточку: работодатели видят,
-                скольких вы привели и сколько из них вышли.
-              </Text>
-              <Text style={s.leadMuted}>
-                Денег за приглашение мы не платим — и не обещаем. Платит это
-                другим: из двух похожих анкет работодатель берёт ту, за которой
-                кто-то стоит.
-              </Text>
-
-              <Text style={s.codeLabel}>Ваш код</Text>
-              <Text style={s.code} selectable>{data.code}</Text>
-
-              <TouchableOpacity style={s.primaryBtn} onPress={() => void share()} activeOpacity={0.85}>
-                <Ionicons name="share-outline" size={rf(17)} color="#fff" />
-                <Text style={s.primaryBtnTxt}>Поделиться ссылкой</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={s.secondaryBtn} onPress={() => void copy()} activeOpacity={0.7}>
-                <Ionicons name="copy-outline" size={rf(16)} color={Colors.textSecondary} />
-                <Text style={s.secondaryBtnTxt}>Скопировать ссылку</Text>
+              <Text style={s.lead}>Не получилось загрузить</Text>
+              <Text style={s.muted}>Проверьте связь и попробуйте ещё раз.</Text>
+              <TouchableOpacity style={s.primaryBtn} onPress={() => void load()} activeOpacity={0.85}>
+                <Text style={s.primaryBtnTxt}>Повторить</Text>
               </TouchableOpacity>
             </View>
+          </HardShadowBox>
+        ) : (
+          <>
+            <HardShadowBox offset={6} radius={28}>
+              <View style={s.card}>
+                <Text style={s.lead}>
+                  Позовите знакомого, которому нужна работа. Когда он устроится
+                  на работу через JobToo, это встанет в вашу карточку:
+                  работодатели видят, скольких вы привели и сколько из них
+                  устроились.
+                </Text>
+                <Text style={s.muted}>
+                  Денег за приглашение мы не платим — и не обещаем. Платит это
+                  другим: из двух похожих анкет работодатель берёт ту, за которой
+                  кто-то стоит.
+                </Text>
 
-            {/* Два числа крупно, третье — строкой под ними и только когда оно
-                есть. Три равных столбца на узком экране читаются как таблица,
-                а невышедшие — не столбец: это оговорка к первым двум. Прятать
-                её нельзя, иначе «вышли» перестаёт что-либо значить. */}
+                <Text style={s.codeLabel}>Ваш код</Text>
+                <View style={s.codeBox}>
+                  <Text style={s.code} selectable>{data.code}</Text>
+                  <TouchableOpacity
+                    onPress={() => void copyText(data.code, 'Код скопирован')}
+                    style={s.codeCopy}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Скопировать код"
+                  >
+                    <CopyIcon size={20} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={s.primaryWrap}>
+                  <View pointerEvents="none" style={s.primaryShadow} />
+                  <TouchableOpacity style={s.primaryBtn} onPress={() => void share()} activeOpacity={0.85}>
+                    <ShareIcon />
+                    <Text style={s.primaryBtnTxt}>Поделиться ссылкой</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={s.ghostBtn}
+                  onPress={() => void copyText(link, 'Ссылка скопирована')}
+                  activeOpacity={0.7}
+                >
+                  <CopyIcon size={18} />
+                  <Text style={s.ghostBtnTxt}>Скопировать ссылку</Text>
+                </TouchableOpacity>
+              </View>
+            </HardShadowBox>
+
+            {/* Не пришедшие «не вышли» на экран не выносим: смен больше нет, а
+                новые итоги — только «устроился». Старые невыходы остаются в
+                журнале и на карточке не показываются. */}
             <View style={s.stats}>
-              <View style={s.stat}>
+              <View style={[s.stat, s.statDivider]}>
                 <Text style={s.statNum}>{data.invited}</Text>
                 <Text style={s.statLabel}>позвали</Text>
               </View>
-              <View style={s.statDivider} />
               <View style={s.stat}>
-                <Text style={[s.statNum, { color: Colors.green }]}>{data.worked}</Text>
-                <Text style={s.statLabel}>вышли на смену</Text>
+                <Text style={[s.statNum, { color: '#C2410C' }]}>{hiredTotal}</Text>
+                <Text style={s.statLabel}>устроились</Text>
               </View>
             </View>
-            {data.noShow > 0 ? (
-              <Text style={s.statsFoot}>Не вышли: {data.noShow}</Text>
-            ) : null}
 
             <View style={s.note}>
-              <Ionicons name="information-circle-outline" size={rf(16)} color={Colors.textMuted} />
+              <InfoGlyph />
               <Text style={s.noteTxt}>
-                Считается выход на смену, а не регистрация. Поэтому зовите тех,
-                за кого готовы поручиться: их выход поднимает вашу карточку, их
-                невыход — тоже ваш.
+                Считается, что друг устроился на работу, а не зарегистрировался.
+                Поэтому зовите тех, за кого готовы поручиться: их трудоустройство
+                поднимает вашу карточку.
               </Text>
             </View>
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.outerBg },
+  screen: { flex: 1, backgroundColor: JT.background },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(16), paddingVertical: rs(12),
-    borderBottomWidth: 1, borderBottomColor: Colors.divider, backgroundColor: Colors.bg,
+    paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 14,
+    minHeight: 44, backgroundColor: JT.background, zIndex: 1,
   },
-  headerTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
+  backBtn: {
+    width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.surface, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  title: { flex: 1, minWidth: 0, fontFamily: EditFonts.heading, fontSize: 18, color: JT.ink },
 
-  body: { padding: rs(16), gap: rs(12) },
+  scroll: { flex: 1 },
+  body: { paddingHorizontal: 20, paddingTop: 8 },
 
   card: {
-    backgroundColor: Colors.card, borderRadius: Radius.lg,
-    padding: rs(16), gap: rs(10),
+    backgroundColor: JT.surface, borderRadius: 28, borderWidth: 2, borderColor: JT.ink,
+    paddingTop: 18, paddingHorizontal: 18, paddingBottom: 12,
   },
-  lead: { fontSize: rf(15), lineHeight: rf(21), color: Colors.textPrimary },
-  leadMuted: { fontSize: rf(13), lineHeight: rf(19), color: Colors.textSecondary },
-
-  codeLabel: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(6) },
-  code: {
-    fontSize: rf(26), fontWeight: '800', letterSpacing: rs(3),
-    color: Colors.primary, marginBottom: rs(4),
+  lead: { fontFamily: EditFonts.text700, fontSize: 16, lineHeight: 23, color: JT.ink },
+  muted: {
+    marginTop: 10, fontFamily: EditFonts.text600, fontSize: 13, lineHeight: 19, color: JT.textBody,
   },
 
+  codeLabel: { marginTop: 16, fontFamily: EditFonts.text700, fontSize: 14, color: JT.textBody },
+  codeBox: {
+    marginTop: 8, height: 62, paddingLeft: 18, paddingRight: 8, borderRadius: 18,
+    borderWidth: 2, borderColor: JT.ink, borderStyle: 'dashed', backgroundColor: JT.accentSoft,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  code: { fontFamily: EditFonts.heading, fontSize: 24, letterSpacing: 0.12 * 24, color: JT.ink },
+  codeCopy: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+
+  primaryWrap: { marginTop: 18 },
+  primaryShadow: {
+    position: 'absolute', top: 4, left: 4, right: -4, bottom: -4,
+    backgroundColor: JT.ink, borderRadius: 29,
+  },
   primaryBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
-    backgroundColor: Colors.primary, borderRadius: Radius.md, paddingVertical: rs(13),
+    height: 58, borderRadius: 29, borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.accent,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
   },
-  primaryBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
-  secondaryBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
-    paddingVertical: rs(11),
+  primaryBtnTxt: { fontFamily: EditFonts.text800, fontSize: 16, color: JT.ink },
+  ghostBtn: {
+    marginTop: 6, height: 52, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 8,
   },
-  secondaryBtnTxt: { color: Colors.textSecondary, fontSize: rf(14), fontWeight: '600' },
+  ghostBtnTxt: { fontFamily: EditFonts.text800, fontSize: 16, color: JT.ink },
 
   stats: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.card, borderRadius: Radius.lg, paddingVertical: rs(16),
+    marginTop: 20, flexDirection: 'row', backgroundColor: JT.surface,
+    borderRadius: 20, paddingVertical: 14, paddingHorizontal: 8,
   },
-  stat: { flex: 1, alignItems: 'center', gap: rs(2) },
-  statNum: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary },
-  statLabel: { fontSize: rf(12), color: Colors.textSecondary },
-  statDivider: { width: 1, height: rs(34), backgroundColor: Colors.divider },
-  statsFoot: {
-    fontSize: rf(12), color: Colors.textMuted,
-    textAlign: 'center', marginTop: rs(-4),
+  stat: { flex: 1, alignItems: 'center', gap: 4 },
+  statDivider: { borderRightWidth: 1.5, borderRightColor: '#EFE7DC' },
+  statNum: { fontFamily: EditFonts.heading, fontSize: 26, color: JT.ink },
+  statLabel: { fontFamily: EditFonts.text600, fontSize: 14, color: JT.textTertiary },
+
+  note: { marginTop: 14, flexDirection: 'row', gap: 10, paddingHorizontal: 4 },
+  noteTxt: {
+    flex: 1, fontFamily: EditFonts.text600, fontSize: 14, lineHeight: 21, color: JT.textTertiary,
   },
-
-  note: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(4) },
-  noteTxt: { flex: 1, fontSize: rf(12), lineHeight: rf(17), color: Colors.textMuted },
-
-  failTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  failText: { fontSize: rf(13), color: Colors.textSecondary },
 });

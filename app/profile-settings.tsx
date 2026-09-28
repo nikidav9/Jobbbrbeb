@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  KeyboardAvoidingView, Platform, Linking, ActivityIndicator, Switch,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Linking, ActivityIndicator, Switch,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Shadow } from '@/constants/theme';
-import { rs, rf } from '@/constants/scale';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useApp } from '@/hooks/useApp';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
   dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
@@ -17,8 +16,6 @@ import {
 } from '@/services/db';
 import { forgetJupiterLive } from '@/services/jupiterLive';
 import { confirmAsync } from '@/services/confirm';
-import { AppInput } from '@/components/ui/AppInput';
-import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
@@ -29,16 +26,20 @@ import {
 } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug, isWebPushRegistered } from '@/lib/webPush';
 import { clearRuntimeCache } from '@/services/storage';
-import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
+import { BackButton } from '@/components/ui/BackButton';
+import { JT } from '@/constants/jt';
+import { EditColors, EditFonts } from '@/constants/profileEditTheme';
+import {
+  BottomSheet, ConfirmDialog, Field, HardShadowBox, CloseIcon, CheckIcon, ChevronRightIcon,
+} from '@/components/profile/edit';
 
 const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
+const DANGER = EditColors.danger;
 
 type NotificationState = 'checking' | 'enabled' | 'disabled' | 'blocked' | 'unavailable' | 'error';
+type IonName = React.ComponentProps<typeof Ionicons>['name'];
 
-const ABOUT_DOCS: {
-  key: LegalDocKey;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-}[] = [
+const ABOUT_DOCS: { key: LegalDocKey; icon: IonName }[] = [
   { key: 'terms', icon: 'document-text-outline' },
   { key: 'privacy', icon: 'shield-checkmark-outline' },
   { key: 'consent', icon: 'checkmark-circle-outline' },
@@ -47,41 +48,203 @@ const ABOUT_DOCS: {
   { key: 'employers', icon: 'business-outline' },
 ];
 
-type RowProps = {
-  label: string;
-  icon?: React.ComponentProps<typeof Ionicons>['name'];
-  onPress: () => void;
-  danger?: boolean;
-  last?: boolean;
-};
+// Иконки плиток — пути из docs/design/settings-help/03-settings.html.
+const iconProps = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none' } as const;
+const stroke = { stroke: JT.ink, strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
+const ChatIcon = () => (
+  <Svg {...iconProps}>
+    <Path d="M4 5h16v11H9l-5 4z" {...stroke} />
+    <Path d="M9 10.5h.01M12 10.5h.01M15 10.5h.01" stroke={JT.ink} strokeWidth={3} strokeLinecap="round" />
+  </Svg>
+);
+const BellIcon = ({ size = 20, color = JT.ink }: { size?: number; color?: string }) => (
+  <Svg {...iconProps} width={size} height={size}>
+    <Path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" {...stroke} stroke={color} />
+    <Path d="M10 20a2 2 0 0 0 4 0" {...stroke} stroke={color} />
+  </Svg>
+);
+const KeyIcon = ({ size = 20 }: { size?: number }) => (
+  <Svg {...iconProps} width={size} height={size}>
+    <Circle cx="8" cy="15" r="4" {...stroke} />
+    <Path d="M11 12l8-8M16 7l2 2M14 9l2 2" {...stroke} />
+  </Svg>
+);
+const GiftIcon = () => (
+  <Svg {...iconProps}>
+    <Rect x="3" y="8" width="18" height="5" rx="1" {...stroke} />
+    <Path d="M5 13v8h14v-8M12 8v13" {...stroke} />
+    <Path d="M12 8C10 4 6 4 6 6.5S9 8 12 8c3 0 6 .5 6-1.5S14 4 12 8z" {...stroke} />
+  </Svg>
+);
+const RefreshIcon = () => (
+  <Svg {...iconProps}>
+    <Path d="M20 12a8 8 0 1 1-2.3-5.7" {...stroke} />
+    <Path d="M20 4v5h-5" {...stroke} />
+  </Svg>
+);
+const LogoutIcon = () => (
+  <Svg {...iconProps}>
+    <Path d="M15 4h4v16h-4" stroke={DANGER} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M10 8l-4 4l4 4M6 12h10" stroke={DANGER} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+const EyeIcon = ({ color }: { color: string }) => (
+  <Svg {...iconProps}>
+    <Path d="M2 12s3.5-7 10-7s10 7 10 7s-3.5 7-10 7S2 12 2 12z" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
 
-function SettingsRow({ label, icon, onPress, danger, last }: RowProps) {
+function Tile({ children, size = 40, radius = 12 }: { children: React.ReactNode; size?: number; radius?: number }) {
+  return <View style={[s.tile, { width: size, height: size, borderRadius: radius }]}>{children}</View>;
+}
+
+function Row({
+  label, icon, ionIcon, value, onPress, last,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  ionIcon?: IonName;
+  value?: string;
+  onPress: () => void;
+  last?: boolean;
+}) {
   return (
     <TouchableOpacity
       style={[s.row, !last && s.rowBorder]}
       onPress={onPress}
       activeOpacity={0.72}
+      accessibilityRole="button"
     >
-      {icon ? (
-        <View style={[s.rowIcon, danger && s.rowIconDanger]}>
-          <Ionicons
-            name={icon}
-            size={rf(18)}
-            color={danger ? Colors.red : Colors.textSecondary}
-          />
-        </View>
-      ) : null}
-      <Text style={[s.rowLabel, danger && s.rowLabelDanger]}>{label}</Text>
-      {!danger ? <Ionicons name="chevron-forward" size={rf(17)} color={Colors.textMuted} /> : null}
+      <Tile>{icon ?? <Ionicons name={ionIcon ?? 'ellipse-outline'} size={20} color={JT.ink} />}</Tile>
+      <Text style={s.rowTitle}>{label}</Text>
+      {value ? <Text style={s.rowValue}>{value}</Text> : null}
+      <ChevronRightIcon size={18} />
     </TouchableOpacity>
   );
 }
 
-function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+function SwitchRow({
+  label, ionIcon, value, onChange, disabled, hint, last,
+}: {
+  label: string;
+  ionIcon: IonName;
+  value: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  hint: React.ReactNode;
+  last?: boolean;
+}) {
   return (
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>{title}</Text>
+    <View style={[s.switchRow, !last && s.rowBorder]}>
+      <View style={s.switchTop}>
+        <Tile><Ionicons name={ionIcon} size={20} color={JT.ink} /></Tile>
+        <Text style={s.rowTitle}>{label}</Text>
+        <Switch
+          value={value}
+          onValueChange={onChange}
+          disabled={disabled}
+          accessibilityLabel={label}
+          trackColor={{ false: EditColors.disabledBg, true: JT.accent }}
+          thumbColor={JT.surface}
+        />
+      </View>
+      <Text style={s.hint}>{hint}</Text>
+    </View>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <>
+      <Text style={s.sectionLabel}>{title}</Text>
       <View style={s.card}>{children}</View>
+    </>
+  );
+}
+
+type BtnKind = 'primary' | 'outline' | 'ghost';
+function Btn({
+  kind, label, onPress, disabled, danger, icon,
+}: { kind: BtnKind; label: string; onPress: () => void; disabled?: boolean; danger?: boolean; icon?: React.ReactNode }) {
+  const inner = (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      style={[
+        s.btn,
+        kind === 'primary' && (disabled ? s.btnDisabled : s.btnPrimary),
+        kind === 'outline' && (disabled ? s.btnDisabled : s.btnOutline),
+        kind === 'ghost' && s.btnGhost,
+        danger && !disabled && { borderColor: DANGER },
+        icon ? { flexDirection: 'row', gap: 8 } : null,
+      ]}
+    >
+      {icon}
+      <Text
+        style={[
+          s.btnText,
+          kind === 'ghost' && s.btnGhostText,
+          disabled && kind !== 'ghost' && s.btnTextDisabled,
+          danger && !disabled && { color: DANGER },
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+  if (kind === 'primary' && !disabled) {
+    return <HardShadowBox radius={29} offset={4}>{inner}</HardShadowBox>;
+  }
+  return inner;
+}
+
+function SheetHeader({ title, tile, onClose }: { title: string; tile: React.ReactNode; onClose: () => void }) {
+  return (
+    <View style={s.sheetHeader}>
+      <Tile size={44} radius={13}>{tile}</Tile>
+      <Text style={s.sheetTitle} numberOfLines={1}>{title}</Text>
+      <TouchableOpacity onPress={onClose} style={s.closeBtn} accessibilityLabel="Закрыть" accessibilityRole="button">
+        <CloseIcon size={16} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function PasswordField({
+  label, value, onChangeText, placeholder, error,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder?: string;
+  error?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={{ gap: 6 }}>
+      <Field
+        label={label}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        secureTextEntry={!visible}
+        autoCapitalize="none"
+        autoCorrect={false}
+        right={(
+          <TouchableOpacity
+            onPress={() => setVisible(v => !v)}
+            style={s.eye}
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Скрыть пароль' : 'Показать пароль'}
+          >
+            <EyeIcon color={value ? JT.ink : EditColors.textTertiary} />
+          </TouchableOpacity>
+        )}
+      />
+      {error ? <Text style={s.error}>{error}</Text> : null}
     </View>
   );
 }
@@ -89,12 +252,15 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 export default function ProfileSettingsScreen() {
   const router = useRouter();
   const { currentUser, logout, showToast } = useApp();
+  const insets = useSafeAreaInsets();
+  useWarmSystemBar();
 
   const [showPassword, setShowPassword] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [wrongOldPassword, setWrongOldPassword] = useState(false);
 
   const [showLogout, setShowLogout] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -215,6 +381,11 @@ export default function ProfileSettingsScreen() {
       setNotificationMessage('Не удалось проверить разрешение на уведомления.');
     }
   };
+
+  // Статус «Вкл/Выкл» в строке настроек показываем по реальному состоянию.
+  useEffect(() => {
+    refreshNotificationState().catch(() => {});
+  }, []);
 
   const openNotificationSettings = () => {
     setShowNotificationSettings(true);
@@ -369,7 +540,7 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-    const performLogout = async () => {
+  const performLogout = async () => {
     try {
       await logout();
     } catch {
@@ -379,7 +550,7 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-    const savePassword = async () => {
+  const savePassword = async () => {
     if (!currentUser || savingPassword) return;
     if (newPassword.length < 6) {
       showToast('Пароль должен быть не менее 6 символов', 'error');
@@ -390,10 +561,11 @@ export default function ProfileSettingsScreen() {
       return;
     }
     setSavingPassword(true);
+    setWrongOldPassword(false);
     try {
       const result = await dbChangePassword(currentUser.id, oldPassword, newPassword);
       if (!result.ok) {
-        showToast('Неверный текущий пароль', 'error');
+        setWrongOldPassword(true);
         return;
       }
       setOldPassword('');
@@ -406,6 +578,16 @@ export default function ProfileSettingsScreen() {
     } finally {
       setSavingPassword(false);
     }
+  };
+
+  const closePasswordSheet = () => {
+    setShowPassword(false);
+    setOldPassword(''); setNewPassword(''); setConfirmPassword('');
+    setWrongOldPassword(false);
+  };
+
+  const goSetPasswordByCode = () => {
+    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
   };
 
   const deleteAccount = async () => {
@@ -424,505 +606,381 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  if (!currentUser) return <SafeAreaView style={s.safe} />;
+  if (!currentUser) return <View style={s.screen} />;
+
+  const isWorker = currentUser.role === 'worker';
+  const noPassword = currentUser.hasPassword === false;
+  const passwordFilled = !!oldPassword && !!newPassword && !!confirmPassword;
+  const mismatch = !!confirmPassword && newPassword !== confirmPassword;
+  const tooShort = !!newPassword && newPassword.length < 6;
+  const canSavePassword = passwordFilled && !mismatch && !tooShort && !savingPassword;
+  const notificationValue = notificationState === 'checking' ? '' : notificationState === 'enabled' ? 'Вкл' : 'Выкл';
+
+  const notificationTitle = {
+    checking: 'Проверяем состояние…',
+    enabled: 'Уведомления включены',
+    disabled: 'Уведомления выключены',
+    blocked: 'Уведомления заблокированы',
+    unavailable: 'Уведомления недоступны',
+    error: 'Что-то пошло не так',
+  }[notificationState];
 
   return (
-    <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
-      <View style={s.header}>
-        <BackButton onPress={() => router.replace('/(tabs)/profile')} />
-        <Text style={s.headerTitle}>Настройки</Text>
-        <View style={s.headerSpacer} />
+    <View style={s.screen}>
+      <View style={[s.header, { paddingTop: Math.max(insets.top, 16) + 12 }]}>
+        <BackButton
+          onPress={() => router.replace('/(tabs)/profile')}
+          label="Назад в профиль"
+          style={s.backBtn}
+        />
+        <Text style={s.headerTitle} pointerEvents="none">Настройки</Text>
       </View>
 
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <SettingsSection title="Аккаунт">
-          <SettingsRow
+        <Section title="Аккаунт">
+          <Row
             label="Помощь и обратная связь"
-            icon="chatbubble-ellipses-outline"
+            icon={<ChatIcon />}
             onPress={() => router.push('/support')}
           />
-          <SettingsRow
-            label="Настройки уведомлений"
-            icon="notifications-outline"
+          <Row
+            label="Уведомления"
+            icon={<BellIcon />}
+            value={notificationValue}
             onPress={openNotificationSettings}
           />
           {/* Аккаунт по коду из письма пароля не имеет: «Сменить» с полем
               «текущий пароль» ему не пройти. Такому сразу — задать по коду. */}
-          <SettingsRow
+          <Row
             label={currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
-            icon="key-outline"
+            icon={<KeyIcon />}
             onPress={() => {
               // Регистрация «почта → код» (27.09.2026) пароля не заводит —
               // «Сменить пароль» на таком аккаунте всегда отвечал бы «неверный
               // пароль». Ведём сразу туда, откуда пароль реально берётся.
-              if (currentUser.hasPassword === false) {
-                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
-              } else {
-                setShowPassword(true);
-              }
+              if (noPassword) goSetPasswordByCode();
+              else setShowPassword(true);
             }}
-            last
           />
-        </SettingsSection>
-
-        {currentUser.role === 'worker' ? (
-          <SettingsSection title="JobToo">
-            <SettingsRow
-              label="Пригласить друга"
-              icon="gift-outline"
-              onPress={() => router.push('/invite')}
-            />
-            <SettingsRow
-              label="Показать обучение снова"
-              icon="refresh-outline"
-              onPress={async () => {
-                await resetOnboarding(currentUser.id);
-                router.replace('/(tabs)/feed');
-              }}
-              last
-            />
-          </SettingsSection>
-        ) : null}
-
-        {currentUser.role === 'worker' ? (
-          <SettingsSection title="Юпитер">
-            <View style={[s.row, { alignItems: 'flex-start' }]}>
-              <View style={s.rowIcon}>
-                <Ionicons name="rocket-outline" size={rf(18)} color={Colors.textSecondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(11) }}>
-                  <Text style={[s.rowLabel, { flex: 1 }]}>Автоотклик Юпитера</Text>
-                  <Switch
-                    value={jupiterLive}
-                    onValueChange={toggleJupiterLive}
-                    disabled={jupiterBusy}
-                  />
-                </View>
-                <Text style={s.jupiterHint}>
-                  Юпитер сам отправляет отклики на вакансии с сайтов компаний. Капчу, коды и согласия,
-                  которые компания просит от своего имени, вы проходите сами.
-                </Text>
-              </View>
-            </View>
-          </SettingsSection>
-        ) : null}
-
-        {!currentUser.isGuest ? (
-          <SettingsSection title="Рассылки">
-            <View style={[s.row, { alignItems: 'flex-start' }]}>
-              <View style={s.rowIcon}>
-                <Ionicons name="megaphone-outline" size={rf(18)} color={Colors.textSecondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(11) }}>
-                  <Text style={[s.rowLabel, { flex: 1 }]}>Рекламные рассылки</Text>
-                  <Switch
-                    value={adsOn}
-                    onValueChange={toggleAds}
-                    disabled={adsBusy}
-                    accessibilityLabel="Рекламные рассылки"
-                  />
-                </View>
-                <Text style={s.jupiterHint}>
+          {!currentUser.isGuest ? (
+            <SwitchRow
+              label="Рекламные рассылки"
+              ionIcon="megaphone-outline"
+              value={adsOn}
+              onChange={toggleAds}
+              disabled={adsBusy}
+              hint={(
+                <>
                   Подборки вакансий, новые функции и акции JobToo — на почту и в уведомлениях.
                   Коды входа и служебные письма приходят независимо от этой настройки.{' '}
                   <Text
-                    style={{ color: Colors.primary }}
+                    style={s.hintLink}
                     onPress={() => router.push({ pathname: '/legal', params: { doc: 'marketing' } })}
                   >
                     Условия
                   </Text>
-                </Text>
-              </View>
-            </View>
-          </SettingsSection>
-        ) : null}
-
-        <SettingsSection title="Приложение">
-          <SettingsRow
-            label={refreshBusy ? 'Обновляем…' : 'Очистить кеш и обновить'}
-            icon="refresh-circle-outline"
-            onPress={clearCacheAndRefresh}
+                </>
+              )}
+            />
+          ) : null}
+          <Row
+            label="Удалить аккаунт"
+            ionIcon="trash-outline"
+            onPress={() => setShowDelete(true)}
             last
           />
-        </SettingsSection>
+        </Section>
 
-        <SettingsSection title="О приложении">
+        <Section title="JobToo">
+          {isWorker ? (
+            <Row label="Пригласить друга" icon={<GiftIcon />} onPress={() => router.push('/invite')} />
+          ) : null}
+          {isWorker ? (
+            <Row
+              label="Показать обучение снова"
+              icon={<RefreshIcon />}
+              onPress={async () => {
+                await resetOnboarding(currentUser.id);
+                router.replace('/(tabs)/feed');
+              }}
+            />
+          ) : null}
+          {isWorker ? (
+            <SwitchRow
+              label="Автоотклик Юпитера"
+              ionIcon="rocket-outline"
+              value={jupiterLive}
+              onChange={toggleJupiterLive}
+              disabled={jupiterBusy}
+              hint="Юпитер сам отправляет отклики на вакансии с сайтов компаний. Капчу, коды и согласия, которые компания просит от своего имени, вы проходите сами."
+            />
+          ) : null}
+          <Row
+            label={refreshBusy ? 'Обновляем…' : 'Очистить кеш и обновить'}
+            ionIcon="refresh-circle-outline"
+            onPress={clearCacheAndRefresh}
+          />
           {ABOUT_DOCS.map((doc, index) => (
-            <SettingsRow
+            <Row
               key={doc.key}
               label={LEGAL_DOCS[doc.key].title}
-              icon={doc.icon}
+              ionIcon={doc.icon}
               onPress={() => router.push({ pathname: '/legal', params: { doc: doc.key } })}
               last={index === ABOUT_DOCS.length - 1}
             />
           ))}
-        </SettingsSection>
+        </Section>
 
-        <SettingsSection title="Важное">
-          <SettingsRow
-            label="Выйти из аккаунта"
-            icon="log-out-outline"
-            danger
-            onPress={() => setShowLogout(true)}
-          />
-          <SettingsRow
-            label="Удалить аккаунт"
-            icon="trash-outline"
-            danger
-            onPress={() => setShowDelete(true)}
-            last
-          />
-        </SettingsSection>
+        <View style={{ marginTop: 28 }}>
+          <Btn kind="outline" danger icon={<LogoutIcon />} label="Выйти из аккаунта" onPress={() => setShowLogout(true)} />
+        </View>
 
         <Text style={s.footer}>
           Настройки профиля и приватные документы доступны только владельцу аккаунта.
         </Text>
       </ScrollView>
 
-      <Modal
+      <ConfirmDialog
         visible={showLogout}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowLogout(false)}
-      >
-        <View style={s.confirmOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setShowLogout(false)}
-          />
-          <View style={s.confirmCard}>
-            <View style={s.confirmIcon}>
-              <Ionicons name="log-out-outline" size={rf(24)} color={Colors.red} />
-            </View>
-            <Text style={s.confirmTitle}>Выйти из аккаунта?</Text>
-            <Text style={s.confirmText}>
-              Чтобы вернуться, понадобится снова войти по номеру телефона.
-            </Text>
-            <View style={s.confirmActions}>
-              <PrimaryButton
-                label="Выйти"
-                onPress={async () => {
-                  setShowLogout(false);
-                  await performLogout();
-                }}
-              />
-              <PrimaryButton
-                label="Отмена"
-                onPress={() => setShowLogout(false)}
-                secondary
-              />
-            </View>
+        title="Выйти из аккаунта?"
+        message="Чтобы вернуться, понадобится снова войти."
+        confirmLabel="Выйти"
+        cancelLabel="Отмена"
+        onConfirm={async () => {
+          setShowLogout(false);
+          await performLogout();
+        }}
+        onCancel={() => setShowLogout(false)}
+        onDismiss={() => setShowLogout(false)}
+      />
+
+      <BottomSheet visible={showNotificationSettings} onClose={() => setShowNotificationSettings(false)}>
+        <SheetHeader title="Уведомления" tile={<BellIcon size={22} />} onClose={() => setShowNotificationSettings(false)} />
+        <View style={s.statusBox}>
+          {notificationState === 'checking' ? (
+            <View style={s.statusCircleOff}><ActivityIndicator size="small" color={JT.accent} /></View>
+          ) : notificationState === 'enabled' ? (
+            <View style={s.statusCircleOn}><CheckIcon size={18} color={JT.accent} /></View>
+          ) : (
+            <View style={s.statusCircleOff}><BellIcon size={18} color={notificationState === 'blocked' || notificationState === 'error' ? DANGER : JT.ink} /></View>
+          )}
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={s.statusTitle}>{notificationTitle}</Text>
+            {notificationMessage ? <Text style={s.small}>{notificationMessage}</Text> : null}
           </View>
         </View>
-      </Modal>
-
-      <Modal
-        visible={showNotificationSettings}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowNotificationSettings(false)}
-      >
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowNotificationSettings(false)} />
-          <View style={s.sheet}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Уведомления</Text>
-            <View style={s.notificationStatus}>
-              {notificationState === 'checking'
-                ? <ActivityIndicator size="small" color={Colors.primary} />
-                : (
-                  <Ionicons
-                    name={
-                      notificationState === 'enabled'
-                        ? 'checkmark-circle'
-                        : notificationState === 'blocked'
-                        ? 'alert-circle'
-                        : 'notifications-off-outline'
-                    }
-                    size={rf(22)}
-                    color={
-                      notificationState === 'enabled'
-                        ? Colors.green
-                        : notificationState === 'blocked' || notificationState === 'error'
-                        ? Colors.red
-                        : Colors.textSecondary
-                    }
-                  />
-                )}
-              <Text style={s.notificationStatusText}>
-                {notificationMessage || 'Проверяем состояние уведомлений…'}
-              </Text>
-            </View>
-
-            <View style={s.sheetActions}>
-              {notificationState !== 'enabled' ? (
-                <PrimaryButton
-                  label={notificationBusy ? 'Подключаем…' : 'Включить уведомления'}
-                  onPress={enableNotifications}
-                  disabled={notificationBusy}
-                />
-              ) : (
-                <PrimaryButton
-                  label={notificationBusy ? 'Отключаем…' : 'Отключить уведомления'}
-                  onPress={disableNotifications}
-                  disabled={notificationBusy}
-                  secondary
-                />
-              )}
-              {Platform.OS !== 'web' && notificationState === 'blocked' ? (
-                <PrimaryButton
-                  label="Открыть настройки устройства"
-                  onPress={() => {
-                    Linking.openSettings().catch(() => {
-                      showToast('Не удалось открыть настройки устройства', 'error');
-                    });
-                  }}
-                  secondary
-                />
-              ) : null}
-              <PrimaryButton label="Закрыть" onPress={() => setShowNotificationSettings(false)} secondary />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        visible={showPassword}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowPassword(false)}
-      >
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowPassword(false)} />
-          <View style={s.sheet}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Сменить пароль</Text>
-            <View style={s.form}>
-              <AppInput label="Текущий пароль" value={oldPassword} onChangeText={setOldPassword} secureTextEntry />
-              <AppInput label="Новый пароль" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
-              <AppInput label="Повторите новый пароль" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
-            </View>
-            {/* Аккаунт без пароля (регистрация «почта → код») никогда не
-                пройдёт проверку текущего пароля — сервер отвечает
-                wrong_password намеренно. Путь такому человеку — код из письма. */}
-            <TouchableOpacity
+        <View style={{ marginTop: 22 }}>
+          {notificationState !== 'enabled' ? (
+            <Btn
+              kind="primary"
+              label={notificationBusy ? 'Подключаем…' : 'Включить уведомления'}
+              onPress={enableNotifications}
+              disabled={notificationBusy}
+            />
+          ) : (
+            <Btn
+              kind="outline"
+              label={notificationBusy ? 'Отключаем…' : 'Отключить уведомления'}
+              onPress={disableNotifications}
+              disabled={notificationBusy}
+            />
+          )}
+        </View>
+        {Platform.OS !== 'web' && notificationState === 'blocked' ? (
+          <View style={{ marginTop: 10 }}>
+            <Btn
+              kind="outline"
+              label="Открыть настройки устройства"
               onPress={() => {
-                setShowPassword(false); setOldPassword(''); setNewPassword(''); setConfirmPassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
+                Linking.openSettings().catch(() => {
+                  showToast('Не удалось открыть настройки устройства', 'error');
+                });
               }}
-              accessibilityRole="button"
-            >
-              <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-            </TouchableOpacity>
-            <View style={s.sheetActions}>
-              <PrimaryButton label="Сохранить" onPress={savePassword} disabled={savingPassword} />
-              <PrimaryButton label="Отмена" onPress={() => setShowPassword(false)} secondary />
-            </View>
+            />
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        ) : null}
+        <View style={{ marginTop: 4 }}>
+          <Btn kind="ghost" label="Закрыть" onPress={() => setShowNotificationSettings(false)} />
+        </View>
+      </BottomSheet>
 
-      <Modal
+      <BottomSheet visible={showPassword} onClose={closePasswordSheet}>
+        <SheetHeader title="Сменить пароль" tile={<KeyIcon size={22} />} onClose={closePasswordSheet} />
+        <View style={s.form}>
+          <PasswordField
+            label="Текущий пароль"
+            value={oldPassword}
+            onChangeText={t => { setOldPassword(t); setWrongOldPassword(false); }}
+            error={wrongOldPassword ? 'Неверный текущий пароль' : undefined}
+          />
+          <PasswordField
+            label="Новый пароль"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="Минимум 6 символов"
+            error={tooShort ? 'Пароль должен быть не менее 6 символов' : undefined}
+          />
+          <PasswordField
+            label="Повторите новый пароль"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Ещё раз"
+            error={mismatch ? 'Пароли не совпадают' : undefined}
+          />
+        </View>
+        {/* Аккаунт без пароля (регистрация «почта → код») никогда не
+            пройдёт проверку текущего пароля — сервер отвечает
+            wrong_password намеренно. Путь такому человеку — код из письма. */}
+        <TouchableOpacity
+          onPress={() => { closePasswordSheet(); goSetPasswordByCode(); }}
+          accessibilityRole="button"
+          style={{ alignSelf: 'center', marginTop: 18 }}
+        >
+          <Text style={s.link}>Нет пароля? Задайте его по коду из письма</Text>
+        </TouchableOpacity>
+        <View style={{ marginTop: 20 }}>
+          <Btn
+            kind="primary"
+            label={savingPassword ? 'Сохраняем…' : 'Сохранить'}
+            onPress={savePassword}
+            disabled={!canSavePassword}
+          />
+        </View>
+        <View style={{ marginTop: 4 }}>
+          <Btn kind="ghost" label="Отмена" onPress={closePasswordSheet} />
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
         visible={showDelete}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDelete(false)}
+        onClose={() => { setShowDelete(false); setDeletePassword(''); }}
       >
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowDelete(false)} />
-          <View style={s.sheet}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Удалить аккаунт?</Text>
-            <Text style={s.sheetText}>
-              Профиль и сохранённые резюме будут удалены. Это действие нельзя отменить.
-            </Text>
-            {currentUser.hasPassword === false ? (
-              // Аккаунт «почта → код» без пароля: удаление по одной сессии
-              // не делаем (безопасность) — сначала задать пароль, потом удалить.
-              <Text style={s.sheetText}>
-                Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
-              </Text>
-            ) : (
-              <>
-                <View style={s.form}>
-                  <AppInput
-                    label="Пароль"
-                    value={deletePassword}
-                    onChangeText={setDeletePassword}
-                    secureTextEntry
-                    placeholder="Подтвердите пароль"
-                  />
-                </View>
-                {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
-                    аккаунта «почта → код» пароля может не быть вовсе. */}
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowDelete(false); setDeletePassword('');
-                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Text style={s.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            <View style={s.sheetActions}>
-              {currentUser.hasPassword === false ? (
-                <PrimaryButton
-                  label="Задать пароль"
-                  onPress={() => {
-                    setShowDelete(false);
-                    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
-                  }}
-                />
-              ) : (
-                <PrimaryButton label={deleting ? 'Удаление…' : 'Удалить аккаунт'} onPress={deleteAccount} disabled={deleting || !deletePassword.trim()} />
-              )}
-              <PrimaryButton label="Отмена" onPress={() => setShowDelete(false)} secondary />
+        <SheetHeader
+          title="Удалить аккаунт?"
+          tile={<Ionicons name="trash-outline" size={22} color={JT.ink} />}
+          onClose={() => { setShowDelete(false); setDeletePassword(''); }}
+        />
+        <Text style={[s.small, { marginTop: 16 }]}>
+          Профиль и сохранённые резюме будут удалены. Это действие нельзя отменить.
+        </Text>
+        {noPassword ? (
+          // Аккаунт «почта → код» без пароля: удаление по одной сессии
+          // не делаем (безопасность) — сначала задать пароль, потом удалить.
+          <Text style={[s.small, { marginTop: 8 }]}>
+            Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
+          </Text>
+        ) : (
+          <>
+            <View style={s.form}>
+              <PasswordField
+                label="Пароль"
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                placeholder="Подтвердите пароль"
+              />
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    </SafeAreaView>
+            {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
+                аккаунта «почта → код» пароля может не быть вовсе. */}
+            <TouchableOpacity
+              onPress={() => { setShowDelete(false); setDeletePassword(''); goSetPasswordByCode(); }}
+              accessibilityRole="button"
+              style={{ alignSelf: 'center', marginTop: 18 }}
+            >
+              <Text style={s.link}>Нет пароля? Задайте его по коду из письма</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        <View style={{ marginTop: 20 }}>
+          {noPassword ? (
+            <Btn
+              kind="primary"
+              label="Задать пароль"
+              onPress={() => { setShowDelete(false); goSetPasswordByCode(); }}
+            />
+          ) : (
+            <Btn
+              kind="outline"
+              danger
+              label={deleting ? 'Удаление…' : 'Удалить аккаунт'}
+              onPress={deleteAccount}
+              disabled={deleting || !deletePassword.trim()}
+            />
+          )}
+        </View>
+        <View style={{ marginTop: 4 }}>
+          <Btn kind="ghost" label="Отмена" onPress={() => { setShowDelete(false); setDeletePassword(''); }} />
+        </View>
+      </BottomSheet>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F6F6F8' },
+  screen: { flex: 1, backgroundColor: JT.background },
+  // Свой фон и zIndex: контент при прокрутке уходит под шапку (как в EditScreen).
   header: {
-    minHeight: rs(68),
-    paddingHorizontal: rs(18),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F6F6F8',
+    paddingHorizontal: 20, paddingBottom: 12, minHeight: 44, justifyContent: 'center',
+    backgroundColor: JT.background, zIndex: 1,
   },
-  headerTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
-  headerSpacer: { width: BACK_BUTTON_SIZE, height: BACK_BUTTON_SIZE },
-  scroll: { paddingHorizontal: rs(18), paddingTop: rs(12), paddingBottom: rs(48), gap: rs(24) },
-  section: { gap: rs(10) },
-  sectionTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary, paddingHorizontal: rs(4) },
-  card: { backgroundColor: '#FFFFFF', borderRadius: rs(18), overflow: 'hidden', ...Shadow.card },
-  row: {
-    minHeight: rs(66),
-    paddingHorizontal: rs(15),
-    paddingVertical: rs(12),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(11),
+  backBtn: {
+    width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.surface, zIndex: 1, shadowOpacity: 0, elevation: 0,
   },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
-  rowIcon: {
-    width: rs(34),
-    height: rs(34),
-    borderRadius: rs(10),
-    backgroundColor: '#F4F5F7',
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerTitle: {
+    position: 'absolute', left: 0, right: 0, bottom: 12, textAlign: 'center',
+    lineHeight: 44, fontFamily: EditFonts.heading, fontSize: 20, letterSpacing: -0.2, color: JT.ink,
   },
-  rowIconDanger: { backgroundColor: Colors.redLight },
-  rowLabel: { flex: 1, fontSize: rf(14.5), fontWeight: '600', color: Colors.textPrimary },
-  rowLabelDanger: { color: Colors.red },
-  jupiterHint: { fontSize: rf(12), lineHeight: rf(16.5), color: Colors.textMuted, marginTop: rs(6) },
+  scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 48 },
+  sectionLabel: {
+    marginTop: 14, marginBottom: 10, fontFamily: EditFonts.heading, fontSize: 15, color: JT.ink,
+  },
+  card: { backgroundColor: JT.surface, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 4 },
+  row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  rowBorder: { borderBottomWidth: 1.5, borderBottomColor: '#EFE7DC' },
+  rowTitle: { flex: 1, fontFamily: EditFonts.text700, fontSize: 16, color: JT.ink },
+  rowValue: { fontFamily: EditFonts.text800, fontSize: 13, color: EditColors.textTertiary },
+  tile: { width: 40, height: 40, borderRadius: 12, backgroundColor: JT.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  switchRow: { paddingVertical: 12, gap: 8 },
+  switchTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  hint: { fontFamily: EditFonts.text600, fontSize: 13, lineHeight: 19, color: EditColors.textTertiary },
+  hintLink: { fontFamily: EditFonts.text800, color: JT.ink, textDecorationLine: 'underline' },
   footer: {
-    fontSize: rf(11.5),
-    lineHeight: rf(17),
-    color: Colors.textMuted,
-    textAlign: 'center',
-    paddingHorizontal: rs(18),
+    marginTop: 20, fontFamily: EditFonts.text600, fontSize: 12, lineHeight: 18,
+    color: EditColors.textTertiary, textAlign: 'center',
   },
-  confirmOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.32)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: rs(22),
+  btn: { height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', width: '100%' },
+  btnPrimary: { borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.accent },
+  btnOutline: { borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.surface },
+  btnDisabled: { backgroundColor: EditColors.disabledBg },
+  btnGhost: { height: 48 },
+  btnText: { fontFamily: EditFonts.text800, fontSize: 17, color: JT.ink },
+  btnTextDisabled: { color: EditColors.placeholder },
+  btnGhostText: { color: EditColors.textTertiary },
+  sheetHeader: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sheetTitle: { flex: 1, minWidth: 0, fontFamily: EditFonts.heading, fontSize: 19, letterSpacing: -0.19, color: JT.ink },
+  closeBtn: {
+    width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: EditColors.border,
+    backgroundColor: JT.surface, alignItems: 'center', justifyContent: 'center',
   },
-  confirmCard: {
-    width: '100%',
-    maxWidth: rs(380),
-    borderRadius: rs(22),
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: rs(20),
-    paddingVertical: rs(22),
-    ...Shadow.card,
+  form: { marginTop: 20, gap: 16 },
+  eye: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: -8 },
+  error: { fontFamily: EditFonts.text700, fontSize: 13, color: DANGER },
+  link: {
+    fontFamily: EditFonts.text800, fontSize: 14, color: JT.ink, textDecorationLine: 'underline',
   },
-  confirmIcon: {
-    width: rs(48),
-    height: rs(48),
-    borderRadius: rs(24),
-    backgroundColor: Colors.redLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
+  small: { fontFamily: EditFonts.text600, fontSize: 13, lineHeight: 19, color: EditColors.textTertiary },
+  statusBox: {
+    marginTop: 20, padding: 16, borderRadius: 18, backgroundColor: JT.background,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
   },
-  confirmTitle: {
-    marginTop: rs(14),
-    fontSize: rf(19),
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
+  statusCircleOn: { width: 40, height: 40, borderRadius: 20, backgroundColor: JT.ink, alignItems: 'center', justifyContent: 'center' },
+  statusCircleOff: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: JT.surface,
+    borderWidth: 2, borderStyle: 'dashed', borderColor: JT.ink, alignItems: 'center', justifyContent: 'center',
   },
-  confirmText: {
-    marginTop: rs(7),
-    fontSize: rf(12.5),
-    lineHeight: rf(18),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  confirmActions: { gap: rs(9), marginTop: rs(20) },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.28)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: rs(24),
-    borderTopRightRadius: rs(24),
-    paddingHorizontal: rs(18),
-    paddingTop: rs(10),
-    paddingBottom: rs(28),
-  },
-  sheetHandle: {
-    width: rs(42),
-    height: rs(5),
-    borderRadius: rs(3),
-    backgroundColor: '#D1D5DB',
-    alignSelf: 'center',
-    marginBottom: rs(14),
-  },
-  sheetTitle: { fontSize: rf(19), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  sheetText: {
-    fontSize: rf(12.5),
-    lineHeight: rf(18),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginTop: rs(8),
-  },
-  form: { gap: rs(10), marginTop: rs(18) },
-  noPasswordLink: {
-    fontSize: rf(12.5), fontWeight: '600', color: Colors.primary,
-    textAlign: 'center', marginTop: rs(12),
-  },
-  notificationStatus: {
-    marginTop: rs(18),
-    minHeight: rs(64),
-    borderRadius: rs(14),
-    backgroundColor: '#F6F7F8',
-    paddingHorizontal: rs(14),
-    paddingVertical: rs(12),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rs(10),
-  },
-  notificationStatusText: {
-    flex: 1,
-    fontSize: rf(12.5),
-    lineHeight: rf(18),
-    color: Colors.textSecondary,
-  },
-  sheetActions: { gap: rs(9), marginTop: rs(18) },
+  statusTitle: { fontFamily: EditFonts.text800, fontSize: 16, color: JT.ink },
 });

@@ -15,12 +15,16 @@ import { CloseIcon } from './icons';
  * работает одинаково на всех трёх поверхностях.
  */
 export function BottomSheet({
-  visible, onClose, title, children,
+  visible, onClose, title, children, height, backgroundColor,
 }: {
   visible: boolean;
   onClose: () => void;
   title?: string;
   children?: React.ReactNode;
+  /** Фиксированная высота шторки (например, `'90%'`); по умолчанию — по содержимому. */
+  height?: number | `${number}%`;
+  /** Фон панели; по умолчанию белый. */
+  backgroundColor?: string;
 }) {
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -54,7 +58,12 @@ export function BottomSheet({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={s.overlay} />
       </TouchableWithoutFeedback>
-      <Animated.View style={[s.sheet, { transform: [{ translateY }] }]} {...panResponder.panHandlers}>
+      <Animated.View style={[
+        s.sheet,
+        height !== undefined && { height },
+        backgroundColor ? { backgroundColor } : null,
+        { transform: [{ translateY }] },
+      ]} {...panResponder.panHandlers}>
         <View style={s.handle} />
         {title ? (
           <View style={s.header}>

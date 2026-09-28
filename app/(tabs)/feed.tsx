@@ -30,6 +30,7 @@ import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
 import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
 import { FORMATS, GRADES } from '@/components/filters/kit';
 import { JTBolt } from '@/components/ui/JTBolt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
@@ -1812,33 +1813,46 @@ function WorkerPermMode() {
           предлагаем: обещать покупку, которой не существует, нельзя. */}
       {limitOpen ? (
         <View style={pS.limitOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLimitOpen(false)} />
-          <View style={[pS.limitCard, { marginBottom: tabBarHeight + rs(16) }]}>
-            <View style={pS.limitIcon}>
-              <JTBolt size={26} />
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setLimitOpen(false)} />
+          <HardShadowBox style={pS.limitWrap} offset={6} radius={rs(28)}>
+            <View style={pS.limitCard}>
+              <View style={pS.limitIcon}>
+                <JTBolt size={rs(36)} />
+              </View>
+              {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
+                  ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
+              <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
+              <Text style={pS.limitBody}>
+                {energy.left > 0
+                  ? 'Каждый отклик тратит одну молнию, а пропуск вакансии — бесплатный. '
+                  : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
+                    + 'сейчас — это молнии не тратит. '}
+                Завтра снова будет {DAILY_ENERGY} — запас не копится.
+              </Text>
+              <View style={pS.limitStats}>
+                <View style={pS.limitStat}>
+                  <Text style={pS.limitStatNum}>{energy.left}</Text>
+                  <Text style={pS.limitStatLbl}>осталось сегодня</Text>
+                </View>
+                <View style={pS.limitStat}>
+                  <Text style={pS.limitStatNum}>00:00</Text>
+                  <Text style={pS.limitStatLbl}>снова {DAILY_ENERGY}</Text>
+                </View>
+              </View>
+              <HardShadowBox style={pS.limitBtnWrap} offset={4} radius={rs(29)}>
+                <TouchableOpacity
+                  style={pS.limitBtn}
+                  onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
+                </TouchableOpacity>
+              </HardShadowBox>
+              <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
+                <Text style={pS.limitCloseTxt}>Закрыть</Text>
+              </TouchableOpacity>
             </View>
-            {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
-                ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
-            <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
-            <Text style={pS.limitBody}>
-              {energy.left > 0
-                ? `Осталось ${energy.left} на сегодня. Каждый отклик тратит одну молнию, `
-                  + 'а пропуск вакансии — бесплатный. '
-                : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
-                  + 'сейчас — это молнии не тратит. '}
-              Завтра снова будет {DAILY_ENERGY} — запас не копится.
-            </Text>
-            <TouchableOpacity
-              style={pS.limitBtn}
-              onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
-              activeOpacity={0.85}
-            >
-              <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
-              <Text style={pS.limitCloseTxt}>Закрыть</Text>
-            </TouchableOpacity>
-          </View>
+          </HardShadowBox>
         </View>
       ) : null}
 
@@ -2335,24 +2349,41 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(13), paddingVertical: rs(8), ...Shadow.card,
   },
   scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
-  limitOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end', zIndex: 50 },
+  limitOverlay: {
+    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.5)',
+    justifyContent: 'center', paddingHorizontal: rs(20), zIndex: 50,
+  },
+  limitWrap: { alignSelf: 'stretch' },
   limitCard: {
-    backgroundColor: Colors.bg, borderRadius: rs(24), marginHorizontal: rs(16),
-    padding: rs(22), alignItems: 'center', gap: rs(8), ...Shadow.strong,
+    backgroundColor: JT.surface, borderRadius: rs(28), borderWidth: 2, borderColor: JT.ink,
+    paddingTop: rs(28), paddingHorizontal: rs(22), paddingBottom: rs(18), alignItems: 'center',
   },
   limitIcon: {
-    width: rs(56), height: rs(56), borderRadius: rs(28),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryLight,
+    width: rs(76), height: rs(76), borderRadius: rs(38), borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: JT.accentSoft,
   },
-  limitTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(4) },
-  limitBody: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
+  limitTitle: {
+    fontFamily: JT_FONT.head, fontSize: rf(22), color: JT.ink, marginTop: rs(18), textAlign: 'center',
+  },
+  limitBody: {
+    fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textSecondary,
+    textAlign: 'center', lineHeight: rf(22), marginTop: rs(12),
+  },
+  limitStats: { flexDirection: 'row', gap: rs(8), alignSelf: 'stretch', marginTop: rs(18) },
+  limitStat: {
+    flex: 1, paddingVertical: rs(12), paddingHorizontal: rs(12), borderRadius: rs(16),
+    backgroundColor: JT.background, alignItems: 'center', gap: rs(2),
+  },
+  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink },
+  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
+  limitBtnWrap: { alignSelf: 'stretch', marginTop: rs(20) },
   limitBtn: {
-    alignSelf: 'stretch', marginTop: rs(8), backgroundColor: Colors.primary,
-    borderRadius: rs(14), paddingVertical: rs(13), alignItems: 'center',
+    height: rs(58), borderRadius: rs(29), borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.accent, alignItems: 'center', justifyContent: 'center',
   },
-  limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-  limitClose: { paddingVertical: rs(8) },
-  limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
+  limitBtnTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink },
+  limitClose: { height: rs(48), marginTop: rs(4), alignItems: 'center', justifyContent: 'center' },
+  limitCloseTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(15), color: JT.textTertiary },
   deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
   deckCompanyLogoOverlay: {
     position: 'absolute',

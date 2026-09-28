@@ -144,6 +144,11 @@
   `tests/ext_feed_test.php`, `tests/feed_filters.test.ts`.
 - `hooks/useSwipeDeck.ts` — физика свайпа, общая для обеих колод.
   Жест на gesture-handler, значения на Reanimated, всё на потоке интерфейса.
+- Настройки, Помощь, Молния — по макетам `docs/design/settings-help/`:
+  `app/profile-settings.tsx` (разделы «Аккаунт»/«JobToo», шторки пароля и
+  уведомлений на `BottomSheet`), `app/support.tsx` (чат + шторка FAQ из
+  `jm_support_knowledge`; `BottomSheet` умеет `height`/`backgroundColor`),
+  модалка «Молния» — в `app/(tabs)/feed.tsx` (`limitOpen`).
 - `hooks/useWarmSystemBar.ts` — кремовая зона статус-бара в iOS PWA (meta theme-color + фон html/body, пока экран в фокусе). Стоит на Вакансиях, Откликах, Профиле соискателя, `profile-edit/_layout`, `jupiter-application`; новый тёплый экран — добавь туда же.
 - **Карточка листается вниз.** Длинная вакансия не обрезается: карточка растёт
   по содержимому (`cardAnimated` — `flexGrow`, не `flex`), а прокручивает её тот
@@ -759,6 +764,12 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   денежные колонки `amount_rub`/`paid_at`/`status` убраны). Строки заводит
   `jt_referral_on_outcome` в `db.php`, он же поднимает счётчик
   `jm_users.referral_worked`.
+- **С 28.09.2026 смен нет — считается найм** (миграция `131`, outcome
+  `hired`). `jt_referral_on_hire` в `db.php` зовётся из
+  `dbSetPermApplicationStatus`, когда работодатель-владелец отклика ставит
+  `hired`: одна строка на приглашённого (старая `worked` тоже блокирует),
+  пригласивший сам нанять не может, счётчик тот же `referral_worked`.
+  Охрана — `tests/referral_hired_test.php`.
 - `referral_worked` — денормализация ради одного экрана: карточку кандидата
   работодатель видит списком. Входит в `USER_PUBLIC_COLS`, показывается в
   `app/candidates.tsx` и `app/user-profile.tsx`. Источник правды — журнал,
@@ -769,9 +780,9 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 - Свой код человек узнаёт операцией `dbGetMyReferral` (только про себя). В
   `USER_PUBLIC_COLS` кода НЕТ и быть не должно: эти колонки уходят при запросе
   любого человека.
-- Экран — `app/invite.tsx`, вход из `app/(tabs)/profile.tsx` отдельной строкой.
-  Показывает код, ссылку и три числа: позвали, вышли на смену, не вышли.
-  Разрыв между ними и есть весь смысл. Экран прямо говорит, что денег за
+- Экран — `app/invite.tsx` (макет `docs/design/settings-help/02`), вход из
+  настроек. Показывает код, ссылку и два числа: позвали и устроились
+  (`worked` + `hired` из `dbGetMyReferral`). Экран прямо говорит, что денег за
   приглашение нет: обещание без суммы читается как обман.
 - Проверки — `tests/referral_test.php` (правила) и
   `tests/referral_chain_test.py` (непрерывность цепочки от ссылки до сервера).
