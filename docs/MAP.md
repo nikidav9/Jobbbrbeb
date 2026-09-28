@@ -231,6 +231,34 @@
   нарисованы (там только 4 секции) — добавлены в `PersonalTabContent` тем же
   визуальным языком (эйброу + белая карточка), чтобы не терять
   функциональность старого профиля.
+- **Библиотека для 20 экранов редактирования профиля** (карандаш ✎ и «+» в
+  профиле) — `components/profile/edit/` (`index.ts` реэкспортирует всё):
+  `EditScreen` (шапка «назад»/заголовок/«Удалить», прокрутка, закреплённая
+  кнопка с растворением фона и жёсткой тенью), `Field`/`TextArea`/
+  `SelectField`/`FieldLabel`, `BottomSheet`/`OptionSheet` (нижняя шторка,
+  свайп вниз через `PanResponder` — не reanimated-жесты, чтобы не рисковать
+  вебом), `Chip`/`SuggestChip`/`RemovableChip`/`ChipGroup`, `Checkbox`,
+  `RadioCard`, `Toggle`, `AddDashedButton`, `InfoNote`, `SectionTitle`,
+  `ConfirmDialog` (свой модал — `Alert.alert` на вебе не работает),
+  `useUnsavedGuard` (перехват выхода с несохранёнными правками: кнопка
+  «назад» в шапке + `beforeRemove` навигации + Android `BackHandler`).
+  Токены — `constants/profileEditTheme.ts` (`EditColors`/`EditFonts`,
+  отдельно от `constants/profileTheme.ts` — там Onest и не все те же цвета).
+  Эталон — `docs/design/profile-edit/README.md` и HTML-макеты
+  `resume/`, `personal/`. Иконки экранов — `components/profile/edit/icons.tsx`
+  (react-native-svg, пути 1:1 из `docs/design/profile-edit/assets/icons/`).
+  Шрифт Manrope — `@expo-google-fonts/manrope`, грузится в `app/_layout.tsx`
+  рядом с Unbounded/Onest. Сами 20 экранов (маршруты, сохранение в
+  `services/db.ts`) в эту библиотеку не входят — она только UI-каркас.
+- **Данные для тех же 20 экранов** — `lib/profileEdit.ts`: `emptyResume`,
+  `patchResume`/`patchPersonal` (создают `resume`/`personalDetails`, если их
+  не было, и синхронизируют новые структурные поля в старые строковые —
+  список пар в комментарии файла), `upsertAt`/`removeAt` для списков-карточек,
+  справочники вариантов из макетов. Навыки резюме — `constants/skills.ts`
+  (`SKILLS`, `POPULAR_IT_SKILLS`, `searchSkills`, `normalizeSkill`). Сервер
+  новые ключи внутри `resume_data`/`personal_data` не фильтрует (это JSON-
+  колонки целиком) — фильтр в `php-proxy/db.php` только по списку колонок
+  верхнего уровня строки.
 - **Загрузка резюме на регистрации** — только на запасном пути по телефону
   (`app/register-worker.tsx`, шаг 6 из 7, необязательный, решение владельца
   25.09); по почте регистрация — «почта → код → лента», резюме и имя спросит
