@@ -156,6 +156,9 @@
   уведомлений на `BottomSheet`), `app/support.tsx` (чат + шторка FAQ из
   `jm_support_knowledge`; `BottomSheet` умеет `height`/`backgroundColor`),
   модалка «Молния» — в `app/(tabs)/feed.tsx` (`limitOpen`).
+- Гостевой режим — `components/GuestGate.tsx` (заглушка «… — после регистрации»
+  для Откликов, Чатов, Профиля) в стиле JT: карточка-наклейка, Unbounded.
+  Документы `app/legal.tsx` — шрифтами JT (Unbounded/Manrope), кремовый фон.
 - `hooks/useWarmSystemBar.ts` — кремовая зона статус-бара в iOS PWA (meta theme-color + фон html/body, пока экран в фокусе). Стоит на Вакансиях, Откликах, Профиле соискателя, `profile-edit/_layout`, `jupiter-application`; новый тёплый экран — добавь туда же.
 - **Карточка листается вниз.** Длинная вакансия не обрезается: карточка растёт
   по содержимому (`cardAnimated` — `flexGrow`, не `flex`), а прокручивает её тот
@@ -871,8 +874,10 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   свайпом» → полоса по реальному проценту. Веб — статичный `#splash` в
   `app/+html.tsx` (свои шрифты и логотип в `public/splash/`; контракт с
   приложением — `lib/webSplash.ts`: `__setSplashProgress`, `__hideSplash`;
-  минимум 1,3 с, на выходе плашка улетает в логотип шапки; дольше 8 с —
-  «Долго грузится…» и «Повторить»). Приложение — `components/SplashLoader.tsx`
+  всегда ~5 с (решение владельца 28.09.2026: раскадровка растянута вдвое,
+  полоса 2,4→4,4 с, затем плашка улетает в логотип шапки; сторожа
+  `check-small-screens`/`shoot-screens` ждут ухода `#splash` из DOM); логотип
+  впрыгивает по `load` картинки; дольше 10 с — «Долго грузится…» и «Повторить»). Приложение — `components/SplashLoader.tsx`
   (RN Animated, те же тайминги; показ дважды — `index.tsx`, затем оверлей
   `EntryTransition` — продолжает, а не начинает заново, `bootElapsed`).
   Системный экран (`app.json`, кремовый фон и точка) сменится только со

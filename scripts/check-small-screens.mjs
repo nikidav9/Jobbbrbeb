@@ -342,7 +342,10 @@ try {
         });
         await page.waitForTimeout(screen.wait || 2200);
         await page.evaluate(() => { try { window.__hideSplash?.(); } catch {} });
-        await page.waitForTimeout(700);
+        // Заставка держится ~5 с (решение владельца 28.09.2026) и перехватывает
+        // нажатия — ждём, пока она уйдёт из DOM, а не фиксированную паузу.
+        await page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 12000 }).catch(() => {});
+        await page.waitForTimeout(300);
 
         const layout = await inspectLayout(page);
         // SMALL_SCREEN_SHOTS=1 — снимок каждого экрана для глаз, не только упавших.

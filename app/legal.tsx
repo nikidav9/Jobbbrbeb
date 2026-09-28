@@ -5,7 +5,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Colors } from '@/constants/theme';
+import { JT, JT_FONT } from '@/constants/jt';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -30,12 +31,13 @@ export default function LegalScreen() {
   // Параметр — после первого рендера: иначе расхождение со статическим HTML (#418).
   const doc = useHydrated() ? params.doc : undefined;
   const content = doc ? LEGAL_DOCS[doc as LegalDocKey] ?? null : null;
+  useWarmSystemBar();
 
   if (!doc) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <BackButton />
+          <BackButton style={styles.backBtn} />
           <Text style={styles.headerTitle}>Документы</Text>
           <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
@@ -46,7 +48,7 @@ export default function LegalScreen() {
         >
           <View style={styles.libraryHero}>
             <View style={styles.libraryIcon}>
-              <Ionicons name="documents-outline" size={rf(24)} color={Colors.primary} />
+              <Ionicons name="documents-outline" size={rf(26)} color={JT.ink} />
             </View>
             <Text style={styles.libraryTitle}>Все документы JobToo</Text>
             <Text style={styles.librarySubtitle}>
@@ -65,7 +67,7 @@ export default function LegalScreen() {
                   onPress={() => router.push({ pathname: '/legal', params: { doc: key } })}
                 >
                   <View style={styles.libraryRowIcon}>
-                    <Ionicons name="document-text-outline" size={rf(19)} color={Colors.primary} />
+                    <Ionicons name="document-text-outline" size={rf(20)} color={JT.ink} />
                   </View>
                   <View style={styles.libraryRowText}>
                     <Text style={styles.libraryRowTitle}>{item.title}</Text>
@@ -73,7 +75,7 @@ export default function LegalScreen() {
                       Редакция от {formatLegalDate(item.version)}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
+                  <Ionicons name="chevron-forward" size={rf(20)} color={JT.ink} />
                 </TouchableOpacity>
               );
             })}
@@ -91,12 +93,12 @@ export default function LegalScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <BackButton />
+          <BackButton style={styles.backBtn} />
           <Text style={styles.headerTitle}>Документ</Text>
           <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={styles.notFound}>
-          <Text style={{ color: Colors.textMuted }}>Документ не найден</Text>
+          <Text style={styles.notFoundText}>Документ не найден</Text>
         </View>
       </SafeAreaView>
     );
@@ -105,7 +107,7 @@ export default function LegalScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <BackButton />
+        <BackButton style={styles.backBtn} />
         <Text style={styles.headerTitle} numberOfLines={1}>{content.title}</Text>
         <View style={{ width: BACK_BUTTON_SIZE }} />
       </View>
@@ -125,21 +127,26 @@ export default function LegalScreen() {
   );
 }
 
+// Стиль JT (28.09.2026): кремовый фон, Unbounded — заголовки, Manrope — текст,
+// белые карточки с контуром — как на экранах настроек и помощи.
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: JT.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: rs(8),
     paddingHorizontal: rs(16),
-    paddingVertical: rs(14),
+    paddingVertical: rs(12),
+    backgroundColor: JT.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: JT.stack2,
   },
+  backBtn: { borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.surface, shadowOpacity: 0, elevation: 0 },
   headerTitle: {
-    fontSize: rf(15),
-    fontWeight: '700',
-    color: '#111827',
+    fontFamily: JT_FONT.head,
+    fontSize: rf(16),
+    color: JT.ink,
     flex: 1,
     textAlign: 'center',
   },
@@ -154,36 +161,39 @@ const styles = StyleSheet.create({
     paddingBottom: rs(22),
   },
   libraryIcon: {
-    width: rs(52),
-    height: rs(52),
-    borderRadius: rs(26),
-    backgroundColor: Colors.primaryLight,
+    width: rs(64),
+    height: rs(64),
+    borderRadius: rs(32),
+    backgroundColor: JT.accentSoft,
+    borderWidth: 2,
+    borderColor: JT.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: rs(12),
+    marginBottom: rs(14),
   },
   libraryTitle: {
-    fontSize: rf(23),
-    lineHeight: rf(29),
-    fontWeight: '800',
-    color: Colors.textPrimary,
+    fontFamily: JT_FONT.head,
+    fontSize: rf(22),
+    lineHeight: rf(28),
+    color: JT.ink,
     textAlign: 'center',
   },
   librarySubtitle: {
-    marginTop: rs(7),
+    marginTop: rs(8),
     maxWidth: rs(330),
-    fontSize: rf(14),
-    lineHeight: rf(20),
-    color: Colors.textSecondary,
+    fontFamily: JT_FONT.medium,
+    fontSize: rf(15),
+    lineHeight: rf(22),
+    color: JT.textSecondary,
     textAlign: 'center',
   },
   libraryList: { gap: rs(10) },
   libraryRow: {
     minHeight: rs(72),
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    borderRadius: rs(14),
-    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: JT.ink,
+    borderRadius: rs(20),
+    backgroundColor: JT.surface,
     paddingHorizontal: rs(14),
     paddingVertical: rs(12),
     flexDirection: 'row',
@@ -191,39 +201,42 @@ const styles = StyleSheet.create({
     gap: rs(12),
   },
   libraryRowIcon: {
-    width: rs(38),
-    height: rs(38),
-    borderRadius: rs(19),
-    backgroundColor: Colors.primaryLight,
+    width: rs(40),
+    height: rs(40),
+    borderRadius: rs(12),
+    backgroundColor: JT.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   libraryRowText: { flex: 1, minWidth: 0 },
   libraryRowTitle: {
+    fontFamily: JT_FONT.bold,
     fontSize: rf(15),
     lineHeight: rf(20),
-    fontWeight: '700',
-    color: Colors.textPrimary,
+    color: JT.ink,
   },
   libraryRowVersion: {
     marginTop: rs(3),
+    fontFamily: JT_FONT.bold,
     fontSize: rf(12.5),
-    color: Colors.textMuted,
+    color: JT.textTertiary,
   },
   libraryNote: {
     marginTop: rs(18),
-    fontSize: rf(12.5),
-    lineHeight: rf(18),
-    color: Colors.textMuted,
+    fontFamily: JT_FONT.medium,
+    fontSize: rf(13),
+    lineHeight: rf(19),
+    color: JT.textTertiary,
     textAlign: 'center',
   },
 
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  body: { padding: rs(20), paddingBottom: rs(40), gap: rs(16) },
-  docTitle: { fontSize: rf(20), fontWeight: '800', color: '#111827', lineHeight: rf(26) },
+  notFoundText: { fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textTertiary },
+  body: { padding: rs(20), paddingBottom: rs(40), gap: rs(18) },
+  docTitle: { fontFamily: JT_FONT.head, fontSize: rf(22), color: JT.ink, lineHeight: rf(28) },
   section: { gap: rs(6) },
-  heading: { fontSize: rf(15), fontWeight: '700', color: '#111827' },
-  version: { fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(-8) },
-  docBody: { fontSize: rf(15), color: '#374151', lineHeight: rf(24) },
+  heading: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink, lineHeight: rf(22) },
+  version: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(-8) },
+  docBody: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: JT.textBody, lineHeight: rf(24) },
 });

@@ -183,7 +183,10 @@ export default function RootScreen() {
     finishing.current = true;
     // Даже если грузить нечего, даём логотипу дорисоваться, а счётчику —
     // добежать до 100 %: иначе экран мелькает и пропадает недорисованным.
-    const wait = Math.max(0, SPLASH_MIN_MS - bootElapsed());
+    // На вебе минимум держит сама HTML-заставка (app/+html.tsx) от начала
+    // загрузки страницы; второй минимум здесь, от старта бандла, растягивал
+    // её с ~5 до ~6,5 с.
+    const wait = Platform.OS === 'web' ? 0 : Math.max(0, SPLASH_MIN_MS - bootElapsed());
     finishTimer.current = setTimeout(() => {
       // Read from ref so we get the committed value, not a stale closure
       if (currentUserRef.current) {
