@@ -1367,6 +1367,12 @@ ATS-платформ, куда вакансия может увести анке
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
+Цикл капчи в воркере — `jupiter/captcha_loop.py`: агент вернул
+`CAPTCHA_REQUIRED` на живой задаче браузерного движка → снимок капчи
+(`engine.captcha_png`) уходит на сервер (`queue.captcha_post`), воркер держит
+аренду и опрашивает ответ (до 10 мин; потеря аренды — стоп), вводит его
+(`engine.enter_captcha`) и продолжает агента с той же страницы; не больше 2
+капч на задачу. Ответ капчи не пишется ни в лог, ни в траекторию.
 Разделение воркеров (миграция 136, решение владельца «эскалация»): у заявки
 `engine` (`http` по умолчанию | `browser`), `jupiter_lease_task(worker, secs,
 engine)` выдаёт только заявки своего движка, воркер передаёт `JUPITER_ENGINE`.

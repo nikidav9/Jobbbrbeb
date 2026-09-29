@@ -13,6 +13,7 @@ import threading
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
+from captcha_loop import continue_through_captcha
 from tasks import ApplicationTask, TaskQueueProto, TaskState, SubmissionAuthorizationRevoked
 
 # Что имеет смысл повторить: связь, время ожидания, дроссель на той стороне.
@@ -176,6 +177,8 @@ def run_once(
                 result = agent.resume(task.resume_token, resolved)
             else:
                 result = agent.run(task.vacancy_url, resolved)
+            # Капча: показать человеку в приложении и продолжить с той же страницы.
+            result = continue_through_captcha(agent, queue, task.id, resolved, result)
         except SubmissionAuthorizationRevoked:
             queue.finish(task.id, TaskState.ACTION_REQUIRED,
                          reason_code="LIVE_AUTHORIZATION_REVOKED")
