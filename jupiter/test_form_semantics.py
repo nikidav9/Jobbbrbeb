@@ -378,6 +378,56 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0))
 
+    def test_food_order_is_not_an_application(self):
+        # Хлеб Насущный (разведка 29.09): заказ доставки спрашивает имя и
+        # телефон — агент брал его за анкету.
+        page = parse(
+            '<form action="/order" method="post">'
+            '<input name="Имя" required>'
+            '<input type="tel" name="Phone" required>'
+            '<select name="Количество персон"><option>1</option></select>'
+            '<label><input type="radio" name="Вариант доставки:" required> Ко времени</label>'
+            '<button type="submit">Заказать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_ask_a_question_is_not_an_application(self):
+        # Айтуби, Oxygen: «Задайте вопрос» / «Тема заявки» на странице вакансии.
+        for question in ("Задайте вопрос", "Тема заявки"):
+            page = parse(
+                '<form action="/feedback" method="post">'
+                '<label>Ваше имя <input name="name" required></label>'
+                '<label>Телефон <input name="tel" required></label>'
+                f'<label>{question} <textarea name="message" required></textarea></label>'
+                '<button type="submit">Отправить</button>'
+                "</form>"
+            )
+            self.assertFalse(is_application_form(page, 0), question)
+
+    def test_question_field_next_to_resume_is_still_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Резюме <input type="file" name="cv"></label>'
+            '<label>Ваш вопрос <textarea name="q"></textarea></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_courier_vacancy_mentioning_delivery_is_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Вакансия <input name="vacancy" value="Курьер доставки"></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_vacancy_filter_is_not_an_application_form(self):
         page = parse(
             '<form action="/search" method="get">'

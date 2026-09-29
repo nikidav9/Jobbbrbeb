@@ -104,6 +104,18 @@ _CANDIDATE_FIELD_MARKERS = (
     "resume", "резюм", "cv", "vacanc", "ваканс", "position", "должност",
     "о себе", "portfolio", "портфолио", "cover", "сопроводит",
 )
+# Заказ у магазина или ресторана (Хлеб Насущный: «количество персон»,
+# «вариант доставки») — не анкета ни при каких полях.
+_ORDER_FORM_MARKERS = (
+    "вариант доставки", "способ доставки", "адрес доставки", "время доставки",
+    "количество персон", "оформить заказ", "ваш заказ",
+)
+# Вопрос или обращение («задайте вопрос», «тема заявки») — не анкета, если в
+# форме нет ничего от кандидата: ни резюме, ни вакансии.
+_QUESTION_FORM_MARKERS = (
+    "задайте вопрос", "ваш вопрос", "какой вопрос", "тема заявки", "тема обращения",
+    "тема сообщения",
+)
 _REFERRER_LABEL_MARKERS = ("рекомендател", "порекомендуй", "рекомендую друга", "friend")
 _STRUCTURAL_CONTROL_TYPES = {"checkbox", "radio", "hidden", "submit", "button", "file"}
 
@@ -607,6 +619,7 @@ def is_application_form(
     has_file = False
     text_fields = 0  # поля для ввода текста (не select)
     only_text_is_email = False
+    is_question = False
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -642,6 +655,11 @@ def is_application_form(
             ) if value
         ))
 
+        if any(marker in haystack for marker in _ORDER_FORM_MARKERS):
+            return False
+        if any(marker in haystack for marker in _QUESTION_FORM_MARKERS):
+            is_question = True
+
         # Форма для клиентов (заявка от компании), а не для кандидата. ИНН —
         # признак сразу. Обязательная «компания» — только если в форме нет
         # ни одного поля кандидата (резюме, вакансия, «о себе»; проверка после
@@ -664,7 +682,7 @@ def is_application_form(
             text_fields += 1
             only_text_is_email = text_fields == 1 and has_email_only
 
-    if requires_company and not has_candidate_field:
+    if (requires_company or is_question) and not has_candidate_field:
         return False
     # Подписка на вакансии: единственное текстовое поле — почта, рядом только
     # select'ы (город, направление), ни имени, ни телефона, ни резюме. Такую
