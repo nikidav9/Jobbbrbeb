@@ -650,6 +650,29 @@ class BareNameField(unittest.TestCase):
         self.assertEqual(choose_key(control(page, "name"), profile, "https://e.example/", page), "city")
 
 
+class UnknownConsentStopsAsConsent(unittest.TestCase):
+    """Обязательная галочка «agree» без подписи — не «заполните профиль», а
+    согласие, которое ставит сам человек (разведка 29.09: IBS, Targem, Bell)."""
+
+    def test_unnamed_required_consent_is_consent_required(self):
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = parse(
+            '<form method=post><input name="phone" type="tel" value="+7999">'
+            '<input type="checkbox" name="agree" required>'
+            '<button>Откликнуться</button></form>'
+        )
+        self.assertEqual(agent._missing_reason_code(page, 0), "CONSENT_REQUIRED")
+
+    def test_ordinary_required_checkbox_is_still_missing_data(self):
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = parse(
+            '<form method=post><input name="phone" type="tel" value="+7999">'
+            '<label><input type="checkbox" name="trips" required> Готов к командировкам</label>'
+            '<button>Откликнуться</button></form>'
+        )
+        self.assertNotEqual(agent._missing_reason_code(page, 0), "CONSENT_REQUIRED")
+
+
 class ValueFitsField(unittest.TestCase):
     """Значение профиля в записи, которую поле примет."""
 

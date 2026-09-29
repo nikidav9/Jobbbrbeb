@@ -1506,7 +1506,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   заявку `third_party_consent_at`/`third_party_terms_url`; принятие редакции
   (`jt_employer_requeue_consent`) и повторный свайп снимают с паузы
   `CONSENT_REQUIRED`. Воркер: `DELEGATED_CONSENTS` в `jupiter/run_worker.py`,
-  виды галочек — `CONSENT_KINDS` в `jupiter/candidate.py`. Карточка отклика
+  виды галочек — `CONSENT_KINDS` в `jupiter/candidate.py`; обязательная галочка, похожая на согласие, но неузнанного вида (`agree`, `policy`, «ознакомлен и согласен» — `looks_like_consent`), не ставится и останавливает заявку с `CONSENT_REQUIRED` (человек отмечает её сам в «Ждут вас»), а не с `MISSING_PROFILE_FIELD`. Карточка отклика
   (`app/jupiter-application.tsx`) показывает дату и ссылку «Условия и политика
   работодателя». Перечень «Работодатели Юпитера» — документ `employers` из
   `constants/jupiterEmployers.ts` (генерирует `scripts/gen-jupiter-employers.mjs`
