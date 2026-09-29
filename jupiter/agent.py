@@ -958,14 +958,19 @@ class JupiterAgent:
         before: PageState,
         after: PageState,
         form_gone: bool,
+        api_result: dict | None = None,
     ) -> list[SubmissionEvidence]:
         """Доказательства того, что отклик приняли.
 
         Единственный механизм: раньше рядом жила проверка «есть ли на
         странице слово „спасибо“», и она подтверждала отправку на сайте, где
         это слово стоит в подвале всегда.
+
+        api_result — что ответило API самой страницы на отправку (браузерный
+        движок, browser_success.classify). SPA часто не меняет ни адрес, ни
+        текст, и единственное подтверждение — JSON сервера.
         """
-        return collect_evidence(
+        evidence = collect_evidence(
             before_url=before.url,
             before_text=before.text,
             after_url=after.url,
@@ -975,6 +980,15 @@ class JupiterAgent:
             form_gone=form_gone,
             normalize=normalize,
         )
+        if api_result:
+            detail = "; ".join(api_result.get("evidence") or [])[:300]
+            if api_result.get("api_error"):
+                evidence.append(SubmissionEvidence(
+                    "API_ERROR", f"{api_result['api_error']} {detail}".strip(), 0.0, after.url,
+                ))
+            elif api_result.get("api_success"):
+                evidence.append(SubmissionEvidence("API_RESPONSE", detail, 0.85, after.url))
+        return evidence
 
     @staticmethod
     def _candidate_id(profile: CandidateProfile) -> str:
@@ -2381,7 +2395,9 @@ class JupiterAgent:
                 )
                 for index in range(len(page.forms))
             )
-            evidence = self._evidence(before, page, form_gone)
+            # Ответ API на «Далее» — это сохранение шага, а не отклик.
+            api_result = None if clicked_next else getattr(self.engine, "last_api_result", None)
+            evidence = self._evidence(before, page, form_gone, api_result)
             trajectory.append({
                 "action": "verify_submission",
                 "url": page.url,
