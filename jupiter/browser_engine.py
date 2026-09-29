@@ -6,7 +6,7 @@
 доходит. Разовый замер (scripts/browser-probe.mjs) на 185 сложных сайтах: 121 —
 анкету без действий на странице не найти, 26 — открыта и без капчи.
 
-Образец — открытые браузерные агенты (browser-use и др.), но код свой и
+Образец — открытые браузерные агенты, но код свой и
 устроен иначе: у движка тот же интерфейс, что у JupiterWebEngine (open, submit,
 load_html, allowed_hosts, read_only, куки), поэтому вся логика агента
 (agent.py) — смысл полей, согласия по поручению, «не выдумывать факты»,
@@ -202,25 +202,84 @@ SNAPSHOT_JS = r"""
 FIND_APPLY_JS = r"""
 (re) => {
   const rx = new RegExp(re, 'i');
-  const els = Array.from(document.querySelectorAll('a,button,[role=button],input[type=button],input[type=submit]'));
   const visible = el => { const st = getComputedStyle(el); return st.display !== 'none' && st.visibility !== 'hidden' && el.getClientRects().length > 0; };
-  let i = 0;
-  for (const el of els) {
-    const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
-    if (!text || text.length > 60 || !rx.test(text) || !visible(el)) continue;
-    if (el.tagName === 'A') {
-      const href = el.getAttribute('href') || '';
-      try {
-        const u = new URL(href, location.href);
-        if (u.host && u.host !== location.host && !href.startsWith('#')) continue;
-      } catch (e) {}
-    }
-    const mark = 'apply-' + (i++);
-    el.setAttribute('data-jt-apply', mark);
-    return mark;
+  const textOf = el => (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
+  const offsite = el => {
+    if (el.tagName !== 'A') return false;
+    const href = el.getAttribute('href') || '';
+    try {
+      const u = new URL(href, location.href);
+      return !!u.host && u.host !== location.host && !href.startsWith('#');
+    } catch (e) { return false; }
+  };
+  const fits = el => {
+    const text = textOf(el);
+    return text && text.length <= 60 && rx.test(text) && visible(el) && !offsite(el);
+  };
+  const mark = el => { el.setAttribute('data-jt-apply', 'apply-0'); return 'apply-0'; };
+  // Сначала настоящие кнопки и ссылки.
+  for (const el of document.querySelectorAll('a,button,[role=button],input[type=button],input[type=submit]')) {
+    if (fits(el)) return mark(el);
   }
-  return null;
+  // Потом «кнопки» на div/span: обработчик клика (data-jt-click ставит движок
+  // через CDP), onclick, tabindex, role=link или курсор-рука: React и Vue
+  // рисуют кнопки без <button>. Из вложенных подходящих берём самый глубокий.
+  const soft = Array.from(document.querySelectorAll('div,span,li,p,label,[data-jt-click],[onclick],[tabindex],[role=link]'))
+    .filter(el => fits(el) && (el.hasAttribute('data-jt-click') || el.hasAttribute('onclick')
+      || (el.hasAttribute('tabindex') && el.tabIndex >= 0) || el.getAttribute('role') === 'link'
+      || getComputedStyle(el).cursor === 'pointer'));
+  const deepest = soft.find(el => !soft.some(other => other !== el && el.contains(other)));
+  return deepest ? mark(deepest) : null;
 }
+"""
+
+# Поля, в которые печатать нельзя: дата/время HTML5 и jQuery/Bootstrap-
+# календари (ввод по буквам они режут или переписывают). Значение — через
+# «родной» сеттер (его видит React), затем input/change/blur, для jQuery —
+# его change. null — поле обычное, печатаем как всегда.
+DIRECT_VALUE_JS = r"""
+(el, value) => {
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  const cls = (el.getAttribute('class') || '').toLowerCase();
+  const direct = ['date', 'time', 'datetime-local', 'month', 'week'].includes(type)
+    || (['text', ''].includes(type) && (/datepicker|daterangepicker|datetimepicker/.test(cls)
+      || el.hasAttribute('data-datepicker') || el.hasAttribute('data-date-format') || el.getAttribute('data-provide') === 'datepicker'));
+  if (!direct) return null;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  setter.call(el, value);
+  el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+  el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+  if (window.jQuery) { try { window.jQuery(el).trigger('change'); } catch (e) {} }
+  return el.value;
+}
+"""
+
+# После обычного ввода: change и blur. fill() шлёт только input, а часть
+# форм проверяет поле и снимает ошибку по change/blur.
+AFTER_FILL_JS = "el => { el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); }"
+
+# Элементы с обработчиками клика (addEventListener) — видны только через
+# DevTools-API getEventListeners (CDP, includeCommandLineAPI). Помечаем их
+# data-jt-click для FIND_APPLY_JS.
+MARK_CLICK_LISTENERS_JS = r"""
+(() => {
+  if (typeof getEventListeners !== 'function') return -1;
+  const all = document.querySelectorAll('div,span,li,p,label,img,svg,a');
+  if (all.length > 10000) return -2;
+  let n = 0;
+  for (const el of all) {
+    try {
+      const l = getEventListeners(el);
+      if (l.click || l.mousedown || l.mouseup || l.pointerdown || l.pointerup) {
+        el.setAttribute('data-jt-click', '1');
+        if (++n > 500) break;
+      }
+    } catch (e) {}
+  }
+  return n;
+})()
 """
 
 
@@ -450,11 +509,25 @@ class JupiterBrowserEngine:
             return self._click_apply(self._snapshot())
         return page
 
+    def _mark_click_listeners(self) -> None:
+        try:
+            cdp = self._context.new_cdp_session(self._tab)
+            try:
+                cdp.send("Runtime.evaluate", {
+                    "expression": MARK_CLICK_LISTENERS_JS, "includeCommandLineAPI": True,
+                    "returnByValue": True,
+                })
+            finally:
+                cdp.detach()
+        except PlaywrightError:
+            pass  # без пометок останутся onclick, tabindex и курсор-рука
+
     def _click_apply(self, page: PageState) -> PageState:
         """Анкеты не видно — нажать «Откликнуться» (до max_apply_clicks раз)."""
         for _ in range(self.max_apply_clicks):
             if self._has_candidate_form(page):
                 return page
+            self._mark_click_listeners()
             mark = self._tab.evaluate(FIND_APPLY_JS, APPLY_TEXT_RE)
             if not mark:
                 return page
@@ -540,11 +613,15 @@ class JupiterBrowserEngine:
                         loc.select_option(values, force=True)
                 else:
                     current = loc.input_value()
+                    if control.value and current != control.value and control.tag == "input" \
+                            and loc.evaluate(DIRECT_VALUE_JS, control.value) is not None:
+                        continue  # календарь: значение записано напрямую
                     if control.value and current != control.value:
                         loc.fill(control.value, force=True)
                         # Маски телефона переписывают ввод — тогда печатаем по символу.
                         if loc.input_value() != control.value and control.type == "tel":
                             fill_masked(self._tab, loc, control.value)
+                        loc.evaluate(AFTER_FILL_JS)
             except PlaywrightError as exc:
                 raise EngineTransportError(
                     f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"

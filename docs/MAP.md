@@ -1341,7 +1341,11 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 страницей, если хост разрешён); анкетой считает только форму, которую
 `agent.is_application_form` признаёт анкетой (поиск и фильтры не мешают жать
 «Откликнуться»); виртуальная форма — в границах личных полей и кнопки отправки;
-HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`; капча, успех по API и планировщик — следующим шагом; «зоопарк» из
+HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`;
+«Откликнуться» ищет и среди div/span с обработчиком клика (CDP
+`getEventListeners` → `data-jt-click`), onclick, tabindex, курсором-рукой;
+даты и календари пишет напрямую через родной сеттер + input/change/blur;
+после ввода досылает change и blur; капча, успех по API и планировщик — следующим шагом; «зоопарк» из
 8 тяжёлых синтетических сайтов — `jupiter/test_browser_zoo.py`): `browser_frames.py` — анкеты в iframe;
 `browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
 все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`)

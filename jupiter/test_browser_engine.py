@@ -187,6 +187,37 @@ document.getElementById('send').addEventListener('click', async () => {
 </script>
 """
 
+# «Откликнуться» — div с обработчиком клика (ни button, ни курсора-руки, ни
+# tabindex), а дата рождения — календарь, который глушит ввод с клавиатуры.
+DIVBTN_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Тестировщик — Карьера</title>
+<h1>QA-инженер</h1>
+<div class="cta"><div class="cta__text">Откликнуться</div></div>
+<div id="root"></div>
+<script>
+document.querySelector('.cta__text').addEventListener('click', () => {
+  document.getElementById('root').innerHTML = `
+    <label>Имя <input id="fn"></label>
+    <label>Фамилия <input id="ln"></label>
+    <label>Email <input id="em" type="email"></label>
+    <label>Телефон <input id="ph" type="tel"></label>
+    <label>Дата рождения <input id="bd" class="datepicker" name="birth_date"></label>
+    <button type="button" id="send">Отправить отклик</button>`;
+  // Как плагины-календари: набранное с клавиатуры стирается, принимается
+  // только значение, записанное скриптом (выбор даты в календаре).
+  document.getElementById('bd').addEventListener('input', e => {
+    if (e.inputType && e.inputType.startsWith('insert')) e.target.value = '';
+  });
+  document.getElementById('send').addEventListener('click', async () => {
+    const body = JSON.stringify({fn: fn.value, em: em.value, bd: bd.value});
+    const r = await fetch('/api/apply', { method: 'POST', body });
+    document.getElementById('root').innerHTML = (await r.json()).ok ? '<h2>Спасибо! Ваш отклик получен</h2>' : 'Ошибка';
+  });
+});
+</script>
+"""
+
 
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -202,7 +233,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         pages = {"/vacancy": SPA_VACANCY, "/combo": COMBO_VACANCY,
-                 "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY,
+                 "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
                  "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
@@ -240,6 +271,7 @@ PROFILE = {
     "phone": "+79990000000",
     "consent": True,
     "city": "Москва",
+    "birth_date": "1995-02-01",
     "resume_path": "resume.txt",
 }
 
@@ -363,6 +395,17 @@ class BrowserEngineTest(unittest.TestCase):
         self.assertNotIn('"area"', json.dumps(result.trajectory, ensure_ascii=False))
         sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
         self.assertEqual(sent["em"], "nikita.demo@reply.jobtoo.ru")
+
+    def test_div_apply_button_and_datepicker_that_blocks_typing(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/divbtn/4", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        self.assertIn({"action": "apply_click", "label": "Откликнуться"}, eng.actions)
+        sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
+        self.assertEqual(sent["fn"], "Никита")
+        self.assertIn("1995", sent["bd"], sent)
 
     def test_blocked_page_is_a_navigation_failure(self):
         eng = self.engine(read_only=True)
