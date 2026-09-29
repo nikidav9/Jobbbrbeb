@@ -16,8 +16,9 @@ engine="browser" и browser_actions (что движок сделал сам). �
     python3 recon_browser.py --from-http jupiter-recon.json --max-minutes 150 \
         --workers 1 --out jupiter-recon-browser.json
 Берутся только разделы, где HTTP-итог не dry_run_ok, а упёрся в spa, captcha,
-form_unmapped или no_vacancy: остальное браузер не улучшит (dry_run_ok уже
-есть, aggregator/blocked — не про движок). Сначала — подтвердить вчерашние
+form_unmapped, no_vacancy или отказ в доступе (blocked с 401/403/429/503 —
+часто проверка браузера): остальное браузер не улучшит (dry_run_ok уже есть,
+aggregator, сертификат, сеть — не про движок). Сначала — подтвердить вчерашние
 dry_run_ok браузера (иначе они выпадут из live_ready), потом — ещё не
 виденные, потом остальные. По исчерпании --max-minutes новые разделы не
 начинаются. Итог пишется атомарно (tmp + rename): site_compat никогда не
@@ -55,6 +56,10 @@ DEFAULT_BASELINE = os.environ.get("JUPITER_RECON_FILE", "jupiter-recon.json")
 RESULT_MARK = "@@RECON_RESULT@@"
 # Классы HTTP-разведки, которые браузер может перевести в dry_run_ok.
 BROWSER_RETRY_CLASSES = ("spa", "captcha", "form_unmapped", "no_vacancy")
+# Из «blocked» — только отказ в доступе: за ним часто стоит проверка браузера,
+# которую Chromium проходит сам (browser_engine.CHALLENGE_WAIT_MS). Сертификат,
+# сеть и 404 браузер не исправит.
+BROWSER_RETRY_BLOCKS = ("доступ (401)", "доступ (403)", "доступ (429)", "доступ (503)")
 
 
 @dataclass
@@ -191,7 +196,10 @@ def sites_needing_browser(http_items: list[dict]) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for item in http_items:
         url = str(item.get("url") or "")
-        if item.get("klass") not in BROWSER_RETRY_CLASSES or not url or url in seen:
+        retry = item.get("klass") in BROWSER_RETRY_CLASSES or (
+            item.get("klass") == "blocked" and item.get("block_kind") in BROWSER_RETRY_BLOCKS
+        )
+        if not retry or not url or url in seen:
             continue
         if normalize_host(url) in ok_hosts:
             continue

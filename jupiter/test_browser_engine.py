@@ -247,6 +247,18 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path.startswith("/challenge") and "jt_check=1" not in (self.headers.get("Cookie") or ""):
+            # Проверка браузера, как у DDoS-Guard: 403 и скрипт, который ставит
+            # куку и перезагружает страницу.
+            body = ("<!doctype html><meta charset=utf-8><p>Проверяем браузер…</p><script>"
+                    "document.cookie='jt_check=1; path=/';"
+                    "setTimeout(function(){location.reload()},300)</script>").encode("utf-8")
+            self.send_response(403)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/blocked"):
             body = "<h1>417 Доступ заблокирован. Отключите VPN</h1>".encode("utf-8")
             self.send_response(417)
@@ -255,7 +267,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        pages = {"/vacancy": SPA_VACANCY, "/combo": COMBO_VACANCY,
+        pages = {"/vacancy": SPA_VACANCY, "/challenge": SPA_VACANCY, "/combo": COMBO_VACANCY,
                  "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
                  "/lazy": LAZY_VACANCY,
                  "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
@@ -445,6 +457,14 @@ class BrowserEngineTest(unittest.TestCase):
         agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=True)
         result = agent.run(f"http://127.0.0.1:{self.port}/blocked/1", self.profile)
         self.assertEqual(result.reason_code, "NAVIGATION_FAILED", result.as_dict())
+
+    def test_browser_check_page_passes_by_itself(self):
+        eng = self.engine(read_only=True)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=True)
+        result = agent.run(f"http://127.0.0.1:{self.port}/challenge/42", self.profile)
+        self.assertNotEqual(result.reason_code, "NAVIGATION_FAILED", result.as_dict())
+        self.assertIn({"action": "browser_check_passed", "was": 403, "now": 200}, eng.actions)
+        self.assertEqual(self.server.state["posts"], [])
 
     def test_navigation_outside_allowed_hosts_is_refused(self):
         eng = self.engine(read_only=True)

@@ -1348,7 +1348,7 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 страницей, если хост разрешён); анкетой считает только форму, которую
 `agent.is_application_form` признаёт анкетой (поиск и фильтры не мешают жать
 «Откликнуться»); виртуальная форма — в границах личных полей и кнопки отправки;
-HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`;
+HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`, но страница блокировки со скриптом (проверка браузера DDoS-Guard/Qrator) получает до `CHALLENGE_WAIT_MS`=12 с перейти на сайт сама (`_await_challenge`, в траектории `browser_check_passed`; капча — только человеку);
 «Откликнуться» ищет и среди div/span с обработчиком клика (CDP
 `getEventListeners` → `data-jt-click`), onclick, tabindex, курсором-рукой;
 даты и календари пишет напрямую через родной сеттер + input/change/blur;
@@ -1398,7 +1398,7 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 `engine` (`http` по умолчанию | `browser`), `jupiter_lease_task(worker, secs,
 engine)` выдаёт только заявки своего движка, воркер передаёт `JUPITER_ENGINE`.
 HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_FOUND`/
-`STEP_DID_NOT_ADVANCE` → `jupiterFinish` переводит заявку на `browser` и в
+`STEP_DID_NOT_ADVANCE`/`CAPTCHA_REQUIRED`/`NAVIGATION_FAILED` → `jupiterFinish` переводит заявку на `browser` и в
 очередь, только если `JUPITER_BROWSER_ENABLED=1`, есть поручение на отправку и
 человек принял terms ≥ `JT_BROWSER_SUBMIT_FROM` (2026-09-29); иначе как раньше. Юридическая сверка —
 `docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
@@ -1422,7 +1422,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `jupiter/submission.py` | Доказательства отправки, отпечаток отклика и журнал поданных |
 | `jupiter/spa_payload.py` | Чтение встроенного JSON SPA (`__NEXT_DATA__`, ld+json, Nuxt) ради адреса анкеты |
 | `jupiter/js_engine.py` | QuickJS-движок: выполняет скрипты страницы, перехватывает fetch/XHR, находит API-эндпоинты SPA |
-| `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (30 сайтов; последним 26.09 — Контур, поля сверены вручную) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`) **или** в браузерной разведке `/var/www/html/jupiter-recon-browser.json` (`JUPITER_RECON_BROWSER_FILE`; `infra/recon-browser-run.sh`, таймер `jt-recon-browser` после `jt-recon`, от nobody, dry-run, только разделы spa/captcha/form_unmapped/no_vacancy); `live_ready_source` → owner/http/browser. Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
+| `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (30 сайтов; последним 26.09 — Контур, поля сверены вручную) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`) **или** в браузерной разведке `/var/www/html/jupiter-recon-browser.json` (`JUPITER_RECON_BROWSER_FILE`; `infra/recon-browser-run.sh`, таймер `jt-recon-browser` после `jt-recon`, от nobody, dry-run, только разделы spa/captcha/form_unmapped/no_vacancy и blocked с отказом в доступе 401/403/429/503 — `BROWSER_RETRY_BLOCKS`); `live_ready_source` → owner/http/browser. Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
 | `jupiter/recon.py` | Разведка форм отклика по всем 488 разделам `scripts/career-sites.tsv` (на сервере — ежедневно, `infra/recon-run.sh` → `/jupiter-recon.json`; `dry_run_ok` из свежего итога сам открывает боевую подачу через `site_compat.live_ready`): Jupiter в dry-run с синтетическим кандидатом, класс раздела и снимок полей. Итог — `docs/разведка-форм.md`; `--via-proxy` только для облачного контейнера |
 | `infra/recon-run.sh` | Та же разведка на московском сервере раз в сутки (таймер `jt-recon`, в 04:40; первый прогон сразу, пока журнал пуст; состояние — `recon_state`/`recon_last` в `security-status.json`): честная подпись Jupiter, 4 потока, только чтение; итог — открытый `https://147.45.184.99.sslip.io/jupiter-recon.json` (адреса работодателей и устройство анкет, без людей) |
 | `jupiter/mail_sync.py` | «Почта JobToo»: служба `jt-jupiter-mail` читает общий ящик Timeweb по IMAP и раскладывает письма по людям (`jupiterMailIngest`); адресата берёт только из первого `Received` публичного MX Timeweb. Адреса — `имя.фамилия@jobtoo.ru`, выдаёт `jt_jupiter_mailbox()` в `db.php` по правилам `php-proxy/jupiter_mail_address.php`; подробности — `docs/jupiter-mail.md` |
