@@ -21,7 +21,7 @@ from engine import (
 )
 from site_compat import field_override, trusted_hosts_for
 from candidate import (
-    FieldClass, classify_key, consent_kinds, decide_consent, provenance_for,
+    FieldClass, classify_key, consent_kinds, decide_consent, looks_like_consent, provenance_for,
 )
 from handoff import (
     HandoffStore, HumanAction, HumanActionRequest, ResumeState, new_token,
@@ -1191,7 +1191,8 @@ class JupiterAgent:
                     continue
             elif not control.required or not self.control_is_empty(control):
                 continue
-            if consent_kinds(self.descriptor(control)):
+            descriptor = self.descriptor(control)
+            if consent_kinds(descriptor) or control.type == "checkbox" and looks_like_consent(descriptor):
                 continue
             if self._resume_alternative_satisfied(page, control):
                 continue
@@ -1300,7 +1301,7 @@ class JupiterAgent:
             if not self.control_is_empty(control):
                 continue
             descriptor = self.descriptor(control)
-            if control.type == "checkbox" and consent_kinds(descriptor):
+            if control.type == "checkbox" and looks_like_consent(descriptor):
                 consent_pending = True
                 continue
             key = choose_key(control, CandidateProfile(values={}), page.url)

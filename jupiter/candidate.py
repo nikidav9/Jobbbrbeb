@@ -102,7 +102,8 @@ CONSENT_KINDS: tuple[ConsentKind, ...] = (
     # «Подтверждаю достоверность данных». Даётся по поручению (Соглашение
     # п. 8.3): за точность профиля отвечает сам человек (п. 3.1, 4.4).
     ConsentKind("data_accuracy_confirmation", True, (
-        "достоверн", "подтверждаю правильност", "information is accurate",
+        "достоверн", "подтверждаю правильност", "соответствуют действительност",
+        "соответствует действительност", "information is accurate",
         "true and correct", "true and accurate",
     )),
 )
@@ -124,6 +125,23 @@ def classify_key(key: str) -> str:
     if key.endswith("_consent") or key == "consent":
         return FieldClass.CONSENT
     return FieldClass.FACT
+
+
+# Галочка-согласие, вид которого не узнан: agree, policy, «ознакомлен и
+# согласен» без предмета. Юпитер её не ставит — решает сам человек, и причина
+# остановки — согласие, а не «заполните профиль».
+_CONSENT_LIKE_WORDS = (
+    "agree", "consent", "policy", "privacy", "terms", "accept", "soglas",
+    "oznakoml", "согласен", "согласна", "согласие", "ознакомлен", "ознакомлена",
+    "принимаю", "подтверждаю",
+)
+
+
+def looks_like_consent(text: str) -> bool:
+    if consent_kinds(text):
+        return True
+    words = _flat(text).split()
+    return any(word.startswith(marker) for word in words for marker in _CONSENT_LIKE_WORDS)
 
 
 def consent_kinds(text: str) -> list[ConsentKind]:
