@@ -473,6 +473,15 @@
   сразу рисует по параметру, расходится со статикой (React #418). Так сделаны
   `app/legal.tsx` и `app/(tabs)/company.tsx`.
 
+### «Потяните, чтобы обновить» на вебе (`components/ui/JTPullRefresh.tsx`)
+react-native-web не умеет `RefreshControl`, поэтому на сайте, в PWA и в
+мини-приложении жест не делал ничего. Обёртка ловит палец вниз, когда всё под
+ним прокручено к началу и палец идёт не вбок (свайп карточки не мешает), и
+показывает значок JT: кружок с контуром и тенью, стрелка, «Потяните / Отпустите
+/ Обновляем…». Стоит на «Вакансиях», «Откликах» (соискатель и работодатель) и
+«Профиле» (`refreshUsers` + `refreshNotifications`). В приложении жест у
+системного `RefreshControl` экранов — обёртка там ничего не добавляет.
+
 ### Кнопка «назад» (`components/ui/BackButton.tsx`)
 - Одна на всё приложение (решение владельца 26.09.2026): белый круг 44 pt с
   тенью и ‹. Без `onPress` — шаг по истории, а без истории (сайт или
@@ -811,7 +820,7 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 ### Каталог карьерных сайтов
 Два файла, и оба — источник правды, а не справка:
 
-- `scripts/career-sites.tsv` — master-list целей: 473 компании / 480 разделов.
+- `scripts/career-sites.tsv` — master-list целей: 481 компания / 488 разделов (29.09.2026 — +8 из сверки с careerday.fut.ru).
   С 25.09.2026 — не только IT: все крупные работодатели с вакансиями в Москве
   (решение владельца). Новые адреса проверяет `scripts/career-catalog-check.py`:
   раздел отвечает 200 и не уводит на hh/SuperJob; где отсюда мешает защита
@@ -1329,7 +1338,16 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 Модули браузерного движка (28.09.2026; в `browser_engine.py` уже подключены
 `browser_guard`, `browser_overlays`, `browser_custom_controls` (списки — в снимке
 `<select data-jt-custom>`) и `browser_frames` (анкету из iframe открывает
-страницей, если хост разрешён); капча, успех по API и планировщик — следующим шагом; «зоопарк» из
+страницей, если хост разрешён); анкетой считает только форму, которую
+`agent.is_application_form` признаёт анкетой (поиск и фильтры не мешают жать
+«Откликнуться»); виртуальная форма — в границах личных полей и кнопки отправки;
+HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`;
+«Откликнуться» ищет и среди div/span с обработчиком клика (CDP
+`getEventListeners` → `data-jt-click`), onclick, tabindex, курсором-рукой;
+даты и календари пишет напрямую через родной сеттер + input/change/blur;
+после ввода досылает change и blur;
+нет анкеты ни после «Откликнуться», ни во iframe — прокручивает страницу до низа
+(лендинги догружают форму по прокрутке) и ищет кнопку ещё раз; капча, успех по API и планировщик — следующим шагом; «зоопарк» из
 8 тяжёлых синтетических сайтов — `jupiter/test_browser_zoo.py`): `browser_frames.py` — анкеты в iframe;
 `browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
 все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`)
@@ -1348,7 +1366,14 @@ ATS-платформ, куда вакансия может увести анке
 `/etc/jobtoo/jupiter-browser.enabled` (`bootstrap.sh`). Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
-(`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`. Юридическая сверка —
+(`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
+Разделение воркеров (миграция 136, решение владельца «эскалация»): у заявки
+`engine` (`http` по умолчанию | `browser`), `jupiter_lease_task(worker, secs,
+engine)` выдаёт только заявки своего движка, воркер передаёт `JUPITER_ENGINE`.
+HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_FOUND`/
+`STEP_DID_NOT_ADVANCE` → `jupiterFinish` переводит заявку на `browser` и в
+очередь, только если `JUPITER_BROWSER_ENABLED=1`, есть поручение на отправку и
+человек принял terms ≥ `JT_BROWSER_SUBMIT_FROM` (2026-09-29); иначе как раньше. Юридическая сверка —
 `docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
 анкет из 33 с формой) и список правок движка — `docs/jupiter-browser-survey.md`.
 
@@ -1371,7 +1396,7 @@ ATS-платформ, куда вакансия может увести анке
 | `jupiter/spa_payload.py` | Чтение встроенного JSON SPA (`__NEXT_DATA__`, ld+json, Nuxt) ради адреса анкеты |
 | `jupiter/js_engine.py` | QuickJS-движок: выполняет скрипты страницы, перехватывает fetch/XHR, находит API-эндпоинты SPA |
 | `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (30 сайтов; последним 26.09 — Контур, поля сверены вручную) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`). Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
-| `jupiter/recon.py` | Разведка форм отклика по всем 480 разделам `scripts/career-sites.tsv` (на сервере — ежедневно, `infra/recon-run.sh` → `/jupiter-recon.json`; `dry_run_ok` из свежего итога сам открывает боевую подачу через `site_compat.live_ready`): Jupiter в dry-run с синтетическим кандидатом, класс раздела и снимок полей. Итог — `docs/разведка-форм.md`; `--via-proxy` только для облачного контейнера |
+| `jupiter/recon.py` | Разведка форм отклика по всем 488 разделам `scripts/career-sites.tsv` (на сервере — ежедневно, `infra/recon-run.sh` → `/jupiter-recon.json`; `dry_run_ok` из свежего итога сам открывает боевую подачу через `site_compat.live_ready`): Jupiter в dry-run с синтетическим кандидатом, класс раздела и снимок полей. Итог — `docs/разведка-форм.md`; `--via-proxy` только для облачного контейнера |
 | `infra/recon-run.sh` | Та же разведка на московском сервере раз в сутки (таймер `jt-recon`, в 04:40; первый прогон сразу, пока журнал пуст; состояние — `recon_state`/`recon_last` в `security-status.json`): честная подпись Jupiter, 4 потока, только чтение; итог — открытый `https://147.45.184.99.sslip.io/jupiter-recon.json` (адреса работодателей и устройство анкет, без людей) |
 | `jupiter/mail_sync.py` | «Почта JobToo»: служба `jt-jupiter-mail` читает общий ящик Timeweb по IMAP и раскладывает письма по людям (`jupiterMailIngest`); адресата берёт только из первого `Received` публичного MX Timeweb. Адреса — `имя.фамилия@jobtoo.ru`, выдаёт `jt_jupiter_mailbox()` в `db.php` по правилам `php-proxy/jupiter_mail_address.php`; подробности — `docs/jupiter-mail.md` |
 | `jupiter/test_recon.py` | Классы разведки на синтетическом сайте; ни одного POST за весь обход |

@@ -38,6 +38,7 @@ import { employerLikes, employerPending, employerMatched, employerCompleted,
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
+import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -599,6 +600,7 @@ function WorkerMatches() {
         </View>
       </View>
 
+      <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }]}
@@ -709,6 +711,7 @@ function WorkerMatches() {
           ))}
         </ScrollView>
       </OnboardingTarget>
+      </JTPullRefresh>
 
       {/* Под меню — растворение фона, список уходит под него (макет). */}
       <LinearGradient
@@ -1580,6 +1583,7 @@ function EmployerMatches() {
         ))}
       </View>
 
+      <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
       {shown.length === 0 ? (
         <View style={s.empty}>
@@ -1615,6 +1619,7 @@ function EmployerMatches() {
         />
       )}
       </OnboardingTarget>
+      </JTPullRefresh>
 
       <ApplySheet
         visible={!!approvingApp}

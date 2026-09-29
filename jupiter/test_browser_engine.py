@@ -140,13 +140,124 @@ FRAME_FORM = """<!doctype html>
 </form>
 """
 
+# Поиск вакансий в шапке + анкета за «Откликнуться» (как job.rt.ru).
+SEARCH_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>DevOps — Карьера</title>
+<form action="/search" method="get"><input name="q" placeholder="Поиск вакансий"><input name="city" placeholder="Город">
+  <button>Найти</button></form>
+<h1>DevOps-инженер</h1>
+<button type="button" id="open">Откликнуться</button>
+<div id="root"></div>
+<script>
+document.getElementById('open').addEventListener('click', () => {
+  document.getElementById('root').innerHTML = `<form method="post" action="/api/search-apply">
+    <label>Имя <input name="first_name" required></label>
+    <label>Фамилия <input name="last_name" required></label>
+    <label>Email <input name="email" type="email" required></label>
+    <label>Телефон <input name="phone" type="tel" required></label>
+    <button type="submit">Отправить отклик</button></form>`;
+});
+</script>
+"""
+
+# Анкета без <form> рядом с калькулятором ипотеки (как fsk.ru): поля
+# калькулятора в анкету попадать не должны.
+CALC_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Юрист — Карьера</title>
+<section class="calc">
+  <label>Площадь <input id="area" maxlength="4" value="169,1"></label>
+  <label>Цена <input id="price" maxlength="0" value="0 ₽"></label>
+</section>
+<section class="apply">
+  <h2>Отклик</h2>
+  <label>Имя <input id="fn"></label>
+  <label>Фамилия <input id="ln"></label>
+  <label>Email <input id="em" type="email"></label>
+  <label>Телефон <input id="ph" type="tel"></label>
+  <button type="button" id="send">Отправить отклик</button>
+</section>
+<script>
+document.getElementById('send').addEventListener('click', async () => {
+  const body = JSON.stringify({fn: fn.value, ln: ln.value, em: em.value, ph: ph.value});
+  const r = await fetch('/api/apply', { method: 'POST', body });
+  document.querySelector('.apply').innerHTML = (await r.json()).ok ? '<h2>Спасибо! Ваш отклик получен</h2>' : 'Ошибка';
+});
+</script>
+"""
+
+# «Откликнуться» — div с обработчиком клика (ни button, ни курсора-руки, ни
+# tabindex), а дата рождения — календарь, который глушит ввод с клавиатуры.
+DIVBTN_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Тестировщик — Карьера</title>
+<h1>QA-инженер</h1>
+<div class="cta"><div class="cta__text">Откликнуться</div></div>
+<div id="root"></div>
+<script>
+document.querySelector('.cta__text').addEventListener('click', () => {
+  document.getElementById('root').innerHTML = `
+    <label>Имя <input id="fn"></label>
+    <label>Фамилия <input id="ln"></label>
+    <label>Email <input id="em" type="email"></label>
+    <label>Телефон <input id="ph" type="tel"></label>
+    <label>Дата рождения <input id="bd" class="datepicker" name="birth_date"></label>
+    <button type="button" id="send">Отправить отклик</button>`;
+  // Как плагины-календари: набранное с клавиатуры стирается, принимается
+  // только значение, записанное скриптом (выбор даты в календаре).
+  document.getElementById('bd').addEventListener('input', e => {
+    if (e.inputType && e.inputType.startsWith('insert')) e.target.value = '';
+  });
+  document.getElementById('send').addEventListener('click', async () => {
+    const body = JSON.stringify({fn: fn.value, em: em.value, bd: bd.value});
+    const r = await fetch('/api/apply', { method: 'POST', body });
+    document.getElementById('root').innerHTML = (await r.json()).ok ? '<h2>Спасибо! Ваш отклик получен</h2>' : 'Ошибка';
+  });
+});
+</script>
+"""
+
+# Лендинг на конструкторе: форма отклика внизу появляется, только когда до
+# неё докрутили (IntersectionObserver).
+LAZY_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Продакт — Карьера</title>
+<h1>Продакт-менеджер</h1>
+<div style="height:3200px">Описание вакансии и о компании…</div>
+<div id="sentinel" style="height:10px"></div>
+<div id="root"></div>
+<script>
+new IntersectionObserver((entries, obs) => {
+  if (!entries.some(e => e.isIntersecting)) return;
+  obs.disconnect();
+  document.getElementById('root').innerHTML = `<form method="post" action="/api/search-apply">
+    <label>Имя <input name="first_name" required></label>
+    <label>Фамилия <input name="last_name" required></label>
+    <label>Email <input name="email" type="email" required></label>
+    <label>Телефон <input name="phone" type="tel" required></label>
+    <button type="submit">Отправить отклик</button></form>`;
+}).observe(document.getElementById('sentinel'));
+</script>
+"""
+
 
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
     def do_GET(self):
+        if self.path.startswith("/blocked"):
+            body = "<h1>417 Доступ заблокирован. Отключите VPN</h1>".encode("utf-8")
+            self.send_response(417)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         pages = {"/vacancy": SPA_VACANCY, "/combo": COMBO_VACANCY,
+                 "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
+                 "/lazy": LAZY_VACANCY,
                  "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
@@ -164,7 +275,7 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length)
         self.server.state["posts"].append((self.path, raw))
-        if self.path == "/api/frame-apply":
+        if self.path in {"/api/frame-apply", "/api/search-apply"}:
             body = "<!doctype html><meta charset=utf-8><h2>Спасибо! Ваш отклик получен</h2>".encode()
             ctype = "text/html; charset=utf-8"
         else:
@@ -184,6 +295,7 @@ PROFILE = {
     "phone": "+79990000000",
     "consent": True,
     "city": "Москва",
+    "birth_date": "1995-02-01",
     "resume_path": "resume.txt",
 }
 
@@ -286,6 +398,53 @@ class BrowserEngineTest(unittest.TestCase):
         applies = [raw for path, raw in self.server.state["posts"] if path == "/api/frame-apply"]
         self.assertEqual(len(applies), 1, dump)
         self.assertIn("Давыдов", urllib.parse.unquote_plus(applies[0].decode("utf-8")))
+
+    def test_search_form_does_not_hide_the_apply_button(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/searchy/5", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        self.assertIn({"action": "apply_click", "label": "Откликнуться"}, eng.actions)
+        self.assertEqual([p for p, _ in self.server.state["posts"]], ["/api/search-apply"], dump)
+        self.assertEqual(result.trajectory[0]["engine"], "jupiter-browser-engine")
+
+    def test_calculator_fields_stay_out_of_the_virtual_form(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/calc/9", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        # До правки агент проверял и поля калькулятора и падал на VALIDATION_FAILED.
+        self.assertNotIn('"area"', json.dumps(result.trajectory, ensure_ascii=False))
+        sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
+        self.assertEqual(sent["em"], "nikita.demo@reply.jobtoo.ru")
+
+    def test_div_apply_button_and_datepicker_that_blocks_typing(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/divbtn/4", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        self.assertIn({"action": "apply_click", "label": "Откликнуться"}, eng.actions)
+        sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
+        self.assertEqual(sent["fn"], "Никита")
+        self.assertIn("1995", sent["bd"], sent)
+
+    def test_lazy_form_at_the_bottom_appears_after_scrolling(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/lazy/2", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        self.assertIn({"action": "scroll_through"}, eng.actions)
+        self.assertEqual([p for p, _ in self.server.state["posts"]], ["/api/search-apply"], dump)
+
+    def test_blocked_page_is_a_navigation_failure(self):
+        eng = self.engine(read_only=True)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=True)
+        result = agent.run(f"http://127.0.0.1:{self.port}/blocked/1", self.profile)
+        self.assertEqual(result.reason_code, "NAVIGATION_FAILED", result.as_dict())
 
     def test_navigation_outside_allowed_hosts_is_refused(self):
         eng = self.engine(read_only=True)

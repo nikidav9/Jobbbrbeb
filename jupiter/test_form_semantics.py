@@ -654,5 +654,73 @@ class KonturLessons(unittest.TestCase):
         self.assertTrue(box.checked)
 
 
+class BrowserSurveyRegressions(unittest.TestCase):
+    """Ошибки, найденные прогоном браузерного агента на живых сайтах 29.09.2026."""
+
+    def test_email_only_newsletter_form_is_not_an_application(self):
+        page = parse(
+            '<form action="/subscribe" method="post">'
+            '<input type="email" name="EMAIL" placeholder="Ваш e-mail">'
+            '<label><input type="checkbox" name="agree"> Согласен получать рассылку</label>'
+            '<button type="submit">Подписаться</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_email_only_form_with_newsletter_words_only_around_it_is_not_an_application(self):
+        page = parse(
+            '<h3>Подпишитесь на рассылку</h3>'
+            '<form action="/api/sub" method="post">'
+            '<input type="email" name="email">'
+            '<label><input type="checkbox" name="terms"> Я даю согласие на обработку персональных данных</label>'
+            '<button type="submit">OK</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_email_only_apply_form_without_newsletter_words_stays_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input type="email" name="email" required>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_vacancy_slug_distinguishes_neighbour_vacancies(self):
+        from agent import _vacancy_slug
+        self.assertEqual(_vacancy_slug("https://mish.design/vacancies/118-marketing-lead"), "118-marketing-lead")
+        self.assertEqual(_vacancy_slug("https://mish.design/vacancies/118-marketing-lead/apply"), "118-marketing-lead")
+        self.assertEqual(_vacancy_slug("https://x.ru/jobs/apply?id=1"), "")
+        self.assertEqual(_vacancy_slug("https://x.ru/about"), "")
+
+    def test_agent_does_not_walk_to_a_neighbour_vacancy(self):
+        engine = JupiterWebEngine({"127.0.0.1"}, read_only=True)
+        agent = JupiterAgent({"127.0.0.1"}, engine=engine, dry_run=True)
+        agent._root_url = "http://127.0.0.1/vacancies/118-marketing-lead"
+        page = engine.load_html(
+            '<h1>Marketing lead</h1>'
+            '<a href="/vacancies/121-sistemnyj-analitik">Вакансия: системный аналитик</a>'
+            '<a href="/vacancies/118-marketing-lead/apply">Откликнуться</a>',
+            agent._root_url,
+        )
+        best = agent._best_navigation(page, {page.url})
+        self.assertEqual(best[0], "http://127.0.0.1/vacancies/118-marketing-lead/apply")
+        page2 = engine.load_html(
+            '<a href="/vacancies/121-sistemnyj-analitik">Откликнуться на похожую</a>', agent._root_url)
+        self.assertIsNone(agent._best_navigation(page2, {page2.url}))
+
+    def test_dry_run_without_any_filled_field_is_not_ready(self):
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        result = agent.run_loaded_html(
+            '<form action="/apply" method="post">'
+            '<input type="email" name="email" value="prefilled@example.com" required>'
+            '<button type="submit">Отправить отклик</button></form>',
+            "http://127.0.0.1/apply",
+            CandidateProfile(values={"phone": "+79990000000"}),
+        )
+        self.assertNotEqual(result.status, "ready_to_submit", result.as_dict())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

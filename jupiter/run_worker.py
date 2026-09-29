@@ -99,6 +99,7 @@ def main() -> int:
     queue = RemoteTaskQueue(
         base_url, admin_token, _require_env("EXPO_PUBLIC_APP_SECRET"),
         lease_seconds=lease_seconds,
+        engine=engine_kind,
     )
 
     def profile_factory(task: ApplicationTask) -> CandidateProfile:

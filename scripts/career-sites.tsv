@@ -555,3 +555,18 @@ Tilda Publishing	https://company.tilda.ru/ru
 SharpLase	https://sharplase.ru/o-kompanii/job/
 TalkBank	https://talkbank.io/vacansy
 Eduson	https://www.eduson.tv/vacancy-account-manager
+#
+# 29.09.2026 — сверка со списком участников careerday.fut.ru (скриншоты
+# владельца). Из 35 компаний у нас не было восьми; P&G не взята — иностранная.
+# Сколтех и Magnit Tech — раздел вакансий отвечает 200. Бюро 1440, Банк России,
+# РЕД СОФТ (403 от защиты) — только главная. ИКС Холдинг, РТЛабс и «Команда
+# Москвы» из облака не открываются (похоже на геоблок) — раздел ищет разведка
+# с московского сервера.
+Сколтех	https://www.skoltech.ru/vakansii
+Magnit Tech	https://magnit.tech/vacancies
+Бюро 1440	https://1440.space/
+Банк России	https://www.cbr.ru/
+РЕД СОФТ	https://red-soft.ru/
+ИКС Холдинг	https://ics-holding.ru/
+РТЛабс	https://rtlabs.ru/
+Команда Москвы	https://talent.mos.ru/

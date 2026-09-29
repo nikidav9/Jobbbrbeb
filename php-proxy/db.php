@@ -1717,6 +1717,12 @@ define('JT_JUPITER_CONSENT_FROM', '2026-09-25');
 // достоверности анкеты. Решение владельца 26.09.2026. Версия сравнивается
 // целиком: `2026-09-26` (без поручения) < `2026-09-26-2`.
 define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');
+// Редакция Соглашения, с которой отклик на анкету на скрипте подаёт сервер
+// (браузерный движок Юпитера). До неё — отклик через телефон.
+define('JT_BROWSER_SUBMIT_FROM', '2026-09-29');
+// Причины остановки HTTP-движка, которые браузер снимает: анкету рисует
+// скрипт, форма за кнопкой, шаг визарда не сдвинулся без JS.
+const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE'];
 
 // Известные адреса условий работодателей. Для остальных сайтов условия
 // показываются ссылкой на сам сайт вакансии (карточка отклика).
@@ -3206,6 +3212,63 @@ function jt_employer_delegated(string $uid): bool
         // даётся только тогда, когда оно точно записано.
     }
     return false;
+}
+
+/**
+ * Браузерная подача (Соглашение п. 8.2, редакция JT_BROWSER_SUBMIT_FROM):
+ * человек принял редакцию, где отклик на анкету на скрипте подаёт сервер.
+ */
+function jt_browser_delegated(string $uid): bool
+{
+    if ($uid === '') return false;
+    try {
+        foreach (sb_select('jm_consents', ['user_id' => 'eq.' . $uid], 'stamp') as $row) {
+            foreach (explode('|', (string)($row['stamp'] ?? '')) as $part) {
+                $pair = explode(':', $part, 2);
+                if (count($pair) === 2 && $pair[0] === 'terms'
+                    && strcmp($pair[1], JT_BROWSER_SUBMIT_FROM) >= 0) return true;
+            }
+        }
+    } catch (Throwable $e) {
+        // Нет ответа базы — нет и поручения.
+    }
+    return false;
+}
+
+/**
+ * Переводить ли заявку с HTTP-движка на браузер (миграция 136). Только:
+ * браузерная служба включена (JUPITER_BROWSER_ENABLED=1), заявка ещё на HTTP,
+ * HTTP-движок остановился на том, что умеет браузер, у заявки есть поручение
+ * на отправку и человек принял редакцию 2026-09-29. Иначе — как раньше.
+ */
+function jt_jupiter_escalates_to_browser(array $task, string $state, string $reason): bool
+{
+    return jt_secret('JUPITER_BROWSER_ENABLED') === '1'
+        && (string)($task['engine'] ?? 'http') === 'http'
+        && in_array($state, ['action_required', 'failed'], true)
+        && in_array($reason, JT_BROWSER_ESCALATE_REASONS, true)
+        && !empty($task['submission_authorized_at'])
+        && jt_browser_delegated((string)($task['user_id'] ?? ''));
+}
+
+/**
+ * Эскалация на браузер: HTTP-движок упёрся в анкету на скрипте — заявка
+ * встаёт в очередь браузерного воркера вместо «Нужны вы». true — переведена.
+ */
+function jt_jupiter_escalate_to_browser(string $id, array $task, string $state, string $reason): bool
+{
+    if (!jt_jupiter_escalates_to_browser($task, $state, $reason)) return false;
+    sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], [
+        'engine' => 'browser',
+        'state' => 'queued',
+        'reason_code' => null,
+        'attempt_count' => 0,
+        'not_before' => null,
+        'lease_owner' => null,
+        'lease_until' => null,
+        'updated_at' => now_iso(),
+    ]);
+    return true;
 }
 
 /** Поля заявки, которыми фиксируется поручение на согласия работодателю. */
@@ -7378,9 +7441,15 @@ try {
             $leaseSeconds = (int)($args[1] ?? 300);
             if ($worker === '') { jt_respond(['error' => 'Нужен идентификатор воркера'], 400); exit; }
             $leaseSeconds = max(30, min(3600, $leaseSeconds));
+            // Движок воркера (миграция 136): каждый берёт только свои заявки.
+            $engine = (string)($args[2] ?? 'http');
+            if (!in_array($engine, ['http', 'browser'], true)) {
+                jt_respond(['error' => 'Неизвестный движок'], 400); exit;
+            }
             $task = sb_rpc('jupiter_lease_task', [
                 'p_worker' => $worker,
                 'p_lease_seconds' => $leaseSeconds,
+                'p_engine' => $engine,
             ]);
             jt_respond($task ?: null); exit;
         }
@@ -7468,9 +7537,13 @@ try {
             if (!in_array($state, $allowed, true)) {
                 jt_respond(['error' => 'Unknown state'], 400); exit;
             }
-            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id], 'lease_owner');
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
+                'lease_owner,user_id,engine,submission_authorized_at');
             if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
                 jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
+            }
+            if (jt_jupiter_escalate_to_browser($id, $task, $state, (string)($extra['reason_code'] ?? ''))) {
+                jt_respond(['ok' => true, 'escalated' => 'browser']); exit;
             }
             $patch = [
                 'state' => $state,

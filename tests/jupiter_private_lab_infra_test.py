@@ -48,7 +48,9 @@ assert "class _SafeRedirectHandler" in engine
 assert "multipart/form-data" in engine
 assert "self.assert_allowed(resolved)" not in engine or "_SafeRedirectHandler" in engine
 assert "JupiterWebEngine" in agent
-assert '"engine": "jupiter-web-engine"' in agent
+# Метку движка в траектории даёт сам движок; HTTP-движок — по умолчанию.
+assert '"engine": getattr(self.engine, "name", "jupiter-web-engine")' in agent
+assert 'name = "jupiter-browser-engine"' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert "class JupiterScriptRuntime" in script_runtime
 assert "addEventListener" in script_runtime
 assert "preventDefault" in script_runtime

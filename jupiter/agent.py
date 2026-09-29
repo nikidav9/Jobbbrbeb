@@ -89,6 +89,8 @@ CONSENT_MARKERS = (
 # на той же странице (фильтр вакансий, подписка, форма для клиентов, форма
 # «порекомендуй знакомого»).
 _CONTACT_FIELD_MARKERS = ("phone", "tel", "mail", "телефон", "почт", "e-mail")
+_APPLY_FORM_MARKERS = ("отклик", "откликн", "резюме", "анкет", "ваканс", "заявк", "apply", "application", "resume", " cv")
+_SUBSCRIPTION_MARKERS = ("подпис", "рассылк", "новост", "subscri", "newsletter", "акци", "скидк")
 _COMPANY_FIELD_MARKERS = ("company", "organization", "organisation", "компани", "организац")
 # Поле, которое бывает только у кандидата. Имя не годится: форма «свяжитесь
 # с нами» для клиентов тоже спрашивает имя и компанию.
@@ -494,6 +496,20 @@ def choose_key(
     return best[1] if best[0] >= 30 else None
 
 
+_VACANCY_PATH_RE = re.compile(r"/(?:vacanc(?:y|ies)|jobs?|career/vacanc\w*)/([^/?#]+)", re.I)
+
+
+_APPLY_SLUGS = {"apply", "application", "response", "questionary", "form", "otklik", "anketa"}
+
+
+def _vacancy_slug(url: str) -> str:
+    """Идентификатор вакансии в адресе: /vacancies/118-marketing-lead → 118-marketing-lead."""
+    match = _VACANCY_PATH_RE.search(urllib.parse.urlparse(url or "").path)
+    slug = match.group(1).lower() if match else ""
+    # /jobs/apply?id=1 — это отклик, а не другая вакансия.
+    return "" if slug in _APPLY_SLUGS else slug
+
+
 def is_application_form(
     page: PageState,
     form_index: int,
@@ -522,6 +538,8 @@ def is_application_form(
         return False
 
     has_contact = False
+    questions = 0  # поля-вопросы, кроме галочек и кнопок
+    has_email_only = False
     has_candidate_field = False
     requires_company = False
     for control in page.controls:
@@ -540,6 +558,8 @@ def is_application_form(
 
         if control.type == "file":
             has_candidate_field = True  # резюме или портфолио файлом
+        if control.type == "radio":
+            questions += 1  # выбор из вариантов — вопрос анкеты, у подписки его нет
         if control.type in _STRUCTURAL_CONTROL_TYPES:
             continue
 
@@ -572,9 +592,28 @@ def is_application_form(
 
         if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
             has_contact = True
+        questions += 1
+        has_email_only = control.type == "email" or "mail" in haystack or "почт" in haystack
 
     if requires_company and not has_candidate_field:
         return False
+    # Подписка на рассылку под видом формы: одно поле почты и галочки, больше
+    # ни одного вопроса. Разведка браузером (29.09.2026) нашла такие у
+    # re-store, МТС и azimuthotels — агент заполнял их вместо анкеты.
+    if require_contact and not has_candidate_field and questions == 1 and has_email_only:
+        form = page.forms[form_index]
+        context = normalize(" ".join(
+            str(value) for control in page.controls if control.form_index == form_index
+            for value in (control.label, control.text, control.value, control.name, control.id)
+            if value
+        ) + f" {form.action} {form.id}")
+        # Одна почта — анкета, только если форма сама говорит об отклике:
+        # у подписки re-store и azimuthotels слово «рассылка» стоит в тексте
+        # вокруг формы, а в самой форме — только почта и галочка.
+        if any(marker in context for marker in _SUBSCRIPTION_MARKERS):
+            return False
+        if not any(marker in context for marker in _APPLY_FORM_MARKERS):
+            return False
     return has_contact if require_contact else True
 
 
@@ -1304,9 +1343,16 @@ class JupiterAgent:
             # ссылка вперёд. Она видна человеку, а значит проверяема.
             (self._spa_links(page), "spa_state", 0),
         ]
+        own_vacancy = _vacancy_slug(self._root_url)
         for candidates, origin, priority in sources:
             for url, text in candidates:
                 if url in visited:
+                    continue
+                # С карточки вакансии — только к отклику на неё же. Соседняя
+                # вакансия в «похожих» набирает те же очки, и агент заполнял
+                # анкету на чужую позицию (mish.design, infotecs; 29.09.2026).
+                slug = _vacancy_slug(url)
+                if own_vacancy and slug and slug != own_vacancy:
                     continue
                 parsed = urllib.parse.urlparse(url)
                 if (parsed.hostname or "").lower() not in self.engine.allowed_hosts:
@@ -1446,6 +1492,18 @@ class JupiterAgent:
             return AgentResult(
                 "step_ready", reason, trajectory, Reason.MULTI_STEP_DRY_RUN_LIMIT
             )
+
+        filled = sum(1 for item in trajectory if item.get("action") in {"fill", "select", "upload"})
+        if filled == 0:
+            # Форма нашлась, а вписать в неё нечего — это не анкета (Tilda
+            # раскладывает поля по отдельным формам, job.ginza.ru 29.09.2026).
+            # «Готово к отправке» здесь было бы ложным успехом.
+            reason = "Form found, but no candidate field was filled"
+            trajectory.append({
+                "action": "failed", "reason": reason,
+                "reason_code": Reason.VACANCY_NOT_FOUND,
+            })
+            return AgentResult("failed", reason, trajectory, Reason.VACANCY_NOT_FOUND)
 
         reason = "Dry-run complete: fields filled; submit was not attempted"
         if captcha:
@@ -2242,7 +2300,7 @@ class JupiterAgent:
             "action": "open",
             "url": page.url,
             "status": page.status,
-            "engine": "jupiter-web-engine",
+            "engine": getattr(self.engine, "name", "jupiter-web-engine"),
             "dry_run": self.dry_run,
         }]
         return self._run_from_page(page, profile, trajectory)
@@ -2269,7 +2327,7 @@ class JupiterAgent:
             "action": "open",
             "url": page.url,
             "status": page.status,
-            "engine": "jupiter-web-engine",
+            "engine": getattr(self.engine, "name", "jupiter-web-engine"),
             "source": "inline-test",
             "dry_run": self.dry_run,
         }]

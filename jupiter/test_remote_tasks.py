@@ -188,6 +188,12 @@ class RemoteTaskQueueTest(unittest.TestCase):
         self.assertEqual(task.id, tid)
         self.assertEqual(task.vacancy_url, "https://e.ru/v/1")
 
+    def test_lease_asks_only_for_its_own_engine(self) -> None:
+        self._queue().lease("w-http")
+        self._queue(engine="browser").lease("w-browser")
+        leases = [args for fn, args in FakeDbHandler.calls if fn == "jupiterLease"]
+        self.assertEqual([a[2] for a in leases], ["http", "browser"])
+
     def test_lease_returns_none_when_queue_is_empty(self) -> None:
         q = self._queue()
         self.assertIsNone(q.lease("w1"))
