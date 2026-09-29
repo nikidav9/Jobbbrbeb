@@ -216,6 +216,8 @@ FIND_APPLY_JS = r"""
     const text = textOf(el);
     return text && text.length <= 60 && rx.test(text) && visible(el) && !offsite(el);
   };
+  // Метка прошлого поиска могла остаться на другом элементе — снимаем.
+  document.querySelectorAll('[data-jt-apply]').forEach(el => el.removeAttribute('data-jt-apply'));
   const mark = el => { el.setAttribute('data-jt-apply', 'apply-0'); return 'apply-0'; };
   // Сначала настоящие кнопки и ссылки.
   for (const el of document.querySelectorAll('a,button,[role=button],input[type=button],input[type=submit]')) {

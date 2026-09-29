@@ -40,8 +40,12 @@ class RemoteTaskQueue:
         app_secret: str,
         *,
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        engine: str = "http",
     ):
         self._url = base_url.rstrip("/") + "/api/db.php"
+        # Воркер берёт только заявки своего движка (миграция 136): иначе
+        # HTTP- и браузерный воркер хватали бы одни и те же.
+        self._engine = engine
         self._token = admin_token
         self._app_secret = app_secret
         self._lease_seconds = lease_seconds
@@ -90,7 +94,7 @@ class RemoteTaskQueue:
 
     def lease(self, worker: str) -> ApplicationTask | None:
         self._worker = worker
-        result = self._call("jupiterLease", [worker, self._lease_seconds])
+        result = self._call("jupiterLease", [worker, self._lease_seconds, self._engine])
         if result is None:
             return None
         # PostgreSQL functions returning a composite row can be serialized by

@@ -1364,7 +1364,14 @@ ATS-платформ, куда вакансия может увести анке
 `/etc/jobtoo/jupiter-browser.enabled` (`bootstrap.sh`). Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
-(`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`. Юридическая сверка —
+(`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
+Разделение воркеров (миграция 136, решение владельца «эскалация»): у заявки
+`engine` (`http` по умолчанию | `browser`), `jupiter_lease_task(worker, secs,
+engine)` выдаёт только заявки своего движка, воркер передаёт `JUPITER_ENGINE`.
+HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_FOUND`/
+`STEP_DID_NOT_ADVANCE` → `jupiterFinish` переводит заявку на `browser` и в
+очередь, только если `JUPITER_BROWSER_ENABLED=1`, есть поручение на отправку и
+человек принял terms ≥ `JT_BROWSER_SUBMIT_FROM` (2026-09-29); иначе как раньше. Юридическая сверка —
 `docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
 анкет из 33 с формой) и список правок движка — `docs/jupiter-browser-survey.md`.
 
