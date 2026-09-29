@@ -218,6 +218,29 @@ document.querySelector('.cta__text').addEventListener('click', () => {
 </script>
 """
 
+# Лендинг на конструкторе: форма отклика внизу появляется, только когда до
+# неё докрутили (IntersectionObserver).
+LAZY_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Продакт — Карьера</title>
+<h1>Продакт-менеджер</h1>
+<div style="height:3200px">Описание вакансии и о компании…</div>
+<div id="sentinel" style="height:10px"></div>
+<div id="root"></div>
+<script>
+new IntersectionObserver((entries, obs) => {
+  if (!entries.some(e => e.isIntersecting)) return;
+  obs.disconnect();
+  document.getElementById('root').innerHTML = `<form method="post" action="/api/search-apply">
+    <label>Имя <input name="first_name" required></label>
+    <label>Фамилия <input name="last_name" required></label>
+    <label>Email <input name="email" type="email" required></label>
+    <label>Телефон <input name="phone" type="tel" required></label>
+    <button type="submit">Отправить отклик</button></form>`;
+}).observe(document.getElementById('sentinel'));
+</script>
+"""
+
 
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -234,6 +257,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         pages = {"/vacancy": SPA_VACANCY, "/combo": COMBO_VACANCY,
                  "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
+                 "/lazy": LAZY_VACANCY,
                  "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
@@ -406,6 +430,15 @@ class BrowserEngineTest(unittest.TestCase):
         sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
         self.assertEqual(sent["fn"], "Никита")
         self.assertIn("1995", sent["bd"], sent)
+
+    def test_lazy_form_at_the_bottom_appears_after_scrolling(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/lazy/2", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        self.assertIn({"action": "scroll_through"}, eng.actions)
+        self.assertEqual([p for p, _ in self.server.state["posts"]], ["/api/search-apply"], dump)
 
     def test_blocked_page_is_a_navigation_failure(self):
         eng = self.engine(read_only=True)

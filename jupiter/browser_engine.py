@@ -67,6 +67,10 @@ except ImportError:  # pragma: no cover
 # режут как бота, но и не выдаём себя за человека.
 UA_SUFFIX = " JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)"
 CUSTOM_WIDGETS = "[role=combobox]:not(select),[role=listbox]:not(select),[aria-haspopup=listbox]:not(select)"
+# Прокрутка до низа, чтобы лендинг догрузил блоки: не больше SCROLL_STEPS
+# экранов, пауза между ними — чтобы сработали IntersectionObserver и лени.
+SCROLL_STEPS = 12
+SCROLL_PAUSE_MS = 250
 # Ответы, при которых анкеты не будет: защита от ботов, гео- или VPN-блок.
 BLOCK_STATUSES = {401, 403, 407, 417, 429, 451}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -490,7 +494,29 @@ class JupiterBrowserEngine:
         page = self._click_apply(page)
         if self._has_candidate_form(page):
             return page
-        return self._open_frame_form(page)
+        page = self._open_frame_form(page)
+        if self._has_candidate_form(page):
+            return page
+        # Лендинги (Tilda и другие конструкторы) догружают блоки, только когда
+        # до них докрутили: форма отклика внизу появляется после прокрутки.
+        page = self._scroll_through()
+        return self._click_apply(page)
+
+    def _scroll_through(self) -> PageState:
+        try:
+            for _ in range(SCROLL_STEPS):
+                at_bottom = self._tab.evaluate(
+                    "() => { window.scrollBy(0, window.innerHeight * 0.9);"
+                    " return window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4; }"
+                )
+                self._tab.wait_for_timeout(SCROLL_PAUSE_MS)
+                if at_bottom:
+                    break
+            self.actions.append({"action": "scroll_through"})
+            self._settle()
+        except PlaywrightError:
+            pass
+        return self._snapshot()
 
     def _open_frame_form(self, page: PageState) -> PageState:
         """Анкета во iframe (Huntflow, Potok и самописные) — открыть её адрес
