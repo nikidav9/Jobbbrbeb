@@ -2,6 +2,7 @@
 """RemoteTaskQueue — без настоящего сервера, с заглушкой db.php."""
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import time
@@ -43,6 +44,7 @@ class FakeTask:
 class FakeDbHandler(BaseHTTPRequestHandler):
     tasks: dict[str, FakeTask] = {}
     calls: list[tuple[str, list[Any]]] = []
+    captcha_poll: dict[str, Any] = {"status": "none", "answer": None}
 
     def log_message(self, *_args: Any) -> None:
         pass
@@ -77,8 +79,32 @@ class FakeDbHandler(BaseHTTPRequestHandler):
                        and bool(task.data["submission_authorized_at"]))
             self._json({"ok": True} if allowed else {"error": "Submission is not authorized"},
                        200 if allowed else 409)
+        elif fn == "jupiterCaptchaPost":
+            self._handle_captcha_post(args)
+        elif fn == "jupiterCaptchaPoll":
+            self._json(FakeDbHandler.captcha_poll)
+        elif fn == "jupiterCaptchaResult":
+            if len(args) < 2 or args[1] not in ("solved", "failed"):
+                self._json({"error": "Unknown result"}, 400)
+            else:
+                self._json({"ok": True})
         else:
             self._json({"error": f"Unknown fn: {fn}"}, 400)
+
+    def _handle_captcha_post(self, args: list[Any]) -> None:
+        # Та же проверка, что в db.php: base64 до 200000 символов и PNG внутри.
+        img = str(args[1]) if len(args) > 1 else ""
+        if not args or not args[0] or not img or len(img) > 200000:
+            self._json({"error": "Нужна картинка до 200 КБ"}, 400)
+            return
+        try:
+            raw = base64.b64decode(img, validate=True)
+        except ValueError:
+            raw = b""
+        if not raw.startswith(b"\x89PNG"):
+            self._json({"error": "Ожидается PNG в base64"}, 400)
+            return
+        self._json({"ok": True, "id": "cap-1"})
 
     def _handle_lease(self, args: list[Any]) -> None:
         worker = str(args[0]) if args else ""
@@ -164,6 +190,7 @@ class RemoteTaskQueueTest(unittest.TestCase):
     def setUp(self) -> None:
         FakeDbHandler.tasks.clear()
         FakeDbHandler.calls.clear()
+        FakeDbHandler.captcha_poll = {"status": "none", "answer": None}
 
     def _queue(self, **kw: Any) -> RemoteTaskQueue:
         return RemoteTaskQueue(
@@ -323,6 +350,45 @@ class RemoteTaskQueueTest(unittest.TestCase):
         with self.assertRaises(RemoteError) as ctx:
             q.lease("w1")
         self.assertEqual(ctx.exception.status, 403)
+
+    # ── капча ──────────────────────────────────────────────────────────────
+
+    PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+    def test_captcha_post_sends_base64_png_and_returns_id(self) -> None:
+        tid = self._seed()
+        self.assertEqual(self._queue().captcha_post(tid, self.PNG), "cap-1")
+        fn, args = FakeDbHandler.calls[-1]
+        self.assertEqual(fn, "jupiterCaptchaPost")
+        self.assertEqual(args[0], tid)
+        self.assertEqual(base64.b64decode(args[1]), self.PNG)
+
+    def test_captcha_post_rejects_big_png_without_request(self) -> None:
+        big = self.PNG + b"\x00" * 150001  # base64 > 200000 символов
+        with self.assertRaises(ValueError) as ctx:
+            self._queue().captcha_post("t1", big)
+        self.assertIn("200000", str(ctx.exception))
+        self.assertEqual(FakeDbHandler.calls, [])
+
+    def test_captcha_post_http_error_is_remote_error(self) -> None:
+        with self.assertRaises(RemoteError) as ctx:
+            self._queue().captcha_post("t1", b"GIF89a")
+        self.assertEqual(ctx.exception.status, 400)
+
+    def test_captcha_poll_returns_status_and_answer(self) -> None:
+        q = self._queue()
+        self.assertEqual(q.captcha_poll("t1"), ("none", None))
+        FakeDbHandler.captcha_poll = {"status": "answered", "answer": "kotik"}
+        self.assertEqual(q.captcha_poll("t1"), ("answered", "kotik"))
+        self.assertEqual(FakeDbHandler.calls[-1], ("jupiterCaptchaPoll", ["t1"]))
+
+    def test_captcha_result_sends_outcome_and_rejects_unknown(self) -> None:
+        q = self._queue()
+        q.captcha_result("t1", "solved")
+        self.assertEqual(FakeDbHandler.calls[-1], ("jupiterCaptchaResult", ["t1", "solved"]))
+        with self.assertRaises(ValueError):
+            q.captcha_result("t1", "expired")
+        self.assertEqual(len(FakeDbHandler.calls), 1)
 
     # ── worker.py integration ──────────────────────────────────────────────
 
