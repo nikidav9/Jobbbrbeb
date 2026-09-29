@@ -127,6 +127,12 @@ for key in ('"включён"', '"служба"', '"перезапуски"', '"
             '"политика_ca"', '"yandex_gpt"', '"http_воркер"'):
     assert key in section, key
 
+# Файл статуса пишется в /var/www/html, но наружу его отдаёт только явный
+# location: без него запрос уходил в SPA, и проверить воркер было нечем.
+nginx = (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert "location = /jupiter-browser-status.json" in nginx
+assert "alias /var/www/html/jupiter-browser-status.json;" in nginx
+
 # Инвариант проекта: обычный Jupiter браузер не получает.
 assert "jt-jupiter.service" in bootstrap
 assert "playwright" not in (ROOT / "jupiter" / "requirements.txt").read_text(encoding="utf-8").lower()

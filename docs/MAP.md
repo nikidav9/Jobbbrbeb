@@ -1382,7 +1382,7 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 `/etc/jobtoo/jupiter-browser.enabled`, политику Chromium для Минцифры, секрет
 `JUPITER_BROWSER_ENABLED=1` для PHP (`infra/docker-compose.yml`), таймер
 браузерной разведки `jt-recon-browser`; состояние —
-`/var/www/html/jupiter-browser-status.json`. YandexGPT — файл
+`/var/www/html/jupiter-browser-status.json` (наружу — `https://147.45.184.99.sslip.io/jupiter-browser-status.json`, location в `infra/nginx-tls.conf`). YandexGPT — файл
 `/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
@@ -1536,7 +1536,10 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   отклик» засчитывается, только если его не было на странице ДО отправки:
   иначе сайт с этой фразой в подвале подтверждал бы что угодно. HTTP-ответ
   пишется в доказательства с весом ноль — намеренно, чтобы правило было видно
-  в данных.
+  в данных. У браузерного движка есть ещё ответ API страницы на отправку
+  (`engine.last_api_result`): успех в JSON весит 0.85 (`API_RESPONSE`),
+  отказ (`API_ERROR`) обнуляет счёт при любом «спасибо» на экране. Ответ на
+  «Далее» не засчитывается — это сохранение шага, а не отклик.
 - **Один отклик — один раз.** Отпечаток (кандидат, работодатель, адрес
   вакансии без рекламных меток, адрес анкеты, состав формы) проверяется ДО
   отправки. Уже поданное не подаётся снова: статус `duplicate`. Журнал —
