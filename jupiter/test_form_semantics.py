@@ -378,6 +378,56 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0))
 
+    def test_food_order_is_not_an_application(self):
+        # Хлеб Насущный (разведка 29.09): заказ доставки спрашивает имя и
+        # телефон — агент брал его за анкету.
+        page = parse(
+            '<form action="/order" method="post">'
+            '<input name="Имя" required>'
+            '<input type="tel" name="Phone" required>'
+            '<select name="Количество персон"><option>1</option></select>'
+            '<label><input type="radio" name="Вариант доставки:" required> Ко времени</label>'
+            '<button type="submit">Заказать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_ask_a_question_is_not_an_application(self):
+        # Айтуби, Oxygen: «Задайте вопрос» / «Тема заявки» на странице вакансии.
+        for question in ("Задайте вопрос", "Тема заявки"):
+            page = parse(
+                '<form action="/feedback" method="post">'
+                '<label>Ваше имя <input name="name" required></label>'
+                '<label>Телефон <input name="tel" required></label>'
+                f'<label>{question} <textarea name="message" required></textarea></label>'
+                '<button type="submit">Отправить</button>'
+                "</form>"
+            )
+            self.assertFalse(is_application_form(page, 0), question)
+
+    def test_question_field_next_to_resume_is_still_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Резюме <input type="file" name="cv"></label>'
+            '<label>Ваш вопрос <textarea name="q"></textarea></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_courier_vacancy_mentioning_delivery_is_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Вакансия <input name="vacancy" value="Курьер доставки"></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_vacancy_filter_is_not_an_application_form(self):
         page = parse(
             '<form action="/search" method="get">'
@@ -560,6 +610,44 @@ class FieldMeaning(unittest.TestCase):
         self.assertIsNone(self.key_for('<label>Должность <input name="work_history[position]"></label>'))
         self.assertIsNone(self.key_for('<label>Компания <input name="experiences[company]"></label>'))
 
+
+
+class BareNameField(unittest.TestCase):
+    """Поле имени без подписи: разведка 29.09 — Верный, ЭФКО, Русагро, KDL,
+    Major Express, АМ Винотеки стояли на «нет данных» при заполненном профиле."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров",
+        "email": "i@example.com", "phone": "+79990000000",
+    })
+
+    def key_for(self, form_html: str, name: str) -> str | None:
+        page = parse(f"<form method=post>{form_html}<button>Отправить</button></form>")
+        return choose_key(control(page, name), self.PROFILE, "https://employer.example/job", page)
+
+    def test_bare_name_alone_is_the_whole_name(self):
+        for name in ("name", "userNamePop", "modal_name", "form_text_12"):
+            html = f'<input name="{name}" id="4-popup-form-name"><input name="phone">'
+            self.assertEqual(self.key_for(html, name), "full_name", name)
+
+    def test_fio_token_in_internal_name(self):
+        self.assertEqual(self.key_for('<input name="responce-fio"><input name="email">', "responce-fio"), "full_name")
+
+    def test_bare_name_next_to_surname_is_first_name_only(self):
+        html = '<input name="name"><input name="surname"><input name="phone">'
+        self.assertEqual(self.key_for(html, "name"), "first_name")
+        html = '<input name="name"><label>Фамилия <input name="f2"></label>'
+        self.assertEqual(self.key_for(html, "name"), "first_name")
+
+    def test_other_names_are_not_the_candidate(self):
+        for name in ("company_name", "vacancy-name", "fileName", "org_name"):
+            self.assertIsNone(self.key_for(f'<input name="{name}"><input name="phone">', name), name)
+
+    def test_label_still_wins(self):
+        # Подпись «Город» при name="name" — это город, не имя.
+        profile = CandidateProfile(values={**self.PROFILE.values, "city": "Москва"})
+        page = parse('<form method=post><label>Город <input name="name"></label><button>Ок</button></form>')
+        self.assertEqual(choose_key(control(page, "name"), profile, "https://e.example/", page), "city")
 
 
 class ValueFitsField(unittest.TestCase):
