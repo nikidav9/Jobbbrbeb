@@ -667,6 +667,17 @@ class BrowserSurveyRegressions(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0))
 
+    def test_email_only_form_with_newsletter_words_only_around_it_is_not_an_application(self):
+        page = parse(
+            '<h3>Подпишитесь на рассылку</h3>'
+            '<form action="/api/sub" method="post">'
+            '<input type="email" name="email">'
+            '<label><input type="checkbox" name="terms"> Я даю согласие на обработку персональных данных</label>'
+            '<button type="submit">OK</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
     def test_email_only_apply_form_without_newsletter_words_stays_an_application(self):
         page = parse(
             '<form action="/apply" method="post">'

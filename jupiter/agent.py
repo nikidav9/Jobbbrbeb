@@ -89,6 +89,7 @@ CONSENT_MARKERS = (
 # на той же странице (фильтр вакансий, подписка, форма для клиентов, форма
 # «порекомендуй знакомого»).
 _CONTACT_FIELD_MARKERS = ("phone", "tel", "mail", "телефон", "почт", "e-mail")
+_APPLY_FORM_MARKERS = ("отклик", "откликн", "резюме", "анкет", "ваканс", "заявк", "apply", "application", "resume", " cv")
 _SUBSCRIPTION_MARKERS = ("подпис", "рассылк", "новост", "subscri", "newsletter", "акци", "скидк")
 _COMPANY_FIELD_MARKERS = ("company", "organization", "organisation", "компани", "организац")
 # Поле, которое бывает только у кандидата. Имя не годится: форма «свяжитесь
@@ -606,7 +607,12 @@ def is_application_form(
             for value in (control.label, control.text, control.value, control.name, control.id)
             if value
         ) + f" {form.action} {form.id}")
+        # Одна почта — анкета, только если форма сама говорит об отклике:
+        # у подписки re-store и azimuthotels слово «рассылка» стоит в тексте
+        # вокруг формы, а в самой форме — только почта и галочка.
         if any(marker in context for marker in _SUBSCRIPTION_MARKERS):
+            return False
+        if not any(marker in context for marker in _APPLY_FORM_MARKERS):
             return False
     return has_contact if require_contact else True
 
