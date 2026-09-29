@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput,
-  ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated,
+  ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated, RefreshControl,
 } from 'react-native';
+import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -283,7 +284,16 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { tab } = useLocalSearchParams<{ tab?: string }>();
   const tabBarHeight = useBottomTabBarHeight();
-  const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
+  const { currentUser, logout, users, showToast, updateUser, unreadCount, refreshUsers, refreshNotifications } = useApp();
+  // Потянуть вниз — свежие данные профиля и колокольчик (как в «Вакансиях»
+  // и «Откликах»). Ошибку не показываем: на экране остаются прежние данные.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try { await Promise.all([refreshUsers(), refreshNotifications()]); } catch { /* прежние данные */ }
+    finally { setRefreshing(false); }
+  };
   useWarmSystemBar(currentUser?.role === 'worker', ProfileColors.bg);
   // Шторки «Email для связи» и «Телефон» вкладки «Личные» (docs/design/profile-edit, 12–13).
   const [contactSheet, setContactSheet] = useState<'email' | 'phone' | null>(null);
@@ -700,8 +710,12 @@ export default function ProfileScreen() {
           }
         />
       ) : null}
+      <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />
+        }
         // The profile now scrolls to the physical bottom under the floating
         // navigation, but its last section can still clear the pill on scroll.
         contentContainerStyle={[
@@ -1020,6 +1034,7 @@ export default function ProfileScreen() {
         <View style={{ height: 8 }} />
       </ScrollView>
       </OnboardingTarget>
+      </JTPullRefresh>
 
       {/* Photo source picker */}
       {showPhotoSource ? (

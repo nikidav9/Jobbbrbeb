@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
@@ -1731,6 +1732,7 @@ function WorkerPermMode() {
   };
 
   return (
+    <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
     <View style={{ flex: 1 }}>
       {isGuest && (
         <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister({ vacancyKind: 'permanent' })}>
@@ -1767,8 +1769,10 @@ function WorkerPermMode() {
 
       {backendOffline ? (
         <View style={pS.offlineBar}>
-          <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
-          <Text style={pS.offlineTxt}>Нет связи с сервером — показаны последние данные. Потяните вниз, чтобы обновить.</Text>
+          <Ionicons name="cloud-offline-outline" size={rs(18)} color={JT.ink} />
+          <Text style={pS.offlineTxt}>
+            <Text style={pS.offlineStrong}>Нет связи с сервером.</Text> Показаны последние данные — потяните вниз, чтобы обновить.
+          </Text>
         </View>
       ) : null}
 
@@ -1831,7 +1835,7 @@ function WorkerPermMode() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
-          <Ionicons name={backendOffline ? 'cloud-offline-outline' : careerLoading ? 'hourglass-outline' : 'search-outline'} size={48} color={Colors.textMuted} />
+          <Ionicons name={backendOffline ? 'cloud-offline-outline' : careerLoading ? 'hourglass-outline' : 'search-outline'} size={48} color={JT.ink} />
           <Text style={styles.emptyTitle}>
             {backendOffline ? 'Нет связи с сервером'
               : careerLoading ? 'Загружаем вакансии…'
@@ -1846,7 +1850,7 @@ function WorkerPermMode() {
           </Text>
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
-              <Ionicons name="refresh" size={16} color="#fff" />
+              <Ionicons name="refresh" size={16} color={JT.ink} />
               <Text style={pS.retryTxt}>Попробовать снова</Text>
             </TouchableOpacity>
           ) : !careerLoading && permFiltersActive ? (
@@ -1883,6 +1887,7 @@ function WorkerPermMode() {
       />
 
     </View>
+    </JTPullRefresh>
   );
 }
 
@@ -2287,19 +2292,23 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingBottom: rs(6),
   },
 
+  // Плашка в стиле JT (29.09.2026): наклейка с контуром, как чипы и карточки.
   offlineBar: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    backgroundColor: '#FEF3C7', paddingHorizontal: rs(14), paddingVertical: rs(8),
+    flexDirection: 'row', alignItems: 'center', gap: rs(10),
+    marginHorizontal: rs(20), marginBottom: rs(8),
+    backgroundColor: JT.accentSoft, borderWidth: 2, borderColor: JT.ink, borderRadius: rs(16),
+    paddingHorizontal: rs(14), paddingVertical: rs(10),
   },
-  offlineTxt: { flex: 1, fontSize: rf(12), color: '#92400E', lineHeight: rf(16) },
+  offlineTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.ink, lineHeight: rf(18) },
+  offlineStrong: { fontFamily: JT_FONT.heavy },
   // Кнопка, а не только «потяните вниз»: на пустом экране жест обновления
   // не виден, а тупик человеку хуже ошибки.
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7),
-    marginTop: rs(16), backgroundColor: Colors.primary,
-    paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
+    marginTop: rs(16), backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+    paddingHorizontal: rs(22), paddingVertical: rs(12), borderRadius: rs(24),
   },
-  retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
+  retryTxt: { color: JT.ink, fontFamily: JT_FONT.bold, fontSize: rf(15) },
   // Ширина по карточке, а не по экрану: карточка отступает на rs(13) плюс
   // рамка, и растворение должно кончаться ровно на её краю. bottom задаётся
   // рядом с карточкой через deckBottomReserve, чтобы совпадать на всех safe area.
@@ -2701,8 +2710,8 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(24), paddingBottom: rs(180) },
   emptyCharContainer: { width: SW - 40, height: Math.round((SW - 40) * 1.216), marginBottom: rs(8) },
   emptyCharImg: { width: '100%', height: '100%' },
-  emptyTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  emptySubtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(4), textAlign: 'center', lineHeight: rf(20) },
+  emptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), lineHeight: rf(24), color: JT.ink, textAlign: 'center', marginTop: rs(10) },
+  emptySubtitle: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6), textAlign: 'center', lineHeight: rf(20) },
   filterOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, justifyContent: 'flex-end' },
   filterSheet: { backgroundColor: Colors.bg, borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20), paddingBottom: rs(40), maxHeight: '70%' },
   filterSheetHandle: { alignSelf: 'center', width: rs(40), height: rs(5), borderRadius: rs(3), backgroundColor: Colors.divider, marginTop: rs(8) },
