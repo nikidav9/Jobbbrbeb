@@ -156,6 +156,13 @@
   уведомлений на `BottomSheet`), `app/support.tsx` (чат + шторка FAQ из
   `jm_support_knowledge`; `BottomSheet` умеет `height`/`backgroundColor`),
   модалка «Молния» — в `app/(tabs)/feed.tsx` (`limitOpen`).
+- Шапка «Откликов» (`app/(tabs)/matches.tsx`, стили `wm.header/title/subtitle`)
+  повторяет `components/profile/ProfileHeader.tsx` один в один: поля 16, ряд 44,
+  кнопки 40 с контуром 1,5 и иконками `components/profile/icons.tsx`, заголовок
+  Unbounded 800 28. Меняешь одну — поменяй и другую.
+- Гостевой режим — `components/GuestGate.tsx` (заглушка «… — после регистрации»
+  для Откликов, Чатов, Профиля) в стиле JT: карточка-наклейка, Unbounded.
+  Документы `app/legal.tsx` — шрифтами JT (Unbounded/Manrope), кремовый фон.
 - `hooks/useWarmSystemBar.ts` — кремовая зона статус-бара в iOS PWA (meta theme-color + фон html/body, пока экран в фокусе). Стоит на Вакансиях, Откликах, Профиле соискателя, `profile-edit/_layout`, `jupiter-application`; новый тёплый экран — добавь туда же.
 - **Карточка листается вниз.** Длинная вакансия не обрезается: карточка растёт
   по содержимому (`cardAnimated` — `flexGrow`, не `flex`), а прокручивает её тот
@@ -839,7 +846,7 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 страница-проверка. Только чтение: без ввода, переход не GET обрывается,
 подпись честная. Итог — `/jupiter-browser-probe.json`, ход —
 `/jupiter-browser-probe-status.json`; сторож — `tests/jupiter_private_lab_infra_test.py`.
-Сам Jupiter браузера по-прежнему не содержит.
+С 28.09.2026 в Jupiter есть браузерный движок — см. раздел Jupiter.
 
 **Разведка сама находит и включает новые источники.** Недельный таймер
 `jt-career-discover` (вс 03:10, `infra/bootstrap.sh`) запускает
@@ -871,8 +878,10 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   свайпом» → полоса по реальному проценту. Веб — статичный `#splash` в
   `app/+html.tsx` (свои шрифты и логотип в `public/splash/`; контракт с
   приложением — `lib/webSplash.ts`: `__setSplashProgress`, `__hideSplash`;
-  минимум 1,3 с, на выходе плашка улетает в логотип шапки; дольше 8 с —
-  «Долго грузится…» и «Повторить»). Приложение — `components/SplashLoader.tsx`
+  всегда ~5 с (решение владельца 28.09.2026: раскадровка растянута вдвое,
+  полоса 2,4→4,4 с, затем плашка улетает в логотип шапки; сторожа
+  `check-small-screens`/`shoot-screens` ждут ухода `#splash` из DOM); логотип
+  впрыгивает по `load` картинки; дольше 10 с — «Долго грузится…» и «Повторить»). Приложение — `components/SplashLoader.tsx`
   (RN Animated, те же тайминги; показ дважды — `index.tsx`, затем оверлей
   `EntryTransition` — продолжает, а не начинает заново, `bootElapsed`).
   Системный экран (`app.json`, кремовый фон и точка) сменится только со
@@ -1306,9 +1315,42 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 
 ### Jupiter — агент подачи откликов (`jupiter/`)
 
-Свой движок, не Playwright и не Selenium: HTTP-клиент, cookie jar, разбор
-HTML и форм, политика переходов, отправка и проверка успеха написаны здесь.
-Только stdlib Python, браузер не ставится.
+Свой движок: HTTP-клиент, cookie jar, разбор HTML и форм, политика переходов,
+отправка и проверка успеха написаны здесь, stdlib Python. С 28.09.2026 —
+второй, браузерный движок `jupiter/browser_engine.py` (Chromium через
+Python-Playwright, тот же интерфейс `open/submit/load_html`): сам жмёт
+«Откликнуться», снимает отрисованный DOM для того же `_SemanticParser`
+(невидимые поля убраны, поля без `<form>` — в виртуальной форме `data-jt-virtual`,
+метки `data-jt-ref` → `ControlState.dom_ref`), при отправке переносит значения
+агента в живую страницу. В read_only обрывает любой не-GET запрос. Тест —
+`jupiter/test_browser_engine.py`, отдельная задача CI `jupiter-browser`
+(Playwright ставится только там).
+
+Модули браузерного движка (28.09.2026; в `browser_engine.py` уже подключены
+`browser_guard`, `browser_overlays`, `browser_custom_controls` (списки — в снимке
+`<select data-jt-custom>`) и `browser_frames` (анкету из iframe открывает
+страницей, если хост разрешён); капча, успех по API и планировщик — следующим шагом; «зоопарк» из
+8 тяжёлых синтетических сайтов — `jupiter/test_browser_zoo.py`): `browser_frames.py` — анкеты в iframe;
+`browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
+все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`)
+и поля с маской; `browser_success.py` — успех по ответу API и тостам;
+`browser_sessions.py` — парковка сессии на время капчи; `browser_captcha.py` —
+найти капчу, вырезать только её картинку, ввести ответ человека (не решает сам);
+`browser_guard.py` — DNS-пиннинг, попапы, загрузки, разрешения, WebRTC, service
+worker, изоляция контекстов; `browser_planner.py` + `yandex_gpt.py` — сопоставление
+полей через YandexGPT без данных кандидата (`redact`); `ats_hosts.py` — домены
+ATS-платформ, куда вакансия может увести анкету; `browser_limits.py` — пределы ресурсов (сколько браузеров
+по памяти, сторож задачи, добивание своих зависших Chromium; замер —
+`scripts/browser-bench.py`); `recon_browser.py` — разведка
+браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало».
+Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
+`run_worker.py`; служба `infra/jupiter-browser-run.sh`, включается флагом
+`/etc/jobtoo/jupiter-browser.enabled` (`bootstrap.sh`). Капча человеку —
+миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
+`jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
+(`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`. Юридическая сверка —
+`docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
+анкет из 33 с формой) и список правок движка — `docs/jupiter-browser-survey.md`.
 
 | Файл | Что внутри |
 |---|---|
@@ -1395,6 +1437,13 @@ HTML и форм, политика переходов, отправка и пр�
   116): пока она не пуста, повторное согласие автоотклик не включает —
   `requestJupiterLive` (`services/jupiterLive.ts`) при отзыве переспрашивает
   явно.
+- **Подача сервером и капча (Соглашение, редакция 2026-09-29).** П. 8.2: отклик,
+  в том числе на анкету на скрипте, подаёт программа на сервере в РФ; «я не
+  робот» решает только сам человек в приложении (`app/jupiter-captcha.tsx`),
+  встроенный браузер на устройстве — запасной путь, отправляет человек; неясную
+  отметку или поле Юпитер не трогает. П. 8.3: капча не решается сама и не
+  уходит сервисам распознавания. `consentVersion` terms поднят — браузерную
+  подачу включать только принявшим terms ≥ 2026-09-29.
 - **Согласия работодателю — тоже по поручению (редакция 2026-09-26-2).**
   Соглашение п. 8.2–8.7, Согласие, dataPolicy п. 9.1.1: Юпитер даёт от имени
   человека только то, без чего сайт не примет отклик — обработка ПДн этим
@@ -1473,7 +1522,7 @@ HTML и форм, политика переходов, отправка и пр�
 Раздел «Внешние вакансии» (`/external`, `fetchExternal`): каталог — из открытого `/api/feed_stats.php` (там же правило IT-ленты и Москвы, отдаёт CORS `*`), свайпы `jm_ext_swipes` и отклики Jupiter `jm_jupiter_applications` за 90 дней, здоровье сбора — поля `last_*` в `jm_ext_sources`. Показы карточек не пишутся (события сняты в 096), воронка начинается со свайпа вправо.
 Раздел «Юпитер» (`dashboard/app/jupiter/page.tsx`) — замер автооткликов по сайтам
 компаний за 7/30 дней: отправил сам, подтверждено сайтом, ждут человека, «сайт ещё
-подключаем», частая причина остановки. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
+подключаем», частая причина остановки. Карточка «По движку» — HTTP/браузер из `checkpoint.summary.engine`, капча ждали/решена. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
 людей панель у базы не просит (`JUPITER_COLUMNS`), охрана — `tests/jupiter_stats.test.ts`.
 Выкладка — отдельная, через релизы GitHub; сервер тянет их сам.
 

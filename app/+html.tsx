@@ -88,7 +88,7 @@ export default function Root({ children }: PropsWithChildren) {
           #splash {
             position: fixed; inset: 0; z-index: 9999;
             background: #F5EFE6; color: #141414;
-            transition: background-color 0.3s ease 0.2s;
+            transition: background-color 0.6s ease 0.35s;
           }
           /* Центр плашки — на 45 % высоты, как (195, 380) на экране 844 */
           #splash-slot { position: absolute; left: 50%; top: 45%; width: 140px; height: 140px; margin: -70px 0 0 -70px; }
@@ -97,22 +97,25 @@ export default function Root({ children }: PropsWithChildren) {
             border: 2px solid #141414; border-radius: 36px; background: #FFFFFF;
             box-shadow: 6px 6px 0 #141414;
             display: flex; align-items: center; justify-content: center;
-            animation: jt-plate 600ms cubic-bezier(.2,.8,.2,1) both, jt-sticker 400ms ease-out 900ms both;
+            animation: jt-plate 1100ms cubic-bezier(.2,.8,.2,1) both, jt-sticker 700ms ease-out 1700ms both;
           }
-          #splash-logo { width: 96px; height: auto; display: block;
-            animation: jt-logo 400ms cubic-bezier(.3,1.4,.5,1) 600ms both; }
+          /* Логотип впрыгивает, только когда картинка загружена: на медленной
+             сети она приходила позже анимации, и плашка стояла пустой, а потом
+             логотип появлялся рывком. Задержку ставит скрипт ниже. */
+          #splash-logo { width: 96px; height: auto; display: block; opacity: 0; }
+          #splash-logo.in { animation: jt-logo 700ms cubic-bezier(.3,1.4,.5,1) both; }
           #splash-below { position: absolute; left: 0; right: 0; top: calc(45% + 106px);
             display: flex; flex-direction: column; align-items: center; padding: 0 16px; }
           #splash-tag { margin: 0; font: 700 18px/1.2 'JTSplashUnbounded', -apple-system, 'Segoe UI', Roboto, sans-serif;
-            letter-spacing: -0.01em; text-align: center; animation: jt-tag 400ms ease-out 900ms both; }
+            letter-spacing: -0.01em; text-align: center; animation: jt-tag 700ms ease-out 1700ms both; }
           #splash-bar { margin-top: 26px; width: 180px; height: 14px; box-sizing: border-box;
             border: 2px solid #141414; border-radius: 7px; background: #FFFFFF; overflow: hidden;
-            animation: jt-fade 300ms ease-out 1300ms both; }
+            animation: jt-fade 500ms ease-out 2400ms both; }
           #splash-fill { display: block; height: 100%; width: 0; background: #FF6B1A;
-            box-sizing: border-box; transition: width 200ms cubic-bezier(.4,0,.2,1); }
+            box-sizing: border-box; transition: width 120ms linear; }
           #splash-fill.on { border-right: 2px solid #141414; }
           #splash-cap { margin: 10px 0 0; font: 700 13px/1.3 'JTSplashManrope', -apple-system, 'Segoe UI', Roboto, sans-serif;
-            color: #6B645C; text-align: center; animation: jt-fade 300ms ease-out 1300ms both; }
+            color: #6B645C; text-align: center; animation: jt-fade 500ms ease-out 2400ms both; }
           #splash-retry { display: none; margin-top: 12px; padding: 10px 22px; border: 2px solid #141414;
             border-radius: 22px; background: #FF6B1A; color: #141414; box-shadow: 3px 3px 0 #141414;
             font: 700 14px 'JTSplashManrope', -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }
@@ -129,15 +132,16 @@ export default function Root({ children }: PropsWithChildren) {
           /* Переход в ленту: подпись и полоса гаснут, плашка уменьшается и
              улетает в левый верх — на место логотипа шапки (44, 78). */
           #splash.leave { background-color: rgba(245,239,230,0); pointer-events: none; }
-          #splash.leave #splash-below { opacity: 0; transition: opacity 150ms ease; }
+          #splash.leave #splash-below { opacity: 0; transition: opacity 300ms ease; }
           #splash.leave #splash-plate {
             animation: none;
             transform: translate(calc(44px - 50vw), calc(78px - 45vh)) scale(.33);
             opacity: 0; box-shadow: 0 0 0 #141414;
-            transition: transform 500ms cubic-bezier(.2,.8,.2,1), opacity 500ms ease, box-shadow 300ms ease;
+            transition: transform 800ms cubic-bezier(.2,.8,.2,1), opacity 800ms ease, box-shadow 400ms ease;
           }
           @media (prefers-reduced-motion: reduce) {
-            #splash-plate, #splash-logo, #splash-tag, #splash-bar, #splash-cap { animation: none; }
+            #splash-plate, #splash-logo.in, #splash-tag, #splash-bar, #splash-cap { animation: none; }
+            #splash-logo.in { opacity: 1; }
             #splash.leave #splash-plate { transform: none; transition: opacity 200ms ease; }
             #splash { transition: background-color 200ms ease; }
           }
@@ -182,32 +186,54 @@ export default function Root({ children }: PropsWithChildren) {
             var cap = document.getElementById('splash-cap');
             var retry = document.getElementById('splash-retry');
             var done = false, finishRequested = false, pct = 1;
-            // Анимация не обрывается: экран держится минимум до конца кадра 4
-            // (макет: 1,3 с), даже если данные пришли раньше.
-            var MIN_MS = 1300;
+            // Заставка всегда ~5 с (решение владельца 28.09.2026): раскадровка
+            // растянута вдвое, в 4,4 с плашка улетает в шапку, к ~5,2 с экран
+            // убран. Полоса идёт с 2,4 с и доходит до 100 % ровно к 4,4 с, даже
+            // если данные пришли раньше; медленнее данных она не бывает.
+            var MIN_MS = 4400, BAR_FROM = 2400;
             var shownAt = (window.performance && performance.now) ? performance.now() : 0;
             function now() { return (window.performance && performance.now) ? performance.now() : shownAt + MIN_MS; }
+            // Логотип впрыгивает на 1,1 с (раскадровка растянута до ~5 с); пришёл позже — сразу.
+            // Не загрузился — показываем как есть (подпись alt), а не пустую плашку.
+            var logo = document.getElementById('splash-logo');
+            function logoIn() {
+              if (!logo || logo.classList.contains('in')) return;
+              logo.style.animationDelay = Math.max(0, 1100 - (now() - shownAt)) + 'ms';
+              logo.classList.add('in');
+            }
+            if (logo) {
+              // complete — и после успеха, и после ошибки: ждать тут нечего.
+              if (logo.complete) logoIn();
+              else {
+                logo.addEventListener('load', logoIn);
+                logo.addEventListener('error', logoIn);
+              }
+            }
             // Пока bundle скачивается, плавно идём до 30 %. Дальше каждая
             // граница открывается только реальным этапом приложения:
             // HTML/download=1..30, bundle=35, boot=45, session=55,
             // cache=70, API=80, ready=100.
             var target = Math.max(30, window.__jobtooSplashPendingProgress || 1);
 
+            // Показываем меньшее из реального прогресса и времени: полоса не
+            // прыгает к 100 %, а плавно доходит к MIN_MS.
+            function shown() {
+              var cap = Math.max(0, Math.min(100, (now() - shownAt - BAR_FROM) / (MIN_MS - BAR_FROM) * 100));
+              return Math.round(Math.min(pct, cap));
+            }
             function paint() {
+              var v = shown();
               if (fill) {
-                fill.style.width = pct + '%';
-                if (pct > 0 && pct < 100) fill.classList.add('on'); else fill.classList.remove('on');
+                fill.style.width = v + '%';
+                if (v > 0 && v < 100) fill.classList.add('on'); else fill.classList.remove('on');
               }
-              if (bar) bar.setAttribute('aria-valuenow', String(pct));
+              if (bar) bar.setAttribute('aria-valuenow', String(v));
             }
             var tick = setInterval(function() {
-              if (finishRequested) {
-                // Данные готовы: бар быстро добегает до 100 % (200 мс в CSS).
-                if (pct < 100) { pct = 100; paint(); }
-                if (now() - shownAt >= MIN_MS) { clearInterval(tick); setTimeout(hide, 220); }
-                return;
-              }
-              if (pct < target) { pct += 1; paint(); }
+              if (finishRequested) pct = 100;
+              else if (pct < target) pct += 1;
+              paint();
+              if (finishRequested && shown() >= 100) { clearInterval(tick); setTimeout(hide, 150); }
             }, 25);
             paint();
 
@@ -232,7 +258,7 @@ export default function Root({ children }: PropsWithChildren) {
               }
               if (splash) {
                 splash.classList.add('leave');
-                setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 560);
+                setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 1000);
               }
             }
 
@@ -258,13 +284,13 @@ export default function Root({ children }: PropsWithChildren) {
 
             // Не перезагружаем страницу автоматически: именно эта страховка
             // раньше создавала второй загрузочный экран на медленной сети.
-            // Дольше 8 с (макет) — честно говорим и даём осознанный повтор.
+            // Дольше 10 с (макет: 8 с сверх обычной загрузки) — честно говорим и даём повтор.
             if (retry) retry.onclick = function() { location.reload(); };
             setTimeout(function() {
               if (done || !splash) return;
               if (cap) cap.textContent = 'Долго грузится… Проверьте интернет';
               splash.classList.add('slow');
-            }, 8000);
+            }, 10000);
           })();
         `}</script>
       </body>

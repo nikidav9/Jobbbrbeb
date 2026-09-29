@@ -112,15 +112,23 @@ export function bootElapsed(): number {
 }
 
 /**
- * Минимальное время показа загрузочного экрана — до конца кадра 4 макета
- * (плашка, логотип, наклейка, подпись). Без него при быстром старте (гость,
- * которому нечего грузить) экран улетал недорисованным.
+ * Минимальное время показа загрузочного экрана. Без него при быстром старте
+ * (гость, которому нечего грузить) экран улетал недорисованным.
  */
-export const SPLASH_MIN_MS = 1300;  // макет: до конца кадра 4, анимация не обрывается
+// Заставка всегда ~5 с (решение владельца 28.09.2026): раскадровка макета
+// растянута вдвое; полоса идёт с SPLASH_BAR_FROM и доходит до 100 % к
+// SPLASH_MIN_MS, после — плавный уход (EntryTransition, FADE_MS).
+export const SPLASH_MIN_MS = 4400;
+const SPLASH_BAR_FROM = 2400;
 
-export function useLoadingPercent(ready: boolean, minMs = DRAW_MS): number {
+/**
+ * Процент на полосе заставки. Полоса видна с SPLASH_BAR_FROM и идёт ровно по
+ * времени: данные готовы — доходит до 100 % к SPLASH_MIN_MS, не раньше (иначе
+ * прыгнула бы к концу и стояла); данные ещё едут — останавливается на 95 и
+ * дальше ползёт по проценту, не обещая 100 %, пока их нет.
+ */
+export function useLoadingPercent(ready: boolean, minMs = SPLASH_MIN_MS): number {
   const [percent, setPercent] = useState(lastPercent);
-  const start = useRef(bootStart());
   const readyRef = useRef(ready);
   readyRef.current = ready;
 
@@ -130,17 +138,10 @@ export function useLoadingPercent(ready: boolean, minMs = DRAW_MS): number {
         // Считаем от общего достигнутого значения, а не от локального
         const prev = Math.max(prevState, lastPercent);
         if (prev >= 100) { lastPercent = 100; return 100; }
-        if (readyRef.current) {
-          // Добегаем до 100 плавно: у финиша — по проценту за тик, чтобы
-          // 96, 97, 98, 99 успели показаться, а не перескочили одним кадром
-          const left = 100 - prev;
-          return (lastPercent = Math.min(100, prev + (left > 12 ? Math.ceil(left / 8) : 1)));
-        }
-        const elapsed = Date.now() - start.current;
-        if (elapsed < minMs) {
-          // равномерный подъём 1 → 95: пользователь видит счёт с самого начала
-          return (lastPercent = Math.max(prev, Math.round(1 + (elapsed / minMs) * 94)));
-        }
+        const elapsed = bootElapsed();
+        const byTime = Math.max(0, Math.min(100, Math.round((elapsed - SPLASH_BAR_FROM) / (minMs - SPLASH_BAR_FROM) * 100)));
+        if (readyRef.current) return (lastPercent = Math.max(prev, byTime));
+        if (elapsed < minMs) return (lastPercent = Math.max(prev, Math.min(95, byTime)));
         // хвост: 96, 97, 98, 99 — заметно медленнее
         const extra = Math.floor((elapsed - minMs) / TAIL_STEP_MS);
         return (lastPercent = Math.max(prev, Math.min(99, 95 + extra)));
@@ -177,12 +178,12 @@ function play(value: Animated.Value, at: number, ms: number, easing: (t: number)
 }
 
 export default function SplashLoader({ percent = 1 }: { percent?: number }) {
-  // Тайминги — таблица раскадровки README макета.
-  const dot = useRef(new Animated.Value(0)).current;      // 0–300: точка 0 → 1
-  const open = useRef(new Animated.Value(0)).current;     // 300–600: точка → плашка
-  const logo = useRef(new Animated.Value(0)).current;     // 600–1000: логотип с отскоком
-  const sticker = useRef(new Animated.Value(0)).current;  // 900–1300: тень и подпись
-  const loading = useRef(new Animated.Value(0)).current;  // 1300+: полоса и подпись под ней
+  // Тайминги — раскадровка макета, растянутая до ~5 с.
+  const dot = useRef(new Animated.Value(0)).current;      // 0–500: точка 0 → 1
+  const open = useRef(new Animated.Value(0)).current;     // 500–1100: точка → плашка
+  const logo = useRef(new Animated.Value(0)).current;     // 1100–1800: логотип с отскоком
+  const sticker = useRef(new Animated.Value(0)).current;  // 1700–2400: тень и подпись
+  const loading = useRef(new Animated.Value(0)).current;  // 2400+: полоса и подпись под ней
 
   useEffect(() => {
     let alive = true;
@@ -193,11 +194,11 @@ export default function SplashLoader({ percent = 1 }: { percent?: number }) {
         [dot, open, logo, sticker, loading].forEach(v => v.setValue(1));
         return;
       }
-      play(dot, 0, 300, Easing.out(Easing.quad), false);
-      play(open, 300, 300, Easing.bezier(0.2, 0.8, 0.2, 1), false);
-      play(logo, 600, 400, Easing.linear, true);
-      play(sticker, 900, 400, Easing.out(Easing.quad), true);
-      play(loading, 1300, 300, Easing.out(Easing.quad), true);
+      play(dot, 0, 500, Easing.out(Easing.quad), false);
+      play(open, 500, 600, Easing.bezier(0.2, 0.8, 0.2, 1), false);
+      play(logo, 1100, 700, Easing.linear, true);
+      play(sticker, 1700, 700, Easing.out(Easing.quad), true);
+      play(loading, SPLASH_BAR_FROM, 500, Easing.out(Easing.quad), true);
     };
     AccessibilityInfo.isReduceMotionEnabled().then(run).catch(() => run(false));
     return () => { alive = false; };

@@ -433,7 +433,9 @@ for (const shot of SHOTS) {
     // сразу на вкладку его никто не снимает — снимаем сами, иначе на снимке
     // будет оранжевый экран загрузки вместо приложения.
     await page.evaluate(() => { try { window.__hideSplash && window.__hideSplash(); } catch {} });
-    await page.waitForTimeout(1400);
+    // Заставка держится ~5 с — ждём её ухода из DOM.
+    await page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 12000 }).catch(() => {});
+    await page.waitForTimeout(400);
     // Снимок + векторная версия. Вектор нужен, чтобы в Figma приехали
     // слои, а не картинка.
     const snap = async (id) => {

@@ -259,7 +259,9 @@ export default function SupportScreen() {
           ) : null}
         </ScrollView>
 
-        <View style={[s.composer, { paddingBottom: Math.max(insets.bottom, 12) + 4 }]}>
+        {/* Поле ввода — вплотную над полоской «домой»: прежний отступ
+            (вырез + 4) поднимал его заметно выше края экрана. */}
+        <View style={[s.composer, { paddingBottom: Math.max(insets.bottom - 8, 10) }]}>
           <TextInput
             style={s.input}
             value={text}
@@ -387,9 +389,9 @@ const s = StyleSheet.create({
   },
   bubble: {
     maxWidth: '100%',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   bot: {
     backgroundColor: JT.accentSoft,
@@ -409,13 +411,14 @@ const s = StyleSheet.create({
     borderColor: JT.ink,
     borderBottomRightRadius: 6,
   },
+  // Текст сообщений легче и компактнее (просьба владельца 28.09.2026).
   bubbleTxt: {
-    fontFamily: EditFonts.text600,
-    fontSize: 15,
-    lineHeight: 22,
+    fontFamily: EditFonts.text500,
+    fontSize: 14,
+    lineHeight: 20,
     color: JT.ink,
   },
-  mineTxt: { fontFamily: EditFonts.text700 },
+  mineTxt: { fontFamily: EditFonts.text600 },
   suggestions: { gap: 10, marginTop: 6 },
   suggestion: {
     alignSelf: 'flex-start',
@@ -457,7 +460,7 @@ const s = StyleSheet.create({
   },
   composer: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1.5,
     borderTopColor: '#EFE7DC',
     backgroundColor: JT.background,

@@ -92,6 +92,9 @@ class ControlState:
     # него нет ни label, ни name.
     section: str = ""
     options: list[OptionState] = field(default_factory=list)
+    # Метка элемента в живой странице браузерного движка (browser_engine.py,
+    # атрибут data-jt-ref). HTTP-движку не нужна и остаётся пустой.
+    dom_ref: str = ""
     file_path: str | None = None
     file_paths: list[str] = field(default_factory=list)
 
@@ -330,6 +333,7 @@ class _SemanticParser(HTMLParser):
             formmethod=(attrs.get("formmethod", "") or "").lower(),
             formenctype=(attrs.get("formenctype", "") or "").lower(),
             formnovalidate="formnovalidate" in attrs,
+            dom_ref=attrs.get("data-jt-ref", ""),
         )
         self.controls.append(c)
         if self.current_form is not None:

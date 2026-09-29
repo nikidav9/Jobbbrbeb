@@ -25,7 +25,8 @@ SECRETS=/opt/jobtoo-secrets/env
 # даже на задыхающейся машине.
 avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 if [ "${avail_kb:-0}" -gt 0 ] && [ "${avail_kb:-0}" -lt 614400 ] && command -v docker >/dev/null 2>&1; then
-  pw=$(docker ps -q --filter 'ancestor=mcr.microsoft.com/playwright:v1.51.1-jammy' 2>/dev/null || true)
+  pw=$(docker ps -q --filter 'ancestor=mcr.microsoft.com/playwright:v1.51.1-jammy' \
+    --filter 'ancestor=mcr.microsoft.com/playwright/python:v1.63.0-jammy' 2>/dev/null || true)
   if [ -n "$pw" ]; then
     echo "$pw" | xargs -r docker kill >/dev/null 2>&1 || true
     echo "$(date -Is) [память] доступно ${avail_kb} КБ — остановлены браузерные контейнеры" >> /var/log/jt-apply.log
@@ -449,6 +450,52 @@ if [ -f "$REPO/jupiter/run_worker.py" ]; then
     say "jupiter" "воркер запущен"
   else
     say "jupiter" "воркер не запустился"
+  fi
+fi
+
+# ── Jupiter: браузерный воркер (JUPITER_ENGINE=browser) ──────────────────
+# Развёрнут, но ВЫКЛЮЧЕН: без флага /etc/jobtoo/jupiter-browser.enabled
+# служба не стартует (ConditionPathExists), поведение боя не меняется.
+# Включить: touch /etc/jobtoo/jupiter-browser.enabled  (bootstrap запустит
+# службу в течение минуты). Выключить: rm флага (bootstrap остановит).
+# Секреты — из того же $SECRETS, что у jt-jupiter; YANDEX_GPT_API_KEY и
+# YANDEX_GPT_FOLDER_ID дописываются туда вручную, в репозитории их нет.
+if [ -f "$REPO/infra/jupiter-browser-run.sh" ]; then
+  install -m 755 "$REPO/infra/jupiter-browser-run.sh" /usr/local/bin/jt-jupiter-browser
+  mkdir -p /etc/jobtoo /var/lib/jupiter-browser
+  if [ ! -f /etc/systemd/system/jt-jupiter-browser.service ]; then
+    cat > /etc/systemd/system/jt-jupiter-browser.service <<SVCEOF
+[Unit]
+Description=JobToo: Jupiter browser worker (JUPITER_ENGINE=browser)
+After=docker.service network-online.target
+Wants=docker.service
+ConditionPathExists=/etc/jobtoo/jupiter-browser.enabled
+
+[Service]
+EnvironmentFile=$SECRETS
+Environment=JOBTOO_URL=https://jobtoo.ru
+Environment=JUPITER_ENGINE=browser
+ExecStart=/usr/local/bin/jt-jupiter-browser
+ExecStop=-/usr/bin/docker stop jt-jupiter-browser
+MemoryMax=1500M
+Restart=on-failure
+RestartSec=30
+Nice=10
+StandardOutput=append:/var/log/jt-jupiter-browser.log
+StandardError=append:/var/log/jt-jupiter-browser.log
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+    systemctl daemon-reload
+    say "jupiter-browser" "юнит создан, выключен (нет флага)"
+  fi
+  if [ -f /etc/jobtoo/jupiter-browser.enabled ]; then
+    systemctl is-active --quiet jt-jupiter-browser.service 2>/dev/null \
+      || systemctl start --no-block jt-jupiter-browser.service >/dev/null 2>&1 || true
+  else
+    systemctl is-active --quiet jt-jupiter-browser.service 2>/dev/null \
+      && systemctl stop jt-jupiter-browser.service >/dev/null 2>&1 || true
   fi
 fi
 

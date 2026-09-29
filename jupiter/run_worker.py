@@ -26,6 +26,7 @@ from remote_tasks import RemoteTaskQueue
 from site_compat import AUDITED_SITES, live_ready, recon_ok_hosts
 from submission import ReceiptStore
 from tasks import ApplicationTask
+import browser_engine
 import worker
 
 log = logging.getLogger("jupiter")
@@ -79,6 +80,19 @@ def main() -> int:
     handoffs_path = os.environ.get("JUPITER_HANDOFFS", "").strip() or None
     lease_seconds = int(os.environ.get("JUPITER_LEASE_SECONDS", "300"))
 
+    engine_kind = os.environ.get("JUPITER_ENGINE", "http").strip().lower() or "http"
+    if engine_kind not in ("http", "browser"):
+        sys.exit(f"JUPITER_ENGINE должен быть http или browser, а не {engine_kind!r}")
+    chromium_path = os.environ.get("JUPITER_CHROMIUM", "").strip() or None
+    if engine_kind == "browser" and browser_engine.sync_playwright is None:
+        # Ошибка при старте, а не посреди задачи.
+        sys.exit(
+            "JUPITER_ENGINE=browser требует Playwright: pip install playwright "
+            "(и Chromium — JUPITER_CHROMIUM или playwright install chromium)"
+        )
+    # Браузерные движки, созданные фабрикой; закрываются после каждой задачи.
+    open_engines: list = []
+
     receipts = ReceiptStore(receipts_path)
     handoffs = HandoffStore(handoffs_path)
 
@@ -102,20 +116,39 @@ def main() -> int:
         return profile
 
     def agent_factory(task: ApplicationTask) -> JupiterAgent:
+        dry_run = not bool(task.submission_authorized_at)
+        engine = None
+        if engine_kind == "browser":
+            engine = browser_engine.JupiterBrowserEngine(
+                allowed_hosts=set(),
+                read_only=dry_run,
+                executable_path=chromium_path,
+            )
+            open_engines.append(engine)
         return JupiterAgent(
             allowed_hosts=set(),
             max_steps=max_steps,
-            dry_run=not bool(task.submission_authorized_at),
+            dry_run=dry_run,
             receipts=receipts,
             handoffs=handoffs,
+            **({"engine": engine} if engine is not None else {}),
         )
+
+    def close_engines() -> None:
+        # Одна браузерная задача за раз: после каждой Chromium закрывается.
+        while open_engines:
+            engine = open_engines.pop()
+            try:
+                engine.close()
+            except Exception:
+                log.exception("не удалось закрыть браузерный движок")
 
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT, _on_signal)
 
     log.info(
-        "воркер %s запущен, сервер %s, режим по согласию заявки",
-        worker_id, base_url,
+        "воркер %s запущен, сервер %s, движок %s, режим по согласию заявки",
+        worker_id, base_url, engine_kind,
     )
 
     last_requeue = 0.0
@@ -140,6 +173,8 @@ def main() -> int:
             log.exception("ошибка в run_once")
             time.sleep(poll_interval)
             continue
+        finally:
+            close_engines()
 
         if result is None:
             log.debug("очередь пуста, жду %d сек", poll_interval)
