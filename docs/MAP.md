@@ -1349,7 +1349,8 @@ ATS-платформ, куда вакансия может увести анке
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`. Юридическая сверка —
-`docs/jupiter-browser-legal.md`.
+`docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
+анкет из 33 с формой) и список правок движка — `docs/jupiter-browser-survey.md`.
 
 | Файл | Что внутри |
 |---|---|
