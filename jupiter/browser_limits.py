@@ -229,7 +229,7 @@ class TaskWatchdog:
     зависший вызов Playwright в основном потоке падает исключением; дальше
     вызывающий делает engine.close() как обычно.
 
-        with TaskWatchdog(180, kill=lambda: kill_tree(engine_root_pid(engine))) as wd:
+        with watch_engine(engine, 180) as wd:
             run_task(engine)
         if wd.fired: ...  # задача убита по времени
 
@@ -267,9 +267,19 @@ class TaskWatchdog:
         self.cancel()
 
 
+def kill_engine_browser(engine: object) -> list[int]:
+    """Убить Chromium одного движка, оставив живым node-драйвер Playwright.
+    Так надо: убитый драйвер оставляет engine.close() в гонке (замер: ~50%
+    зависаний в context.close()), а при убитом браузере драйвер сам сообщает
+    «browser has been closed», зависший вызов падает, close() отрабатывает чисто.
+    Драйвер не нашли — запасной путь: все Chromium нашего процесса."""
+    pid = engine_root_pid(engine)
+    if pid is None:
+        return kill_stray_chromium()
+    return kill_stray_chromium(pid)
+
+
 def watch_engine(engine: object, timeout: float = WATCHDOG_TIMEOUT_S) -> TaskWatchdog:
-    """Watchdog на конкретный движок: убивает только его дерево процессов."""
-    def kill() -> object:
-        pid = engine_root_pid(engine)
-        return kill_tree(pid) if pid else kill_stray_chromium()
-    return TaskWatchdog(timeout, kill)
+    """Watchdog на конкретный движок: убивает только его Chromium (не соседние
+    движки этого же процесса). Дальше вызывающий делает engine.close()."""
+    return TaskWatchdog(timeout, lambda: kill_engine_browser(engine))
