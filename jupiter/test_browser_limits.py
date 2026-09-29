@@ -66,9 +66,12 @@ class ParallelismTest(unittest.TestCase):
         f = bl.max_parallel_browsers
         self.assertEqual(f(0), 1)       # хуже некуда — всё равно одна задача
         self.assertEqual(f(1200), 1)
-        self.assertEqual(f(2048), 2)    # (2048-1024)//500
-        self.assertEqual(f(4096), 4)    # 6, но упор в HARD_CAP=4
+        self.assertEqual(f(2048), 1)    # (2048-1024)//600
+        self.assertEqual(f(2300, hard_cap=4), 2)
+        self.assertEqual(f(4096, hard_cap=8), 5)
+        self.assertEqual(f(4096, hard_cap=4), 4)
         self.assertEqual(f(64000), bl.HARD_CAP)
+        self.assertLessEqual(bl.HARD_CAP, 4)
         self.assertEqual(f(4096, hard_cap=2), 2)
         self.assertEqual(f(3000, per_browser_mb=1000, reserve_mb=0), 3)
 

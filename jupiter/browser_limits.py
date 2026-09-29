@@ -31,9 +31,9 @@ WATCHDOG_TIMEOUT_S = 180.0
 
 # Оценка по замеру: один движок (браузер + node-драйвер + вкладка) на тяжёлой
 # странице. Значения округлены вверх, с запасом на страницы тяжелее замеренной.
-PER_BROWSER_MB = 500
+PER_BROWSER_MB = 600
 RESERVE_MB = 1024  # память под ОС, PHP, сам воркер и всплески
-HARD_CAP = 4       # больше — упирается в CPU и анти-бот сайтов, а не в память
+HARD_CAP = min(4, os.cpu_count() or 1)  # больше — упирается в CPU и анти-бот сайтов, а не в память
 
 OWNER_ENV = "JUPITER_BROWSER_OWNER"
 _CHROME_NAMES = ("chrome", "chrome_crashpad", "chromium", "headless_shell")
