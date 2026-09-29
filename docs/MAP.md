@@ -1393,7 +1393,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `jupiter/policy.py` | Сетевая политика: резолв, отсечение внутренних сетей, закрепление адреса |
 | `jupiter/tasks.py` | Очередь задач подачи: аренда, сердцебиение, чекпоинты, повторы |
 | `jupiter/remote_tasks.py` | HTTP-мост к серверной очереди + `fetch_profile` для загрузки профиля кандидата из базы |
-| `jupiter/run_worker.py` | Точка входа: цикл `run_once`, профиль кандидата из базы по `user_id` задачи |
+| `jupiter/run_worker.py` | Точка входа: цикл `run_once`, профиль кандидата из базы по `user_id` задачи; `JUPITER_ENGINE=browser` — сторож задачи `browser_limits.watch_engine` (`JUPITER_TASK_TIMEOUT_S`, 240 с; сработал → `NAVIGATION_FAILED`/повтор), проверка памяти перед задачей (~1,6 ГБ свободно), добивание своих Chromium; YandexGPT (`YANDEX_GPT_*` в env) → `field_mapper` агента |
 | `services/jupiterTimeline.ts` | Статус, метка и строка отклика Юпитера. `jupiterVacancyClosed`: сбор погасил вакансию (`vacancy_active=false` из `jupiterMyApplications`), а отклик не ушёл — «Вакансия закрыта работодателем», без «Открыть анкету», не в «Ждут вас» (решение владельца 26.09) |
 | `jupiter/worker.py` | Воркер: берёт задачу и доводит её агентом; боевую задачу на сайт без `live_ready` не исполняет, а паркует с `SITE_NOT_VERIFIED` («Сайт ещё подключаем» в «Откликах») |
 | `jupiter/handoff.py` | Просьба к человеку и состояние возврата: токен, куки, адрес шага |
@@ -1553,7 +1553,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 Раздел «Внешние вакансии» (`/external`, `fetchExternal`): каталог — из открытого `/api/feed_stats.php` (там же правило IT-ленты и Москвы, отдаёт CORS `*`), свайпы `jm_ext_swipes` и отклики Jupiter `jm_jupiter_applications` за 90 дней, здоровье сбора — поля `last_*` в `jm_ext_sources`. Показы карточек не пишутся (события сняты в 096), воронка начинается со свайпа вправо.
 Раздел «Юпитер» (`dashboard/app/jupiter/page.tsx`) — замер автооткликов по сайтам
 компаний за 7/30 дней: отправил сам, подтверждено сайтом, ждут человека, «сайт ещё
-подключаем», частая причина остановки. Карточка «По движку» — HTTP/браузер из `checkpoint.summary.engine`, капча ждали/решена. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
+подключаем», частая причина остановки. Карточка «По движку» — колонка `engine` заявки (миграция 136), строка «Переведено на браузер»; блок «Капча» — `jm_jupiter_captcha` (135): показано/решено/неверно/не успели/среднее время ответа, только `CAPTCHA_COLUMNS` (без `user_id`, картинки и ответа); не прочиталась — прочерки. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
 людей панель у базы не просит (`JUPITER_COLUMNS`), охрана — `tests/jupiter_stats.test.ts`.
 Выкладка — отдельная, через релизы GitHub; сервер тянет их сам.
 
