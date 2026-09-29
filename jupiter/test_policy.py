@@ -153,5 +153,28 @@ class EnginePinning(unittest.TestCase):
         engine.assert_allowed("https://example.test/vacancy")
 
 
+
+class StartHostVariants(unittest.TestCase):
+    """Разведка 29.09: редирект melonfashion.ru → www.melonfashion.ru резался
+    как чужой домен (Familia, Винлаб, ПИК, Инград, World Class)."""
+
+    def expanded(self, url):
+        from agent import JupiterAgent
+        agent = JupiterAgent(set(), dry_run=True)
+        agent._expand_policy_for_start(url)
+        return agent.allowed_hosts
+
+    def test_bare_start_allows_www(self):
+        self.assertIn("www.melonfashion.ru", self.expanded("https://melonfashion.ru/"))
+
+    def test_www_start_allows_bare(self):
+        self.assertIn("pik.ru", self.expanded("https://www.pik.ru/career"))
+
+    def test_other_subdomains_stay_closed(self):
+        hosts = self.expanded("https://famil.ru/")
+        self.assertNotIn("shop.famil.ru", hosts)
+        self.assertNotIn("evil-famil.ru", hosts)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -189,7 +189,8 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
         },
     ),
     SiteProfile("Вкусно — и точка", ("rabotaitochka.ru",)),
-    SiteProfile("ROSTIC'S", ("rostics.ru",)),
+    # Анкеты — на своём карьерном домене (разведка 29.09 резала редирект).
+    SiteProfile("ROSTIC'S", ("rostics.ru",), ("rabotavrostics.ru", "www.rabotavrostics.ru")),
     SiteProfile("Burger King Россия", ("burgerkingrus.ru",)),
     SiteProfile(
         "Теремок",
@@ -307,6 +308,10 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("Reksoft", ("career.reksoft.com",), ("www.career.reksoft.com",)),
     SiteProfile("iFellow", ("ifellow.ru",), ("ifellowgroup.ru", "www.ifellowgroup.ru")),
     SiteProfile("Arenadata", ("career.arenadata.tech",), ("arenadata.tech", "www.arenadata.tech")),
+    # Разведка 29.09: раздел вакансий уводит на свой же карьерный домен.
+    SiteProfile("SUNLIGHT", ("job.sunlight.net",), ("rabota.sunlight.net",)),
+    SiteProfile("Тануки", ("job.tanuki.ru",), ("tanukifamily.ru", "www.tanukifamily.ru")),
+    SiteProfile("Спортс", ("sports.ru",), ("careers.sports.ru",)),
 )
 
 

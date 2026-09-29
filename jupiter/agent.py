@@ -1687,7 +1687,11 @@ class JupiterAgent:
     def _expand_policy_for_start(self, url: str) -> None:
         parsed = urllib.parse.urlparse(url)
         if parsed.hostname:
-            self.allowed_hosts.add(parsed.hostname.lower())
+            host = parsed.hostname.lower()
+            # melonfashion.ru → www.melonfashion.ru — тот же сайт: разведка 29.09
+            # резала этот редирект как чужой домен у Familia, Винлаба, ПИК и др.
+            bare = host.removeprefix("www.")
+            self.allowed_hosts.update({host, bare, "www." + bare})
         self.allowed_hosts.update(trusted_hosts_for(url))
         self.engine.allowed_hosts.update(self.allowed_hosts)
 
