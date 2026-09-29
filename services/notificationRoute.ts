@@ -14,9 +14,17 @@ const TO_FEED = new Set(['nearby_shift', 'nearby_perm']);
 
 export function routeForNotification(
   type?: string | null,
-  payload?: { chatId?: string } | null,
+  payload?: { chatId?: string; applicationId?: string } | null,
 ): NotifTarget | null {
   if (!type) return null;
+  // Юпитер ждёт слово с картинки: сразу на экран капчи этой заявки. Id
+  // заявки приходит только в payload колокольчика (системный пуш нейтральный,
+  // {type:'refresh'}); без id — в «Отклики», там заявка в «Нужны вы».
+  if (type === 'jupiter_captcha') {
+    return payload?.applicationId
+      ? { pathname: '/jupiter-captcha', params: { id: payload.applicationId } }
+      : { pathname: '/(tabs)/matches' };
+  }
   if (type === 'message') {
     return payload?.chatId
       ? { pathname: '/chat-room', params: { chatId: payload.chatId } }

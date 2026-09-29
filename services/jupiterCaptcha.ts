@@ -1,11 +1,11 @@
 // Капча карьерного сайта: Юпитер остановился на картинке, человек вводит слово.
 //
-// Серверные функции jupiterCaptchaGet / jupiterCaptchaAnswer живут в
-// services/db.ts (proxy там не экспортируется, свой fetch с токеном не
-// дублируем). Импорт через пространство имён и приведение типа — чтобы
-// экран собирался и до появления этих функций; когда они появятся, обёртки
-// ниже начнут работать без правок.
-import * as db from '@/services/db';
+// Тонкая обёртка над jupiterCaptchaGet / jupiterCaptchaAnswer из services/db.ts:
+// переводит ответ сервера (snake_case) в вид, удобный экрану.
+import {
+  jupiterCaptchaAnswer as dbJupiterCaptchaAnswer,
+  jupiterCaptchaGet as dbJupiterCaptchaGet,
+} from '@/services/db';
 
 export type JupiterCaptcha = {
   id: string;
@@ -15,19 +15,14 @@ export type JupiterCaptcha = {
   expiresAt: string;
 };
 
-type CaptchaApi = {
-  jupiterCaptchaGet?: (userId: string, applicationId: string) => Promise<JupiterCaptcha | null>;
-  jupiterCaptchaAnswer?: (userId: string, captchaId: string, answer: string) => Promise<{ ok: boolean }>;
-};
-
-const api = db as unknown as CaptchaApi;
-
+/** Ждущая капча заявки или null, если её нет или она просрочена. */
 export async function jupiterCaptchaGet(userId: string, applicationId: string): Promise<JupiterCaptcha | null> {
-  if (!api.jupiterCaptchaGet) throw new Error('Проверка сайта пока недоступна');
-  return api.jupiterCaptchaGet(userId, applicationId);
+  const r = await dbJupiterCaptchaGet(userId, applicationId);
+  if (!r) return null;
+  return { id: r.id, imagePng: r.image_png, company: null, expiresAt: r.expires_at };
 }
 
-export async function jupiterCaptchaAnswer(userId: string, captchaId: string, answer: string): Promise<{ ok: boolean }> {
-  if (!api.jupiterCaptchaAnswer) throw new Error('Проверка сайта пока недоступна');
-  return api.jupiterCaptchaAnswer(userId, captchaId, answer);
+/** Ответ человека на капчу заявки. Сервер ищет ждущую капчу по заявке сам. */
+export async function jupiterCaptchaAnswer(userId: string, applicationId: string, answer: string): Promise<void> {
+  await dbJupiterCaptchaAnswer(userId, applicationId, answer);
 }

@@ -30,6 +30,14 @@ export function jupiterNeedsSberConsent(a: JupiterApplication): boolean {
     && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
 }
 
+/**
+ * Браузерный движок Юпитера упёрся в капчу и ждёт слово от человека: картинка
+ * уже у нас, ответ вводится на экране /jupiter-captcha, и отклик уходит сразу.
+ */
+export function jupiterNeedsCaptcha(a: Pick<JupiterApplication, 'state' | 'reasonCode'>): boolean {
+  return a.state === 'action_required' && a.reasonCode === 'CAPTCHA_HUMAN';
+}
+
 function stateStatus(state: JupiterApplicationState): JupiterStatus {
   switch (state) {
     case 'ready_to_submit': return { label: 'Анкета заполнена · не отправлена', ...WAIT };
@@ -48,6 +56,7 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   if (jupiterVacancyClosed(a)) return { label: 'Вакансия закрыта работодателем', ...CLOSED };
   if (a.reasonCode === 'LIVE_AUTHORIZATION_REVOKED') return { label: 'Автоотклик выключен · не отправлено', ...WAIT };
   if (jupiterNeedsSberConsent(a)) return { label: 'Нужно согласие Сбера · не отправлено', ...WAIT };
+  if (jupiterNeedsCaptcha(a)) return { label: 'Нужна проверка сайта', ...WAIT };
   if (a.reasonCode === 'UNSUPPORTED_SCRIPT') return { label: 'Нужен браузер · отклик не отправлен', ...WAIT };
   if (a.reasonCode === 'PHONE_FILL') return { label: 'Ждёт отправки · анкета заполнится сама', ...WAIT };
   if (a.reasonCode === 'SITE_NOT_VERIFIED') return { label: 'Сайт ещё подключаем · отклик сохранён', ...INFO };
@@ -135,6 +144,7 @@ export function fillNote(detail: JupiterEvent['detail']): string | undefined {
 
 const ACTION_REASONS: Record<string, string> = {
   CAPTCHA_REQUIRED: 'Сайт просит проверку «я не робот» — отправьте сами',
+  CAPTCHA_HUMAN: 'Введите слово с картинки — отклик уйдёт сразу',
   PHONE_FILL: 'Анкету заполним за вас — останется нажать «Отправить»',
   SITE_NOT_VERIFIED: 'Сайт ещё подключаем — отклик можно отправить самому',
   CONSENT_REQUIRED: 'Работодатель просит согласие на обработку данных',
