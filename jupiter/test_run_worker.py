@@ -586,7 +586,7 @@ class TestFillSummary(unittest.TestCase):
     def test_counts_fields_keys_and_resume_without_values(self) -> None:
         from worker import fill_summary
         summary = fill_summary([
-            {"action": "open", "url": "https://e.ru"},
+            {"action": "open", "url": "https://e.ru", "engine": "jupiter-browser-engine"},
             {"action": "fill", "field": "name", "key": "first_name", "value": "Иван"},
             {"action": "fill", "field": "tel", "key": "phone", "value": "+7999"},
             {"action": "select", "field": "city", "key": "city", "value": "Москва"},
@@ -596,11 +596,12 @@ class TestFillSummary(unittest.TestCase):
         self.assertEqual(summary["fields"], 4)
         self.assertEqual(summary["keys"], ["first_name", "phone", "city", "personal_data_consent"])
         self.assertTrue(summary["resume"])
+        self.assertEqual(summary["engine"], "jupiter-browser-engine")
         self.assertNotIn("Иван", str(summary))
 
     def test_empty_trajectory(self) -> None:
         from worker import fill_summary
-        self.assertEqual(fill_summary([]), {"fields": 0, "keys": [], "resume": False})
+        self.assertEqual(fill_summary([]), {"fields": 0, "keys": [], "resume": False, "engine": ""})
 
 
 if __name__ == "__main__":

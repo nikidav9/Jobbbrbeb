@@ -50,6 +50,7 @@ import browser_guard
 from browser_custom_controls import (
     CLONE_HOOK_JS, apply_custom_select, discover_custom_selects, fill_masked,
 )
+from agent import is_application_form
 from browser_frames import find_application_frames
 from browser_overlays import dismiss_overlays
 from policy import NetworkPolicy, PolicyError, is_blocked_address, literal_loopback
@@ -66,6 +67,8 @@ except ImportError:  # pragma: no cover
 # режут как бота, но и не выдаём себя за человека.
 UA_SUFFIX = " JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)"
 CUSTOM_WIDGETS = "[role=combobox]:not(select),[role=listbox]:not(select),[aria-haspopup=listbox]:not(select)"
+# Ответы, при которых анкеты не будет: защита от ботов, гео- или VPN-блок.
+BLOCK_STATUSES = {401, 403, 407, 417, 429, 451}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Кнопки, открывающие анкету. Порядок — от самых точных.
 APPLY_TEXT_RE = (
@@ -90,6 +93,7 @@ SNAPSHOT_JS = r"""
   // Файловые поля и галочки сайты прячут и рисуют вместо них свои кнопки —
   // заполнять их всё равно надо. Прочее невидимое агенту не показываем.
   const keepHidden = el => ['file', 'checkbox', 'radio'].includes((el.type || '').toLowerCase());
+  if (!document.documentElement) return { html: '<!doctype html><html></html>', url: location.href, virtualForm: false };
   const clone = document.documentElement.cloneNode(true);
   const byRef = new Map();
   clone.querySelectorAll('[data-jt-ref]').forEach(c => byRef.set(c.getAttribute('data-jt-ref'), c));
@@ -130,7 +134,7 @@ SNAPSHOT_JS = r"""
   // общего предка. Кнопки type=button с «отправить/далее» в ней — submit:
   // иначе агент не узнает в них отправку.
   const submitRe = new RegExp(submitReSrc, 'i');
-  const loose = live.filter(el => {
+  let loose = live.filter(el => {
     if (el.form || el.hasAttribute('form')) return false;
     const tag = el.tagName.toLowerCase();
     const type = (el.type || '').toLowerCase();
@@ -139,10 +143,25 @@ SNAPSHOT_JS = r"""
     return visible(el) || keepHidden(el);
   });
   let virtualForm = false;
+  const buttons = live.filter(el => !el.form && visible(el)
+    && (el.tagName === 'BUTTON' || ['submit', 'button'].includes((el.type || '').toLowerCase()))
+    && submitRe.test((el.innerText || el.value || '').trim()));
+  // Границы анкеты — по личным полям и кнопке отправки: калькулятор или
+  // фильтр на той же странице в анкету не попадает (fsk.ru, 29.09.2026).
+  const personalRe = /имя|фамил|фио|name|телефон|phone|mail|почт|резюме|resume|\bcv\b/i;
+  const personal = loose.filter(el => {
+    const t = (el.type || '').toLowerCase();
+    if (['email', 'tel', 'file'].includes(t)) return true;
+    const lab = el.labels && el.labels[0] ? el.labels[0].innerText : '';
+    return personalRe.test([lab, el.name, el.id, el.placeholder, el.getAttribute('aria-label')].join(' '));
+  });
+  if (personal.length) {
+    const anchor = personal.concat(buttons);
+    let scope = anchor[0];
+    while (scope && !anchor.every(n => scope.contains(n))) scope = scope.parentElement;
+    if (scope) loose = loose.filter(el => scope.contains(el));
+  }
   if (loose.length) {
-    const buttons = live.filter(el => !el.form && visible(el)
-      && (el.tagName === 'BUTTON' || ['submit', 'button'].includes((el.type || '').toLowerCase()))
-      && submitRe.test((el.innerText || el.value || '').trim()));
     const nodes = loose.concat(buttons).map(el => byRef.get(el.getAttribute('data-jt-ref'))).filter(Boolean);
     const ancestors = n => { const out = []; for (let x = n; x; x = x.parentElement) out.push(x); return out; };
     let lca = null;
@@ -206,6 +225,7 @@ FIND_APPLY_JS = r"""
 
 
 class JupiterBrowserEngine:
+    name = "jupiter-browser-engine"
     """Chromium с интерфейсом JupiterWebEngine."""
 
     def __init__(
@@ -361,10 +381,17 @@ class JupiterBrowserEngine:
         self._tab.wait_for_timeout(self.settle_ms)
 
     def _snapshot(self) -> PageState:
-        try:
-            data = self._tab.evaluate(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
-        except PlaywrightError as exc:
-            raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
+        data = None
+        for attempt in range(2):
+            try:
+                data = self._tab.evaluate(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
+                break
+            except PlaywrightError as exc:
+                # Страница перерисовалась или ушла по адресу посреди снимка —
+                # дождаться и снять ещё раз (fsk.ru, 29.09.2026).
+                if attempt or "context was destroyed" not in str(exc).lower():
+                    raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
+                self._settle()
         parser = _SemanticParser(data["url"])
         parser.feed(data["html"])
         parser.close()
@@ -389,11 +416,13 @@ class JupiterBrowserEngine:
 
     @staticmethod
     def _has_candidate_form(page: PageState) -> bool:
-        text_like = {"text", "email", "tel", "file", ""}
+        # Поиск и фильтры вакансий — тоже формы с текстовыми полями; из-за них
+        # «Откликнуться» не нажимался (job.rt.ru, metro, gum.ru; 29.09.2026).
+        # Анкета — только то, что агент сам признает анкетой кандидата.
         return any(
-            c.form_index is not None and c.tag in {"input", "textarea"}
-            and c.type in text_like and not c.disabled
-            for c in page.controls
+            is_application_form(page, form.index)
+            or any(page.controls[i].type == "file" for i in form.control_indices)
+            for form in page.forms
         )
 
     def _reveal_form(self, page: PageState) -> PageState:
@@ -452,7 +481,13 @@ class JupiterBrowserEngine:
         except PlaywrightError as exc:
             raise EngineTransportError(f"Страница не открылась: {exc}") from exc
         self._last_status = response.status if response is not None else 200
-        self.assert_allowed(self._tab.url)
+        final = self._tab.url
+        if final.startswith(("chrome-error:", "about:blank")) and not url.startswith("about:"):
+            raise EngineTransportError(f"Страница не открылась: браузер показал ошибку ({final[:40]})")
+        if self._last_status in BLOCK_STATUSES:
+            raise EngineTransportError(
+                f"Сайт не пустил браузер: HTTP {self._last_status} (защита от ботов или блокировка)")
+        self.assert_allowed(final)
         self._settle()
 
     # ── Интерфейс JupiterWebEngine ─────────────────────────────────────────
