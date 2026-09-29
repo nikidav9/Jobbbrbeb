@@ -25,12 +25,22 @@ SECRETS=/opt/jobtoo-secrets/env
 # даже на задыхающейся машине.
 avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 if [ "${avail_kb:-0}" -gt 0 ] && [ "${avail_kb:-0}" -lt 614400 ] && command -v docker >/dev/null 2>&1; then
-  pw=$(docker ps -q --filter 'ancestor=mcr.microsoft.com/playwright:v1.51.1-jammy' \
-    --filter 'ancestor=mcr.microsoft.com/playwright/python:v1.63.0-jammy' 2>/dev/null || true)
+  pw=$(docker ps -q --filter 'ancestor=mcr.microsoft.com/playwright:v1.51.1-jammy' 2>/dev/null || true)
   if [ -n "$pw" ]; then
     echo "$pw" | xargs -r docker kill >/dev/null 2>&1 || true
     echo "$(date -Is) [память] доступно ${avail_kb} КБ — остановлены браузерные контейнеры" >> /var/log/jt-apply.log
   fi
+fi
+# Браузерный воркер Jupiter и его разведка идут не в Docker, а службами:
+# гасим их браузеры так же. Воркер поднимет Restart=on-failure через минуту,
+# а заявку, оборванную на полпути, сервер отдаст снова по истечении аренды.
+if [ "${avail_kb:-0}" -gt 0 ] && [ "${avail_kb:-0}" -lt 614400 ]; then
+  for u in jt-jupiter-browser.service jt-recon-browser.service; do
+    if systemctl is-active --quiet "$u" 2>/dev/null; then
+      systemctl kill -s KILL "$u" >/dev/null 2>&1 || true
+      echo "$(date -Is) [память] доступно ${avail_kb} КБ — остановлен $u" >> /var/log/jt-apply.log
+    fi
+  done
 fi
 
 say() {
@@ -454,32 +464,90 @@ if [ -f "$REPO/jupiter/run_worker.py" ]; then
 fi
 
 # ── Jupiter: браузерный воркер (JUPITER_ENGINE=browser) ──────────────────
-# Развёрнут, но ВЫКЛЮЧЕН: без флага /etc/jobtoo/jupiter-browser.enabled
-# служба не стартует (ConditionPathExists), поведение боя не меняется.
-# Включить: touch /etc/jobtoo/jupiter-browser.enabled  (bootstrap запустит
-# службу в течение минуты). Выключить: rm флага (bootstrap остановит).
-# Секреты — из того же $SECRETS, что у jt-jupiter; YANDEX_GPT_API_KEY и
-# YANDEX_GPT_FOLDER_ID дописываются туда вручную, в репозитории их нет.
+# Включается ИЗ РЕПОЗИТОРИЯ: есть файл infra/jupiter-browser.enabled — служба
+# работает, удалили файл — после выкладки служба останавливается. Флаг
+# /etc/jobtoo/jupiter-browser.enabled bootstrap приводит к репозиторию каждый
+# заход, так что ставить или снимать его руками бесполезно.
+#
+# При включении:
+# - Playwright $PW в отдельный venv /opt/jupiter-browser/venv и Chromium с
+#   системными библиотеками — делает ExecStartPre (jt-jupiter-browser setup),
+#   повтор только при смене версии, чтобы не держать bootstrap минутами;
+# - одна служба, один браузер (browser_limits: 600 МБ на браузер), потолок
+#   MemoryMax=1500M, воркер от временного пользователя (DynamicUser), а не root:
+#   Chromium ходит по чужим сайтам без песочницы;
+# - политика Chromium с УЦ Минцифры (jupiter/ru_trusted_ca.pem), проверка
+#   сертификатов штатная — см. infra/jupiter-browser-ca-policy.py;
+# - серверу PHP — JUPITER_BROWSER_ENABLED=1 (через $SECRETS и docker compose),
+#   иначе заявки на браузер не переводятся. 1 — только когда браузер уже
+#   поставлен, 0 — когда выключен.
+# Секреты — из того же $SECRETS, что у jt-jupiter, ключ YandexGPT — из
+# /etc/jobtoo/yandex-gpt.env (кладётся руками, в репозитории его нет).
+# Состояние — /var/www/html/jupiter-browser-status.json.
+JB_FLAG=/etc/jobtoo/jupiter-browser.enabled
+JB_BASE=/opt/jupiter-browser
+JB_POLICY=/etc/chromium/policies/managed/jobtoo-ru-ca.json
+YGPT_ENV=/etc/jobtoo/yandex-gpt.env
+mkdir -p /etc/jobtoo
+# Ключ YandexGPT: только root. Файла нет — воркеры идут без YandexGPT.
+if [ -f "$YGPT_ENV" ]; then
+  chown root:root "$YGPT_ENV" && chmod 600 "$YGPT_ENV" || true
+fi
+# Обычному воркеру тот же ключ — дополнением к его юниту: сам юнит
+# создаётся один раз и не переписывается.
+mkdir -p /etc/systemd/system/jt-jupiter.service.d
+printf '[Service]\nEnvironmentFile=-%s\n' "$YGPT_ENV" > /tmp/jt-jupiter-ygpt.conf
+if ! cmp -s /tmp/jt-jupiter-ygpt.conf /etc/systemd/system/jt-jupiter.service.d/yandex-gpt.conf; then
+  mv -f /tmp/jt-jupiter-ygpt.conf /etc/systemd/system/jt-jupiter.service.d/yandex-gpt.conf
+  systemctl daemon-reload
+  systemctl is-active --quiet jt-jupiter.service 2>/dev/null \
+    && systemctl restart jt-jupiter.service >/dev/null 2>&1 || true
+  say "jupiter" "YandexGPT подключён файлом $YGPT_ENV (если он есть)"
+fi
+rm -f /tmp/jt-jupiter-ygpt.conf
+
 if [ -f "$REPO/infra/jupiter-browser-run.sh" ]; then
-  install -m 755 "$REPO/infra/jupiter-browser-run.sh" /usr/local/bin/jt-jupiter-browser
-  mkdir -p /etc/jobtoo /var/lib/jupiter-browser
-  if [ ! -f /etc/systemd/system/jt-jupiter-browser.service ]; then
-    cat > /etc/systemd/system/jt-jupiter-browser.service <<SVCEOF
+  if [ -f "$REPO/infra/jupiter-browser.enabled" ]; then
+    [ -f "$JB_FLAG" ] || { touch "$JB_FLAG"; say "jupiter-browser" "включён из репозитория"; }
+  elif [ -f "$JB_FLAG" ]; then
+    rm -f "$JB_FLAG"
+    say "jupiter-browser" "выключен из репозитория"
+  fi
+
+  JB_CHANGED=0
+  if ! cmp -s "$REPO/infra/jupiter-browser-run.sh" /usr/local/bin/jt-jupiter-browser; then
+    install -m 755 "$REPO/infra/jupiter-browser-run.sh" /usr/local/bin/jt-jupiter-browser
+    JB_CHANGED=1
+  fi
+  cat > /tmp/jt-jupiter-browser.service <<SVCEOF
 [Unit]
 Description=JobToo: Jupiter browser worker (JUPITER_ENGINE=browser)
-After=docker.service network-online.target
-Wants=docker.service
-ConditionPathExists=/etc/jobtoo/jupiter-browser.enabled
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=$JB_FLAG
 
 [Service]
+WorkingDirectory=$REPO/jupiter
 EnvironmentFile=$SECRETS
+EnvironmentFile=-$YGPT_ENV
 Environment=JOBTOO_URL=https://jobtoo.ru
 Environment=JUPITER_ENGINE=browser
-ExecStart=/usr/local/bin/jt-jupiter-browser
-ExecStop=-/usr/bin/docker stop jt-jupiter-browser
+Environment=JUPITER_WORKER_ID=jupiter-browser-%H
+Environment=JUPITER_RECEIPTS=/var/lib/jt-jupiter-browser/receipts.json
+Environment=JUPITER_HANDOFFS=/var/lib/jt-jupiter-browser/handoffs.json
+Environment=PLAYWRIGHT_BROWSERS_PATH=$JB_BASE/ms-playwright
+Environment=HOME=/var/lib/jt-jupiter-browser
+Environment=PYTHONDONTWRITEBYTECODE=1
+DynamicUser=yes
+StateDirectory=jt-jupiter-browser
+ExecStartPre=+/usr/local/bin/jt-jupiter-browser setup
+ExecStart=/usr/local/bin/jt-jupiter-browser run
+TimeoutStartSec=30min
 MemoryMax=1500M
+MemorySwapMax=0
+CPUQuota=100%
 Restart=on-failure
-RestartSec=30
+RestartSec=60
 Nice=10
 StandardOutput=append:/var/log/jt-jupiter-browser.log
 StandardError=append:/var/log/jt-jupiter-browser.log
@@ -487,16 +555,114 @@ StandardError=append:/var/log/jt-jupiter-browser.log
 [Install]
 WantedBy=multi-user.target
 SVCEOF
+  if ! cmp -s /tmp/jt-jupiter-browser.service /etc/systemd/system/jt-jupiter-browser.service; then
+    mv -f /tmp/jt-jupiter-browser.service /etc/systemd/system/jt-jupiter-browser.service
     systemctl daemon-reload
-    say "jupiter-browser" "юнит создан, выключен (нет флага)"
+    JB_CHANGED=1
+    say "jupiter-browser" "юнит обновлён"
   fi
-  if [ -f /etc/jobtoo/jupiter-browser.enabled ]; then
-    systemctl is-active --quiet jt-jupiter-browser.service 2>/dev/null \
-      || systemctl start --no-block jt-jupiter-browser.service >/dev/null 2>&1 || true
+  rm -f /tmp/jt-jupiter-browser.service
+
+  if [ -f "$JB_FLAG" ]; then
+    # Доверие к УЦ Минцифры: политика Chromium, не флаг командной строки.
+    mkdir -p "$(dirname "$JB_POLICY")"
+    if python3 "$REPO/infra/jupiter-browser-ca-policy.py" "$REPO/jupiter/ru_trusted_ca.pem" \
+         > /tmp/jt-ru-ca.json 2>/dev/null \
+       && ! cmp -s /tmp/jt-ru-ca.json "$JB_POLICY"; then
+      install -m 644 -o root -g root /tmp/jt-ru-ca.json "$JB_POLICY"
+      JB_CHANGED=1
+      say "jupiter-browser" "политика Chromium с УЦ Минцифры обновлена"
+    fi
+    rm -f /tmp/jt-ru-ca.json
+    systemctl enable jt-jupiter-browser.service >/dev/null 2>&1 || true
+    JB_SHA="${JUPITER_SHA:-}"
+    if systemctl is-active --quiet jt-jupiter-browser.service 2>/dev/null; then
+      if [ "$JB_CHANGED" = 1 ] || [ "$JB_SHA" != "$(cat "$JB_BASE/.deployed.sha256" 2>/dev/null || true)" ]; then
+        systemctl restart --no-block jt-jupiter-browser.service >/dev/null 2>&1 \
+          && say "jupiter-browser" "перезапущен на новой версии" || true
+        mkdir -p "$JB_BASE"; echo "$JB_SHA" > "$JB_BASE/.deployed.sha256"
+      fi
+    elif [ "$(systemctl show -p ActiveState --value jt-jupiter-browser.service 2>/dev/null)" != activating ]; then
+      # activating — идёт установка (ExecStartPre) или пауза перед повтором.
+      systemctl start --no-block jt-jupiter-browser.service >/dev/null 2>&1 || true
+      mkdir -p "$JB_BASE"; echo "$JB_SHA" > "$JB_BASE/.deployed.sha256"
+    fi
   else
-    systemctl is-active --quiet jt-jupiter-browser.service 2>/dev/null \
-      && systemctl stop jt-jupiter-browser.service >/dev/null 2>&1 || true
+    if systemctl is-active --quiet jt-jupiter-browser.service 2>/dev/null \
+       || [ "$(systemctl show -p ActiveState --value jt-jupiter-browser.service 2>/dev/null)" = activating ]; then
+      systemctl stop jt-jupiter-browser.service >/dev/null 2>&1 || true
+      say "jupiter-browser" "служба остановлена"
+    fi
+    systemctl disable jt-jupiter-browser.service >/dev/null 2>&1 || true
+    [ -f "$JB_POLICY" ] && rm -f "$JB_POLICY" && say "jupiter-browser" "политика Chromium снята"
   fi
+
+  # Браузерная разведка анкет (infra/recon-browser-run.sh) — раз в сутки после
+  # HTTP-разведки jt-recon (04:40; скрипт сам ждёт её конца) и только пока
+  # браузер включён: окружение у неё то же, venv браузерного воркера.
+  if [ -f "$REPO/infra/recon-browser-run.sh" ] && [ -f "$JB_FLAG" ]; then
+    install -m 755 "$REPO/infra/recon-browser-run.sh" /usr/local/bin/jt-recon-browser
+    cat > /tmp/jt-recon-browser.service <<SVCEOF
+[Unit]
+Description=JobToo Jupiter read-only browser recon of employer application forms
+After=network-online.target jt-recon.service
+ConditionPathExists=$JB_FLAG
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jt-recon-browser
+TimeoutStartSec=7h
+MemoryMax=1200M
+MemorySwapMax=0
+Nice=10
+SVCEOF
+    cat > /tmp/jt-recon-browser.timer <<'SVCEOF'
+[Unit]
+Description=Daily read-only browser recon after jt-recon
+
+[Timer]
+OnCalendar=*-*-* 05:10
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+SVCEOF
+    JR_CHANGED=0
+    for u in service timer; do
+      if ! cmp -s "/tmp/jt-recon-browser.$u" "/etc/systemd/system/jt-recon-browser.$u"; then
+        mv -f "/tmp/jt-recon-browser.$u" "/etc/systemd/system/jt-recon-browser.$u"; JR_CHANGED=1
+      fi
+      rm -f "/tmp/jt-recon-browser.$u"
+    done
+    [ "$JR_CHANGED" = 1 ] && systemctl daemon-reload
+    systemctl is-enabled --quiet jt-recon-browser.timer 2>/dev/null \
+      || { systemctl enable --now jt-recon-browser.timer >/dev/null 2>&1 || true; say "recon-browser" "таймер включён"; }
+  elif systemctl is-enabled --quiet jt-recon-browser.timer 2>/dev/null; then
+    systemctl disable --now jt-recon-browser.timer >/dev/null 2>&1 || true
+    systemctl stop jt-recon-browser.service >/dev/null 2>&1 || true
+    say "recon-browser" "таймер выключен вместе с браузером"
+  fi
+
+  # Серверу PHP: переводить ли заявки на браузер. Доезжает до контейнера
+  # через --env-file в общем docker compose up ниже (как JUPITER_MAIL_VERIFIED).
+  if [ -f "$JB_FLAG" ] && [ -f "$JB_BASE/.installed" ]; then JB_PHP=1; else JB_PHP=0; fi
+  if [ -f "$SECRETS" ] && ! grep -qx "JUPITER_BROWSER_ENABLED=$JB_PHP" "$SECRETS"; then
+    sed -i '/^JUPITER_BROWSER_ENABLED=/d' "$SECRETS"
+    echo "JUPITER_BROWSER_ENABLED=$JB_PHP" >> "$SECRETS"
+    say "jupiter-browser" "серверу PHP: JUPITER_BROWSER_ENABLED=$JB_PHP"
+  fi
+
+  # Жив ли браузерный воркер — рядом с status.json, без секретов.
+  jb_prop() { systemctl show -p "$1" --value jt-jupiter-browser.service 2>/dev/null || true; }
+  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"http_воркер":"%s"}\n' \
+    "$(date -Is)" "$([ -f "$JB_FLAG" ] && echo true || echo false)" \
+    "$(jb_prop ActiveState)/$(jb_prop SubState)" "$(jb_prop NRestarts)" \
+    "$(jb_prop ActiveEnterTimestamp)" "$(cat "$JB_BASE/.installed" 2>/dev/null || echo нет)" \
+    "$JB_PHP" "$([ -f "$JB_POLICY" ] && echo true || echo false)" \
+    "$([ -f "$YGPT_ENV" ] && echo true || echo false)" \
+    "$(systemctl is-active jt-jupiter.service 2>/dev/null || true)" \
+    > /var/www/html/jupiter-browser-status.json.tmp 2>/dev/null \
+    && mv -f /var/www/html/jupiter-browser-status.json.tmp /var/www/html/jupiter-browser-status.json || true
 fi
 
 # Dedicated catch-all mailbox. Credentials are supplied in the server-only

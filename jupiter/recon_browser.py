@@ -12,6 +12,17 @@ engine="browser" и browser_actions (что движок сделал сам). �
 отдельном процессе: жёсткий таймаут на сайт и зависший Chromium не роняют обход.
 Одновременно — не больше двух браузеров.
 
+Режим сервера (infra/recon-browser-run.sh, раз в сутки после HTTP-разведки):
+    python3 recon_browser.py --from-http jupiter-recon.json --max-minutes 150 \
+        --workers 1 --out jupiter-recon-browser.json
+Берутся только разделы, где HTTP-итог не dry_run_ok, а упёрся в spa, captcha,
+form_unmapped или no_vacancy: остальное браузер не улучшит (dry_run_ok уже
+есть, aggregator/blocked — не про движок). Сначала — подтвердить вчерашние
+dry_run_ok браузера (иначе они выпадут из live_ready), потом — ещё не
+виденные, потом остальные. По исчерпании --max-minutes новые разделы не
+начинаются. Итог пишется атомарно (tmp + rename): site_compat никогда не
+увидит полфайла.
+
 Запуск:
     python3 recon_browser.py --limit 5 --out /tmp/recon-browser.json
     python3 recon_browser.py --only-hosts vkusvill.ru magnit.ru
@@ -25,6 +36,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -41,6 +53,8 @@ MAX_BROWSERS = 2
 DEFAULT_OUT = "jupiter-recon-browser.json"
 DEFAULT_BASELINE = os.environ.get("JUPITER_RECON_FILE", "jupiter-recon.json")
 RESULT_MARK = "@@RECON_RESULT@@"
+# Классы HTTP-разведки, которые браузер может перевести в dry_run_ok.
+BROWSER_RETRY_CLASSES = ("spa", "captcha", "form_unmapped", "no_vacancy")
 
 
 @dataclass
@@ -140,12 +154,79 @@ def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: s
 def run_recon(
     sites: list[tuple[str, str]], *, timeout: float = 30.0, site_deadline: float = 120.0,
     workers: int = MAX_BROWSERS, chromium: str | None = None,
+    max_seconds: float | None = None,
 ) -> list[BrowserReconResult]:
+    """Обход. С max_seconds новые разделы после срока не начинаются (начатый
+    доживает до site_deadline) и в итог не попадают."""
     workers = max(1, min(workers, MAX_BROWSERS))
+    stop_at = time.monotonic() + max_seconds if max_seconds is not None else None
+
+    def one(site: tuple[str, str]) -> BrowserReconResult | None:
+        if stop_at is not None and time.monotonic() >= stop_at:
+            return None
+        return _run_child(site[0], site[1], timeout, site_deadline, chromium)
+
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(
-            lambda s: _run_child(s[0], s[1], timeout, site_deadline, chromium), sites,
-        ))
+        return [r for r in pool.map(one, sites) if r is not None]
+
+
+def _load_list(path: str | None) -> list[dict]:
+    if not path:
+        return []
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [i for i in data if isinstance(i, dict)] if isinstance(data, list) else []
+
+
+def sites_needing_browser(http_items: list[dict]) -> list[tuple[str, str]]:
+    """Разделы, где HTTP-разведка не дошла до dry_run_ok по причине, которую
+    браузер может снять. Хост, уже прошедший HTTP-движком, пропускается."""
+    ok_hosts = {
+        normalize_host(str(i.get(k) or ""))
+        for i in http_items if i.get("klass") == "dry_run_ok" for k in ("url", "start_url")
+    }
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for item in http_items:
+        url = str(item.get("url") or "")
+        if item.get("klass") not in BROWSER_RETRY_CLASSES or not url or url in seen:
+            continue
+        if normalize_host(url) in ok_hosts:
+            continue
+        seen.add(url)
+        out.append((str(item.get("name") or normalize_host(url) or url), url))
+    return out
+
+
+def order_by_previous(sites: list[tuple[str, str]], previous: list[dict]) -> list[tuple[str, str]]:
+    """Вчерашние dry_run_ok браузера — первыми (подтвердить, пока не протухли),
+    затем не виденные, затем прочие. Порядок внутри группы сохраняется."""
+    prev = {str(i.get("url") or ""): i.get("klass") for i in previous}
+
+    def rank(site: tuple[str, str]) -> int:
+        klass = prev.get(site[1])
+        return 0 if klass == "dry_run_ok" else 1 if klass is None else 2
+
+    return sorted(sites, key=rank)
+
+
+def write_atomic(path: str, data: Any) -> None:
+    """tmp в том же каталоге + rename: читатель видит старый или новый файл."""
+    target = Path(path)
+    fd, tmp = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent or "."))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=1)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def select_sites(
@@ -187,6 +268,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=30.0, help="таймаут навигации, с")
     parser.add_argument("--site-deadline", type=float, default=120.0, help="жёсткий срок на сайт, с")
     parser.add_argument("--chromium", default=os.environ.get("JUPITER_CHROMIUM"))
+    parser.add_argument(
+        "--from-http", metavar="FILE",
+        help="итог HTTP-разведки: обойти только его разделы с классами " + ", ".join(BROWSER_RETRY_CLASSES),
+    )
+    parser.add_argument("--max-minutes", type=float, help="после срока новые разделы не начинаются")
     parser.add_argument("--_one", nargs=2, metavar=("NAME", "URL"), help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
@@ -204,18 +290,27 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.urls:
         sites = [(normalize_host(u) or u, u) for u in args.urls]
+    elif args.from_http:
+        http_items = _load_list(args.from_http)
+        if not http_items:
+            print(f"Итог HTTP-разведки {args.from_http} пуст или не читается — выхожу.", file=sys.stderr)
+            return 1
+        sites = order_by_previous(sites_needing_browser(http_items), _load_list(args.out))
     else:
         sites = load_sites()
     sites = select_sites(sites, args.only_hosts, args.limit)
     results = run_recon(
         sites, timeout=args.timeout, site_deadline=args.site_deadline,
         workers=args.workers, chromium=args.chromium,
+        max_seconds=args.max_minutes * 60 if args.max_minutes is not None else None,
     )
+    if len(results) < len(sites):
+        print(f"Срок вышел: пройдено {len(results)} из {len(sites)} разделов.", file=sys.stderr)
     for item in results:
         print(f"{item.klass:14} {item.reason_code or item.status:28} {item.name}", file=sys.stderr)
     data = [asdict(item) for item in results]
-    Path(args.out).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    baseline = Path(args.baseline)
+    write_atomic(args.out, data)
+    baseline = Path(args.from_http or args.baseline)
     if baseline.is_file():
         try:
             old = json.loads(baseline.read_text(encoding="utf-8"))
