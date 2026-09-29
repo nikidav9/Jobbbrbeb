@@ -1723,7 +1723,9 @@ define('JT_BROWSER_SUBMIT_FROM', '2026-09-29');
 // Причины остановки HTTP-движка, которые браузер снимает: анкету рисует
 // скрипт, форма за кнопкой, шаг визарда не сдвинулся без JS, капча (браузер
 // не решает её сам — показывает человеку через jupiterCaptchaPost).
-const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE', 'CAPTCHA_REQUIRED'];
+// NAVIGATION_FAILED — сайт не пустил HTTP-клиент (часто проверка браузера, которую
+// Chromium проходит сам). Перевод один: заявка уже на браузере не переводится.
+const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE', 'CAPTCHA_REQUIRED', 'NAVIGATION_FAILED'];
 
 // Известные адреса условий работодателей. Для остальных сайтов условия
 // показываются ссылкой на сам сайт вакансии (карточка отклика).

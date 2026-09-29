@@ -80,6 +80,10 @@ SCROLL_STEPS = 12
 SCROLL_PAUSE_MS = 250
 # Ответы, при которых анкеты не будет: защита от ботов, гео- или VPN-блок.
 BLOCK_STATUSES = {401, 403, 407, 417, 429, 451}
+# Защита от ботов (DDoS-Guard, Qrator и др.) отдаёт 401/403 со скриптом,
+# который проверяет браузер и сам перезагружает страницу. Настоящему браузеру
+# достаточно подождать. Капча сюда не относится: её решает только человек.
+CHALLENGE_WAIT_MS = 12000
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Кнопки, открывающие анкету. Порядок — от самых точных.
 APPLY_TEXT_RE = (
@@ -621,10 +625,49 @@ class JupiterBrowserEngine:
         if final.startswith(("chrome-error:", "about:blank")) and not url.startswith("about:"):
             raise EngineTransportError(f"Страница не открылась: браузер показал ошибку ({final[:40]})")
         if self._last_status in BLOCK_STATUSES:
+            self._last_status = self._await_challenge(self._last_status)
+            final = self._tab.url
+        if self._last_status in BLOCK_STATUSES:
             raise EngineTransportError(
                 f"Сайт не пустил браузер: HTTP {self._last_status} (защита от ботов или блокировка)")
         self.assert_allowed(final)
         self._settle()
+
+    def _await_challenge(self, status: int) -> int:
+        """Страница блокировки со скриптом — возможно, проверка браузера: ждём,
+        пока она сама перейдёт на сайт. Без скрипта ждать нечего."""
+        try:
+            if not self._tab.evaluate("document.scripts.length"):
+                return status
+        except PlaywrightError:
+            return status
+        statuses: list[int] = []
+
+        def on_response(response: Any) -> None:
+            try:
+                if response.request.is_navigation_request() and response.frame == self._tab.main_frame:
+                    statuses.append(response.status)
+            except PlaywrightError:
+                pass
+
+        self._tab.on("response", on_response)
+        try:
+            waited = 0
+            while waited < CHALLENGE_WAIT_MS:
+                self._tab.wait_for_timeout(500)
+                waited += 500
+                if statuses and statuses[-1] not in BLOCK_STATUSES:
+                    break
+        finally:
+            self._tab.remove_listener("response", on_response)
+        if not statuses or statuses[-1] in BLOCK_STATUSES:
+            return status
+        try:
+            self._tab.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
+        except PlaywrightError:
+            pass
+        self.actions.append({"action": "browser_check_passed", "was": status, "now": statuses[-1]})
+        return statuses[-1]
 
     # ── Интерфейс JupiterWebEngine ─────────────────────────────────────────
     def open(self, url: str) -> PageState:

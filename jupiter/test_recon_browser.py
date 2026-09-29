@@ -134,9 +134,11 @@ class PureTest(unittest.TestCase):
             {"name": "nov", "url": "https://nov.ru/jobs", "klass": "no_vacancy"},  # дубль
             {"name": "agg", "url": "https://agg.ru/jobs", "klass": "aggregator"},
             {"name": "blk", "url": "https://blk.ru/jobs", "klass": "blocked"},
+            {"name": "tls", "url": "https://tls.ru/jobs", "klass": "blocked", "block_kind": "tls"},
+            {"name": "403", "url": "https://waf.ru/jobs", "klass": "blocked", "block_kind": "доступ (403)"},
         ]
         self.assertEqual(
-            [name for name, _ in sites_needing_browser(http)], ["spa", "cap", "unm", "nov"],
+            [name for name, _ in sites_needing_browser(http)], ["spa", "cap", "unm", "nov", "403"],
         )
 
     def test_previous_dry_run_ok_goes_first_then_unseen(self):
