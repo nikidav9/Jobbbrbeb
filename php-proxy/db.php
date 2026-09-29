@@ -1721,8 +1721,9 @@ define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');
 // (браузерный движок Юпитера). До неё — отклик через телефон.
 define('JT_BROWSER_SUBMIT_FROM', '2026-09-29');
 // Причины остановки HTTP-движка, которые браузер снимает: анкету рисует
-// скрипт, форма за кнопкой, шаг визарда не сдвинулся без JS.
-const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE'];
+// скрипт, форма за кнопкой, шаг визарда не сдвинулся без JS, капча (браузер
+// не решает её сам — показывает человеку через jupiterCaptchaPost).
+const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE', 'CAPTCHA_REQUIRED'];
 
 // Известные адреса условий работодателей. Для остальных сайтов условия
 // показываются ссылкой на сам сайт вакансии (карточка отклика).
@@ -7605,7 +7606,18 @@ try {
             try {
                 notify_user((string)$app['user_id'], 'Нужна капча',
                     'Введите слово, чтобы отклик в ' . $company . ' ушёл',
-                    'jupiter_captcha', ['application_id' => $appId]);
+                    'jupiter_captcha', ['applicationId' => $appId]);
+                // Id заявки кладём в payload колокольчика (миграция 011): по нему
+                // приложение открывает /jupiter-captcha?id=<id>. Внешний пуш id
+                // не несёт — push_privacy.php сводит его к {type:'refresh'}.
+                // payload=is.null: если колокольчик заглушён дублем, чужую
+                // строку (капчу другой заявки) не переписываем.
+                sb_update('jm_notifications', [
+                    'user_id' => 'eq.' . (string)$app['user_id'],
+                    'type' => 'eq.jupiter_captcha',
+                    'payload' => 'is.null',
+                    'created_at' => 'gte.' . gmdate('Y-m-d\TH:i:s\Z', time() - 60),
+                ], ['payload' => ['applicationId' => $appId]]);
             } catch (Throwable $e) { /* Пуш не должен ронять запись капчи. */ }
             $data = ['ok' => true, 'id' => $rows[0]['id'] ?? null];
             break;

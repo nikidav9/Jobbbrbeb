@@ -25,8 +25,13 @@ check(str_contains($db, "define('JT_BROWSER_SUBMIT_FROM', '2026-09-29');"), 'р�
 check((bool)preg_match("~jt_secret\('JUPITER_BROWSER_ENABLED'\) === '1'~", $db), 'эскалация только при включённой службе');
 check(str_contains($db, "&& !empty(\$task['submission_authorized_at'])"), 'эскалация только с поручением на отправку');
 check(str_contains($db, "&& jt_browser_delegated((string)(\$task['user_id'] ?? ''))"), 'эскалация только принявшим 2026-09-29');
-check(str_contains($db, "const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE'];"), 'причины эскалации');
-check(!str_contains($db, "'CAPTCHA_REQUIRED', 'VACANCY") , 'капча не эскалируется, пока цикл капчи не готов');
+check(str_contains($db, "const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE', 'CAPTCHA_REQUIRED'];"), 'причины эскалации');
+// Капча эскалируется: браузер покажет её человеку (jupiterCaptchaPost), а не решит сам.
+check(str_contains($db, "'STEP_DID_NOT_ADVANCE', 'CAPTCHA_REQUIRED']"), 'капча эскалируется на браузер');
+// Капча человеку не зависит от движка: Get/Answer смотрят только владельца и заявку.
+$ca = strpos($db, "case 'jupiterCaptchaGet': {");
+$cb = strpos($db, "case 'jupiterCaptchaPoll': {", (int)$ca);
+check($ca !== false && $cb !== false && !str_contains(substr($db, $ca, $cb - $ca), 'engine'), 'капча человеку не смотрит на движок');
 
 // Редакция сравнивается строкой: 2026-09-26-2 — раньше, 2026-09-29 — годится.
 check(str_contains($db, "strcmp(\$pair[1], JT_BROWSER_SUBMIT_FROM) >= 0"), 'сравнение редакции terms');
