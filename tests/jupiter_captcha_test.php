@@ -44,6 +44,17 @@ check('картинка ограничена 200 КБ', str_contains($post, '200
 check('капча ставит CAPTCHA_HUMAN и action_required',
     str_contains($post, "'state' => 'action_required'") && str_contains($post, "'reason_code' => 'CAPTCHA_HUMAN'"));
 check('пуш зовёт notify_user', str_contains($post, 'notify_user('));
+// Id заявки доходит до приложения: в data уведомления и в payload строки
+// колокольчика (внешний пуш push_privacy.php сводит к {type:'refresh'}).
+check('id заявки в данных уведомления',
+    str_contains($post, "'jupiter_captcha', ['applicationId' => \$appId]"));
+check('id заявки в payload колокольчика',
+    str_contains($post, "['payload' => ['applicationId' => \$appId]]")
+    && str_contains($post, "'type' => 'eq.jupiter_captcha'")
+    && str_contains($post, "'payload' => 'is.null'"));
+check('внешний пуш нейтральный: только {type:refresh}',
+    str_contains((string)file_get_contents(__DIR__ . '/../php-proxy/push_privacy.php'),
+        "'data' => ['type' => 'refresh']"));
 check('срок жизни 10 минут', str_contains($post, 'time() + 600'));
 check('get отбирает по владельцу и pending',
     str_contains($get, "'user_id' => 'eq.'") && str_contains($get, "'status' => 'eq.pending'"));

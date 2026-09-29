@@ -145,6 +145,8 @@ test('закрытая работодателем вакансия — не в �
   assert.equal(jupiterManualEligible({ ...base, vacancyActive: true }), true);
   assert.equal(jupiterManualEligible({ ...base, vacancyActive: null }), true);
   assert.equal(jupiterManualEligible({ ...base, vacancyActive: false }), false);
+  // Ждёт капчу — Юпитер допишет сам, ручная анкета отправила бы второй раз.
+  assert.equal(jupiterManualEligible({ ...base, vacancyActive: true, reasonCode: 'CAPTCHA_HUMAN' }), false);
 });
 
 test('транслит и короткие подписи: otchestvo, «Сообщение»', () => {

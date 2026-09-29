@@ -11,13 +11,13 @@
  * node, без сборки панели.
  */
 
-// engine — путь в JSON сводки прогона (checkpoint.summary.engine), а не сам
-// checkpoint: в нём лежат токены возобновления, панели нужна одна строка.
-export const JUPITER_COLUMNS = 'id,state,reason_code,canonical_url,vacancy_url,company,created_at,submitted_at,verified_at,engine:checkpoint->summary->>engine'
+// engine — колонка заявки (миграция 136): 'http' или 'browser'. checkpoint
+// не просим вовсе: в нём лежат токены возобновления.
+export const JUPITER_COLUMNS = 'id,state,reason_code,canonical_url,vacancy_url,company,created_at,submitted_at,verified_at,engine'
 
 export type JupiterRow = {
   id?: string
-  /** Движок последнего прогона: jupiter-web-engine | jupiter-browser-engine. */
+  /** Движок заявки: 'http' (по умолчанию) | 'browser' (переведена эскалацией). */
   engine?: string | null
   state: string
   reason_code: string | null
@@ -184,14 +184,18 @@ export type CaptchaEvent = { application_id: string; reason_code: string | null;
 export type EngineKey = 'http' | 'browser' | 'unknown'
 
 export const ENGINE_LABEL: Record<EngineKey, string> = {
-  http: 'HTTP (jupiter-web-engine)',
-  browser: 'Браузер (jupiter-browser-engine)',
+  http: 'HTTP',
+  browser: 'Переведено на браузер',
   unknown: 'Движок не записан',
 }
 
+/**
+ * Колонка engine хранит 'http' | 'browser'; в событиях истории движок
+ * записан полным именем (jupiter-web-engine | jupiter-browser-engine).
+ */
 export function engineOf(name: string | null | undefined): EngineKey {
-  if (name === 'jupiter-web-engine') return 'http'
-  if (name === 'jupiter-browser-engine') return 'browser'
+  if (name === 'http' || name === 'jupiter-web-engine') return 'http'
+  if (name === 'browser' || name === 'jupiter-browser-engine') return 'browser'
   return 'unknown'
 }
 
@@ -210,7 +214,7 @@ export type EngineStat = {
 
 /**
  * Разрез по движку за последние `days` дней (0 — всё время).
- * Движок берём из строки заявки, а если там пусто — из события с капчей.
+ * Движок — колонка engine заявки; если её нет (старая строка), — из события с капчей.
  */
 export function buildEngineReport(
   rows: JupiterRow[], events: CaptchaEvent[], days: number, now: Date = new Date(),
@@ -243,14 +247,77 @@ export function buildEngineReport(
       if (r.state === 'submitted') s.captchaSolved++
     }
   }
+  if (!acc.size) return []
+  // HTTP и «Переведено на браузер» — всегда отдельными строками, даже с нулём:
+  // ноль переводов — тоже ответ. «Движок не записан» — только если есть.
+  const blank = (engine: EngineKey) => ({
+    engine, total: 0, auto: 0, verified: 0, captchaWaited: 0, captchaSolved: 0, topReasons: [], reasons: new Map<string, number>(),
+  })
   const order: EngineKey[] = ['http', 'browser', 'unknown']
-  return order.filter(k => acc.has(k)).map(k => {
-    const { reasons, ...s } = acc.get(k)!
+  return order.filter(k => k !== 'unknown' || acc.has(k)).map(k => {
+    const { reasons, ...s } = acc.get(k) ?? blank(k)
     const topReasons = Array.from(reasons.entries())
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .slice(0, 3).map(([code, count]) => ({ code, count }))
     return { ...s, topReasons }
   })
+}
+
+/**
+ * Капча человеку (jm_jupiter_captcha, миграция 135). Панель просит только
+ * эти колонки: ни user_id, ни картинки (image_png), ни ответа (answer).
+ */
+export const CAPTCHA_COLUMNS = 'id,application_id,status,created_at,answered_at'
+
+export type CaptchaRow = {
+  id: string
+  application_id: string
+  status: 'pending' | 'answered' | 'expired' | 'solved' | 'failed' | string
+  created_at: string
+  answered_at: string | null
+}
+
+export type CaptchaStat = {
+  /** Показано человеку — каждая строка таблицы. */
+  shown: number
+  solved: number
+  failed: number
+  expired: number
+  /** Ещё ждут ответа или ответ ещё не проверен (pending, answered). */
+  open: number
+  /** Среднее answered_at − created_at, секунды; null — ответов не было. */
+  avgAnswerSec: number | null
+}
+
+/** Капча за последние `days` дней по дате показа (0 — всё время). */
+export function buildCaptchaReport(rows: CaptchaRow[], days: number, now: Date = new Date()): CaptchaStat {
+  const from = days ? lastDays(days, now)[0] : ''
+  const st: CaptchaStat = { shown: 0, solved: 0, failed: 0, expired: 0, open: 0, avgAnswerSec: null }
+  let sum = 0
+  let n = 0
+  for (const r of rows) {
+    if (from && moscowDay(r.created_at) < from) continue
+    st.shown++
+    if (r.status === 'solved') st.solved++
+    else if (r.status === 'failed') st.failed++
+    else if (r.status === 'expired') st.expired++
+    else st.open++
+    if (r.answered_at) {
+      const ms = Date.parse(r.answered_at) - Date.parse(r.created_at)
+      if (Number.isFinite(ms) && ms >= 0) { sum += ms; n++ }
+    }
+  }
+  if (n) st.avgAnswerSec = Math.round(sum / n / 1000)
+  return st
+}
+
+/** «42 с», «3 мин 5 с», «—» для null. */
+export function formatDuration(sec: number | null | undefined): string {
+  if (sec == null || !Number.isFinite(sec)) return '—'
+  if (sec < 60) return `${sec} с`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return s ? `${m} мин ${s} с` : `${m} мин`
 }
 
 /** Причины остановки — теми же словами, что видит человек в «Откликах». */

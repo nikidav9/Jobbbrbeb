@@ -458,6 +458,43 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0, require_contact=False))
 
+    def test_mts_vacancy_subscription_with_selects_is_not_an_application_form(self):
+        # job.mts.ru (разведка браузером 29.09.2026): «Укажи свой e-mail» и
+        # выбор города с направлением — подписка на вакансии. Select'ы делали
+        # её «формой с вопросами», и агент принимал её за анкету.
+        page = parse(
+            '<form action="/api/vacancy-alerts" method="post">'
+            '<label>Город <select name="city"><option value="msk">Москва</option>'
+            '<option value="spb">Санкт-Петербург</option></select></label>'
+            '<label>Направление <select name="direction">'
+            '<option value="it">IT</option><option value="sales">Продажи</option>'
+            "</select></label>"
+            '<input type="email" name="email" placeholder="Укажи свой e-mail">'
+            '<button type="submit">Подписаться на новые вакансии</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+        self.assertFalse(is_application_form(page, 0, require_contact=False))
+
+    def test_email_only_submit_application_form_stays_an_application(self):
+        page = parse(
+            '<form action="/jobs/42/apply" method="post">'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<button type="submit">Submit application</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_email_and_select_application_without_subscription_words_stays(self):
+        page = parse(
+            '<form action="/jobs/42/apply" method="post">'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<label>Город <select name="city"><option value="msk">Москва</option></select></label>'
+            '<button type="submit">Submit application</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_dry_run_does_not_report_ready_to_submit_for_a_subscription_only_page(self):
         # Тот самый случай из разведки: единственная форма на странице —
         # подписка с полем email name=subscribe. Анкеты нет вовсе, и агент

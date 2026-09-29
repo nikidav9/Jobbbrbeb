@@ -25,7 +25,7 @@ import {
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
-import { jupiterBadge, jupiterRowSummary } from '@/services/jupiterTimeline';
+import { jupiterBadge, jupiterNeedsCaptcha, jupiterRowSummary } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -490,7 +490,13 @@ function WorkerMatches() {
   // Цель плашки: если есть анкета Юпитера, которую можно заполнить самому, —
   // сразу туда (как прежнее «По очереди ›»); иначе — первая строка «Нужны вы».
   const manualJupiterApps = jupiterApps.filter(jupiterManualEligible);
+  const captchaApp = jupiterApps.find(jupiterNeedsCaptcha);
   const openNeeds = () => {
+    // Капча ждёт человека не дольше 10 минут — её первой.
+    if (captchaApp) {
+      router.push({ pathname: '/jupiter-captcha', params: { id: captchaApp.id } });
+      return;
+    }
     if (Platform.OS !== 'web' && manualJupiterApps.length > 0) {
       router.push({
         pathname: '/jupiter-fill',

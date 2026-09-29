@@ -100,3 +100,17 @@ test('вакансия закрыта работодателем: статус, 
   assert.equal(jupiterVacancyClosed(sent), false);
   assert.equal(jupiterBadge(sent).tone, 'sent');
 });
+
+test('капча человеку (CAPTCHA_HUMAN): «Нужна проверка сайта», отклик уйдёт сразу', async () => {
+  const { jupiterNeedsCaptcha } = await import('../services/jupiterTimeline.ts');
+  const a = app({ state: 'action_required', reasonCode: 'CAPTCHA_HUMAN' });
+  assert.equal(jupiterNeedsCaptcha(a), true);
+  assert.equal(jupiterStatus(a).label, 'Нужна проверка сайта');
+  assert.deepEqual(jupiterBadge(a), { label: 'НУЖНЫ ВЫ', tone: 'needs_you' });
+  assert.equal(jupiterRowSummary(a), 'Введите слово с картинки — отклик уйдёт сразу');
+  const [step] = buildTimeline([{ kind: 'action_required', reason_code: 'CAPTCHA_HUMAN', detail: null, created_at: '1' }]);
+  assert.equal(step.note, 'Введите слово с картинки — отклик уйдёт сразу');
+  // Капча уже не ждёт человека — заявка не в «проверке сайта».
+  assert.equal(jupiterNeedsCaptcha(app({ state: 'queued', reasonCode: 'CAPTCHA_HUMAN' })), false);
+  assert.equal(jupiterNeedsCaptcha(app({ state: 'action_required', reasonCode: 'CAPTCHA_REQUIRED' })), false);
+});

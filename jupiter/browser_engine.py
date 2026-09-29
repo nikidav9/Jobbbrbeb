@@ -25,7 +25,11 @@ load_html, allowed_hosts, read_only, куки), поэтому вся логик
   любой не-GET запрос — даже если скрипт сайта захочет что-то послать сам;
 - переходы — только на разрешённые хосты, внутренние адреса (SSRF) закрыты
   так же, как у HTTP-движка (policy.NetworkPolicy / is_blocked_address);
-- капчу движок не трогает: агент её видит и передаёт человеку.
+- капчу движок не решает и не отдаёт сервисам распознавания: captcha()
+  находит её, captcha_png() снимает только саму картинку (остальная страница
+  с ПДн человеку не уходит), enter_captcha() вводит ответ самого кандидата;
+- успех отправки на SPA подтверждает ответ сайта: submit() записывает ответы
+  API (browser_success) и дописывает к тексту страницы исчезающий тост.
 
 Playwright — необязательная зависимость: без него модуль импортируется, а
 при создании движка объясняет, чего не хватает. Остальной Юпитер работает на
@@ -37,6 +41,9 @@ import os
 import urllib.parse
 from typing import Any
 
+import browser_captcha
+import browser_success
+from browser_captcha import CaptchaInfo
 from engine import (
     ControlState,
     EngineError,
@@ -79,6 +86,8 @@ APPLY_TEXT_RE = (
     r"откликнуться|отправить резюме|подать заявку|отклик на вакансию|"
     r"хочу у вас работать|хочу в команду|respond|apply( now)?$|^apply"
 )
+# Опрос всплывашек после отправки: тост живёт секунду-другую, дольше settle.
+TOAST_POLL_MS = 200
 SUBMIT_TEXT_RE = r"отправ|откликн|подать|далее|продолжить|submit|apply|send|next"
 
 # Снимок отрисованной страницы. Живой DOM не меняем, кроме меток data-jt-ref:
@@ -330,6 +339,8 @@ class JupiterBrowserEngine:
         # Что движок сделал сам (нажал «Откликнуться», оборвал запрос) —
         # для журнала и отладки; агент ведёт свою траекторию отдельно.
         self.actions: list[dict[str, Any]] = []
+        # Итог browser_success.classify последней отправки (None — не было).
+        self.last_api_result: dict[str, Any] | None = None
         self._host_ok: dict[str, bool] = {}
         self._last_status = 200
         self._pw = sync_playwright().start()
@@ -438,12 +449,36 @@ class JupiterBrowserEngine:
         self.actions.extend(dismiss_overlays(self._tab))
 
     # ── Снимок страницы ────────────────────────────────────────────────────
-    def _settle(self) -> None:
-        try:
-            self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
-        except PlaywrightError:
-            pass  # долгие опросы и счётчики — не повод ждать дальше
-        self._tab.wait_for_timeout(self.settle_ms)
+    def _settle(self, toasts: list[str] | None = None) -> None:
+        """Дождаться тишины в сети. С toasts — заодно собирать всплывашки."""
+        if toasts is None:
+            try:
+                self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
+            except PlaywrightError:
+                pass  # долгие опросы и счётчики — не повод ждать дальше
+            self._tab.wait_for_timeout(self.settle_ms)
+            return
+
+        def grab() -> None:
+            text = browser_success.toast_text(self._tab)
+            if text and text not in toasts:
+                toasts.append(text)
+
+        # networkidle ждём короткими шагами: тост показывается и гаснет,
+        # пока сеть ещё не затихла.
+        deadline = min(self.timeout_ms, 10000)
+        waited = 0
+        while waited < deadline:
+            grab()
+            try:
+                self._tab.wait_for_load_state("networkidle", timeout=TOAST_POLL_MS)
+                break
+            except PlaywrightError:
+                waited += TOAST_POLL_MS
+        for _ in range(max(1, self.settle_ms // TOAST_POLL_MS)):
+            grab()
+            self._tab.wait_for_timeout(TOAST_POLL_MS)
+        grab()
 
     def _snapshot(self) -> PageState:
         data = None
@@ -665,29 +700,69 @@ class JupiterBrowserEngine:
             raise EngineSecurityError("Read-only Jupiter engine blocked form submission")
         self._apply_values(page, form)
         before = self._tab.url
+        self.last_api_result = None
+        recorder = browser_success.ResponseRecorder(self.allowed_hosts).start(self._tab)
+        toasts: list[str] = []
         try:
-            button = self._locator(submit_control) if submit_control is not None else None
-            if button is not None:
-                try:
-                    button.click(timeout=8000)
-                except PlaywrightError:
-                    button.click(timeout=8000, force=True)
-                self.last_submit_mode = "browser_click"
-            else:
-                # Кнопки нет — отправка формы средствами самой страницы.
-                refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
-                if not refs:
-                    raise EngineError("Нечем отправить форму: ни кнопки, ни полей")
-                self._tab.locator(f'[data-jt-ref="{refs[-1]}"]').first.press("Enter")
-                self.last_submit_mode = "browser_enter"
-        except PlaywrightError as exc:
-            raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
-        self._settle()
-        if self._tab.url != before:
             try:
-                self.assert_allowed(self._tab.url)
-            except EngineSecurityError:
-                raise
+                button = self._locator(submit_control) if submit_control is not None else None
+                if button is not None:
+                    try:
+                        button.click(timeout=8000)
+                    except PlaywrightError:
+                        button.click(timeout=8000, force=True)
+                    self.last_submit_mode = "browser_click"
+                else:
+                    # Кнопки нет — отправка формы средствами самой страницы.
+                    refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
+                    if not refs:
+                        raise EngineError("Нечем отправить форму: ни кнопки, ни полей")
+                    self._tab.locator(f'[data-jt-ref="{refs[-1]}"]').first.press("Enter")
+                    self.last_submit_mode = "browser_enter"
+            except PlaywrightError as exc:
+                raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
+            self._settle(toasts)
+        finally:
+            responses = recorder.stop()
+        self._record_api_result(responses)
+        if self._tab.url != before:
+            self.assert_allowed(self._tab.url)
+        result = self._snapshot()
+        if toasts:
+            # «Спасибо, отклик получен» во всплывашке исчезает раньше снимка —
+            # дописываем к тексту, чтобы агент увидел подтверждение.
+            result.text = (result.text + "\n" + "\n".join(toasts)).strip()
+        return result
+
+    def _record_api_result(self, responses: list[dict[str, Any]]) -> None:
+        verdict = browser_success.classify(responses)
+        if verdict["api_success"] or verdict["api_error"]:
+            self.last_api_result = verdict
+            self.actions.append({"action": "api_result", **verdict})
+
+    # ── Капча: только показать человеку и ввести его ответ ─────────────────
+    def captcha(self) -> CaptchaInfo | None:
+        """Капча на текущей вкладке (None — нет или страница недоступна)."""
+        try:
+            return browser_captcha.detect(self._tab)
+        except PlaywrightError:
+            return None
+
+    def captcha_png(self, info: CaptchaInfo) -> bytes:
+        """PNG одной картинки капчи — для кандидата, не для распознавания."""
+        return browser_captcha.capture(self._tab, info)
+
+    def enter_captcha(self, info: CaptchaInfo, answer: str) -> bool:
+        """Ввести ответ кандидата. True — капча ушла, False — осталась."""
+        if self.read_only:
+            # Подтверждение капчи может само отправить анкету.
+            raise EngineSecurityError("Read-only Jupiter engine blocked captcha answer")
+        solved = browser_captcha.enter_answer(self._tab, info, answer)
+        self._settle()
+        return solved
+
+    def current_page(self) -> PageState:
+        """Свежий снимок текущей вкладки — продолжить с места после капчи."""
         return self._snapshot()
 
     def export_cookies(self) -> list[dict[str, str]]:
@@ -718,7 +793,7 @@ class JupiterBrowserEngine:
         return snapshot
 
     def screenshot(self, path: str) -> None:
-        """Снимок экрана — для отладки и будущей передачи капчи человеку."""
+        """Снимок экрана — только для отладки: человеку капчу даёт captcha_png()."""
         self._tab.screenshot(path=path, full_page=False)
 
     def close(self) -> None:

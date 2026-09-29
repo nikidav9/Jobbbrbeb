@@ -1,0 +1,53 @@
+"""infra/recon-browser-run.sh: браузерная разведка на сервере — только dry-run,
+честная подпись, окружение браузерного воркера, итог туда, где его читает
+site_compat."""
+import re
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+run = (ROOT / "infra" / "recon-browser-run.sh").read_text(encoding="utf-8")
+worker_run = (ROOT / "infra" / "jupiter-browser-run.sh").read_text(encoding="utf-8")
+site_compat = (ROOT / "jupiter" / "site_compat.py").read_text(encoding="utf-8")
+recon_browser = (ROOT / "jupiter" / "recon_browser.py").read_text(encoding="utf-8")
+
+subprocess.run(["bash", "-n", str(ROOT / "infra" / "recon-browser-run.sh")], check=True)
+assert run.startswith("#!/usr/bin/env bash\n")
+assert "set -Eeuo pipefail" in run
+
+# Итог — ровно тот файл, который по умолчанию читает site_compat.
+assert "OUT=${OUT:-/var/www/html/jupiter-recon-browser.json}" in run
+assert '"JUPITER_RECON_BROWSER_FILE", "/var/www/html/jupiter-recon-browser.json"' in site_compat
+assert "HTTP_RECON=${HTTP_RECON:-/var/www/html/jupiter-recon.json}" in run
+# Запись атомарная: tmp рядом с итогом, затем mv.
+assert 'tmp=$(mktemp "$OUT.XXXXXX")' in run and 'mv -f "$tmp" "$OUT"' in run
+assert "os.replace(tmp, target)" in recon_browser
+
+# Окружение — venv браузерного воркера: тот же каталог, тот же Chromium.
+for line in ("BASE=${BASE:-/opt/jupiter-browser}", 'VENV="$BASE/venv"',
+             "export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$BASE/ms-playwright}"):
+    assert line in worker_run, line
+    assert line in run, line
+assert '"$VENV/bin/python" recon_browser.py' in run
+assert 'jupiter-browser-run.sh" setup' in run
+# Браузер открывает чужие сайты — не от root.
+assert "setpriv --reuid=nobody" in run
+
+# Режим сервера: только не пройденные HTTP разделы, один браузер, срок.
+assert 'recon_browser.py --from-http "$WORK/http.json"' in run
+assert "--workers 1" in run
+assert '--max-minutes "$MAX_MINUTES"' in run
+assert "jt-recon.service" in run  # ждёт окончания HTTP-разведки
+assert "flock -n 9" in run
+
+# Только чтение: код обхода — только на чтение, никаких боевых переключателей.
+assert 'dry_run=True' in recon_browser and 'read_only=True' in recon_browser
+for forbidden in ("dry_run=False", "read_only=False", "--live", "JUPITER_ENGINE", "run_worker"):
+    assert forbidden not in run, forbidden
+# Подпись — честная, движка: своей подписи и подмены UA здесь нет.
+assert not re.search(r"user[-_]?agent|--ua\b|BROWSER_UA", run, re.I)
+# Секреты разведке не нужны и не передаются.
+for name in ("TOKEN", "SECRET", "YANDEX_GPT", "EnvironmentFile"):
+    assert name not in run, name
+
+print("recon-browser infra: ok")

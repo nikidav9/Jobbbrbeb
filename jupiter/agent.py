@@ -91,6 +91,12 @@ CONSENT_MARKERS = (
 _CONTACT_FIELD_MARKERS = ("phone", "tel", "mail", "телефон", "почт", "e-mail")
 _APPLY_FORM_MARKERS = ("отклик", "откликн", "резюме", "анкет", "ваканс", "заявк", "apply", "application", "resume", " cv")
 _SUBSCRIPTION_MARKERS = ("подпис", "рассылк", "новост", "subscri", "newsletter", "акци", "скидк")
+# Подписка на вакансии: почта плюс выбор города и направления (job.mts.ru,
+# разведка браузером 29.09.2026). Слова уже, чем у рассылки: рядом стоят
+# select'ы настоящей анкеты, и «акци» из «редакции» здесь не годится.
+_VACANCY_SUBSCRIPTION_MARKERS = (
+    "подпис", "рассылк", "новые вакансии", "присылать вакансии", "subscri",
+)
 _COMPANY_FIELD_MARKERS = ("company", "organization", "organisation", "компани", "организац")
 # Поле, которое бывает только у кандидата. Имя не годится: форма «свяжитесь
 # с нами» для клиентов тоже спрашивает имя и компанию.
@@ -542,6 +548,9 @@ def is_application_form(
     has_email_only = False
     has_candidate_field = False
     requires_company = False
+    has_file = False
+    text_fields = 0  # поля для ввода текста (не select)
+    only_text_is_email = False
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -558,6 +567,7 @@ def is_application_form(
 
         if control.type == "file":
             has_candidate_field = True  # резюме или портфолио файлом
+            has_file = True
         if control.type == "radio":
             questions += 1  # выбор из вариантов — вопрос анкеты, у подписки его нет
         if control.type in _STRUCTURAL_CONTROL_TYPES:
@@ -594,9 +604,26 @@ def is_application_form(
             has_contact = True
         questions += 1
         has_email_only = control.type == "email" or "mail" in haystack or "почт" in haystack
+        if control.tag != "select":
+            text_fields += 1
+            only_text_is_email = text_fields == 1 and has_email_only
 
     if requires_company and not has_candidate_field:
         return False
+    # Подписка на вакансии: единственное текстовое поле — почта, рядом только
+    # select'ы (город, направление), ни имени, ни телефона, ни резюме. Такую
+    # у МТС агент принимал за анкету — select'ы делали её «формой с
+    # вопросами», и правило про одну почту ниже не срабатывало.
+    if not has_file and text_fields == 1 and only_text_is_email:
+        form = page.forms[form_index]
+        context = normalize(" ".join(
+            str(value) for control in page.controls if control.form_index == form_index
+            for value in (control.label, control.text, control.value, control.name,
+                          control.id, control.placeholder)
+            if value
+        ) + f" {form.action} {form.id} {form.name}")
+        if any(marker in context for marker in _VACANCY_SUBSCRIPTION_MARKERS):
+            return False
     # Подписка на рассылку под видом формы: одно поле почты и галочки, больше
     # ни одного вопроса. Разведка браузером (29.09.2026) нашла такие у
     # re-store, МТС и azimuthotels — агент заполнял их вместо анкеты.
@@ -628,6 +655,7 @@ class JupiterAgent:
         receipts: ReceiptStore | None = None,
         handoffs: HandoffStore | None = None,
         before_submit: Callable[[str, bool], None] | None = None,
+        field_mapper: Callable[[list[dict], list[str]], dict[str, str]] | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -641,6 +669,11 @@ class JupiterAgent:
         # капча была привязана к нашей прежней сессии.
         self.handoffs = handoffs if handoffs is not None else HandoffStore()
         self.before_submit = before_submit
+        # Нейросеть для незнакомых обязательных полей: получает только
+        # описания полей и имена заполненных ключей профиля, возвращает
+        # {имя поля: ключ}. Значения кандидата и полей ей не показываются,
+        # согласия и галочки она не трогает. См. _map_unknown_fields.
+        self.field_mapper = field_mapper
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -740,6 +773,7 @@ class JupiterAgent:
         control: ControlState,
         profile: CandidateProfile,
         trajectory: list[dict[str, Any]],
+        key_override: str | None = None,
     ) -> bool:
         if control.type in {"hidden", "submit", "image", "button", "reset"}:
             return False
@@ -800,7 +834,7 @@ class JupiterAgent:
                 return True
             return False
 
-        key = choose_key(control, profile, page.url)
+        key = key_override or choose_key(control, profile, page.url)
         if not key:
             if control.tag == "select" and control.required:
                 real_options = [
@@ -1029,6 +1063,134 @@ class JupiterAgent:
             and bool(peer.file_path)
             for peer in page.controls
         )
+
+    # Чего нейросеть не трогает никогда: галочки (там согласия — только по
+    # правилам), файлы, пароли, скрытые поля и кнопки.
+    _LLM_SKIP_TYPES = {
+        "checkbox", "file", "password", "hidden", "submit", "image", "button", "reset",
+    }
+
+    def _llm_candidates(
+        self,
+        page: PageState,
+        form_index: int,
+        profile: CandidateProfile,
+    ) -> dict[str, list[ControlState]]:
+        """Обязательные пустые поля, которые правила не сопоставили с профилем.
+
+        Ключ — имя поля (для радиокнопок — имя группы), значение — элементы.
+        """
+        found: dict[str, list[ControlState]] = {}
+        checked_groups = {
+            control.name for control in page.controls
+            if control.form_index == form_index and control.type == "radio"
+            and control.name and control.checked
+        }
+        for control in page.controls:
+            if control.form_index != form_index or not control.name:
+                continue
+            if control.type in self._LLM_SKIP_TYPES or control.tag == "button":
+                continue
+            if control.disabled or control.readonly or _looks_like_captcha(control):
+                continue
+            if control.type == "radio":
+                group = [
+                    peer for peer in page.controls
+                    if peer.form_index == form_index and peer.type == "radio"
+                    and peer.name == control.name
+                ]
+                if control.name in checked_groups or not any(p.required for p in group):
+                    continue
+            elif not control.required or not self.control_is_empty(control):
+                continue
+            if consent_kinds(self.descriptor(control)):
+                continue
+            if self._resume_alternative_satisfied(page, control):
+                continue
+            if choose_key(control, profile, page.url):
+                continue  # правила поле узнали — значит, не хватает данных, а не смысла
+            found.setdefault(control.name, []).append(control)
+        return found
+
+    @staticmethod
+    def _llm_field_description(controls: list[ControlState]) -> dict[str, Any]:
+        """Описание поля для нейросети — без значений поля и кандидата."""
+        first = controls[0]
+        if first.type == "radio":
+            return {
+                "name": first.name,
+                "label": "",
+                "placeholder": "",
+                "type": "radio",
+                "options": [peer.label or peer.text for peer in controls if peer.label or peer.text],
+            }
+        return {
+            "name": first.name,
+            "label": first.label or first.aria or first.title_attr,
+            "placeholder": first.placeholder,
+            "type": "select" if first.tag == "select" else (
+                "textarea" if first.tag == "textarea" else (first.type or "text")
+            ),
+            "options": [
+                option.label for option in first.options
+                if not option.disabled and option.label
+            ] if first.tag == "select" else [],
+        }
+
+    @staticmethod
+    def _llm_allowed_keys(profile: CandidateProfile) -> list[str]:
+        """Ключи профиля, которые реально заполнены. Только имена, без значений."""
+        return sorted(
+            key for key, value in profile.values.items()
+            if value is not None and value != "" and not isinstance(value, (dict, list))
+            # Юридические вопросы (гражданство, судимость, права) — к
+            # человеку: ошибка сопоставления там — ложное заявление от его
+            # имени, а не опечатка.
+            and classify_key(key) not in {FieldClass.CONSENT, FieldClass.LEGAL}
+            and key not in {"candidate_id", "resume"}
+        )
+
+    def _map_unknown_fields(
+        self,
+        page: PageState,
+        form_index: int | None,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+    ) -> bool:
+        """Спросить нейросеть, каким известным ключам отвечают незнакомые поля.
+
+        Нейросеть только сопоставляет поле с ключом, который у кандидата уже
+        заполнен; значение берётся из профиля обычным путём fill_control.
+        Любой сбой — как будто нейросети нет. Возвращает, заполнено ли хоть
+        одно поле.
+        """
+        if self.field_mapper is None or form_index is None:
+            return False
+        unknown = self._llm_candidates(page, form_index, profile)
+        allowed = self._llm_allowed_keys(profile)
+        if not unknown or not allowed:
+            return False
+        fields = [self._llm_field_description(controls) for controls in unknown.values()]
+        try:
+            answer = self.field_mapper(fields, list(allowed))
+        except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+            return False
+        if not isinstance(answer, dict):
+            return False
+        filled = False
+        for name, key in answer.items():
+            if not isinstance(name, str) or not isinstance(key, str):
+                continue
+            if key not in allowed or name not in unknown:
+                continue
+            for control in unknown[name]:
+                if self.fill_control(page, control, profile, trajectory, key_override=key):
+                    trajectory.insert(len(trajectory) - 1, {
+                        "action": "llm_map", "field": name, "key": key,
+                    })
+                    filled = True
+                    break
+        return filled
 
     def _missing_reason_code(
         self,
@@ -1798,6 +1960,10 @@ class JupiterAgent:
             )
 
             missing = self._required_missing(page, target_form_index)
+            if missing and self._map_unknown_fields(
+                page, target_form_index, profile, trajectory
+            ):
+                missing = self._required_missing(page, target_form_index)
             has_application_form = target_form_index is not None
             submit = self._submit_control(
                 page, target_form_index, require_contact=not in_flow

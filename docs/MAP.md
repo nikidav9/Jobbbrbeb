@@ -622,9 +622,16 @@ SPA-сайтов страница вакансии пустая, поэтому 
 для доменов из `JT_RU_CA_HOSTS` (tbank.ru, alfabank.ru, tochka.com и их
 поддомены) доверие — ТОЛЬКО этому центру (`CURLOPT_CAINFO_BLOB`, PEM в
 `php-proxy/ru_trusted_ca.php`, потому что выкладка копирует только *.php), для
-остальных — ничего не меняется. Юпитер доверяет ему по тому же правилу и
-для тех же трёх банков: `RU_CA_HOSTS` и `ru_ca_context()` в `jupiter/engine.py`,
-PEM — копия в `jupiter/ru_trusted_ca.pem` (в `.gitignore` для неё исключение из
+остальных — ничего не меняется. Юпитер (с 29.09.2026, решение владельца)
+доверяет ему для ВСЕХ сайтов работодателей: `trust_context()` в
+`jupiter/engine.py` = системные корни + Минцифры, проверка цепочки и имени
+штатная; плюс AIA-догрузка промежуточного сертификата при неполной цепочке
+(`_AiaTrust`: только публичные адреса, 64 КБ, самоподписанный «промежуточный»
+не грузится, вершина проверенной цепочки обязана быть корнем — тест
+`jupiter/test_tls_trust.py`). `RU_CA_HOSTS`/`ru_ca_context()` сохранены для
+сверки с PHP. Браузер — политикой Chromium `CACertificatesWithConstraints`
+(`infra/jupiter-browser-ca-policy.py`); флаг `--ignore-certificate-errors-spki-list`
+запрещён: проверено, что он отключает всю проверку цепочки с этим ключом. PEM — копия в `jupiter/ru_trusted_ca.pem` (в `.gitignore` для неё исключение из
 `*.pem`); что копия и список хостов совпадают с PHP, сторожит
 `jupiter/test_ru_ca.py`. Вход и база этому центру не доверяют.
 Промежуточный сертификат действует до 06.03.2027 — к этому сроку обновить.
@@ -1356,17 +1363,37 @@ HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`;
 найти капчу, вырезать только её картинку, ввести ответ человека (не решает сам);
 `browser_guard.py` — DNS-пиннинг, попапы, загрузки, разрешения, WebRTC, service
 worker, изоляция контекстов; `browser_planner.py` + `yandex_gpt.py` — сопоставление
-полей через YandexGPT без данных кандидата (`redact`); `ats_hosts.py` — домены
+полей через YandexGPT без данных кандидата (`redact` вычёркивает почту, телефон,
+ФИО, длинные числа, ссылки с параметрами; поля модели — условные `f0…`; ответ —
+строгая схема, ключ только из разрешённых; таймаут 10 с, один повтор на 429/5xx,
+бюджет `YANDEX_GPT_MAX_CALLS_PER_HOUR`=200, кэш по хосту и подписям); в агенте —
+`JupiterAgent(field_mapper=…)`: только обязательные незнакомые поля, без
+галочек/согласий/капчи/файлов и без юридических ключей профиля, в траектории
+`llm_map` без значений; `ats_hosts.py` — домены
 ATS-платформ, куда вакансия может увести анкету; `browser_limits.py` — пределы ресурсов (сколько браузеров
 по памяти, сторож задачи, добивание своих зависших Chromium; замер —
 `scripts/browser-bench.py`); `recon_browser.py` — разведка
 браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало».
 Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
-`run_worker.py`; служба `infra/jupiter-browser-run.sh`, включается флагом
-`/etc/jobtoo/jupiter-browser.enabled` (`bootstrap.sh`). Капча человеку —
+`run_worker.py`; служба `jt-jupiter-browser` (`infra/jupiter-browser-run.sh`
+setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
+`MemoryMax=1500M`) включается ФАЙЛОМ В РЕПОЗИТОРИИ `infra/jupiter-browser.enabled`
+(удалить и смержить — выключено): bootstrap ставит флаг
+`/etc/jobtoo/jupiter-browser.enabled`, политику Chromium для Минцифры, секрет
+`JUPITER_BROWSER_ENABLED=1` для PHP (`infra/docker-compose.yml`), таймер
+браузерной разведки `jt-recon-browser`; состояние —
+`/var/www/html/jupiter-browser-status.json`. YandexGPT — файл
+`/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
+В движке: `captcha()`, `captcha_png()`, `enter_captcha()` (в read_only — запрет), `current_page()`; `submit()` пишет ответ API в `last_api_result` (`browser_success`) и ловит гаснущие тосты «спасибо» в `page.text`.
+Цикл капчи в воркере — `jupiter/captcha_loop.py`: агент вернул
+`CAPTCHA_REQUIRED` на живой задаче браузерного движка → снимок капчи
+(`engine.captcha_png`) уходит на сервер (`queue.captcha_post`), воркер держит
+аренду и опрашивает ответ (до 10 мин; потеря аренды — стоп), вводит его
+(`engine.enter_captcha`) и продолжает агента с той же страницы; не больше 2
+капч на задачу. Ответ капчи не пишется ни в лог, ни в траекторию.
 Разделение воркеров (миграция 136, решение владельца «эскалация»): у заявки
 `engine` (`http` по умолчанию | `browser`), `jupiter_lease_task(worker, secs,
 engine)` выдаёт только заявки своего движка, воркер передаёт `JUPITER_ENGINE`.
@@ -1379,7 +1406,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 
 | Файл | Что внутри |
 |---|---|
-| `jupiter/engine.py` | HTTP, cookie, разбор HTML в семантическую модель (`PageState`/`FormState`/`ControlState`), сборка и отправка формы; для tbank.ru, alfabank.ru, tochka.com — доверие только центру Минцифры (`ru_trusted_ca.pem`) |
+| `jupiter/engine.py` | HTTP, cookie, разбор HTML в семантическую модель (`PageState`/`FormState`/`ControlState`), сборка и отправка формы; TLS — системные корни + Минцифры (`ru_trusted_ca.pem`) для всех хостов и AIA-догрузка промежуточного |
 | `jupiter/agent.py` | Планировщик: поиск вакансии и анкеты, заполнение полей, коды причин остановки (`Reason`); `is_application_form` отсеивает фильтры, подписки, формы для клиентов и «порекомендуй знакомого» до выбора формы; галочка ставится только на явное «да», резюме — в одно файловое поле формы (подписанное как резюме, иначе первое обязательное), а отмеченные сайтом заранее необязательные согласия (рассылка, подписка, кадровый резерв) снимаются (`drop_preselected_optional_consent`) |
 | `jupiter/validation.py` | Проверка формы по правилам HTML5 до отправки |
 | `jupiter/script_runtime.py` | Свой ограниченный DOM-рантайм, не JS VM |
@@ -1387,7 +1414,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `jupiter/policy.py` | Сетевая политика: резолв, отсечение внутренних сетей, закрепление адреса |
 | `jupiter/tasks.py` | Очередь задач подачи: аренда, сердцебиение, чекпоинты, повторы |
 | `jupiter/remote_tasks.py` | HTTP-мост к серверной очереди + `fetch_profile` для загрузки профиля кандидата из базы |
-| `jupiter/run_worker.py` | Точка входа: цикл `run_once`, профиль кандидата из базы по `user_id` задачи |
+| `jupiter/run_worker.py` | Точка входа: цикл `run_once`, профиль кандидата из базы по `user_id` задачи; `JUPITER_ENGINE=browser` — сторож задачи `browser_limits.watch_engine` (`JUPITER_TASK_TIMEOUT_S`, 240 с; сработал → `NAVIGATION_FAILED`/повтор), проверка памяти перед задачей (~1,6 ГБ свободно), добивание своих Chromium; YandexGPT (`YANDEX_GPT_*` в env) → `field_mapper` агента |
 | `services/jupiterTimeline.ts` | Статус, метка и строка отклика Юпитера. `jupiterVacancyClosed`: сбор погасил вакансию (`vacancy_active=false` из `jupiterMyApplications`), а отклик не ушёл — «Вакансия закрыта работодателем», без «Открыть анкету», не в «Ждут вас» (решение владельца 26.09) |
 | `jupiter/worker.py` | Воркер: берёт задачу и доводит её агентом; боевую задачу на сайт без `live_ready` не исполняет, а паркует с `SITE_NOT_VERIFIED` («Сайт ещё подключаем» в «Откликах») |
 | `jupiter/handoff.py` | Просьба к человеку и состояние возврата: токен, куки, адрес шага |
@@ -1395,7 +1422,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `jupiter/submission.py` | Доказательства отправки, отпечаток отклика и журнал поданных |
 | `jupiter/spa_payload.py` | Чтение встроенного JSON SPA (`__NEXT_DATA__`, ld+json, Nuxt) ради адреса анкеты |
 | `jupiter/js_engine.py` | QuickJS-движок: выполняет скрипты страницы, перехватывает fetch/XHR, находит API-эндпоинты SPA |
-| `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (30 сайтов; последним 26.09 — Контур, поля сверены вручную) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`). Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
+| `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (30 сайтов; последним 26.09 — Контур, поля сверены вручную) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`) **или** в браузерной разведке `/var/www/html/jupiter-recon-browser.json` (`JUPITER_RECON_BROWSER_FILE`; `infra/recon-browser-run.sh`, таймер `jt-recon-browser` после `jt-recon`, от nobody, dry-run, только разделы spa/captcha/form_unmapped/no_vacancy); `live_ready_source` → owner/http/browser. Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
 | `jupiter/recon.py` | Разведка форм отклика по всем 488 разделам `scripts/career-sites.tsv` (на сервере — ежедневно, `infra/recon-run.sh` → `/jupiter-recon.json`; `dry_run_ok` из свежего итога сам открывает боевую подачу через `site_compat.live_ready`): Jupiter в dry-run с синтетическим кандидатом, класс раздела и снимок полей. Итог — `docs/разведка-форм.md`; `--via-proxy` только для облачного контейнера |
 | `infra/recon-run.sh` | Та же разведка на московском сервере раз в сутки (таймер `jt-recon`, в 04:40; первый прогон сразу, пока журнал пуст; состояние — `recon_state`/`recon_last` в `security-status.json`): честная подпись Jupiter, 4 потока, только чтение; итог — открытый `https://147.45.184.99.sslip.io/jupiter-recon.json` (адреса работодателей и устройство анкет, без людей) |
 | `jupiter/mail_sync.py` | «Почта JobToo»: служба `jt-jupiter-mail` читает общий ящик Timeweb по IMAP и раскладывает письма по людям (`jupiterMailIngest`); адресата берёт только из первого `Received` публичного MX Timeweb. Адреса — `имя.фамилия@jobtoo.ru`, выдаёт `jt_jupiter_mailbox()` в `db.php` по правилам `php-proxy/jupiter_mail_address.php`; подробности — `docs/jupiter-mail.md` |
@@ -1547,7 +1574,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 Раздел «Внешние вакансии» (`/external`, `fetchExternal`): каталог — из открытого `/api/feed_stats.php` (там же правило IT-ленты и Москвы, отдаёт CORS `*`), свайпы `jm_ext_swipes` и отклики Jupiter `jm_jupiter_applications` за 90 дней, здоровье сбора — поля `last_*` в `jm_ext_sources`. Показы карточек не пишутся (события сняты в 096), воронка начинается со свайпа вправо.
 Раздел «Юпитер» (`dashboard/app/jupiter/page.tsx`) — замер автооткликов по сайтам
 компаний за 7/30 дней: отправил сам, подтверждено сайтом, ждут человека, «сайт ещё
-подключаем», частая причина остановки. Карточка «По движку» — HTTP/браузер из `checkpoint.summary.engine`, капча ждали/решена. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
+подключаем», частая причина остановки. Карточка «По движку» — колонка `engine` заявки (миграция 136), строка «Переведено на браузер»; блок «Капча» — `jm_jupiter_captcha` (135): показано/решено/неверно/не успели/среднее время ответа, только `CAPTCHA_COLUMNS` (без `user_id`, картинки и ответа); не прочиталась — прочерки. Счёт — `dashboard/lib/jupiterStats.ts`; колонок
 людей панель у базы не просит (`JUPITER_COLUMNS`), охрана — `tests/jupiter_stats.test.ts`.
 Выкладка — отдельная, через релизы GitHub; сервер тянет их сам.
 

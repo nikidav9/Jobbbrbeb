@@ -13,8 +13,15 @@ from urllib.parse import urlparse
 # 26.09.2026. Файл старше RECON_MAX_AGE не в счёт: разведка встала — вход
 # закрывается, а не держится открытым по вчерашней картине.
 RECON_FILE = os.environ.get("JUPITER_RECON_FILE", "/var/www/html/jupiter-recon.json")
+# Итог браузерной разведки (recon_browser.py, infra/recon-browser-run.sh):
+# разделы, где HTTP-движок упёрся в spa/captcha/form_unmapped/no_vacancy, а
+# браузер прошёл анкету до конца. Тот же формат, тот же срок свежести.
+RECON_BROWSER_FILE = os.environ.get(
+    "JUPITER_RECON_BROWSER_FILE", "/var/www/html/jupiter-recon-browser.json",
+)
 RECON_MAX_AGE = float(os.environ.get("JUPITER_RECON_MAX_AGE_DAYS", "3")) * 86400
-_recon_cache: tuple[str, float, frozenset[str]] = ("", 0.0, frozenset())
+# Кэш по пути: {path: (mtime, хосты)}.
+_recon_cache: dict[str, tuple[float, frozenset[str]]] = {}
 
 
 @dataclass(frozen=True)
@@ -317,19 +324,18 @@ def profile_for_url(url: str) -> SiteProfile | None:
     return None
 
 
-def recon_ok_hosts(path: str | None = None, now: float | None = None) -> frozenset[str]:
-    """Хосты, где последняя разведка дала dry_run_ok. Нет файла или он
-    протух — пусто. Кэш по mtime: воркер спрашивает на каждую задачу."""
-    global _recon_cache
-    path = path or RECON_FILE
+def _file_ok_hosts(path: str, now: float | None = None) -> frozenset[str]:
+    """Хосты с dry_run_ok в одном файле разведки. Нет файла или он протух —
+    пусто. Кэш по mtime: воркер спрашивает на каждую задачу."""
     try:
         mtime = os.path.getmtime(path)
     except OSError:
         return frozenset()
     if (now if now is not None else time.time()) - mtime > RECON_MAX_AGE:
         return frozenset()
-    if _recon_cache[0] == path and _recon_cache[1] == mtime:
-        return _recon_cache[2]
+    cached = _recon_cache.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
     hosts: set[str] = set()
     try:
         with open(path, encoding="utf-8") as fh:
@@ -343,20 +349,42 @@ def recon_ok_hosts(path: str | None = None, now: float | None = None) -> frozens
                 if host:
                     hosts.add(host)
     result = frozenset(hosts)
-    _recon_cache = (path, mtime, result)
+    _recon_cache[path] = (mtime, result)
     return result
+
+
+def recon_ok_hosts(path: str | None = None, now: float | None = None) -> frozenset[str]:
+    """Хосты, где свежая разведка дала dry_run_ok. С path — только этот
+    файл; без него — HTTP- и браузерный итог вместе (так их видит и
+    снятие с паузы SITE_NOT_VERIFIED в run_worker)."""
+    if path:
+        return _file_ok_hosts(path, now)
+    return _file_ok_hosts(RECON_FILE, now) | _file_ok_hosts(RECON_BROWSER_FILE, now)
+
+
+def live_ready_source(url: str) -> str | None:
+    """Чем подтверждена боевая подача: "owner" — флаг владельца, "http" —
+    свежая HTTP-разведка, "browser" — свежая браузерная; None — ничем.
+    Браузерный итог полезен воркеру: такой сайт HTTP-движком не пройти."""
+    profile = profile_for_url(url)
+    if profile and profile.live_ready:
+        return "owner"
+    host = normalize_host(url)
+    if not host:
+        return None
+    if host in _file_ok_hosts(RECON_FILE):
+        return "http"
+    if host in _file_ok_hosts(RECON_BROWSER_FILE):
+        return "browser"
+    return None
 
 
 def live_ready(url: str) -> bool:
     """Можно ли подавать сюда по-настоящему. Незнакомый сайт — нельзя.
 
-    Да — если владелец поставил флаг в профиле или свежая разведка прошла
-    анкету этого хоста до конца (dry_run_ok)."""
-    profile = profile_for_url(url)
-    if profile and profile.live_ready:
-        return True
-    host = normalize_host(url)
-    return bool(host) and host in recon_ok_hosts()
+    Да — если владелец поставил флаг в профиле или свежая разведка (HTTP-
+    или браузерная) прошла анкету этого хоста до конца (dry_run_ok)."""
+    return live_ready_source(url) is not None
 
 
 def trusted_hosts_for(url: str) -> set[str]:

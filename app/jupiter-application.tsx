@@ -23,7 +23,7 @@ import { requestJupiterLive } from '@/services/jupiterLive';
 import { confirmAsync } from '@/services/confirm';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import {
-  buildTimeline, jupiterBadge, jupiterNeedsSberConsent, jupiterRowSummary, jupiterStatus, jupiterVacancyClosed,
+  buildTimeline, jupiterBadge, jupiterNeedsCaptcha, jupiterNeedsSberConsent, jupiterRowSummary, jupiterStatus, jupiterVacancyClosed,
   TimelineStep,
 } from '@/services/jupiterTimeline';
 import { getInitials, nameColorFromString } from '@/services/storage';
@@ -168,11 +168,15 @@ export default function JupiterApplicationScreen() {
   const company = app?.company?.trim() || 'Карьерный сайт';
   const vacancyTitle = app?.vacancyTitle?.trim() || '';
   const status = app ? jupiterStatus(app) : null;
-  const canFill = !!app && jupiterManualEligible(app);
   const waiting = app?.state === 'submitted';
   // Работодатель закрыл вакансию, отклик не ушёл: отправлять некуда — ни
   // анкеты, ни Юпитера, ни согласия Сбера (решение владельца 26.09).
   const closed = !!app && jupiterVacancyClosed(app);
+  // Браузер Юпитера держит анкету открытой и ждёт слово с картинки: главное
+  // действие — ввести его. Ручную анкету рядом не предлагаем, чтобы человек
+  // не отправил отклик второй раз параллельно с Юпитером.
+  const needsCaptcha = !!app && !closed && jupiterNeedsCaptcha(app);
+  const canFill = !!app && !needsCaptcha && jupiterManualEligible(app);
   const needsSberConsent = !!app && !closed && jupiterNeedsSberConsent(app);
   // Автоотклик был выключен, когда заявка встала в очередь (или его отозвали
   // именно для неё) — пока человек не включит его заново, Юпитер к заявке не
@@ -191,6 +195,10 @@ export default function JupiterApplicationScreen() {
     // На вебе встроенного браузера нет — там анкета открывается на сайте.
     if (Platform.OS === 'web') { openSite(); return; }
     router.push({ pathname: '/jupiter-fill', params: { id: app.id, company } });
+  };
+  const openCaptcha = () => {
+    if (!app) return;
+    router.push({ pathname: '/jupiter-captcha', params: { id: app.id } });
   };
   const openSberTerms = () => {
     Linking.openURL(app?.thirdPartyTermsUrl || SBER_TERMS_URL)
@@ -243,7 +251,7 @@ export default function JupiterApplicationScreen() {
   };
 
   const badge = app ? jupiterBadge(app) : null;
-  const needsAction = canFill || needsRequeue || needsSberConsent;
+  const needsAction = canFill || needsRequeue || needsSberConsent || needsCaptcha;
   const summary = app ? jupiterRowSummary(app) : '';
   const manualSent = app?.state === 'submitted' && app.reasonCode === 'MANUAL_WEBVIEW';
 
@@ -252,7 +260,10 @@ export default function JupiterApplicationScreen() {
     if (!badge) return null;
     switch (badge.tone) {
       case 'needs_you':
-        return { label: 'Нужны вы · отклик сохранён', box: s.badgeNeeds, color: C.ink, icon: <HandIcon /> };
+        return {
+          label: needsCaptcha ? 'Нужна проверка сайта' : 'Нужны вы · отклик сохранён',
+          box: s.badgeNeeds, color: C.ink, icon: <HandIcon />,
+        };
       case 'sent':
         return {
           label: manualSent ? 'Отправлено вами' : 'Отправлено', box: s.badgeSent, color: '#FFFFFF',
@@ -341,6 +352,7 @@ export default function JupiterApplicationScreen() {
               ) : null}
               {showSummary ? <Text style={s.summary}>{summary}</Text> : null}
 
+              {needsCaptcha ? <PrimaryButton label="Ввести слово с картинки" onPress={openCaptcha} /> : null}
               {canFill ? <PrimaryButton label="Открыть анкету и отправить" onPress={openForm} arrow /> : null}
               {needsRequeue ? <PrimaryButton label="Отправить через Юпитер" onPress={() => void requeueLive()} /> : null}
               {needsSberConsent ? (

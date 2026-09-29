@@ -15,7 +15,10 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from recon_browser import compare, run_recon, select_sites
+import site_compat
+from recon_browser import (
+    compare, order_by_previous, run_recon, select_sites, sites_needing_browser, write_atomic,
+)
 
 try:
     from browser_engine import sync_playwright
@@ -119,6 +122,95 @@ class PureTest(unittest.TestCase):
         text = compare(old, new)
         self.assertIn("spa -> dry_run_ok  u1", text)
         self.assertIn("Сменили класс: 1", text)
+
+    def test_server_mode_takes_only_sections_http_did_not_pass(self):
+        http = [
+            {"name": "ok", "url": "https://ok.ru/jobs", "klass": "dry_run_ok"},
+            {"name": "ok2", "url": "https://www.ok.ru/other", "klass": "spa"},  # хост уже прошёл
+            {"name": "spa", "url": "https://spa.ru/jobs", "klass": "spa"},
+            {"name": "cap", "url": "https://cap.ru/jobs", "klass": "captcha"},
+            {"name": "unm", "url": "https://unm.ru/jobs", "klass": "form_unmapped"},
+            {"name": "nov", "url": "https://nov.ru/jobs", "klass": "no_vacancy"},
+            {"name": "nov", "url": "https://nov.ru/jobs", "klass": "no_vacancy"},  # дубль
+            {"name": "agg", "url": "https://agg.ru/jobs", "klass": "aggregator"},
+            {"name": "blk", "url": "https://blk.ru/jobs", "klass": "blocked"},
+        ]
+        self.assertEqual(
+            [name for name, _ in sites_needing_browser(http)], ["spa", "cap", "unm", "nov"],
+        )
+
+    def test_previous_dry_run_ok_goes_first_then_unseen(self):
+        sites = [("a", "https://a.ru"), ("b", "https://b.ru"), ("c", "https://c.ru"), ("d", "https://d.ru")]
+        prev = [{"url": "https://a.ru", "klass": "spa"}, {"url": "https://c.ru", "klass": "dry_run_ok"}]
+        self.assertEqual([n for n, _ in order_by_previous(sites, prev)], ["c", "b", "d", "a"])
+
+    def test_time_budget_stops_new_sites(self):
+        # Срок уже вышел — ни один процесс не запускается, итог пуст.
+        self.assertEqual(run_recon([("x", "https://x.ru")], max_seconds=0), [])
+
+    def test_write_atomic_replaces_whole_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "r.json"
+            out.write_text("old", encoding="utf-8")
+            write_atomic(str(out), [{"klass": "dry_run_ok"}])
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), [{"klass": "dry_run_ok"}])
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["r.json"])
+
+
+class SiteCompatBrowserReconTest(unittest.TestCase):
+    """live_ready читает и браузерный итог, с тем же сроком свежести."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.http = base / "http.json"
+        self.browser = base / "browser.json"
+        self.http.write_text(json.dumps([
+            {"url": "https://http-ok.example/jobs", "klass": "dry_run_ok"},
+            {"url": "https://spa.example/jobs", "klass": "spa"},
+        ]), encoding="utf-8")
+        self.browser.write_text(json.dumps([
+            {"url": "https://spa.example/jobs", "start_url": "https://jobs.spa.example/v/1",
+             "klass": "dry_run_ok", "engine": "browser"},
+            {"url": "https://cap.example/jobs", "klass": "captcha", "engine": "browser"},
+        ]), encoding="utf-8")
+        old = (site_compat.RECON_FILE, site_compat.RECON_BROWSER_FILE)
+        site_compat.RECON_FILE, site_compat.RECON_BROWSER_FILE = str(self.http), str(self.browser)
+
+        def restore():
+            site_compat.RECON_FILE, site_compat.RECON_BROWSER_FILE = old
+        self.addCleanup(restore)
+
+    def test_browser_dry_run_ok_opens_live_submission(self):
+        self.assertTrue(site_compat.live_ready("https://spa.example/vacancy/7"))
+        self.assertTrue(site_compat.live_ready("https://jobs.spa.example/v/1"))
+        self.assertTrue(site_compat.live_ready("https://http-ok.example/x"))
+        self.assertFalse(site_compat.live_ready("https://cap.example/jobs"))
+        self.assertEqual(site_compat.live_ready_source("https://spa.example/v"), "browser")
+        self.assertEqual(site_compat.live_ready_source("https://http-ok.example/v"), "http")
+        self.assertEqual(site_compat.live_ready_source("https://rabota.sber.ru/search/1"), "owner")
+        self.assertIsNone(site_compat.live_ready_source("https://cap.example/v"))
+        # Снятие с паузы в run_worker берёт хосты обоих итогов.
+        self.assertEqual(
+            site_compat.recon_ok_hosts(),
+            frozenset({"http-ok.example", "spa.example", "jobs.spa.example"}),
+        )
+        self.assertEqual(site_compat.recon_ok_hosts(str(self.http)), frozenset({"http-ok.example"}))
+
+    def test_stale_browser_file_does_not_count(self):
+        stale = self.browser.stat().st_mtime - site_compat.RECON_MAX_AGE - 60
+        os.utime(self.browser, (stale, stale))
+        self.assertFalse(site_compat.live_ready("https://spa.example/vacancy/7"))
+        self.assertIsNone(site_compat.live_ready_source("https://spa.example/vacancy/7"))
+        self.assertTrue(site_compat.live_ready("https://http-ok.example/x"))
+
+    def test_missing_or_broken_browser_file_is_empty(self):
+        self.browser.write_text("not json", encoding="utf-8")
+        self.assertFalse(site_compat.live_ready("https://spa.example/vacancy/7"))
+        self.browser.unlink()
+        self.assertFalse(site_compat.live_ready("https://spa.example/vacancy/7"))
+        self.assertTrue(site_compat.live_ready("https://http-ok.example/x"))
 
 
 if __name__ == "__main__":

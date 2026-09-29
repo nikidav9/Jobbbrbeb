@@ -63,12 +63,11 @@ export default function JupiterCaptchaScreen() {
 
   const submit = async () => {
     const text = answer.trim();
-    if (!captcha || !currentUser?.id || !text || phase !== 'ready') return;
+    if (!captcha || !currentUser?.id || !id || !text || phase !== 'ready') return;
     setPhase('sending');
     try {
-      const res = await jupiterCaptchaAnswer(currentUser.id, captcha.id, text);
-      if (res.ok) setPhase('sent');
-      else { showToast('Не удалось отправить слово, попробуйте ещё раз', 'error'); setPhase('ready'); }
+      await jupiterCaptchaAnswer(currentUser.id, id, text);
+      setPhase('sent');
     } catch (e: any) {
       showToast(e?.message || 'Не удалось отправить слово', 'error');
       setPhase('ready');
@@ -76,6 +75,18 @@ export default function JupiterCaptchaScreen() {
   };
 
   const goBack = () => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/matches'); };
+  // После ответа — обратно к заявке: replace, чтобы «назад» с карточки не
+  // возвращал на отправленную капчу.
+  const toApplication = useCallback(() => {
+    if (!id) { router.replace('/(tabs)/matches'); return; }
+    router.replace({ pathname: '/jupiter-application', params: { id } });
+  }, [id, router]);
+
+  useEffect(() => {
+    if (phase !== 'sent') return;
+    const t = setTimeout(toApplication, 2000);
+    return () => clearTimeout(t);
+  }, [phase, toApplication]);
   const company = captcha?.company?.trim() || 'Карьерный сайт';
   const left = captcha ? minutesLeft(captcha.expiresAt, now) : 0;
   const busy = phase === 'loading' || phase === 'sending';
@@ -106,6 +117,9 @@ export default function JupiterCaptchaScreen() {
                 <View style={s.stateBox}>
                   <ActivityIndicator color={JT.accent} />
                   <Text style={s.stateTxt}>Юпитер вводит слово на сайте…</Text>
+                  <TouchableOpacity style={s.secondaryBtn} onPress={toApplication} activeOpacity={0.85} accessibilityRole="button">
+                    <Text style={s.secondaryTxt}>К отклику</Text>
+                  </TouchableOpacity>
                 </View>
               ) : phase === 'expired' ? (
                 <View style={s.stateBox}>

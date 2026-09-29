@@ -203,6 +203,11 @@ class TestEngineChoice(unittest.TestCase):
         self.old_env = {k: os.environ.get(k) for k in self.KEYS}
         self.old_pw = run_worker.browser_engine.sync_playwright
         self.old_cls = run_worker.browser_engine.JupiterBrowserEngine
+        # Не зависеть от памяти машины и не искать настоящие Chromium.
+        self.old_mem = run_worker._memory_allows_browser
+        self.old_kill = run_worker.browser_limits.kill_stray_chromium
+        run_worker._memory_allows_browser = lambda: True
+        run_worker.browser_limits.kill_stray_chromium = lambda *a, **k: []
         os.environ.update({"JOBTOO_URL": "https://example.com", "JOBTOO_ADMIN_TOKEN": "tok",
                            "EXPO_PUBLIC_APP_SECRET": "app", "JUPITER_POLL_INTERVAL": "0"})
         os.environ.pop("JUPITER_ENGINE", None)
@@ -213,6 +218,8 @@ class TestEngineChoice(unittest.TestCase):
         self.wm.run_once = self.old_run
         self.rw.browser_engine.sync_playwright = self.old_pw
         self.rw.browser_engine.JupiterBrowserEngine = self.old_cls
+        self.rw._memory_allows_browser = self.old_mem
+        self.rw.browser_limits.kill_stray_chromium = self.old_kill
         self.rw._stop = False
         for k, v in self.old_env.items():
             if v is None:
@@ -602,6 +609,256 @@ class TestFillSummary(unittest.TestCase):
     def test_empty_trajectory(self) -> None:
         from worker import fill_summary
         self.assertEqual(fill_summary([]), {"fields": 0, "keys": [], "resume": False, "engine": ""})
+
+
+class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
+    """Сторож и память браузерного режима; YandexGPT как field_mapper."""
+
+    KEYS = ("JOBTOO_URL", "JOBTOO_ADMIN_TOKEN", "EXPO_PUBLIC_APP_SECRET",
+            "JUPITER_POLL_INTERVAL", "JUPITER_ENGINE", "JUPITER_CHROMIUM",
+            "JUPITER_TASK_TIMEOUT_S", "YANDEX_GPT_API_KEY", "YANDEX_GPT_FOLDER_ID")
+    SECRET = "AQVN-secret-key-do-not-log"
+
+    def setUp(self):
+        import browser_limits
+        import browser_planner
+        import run_worker
+        import worker as worker_mod
+        self.rw, self.wm, self.bl, self.bp = run_worker, worker_mod, browser_limits, browser_planner
+        self.saved = [
+            (worker_mod, "run_once", worker_mod.run_once),
+            (run_worker.browser_engine, "sync_playwright", run_worker.browser_engine.sync_playwright),
+            (run_worker.browser_engine, "JupiterBrowserEngine", run_worker.browser_engine.JupiterBrowserEngine),
+            (run_worker, "JupiterAgent", run_worker.JupiterAgent),
+            (run_worker, "_memory_allows_browser", run_worker._memory_allows_browser),
+            (browser_limits, "mark_owner", browser_limits.mark_owner),
+            (browser_limits, "watch_engine", browser_limits.watch_engine),
+            (browser_limits, "kill_stray_chromium", browser_limits.kill_stray_chromium),
+            (browser_planner, "suggest_field_keys", browser_planner.suggest_field_keys),
+        ]
+        self.old_env = {k: os.environ.get(k) for k in self.KEYS}
+        for k in self.KEYS:
+            os.environ.pop(k, None)
+        os.environ.update({"JOBTOO_URL": "https://example.com", "JOBTOO_ADMIN_TOKEN": "tok",
+                           "EXPO_PUBLIC_APP_SECRET": "app", "JUPITER_POLL_INTERVAL": "0"})
+        run_worker._stop = False
+        self.events: list = []
+        browser_limits.mark_owner = lambda: self.events.append("mark_owner")
+        browser_limits.kill_stray_chromium = lambda *a, **k: self.events.append("kill_stray") or []
+        run_worker._memory_allows_browser = lambda: True
+
+    def tearDown(self):
+        for obj, name, value in self.saved:
+            setattr(obj, name, value)
+        self.rw._stop = False
+        for k, v in self.old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def _browser_mode(self):
+        events = self.events
+
+        class FakeEngine:
+            def __init__(self, allowed_hosts, **kw):
+                self.allowed_hosts = set(allowed_hosts)
+                self.read_only = kw.get("read_only", False)
+
+            def close(self):
+                events.append("close")
+
+        self.rw.browser_engine.sync_playwright = object()
+        self.rw.browser_engine.JupiterBrowserEngine = FakeEngine
+        os.environ["JUPITER_ENGINE"] = "browser"
+
+    def _fake_watchdog(self, fired: bool):
+        events = self.events
+
+        class FakeWatchdog:
+            def __init__(self, engine, timeout):
+                self.fired = fired
+                events.append(("watch", engine, timeout))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                events.append("watch_exit")
+        return FakeWatchdog
+
+    def _run_main_with(self, body):
+        def fake_run_once(queue, pf, factory, wid, site_gate=None):
+            try:
+                return body(factory)
+            finally:
+                self.rw._stop = True
+        self.wm.run_once = fake_run_once
+        self.assertEqual(self.rw.main(), 0)
+
+    def test_browser_task_runs_under_watchdog_then_close_then_kill(self):
+        from agent import AgentResult
+        self._browser_mode()
+        os.environ["JUPITER_TASK_TIMEOUT_S"] = "90"
+        self.bl.watch_engine = self._fake_watchdog(fired=False)
+        seen = {}
+
+        def body(factory):
+            agent = factory(ApplicationTask(id="t", candidate_id="u", vacancy_url="https://e.ru/j"))
+            seen["agent"] = agent
+            self.events.append("task")
+            return None
+        self._run_main_with(body)
+        agent = seen["agent"]
+        self.assertIn("run", agent.__dict__)
+        self.assertIn("resume", agent.__dict__)
+        self.assertIn("_run_from_page", agent.__dict__)
+        self.assertEqual(self.events[0], "mark_owner")
+        self.assertEqual(self.events[-2:], ["close", "kill_stray"])
+
+        # Вызов run идёт под сторожем с таймаутом из env и на этом движке.
+        agent.__dict__["run"] = self.rw.JupiterAgent.run.__get__(agent)
+        agent._run_from_page = lambda *a: AgentResult("ready_to_submit")
+        agent.engine.open = lambda url: type("P", (), {"url": url, "status": 200})()
+        self.events.clear()
+        self.rw._watch_agent(agent, agent.engine, 90.0)
+        self.assertEqual(agent.run("https://e.ru/j", CandidateProfile({})).status, "ready_to_submit")
+        watch = [e for e in self.events if isinstance(e, tuple)]
+        self.assertEqual(watch, [("watch", agent.engine, 90.0)])  # вложенный вызов — без второго сторожа
+
+    def test_default_timeout_is_240(self):
+        self._browser_mode()
+        self.bl.watch_engine = self._fake_watchdog(fired=False)
+
+        def body(factory):
+            agent = factory(ApplicationTask(id="t", candidate_id="u", vacancy_url="https://e.ru/j"))
+            agent.engine.open = lambda url: (_ for _ in ()).throw(RuntimeError("boom"))
+            with self.assertRaises(RuntimeError):
+                agent.run("https://e.ru/j", CandidateProfile({}))
+            return None
+        self._run_main_with(body)
+        self.assertEqual([e[2] for e in self.events if isinstance(e, tuple)], [240.0])
+
+    def test_fired_watchdog_makes_task_retryable(self):
+        import worker as worker_mod
+        self._browser_mode()
+        self.bl.watch_engine = self._fake_watchdog(fired=True)
+        states = []
+
+        def body(factory):
+            task = ApplicationTask(id="t", candidate_id="u", vacancy_url="https://e.ru/j")
+            agent = factory(task)
+            # Браузер убит сторожем — зависший вызов Playwright падает.
+            agent.engine.open = lambda url: (_ for _ in ()).throw(RuntimeError("browser has been closed"))
+            result = agent.run(task.vacancy_url, CandidateProfile({}))
+            self.assertEqual(result.status, "failed")
+            self.assertIn(result.reason_code, worker_mod.RETRYABLE_CODES)
+            queue = FakeQueue()
+            states.append(worker_mod.apply_result(queue, task, result))
+            # Отправка уже началась — повтора нет, итог неизвестен.
+            states.append(worker_mod.apply_result(queue, task, result, submission_attempted=True))
+            return None
+        self._run_main_with(body)
+        self.assertEqual(states, [TaskState.RETRYABLE_FAILED, TaskState.SUBMISSION_UNKNOWN])
+
+    def test_fired_watchdog_keeps_submitted_result(self):
+        from agent import AgentResult
+
+        class Agent:
+            def run(self, *a):
+                return AgentResult("submitted")
+            resume = _run_from_page = run
+        self.bl.watch_engine = self._fake_watchdog(fired=True)
+        agent = Agent()
+        self.rw._watch_agent(agent, object(), 5)
+        self.assertEqual(agent.run("u", None).status, "submitted")
+
+    def test_no_memory_task_not_taken(self):
+        self._browser_mode()
+        called = []
+
+        def no_memory():
+            self.rw._stop = True
+            return False
+        self.rw._memory_allows_browser = no_memory
+        self.wm.run_once = lambda *a, **k: called.append(1)
+        self.assertEqual(self.rw.main(), 0)
+        self.assertEqual(called, [])
+
+    def test_memory_check_has_no_floor_of_one(self):
+        # max_parallel_browsers() никогда не меньше 1 — поэтому своя проверка.
+        old = self.bl.read_available_mb
+        try:
+            self.bl.read_available_mb = lambda *a, **k: self.bl.RESERVE_MB + 100
+            self.assertFalse(self.saved[4][2]())
+            self.bl.read_available_mb = lambda *a, **k: self.bl.RESERVE_MB + self.bl.PER_BROWSER_MB
+            self.assertTrue(self.saved[4][2]())
+        finally:
+            self.bl.read_available_mb = old
+
+    def _recording_agent(self, accepts_mapper: bool):
+        made = []
+        real = self.saved[3][2]
+
+        if accepts_mapper:
+            class Agent(real):
+                def __init__(self, allowed_hosts, max_steps=30, *, field_mapper=None, **kw):
+                    super().__init__(allowed_hosts, max_steps, **kw)
+                    self.field_mapper = field_mapper
+                    made.append(self)
+        else:
+            class Agent(real):
+                def __init__(self, allowed_hosts, max_steps=30, **kw):
+                    super().__init__(allowed_hosts, max_steps, **kw)
+                    made.append(self)
+        self.rw.JupiterAgent = Agent
+        return made
+
+    def _one_agent(self):
+        def body(factory):
+            factory(ApplicationTask(id="t", candidate_id="u", vacancy_url="https://e.ru/j"))
+            return None
+        with self.assertLogs("jupiter", level="INFO") as logs:
+            self._run_main_with(body)
+        return "\n".join(logs.output)
+
+    def test_without_key_no_field_mapper(self):
+        made = self._recording_agent(accepts_mapper=True)
+        out = self._one_agent()
+        self.assertIsNone(made[0].field_mapper)
+        self.assertIn("YandexGPT для незнакомых полей: нет", out)
+
+    def test_with_key_field_mapper_calls_suggest_field_keys_and_key_not_logged(self):
+        import yandex_gpt
+        os.environ["YANDEX_GPT_API_KEY"] = self.SECRET
+        os.environ["YANDEX_GPT_FOLDER_ID"] = "b1g-folder-secret"
+        made = self._recording_agent(accepts_mapper=True)
+        calls = []
+
+        def fake_suggest(llm, fields, allowed_keys):
+            calls.append((llm, fields, allowed_keys))
+            return {"plan-f0": "phone"}
+        self.bp.suggest_field_keys = fake_suggest
+        out = self._one_agent()
+        mapper = made[0].field_mapper
+        self.assertTrue(callable(mapper))
+        fields = [{"jt": "plan-f0", "label": "Мобильный"}]
+        self.assertEqual(mapper(fields, ["phone", "email"]), {"plan-f0": "phone"})
+        llm, got_fields, got_keys = calls[0]
+        self.assertIsInstance(llm, yandex_gpt.YandexGPT)
+        self.assertEqual(got_fields, fields)
+        self.assertEqual(got_keys, ["phone", "email"])
+        self.assertIn("YandexGPT для незнакомых полей: да", out)
+        self.assertNotIn(self.SECRET, out)
+        self.assertNotIn("b1g-folder-secret", out)
+
+    def test_agent_without_field_mapper_param_does_not_crash(self):
+        os.environ["YANDEX_GPT_API_KEY"] = self.SECRET
+        os.environ["YANDEX_GPT_FOLDER_ID"] = "folder"
+        made = self._recording_agent(accepts_mapper=False)
+        out = self._one_agent()
+        self.assertEqual(len(made), 1)
+        self.assertNotIn(self.SECRET, out)
 
 
 if __name__ == "__main__":
