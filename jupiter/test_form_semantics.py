@@ -562,6 +562,44 @@ class FieldMeaning(unittest.TestCase):
 
 
 
+class BareNameField(unittest.TestCase):
+    """Поле имени без подписи: разведка 29.09 — Верный, ЭФКО, Русагро, KDL,
+    Major Express, АМ Винотеки стояли на «нет данных» при заполненном профиле."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров",
+        "email": "i@example.com", "phone": "+79990000000",
+    })
+
+    def key_for(self, form_html: str, name: str) -> str | None:
+        page = parse(f"<form method=post>{form_html}<button>Отправить</button></form>")
+        return choose_key(control(page, name), self.PROFILE, "https://employer.example/job", page)
+
+    def test_bare_name_alone_is_the_whole_name(self):
+        for name in ("name", "userNamePop", "modal_name", "form_text_12"):
+            html = f'<input name="{name}" id="4-popup-form-name"><input name="phone">'
+            self.assertEqual(self.key_for(html, name), "full_name", name)
+
+    def test_fio_token_in_internal_name(self):
+        self.assertEqual(self.key_for('<input name="responce-fio"><input name="email">', "responce-fio"), "full_name")
+
+    def test_bare_name_next_to_surname_is_first_name_only(self):
+        html = '<input name="name"><input name="surname"><input name="phone">'
+        self.assertEqual(self.key_for(html, "name"), "first_name")
+        html = '<input name="name"><label>Фамилия <input name="f2"></label>'
+        self.assertEqual(self.key_for(html, "name"), "first_name")
+
+    def test_other_names_are_not_the_candidate(self):
+        for name in ("company_name", "vacancy-name", "fileName", "org_name"):
+            self.assertIsNone(self.key_for(f'<input name="{name}"><input name="phone">', name), name)
+
+    def test_label_still_wins(self):
+        # Подпись «Город» при name="name" — это город, не имя.
+        profile = CandidateProfile(values={**self.PROFILE.values, "city": "Москва"})
+        page = parse('<form method=post><label>Город <input name="name"></label><button>Ок</button></form>')
+        self.assertEqual(choose_key(control(page, "name"), profile, "https://e.example/", page), "city")
+
+
 class ValueFitsField(unittest.TestCase):
     """Значение профиля в записи, которую поле примет."""
 

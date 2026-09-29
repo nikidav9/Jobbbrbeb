@@ -394,6 +394,7 @@ def choose_key(
     control: ControlState,
     profile: CandidateProfile,
     page_url: str,
+    page: PageState | None = None,
 ) -> str | None:
     override = field_override(page_url, control.name, control.id)
     if override:
@@ -499,7 +500,62 @@ def choose_key(
             score = score_alias(descriptor, alias)
             if score > best[0]:
                 best = (score, key)
-    return best[1] if best[0] >= 30 else None
+    if best[0] >= 30:
+        return best[1]
+    return _bare_name_key(control, profile, page)
+
+
+# Служебные слова в имени поля имени: userNamePop, modal_name, 4-popup-form-name.
+# Любое другое слово (company, vacancy, file…) — значит поле не про кандидата.
+_NAME_NEUTRAL_TOKENS = {
+    "user", "your", "form", "popup", "pop", "modal", "input", "field", "text",
+    "edit", "value", "responce", "response", "candidate", "applicant", "contact",
+    "person", "f", "fl", "my",
+}
+_LAST_NAME_TOKENS = {"surname", "lastname", "lname", "family"}
+
+
+def _name_tokens(raw: str) -> list[str]:
+    spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", raw or "")
+    return [t for t in re.split(r"[^a-z0-9]+", spaced.lower()) if t and not t.isdigit()]
+
+
+def _bare_name_key(
+    control: ControlState,
+    profile: CandidateProfile,
+    page: PageState | None,
+) -> str | None:
+    """Поле имени, которое узнаётся только по внутреннему имени: name, userNamePop,
+    responce-fio. Срабатывает, лишь когда подпись ничего не сказала.
+
+    Голое «name» — это всё имя, если в той же форме нет отдельной фамилии;
+    иначе — только имя, чтобы фамилия не попала в анкету дважды.
+    """
+    if control.type in _STRUCTURAL_CONTROL_TYPES or control.tag == "select":
+        return None
+    for raw in (control.name, control.id):
+        tokens = _name_tokens(raw)
+        if not tokens:
+            continue
+        rest = [t for t in tokens if t not in _NAME_NEUTRAL_TOKENS]
+        if rest == ["fio"] and "full_name" in profile.values:
+            return "full_name"
+        if rest in (["fname"], ["firstname"]) and "first_name" in profile.values:
+            return "first_name"
+        if rest != ["name"]:
+            continue
+        has_last_name = page is not None and any(
+            other is not control
+            and other.form_index == control.form_index
+            and (
+                _LAST_NAME_TOKENS & set(_name_tokens(other.name) + _name_tokens(other.id))
+                or "фамил" in normalize(" ".join((other.label, other.placeholder)))
+            )
+            for other in page.controls
+        )
+        key = "first_name" if has_last_name else "full_name"
+        return key if key in profile.values else None
+    return None
 
 
 _VACANCY_PATH_RE = re.compile(r"/(?:vacanc(?:y|ies)|jobs?|career/vacanc\w*)/([^/?#]+)", re.I)
@@ -834,7 +890,7 @@ class JupiterAgent:
                 return True
             return False
 
-        key = key_override or choose_key(control, profile, page.url)
+        key = key_override or choose_key(control, profile, page.url, page)
         if not key:
             if control.tag == "select" and control.required:
                 real_options = [
@@ -1121,7 +1177,7 @@ class JupiterAgent:
                 continue
             if self._resume_alternative_satisfied(page, control):
                 continue
-            if choose_key(control, profile, page.url):
+            if choose_key(control, profile, page.url, page):
                 continue  # правила поле узнали — значит, не хватает данных, а не смысла
             found.setdefault(control.name, []).append(control)
         return found
@@ -1564,7 +1620,7 @@ class JupiterAgent:
                 if any(marker in normalize(descriptor) for marker in SUBMIT_MARKERS):
                     score += 30
                 continue
-            key = choose_key(control, profile, page.url)
+            key = choose_key(control, profile, page.url, page)
             if key and key not in keys:
                 keys.add(key)
                 score += 20
