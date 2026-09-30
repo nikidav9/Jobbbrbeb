@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  JUPITER_COLUMNS, bucketOf, siteOf, buildReport, lastDays, type JupiterRow,
+  JUPITER_COLUMNS, CAPTCHA_COLUMNS, bucketOf, siteOf, buildReport, lastDays, engineOf,
+  buildEngineReport, buildCaptchaReport, formatDuration, type JupiterRow, type CaptchaRow,
 } from '../dashboard/lib/jupiterStats.ts';
 
 const row = (over: Partial<JupiterRow>): JupiterRow => ({
@@ -21,6 +22,9 @@ test('панель не просит у базы колонок людей', () 
   for (const bad of ['user_id', 'resume_token', 'receipt_key', 'external_application_id', 'checkpoint', 'last_error']) {
     assert.ok(!cols.includes(bad), bad);
   }
+  // Движок — прямая колонка, в checkpoint (токены возобновления) не лезем даже путём.
+  assert.ok(cols.includes('engine'));
+  assert.doesNotMatch(JUPITER_COLUMNS, /checkpoint/);
   const page = fs.readFileSync(path.resolve(import.meta.dirname, '../dashboard/app/jupiter/page.tsx'), 'utf8');
   assert.match(page, /\.select\(JUPITER_COLUMNS\)/);
 });
@@ -86,4 +90,67 @@ test('день считается по Москве: 22:30 UTC — уже сле
   const r = buildReport([row({ created_at: '2026-09-25T22:30:00Z' })], 7, now);
   assert.equal(r.days.find(d => d.day === '2026-09-26')!.other, 1);
   assert.deepEqual(lastDays(3, new Date('2026-09-25T22:30:00Z')), ['2026-09-24', '2026-09-25', '2026-09-26']);
+});
+
+test('по движку: колонка engine, «Переведено на браузер» — отдельной строкой', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+  assert.equal(engineOf('http'), 'http');
+  assert.equal(engineOf('browser'), 'browser');
+  assert.equal(engineOf('jupiter-browser-engine'), 'browser');
+  assert.equal(engineOf(null), 'unknown');
+
+  const rows = [
+    row({ id: 'a', engine: 'http', state: 'submitted' }),
+    row({ id: 'b', engine: 'http', state: 'failed', reason_code: 'UNSUPPORTED_SCRIPT' }),
+    row({ id: 'c', engine: 'browser', state: 'submitted', verified_at: '2026-09-25T10:05:00Z' }),
+    row({ id: 'd', engine: 'browser', state: 'action_required', reason_code: 'CAPTCHA_HUMAN' }),
+  ];
+  const e = buildEngineReport(rows, [], 7, now);
+  assert.deepEqual(e.map(x => x.engine), ['http', 'browser']);
+  const br = e.find(x => x.engine === 'browser')!;
+  assert.deepEqual([br.total, br.auto, br.verified, br.captchaWaited, br.captchaSolved], [2, 1, 1, 1, 0]);
+
+  // Переводов нет — строка браузера всё равно есть, с нулём.
+  const onlyHttp = buildEngineReport([rows[0]], [], 7, now);
+  assert.deepEqual(onlyHttp.map(x => [x.engine, x.total]), [['http', 1], ['browser', 0]]);
+  // Свайпов нет — нет и строк (страница покажет «не было»).
+  assert.deepEqual(buildEngineReport([], [], 7, now), []);
+});
+
+test('капча: панель не просит user_id, картинку и ответ', () => {
+  const cols = CAPTCHA_COLUMNS.split(',');
+  assert.deepEqual(cols, ['id', 'application_id', 'status', 'created_at', 'answered_at']);
+  const page = fs.readFileSync(path.resolve(import.meta.dirname, '../dashboard/app/jupiter/page.tsx'), 'utf8');
+  assert.match(page, /\.select\(CAPTCHA_COLUMNS\)/);
+  assert.doesNotMatch(page, /\.select\([^)]*(user_id|image_png|answer\b|\*)/);
+});
+
+test('капча: показано, решено, неверно, не успели, среднее время, период', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+  const c = (over: Partial<CaptchaRow>): CaptchaRow => ({
+    id: 'x', application_id: 'a', status: 'pending',
+    created_at: '2026-09-25T10:00:00Z', answered_at: null, ...over,
+  });
+  const rows = [
+    c({ status: 'solved', answered_at: '2026-09-25T10:00:30Z' }),
+    c({ status: 'failed', answered_at: '2026-09-25T10:01:30Z' }),
+    c({ status: 'expired' }),
+    c({ status: 'pending' }),
+    c({ status: 'answered', answered_at: '2026-09-25T10:02:00Z' }),
+    // Старше недели: в 7 днях его нет.
+    c({ status: 'solved', created_at: '2026-09-01T10:00:00Z', answered_at: '2026-09-01T10:10:00Z' }),
+  ];
+  const w = buildCaptchaReport(rows, 7, now);
+  assert.deepEqual([w.shown, w.solved, w.failed, w.expired, w.open], [5, 1, 1, 1, 2]);
+  assert.equal(w.avgAnswerSec, 80); // (30 + 90 + 120) / 3
+  const all = buildCaptchaReport(rows, 0, now);
+  assert.equal(all.shown, 6);
+  assert.equal(all.avgAnswerSec, 210); // (30 + 90 + 120 + 600) / 4
+
+  const none = buildCaptchaReport([c({ status: 'expired' })], 7, now);
+  assert.equal(none.avgAnswerSec, null);
+  assert.equal(formatDuration(null), '—');
+  assert.equal(formatDuration(42), '42 с');
+  assert.equal(formatDuration(185), '3 мин 5 с');
+  assert.equal(formatDuration(120), '2 мин');
 });

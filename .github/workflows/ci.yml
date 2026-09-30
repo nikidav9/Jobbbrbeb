@@ -55,8 +55,14 @@ jobs:
       - name: Приглашение платит за выход на смену, а не за отклик
         run: php tests/referral_test.php
 
+      - name: Найм приглашённого записывается один раз и только своим работодателем
+        run: php tests/referral_hired_test.php
+
       - name: Смену закрывает её сторона, а не любой вошедший
         run: php tests/shift_authz_test.php
+
+      - name: Скрытые возраст и номер не уходят работодателю, файл сертификата — только владельцу
+        run: php tests/profile_privacy_test.php
 
       - name: Аккаунт без пароля видит «Задать пароль», хеш наружу не уходит
         run: php tests/has_password_test.php
@@ -91,8 +97,20 @@ jobs:
       - name: Почта JobToo — читаемый адрес, повтор получает цифру
         run: php tests/jupiter_mail_address_test.php
 
+      - name: Капча человеку — права, срок, длина ответа, чужая заявка
+        run: php tests/jupiter_captcha_test.php
+
+      - name: Юпитер — заявка на браузер только при включённой службе и новой редакции
+        run: php tests/jupiter_engine_routing_test.php
+
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
+
+      - name: Закладки карьерных вакансий — только свои, таблица закрыта RLS
+        run: php tests/ext_saved_test.php
+
+      - name: Точка на конверте — непрочитанные письма почты для откликов
+        run: php tests/mail_unread_dot_test.php
 
       - name: Уровень, формат и специализация вакансии — паритет PHP и TS
         run: php tests/vacancy_facets_test.php
@@ -241,7 +259,7 @@ jobs:
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
           pip install quickjs
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py jupiter/yandex_gpt.py jupiter/ats_hosts.py jupiter/browser_frames.py jupiter/browser_planner.py jupiter/browser_success.py jupiter/browser_sessions.py jupiter/browser_overlays.py jupiter/browser_captcha.py jupiter/browser_custom_controls.py jupiter/browser_guard.py jupiter/recon_browser.py jupiter/test_browser_zoo.py jupiter/browser_limits.py jupiter/captcha_loop.py jupiter/test_browser_engine_captcha.py jupiter/test_agent_llm.py jupiter/test_tls_trust.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
@@ -257,7 +275,15 @@ jobs:
           (cd jupiter && python3 test_e2e.py)
           (cd jupiter && python3 test_recon.py)
           (cd jupiter && python3 test_js_engine.py)
+          (cd jupiter && python3 test_yandex_gpt.py)
+          (cd jupiter && python3 test_ats_hosts.py)
+          (cd jupiter && python3 test_browser_limits.py)
+          (cd jupiter && python3 test_captcha_loop.py)
+          (cd jupiter && python3 test_agent_llm.py)
+          (cd jupiter && python3 test_tls_trust.py)
           python3 tests/jupiter_private_lab_infra_test.py
+          python3 tests/jupiter_browser_infra_test.py
+          python3 tests/recon_browser_infra_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build
@@ -299,6 +325,34 @@ jobs:
               raise SystemExit('missing app assets: ' + ', '.join(missing))
           print(f'complete shell: {len(parser.urls)} referenced assets')
           PY
+
+  # Браузерный движок Юпитера (решение владельца 28.09.2026): Chromium через
+  # Python-Playwright. Отдельная задача — основной Юпитер остаётся на stdlib,
+  # а браузер ставится только здесь. Версия закреплена.
+  jupiter-browser:
+    name: Jupiter browser engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright + Chromium
+        run: |
+          pip install playwright==1.63.0
+          python -m playwright install --with-deps chromium
+      - name: Browser engine on a synthetic heavy career site
+        env:
+          JUPITER_BROWSER_TESTS: '1'
+        run: |
+          cd jupiter
+          for t in test_browser_engine test_browser_frames test_browser_planner test_browser_success \
+                   test_browser_sessions test_browser_overlays test_browser_captcha \
+                   test_browser_custom_controls test_browser_guard test_recon_browser test_browser_zoo \
+                   test_browser_engine_captcha; do
+            echo "== $t"; python3 $t.py
+          done
 
   dashboard:
     name: Dashboard build

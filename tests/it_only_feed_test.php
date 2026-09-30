@@ -25,8 +25,30 @@ check('фильтр: раздел it или IT-компания',
 check('старая перегрузка функции снята', str_contains($mig, 'drop function if exists public.jm_ext_feed_pool(text, int, text[]);'));
 check('функцию может звать db.php', str_contains($mig, 'grant execute on function public.jm_ext_feed_pool(text, int, text[], boolean) to service_role;'));
 
+// Решение владельца 28.09.2026: IT-компания не тащит в ленту «рабочие»
+// вакансии (миграция 132). Список в SQL совпадает с JOB_SECTIONS_BLUE_COLLAR.
+require_once __DIR__ . '/../php-proxy/job_sections.php';
+$mig132 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/132_it_companies_no_blue_collar.sql');
+preg_match("~c\\.section not in \\(([^)]*)\\)~", $mig132, $m);
+$sqlList = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
+sort($sqlList);
+$phpList = JOB_SECTIONS_BLUE_COLLAR;
+sort($phpList);
+check('миграция 132: рабочие разделы IT-компаний скрыты', $sqlList === $phpList && $phpList !== []);
+check('раздел it в списке рабочих быть не может', !in_array('it', JOB_SECTIONS_BLUE_COLLAR, true));
+foreach (['Кладовщик на частичную занятость', 'Логист', 'Курьер', 'Водитель', 'Повар'] as $t) {
+    check("«{$t}» — рабочий раздел", in_array(job_section($t), JOB_SECTIONS_BLUE_COLLAR, true));
+}
+foreach (['Продуктовый дизайнер', 'HR BP', 'Юрист', 'Менеджер по продажам'] as $t) {
+    check("«{$t}» у IT-компании остаётся", !in_array(job_section($t), JOB_SECTIONS_BLUE_COLLAR, true));
+}
+
 check('свои вакансии — только IT в колоде', str_contains($feed, "&& sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now)"));
-check('и в счётчике «Показать N»', substr_count($feed, "sectionOfPerm(v.workType) === 'it'") >= 2);
+// «Показать N вакансий» теперь считает сервер (dbCountExtFeed, тот же пул
+// jm_ext_feed_pool с p_it_only) — экран фильтров app/filters/index.tsx.
+$allFilters = (string)file_get_contents(__DIR__ . '/../app/filters/index.tsx');
+check('и в счётчике «Показать N»', str_contains($allFilters, 'dbCountExtFeed(')
+    && str_contains((string)file_get_contents(__DIR__ . '/../php-proxy/db.php'), "case 'dbCountExtFeed':"));
 check('сохранённые разделы не применяются', !str_contains($feed, 'getFeedSections('));
 check('блока «Разделы» в шторке нет', !str_contains($feed, '<Text style={fst.label}>Разделы</Text>'));
 

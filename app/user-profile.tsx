@@ -291,7 +291,7 @@ export default function UserProfileScreen() {
               спрятанное под вкладку оно на решение не влияет. */}
           {(user.referralWorked ?? 0) > 0 ? (
             <Text style={styles.vouchLine}>
-              🤝 Привёл на смену: {user.referralWorked}
+              🤝 Привёл, устроились: {user.referralWorked}
             </Text>
           ) : null}
         </View>

@@ -190,6 +190,8 @@ $adminFns = [
     'jupiterLease', 'jupiterHeartbeat', 'jupiterCheckpoint', 'jupiterFinish',
     'jupiterGetCandidateProfile', 'jupiterSubmitGuard', 'jupiterMailIngest',
     'jupiterRequeueSiteReady',
+    // Капча человеку: воркер кладёт картинку, забирает ответ, сообщает итог.
+    'jupiterCaptchaPost', 'jupiterCaptchaPoll', 'jupiterCaptchaResult',
 ];
 if (in_array($fn, $adminFns, true)) {
     // На переходном этапе отдельный токен можно задать как ADMIN_API_TOKEN.
@@ -248,7 +250,7 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
-    'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed',
+    'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed', 'dbCountExtFeed',
     // Регистрация и восстановление пароля по коду из письма — до входа.
     // dbAuthSendCode/dbAuthVerifyCode с целью attach сами требуют сессию.
     'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',
@@ -276,6 +278,8 @@ $selfArgFns = [
     'dbGetPermVacanciesByEmployer' => 0, 'dbGetPermApplications' => 0,
     'dbGetPermSaved' => 0, 'dbAddPermSaved' => 0, 'dbRemovePermSaved' => 0,
     'dbGetPermSavedDetailed' => 0,
+    // Закладки карьерных вакансий (миграция 129) — только свои.
+    'dbGetExtSaved' => 0, 'dbAddExtSaved' => 0, 'dbRemoveExtSaved' => 0,
     'dbSavePushToken' => 0, 'dbClearPushToken' => 0,
     'dbGetWebPushSubscription' => 0, 'dbSaveWebPushSubscription' => 0,
     'dbDeleteWebPushSubscription' => 0, 'dbGetNotifications' => 0,
@@ -287,9 +291,11 @@ $selfArgFns = [
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
-    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0,
+    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
     'jupiterApplicationEvents' => 0,
+    // Капча человеку: видит и отвечает только владелец заявки.
+    'jupiterCaptchaGet' => 0, 'jupiterCaptchaAnswer' => 0,
     // Свайпы по карьерным вакансиям: только свои.
     'dbExtSwipe' => 0, 'dbExtUnswipe' => 0,
     // Свайпы по своим вакансиям JobToo: только свои.
@@ -739,6 +745,37 @@ define('USER_PUBLIC_COLS', implode(',', [
 
 define('USER_SELF_COLS', USER_PUBLIC_COLS . ',phone,email,email_verified_at,resume_email,resume_file_name,resume_imported_at,personal_data');
 
+// Решение владельца (28.09): «Показывать возраст» — по умолчанию включено
+// (отсутствие флага = показывать, для существующих людей ничего не меняется),
+// showAge === false прячет age от всех, кроме самого человека.
+//
+// Один дополнительный запрос — только тех, кто скрыл возраст (их единицы), без
+// списка id: dbGetUsers отдаёт всех, и `id=in.(…)` на сотни uuid вылез бы за
+// предел длины URL — упал бы старт приложения у всех. Тянем только id:
+// personal_data наружу не уходит. $viewerUid — свой возраст видно всегда.
+function jt_mask_hidden_age(array $rows, ?string $viewerUid = null): array {
+    if (empty($rows)) return $rows;
+    try {
+        $hidden = sb_select_all('jm_users', ['personal_data->>showAge' => 'eq.false'], 'id');
+        $hideSet = array_flip(array_column($hidden, 'id'));
+        $hideAll = false;
+    } catch (Throwable $e) {
+        // Не узнали, кто скрыл возраст, — прячем у всех чужих: ни раскрыть
+        // скрытое, ни уронить dbGetUsers (а с ним старт приложения) нельзя.
+        error_log('[jt_mask_hidden_age] ' . $e->getMessage());
+        $hideSet = [];
+        $hideAll = true;
+    }
+    if (!$hideAll && empty($hideSet)) return $rows;
+    foreach ($rows as &$r) {
+        $id = $r['id'] ?? null;
+        if ($id === null || $id === $viewerUid || !array_key_exists('age', $r)) continue;
+        if ($hideAll || isset($hideSet[$id])) $r['age'] = null;
+    }
+    unset($r);
+    return $rows;
+}
+
 // bcrypt-хеш от пароля, положенного как есть, отличается началом строки.
 // Версии три — $2a$, $2b$, $2y$: приложение хеширует библиотекой bcryptjs
 // и даёт $2b$, PHP даёт $2y$, и проверить чужой хеш умеет каждый из них
@@ -811,7 +848,10 @@ function sb_delete(string $t, array $f): void {
 }
 
 // ─── Приватное хранилище PDF-резюме ───────────────────────────────────────
-function jt_resume_storage_upload(string $path, string $bytes): void {
+// $contentType по умолчанию — application/pdf, как было: старые вызовы
+// (резюме) продолжают слать PDF без изменений. Сертификаты используют тот
+// же бакет и ту же функцию, но кладут ещё и JPEG/PNG.
+function jt_resume_storage_upload(string $path, string $bytes, string $contentType = 'application/pdf'): void {
     $ch = curl_init(SB_URL . '/storage/v1/object/resume-files/' . $path);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -821,7 +861,7 @@ function jt_resume_storage_upload(string $path, string $bytes): void {
         CURLOPT_HTTPHEADER => [
             'apikey: ' . SB_KEY,
             'Authorization: Bearer ' . SB_KEY,
-            'Content-Type: application/pdf',
+            'Content-Type: ' . $contentType,
             'x-upsert: false',
         ],
     ]);
@@ -871,6 +911,70 @@ function jt_resume_signed_url(string $path): string {
         throw new RuntimeException('Не удалось открыть PDF');
     }
     return SB_URL . '/storage/v1' . $dec['signedURL'];
+}
+
+// Имена объектов в папке закрытого бакета (без самой папки в имени).
+function jt_resume_storage_list(string $prefix): array {
+    $names = [];
+    for ($offset = 0; ; $offset += 1000) {
+        $ch = curl_init(SB_URL . '/storage/v1/object/list/resume-files');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['prefix' => $prefix, 'limit' => 1000, 'offset' => $offset]),
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => [
+                'apikey: ' . SB_KEY,
+                'Authorization: Bearer ' . SB_KEY,
+                'Content-Type: application/json',
+            ],
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $rows = json_decode($resp ?: 'null', true);
+        if ($code < 200 || $code >= 300 || !is_array($rows)) {
+            throw new RuntimeException('хранилище не отдало список ' . $prefix . ': ' . $code);
+        }
+        foreach ($rows as $r) if (!empty($r['name'])) $names[] = (string)$r['name'];
+        if (count($rows) < 1000) break;
+    }
+    return $names;
+}
+
+// Всё, что лежит в Storage на человека: PDF-резюме (по jm_resume_files) и
+// файлы сертификатов (только по префиксу — в таблицах их нет). Зовётся перед
+// jm_delete_account: каскад БД стирает строки, но не объекты в бакете.
+function jt_purge_user_storage(string $uid): void {
+    if ($uid === '') return;
+    try {
+        $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
+        foreach ($resumeRows as $resumeRow) {
+            jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
+        }
+    } catch (Throwable $e) {
+        // Совместимость с сервером до миграции 100: отсутствие таблицы
+        // не должно ломать удаление аккаунта.
+    }
+    $prefix = 'certificate/' . $uid;
+    try {
+        foreach (jt_resume_storage_list($prefix) as $name) {
+            $path = $prefix . '/' . $name;
+            if (jt_certificate_path_owned($path, $uid)) jt_resume_storage_delete($path);
+        }
+    } catch (Throwable $e) {
+        error_log('[jt_purge_user_storage] ' . $e->getMessage());
+    }
+}
+
+// Путь сертификата обязан лежать в папке самого соискателя и никуда за её
+// пределы: без этой проверки чужой путь в аргументе открывал бы чужой файл
+// (path traversal через "..", чужой uid в пути). При пустом $authUid regex
+// всё равно не совпадёт ни с одним путём, потому что сегмент id обязателен
+// и непуст.
+function jt_certificate_path_owned(string $path, string $uid): bool {
+    if ($uid === '') return false;
+    return (bool)preg_match('#^certificate/' . preg_quote($uid, '#') . '/[A-Za-z0-9_-]+\.(pdf|jpg|png)$#', $path);
 }
 
 function jt_resume_sync_user(string $uid, ?array $row): void {
@@ -1613,6 +1717,15 @@ define('JT_JUPITER_CONSENT_FROM', '2026-09-25');
 // достоверности анкеты. Решение владельца 26.09.2026. Версия сравнивается
 // целиком: `2026-09-26` (без поручения) < `2026-09-26-2`.
 define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');
+// Редакция Соглашения, с которой отклик на анкету на скрипте подаёт сервер
+// (браузерный движок Юпитера). До неё — отклик через телефон.
+define('JT_BROWSER_SUBMIT_FROM', '2026-09-29');
+// Причины остановки HTTP-движка, которые браузер снимает: анкету рисует
+// скрипт, форма за кнопкой, шаг визарда не сдвинулся без JS, капча (браузер
+// не решает её сам — показывает человеку через jupiterCaptchaPost).
+// NAVIGATION_FAILED — сайт не пустил HTTP-клиент (часто проверка браузера, которую
+// Chromium проходит сам). Перевод один: заявка уже на браузере не переводится.
+const JT_BROWSER_ESCALATE_REASONS = ['UNSUPPORTED_SCRIPT', 'VACANCY_NOT_FOUND', 'STEP_DID_NOT_ADVANCE', 'CAPTCHA_REQUIRED', 'NAVIGATION_FAILED'];
 
 // Известные адреса условий работодателей. Для остальных сайтов условия
 // показываются ссылкой на сам сайт вакансии (карточка отклика).
@@ -2037,14 +2150,21 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
 
             $lines = ["📥 <b>Новая заявка на «{$vTitle}»</b>", ''];
             if (jt_has_crossborder_consent($workerId)) {
-                $w = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'first_name,last_name,age,metro_station,phone,avg_rating,rating_count');
+                $w = sb_single('jm_users', ['id' => 'eq.' . $workerId],
+                    'first_name,last_name,age,metro_station,phone,avg_rating,rating_count,personal_data');
+                // personal_data нужен только для чтения этих двух флагов — сам
+                // он в карточку не идёт. Отсутствие флага = показывать: для
+                // 500 людей, заведённых до переключателей, ничего не меняется.
+                $personal = is_array($w['personal_data'] ?? null) ? $w['personal_data'] : [];
+                $showAge = ($personal['showAge'] ?? true) !== false;
+                $showPhone = ($personal['showPhone'] ?? true) !== false;
                 $name = trim(($w['first_name'] ?? '') . ' ' . ($w['last_name'] ?? '')) ?: 'Кандидат';
-                $lines[] = '👤 ' . $name . (!empty($w['age']) ? ", {$w['age']} лет" : '');
+                $lines[] = '👤 ' . $name . ($showAge && !empty($w['age']) ? ", {$w['age']} лет" : '');
                 if (!empty($w['metro_station'])) $lines[] = '🚇 м. ' . $w['metro_station'];
                 if (!empty($w['avg_rating']) && (float)$w['avg_rating'] > 0) {
                     $lines[] = '⭐ Рейтинг ' . $w['avg_rating'] . (!empty($w['rating_count']) ? " ({$w['rating_count']} оценок)" : '');
                 }
-                if (!empty($w['phone'])) $lines[] = '📞 +' . ltrim($w['phone'], '+');
+                if ($showPhone && !empty($w['phone'])) $lines[] = '📞 +' . ltrim($w['phone'], '+');
             } else {
                 $lines[] = '👤 Новый кандидат — данные анкеты доступны только в JobToo.';
             }
@@ -3097,6 +3217,63 @@ function jt_employer_delegated(string $uid): bool
     return false;
 }
 
+/**
+ * Браузерная подача (Соглашение п. 8.2, редакция JT_BROWSER_SUBMIT_FROM):
+ * человек принял редакцию, где отклик на анкету на скрипте подаёт сервер.
+ */
+function jt_browser_delegated(string $uid): bool
+{
+    if ($uid === '') return false;
+    try {
+        foreach (sb_select('jm_consents', ['user_id' => 'eq.' . $uid], 'stamp') as $row) {
+            foreach (explode('|', (string)($row['stamp'] ?? '')) as $part) {
+                $pair = explode(':', $part, 2);
+                if (count($pair) === 2 && $pair[0] === 'terms'
+                    && strcmp($pair[1], JT_BROWSER_SUBMIT_FROM) >= 0) return true;
+            }
+        }
+    } catch (Throwable $e) {
+        // Нет ответа базы — нет и поручения.
+    }
+    return false;
+}
+
+/**
+ * Переводить ли заявку с HTTP-движка на браузер (миграция 136). Только:
+ * браузерная служба включена (JUPITER_BROWSER_ENABLED=1), заявка ещё на HTTP,
+ * HTTP-движок остановился на том, что умеет браузер, у заявки есть поручение
+ * на отправку и человек принял редакцию 2026-09-29. Иначе — как раньше.
+ */
+function jt_jupiter_escalates_to_browser(array $task, string $state, string $reason): bool
+{
+    return jt_secret('JUPITER_BROWSER_ENABLED') === '1'
+        && (string)($task['engine'] ?? 'http') === 'http'
+        && in_array($state, ['action_required', 'failed'], true)
+        && in_array($reason, JT_BROWSER_ESCALATE_REASONS, true)
+        && !empty($task['submission_authorized_at'])
+        && jt_browser_delegated((string)($task['user_id'] ?? ''));
+}
+
+/**
+ * Эскалация на браузер: HTTP-движок упёрся в анкету на скрипте — заявка
+ * встаёт в очередь браузерного воркера вместо «Нужны вы». true — переведена.
+ */
+function jt_jupiter_escalate_to_browser(string $id, array $task, string $state, string $reason): bool
+{
+    if (!jt_jupiter_escalates_to_browser($task, $state, $reason)) return false;
+    sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], [
+        'engine' => 'browser',
+        'state' => 'queued',
+        'reason_code' => null,
+        'attempt_count' => 0,
+        'not_before' => null,
+        'lease_owner' => null,
+        'lease_until' => null,
+        'updated_at' => now_iso(),
+    ]);
+    return true;
+}
+
 /** Поля заявки, которыми фиксируется поручение на согласия работодателю. */
 function jt_employer_consent_fields(string $vacancyUrl, string $now): array
 {
@@ -3371,6 +3548,49 @@ function jt_referral_on_outcome(string $likeId, string $outcome, ?string $byUser
 }
 
 /**
+ * Поручительство за приглашённого, которого работодатель нанял на постоянную
+ * работу (отклик переведён в 'hired'). Смен больше нет, поэтому это единственный
+ * итог, который сейчас растит referral_worked.
+ *
+ * Строка в журнале одна на приглашённого (уникальный индекс по invitee_id):
+ * если уже есть любая — старый выход на смену, невыход или прошлый найм, —
+ * второй не заводим. Повторный 'hired' и смена статусов счётчик не удваивают.
+ * Как и в jt_referral_on_outcome, считается только итог, который отметил
+ * работодатель этого отклика ($byUserId — из подписанной сессии).
+ */
+function jt_referral_on_hire(string $workerId, string $employerId, ?string $byUserId): void
+{
+    try {
+        $workerId = trim($workerId);
+        $employerId = trim($employerId);
+        if ($workerId === '' || $employerId === '') return;
+        if ($byUserId === null || $byUserId === '' || $byUserId !== $employerId) return;
+        if ($employerId === $workerId) return;
+
+        $worker = sb_single('jm_users', ['id' => 'eq.' . $workerId], 'id,invited_by');
+        $invitedBy = trim((string)($worker['invited_by'] ?? ''));
+        if ($invitedBy === '' || $invitedBy === $workerId) return;
+        // Пригласивший не может сам нанимать приглашённого: замкнутый круг.
+        if ($invitedBy === $employerId) return;
+
+        $existing = sb_single('jm_referral_rewards', ['invitee_id' => 'eq.' . $workerId], 'id');
+        if ($existing !== null) return;
+
+        sb_insert('jm_referral_rewards', [
+            'id' => uid(),
+            'inviter_id' => $invitedBy,
+            'invitee_id' => $workerId,
+            'like_id' => null,
+            'outcome' => 'hired',
+            'qualified_at' => now_iso(),
+        ]);
+        jt_referral_bump($invitedBy, 1);
+    } catch (Throwable $e) {
+        // Смена статуса отклика важнее начисления.
+    }
+}
+
+/**
  * Подвинуть счётчик поручительств на карточке приглашающего.
  *
  * Зачем счётчик вообще нужен: карточку кандидата работодатель видит списком,
@@ -3621,15 +3841,26 @@ try {
                     ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.worked']),
                 'noShow' => sb_count('jm_referral_rewards',
                     ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.no_show']),
+                // Приглашённые, которых наняли (миграция 131). Смен больше нет,
+                // поэтому это главное число; старые worked считаются отдельно.
+                'hired' => sb_count('jm_referral_rewards',
+                    ['inviter_id' => 'eq.' . $me, 'outcome' => 'eq.hired']),
             ];
             break;
         }
 
-        case 'dbGetUserById':
-            $data = sb_single('jm_users', ['id' => 'eq.' . $args[0]], USER_PUBLIC_COLS); break;
+        case 'dbGetUserById': {
+            $row = sb_single('jm_users', ['id' => 'eq.' . $args[0]], USER_PUBLIC_COLS);
+            if ($row) [$row] = jt_mask_hidden_age([$row], (string)$authUid);
+            $data = $row; break;
+        }
 
         case 'dbGetUsers':
-            $data = sb_select('jm_users', [], USER_PUBLIC_COLS, 'created_at.asc'); break;
+            $data = jt_mask_hidden_age(
+                sb_select('jm_users', [], USER_PUBLIC_COLS, 'created_at.asc'),
+                (string)$authUid
+            );
+            break;
 
         // Только число для приветственного экрана. Раньше он считал сам,
         // напрямую из базы публичным ключом, — и после закрытия базы получал
@@ -3950,17 +4181,9 @@ try {
             $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
             if (!$ok) { $data = ['error' => 'Неверный пароль']; break; }
 
-            // PDF лежат не в таблице, а в Storage: каскад БД удалит метаданные,
-            // но сами объекты без этой уборки остались бы навсегда.
-            try {
-                $resumeRows = sb_select('jm_resume_files', ['user_id' => 'eq.' . $uid], 'storage_path');
-                foreach ($resumeRows as $resumeRow) {
-                    jt_resume_storage_delete((string)($resumeRow['storage_path'] ?? ''));
-                }
-            } catch (Throwable $e) {
-                // Совместимость с сервером до миграции 100: отсутствие таблицы
-                // не должно ломать удаление аккаунта.
-            }
+            // Резюме и сертификаты лежат не в таблице, а в Storage: каскад БД
+            // удалит метаданные, но сами объекты без этой уборки остались бы навсегда.
+            jt_purge_user_storage($uid);
 
             $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
             break;
@@ -4304,6 +4527,8 @@ try {
         // Осталось для дашборда: там удаляет администратор, и пароля
         // человека у него нет. Проверка прав — на входе в дашборд.
         case 'dbDeleteUser':
+            // Файлы в Storage — той же уборкой, что и при удалении самим человеком.
+            jt_purge_user_storage((string)$args[0]);
             $data = sb_rpc('jm_delete_account', ['uid' => (string)$args[0]]); break;
 
         // Проверка «этот номер уже занят» нужна форме регистрации, но ею же
@@ -6249,6 +6474,61 @@ try {
             break;
         }
 
+        // ── Сертификаты соискателя ─────────────────────────────────────────────
+        // Решение владельца (28.09): открывает ТОЛЬКО сам соискатель. Тот же
+        // закрытый бакет resume-files, что и у резюме, — своя папка
+        // certificate/<uid>/. Путь строит сервер из $authUid, а не клиент:
+        // в аргументах пути нет, есть только имя файла.
+        case 'dbSaveCertificateFile': {
+            $fileName = trim((string)($args[0] ?? ''));
+            $b64 = (string)($args[1] ?? '');
+            if ($fileName === '' || mb_strlen($fileName) > 180) {
+                $data = ['error' => 'Некорректное имя файла']; break;
+            }
+            $bytes = base64_decode($b64, true);
+            if ($bytes === false || $bytes === '') {
+                $data = ['error' => 'Пустой файл']; break;
+            }
+            if (strlen($bytes) > 10 * 1024 * 1024) {
+                $data = ['error' => 'Файл больше 10 МБ']; break;
+            }
+            // Тип определяет сервер по сигнатуре байтов, а не по заявленному
+            // расширению или Content-Type — их несложно подделать.
+            if (substr($bytes, 0, 4) === '%PDF') {
+                $ext = 'pdf'; $contentType = 'application/pdf';
+            } elseif (substr($bytes, 0, 3) === "\xFF\xD8\xFF") {
+                $ext = 'jpg'; $contentType = 'image/jpeg';
+            } elseif (substr($bytes, 0, 8) === "\x89PNG\x0D\x0A\x1A\x0A") {
+                $ext = 'png'; $contentType = 'image/png';
+            } else {
+                $data = ['error' => 'Можно загрузить только PDF, JPEG или PNG']; break;
+            }
+
+            $path = 'certificate/' . (string)$authUid . '/' . uid() . '.' . $ext;
+            jt_resume_storage_upload($path, $bytes, $contentType);
+            $data = ['path' => $path, 'fileName' => $fileName];
+            break;
+        }
+
+        case 'dbSignCertificateFile': {
+            $path = trim((string)($args[0] ?? ''));
+            if (!jt_certificate_path_owned($path, (string)$authUid)) {
+                $data = ['error' => 'Файл не найден']; break;
+            }
+            $data = ['url' => jt_resume_signed_url($path)];
+            break;
+        }
+
+        case 'dbDeleteCertificateFile': {
+            $path = trim((string)($args[0] ?? ''));
+            if (!jt_certificate_path_owned($path, (string)$authUid)) {
+                $data = ['error' => 'Файл не найден']; break;
+            }
+            jt_resume_storage_delete($path);
+            $data = ['ok' => true];
+            break;
+        }
+
         // ── Chats ──────────────────────────────────────────────────────────────
         case 'dbGetChats': {
             $field = $args[1] === 'worker' ? 'worker_id' : 'employer_id';
@@ -6483,6 +6763,10 @@ try {
         // Гость получает общую ленту с чередованием компаний, вошедший — без
         // уже свайпнутых и с учётом вкуса. Кто вошёл — из подписанной сессии,
         // не из аргументов: чужие свайпы так не подсмотреть.
+        // dbCountExtFeed — кнопка «Показать N вакансий» на экране фильтров:
+        // тот же пул и тот же фильтр, но только число, без карточек, вкуса
+        // и полного описания — её зовут на каждое изменение фильтра.
+        case 'dbCountExtFeed':
         case 'dbGetExtFeed': {
             $limit = max(10, min(100, (int)($args[0] ?? 60)));
             // Раздел из шторки фильтров: только известные id, без дублей и
@@ -6505,8 +6789,9 @@ try {
             // Старый клиент без третьего довода «Всего N» не показывает — ему
             // прежние 30 достаточно.
             $perCompany = $filters !== null ? 200 : 30;
-            // Лента только IT (решение владельца 26.09.2026): раздел it плюс все
-            // вакансии компаний из jm_it_companies (миграция 120). И только
+            // Лента только IT (решение владельца 26.09.2026): раздел it плюс
+            // вакансии компаний из jm_it_companies (миграция 120), кроме
+            // «рабочих» разделов (миграция 132, 28.09.2026). И только
             // Москва, удалёнка и вакансии без города (миграция 121).
             //
             // select= — без description_full/described_at/detail_spec
@@ -6514,11 +6799,34 @@ try {
             // 200 строк, description_full — КБ на строку, а гость публичный, и
             // CURLOPT_TIMEOUT в sb_rpc — 10 секунд. Полное описание дотягиваем
             // ниже только для уже отобранных ≤60 карточек.
-            $pool = sb_rpc('jm_ext_feed_pool', [
+            // «Показать N» в шторке фильтров считает только число — выдача не нужна.
+            $pool = $fn === 'dbCountExtFeed' ? [] : sb_rpc('jm_ext_feed_pool', [
                 'p_user' => $authUid, 'p_per_company' => $perCompany, 'p_sections' => $sections,
                 'p_it_only' => true, 'p_moscow_only' => true,
+                'p_hide_seen' => $filters['hide_seen'] ?? true,
             ], ['select' => EXT_FEED_POOL_SELECT]);
             $pool = is_array($pool) ? $pool : [];
+            // Счёт «Всего N» и компаний шторки — по ВСЕМ вакансиям, а не по
+            // пулу выдачи: у пула потолок на компанию (200), и у Сбера,
+            // Яндекса, МТС лишнее молча выпадало — приложение показывало
+            // ~2000 при 3200 в ленте (28.09.2026). Отдельный лёгкий запрос:
+            // без потолка (миграция 134) и только с полями ext_feed_match;
+            // описание — лишь когда его читает фильтр (формат, поиск).
+            $countFor = $filters ?? ext_feed_filters([]);
+            $countPool = null;
+            if ($fn === 'dbCountExtFeed' || $filters !== null) {
+                $needDesc = !empty($countFor['formats']) || !empty($countFor['query']);
+                $countPool = sb_rpc('jm_ext_feed_pool', [
+                    'p_user' => $authUid, 'p_per_company' => 5000, 'p_sections' => $sections,
+                    'p_it_only' => true, 'p_moscow_only' => true,
+                    'p_hide_seen' => $countFor['hide_seen'] ?? true,
+                ], ['select' => 'company,title,salary,schedule,first_seen_at' . ($needDesc ? ',description' : '')]);
+                $countPool = is_array($countPool) ? $countPool : [];
+            }
+            if ($fn === 'dbCountExtFeed') {
+                $data = ['total' => count(array_filter($countPool, fn($row) => ext_feed_match($row, $countFor)))];
+                break;
+            }
             $history = [];
             if ($authUid !== null) {
                 foreach (sb_select('jm_ext_swipes', [
@@ -6546,10 +6854,11 @@ try {
             }
 
             $matched = array_values(array_filter($pool, fn($row) => ext_feed_match($row, $filters)));
+            $total = count(array_filter($countPool, fn($row) => ext_feed_match($row, $filters)));
             // Счёт по компаниям — при всех фильтрах, КРОМЕ самой компании:
             // иначе выбор одной компании убрал бы остальные из списка шторки.
             $companyCounts = [];
-            foreach ($pool as $row) {
+            foreach ($countPool as $row) {
                 if (!ext_feed_match($row, $filters, true)) continue;
                 $c = trim((string)($row['company'] ?? ''));
                 if ($c === '') continue;
@@ -6565,7 +6874,7 @@ try {
             $arranged = ext_feed_attach_full_descriptions(ext_feed_arrange($matched, $taste, $limit, $seed));
             $data = [
                 'items' => array_map('ext_feed_public_row', $arranged),
-                'total' => count($matched),
+                'total' => $total,
                 'companies' => $companies,
             ];
             break;
@@ -6674,6 +6983,17 @@ try {
             $data = sb_select('jm_jupiter_emails', [
                 'user_id' => 'eq.' . (string)$args[0], 'limit' => '100',
             ], 'id,sender,subject,body,received_at,read_at', 'received_at.desc');
+            break;
+        }
+
+        // Точка на конверте в «Откликах»: сколько непрочитанных писем на почте
+        // JobToo для откликов. Только число, без тел писем, — её зовут при
+        // каждом возврате на экран. Не больше 99: больше точке не нужно.
+        case 'jupiterMailUnread': {
+            $rows = sb_select('jm_jupiter_emails', [
+                'user_id' => 'eq.' . (string)$args[0], 'read_at' => 'is.null', 'limit' => '99',
+            ], 'id');
+            $data = ['unread' => count($rows)];
             break;
         }
 
@@ -7023,61 +7343,19 @@ try {
             if (jt_secret('JUPITER_MAIL_VERIFIED') !== '1') {
                 jt_respond(['error' => 'Почта JobToo временно недоступна'], 503); exit;
             }
-            $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg], 'jupiter_live_enabled_at');
-            $live = !empty($user['jupiter_live_enabled_at']);
-            // Поручение на согласия работодателю (Соглашение п. 8.3) — только
-            // вместе с боевой подачей: без неё согласия никому не нужны.
-            $delegated = $live && jt_employer_delegated($uidArg);
+            // Отклик — через телефон (решение владельца 28.09.2026). Свайп
+            // только копит заявку в «Нужны вы»: анкету заполняет автопилот во
+            // встроенном браузере (app/jupiter-fill.tsx), «Отправить» жмёт
+            // человек. Серверный Юпитер берёт лишь queued/retryable_failed
+            // (jupiter_lease_task), а PHONE_FILL не снимают ни
+            // jupiterRequeueSiteReady, ни jt_employer_requeue_consent — они
+            // смотрят на свои причины. Поэтому без разрешения на автоотправку
+            // и без поручения на согласия: их даёт сам человек на сайте.
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) {
-                // A second swipe after live mode was enabled is an explicit
-                // authorization for this vacancy. Reuse the existing row
-                // (the unique index still prevents duplicate employer
-                // submissions), but do not leave an old dry-run row stuck
-                // forever with submission_authorized_at = null.
-                $canAuthorizeExisting = $live
-                    && empty($existing['submission_authorized_at'])
-                    && empty($existing['lease_owner'])
-                    && in_array((string)($existing['state'] ?? ''), ['queued', 'ready_to_submit'], true);
-                // Повторный свайп по отклику, который ждал согласия, — то же
-                // поручение: если теперь оно есть, отклик идёт дальше сам.
-                $canResumeConsent = $delegated
-                    && empty($existing['third_party_consent_at'])
-                    && empty($existing['lease_owner'])
-                    && (string)($existing['state'] ?? '') === 'action_required'
-                    && (string)($existing['reason_code'] ?? '') === 'CONSENT_REQUIRED';
-                if ($canAuthorizeExisting || $canResumeConsent) {
-                    $now = now_iso();
-                    $filters = [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                        'lease_owner' => 'is.null',
-                    ];
-                    if ($canAuthorizeExisting) {
-                        $filters['submission_authorized_at'] = 'is.null';
-                    } else {
-                        $filters['state'] = 'eq.action_required';
-                    }
-                    $patch = [
-                        'state' => 'queued',
-                        'submission_authorized_at' => !empty($existing['submission_authorized_at'])
-                            ? $existing['submission_authorized_at'] : $now,
-                        'reason_code' => null,
-                        'not_before' => null,
-                        'updated_at' => $now,
-                    ];
-                    if ($delegated && empty($existing['third_party_consent_at'])) {
-                        $patch += jt_employer_consent_fields((string)$existing['vacancy_url'], $now);
-                    }
-                    sb_update('jm_jupiter_applications', $filters, $patch);
-                    $existing = sb_single('jm_jupiter_applications', [
-                        'id' => 'eq.' . (string)$existing['id'],
-                        'user_id' => 'eq.' . $uidArg,
-                    ]);
-                }
                 $data = $existing;
                 break;
             }
@@ -7087,14 +7365,12 @@ try {
                 'vacancy_url' => mb_substr($url, 0, 2048),
                 'canonical_url' => $canonical,
                 'company' => $company !== '' ? mb_substr($company, 0, 200) : null,
-                'state' => 'queued',
-                'submission_authorized_at' => $live ? now_iso() : null,
+                'state' => 'action_required',
+                'reason_code' => 'PHONE_FILL',
+                'submission_authorized_at' => null,
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
-            if ($delegated) {
-                $row += jt_employer_consent_fields($url, now_iso());
-            }
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.
@@ -7168,9 +7444,15 @@ try {
             $leaseSeconds = (int)($args[1] ?? 300);
             if ($worker === '') { jt_respond(['error' => 'Нужен идентификатор воркера'], 400); exit; }
             $leaseSeconds = max(30, min(3600, $leaseSeconds));
+            // Движок воркера (миграция 136): каждый берёт только свои заявки.
+            $engine = (string)($args[2] ?? 'http');
+            if (!in_array($engine, ['http', 'browser'], true)) {
+                jt_respond(['error' => 'Неизвестный движок'], 400); exit;
+            }
             $task = sb_rpc('jupiter_lease_task', [
                 'p_worker' => $worker,
                 'p_lease_seconds' => $leaseSeconds,
+                'p_engine' => $engine,
             ]);
             jt_respond($task ?: null); exit;
         }
@@ -7258,9 +7540,13 @@ try {
             if (!in_array($state, $allowed, true)) {
                 jt_respond(['error' => 'Unknown state'], 400); exit;
             }
-            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id], 'lease_owner');
+            $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
+                'lease_owner,user_id,engine,submission_authorized_at');
             if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
                 jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
+            }
+            if (jt_jupiter_escalate_to_browser($id, $task, $state, (string)($extra['reason_code'] ?? ''))) {
+                jt_respond(['ok' => true, 'escalated' => 'browser']); exit;
             }
             $patch = [
                 'state' => $state,
@@ -7283,6 +7569,133 @@ try {
             }
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
             jt_respond(['ok' => true]); exit;
+        }
+
+        // Капча человеку. Воркер кладёт картинку (base64 PNG до 200 КБ), заявка
+        // встаёт в «Нужны вы» с CAPTCHA_HUMAN, человеку уходит пуш. Прежние
+        // ждущие капчи этой заявки закрываются: живёт одна.
+        case 'jupiterCaptchaPost': {
+            $appId = (string)($args[0] ?? '');
+            $img = (string)($args[1] ?? '');
+            if ($appId === '' || $img === '' || strlen($img) > 200000) {
+                jt_respond(['error' => 'Нужна картинка до 200 КБ'], 400); exit;
+            }
+            $bin = base64_decode($img, true);
+            if ($bin === false || strncmp($bin, "\x89PNG", 4) !== 0) {
+                jt_respond(['error' => 'Ожидается PNG в base64'], 400); exit;
+            }
+            $app = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $appId], 'id,user_id,company');
+            if (!$app) { jt_respond(['error' => 'Заявка не найдена'], 404); exit; }
+            $now = now_iso();
+            sb_update('jm_jupiter_captcha', [
+                'application_id' => 'eq.' . $appId, 'status' => 'in.(pending,answered)',
+            ], ['status' => 'expired']);
+            $rows = sb_insert('jm_jupiter_captcha', [
+                'application_id' => $appId,
+                'user_id' => (string)$app['user_id'],
+                'image_png' => $img,
+                'status' => 'pending',
+                'created_at' => $now,
+                'expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 600),
+            ], true);
+            sb_update('jm_jupiter_applications', ['id' => 'eq.' . $appId], [
+                'state' => 'action_required',
+                'reason_code' => 'CAPTCHA_HUMAN',
+                'updated_at' => $now,
+            ]);
+            $company = trim((string)($app['company'] ?? ''));
+            if ($company === '') $company = 'компанию';
+            try {
+                notify_user((string)$app['user_id'], 'Нужна капча',
+                    'Введите слово, чтобы отклик в ' . $company . ' ушёл',
+                    'jupiter_captcha', ['applicationId' => $appId]);
+                // Id заявки кладём в payload колокольчика (миграция 011): по нему
+                // приложение открывает /jupiter-captcha?id=<id>. Внешний пуш id
+                // не несёт — push_privacy.php сводит его к {type:'refresh'}.
+                // payload=is.null: если колокольчик заглушён дублем, чужую
+                // строку (капчу другой заявки) не переписываем.
+                sb_update('jm_notifications', [
+                    'user_id' => 'eq.' . (string)$app['user_id'],
+                    'type' => 'eq.jupiter_captcha',
+                    'payload' => 'is.null',
+                    'created_at' => 'gte.' . gmdate('Y-m-d\TH:i:s\Z', time() - 60),
+                ], ['payload' => ['applicationId' => $appId]]);
+            } catch (Throwable $e) { /* Пуш не должен ронять запись капчи. */ }
+            $data = ['ok' => true, 'id' => $rows[0]['id'] ?? null];
+            break;
+        }
+
+        // Последняя ждущая и не просроченная капча заявки владельца.
+        case 'jupiterCaptchaGet': {
+            $row = sb_single('jm_jupiter_captcha', [
+                'user_id' => 'eq.' . (string)($args[0] ?? ''),
+                'application_id' => 'eq.' . (string)($args[1] ?? ''),
+                'status' => 'eq.pending',
+                'order' => 'created_at.desc',
+            ], 'id,image_png,expires_at');
+            if ($row && strtotime((string)$row['expires_at']) <= time()) $row = null;
+            $data = $row ? [
+                'id' => $row['id'], 'image_png' => $row['image_png'],
+                'expires_at' => $row['expires_at'],
+            ] : null;
+            break;
+        }
+
+        // Ответ человека: только своя, ждущая, не просроченная; до 64 символов.
+        case 'jupiterCaptchaAnswer': {
+            $uidArg = (string)($args[0] ?? '');
+            $appId = (string)($args[1] ?? '');
+            $answer = trim((string)($args[2] ?? ''));
+            if ($answer === '' || mb_strlen($answer) > 64) {
+                jt_respond(['error' => 'Ответ: от 1 до 64 символов'], 400); exit;
+            }
+            $row = sb_single('jm_jupiter_captcha', [
+                'user_id' => 'eq.' . $uidArg,
+                'application_id' => 'eq.' . $appId,
+                'status' => 'eq.pending',
+                'order' => 'created_at.desc',
+            ], 'id,expires_at');
+            if (!$row || strtotime((string)$row['expires_at']) <= time()) {
+                jt_respond(['error' => 'Капча устарела'], 409); exit;
+            }
+            sb_update('jm_jupiter_captcha', [
+                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uidArg, 'status' => 'eq.pending',
+            ], ['status' => 'answered', 'answer' => $answer, 'answered_at' => now_iso()]);
+            $data = ['ok' => true];
+            break;
+        }
+
+        // Воркер забирает ответ. Просроченная ждущая капча закрывается здесь.
+        case 'jupiterCaptchaPoll': {
+            $row = sb_single('jm_jupiter_captcha', [
+                'application_id' => 'eq.' . (string)($args[0] ?? ''),
+                'order' => 'created_at.desc',
+            ], 'id,status,answer,expires_at');
+            if (!$row) { $data = ['status' => 'none', 'answer' => null]; break; }
+            if ($row['status'] === 'pending' && strtotime((string)$row['expires_at']) <= time()) {
+                sb_update('jm_jupiter_captcha', ['id' => 'eq.' . $row['id'], 'status' => 'eq.pending'],
+                    ['status' => 'expired']);
+                $row['status'] = 'expired';
+            }
+            $data = [
+                'status' => $row['status'],
+                'answer' => $row['status'] === 'answered' ? $row['answer'] : null,
+            ];
+            break;
+        }
+
+        // Итог от воркера: ответ подошёл (solved) или нет (failed).
+        case 'jupiterCaptchaResult': {
+            $appId = (string)($args[0] ?? '');
+            $result = (string)($args[1] ?? '');
+            if (!in_array($result, ['solved', 'failed'], true)) {
+                jt_respond(['error' => 'Unknown result'], 400); exit;
+            }
+            sb_update('jm_jupiter_captcha', [
+                'application_id' => 'eq.' . $appId, 'status' => 'eq.answered',
+            ], ['status' => $result, 'answer' => null]);
+            $data = ['ok' => true];
+            break;
         }
 
         case 'jupiterGetCandidateProfile': {
@@ -7475,6 +7888,10 @@ try {
             sb_update('jm_perm_applications', ['id' => 'eq.' . $appId], ['status' => $status]);
             // Повторное нажатие не шлёт второго уведомления.
             if ($wasStatus !== $status) jt_perm_app_announce($app, $status);
+            // Устроился — поручительство тому, кто его позвал (один раз на человека).
+            if ($status === 'hired' && $wasStatus !== 'hired') {
+                jt_referral_on_hire((string)($app['worker_id'] ?? ''), (string)($app['employer_id'] ?? ''), (string)$authUid);
+            }
             break;
         }
 
@@ -7501,6 +7918,36 @@ try {
 
         case 'dbRemovePermSaved':
             sb_delete('jm_perm_saved', ['user_id' => 'eq.' . $args[0], 'vacancy_id' => 'eq.' . $args[1]]); break;
+
+        // ── Закладки карьерных вакансий (миграция 129) ────────────────────────
+        // Список — сразу с вакансиями: экрану избранного их больше неоткуда
+        // взять (лента держит только текущую порцию). Свежие сверху, не
+        // больше 200; вакансия, ушедшая из базы, уходит и из закладок (cascade).
+        case 'dbGetExtSaved': {
+            $rows = sb_select('jm_ext_saved', [
+                'user_id' => 'eq.' . $args[0], 'limit' => '200',
+            ], 'created_at,jm_ext_vacancies(' . EXT_FEED_POOL_SELECT . ',description_full)', 'created_at.desc');
+            $data = [];
+            foreach ($rows as $r) {
+                $v = $r['jm_ext_vacancies'] ?? null;
+                if (!is_array($v) || !isset($v['id'])) continue;
+                $data[] = ext_feed_public_row($v) + ['saved_at' => $r['created_at'] ?? null];
+            }
+            break;
+        }
+
+        case 'dbAddExtSaved':
+        case 'dbRemoveExtSaved': {
+            $vid = is_string($args[1] ?? null) ? trim($args[1]) : '';
+            if ($vid === '' || strlen($vid) > 200) { jt_respond(['error' => 'Bad vacancy id'], 400); exit; }
+            if ($fn === 'dbAddExtSaved') {
+                sb_upsert('jm_ext_saved', ['user_id' => $args[0], 'vacancy_id' => $vid]);
+            } else {
+                sb_delete('jm_ext_saved', ['user_id' => 'eq.' . $args[0], 'vacancy_id' => 'eq.' . $vid]);
+            }
+            $data = ['ok' => true];
+            break;
+        }
 
         // ── Ratings ────────────────────────────────────────────────────────────
         // Отзывы о человеке. КОЛОНКИ РАЗНЫЕ в зависимости от того, о ком

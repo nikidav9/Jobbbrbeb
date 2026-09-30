@@ -1,11 +1,15 @@
-"""Сертификат Минцифры — только для трёх банков (решение владельца 26.09.2026).
+"""Сертификат Минцифры у Юпитера.
+
+26.09.2026 — только для трёх банков; с 29.09.2026 (решение владельца) — для
+всех хостов Юпитера вместе с системными корнями, банки стали частным случаем.
+Подробные проверки общего контекста и AIA — test_tls_trust.py.
 
 Проверяет:
 - копия PEM у Юпитера совпадает с php-proxy/ru_trusted_ca.php (сборщик);
 - список доменов тот же, что JT_RU_CA_HOSTS в php-proxy/safe_url.php;
 - поддомены — да, похожие чужие домены — нет;
-- контекст доверяет ТОЛЬКО двум сертификатам Минцифры и проверяет имя хоста;
-- остальные сайты получают обычный системный контекст.
+- ru_ca_context() доверяет ТОЛЬКО двум сертификатам Минцифры и проверяет имя;
+- банки и любые другие сайты получают один контекст: системные корни + Минцифры.
 """
 import os
 import re
@@ -63,9 +67,14 @@ class RuCaScope(unittest.TestCase):
         for url in ("https://www.tbank.ru/career/", "https://rabota.sber.ru/"):
             with self.assertRaises(RuntimeError):
                 handler.https_open(urllib.request.Request(url))
-        self.assertIs(seen["www.tbank.ru"], engine.ru_ca_context())
-        self.assertIsNot(seen["rabota.sber.ru"], engine.ru_ca_context())
-
+        # Банк — частный случай: тот же общий контекст, и в нём есть Минцифры.
+        self.assertIs(seen["www.tbank.ru"], engine.trust_context())
+        self.assertIs(seen["rabota.sber.ru"], engine.trust_context())
+        ctx = engine.trust_context()
+        names = {dict(x["subject"][-1]).get("commonName") for x in ctx.get_ca_certs()}
+        self.assertLessEqual({"Russian Trusted Root CA", "Russian Trusted Sub CA"}, names)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

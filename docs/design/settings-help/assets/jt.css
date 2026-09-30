@@ -1,0 +1,94 @@
+/* Job Tools — общие стили экранов «Настройки / Помощь / Пригласить друга / Молния» */
+@import url("fonts/fonts.css");
+
+:root{
+  --accent:#FF6B1A;      /* главный оранжевый */
+  --ink:#141414;         /* чёрный: текст, контуры, тени */
+  --bg:#F5EFE6;          /* фон экранов */
+  --surface:#FFFFFF;     /* карточки */
+  --accent-soft:#FFE2CC; /* мягкие плашки, пузырь бота */
+  --border-soft:#CFC4B6; /* неактивные контуры */
+  --divider:#EFE7DC;     /* разделители в списках */
+  --muted:#E8DED1;       /* неактивные кнопки */
+  --text-2:#4A443D;      /* основной текст описаний */
+  --text-3:#6B645C;      /* мелкий/вторичный текст */
+  --placeholder:#9A9086;
+  --danger:#C2410C;
+  --overlay:rgba(20,20,20,.5);
+}
+
+html,body{margin:0}
+body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif;color:var(--ink)}
+*{box-sizing:border-box}
+a{color:var(--ink)}
+button{font-family:'Manrope',sans-serif;color:var(--ink);cursor:pointer}
+input,textarea{font-family:'Manrope',sans-serif}
+input::placeholder,textarea::placeholder{color:var(--placeholder)}
+
+/* Экран 390×844. Тёмный фон и скругление рамки — только для просмотра в браузере */
+.screen{width:390px;height:844px;position:relative;overflow:hidden;background:var(--bg);border-radius:40px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.page{padding:56px 20px 0;display:flex;flex-direction:column}
+
+/* Шапка */
+.hdr{display:flex;align-items:center;gap:14px;height:44px;position:relative}
+.hdr--center .h-title{position:absolute;left:0;right:0;text-align:center;pointer-events:none}
+.btn-round{flex-shrink:0;width:44px;height:44px;border-radius:22px;border:2px solid var(--ink);background:var(--surface);display:flex;align-items:center;justify-content:center;position:relative;z-index:1;padding:0}
+.h-title{margin:0;flex-grow:1;font-family:'Unbounded',sans-serif;font-weight:700;font-size:20px;letter-spacing:-.01em}
+.pill{height:44px;padding:0 16px 0 12px;border-radius:22px;border:2px solid var(--ink);background:var(--surface);display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px}
+
+/* Типографика */
+.title-u{font-family:'Unbounded',sans-serif;font-weight:700;letter-spacing:-.01em;margin:0}
+.section-label{margin:26px 0 10px;font-family:'Unbounded',sans-serif;font-weight:700;font-size:15px}
+.txt{font-size:15px;line-height:1.5;font-weight:600;color:var(--text-2);margin:0}
+.txt-sm{font-size:13px;line-height:1.5;font-weight:600;color:var(--text-3);margin:0}
+
+/* Карточки и списки */
+.card{background:var(--surface);border-radius:22px}
+.card--sticker{border:2px solid var(--ink);box-shadow:5px 5px 0 var(--ink)}
+.list{padding:4px 16px}
+.row{min-height:64px;display:flex;align-items:center;gap:14px;border-bottom:1.5px solid var(--divider);text-decoration:none;color:var(--ink)}
+.row:last-child{border-bottom:none}
+.row__title{flex-grow:1;font-size:16px;font-weight:700}
+.tile{flex-shrink:0;width:40px;height:40px;border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center}
+.tile--accent{background:var(--accent-soft)}
+
+/* Кнопки */
+.btn{height:58px;border-radius:29px;font-weight:800;font-size:17px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;width:100%}
+.btn--primary{border:2px solid var(--ink);background:var(--accent);box-shadow:4px 4px 0 var(--ink)}
+.btn--outline{border:2px solid var(--ink);background:var(--surface)}
+.btn--ghost{border:none;background:transparent;color:var(--text-3);font-weight:800;height:48px}
+.btn--disabled{border:none;background:var(--muted);color:var(--placeholder);box-shadow:none}
+.link{font-weight:800;text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-underline-offset:4px}
+
+/* Поля */
+.field{display:flex;flex-direction:column;gap:8px}
+.label{font-size:14px;font-weight:700;color:var(--text-2)}
+.input{height:56px;padding:0 8px 0 16px;border-radius:16px;border:1.5px solid var(--border-soft);background:var(--surface);display:flex;align-items:center;gap:8px}
+.input--focus{border:2px solid var(--ink);box-shadow:3px 3px 0 var(--accent)}
+.input input{flex-grow:1;min-width:0;border:none;outline:none;background:transparent;font-size:16px;font-weight:700;color:var(--ink)}
+.eye{width:40px;height:40px;border:none;border-radius:20px;background:transparent;display:flex;align-items:center;justify-content:center;padding:0}
+
+/* Затемнение, шторка, модалка */
+.overlay{position:absolute;inset:0;background:var(--overlay)}
+.sheet{position:absolute;left:0;right:0;bottom:0;padding:10px 20px 34px;border-radius:28px 28px 0 0;background:var(--surface);border-top:2px solid var(--ink);display:flex;flex-direction:column}
+.sheet--bg{background:var(--bg)}
+.handle{align-self:center;width:44px;height:5px;border-radius:3px;background:var(--border-soft)}
+.modal{position:absolute;left:20px;right:20px;top:50%;transform:translateY(-50%);padding:28px 22px 18px;border-radius:28px;background:var(--surface);border:2px solid var(--ink);box-shadow:6px 6px 0 var(--ink);display:flex;flex-direction:column;align-items:center;text-align:center}
+
+/* Чат */
+.chat{display:flex;flex-direction:column;gap:14px;padding:16px 20px 0}
+.msg{max-width:84%;padding:13px 16px;border-radius:20px;font-size:15px;line-height:1.45;font-weight:600}
+.msg__who{font-size:12px;font-weight:800;color:var(--text-3);margin:0 0 6px 4px}
+.msg--bot{background:var(--accent-soft);border-bottom-left-radius:6px;color:var(--ink)}
+.msg--operator{background:var(--surface);border:1.5px solid var(--divider);border-bottom-left-radius:6px;color:var(--ink)}
+.msg--me{align-self:flex-end;background:var(--accent);border:2px solid var(--ink);border-bottom-right-radius:6px;font-weight:700}
+.composer{position:absolute;left:0;right:0;bottom:0;padding:12px 16px 30px;background:var(--bg);border-top:1.5px solid var(--divider);display:flex;gap:10px;align-items:flex-end}
+.composer__input{flex-grow:1;min-height:52px;padding:14px 18px;border-radius:26px;border:1.5px solid var(--border-soft);background:var(--surface);font-size:16px;font-weight:600;outline:none;resize:none}
+.send{flex-shrink:0;width:52px;height:52px;border-radius:26px;border:none;background:var(--muted);display:flex;align-items:center;justify-content:center;padding:0}
+
+/* FAQ-аккордеон */
+.faq{display:flex;flex-direction:column;gap:10px}
+.faq__item{background:var(--surface);border-radius:20px;border:1.5px solid var(--divider)}
+.faq__item--open{border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink)}
+.faq__q{width:100%;min-height:60px;padding:14px 16px 14px 18px;border:none;background:transparent;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;font-size:16px;font-weight:800;line-height:1.35}
+.faq__a{margin:0;padding:0 18px 18px;font-size:14px;line-height:1.5;font-weight:600;color:var(--text-2)}

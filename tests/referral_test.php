@@ -221,12 +221,12 @@ check('счётчик уходит в карточку', str_contains($db, "'ref
 // зелёной при пустой карточке. Первая попытка так и прошла мутацию.
 $cand = (string)file_get_contents(__DIR__ . '/../app/candidates.tsx');
 check('карточка кандидата показывает число',
-    str_contains($cand, 'Привёл на смену: {worker.referralWorked}'));
+    str_contains($cand, 'Привёл, устроились: {worker.referralWorked}'));
 check('карточка не показывает ноль',
     str_contains($cand, '{(worker.referralWorked ?? 0) > 0 ? ('));
 $prof = (string)file_get_contents(__DIR__ . '/../app/user-profile.tsx');
 check('профиль показывает число',
-    str_contains($prof, 'Привёл на смену: {user.referralWorked}'));
+    str_contains($prof, 'Привёл, устроились: {user.referralWorked}'));
 check('профиль не показывает ноль',
     str_contains($prof, '{(user.referralWorked ?? 0) > 0 ? ('));
 

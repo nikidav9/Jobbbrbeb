@@ -11,6 +11,7 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { getSupabaseClient } from '@/template';
 import { User, Vacancy, Like, Chat, PermVacancy, PermApplication } from '@/constants/types';
+import { mergeSelfUser } from '@/lib/profileEdit';
 import {
   getSessionUser,
   saveSessionUser,
@@ -859,9 +860,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!prev) return prev;
       const found = data.find(u => u.id === prev.id);
       if (!found) return prev;
-      // dbGetUsers отдаёт публичную проекцию — has_password в ней нет. Без
-      // этого признак из dbSession/входа стирался бы через 300 мс после старта.
-      const fresh: User = { ...found, hasPassword: found.hasPassword ?? prev.hasPassword };
+      // dbGetUsers отдаёт публичную проекцию (USER_PUBLIC_COLS в db.php) —
+      // в ней нет self-only колонок (телефон, почта, личные данные, резюме
+      // соискателя). mergeSelfUser берёт их из prev, иначе следующий
+      // updateUser отправит personal_data: {} и сотрёт их на сервере.
+      const fresh: User = mergeSelfUser(prev, found);
       saveSessionUser(fresh).catch(() => {});
       return fresh;
     });

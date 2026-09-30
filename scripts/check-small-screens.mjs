@@ -223,7 +223,8 @@ const screens = [
   { id: 'settings-worker', url: '/profile-settings', who: worker, back: true, backTo: /^\/profile$/ },
   { id: 'invite', url: '/invite', who: worker, back: true, backTo: /^\/feed$/ },
   { id: 'user-profile', url: '/user-profile?userId=small-e1', who: worker, back: true, backTo: /^\/feed$/ },
-  { id: 'jupiter-application', url: '/jupiter-application?id=small-j1', who: worker, back: true, backTo: /^\/feed$/ },
+  // Карточка отклика живёт во вкладке «Отклики» (редизайн 28.09.2026): без истории — туда же, как jupiter-fill.
+  { id: 'jupiter-application', url: '/jupiter-application?id=small-j1', who: worker, back: true, backTo: /^\/matches$/ },
   { id: 'jupiter-fill', url: '/jupiter-fill?id=small-j1&company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true, backTo: /^\/matches$/ },
   // Работодатель
   { id: 'employer-feed', url: '/(tabs)/feed', who: employer, wait: 3500 },
@@ -341,7 +342,10 @@ try {
         });
         await page.waitForTimeout(screen.wait || 2200);
         await page.evaluate(() => { try { window.__hideSplash?.(); } catch {} });
-        await page.waitForTimeout(700);
+        // Заставка держится ~5 с (решение владельца 28.09.2026) и перехватывает
+        // нажатия — ждём, пока она уйдёт из DOM, а не фиксированную паузу.
+        await page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 12000 }).catch(() => {});
+        await page.waitForTimeout(300);
 
         const layout = await inspectLayout(page);
         // SMALL_SCREEN_SHOTS=1 — снимок каждого экрана для глаз, не только упавших.

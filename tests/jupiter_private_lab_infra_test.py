@@ -48,7 +48,9 @@ assert "class _SafeRedirectHandler" in engine
 assert "multipart/form-data" in engine
 assert "self.assert_allowed(resolved)" not in engine or "_SafeRedirectHandler" in engine
 assert "JupiterWebEngine" in agent
-assert '"engine": "jupiter-web-engine"' in agent
+# Метку движка в траектории даёт сам движок; HTTP-движок — по умолчанию.
+assert '"engine": getattr(self.engine, "name", "jupiter-web-engine")' in agent
+assert 'name = "jupiter-browser-engine"' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert "class JupiterScriptRuntime" in script_runtime
 assert "addEventListener" in script_runtime
 assert "preventDefault" in script_runtime
@@ -134,9 +136,19 @@ assert "mcr.microsoft.com/playwright" in probe_run and "--memory 1g" in probe_ru
 assert "PROBE_VERSION=" in bootstrap and "/opt/jobtoo-state/browser-probe.$PROBE_VERSION" in bootstrap
 assert "jt-browser-probe.timer" not in bootstrap  # разовый, не по расписанию
 assert "location = /jupiter-browser-probe.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+# С 28.09.2026 (решение владельца) браузерный движок — отдельные модули
+# browser_*.py (и их тесты, recon_browser.py): Playwright разрешён только там и
+# только как необязательный импорт. HTTP-движок, агент и воркер — без браузера;
+# Selenium не нужен нигде.
+BROWSER_MODULES = re.compile(r"^(browser_|test_browser_|recon_browser)")
 for path in (ROOT / "jupiter").glob("*.py"):
     text = path.read_text(encoding="utf-8")
-    assert not re.search(r"^\s*(import|from)\s+(playwright|selenium)", text, re.M), path
+    assert not re.search(r"^\s*(import|from)\s+selenium", text, re.M), path
+    if BROWSER_MODULES.match(path.name):
+        continue
+    assert not re.search(r"^(import|from)\s+playwright", text, re.M), path
+engine_src = (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
+assert "except ImportError" in engine_src and "sync_playwright = None" in engine_src
 
 print("jupiter native engine infra: ok")
 

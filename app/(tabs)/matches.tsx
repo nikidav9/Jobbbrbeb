@@ -4,23 +4,28 @@ import {
   TouchableOpacity, ActivityIndicator, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
+import { BookmarkIcon, MailIcon, SearchIcon } from '@/components/profile/icons';
+import { ProfileColors, ProfileFonts, HAIRLINE } from '@/constants/profileTheme';
+import { JT, JT_FONT } from '@/constants/jt';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useApp } from '@/hooks/useApp';
 import { Like, User, Vacancy, PermApplication, PermApplicationStatus, PermVacancy, Chat, ReportableOutcome, JupiterApplication } from '@/constants/types';
 import { formatDate, getInitials, nameColorFromString } from '@/services/storage';
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterLiveStatus,
+  jupiterMailUnread,
 } from '@/services/db';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
-import { jupiterBadge, jupiterRowSummary, JupiterBadge } from '@/services/jupiterTimeline';
+import { jupiterBadge, jupiterNeedsCaptcha, jupiterRowSummary } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
@@ -33,6 +38,7 @@ import { employerLikes, employerPending, employerMatched, employerCompleted,
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
+import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 
 import { rs, rf } from '@/constants/scale';
 
@@ -303,43 +309,43 @@ function ConfirmBanner({ onOutcome, loading }: {
 // счёт откликов за сегодня, «ждут вашего ответа» = непрочитанные переписки,
 // и «Избранное» — единственный из разделов VIEWS, под которым есть данные.
 
-/** Как статус отклика выглядит для человека. */
-function permAppStatus(status: PermApplicationStatus): {
-  label: string; fg: string; bg: string; icon: React.ComponentProps<typeof Ionicons>['name'];
-} {
+/** Как статус отклика на вакансию JobToo выглядит для человека. */
+function permAppStatus(status: PermApplicationStatus): string {
   switch (status) {
-    case 'approved':
-      return { label: 'Интервью', fg: '#1D4ED8', bg: '#DBEAFE', icon: 'calendar-outline' };
-    case 'rejected':
-      return { label: 'Отказ', fg: Colors.red, bg: '#FEE2E2', icon: 'close-circle-outline' };
-    case 'hired':
-      return { label: 'Оффер', fg: '#047857', bg: '#D1FAE5', icon: 'checkmark-circle-outline' };
-    default:
-      return { label: 'Рассматривают', fg: '#B45309', bg: '#FEF3C7', icon: 'time-outline' };
+    case 'approved': return 'Интервью';
+    case 'rejected': return 'Отказ';
+    case 'hired': return 'Оффер';
+    default: return 'Рассматривают';
   }
 }
 
-// Цвета плашек Юпитера. «Нужны вы» сюда не попадает — та рисуется как
-// wm.action, пунктирной рамкой, но ключ остаётся ради типа JupiterBadge.
-const JUPITER_BADGE_COLORS: Record<JupiterBadge['tone'], { bg: string; fg: string }> = {
-  sent: { bg: Colors.divider, fg: Colors.textSecondary },
-  failed: { bg: Colors.redLight, fg: Colors.red },
-  working: { bg: Colors.blueLight, fg: Colors.blue },
-  needs_you: { bg: Colors.primaryLight, fg: Colors.primary },
-  closed: { bg: Colors.divider, fg: Colors.textMuted },
-};
-
-type AppFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hired';
-
-const APP_FILTERS: { key: AppFilter; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  { key: 'all', label: 'Все', icon: 'file-tray-outline' },
-  { key: 'pending', label: 'Рассматривают', icon: 'time-outline' },
-  { key: 'approved', label: 'Интервью', icon: 'chatbubbles-outline' },
-  { key: 'hired', label: 'Оффер', icon: 'checkmark-circle-outline' },
-  { key: 'rejected', label: 'Отказы', icon: 'close-circle-outline' },
+// Чипы — «Все», «Нужны вы», «Рассматривают» (макет «JT-responses»; «Ответили»
+// убран решением владельца 28.09.2026). Наши статусы раскладываются по смыслу:
+// «Нужны вы» — Юпитер ждёт человека или работодатель написал и ответ не
+// прочитан; «Рассматривают» — отправлено, в работе, ждём работодателя.
+// Интервью, оффер, отказ, «Не получилось» и «Закрыта» — только во «Всех».
+type AppFilter = 'all' | 'needs' | 'review';
+const APP_FILTERS: { key: AppFilter; label: string }[] = [
+  { key: 'all', label: 'Все' },
+  { key: 'needs', label: 'Нужны вы' },
+  { key: 'review', label: 'Рассматривают' },
 ];
 
+// Одна строка общего списка: отклик Юпитера на карьерном сайте или отклик на
+// вакансию JobToo — в макете они идут вперемешку, по дням.
+type RespItem = {
+  key: string;
+  at: string | null | undefined;
+  company: string;
+  title: string;
+  summary: string | null;
+  badge: string;
+  bucket: AppFilter | 'other';
+  open: () => void;
+};
+
 function WorkerMatches() {
+  useWarmSystemBar();
   const router = useRouter();
   const {
     currentUser, permApplications, permVacancies, users, chats,
@@ -353,18 +359,15 @@ function WorkerMatches() {
   const [search, setSearch] = useState('');
   const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
   const [jupiterError, setJupiterError] = useState(false);
-  const [jupiterLive, setJupiterLive] = useState(false);
+  // Непрочитанные письма на почте JobToo для откликов — точка на конверте.
+  const [unreadMail, setUnreadMail] = useState(0);
   const tabBarHeight = useBottomTabBarHeight();
 
   const currentUserId = currentUser?.id ?? '';
   const loadJupiter = useCallback(async () => {
     if (!currentUserId || currentUser?.isGuest) return;
     try {
-      const [apps, live] = await Promise.all([
-        jupiterMyApplications(currentUserId), jupiterLiveStatus(currentUserId),
-      ]);
-      setJupiterApps(apps);
-      setJupiterLive(live);
+      setJupiterApps(await jupiterMyApplications(currentUserId));
       setJupiterError(false);
     } catch (error) {
       console.warn('[jupiterMyApplications]', error);
@@ -373,6 +376,12 @@ function WorkerMatches() {
   }, [currentUserId, currentUser?.isGuest]);
 
   useFocusEffect(useCallback(() => { void loadJupiter(); }, [loadJupiter]));
+  // Число непрочитанных — при каждом возврате на экран (письмо прочитали в
+  // «Почте» — точка гаснет). Сбой или старый сервер — просто без точки.
+  useFocusEffect(useCallback(() => {
+    if (!currentUserId || currentUser?.isGuest) return;
+    jupiterMailUnread(currentUserId).then(setUnreadMail).catch(() => {});
+  }, [currentUserId, currentUser?.isGuest]))
 
   // Пока Юпитер действительно работает, статус должен обновляться сам.
   // Иначе человек видит "обрабатывает" до ручного свайпа экрана и не понимает,
@@ -420,7 +429,7 @@ function WorkerMatches() {
     [myChats],
   );
 
-  if (!currentUser) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
+  if (!currentUser) return <View style={{ flex: 1, backgroundColor: JT.background }} />;
 
   const getVacancy = (id: string): PermVacancy | undefined =>
     permVacancies.find((v: PermVacancy) => v.id === id);
@@ -428,29 +437,75 @@ function WorkerMatches() {
   const companyOf = (a: PermApplication): string =>
     getVacancy(a.vacancyId)?.company ?? getEmployer(a.employerId)?.company ?? 'Работодатель';
 
-  // Поиск и фильтр по статусу — над одним и тем же списком, поэтому считаются
-  // подряд, а не двумя независимыми выборками.
-  const q = search.trim().toLowerCase();
-  const shownJupiterApps = filter === 'all'
-    ? jupiterApps.filter(a => !q || `${a.company ?? ''} ${a.vacancyUrl}`.toLowerCase().includes(q))
-    : [];
-  // Заявки, которые ждут человека, — карточка «Нужны вы» наверху раздела,
-  // как у Sorce. jupiterBadge уже решает это по состоянию/причине.
-  const jupiterNeedsYou = shownJupiterApps.filter(a => jupiterBadge(a).tone === 'needs_you');
-  const jupiterNeedsYouCompanies = Array.from(new Set(jupiterNeedsYou.map(a => a.company?.trim() || 'Карьерный сайт')));
-  // Из них — те, что можно отправить самому во встроенном браузере: карточка
-  // ведёт туда же, куда «По очереди ›» раньше вело первую такую заявку.
-  const manualJupiterApps = shownJupiterApps.filter(jupiterManualEligible);
-  const jupiterByDay = groupByDay(shownJupiterApps, a => a.createdAt);
-  const shownApps = myApps.filter(a => {
-    if (filter !== 'all' && a.status !== filter) return false;
-    if (!q) return true;
-    const v = getVacancy(a.vacancyId);
-    return `${v?.title ?? ''} ${companyOf(a)}`.toLowerCase().includes(q);
+  // ── Общий список ───────────────────────────────────────────────────────────
+  const jupiterItems: RespItem[] = jupiterApps.map(a => {
+    const badge = jupiterBadge(a);
+    return {
+      key: `j-${a.id}`,
+      at: a.createdAt,
+      company: a.company?.trim() || 'Карьерный сайт',
+      title: a.vacancyTitle?.trim() || 'Вакансия на карьерном сайте',
+      summary: jupiterRowSummary(a),
+      badge: badge.tone === 'needs_you' ? 'Нужны вы' : badge.tone === 'sent' ? 'Отправлено'
+        : badge.tone === 'working' ? 'В работе' : badge.tone === 'failed' ? 'Не получилось' : 'Закрыта',
+      bucket: badge.tone === 'needs_you' ? 'needs' : (badge.tone === 'sent' || badge.tone === 'working') ? 'review' : 'other',
+      open: () => router.push({ pathname: '/jupiter-application', params: { id: a.id } }),
+    };
   });
+  const permItems: RespItem[] = myApps.map(a => {
+    const chat = myChats.find(c => c.vacancyId === a.vacancyId);
+    const unread = chat?.unreadWorker ?? 0;
+    const answered = a.status === 'approved' || a.status === 'hired' || a.status === 'rejected';
+    return {
+      key: `p-${a.id}`,
+      at: a.createdAt,
+      company: companyOf(a),
+      title: getVacancy(a.vacancyId)?.title ?? 'Вакансия',
+      summary: unread > 0
+        ? `${unread} ${plural(unread, 'новое сообщение', 'новых сообщения', 'новых сообщений')} от работодателя`
+        : null,
+      badge: unread > 0 ? 'Нужны вы' : permAppStatus(a.status),
+      bucket: unread > 0 ? 'needs' : answered ? 'other' : 'review',
+      open: () => (unread > 0 && chat
+        ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } })
+        : router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })),
+    };
+  });
+  const allItems = [...jupiterItems, ...permItems]
+    .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
 
-  // Группировка по дням: заголовок с числом, как «ВЧЕРА · 15 откликов».
-  const byDay = groupByDay(shownApps, a => a.createdAt);
+  const q = search.trim().toLowerCase();
+  const searched = q ? allItems.filter(i => `${i.title} ${i.company}`.toLowerCase().includes(q)) : allItems;
+  const counts: Record<AppFilter, number> = {
+    all: searched.length,
+    needs: searched.filter(i => i.bucket === 'needs').length,
+    review: searched.filter(i => i.bucket === 'review').length,
+  };
+  const shown = filter === 'all' ? searched : searched.filter(i => i.bucket === filter);
+  const byDay = groupByDay(shown, i => i.at);
+
+  // Чёрная плашка «N откликов ждут вас» — все «Нужны вы», как в макете.
+  const needs = searched.filter(i => i.bucket === 'needs');
+  const needsCompanies = Array.from(new Set(needs.map(i => i.company)));
+  // Цель плашки: если есть анкета Юпитера, которую можно заполнить самому, —
+  // сразу туда (как прежнее «По очереди ›»); иначе — первая строка «Нужны вы».
+  const manualJupiterApps = jupiterApps.filter(jupiterManualEligible);
+  const captchaApp = jupiterApps.find(jupiterNeedsCaptcha);
+  const openNeeds = () => {
+    // Капча ждёт человека не дольше 10 минут — её первой.
+    if (captchaApp) {
+      router.push({ pathname: '/jupiter-captcha', params: { id: captchaApp.id } });
+      return;
+    }
+    if (Platform.OS !== 'web' && manualJupiterApps.length > 0) {
+      router.push({
+        pathname: '/jupiter-fill',
+        params: { id: manualJupiterApps[0].id, company: manualJupiterApps[0].company ?? '' },
+      });
+      return;
+    }
+    needs[0]?.open();
+  };
 
   const today = dayKey(new Date().toISOString());
   const todayCount = myApps.filter(a => dayKey(a.createdAt) === today).length
@@ -460,398 +515,246 @@ function WorkerMatches() {
   // только что откликнувшийся, читает как «мой отклик пропал».
   const offlineHere = offline.permApplications && myApps.length === 0 && jupiterApps.length === 0;
 
-  const openApp = (a: PermApplication) =>
-    router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } });
+  const renderMark = (company: string, size: number, accent?: boolean) => (
+    companyLogo(company) ? (
+      <View style={[wm.markImg, { width: size, height: size, borderRadius: size * 0.27 }]}>
+        <CompanyMark company={company} size={size} />
+      </View>
+    ) : (
+      <View style={[wm.mark, { width: size, height: size, borderRadius: size * 0.27 }, accent && wm.markAccent]}>
+        <Text style={[wm.markTxt, { fontSize: size * 0.39 }]}>{getInitials(company).slice(0, 1)}</Text>
+      </View>
+    )
+  );
 
-  // ── Строка отклика ─────────────────────────────────────────────────────────
-  const renderApp = (a: PermApplication, last: boolean) => {
-    const v = getVacancy(a.vacancyId);
-    const company = companyOf(a);
-    const st = permAppStatus(a.status);
-    const chat = myChats.find(c => c.vacancyId === a.vacancyId);
-    const needsYou = (chat?.unreadWorker ?? 0) > 0;
-
-    return (
-      <TouchableOpacity
-        key={a.id}
-        style={[wm.row, needsYou && wm.rowNeedsYou, !last && wm.rowDivider]}
-        activeOpacity={0.85}
-        onPress={() => (needsYou && chat ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } }) : openApp(a))}
-      >
-        <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
-          <Text style={wm.logoTxt}>{getInitials(company)}</Text>
-        </View>
-
+  const renderRow = (i: RespItem, opts: { sticker?: boolean; divider?: boolean }) => {
+    const needsYou = i.bucket === 'needs';
+    const body = (
+      <>
+        {renderMark(i.company, rs(44), needsYou)}
         <View style={wm.rowBody}>
-          <Text style={wm.rowTitle} numberOfLines={2}>{v?.title ?? 'Вакансия'}</Text>
-          <Text style={wm.rowCompany} numberOfLines={1}>{company}</Text>
-          {needsYou ? (
-            <Text style={wm.rowHint} numberOfLines={1}>
-              {chat!.unreadWorker ?? 0}{' '}
-              {plural(chat!.unreadWorker ?? 0, 'новое сообщение', 'новых сообщения', 'новых сообщений')}
-            </Text>
-          ) : null}
-        </View>
-
-        {needsYou ? (
-          <View style={wm.action}>
-            <Text style={wm.actionTxt}>ОТВЕТИТЬ</Text>
-            <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
-          </View>
-        ) : (
-          <View style={[wm.statusPill, { backgroundColor: st.bg }]}>
-            <Text style={[wm.statusTxt, { color: st.fg }]}>{st.label.toUpperCase()}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  // ── Строка отклика Юпитера ───────────────────────────────────────────────
-  // Как у Sorce: логотип, название вакансии, компания, итог одной строкой
-  // (jupiterRowSummary) и метка справа (jupiterBadge). Действия под строкой
-  // (согласие Сбера, повторная постановка в очередь) переехали в карточку
-  // отклика — вся строка ведёт туда.
-  const renderJupiterApp = (a: JupiterApplication, last: boolean) => {
-    const company = a.company?.trim() || 'Карьерный сайт';
-    const title = a.vacancyTitle?.trim() || 'Вакансия на карьерном сайте';
-    const badge = jupiterBadge(a);
-    const summary = jupiterRowSummary(a);
-    const needsYou = badge.tone === 'needs_you';
-    const onRowPress = () => router.push({ pathname: '/jupiter-application', params: { id: a.id } });
-    return (
-      <TouchableOpacity
-        key={a.id}
-        style={[wm.row, needsYou && wm.rowNeedsYou, !last && wm.rowDivider]}
-        activeOpacity={0.85}
-        onPress={onRowPress}
-        accessibilityLabel={`${title}. ${company}. ${summary}`}
-      >
-        {companyLogo(company) ? (
-          <View style={wm.logoImg}><CompanyMark company={company} size={rs(44)} /></View>
-        ) : (
-          <View style={[wm.logo, { backgroundColor: nameColorFromString(company) }]}>
-            <Text style={wm.logoTxt}>{getInitials(company)}</Text>
-          </View>
-        )}
-        {/* Метка — в первой строке рядом с названием, как у Sorce: так
-            компания и итог идут на всю ширину и не обрезаются на полуслове. */}
-        <View style={wm.rowBody}>
-          <View style={wm.jupiterTop}>
-            <Text style={[wm.rowTitle, { flex: 1 }]} numberOfLines={2}>{title}</Text>
+          <View style={wm.rowTop}>
+            <Text style={wm.rowCompany} numberOfLines={1}>{i.company}</Text>
             {needsYou ? (
-              <View style={wm.action}>
-                <Text style={wm.actionTxt}>{badge.label}</Text>
-                <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
+              <View style={[wm.badge, wm.badgeNeeds]}>
+                <Text style={wm.badgeTxt}>Нужны вы</Text>
+                <Ionicons name="arrow-forward" size={rs(12)} color={JT.ink} />
               </View>
             ) : (
-              <View style={[wm.statusPill, { backgroundColor: JUPITER_BADGE_COLORS[badge.tone].bg }]}>
-                <Text style={[wm.statusTxt, { color: JUPITER_BADGE_COLORS[badge.tone].fg }]}>{badge.label}</Text>
+              <View style={[wm.badge, wm.badgeNeutral]}>
+                {i.badge === 'Отправлено' ? <Ionicons name="checkmark" size={rs(12)} color={JT.textBody} /> : null}
+                <Text style={[wm.badgeTxt, wm.badgeTxtNeutral]}>{i.badge}</Text>
               </View>
             )}
           </View>
-          <Text style={wm.rowCompany} numberOfLines={1}>{company}</Text>
-          <Text style={wm.rowHint} numberOfLines={2}>{summary}</Text>
+          <Text style={wm.rowTitle} numberOfLines={2}>{i.title}</Text>
+          {i.summary ? (
+            <Text style={[wm.rowSummary, needsYou && wm.rowSummaryNeeds]} numberOfLines={2}>{i.summary}</Text>
+          ) : null}
         </View>
+      </>
+    );
+    if (opts.sticker) {
+      return (
+        <View key={i.key} style={wm.stickerWrap}>
+          <View style={wm.stickerShadow} pointerEvents="none" />
+          <TouchableOpacity style={[wm.row, wm.sticker]} activeOpacity={0.85} onPress={i.open}
+            accessibilityLabel={`${i.title}. ${i.company}. ${i.badge}`}>
+            {body}
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <TouchableOpacity key={i.key} style={[wm.row, needsYou && wm.rowNeeds, opts.divider && wm.rowDivider]}
+        activeOpacity={0.85} onPress={i.open} accessibilityLabel={`${i.title}. ${i.company}. ${i.badge}`}>
+        {body}
       </TouchableOpacity>
     );
   };
 
+  // Кнопки шапки — как в «Профиле» (ProfileHeader): 40, тонкий контур, тонкие иконки 18.
+  const headBtn = (Icon: (p: { size?: number; color?: string }) => React.ReactElement, label: string, onPress: () => void, dot = false, on = false) => (
+    <TouchableOpacity style={[wm.headBtn, on && wm.headBtnOn]} onPress={onPress} activeOpacity={0.72}
+      accessibilityRole="button" accessibilityLabel={label}>
+      <Icon size={18} color={JT.ink} />
+      {dot ? <View style={wm.headDot} /> : null}
+    </TouchableOpacity>
+  );
+
   return (
-    <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
-      {/* Шапка: марка слева, действия справа — как на макете. Конверт ведёт
-          в переписки, закладка — в избранное, лупа раскрывает поиск. */}
+    <SafeAreaView style={wm.safe} edges={['top', 'left', 'right']}>
+      {/* Шапка макета: логотип, закладка (избранное), конверт (точка — есть
+          новые), лупа (поиск по откликам). */}
       <View style={wm.header}>
         <Image
           source={require('@/assets/images/header-jt-logo.png')}
-          style={wm.logoMark}
+          style={wm.logo}
           contentFit="contain"
           accessibilityLabel="JobToo"
         />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
-            <TouchableOpacity
-              style={wm.headerBtn}
-              onPress={() => router.push('/saved')}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel="Избранное"
-            >
-              <Ionicons name="bookmark-outline" size={20} color={Colors.textPrimary} />
-            </TouchableOpacity>
+            {headBtn(BookmarkIcon, 'Сохранённые вакансии', () => router.push('/saved'))}
           </OnboardingTarget>
-
           <OnboardingTarget targetKey="matches.chats">
-            <TouchableOpacity
-              style={wm.headerBtn}
-              onPress={() => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats')}
-              activeOpacity={0.8}
-              accessibilityLabel={currentUser?.role === 'worker' ? 'Почта JobToo' : 'Переписки'}
-            >
-              <Ionicons name="mail-outline" size={20} color={Colors.textPrimary} />
-              {unreadChats.length > 0 ? (
-                <View style={wm.headerBadge}>
-                  <Text style={wm.headerBadgeTxt}>{unreadChats.length > 9 ? '9+' : unreadChats.length}</Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
+            {headBtn(MailIcon, unreadChats.length + unreadMail > 0 ? 'Сообщения, есть новые' : 'Сообщения',
+              () => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats'), unreadChats.length + unreadMail > 0)}
           </OnboardingTarget>
-
-          <TouchableOpacity
-            style={[wm.headerBtn, searchOpen && wm.headerBtnOn]}
-            onPress={() => { setSearchOpen(o => !o); if (searchOpen) setSearch(''); }}
-            activeOpacity={0.8}
-            accessibilityLabel={searchOpen ? 'Закрыть поиск' : 'Искать по откликам'}
-          >
-            <Ionicons name="search" size={20} color={searchOpen ? Colors.primary : Colors.textPrimary} />
-          </TouchableOpacity>
+          {headBtn(SearchIcon, searchOpen ? 'Закрыть поиск' : 'Поиск по откликам',
+            () => { setSearchOpen(o => !o); if (searchOpen) setSearch(''); }, false, searchOpen)}
         </View>
       </View>
 
-      <Text style={wm.title}>
-        {todayCount} {plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня
-      </Text>
-
-      {searchOpen ? (
-        <View style={wm.searchWrap}>
-          <Ionicons name="search" size={18} color={Colors.textMuted} />
-          <TextInput
-            style={wm.searchInput}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Должность или компания"
-            placeholderTextColor={Colors.textMuted}
-            returnKeyType="search"
-            autoFocus
-            accessibilityLabel="Поиск по откликам"
-          />
-          {search ? (
-            <TouchableOpacity onPress={() => setSearch('')} hitSlop={8} accessibilityLabel="Очистить поиск">
-              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={wm.chipsScroll}
-        contentContainerStyle={wm.chipsRow}
-      >
-          <TouchableOpacity
-            style={[wm.chipIcon, filter !== 'all' && wm.chipIconOn]}
-            onPress={() => setFilterOpen(true)}
-            activeOpacity={0.8}
-            accessibilityLabel="Фильтры"
-          >
-            <Ionicons name="options-outline" size={18} color={filter !== 'all' ? '#FFFFFF' : Colors.textSecondary} />
-          </TouchableOpacity>
-          {APP_FILTERS.map(f => {
-            const on = filter === f.key;
-            return (
-              <TouchableOpacity
-                key={f.key}
-                style={[wm.chip, on && wm.chipOn]}
-                onPress={() => setFilter(f.key)}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-              >
-                <Ionicons name={f.icon} size={15} color={on ? Colors.textPrimary : Colors.textSecondary} />
-                <Text style={[wm.chipTxt, on && wm.chipTxtOn]}>{f.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-      </ScrollView>
-
+      <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(16) }]}
+          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />
           }
         >
-          <>
-            {filter === 'all' && (shownJupiterApps.length > 0 || jupiterError || jupiterLive) ? (
-              <>
-                <View style={wm.sectionHead}>
-                  <Text style={wm.sectionTitle}>Юпитер · внешние вакансии</Text>
-                </View>
-                {jupiterLive ? null : (
-                  <TouchableOpacity onPress={() => router.push('/profile-settings')} style={{ marginBottom: rs(12) }}>
-                    <Text style={[s.emptySub, { textAlign: 'left', color: Colors.textSecondary }]}>
-                      Автоотклик выключен · включить в настройках
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {jupiterError ? <Text style={s.emptySub}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
-                {jupiterNeedsYou.length > 0 ? (
-                  <TouchableOpacity
-                    style={wm.needsCard}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      // Та же цель, что раньше была у «По очереди ›»: если
-                      // есть анкета, которую можно заполнить самому, — сразу
-                      // туда; иначе (нужно только согласие, или веб без
-                      // встроенного браузера) — в карточку первой заявки.
-                      if (Platform.OS !== 'web' && manualJupiterApps.length > 0) {
-                        router.push({
-                          pathname: '/jupiter-fill',
-                          params: { id: manualJupiterApps[0].id, company: manualJupiterApps[0].company ?? '' },
-                        });
-                      } else {
-                        router.push({ pathname: '/jupiter-application', params: { id: jupiterNeedsYou[0].id } });
-                      }
-                    }}
-                    accessibilityLabel={`${jupiterNeedsYou.length} ${plural(jupiterNeedsYou.length, 'отклик ждёт', 'отклика ждут', 'откликов ждут')} вас`}
-                  >
-                    <View style={wm.needsIcon}>
-                      <Ionicons name="notifications" size={22} color="#B45309" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={wm.needsTitle}>
-                        {jupiterNeedsYou.length}{' '}
-                        {plural(jupiterNeedsYou.length, 'отклик ждёт', 'отклика ждут', 'откликов ждут')} вас
-                      </Text>
-                      <Text style={wm.needsSub} numberOfLines={1}>{jupiterNeedsYouCompanies.join(', ')}</Text>
-                    </View>
-                    <View style={wm.needsMarks}>
-                      {jupiterNeedsYouCompanies.slice(0, 2).map((c, i) => (
-                        <View key={c} style={[wm.needsMark, i > 0 && wm.needsMarkOverlap]}>
-                          <CompanyMark company={c} size={rs(28)} />
-                        </View>
-                      ))}
-                      {jupiterNeedsYouCompanies.length > 2 ? (
-                        <Text style={wm.needsMore}>+{jupiterNeedsYouCompanies.length - 2}</Text>
-                      ) : null}
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
-                  </TouchableOpacity>
-                ) : null}
-                {jupiterByDay.map(day => (
-                  <View key={`jupiter-${day.key || 'earlier'}`}>
-                    <Text style={wm.dayHead}>
-                      {day.label} · {day.items.length} {plural(day.items.length, 'отклик', 'отклика', 'откликов')}
-                    </Text>
-                    <View style={[wm.group, { marginBottom: rs(12) }]}>
-                      {day.items.map((a, i) => renderJupiterApp(a, i === day.items.length - 1))}
-                    </View>
-                  </View>
-                ))}
-              </>
-            ) : null}
-            {/* Переписки внутри JobToo остаются отдельными от заявок Jupiter:
-                ответ работодателю и незаполненная внешняя анкета — разные шаги. */}
-            {unreadChats.length > 0 ? (
-              <>
-                <View style={wm.sectionHead}>
-                  <Text style={wm.sectionTitle}>Ждут вашего ответа</Text>
-                  <View style={wm.sectionDot} />
-                </View>
-                <TouchableOpacity
-                  style={wm.needsCard}
-                  activeOpacity={0.85}
-                  onPress={() => router.push('/(tabs)/chats')}
-                >
-                  <View style={wm.needsIcon}>
-                    <Ionicons name="notifications" size={22} color="#B45309" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={wm.needsTitle}>
-                      {unreadChats.length}{' '}
-                      {plural(unreadChats.length, 'переписка ждёт', 'переписки ждут', 'переписок ждут')} ответа
-                    </Text>
-                    <Text style={wm.needsSub} numberOfLines={1}>
-                      {unreadChats.map(c => c.companyName || c.vacTitle).filter(Boolean).join(', ')}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
-                </TouchableOpacity>
-              </>
-            ) : null}
+          <Text style={wm.title}>Отклики</Text>
+          <Text style={wm.subtitle}>
+            {todayCount} {plural(todayCount, 'отклик', 'отклика', 'откликов')} за сегодня
+            {jupiterApps.length > 0 ? ' · Юпитер, внешние вакансии' : ''}
+          </Text>
+          {jupiterError ? <Text style={wm.note}>Не удалось обновить статусы Юпитера. Потяните вниз для повтора.</Text> : null}
 
-            {shownApps.length === 0 && shownJupiterApps.length === 0 ? (
-              <View style={s.empty}>
-                <Ionicons
-                  name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'}
-                  size={56}
-                  color={Colors.textMuted}
-                />
-                <Text style={s.emptyTitle}>
-                  {offlineHere ? 'Нет связи с сервером' : 'Пока нет откликов'}
-                </Text>
-                <Text style={s.emptySub}>
-                  {offlineHere
-                    ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
-                    : 'Откликайтесь на вакансии — они появятся здесь'}
-                </Text>
-              </View>
-            ) : byDay.map(day => (
-              <View key={day.key || 'earlier'}>
-                <Text style={wm.dayHead}>
-                  {day.label} · {day.items.length} {plural(day.items.length, 'отклик', 'отклика', 'откликов')}
-                </Text>
-                <View style={wm.group}>
-                  {day.items.map((a, i) => renderApp(a, i === day.items.length - 1))}
+          {searchOpen ? (
+            <View style={wm.searchWrap}>
+              <Ionicons name="search" size={rs(18)} color={JT.ink} />
+              <TextInput
+                style={wm.searchInput}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Должность или компания"
+                placeholderTextColor={JT.textTertiary}
+                returnKeyType="search"
+                autoFocus
+                accessibilityLabel="Поиск по откликам"
+              />
+              {search ? (
+                <TouchableOpacity onPress={() => setSearch('')} hitSlop={8} accessibilityLabel="Очистить поиск">
+                  <Ionicons name="close-circle" size={rs(18)} color={JT.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={wm.chipsScroll} contentContainerStyle={wm.chipsRow}>
+            <TouchableOpacity style={wm.filterBtn} onPress={() => setFilterOpen(true)} activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Фильтры откликов">
+              <Ionicons name="options-outline" size={rs(18)} color={JT.surface} />
+            </TouchableOpacity>
+            {APP_FILTERS.map(f => {
+              const on = filter === f.key;
+              return (
+                <TouchableOpacity key={f.key} style={[wm.chip, on && wm.chipOn]} onPress={() => setFilter(f.key)}
+                  activeOpacity={0.8} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                  <Text style={[wm.chipTxt, on && wm.chipTxtOn]}>{f.label}</Text>
+                  {f.key === 'all' ? <Text style={wm.chipCount}>{counts.all}</Text> : null}
+                  {f.key === 'needs' && counts.needs > 0 ? (
+                    <View style={wm.chipBadge}><Text style={wm.chipBadgeTxt}>{counts.needs}</Text></View>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {needs.length > 0 && (filter === 'all' || filter === 'needs') ? (
+            <View style={wm.bannerWrap}>
+              <View style={wm.bannerShadow} pointerEvents="none" />
+              <TouchableOpacity style={wm.banner} activeOpacity={0.85} onPress={openNeeds}
+                accessibilityLabel={`${needs.length} ${plural(needs.length, 'отклик ждёт', 'отклика ждут', 'откликов ждут')} вас`}>
+                <View style={wm.bell}><Ionicons name="notifications-outline" size={rs(24)} color={JT.ink} /></View>
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                  <Text style={wm.bannerTitle}>
+                    {needs.length} {plural(needs.length, 'отклик ждёт', 'отклика ждут', 'откликов ждут')} вас
+                  </Text>
+                  <Text style={wm.bannerSub} numberOfLines={1}>{needsCompanies.join(', ')}</Text>
                 </View>
-              </View>
-            ))}
-          </>
+                <View style={wm.bannerMarks}>
+                  {needsCompanies.slice(0, 2).map((c, i) => (
+                    <View key={c} style={[wm.bannerMark, i === 1 && wm.bannerMarkAccent, i > 0 && { marginLeft: -8 }]}>
+                      <Text style={wm.bannerMarkTxt}>{getInitials(c).slice(0, 1)}</Text>
+                    </View>
+                  ))}
+                  {needsCompanies.length > 2 ? <Text style={wm.bannerMore}>+{needsCompanies.length - 2}</Text> : null}
+                </View>
+                <Ionicons name="chevron-forward" size={rs(20)} color={JT.surface} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {shown.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'} size={56} color={JT.textTertiary} />
+              <Text style={s.emptyTitle}>
+                {offlineHere ? 'Нет связи с сервером' : allItems.length > 0 ? 'Здесь пока пусто' : 'Пока нет откликов'}
+              </Text>
+              <Text style={s.emptySub}>
+                {offlineHere
+                  ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
+                  : allItems.length > 0 ? 'В этом разделе откликов нет — загляните во «Все»'
+                  : 'Откликайтесь на вакансии — они появятся здесь'}
+              </Text>
+            </View>
+          ) : byDay.map(day => (
+            <View key={day.key || 'earlier'}>
+              <Text style={wm.dayHead}>
+                {day.label} · {day.items.length} {plural(day.items.length, 'отклик', 'отклика', 'откликов')}
+              </Text>
+              {day.items.length === 1 && day.items[0].bucket === 'needs'
+                ? renderRow(day.items[0], { sticker: true })
+                : (
+                  <View style={wm.group}>
+                    {day.items.map((i, n) => renderRow(i, { divider: n < day.items.length - 1 }))}
+                  </View>
+                )}
+            </View>
+          ))}
         </ScrollView>
       </OnboardingTarget>
+      </JTPullRefresh>
 
-      {/* Шторка фильтров. Раздел «Показать» на макете содержит четыре строки;
-          у нас данные есть ровно под одну — избранное. Остальные три
-          (звёздочка, архив, «вы их пропустили») не хранятся вовсе. */}
+      {/* Под меню — растворение фона, список уходит под него (макет). */}
+      <LinearGradient
+        colors={['rgba(245,239,230,0)', JT.background]}
+        locations={[0, 0.55]}
+        style={[wm.fade, { height: tabBarHeight + rs(40) }]}
+        pointerEvents="none"
+      />
+
+      {/* Шторка фильтров: те же разделы, что чипы, и «Избранное». */}
       {filterOpen ? (
         <View style={wm.sheetOverlay}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setFilterOpen(false)} />
           <View style={[wm.sheet, { paddingBottom: tabBarHeight + rs(24) }]}>
             <View style={wm.sheetGrabber} />
-            <View style={wm.sheetHead}>
-              <TouchableOpacity style={wm.sheetClose} onPress={() => setFilterOpen(false)} accessibilityLabel="Закрыть">
-                <Ionicons name="close" size={20} color={Colors.textPrimary} />
-              </TouchableOpacity>
-              <Text style={wm.sheetTitle}>Фильтр</Text>
-              <TouchableOpacity style={wm.sheetOk} onPress={() => setFilterOpen(false)} accessibilityLabel="Применить">
-                <Ionicons name="checkmark" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-
+            <Text style={wm.sheetTitle}>Фильтр</Text>
             <Text style={wm.sheetLabel}>СТАТУС</Text>
             <View style={wm.sheetChips}>
               {APP_FILTERS.map(f => {
                 const on = filter === f.key;
                 return (
-                  <TouchableOpacity
-                    key={f.key}
-                    style={[wm.chip, wm.sheetChip, on && wm.chipOn]}
-                    onPress={() => setFilter(f.key)}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on }}
-                  >
-                    <Ionicons name={f.icon} size={15} color={on ? Colors.textPrimary : Colors.textSecondary} />
+                  <TouchableOpacity key={f.key} style={[wm.chip, on && wm.chipOn]}
+                    onPress={() => { setFilter(f.key); setFilterOpen(false); }}
+                    activeOpacity={0.8} accessibilityRole="button" accessibilityState={{ selected: on }}>
                     <Text style={[wm.chipTxt, on && wm.chipTxtOn]}>{f.label}</Text>
+                    <Text style={wm.chipCount}>{counts[f.key]}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-
             <Text style={wm.sheetLabel}>ПОКАЗАТЬ</Text>
-            <TouchableOpacity
-              style={wm.sheetRow}
-              activeOpacity={0.8}
-              onPress={() => { setFilterOpen(false); router.push('/saved'); }}
-            >
-              <View style={wm.sheetRowIcon}>
-                <Ionicons name="bookmark-outline" size={18} color={Colors.textPrimary} />
-              </View>
+            <TouchableOpacity style={wm.sheetRow} activeOpacity={0.8}
+              onPress={() => { setFilterOpen(false); router.push('/saved'); }}>
+              <Ionicons name="bookmark-outline" size={rs(18)} color={JT.ink} />
               <Text style={wm.sheetRowTxt}>Избранное</Text>
               <Text style={wm.sheetRowCount}>{permSavedIds.length}</Text>
-              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+              <Ionicons name="chevron-forward" size={rs(18)} color={JT.textTertiary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -860,149 +763,147 @@ function WorkerMatches() {
   );
 }
 
+// Размеры — README макета «JT-responses»: кнопки шапки 44 с контуром 2,
+// заголовок Unbounded 25, чипы 36/18, плашка с тенью 4/4 оранжевой, карточка
+// «Нужны вы» с контуром 2 и тенью 4/4, группа с контуром 1.5 #E3D9CC,
+// логотип 44/12, бейдж 26/13, заголовок дня 12/800 капсом.
 const wm = StyleSheet.create({
-  jupiterTop: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(8) },
+  safe: { flex: 1, backgroundColor: JT.background },
+  // Шапка, заголовок и подпись — один в один с «Профилем» (ProfileHeader и
+  // workerS.scroll: поля 16, верх 14, ряд 44, заголовок Unbounded 800 28/32,
+  // подпись Onest 13) — логотип и заголовки на одной линии (просьба владельца
+  // 28.09.2026).
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(4),
+    paddingHorizontal: 16, marginTop: 14, height: 44,
   },
-  logoMark: { width: rs(40), height: rs(26), flexShrink: 0 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
-  headerBtn: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
+  logo: { width: 40, height: 26 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  headBtn: {
+    width: 40, height: 40, borderRadius: 20, borderWidth: HAIRLINE, borderColor: JT.ink,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF', ...Shadow.card,
   },
-  headerBtnOn: { backgroundColor: Colors.primaryLight },
-  headerBadge: {
-    position: 'absolute', top: rs(1), right: rs(1),
-    minWidth: rs(18), height: rs(18), borderRadius: rs(9), paddingHorizontal: rs(4),
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.primary, borderWidth: 2, borderColor: '#FFFFFF',
+  headBtnOn: { backgroundColor: JT.accent },
+  headDot: {
+    position: 'absolute', top: 6, right: 7, width: 9, height: 9, borderRadius: 5,
+    backgroundColor: JT.accent, borderWidth: HAIRLINE, borderColor: JT.background,
   },
-  headerBadgeTxt: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '800' },
-
+  list: { paddingHorizontal: 16 },
   title: {
-    fontSize: rf(20), fontWeight: '400', color: Colors.textPrimary,
-    paddingHorizontal: rs(16), paddingTop: rs(10), paddingBottom: rs(12),
+    fontFamily: ProfileFonts.headingExtra, fontSize: 28, lineHeight: 32, letterSpacing: -0.5,
+    color: JT.ink, marginTop: 14,
   },
-
+  subtitle: { fontFamily: ProfileFonts.textRegular, fontSize: 13, color: ProfileColors.muted, marginTop: 4 },
+  note: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(6) },
   searchWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), marginBottom: rs(10),
-    backgroundColor: '#F2F3F5', borderRadius: rs(24),
-    paddingHorizontal: rs(14), height: rs(44),
+    flexDirection: 'row', alignItems: 'center', gap: rs(8), marginTop: rs(14),
+    height: rs(44), paddingHorizontal: rs(12), borderRadius: rs(22),
+    backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink,
   },
-  searchInput: { flex: 1, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  searchInput: { flex: 1, minWidth: 0, padding: 0, fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
 
-  chipsScroll: { flexGrow: 0, flexShrink: 0 },
-  chipsRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(16), paddingBottom: rs(12) },
-  chipIcon: {
-    width: rs(44), height: rs(40), borderRadius: rs(20), flexShrink: 0,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF',
+  chipsScroll: { marginTop: rs(16), marginHorizontal: -rs(20), flexGrow: 0 },
+  chipsRow: { paddingHorizontal: rs(20), gap: rs(8), alignItems: 'center' },
+  filterBtn: {
+    width: rs(44), height: rs(36), borderRadius: rs(18), backgroundColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center',
   },
-  chipIconOn: { backgroundColor: Colors.primary },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6), flexShrink: 0,
-    height: rs(40), paddingHorizontal: rs(16), borderRadius: rs(20),
-    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: 'transparent',
+    flexDirection: 'row', alignItems: 'center', gap: rs(6), height: rs(36), paddingHorizontal: rs(14),
+    borderRadius: rs(18), borderWidth: 1.5, borderColor: JT.borderSoft, backgroundColor: JT.surface,
   },
-  chipOn: { borderColor: Colors.textPrimary },
-  chipTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
-  chipTxtOn: { color: Colors.textPrimary, fontWeight: '700' },
+  chipOn: { backgroundColor: JT.accent, borderColor: JT.ink, borderWidth: 2 },
+  chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink },
+  chipTxtOn: { fontFamily: JT_FONT.heavy },
+  chipCount: { fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink, opacity: 0.7 },
+  chipBadge: {
+    minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, backgroundColor: JT.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  chipBadgeTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(12), color: JT.ink },
 
-  list: { paddingHorizontal: rs(16), gap: rs(4) },
-
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingBottom: rs(10) },
-  sectionTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
-  sectionDot: {
-    width: rs(14), height: rs(14), borderRadius: rs(7),
-    backgroundColor: '#B45309', borderWidth: 3, borderColor: '#FDE8CC',
+  bannerWrap: { marginTop: rs(18), marginRight: rs(4) },
+  bannerShadow: {
+    position: 'absolute', left: rs(4), top: rs(4), right: -rs(4), bottom: -rs(4),
+    borderRadius: rs(22), backgroundColor: JT.accent,
   },
-
-  needsCard: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    backgroundColor: '#FFFFFF', borderRadius: rs(16),
-    padding: rs(14), marginBottom: rs(18), ...Shadow.card,
+  banner: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14),
+    borderRadius: rs(22), backgroundColor: JT.ink,
   },
-  needsIcon: {
-    width: rs(44), height: rs(44), borderRadius: rs(12),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7',
+  bell: {
+    width: rs(48), height: rs(48), borderRadius: rs(14), backgroundColor: JT.accent,
+    alignItems: 'center', justifyContent: 'center',
   },
-  needsTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
-  needsSub: { fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
-  needsMarks: { flexDirection: 'row', alignItems: 'center' },
-  needsMark: {
-    borderRadius: rs(8), borderWidth: 2, borderColor: '#FFFFFF', overflow: 'hidden',
+  bannerTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.surface },
+  bannerSub: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.borderSoft },
+  bannerMarks: { flexDirection: 'row', alignItems: 'center' },
+  bannerMark: {
+    width: rs(28), height: rs(28), borderRadius: rs(9), backgroundColor: JT.surface,
+    borderWidth: 2, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center',
   },
-  needsMarkOverlap: { marginLeft: -rs(10) },
-  needsMore: { fontSize: rf(12), fontWeight: '800', color: Colors.textSecondary, marginLeft: rs(4) },
+  bannerMarkAccent: { backgroundColor: JT.accent },
+  bannerMarkTxt: { fontFamily: JT_FONT.head, fontSize: rf(12), color: JT.ink },
+  bannerMore: { marginLeft: rs(6), fontFamily: JT_FONT.heavy, fontSize: rf(13), color: JT.surface },
 
   dayHead: {
-    fontSize: rf(12), fontWeight: '700', color: Colors.textMuted,
-    letterSpacing: 0.4, paddingTop: rs(10), paddingBottom: rs(8),
+    marginTop: rs(24), marginBottom: rs(10), fontFamily: JT_FONT.heavy, fontSize: rf(12),
+    letterSpacing: 1, textTransform: 'uppercase', color: JT.textTertiary,
   },
-  group: { backgroundColor: '#FFFFFF', borderRadius: rs(16), overflow: 'hidden', ...Shadow.card },
-
-  row: { flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14) },
-  rowNeedsYou: { backgroundColor: '#FEF6ED' },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
-  logoImg: {},
-  logo: {
-    width: rs(44), height: rs(44), borderRadius: rs(12),
-    alignItems: 'center', justifyContent: 'center',
+  group: {
+    borderRadius: rs(22), backgroundColor: JT.surface, borderWidth: 1.5, borderColor: '#E3D9CC', overflow: 'hidden',
   },
-  logoTxt: { color: '#FFFFFF', fontSize: rf(15), fontWeight: '800' },
-  rowBody: { flex: 1 },
-  rowTitle: { fontSize: rf(15.5), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(20) },
-  rowCompany: { fontSize: rf(13.5), color: Colors.textMuted, marginTop: rs(2) },
-  rowHint: { fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(3) },
-
-  statusPill: { borderRadius: rs(8), paddingHorizontal: rs(9), paddingVertical: rs(5), flexShrink: 0 },
-  statusTxt: { fontSize: rf(10.5), fontWeight: '800', letterSpacing: 0.3 },
-  action: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(5), flexShrink: 0,
-    borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(6),
-    borderWidth: 1, borderColor: Colors.primary, borderStyle: 'dashed',
+  stickerWrap: { marginRight: rs(4), marginBottom: rs(4) },
+  stickerShadow: {
+    position: 'absolute', left: rs(4), top: rs(4), right: -rs(4), bottom: -rs(4),
+    borderRadius: rs(22), backgroundColor: JT.ink,
   },
-  actionTxt: { fontSize: rf(10.5), fontWeight: '800', color: Colors.primary, letterSpacing: 0.3 },
-  unsaveBtn: { padding: rs(4), flexShrink: 0 },
+  sticker: { borderRadius: rs(22), borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.surface },
+  row: { flexDirection: 'row', gap: rs(12), padding: rs(16) },
+  rowNeeds: { backgroundColor: '#FFF4EC' },
+  rowDivider: { borderBottomWidth: 1.5, borderBottomColor: '#EFE7DC' },
+  rowBody: { flex: 1, minWidth: 0, gap: rs(3) },
+  rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: rs(8) },
+  rowCompany: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
+  rowTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(16), lineHeight: rf(21), color: JT.ink },
+  rowSummary: { marginTop: rs(4), fontFamily: JT_FONT.bold, fontSize: rf(13), lineHeight: rf(19), color: JT.textTertiary },
+  rowSummaryNeeds: { color: JT.textBody },
+  badge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, height: rs(26), paddingHorizontal: rs(10),
+    borderRadius: rs(13), flexShrink: 0,
+  },
+  badgeNeeds: { backgroundColor: JT.accent, borderWidth: 1.5, borderColor: JT.ink },
+  badgeNeutral: { backgroundColor: '#EDE6DC' },
+  badgeTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(12), color: JT.ink },
+  badgeTxtNeutral: { color: JT.textBody },
+  mark: {
+    backgroundColor: JT.background, borderWidth: 1.5, borderColor: JT.borderSoft,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  markAccent: { backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink },
+  markImg: { overflow: 'hidden', flexShrink: 0 },
+  markTxt: { fontFamily: JT_FONT.head, color: JT.ink },
 
-  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end' },
+  fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.35)', zIndex: 50, elevation: 50 },
   sheet: {
-    backgroundColor: '#F7F8FA', borderTopLeftRadius: rs(24), borderTopRightRadius: rs(24),
-    paddingHorizontal: rs(16),
+    backgroundColor: JT.background, borderTopLeftRadius: rs(26), borderTopRightRadius: rs(26),
+    paddingHorizontal: rs(20), paddingTop: rs(10), borderWidth: 2, borderColor: JT.ink, borderBottomWidth: 0,
   },
-  sheetGrabber: {
-    width: rs(44), height: rs(5), borderRadius: rs(3), backgroundColor: Colors.divider,
-    alignSelf: 'center', marginTop: rs(8),
-  },
-  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: rs(14) },
-  sheetClose: {
-    width: rs(40), height: rs(40), borderRadius: rs(20),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF',
-  },
-  sheetTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
-  sheetOk: {
-    width: rs(44), height: rs(44), borderRadius: rs(22),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary,
-  },
+  sheetGrabber: { alignSelf: 'center', width: rs(40), height: 4, borderRadius: 2, backgroundColor: JT.muted, marginBottom: rs(12) },
+  sheetTitle: { fontFamily: JT_FONT.head, fontSize: rf(20), color: JT.ink, marginBottom: rs(8) },
   sheetLabel: {
-    fontSize: rf(12), fontWeight: '700', color: Colors.textMuted,
-    letterSpacing: 0.4, paddingTop: rs(12), paddingBottom: rs(10),
+    fontFamily: JT_FONT.heavy, fontSize: rf(12), letterSpacing: 1, color: JT.textTertiary,
+    marginTop: rs(14), marginBottom: rs(10),
   },
   sheetChips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8) },
-  sheetChip: { borderColor: '#FFFFFF' },
   sheetRow: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    backgroundColor: '#FFFFFF', borderRadius: rs(14), padding: rs(12),
+    flexDirection: 'row', alignItems: 'center', gap: rs(10), padding: rs(14),
+    borderRadius: rs(18), backgroundColor: JT.surface,
   },
-  sheetRowIcon: {
-    width: rs(40), height: rs(40), borderRadius: rs(10),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F3F5',
-  },
-  sheetRowTxt: { flex: 1, fontSize: rf(16), fontWeight: '600', color: Colors.textPrimary },
-  sheetRowCount: { fontSize: rf(15), fontWeight: '700', color: Colors.textMuted },
+  sheetRowTxt: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink },
+  sheetRowCount: { fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textTertiary },
 });
 
 type EmployerMatchItem = { kind: 'like'; like: Like } | { kind: 'permApp'; app: PermApplication };
@@ -1688,6 +1589,7 @@ function EmployerMatches() {
         ))}
       </View>
 
+      <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
       {shown.length === 0 ? (
         <View style={s.empty}>
@@ -1723,6 +1625,7 @@ function EmployerMatches() {
         />
       )}
       </OnboardingTarget>
+      </JTPullRefresh>
 
       <ApplySheet
         visible={!!approvingApp}

@@ -6,7 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/hooks/useApp';
-import { Colors, Radius } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
+import { JT, JT_FONT } from '@/constants/jt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { rs, rf } from '@/constants/scale';
 import {
   dbGetConsent, dbRecordConsent, dbSetMarketingConsent,
@@ -152,19 +154,21 @@ export default function ConsentGate() {
     ]}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
-            <Ionicons name="cloud-offline-outline" size={rf(26)} color={Colors.primary} />
+            <Ionicons name="cloud-offline-outline" size={rf(26)} color={JT.ink} />
           </View>
           <Text style={styles.title}>Не удалось проверить документы</Text>
           <Text style={styles.lead}>
             Сервер не ответил, поэтому JobToo не может подтвердить, что у аккаунта есть актуальное согласие. Проверьте связь и повторите проверку.
           </Text>
-          <TouchableOpacity
-            style={styles.accept}
-            activeOpacity={0.85}
-            onPress={() => setCheckRetry(v => v + 1)}
-          >
-            <Text style={styles.acceptText}>Повторить</Text>
-          </TouchableOpacity>
+          <HardShadowBox offset={4} radius={rs(28)} style={styles.acceptBox}>
+            <TouchableOpacity
+              style={styles.accept}
+              activeOpacity={0.85}
+              onPress={() => setCheckRetry(v => v + 1)}
+            >
+              <Text style={styles.acceptText}>Повторить</Text>
+            </TouchableOpacity>
+          </HardShadowBox>
           <TouchableOpacity style={styles.leave} activeOpacity={0.7} onPress={() => app?.logout()}>
             <Text style={styles.leaveText}>Выйти</Text>
           </TouchableOpacity>
@@ -193,7 +197,7 @@ export default function ConsentGate() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.iconWrap}>
-            <Ionicons name="document-text-outline" size={rf(26)} color={Colors.primary} />
+            <Ionicons name="document-text-outline" size={rf(26)} color={JT.ink} />
           </View>
 
           <Text style={styles.title}>Примите документы</Text>
@@ -221,7 +225,7 @@ export default function ConsentGate() {
                     <Ionicons
                       name={раскрыт ? 'chevron-up' : 'chevron-down'}
                       size={rf(18)}
-                      color={Colors.textMuted}
+                      color={JT.ink}
                     />
                   </TouchableOpacity>
 
@@ -289,16 +293,22 @@ export default function ConsentGate() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.accept, (busy || !termsAccepted || !coreAccepted) && styles.acceptBusy]}
-            activeOpacity={0.85}
-            onPress={accept}
-            disabled={busy || !termsAccepted || !coreAccepted}
+          <HardShadowBox
+            offset={4}
+            radius={rs(28)}
+            style={[styles.acceptBox, (busy || !termsAccepted || !coreAccepted) && styles.acceptBusy]}
           >
-            {busy
-              ? <ActivityIndicator color="#FFFFFF" />
-              : <Text style={styles.acceptText}>Принять</Text>}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.accept}
+              activeOpacity={0.85}
+              onPress={accept}
+              disabled={busy || !termsAccepted || !coreAccepted}
+            >
+              {busy
+                ? <ActivityIndicator color={JT.ink} />
+                : <Text style={styles.acceptText}>Принять</Text>}
+            </TouchableOpacity>
+          </HardShadowBox>
 
           <TouchableOpacity
             style={styles.leave}
@@ -314,10 +324,13 @@ export default function ConsentGate() {
   );
 }
 
+// Стиль JT (29.09.2026, как GuestGate и «Документы»): кремовая карточка с
+// чёрным контуром, Unbounded в заголовке, Manrope в тексте, документы —
+// белые карточки с контуром, оранжевая кнопка с жёсткой тенью и чёрным текстом.
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(17,17,17,0.55)',
+    backgroundColor: 'rgba(20,20,20,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: rs(20),
@@ -329,8 +342,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: rs(420),
     maxHeight: '100%',
-    backgroundColor: Colors.card,
-    borderRadius: rs(Radius.xl),
+    backgroundColor: JT.background,
+    borderRadius: rs(28),
+    borderWidth: 2,
+    borderColor: JT.ink,
     overflow: 'hidden',
   },
   contentScroll: {
@@ -338,103 +353,122 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   contentContainer: {
-    paddingHorizontal: rs(22),
+    paddingHorizontal: rs(20),
     paddingTop: rs(22),
     paddingBottom: rs(14),
   },
   footer: {
     flexShrink: 0,
-    paddingHorizontal: rs(22),
-    paddingBottom: rs(14),
-    backgroundColor: Colors.card,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.divider,
+    paddingHorizontal: rs(20),
+    paddingTop: rs(4),
+    paddingBottom: rs(12),
+    backgroundColor: JT.background,
+    borderTopWidth: 2,
+    borderTopColor: JT.ink,
   },
   iconWrap: {
-    width: rs(52), height: rs(52), borderRadius: rs(26),
-    backgroundColor: Colors.primaryLight,
+    width: rs(56), height: rs(56), borderRadius: rs(28),
+    backgroundColor: JT.accentSoft, borderWidth: 2, borderColor: JT.ink,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: rs(14),
   },
-  title: { fontSize: rf(21), fontWeight: '800', color: Colors.textPrimary },
+  title: {
+    fontFamily: JT_FONT.head, fontSize: rf(20), lineHeight: rf(25),
+    color: JT.ink, letterSpacing: -0.2,
+  },
   lead: {
     marginTop: rs(8),
+    fontFamily: JT_FONT.medium,
     fontSize: rf(14.5),
     lineHeight: rf(21),
-    color: Colors.textSecondary,
+    color: JT.textSecondary,
   },
   docs: { marginTop: rs(16) },
-  docWrap: { marginBottom: rs(8) },
+  docWrap: {
+    marginBottom: rs(10),
+    backgroundColor: JT.surface,
+    borderWidth: 2,
+    borderColor: JT.ink,
+    borderRadius: rs(18),
+    overflow: 'hidden',
+  },
   doc: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: rs(10),
     paddingVertical: rs(12),
     paddingHorizontal: rs(14),
-    backgroundColor: Colors.surface,
-    borderRadius: rs(12),
   },
-  docTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  docVersion: { marginTop: rs(2), fontSize: rf(12.5), color: Colors.textMuted },
+  docTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(15), lineHeight: rf(20), color: JT.ink },
+  docVersion: { marginTop: rs(2), fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: JT.textTertiary },
   docBody: {
     paddingHorizontal: rs(14),
     paddingTop: rs(12),
-    paddingBottom: rs(4),
+    paddingBottom: rs(12),
+    borderTopWidth: 1.5,
+    borderTopColor: JT.muted,
   },
   secHeading: {
-    fontSize: rf(13.5), fontWeight: '700',
-    color: Colors.textPrimary, marginBottom: rs(4),
+    fontFamily: JT_FONT.bold, fontSize: rf(13.5),
+    color: JT.ink, marginBottom: rs(4),
   },
-  secBody: { fontSize: rf(13.5), lineHeight: rf(20), color: Colors.textSecondary },
+  secBody: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), lineHeight: rf(20), color: JT.textBody },
   consentRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
+    flexDirection: 'row', alignItems: 'flex-start', gap: rs(12),
     paddingVertical: rs(8),
   },
   checkbox: {
-    width: rs(22), height: rs(22), borderRadius: rs(6), borderWidth: 1.5,
-    borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
+    width: rs(24), height: rs(24), borderRadius: rs(7), borderWidth: 2,
+    borderColor: JT.ink, backgroundColor: JT.surface,
+    alignItems: 'center', justifyContent: 'center',
     flexShrink: 0, marginTop: rs(1),
   },
-  checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  checkmark: { color: '#fff', fontWeight: '800', fontSize: rf(13) },
-  consentText: { flex: 1, fontSize: rf(13), lineHeight: rf(18), color: Colors.textSecondary },
-  link: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  checkboxActive: { backgroundColor: JT.accent },
+  checkmark: { color: JT.ink, fontFamily: JT_FONT.heavy, fontSize: rf(14) },
+  consentText: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(13.5), lineHeight: rf(19), color: JT.textBody },
+  link: { color: JT.ink, fontFamily: JT_FONT.bold, textDecorationLine: 'underline' },
   crossLinkButton: {
     alignSelf: 'flex-start',
     paddingTop: rs(6),
     paddingBottom: rs(2),
   },
   crossDocBody: {
-    padding: rs(12), borderRadius: rs(10),
-    backgroundColor: Colors.surface, marginTop: rs(4), marginBottom: rs(6),
+    padding: rs(12), borderRadius: rs(12),
+    backgroundColor: JT.surface, marginTop: rs(4), marginBottom: rs(6),
   },
   error: {
     marginTop: rs(10),
+    fontFamily: JT_FONT.bold,
     fontSize: rf(13.5),
     color: Colors.red,
   },
+  acceptBox: { marginTop: rs(12), marginRight: 4 },
   accept: {
-    marginTop: rs(12),
-    height: rs(52),
-    borderRadius: rs(14),
-    backgroundColor: Colors.primary,
+    height: rs(56),
+    borderRadius: rs(28),
+    backgroundColor: JT.accent,
+    borderWidth: 2,
+    borderColor: JT.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  acceptBusy: { opacity: 0.7 },
-  acceptText: { fontSize: rf(16), fontWeight: '800', color: '#FFFFFF' },
+  acceptBusy: { opacity: 0.45 },
+  // Текст на оранжевом — чёрный (README макетов: белый плохо читается).
+  acceptText: { fontFamily: JT_FONT.bold, fontSize: rf(17), color: JT.ink },
   leave: {
     marginTop: rs(6),
-    height: rs(46),
+    height: rs(44),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  leaveText: { fontSize: rf(15), fontWeight: '600', color: Colors.textSecondary },
+  leaveText: { fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textSecondary },
   note: {
     marginTop: rs(12),
     marginBottom: rs(4),
+    fontFamily: JT_FONT.medium,
     fontSize: rf(12),
     lineHeight: rf(17),
-    color: Colors.textMuted,
+    color: JT.textTertiary,
     textAlign: 'center',
   },
 });

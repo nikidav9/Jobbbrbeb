@@ -146,7 +146,7 @@ check('поддержка: историю можно повторить',
     (bool)preg_match('~onPress=\{\(\) => void loadConversation\(\)\}[\s\S]{0,220}Повторить~', $support));
 check('поддержка: помощь открывается сразу чатом, без старой вкладки вопросов',
     !str_contains($support, "useState<'help' | 'chat'>")
-    && str_contains($support, 'Помощник JobToo'));
+    && str_contains($support, 'JobToo · бот'));
 check('поддержка: FAQ остаётся отдельной кнопкой',
     str_contains($support, 'accessibilityLabel="Частые вопросы"')
     && str_contains($support, 'faqVisible'));

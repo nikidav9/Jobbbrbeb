@@ -4,7 +4,9 @@ import { supabase } from '@/lib/supabase'
 import { useRealtime } from '@/lib/useRealtime'
 import { PALETTE } from '@/lib/queries'
 import {
-  JUPITER_COLUMNS, BUCKET_LABEL, REASON_LABEL, buildReport, type JupiterRow,
+  JUPITER_COLUMNS, CAPTCHA_COLUMNS, BUCKET_LABEL, REASON_LABEL, ENGINE_LABEL, CAPTCHA_REASONS,
+  buildReport, buildEngineReport, buildCaptchaReport, formatDuration,
+  type JupiterRow, type CaptchaEvent, type CaptchaRow,
 } from '@/lib/jupiterStats'
 import PageHeader from '@/components/PageHeader'
 import PageSkeleton from '@/components/PageSkeleton'
@@ -43,6 +45,57 @@ async function fetchRows(): Promise<JupiterRow[]> {
   return all
 }
 
+/** События с капчей: только id заявки, причина и движок, без user_id. */
+async function fetchCaptchaEvents(): Promise<CaptchaEvent[]> {
+  const page = 1000
+  const all: CaptchaEvent[] = []
+  for (let from = 0; ; from += page) {
+    const { data, error } = await supabase
+      .from('jm_jupiter_events')
+      .select('application_id,reason_code,engine:detail->>engine')
+      .in('reason_code', CAPTCHA_REASONS)
+      .order('id', { ascending: true })
+      .range(from, from + page - 1)
+    if (error) throw new Error(error.message)
+    if (!data?.length) break
+    all.push(...(data as unknown as CaptchaEvent[]))
+    if (data.length < page) break
+  }
+  return all
+}
+
+/** Капча человеку: без user_id, без картинки и без ответа (CAPTCHA_COLUMNS). */
+async function fetchCaptcha(): Promise<CaptchaRow[]> {
+  const page = 1000
+  const all: CaptchaRow[] = []
+  for (let from = 0; ; from += page) {
+    const { data, error } = await supabase
+      .from('jm_jupiter_captcha')
+      .select(CAPTCHA_COLUMNS)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + page - 1)
+    if (error) throw new Error(error.message)
+    if (!data?.length) break
+    all.push(...(data as unknown as CaptchaRow[]))
+    if (data.length < page) break
+  }
+  return all
+}
+
+/** captcha = null — таблица капчи не прочиталась, блок показывает прочерки. */
+type Data = { rows: JupiterRow[]; events: CaptchaEvent[]; captcha: CaptchaRow[] | null }
+
+async function fetchAll(): Promise<Data> {
+  // Разрезы по капче вторичны: если они не прочитались, основной замер живёт.
+  const [rows, events, captcha] = await Promise.all([
+    fetchRows(),
+    fetchCaptchaEvents().catch(() => [] as CaptchaEvent[]),
+    fetchCaptcha().catch(() => null),
+  ])
+  return { rows, events, captcha }
+}
+
 type Period = '7' | '30' | 'all'
 const PERIOD_DAYS: Record<Period, number> = { '7': 7, '30': 30, all: 0 }
 
@@ -52,9 +105,10 @@ const th: React.CSSProperties = { padding: '10px 14px', fontWeight: 500, whiteSp
 const td: React.CSSProperties = { padding: '10px 14px', whiteSpace: 'nowrap' }
 
 export default function JupiterPage() {
-  const fetcher = useCallback(() => fetchRows(), [])
-  const { data: rows, loading, error, lastUpdated, pulse, refresh } = useRealtime(fetcher, { intervalSec: 600 })
+  const fetcher = useCallback(() => fetchAll(), [])
+  const { data, loading, error, lastUpdated, pulse, refresh } = useRealtime(fetcher, { intervalSec: 600 })
   const [period, setPeriod] = useState<Period>('7')
+  const rows = data?.rows
 
   const counts = useMemo(() => {
     const all = rows ?? []
@@ -65,6 +119,16 @@ export default function JupiterPage() {
     }
   }, [rows])
   const report = useMemo(() => buildReport(rows ?? [], PERIOD_DAYS[period]), [rows, period])
+
+  const engines = useMemo(
+    () => buildEngineReport(rows ?? [], data?.events ?? [], PERIOD_DAYS[period]),
+    [rows, data, period],
+  )
+
+  const captcha = useMemo(
+    () => (data?.captcha ? buildCaptchaReport(data.captcha, PERIOD_DAYS[period]) : null),
+    [data, period],
+  )
 
   if (loading && !rows) return <PageSkeleton rows={3} />
 
@@ -84,6 +148,7 @@ export default function JupiterPage() {
   }
 
   const t = report.totals
+  const browser = engines.find(e => e.engine === 'browser')
   const tickDay = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}`
 
   return (
@@ -179,6 +244,72 @@ export default function JupiterPage() {
               </table>
             </div>
           )}
+        </ChartCard>
+        <ChartCard title="По движку"
+          sub={`Колонка engine заявки: HTTP по умолчанию, «Переведено на браузер» — эскалация с HTTP на Chromium${
+            browser && t.total ? ` (${browser.total} · ${pct(browser.total, t.total)} свайпов)` : ''}.`}>
+          {engines.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '4px 0 8px' }}>
+              За этот период свайпов по сайтам компаний не было.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', margin: '0 -16px -14px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--ink-3)', borderBottom: '1px solid var(--line)' }}>
+                    <th style={th}>Движок</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Свайпов</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Отправил</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Ждали капчу</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Капча решена</th>
+                    <th style={{ ...th, whiteSpace: 'normal', minWidth: 200 }}>Топ причин остановки</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {engines.map(e => (
+                    <tr key={e.engine} style={{ borderBottom: '1px solid var(--line)' }}>
+                      <td style={{ ...td, color: 'var(--ink)' }}>{ENGINE_LABEL[e.engine]}</td>
+                      <td className="mono" style={{ ...td, textAlign: 'right' }}>{e.total}</td>
+                      <td className="mono" style={{ ...td, textAlign: 'right', color: e.auto ? 'var(--positive)' : 'var(--ink-3)' }}>
+                        {e.auto} <span style={{ color: 'var(--ink-3)' }}>· {pct(e.auto, e.total)}</span>
+                      </td>
+                      <td className="mono" style={{ ...td, textAlign: 'right' }}>{e.captchaWaited}</td>
+                      <td className="mono" style={{ ...td, textAlign: 'right' }}>
+                        {e.captchaSolved} <span style={{ color: 'var(--ink-3)' }}>· {pct(e.captchaSolved, e.captchaWaited)}</span>
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'normal', minWidth: 200, color: 'var(--ink-2)' }}>
+                        {e.topReasons.length
+                          ? e.topReasons.map(r => (
+                              <div key={r.code}>
+                                {REASON_LABEL[r.code] ?? r.code} <span className="mono" style={{ color: 'var(--ink-3)' }}>×{r.count}</span>
+                              </div>
+                            ))
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Капча"
+          sub={captcha
+            ? 'Показано человеку в приложении — по дате показа. Капчу решает только сам кандидат.'
+            : 'Таблица капчи не прочиталась — остальной замер выше верен.'}>
+          <div className="g-4">
+            <KpiCard label="Показано человеку" value={captcha ? captcha.shown : null}
+              sub={captcha?.open ? `ещё ждут ответа: ${captcha.open}` : 'jm_jupiter_captcha'} />
+            <KpiCard label="Решено" value={captcha ? captcha.solved : null}
+              sub={captcha ? `${pct(captcha.solved, captcha.shown)} показанных` : '—'} color="var(--positive)" />
+            <KpiCard label="Неверно" value={captcha ? captcha.failed : null}
+              sub={captcha ? `${pct(captcha.failed, captcha.shown)} показанных` : '—'} color="var(--negative)" />
+            <KpiCard label="Не успели" value={captcha ? captcha.expired : null}
+              sub={captcha ? `${pct(captcha.expired, captcha.shown)} · 10 минут вышли` : '—'} color="var(--accent)" />
+            <KpiCard label="Среднее время ответа" value={captcha?.avgAnswerSec == null ? null : formatDuration(captcha.avgAnswerSec)}
+              sub="от показа до ответа человека" />
+          </div>
         </ChartCard>
       </div>
     </div>

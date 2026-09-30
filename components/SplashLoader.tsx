@@ -1,32 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
+import { View, StyleSheet, Animated, Easing, Dimensions, Image, AccessibilityInfo } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { rs, rf } from '@/constants/scale';
 
-import {
-  BASKET_STROKES, SPARK_STROKES, PRODUCTS, ART_VB_W, ART_VB_H,
-  BASKET_DRAW_MS, PROD_FIRST_MS, PROD_STAGGER_MS, PROD_FALL_MS,
-  SPARKS_AT_MS, SPARKS_MS,
-} from '@/constants/basketArt';
-
-// Загрузочный экран: на фирменном оранжевом линией рисуется корзина, затем над
-// ней один за другим плавно опускаются продукты и разлетаются искорки. Снизу —
-// название и счётчик процентов реальной загрузки.
+// Загрузочный экран — макет «JT-splash» (28.09.2026, docs/design/splash), 1:1
+// с веб-версией в app/+html.tsx: оранжевая точка раскрывается в белую плашку,
+// впрыгивает логотип, появляется тень-наклейка и подпись, полоса загрузки идёт
+// по реальному проценту. Штатный RN Animated (reanimated-плагин не подключён).
 //
-// Анимация на штатном RN Animated (не reanimated: babel-плагин в проекте не
-// подключён). Линии рисуются через strokeDashoffset, поэтому useNativeDriver
-// здесь невозможен — но анимируется всего одно значение, это дёшево.
+// Ниже — ещё и DrawnArt/Stroke: «рисующиеся» линии, которыми нарисованы
+// иконки выбора роли (constants/roleIcons.ts).
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-const { width: SW, height: SH } = Dimensions.get('window');
-// Арт занимает ~62 % ширины, но не вылезает по высоте на маленьких экранах
-const ART_W = Math.min(SW * 0.62, SH * 0.30);
-const ART_H = ART_W * (ART_VB_H / ART_VB_W);
-const K = ART_W / ART_VB_W; // из координат арта в пиксели
+const { height: SH } = Dimensions.get('window');
 
 const WHITE = '#FFFFFF';
-const ORANGE = '#FF6B1A';
 
 // Длительность полной прорисовки
 const DRAW_MS = 1280;
@@ -123,16 +112,23 @@ export function bootElapsed(): number {
 }
 
 /**
- * Минимальное время показа загрузочного экрана: полная прорисовка логотипа
- * плюс небольшой запас, чтобы счётчик успел добежать до 100 %. Без него при
- * быстром старте (например, у гостя, которому нечего грузить) экран улетал
- * недорисованным.
+ * Минимальное время показа загрузочного экрана. Без него при быстром старте
+ * (гость, которому нечего грузить) экран улетал недорисованным.
  */
-export const SPLASH_MIN_MS = DRAW_MS + 280;  // ≈1.56 c: хватает и на добег 95→100
+// Заставка всегда ~5 с (решение владельца 28.09.2026): раскадровка макета
+// растянута вдвое; полоса идёт с SPLASH_BAR_FROM и доходит до 100 % к
+// SPLASH_MIN_MS, после — плавный уход (EntryTransition, FADE_MS).
+export const SPLASH_MIN_MS = 4400;
+const SPLASH_BAR_FROM = 2400;
 
-export function useLoadingPercent(ready: boolean, minMs = DRAW_MS): number {
+/**
+ * Процент на полосе заставки. Полоса видна с SPLASH_BAR_FROM и идёт ровно по
+ * времени: данные готовы — доходит до 100 % к SPLASH_MIN_MS, не раньше (иначе
+ * прыгнула бы к концу и стояла); данные ещё едут — останавливается на 95 и
+ * дальше ползёт по проценту, не обещая 100 %, пока их нет.
+ */
+export function useLoadingPercent(ready: boolean, minMs = SPLASH_MIN_MS): number {
   const [percent, setPercent] = useState(lastPercent);
-  const start = useRef(bootStart());
   const readyRef = useRef(ready);
   readyRef.current = ready;
 
@@ -142,17 +138,10 @@ export function useLoadingPercent(ready: boolean, minMs = DRAW_MS): number {
         // Считаем от общего достигнутого значения, а не от локального
         const prev = Math.max(prevState, lastPercent);
         if (prev >= 100) { lastPercent = 100; return 100; }
-        if (readyRef.current) {
-          // Добегаем до 100 плавно: у финиша — по проценту за тик, чтобы
-          // 96, 97, 98, 99 успели показаться, а не перескочили одним кадром
-          const left = 100 - prev;
-          return (lastPercent = Math.min(100, prev + (left > 12 ? Math.ceil(left / 8) : 1)));
-        }
-        const elapsed = Date.now() - start.current;
-        if (elapsed < minMs) {
-          // равномерный подъём 1 → 95: пользователь видит счёт с самого начала
-          return (lastPercent = Math.max(prev, Math.round(1 + (elapsed / minMs) * 94)));
-        }
+        const elapsed = bootElapsed();
+        const byTime = Math.max(0, Math.min(100, Math.round((elapsed - SPLASH_BAR_FROM) / (minMs - SPLASH_BAR_FROM) * 100)));
+        if (readyRef.current) return (lastPercent = Math.max(prev, byTime));
+        if (elapsed < minMs) return (lastPercent = Math.max(prev, Math.min(95, byTime)));
         // хвост: 96, 97, 98, 99 — заметно медленнее
         const extra = Math.floor((elapsed - minMs) / TAIL_STEP_MS);
         return (lastPercent = Math.max(prev, Math.min(99, 95 + extra)));
@@ -164,150 +153,131 @@ export function useLoadingPercent(ready: boolean, minMs = DRAW_MS): number {
   return percent;
 }
 
-/** Один товар: опускается сверху в корзину и проявляется. */
-function FallingProduct({ p, index }: { p: typeof PRODUCTS[number]; index: number }) {
-  const anim = useRef(new Animated.Value(0)).current;
+const INK = '#141414';
+const ACCENT = '#FF6B1A';
+const PLATE = rs(140);
+const LOGO_W = rs(96);
+const BAR_W = rs(180);
+// Центр плашки — на 45 % высоты, как (195, 380) на экране 844 pt.
+const CENTER_Y = SH * 0.45;
 
-  useEffect(() => {
-    const at = PROD_FIRST_MS + index * PROD_STAGGER_MS;
-    const elapsed = bootElapsed();
-    if (elapsed >= at + PROD_FALL_MS) { anim.setValue(1); return; }
-    Animated.timing(anim, {
-      toValue: 1,
-      duration: PROD_FALL_MS,
-      delay: Math.max(0, at - elapsed),
-      easing: Easing.out(Easing.cubic), // мягко замедляется, будто кладут
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        left: p.left * K,
-        top: p.top * K,
-        width: p.w * K,
-        height: p.h * K,
-        opacity: anim,
-        transform: [{
-          translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-46 * K, 0] }),
-        }],
-      }}
-    >
-      <Svg width={p.w * K} height={p.h * K} viewBox={`0 0 ${p.w} ${p.h}`}>
-        {p.paths.map((path, i) => (
-          <Path
-            key={i}
-            d={path.d}
-            transform={path.t}
-            stroke={WHITE}
-            strokeWidth={path.w ?? 3}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        ))}
-      </Svg>
-    </Animated.View>
-  );
+/**
+ * Проигрывает значение 0 → 1 в окне [at, at + ms] от старта приложения.
+ * Экран показывается дважды подряд (index.tsx, затем оверлей
+ * EntryTransition), поэтому уже прошедшая часть не проигрывается заново.
+ */
+function play(value: Animated.Value, at: number, ms: number, easing: (t: number) => number, native: boolean) {
+  const elapsed = bootElapsed();
+  if (elapsed >= at + ms) { value.setValue(1); return; }
+  const from = elapsed > at ? (elapsed - at) / ms : 0;
+  value.setValue(from);
+  Animated.timing(value, {
+    toValue: 1, duration: ms * (1 - from), delay: Math.max(0, at - elapsed),
+    easing, useNativeDriver: native,
+  }).start();
 }
 
 export default function SplashLoader({ percent = 1 }: { percent?: number }) {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sparks = useRef(new Animated.Value(0)).current;
-  const nameFade = useRef(new Animated.Value(0)).current;
+  // Тайминги — раскадровка макета, растянутая до ~5 с.
+  const dot = useRef(new Animated.Value(0)).current;      // 0–500: точка 0 → 1
+  const open = useRef(new Animated.Value(0)).current;     // 500–1100: точка → плашка
+  const logo = useRef(new Animated.Value(0)).current;     // 1100–1800: логотип с отскоком
+  const sticker = useRef(new Animated.Value(0)).current;  // 1700–2400: тень и подпись
+  const loading = useRef(new Animated.Value(0)).current;  // 2400+: полоса и подпись под ней
 
   useEffect(() => {
-    // Продолжаем с того места, где остановился предыдущий показ, а не с нуля
-    const elapsed = bootElapsed();
-
-    const done = Math.min(1, elapsed / BASKET_DRAW_MS);
-    progress.setValue(done);
-    if (done < 1) {
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: BASKET_DRAW_MS * (1 - done),
-        easing: Easing.linear,
-        useNativeDriver: false, // strokeDashoffset — не нативное свойство
-      }).start();
-    }
-
-    // Искорки — после того, как продукты легли
-    const sDone = Math.min(1, Math.max(0, (elapsed - SPARKS_AT_MS) / SPARKS_MS));
-    sparks.setValue(sDone);
-    if (sDone < 1) {
-      Animated.timing(sparks, {
-        toValue: 1,
-        duration: SPARKS_MS * (1 - sDone),
-        delay: Math.max(0, SPARKS_AT_MS - elapsed),
-        easing: Easing.linear,
-        useNativeDriver: false,
-      }).start();
-    }
-
-    // Название проявляется, когда корзина уже нарисована
-    const nameAt = BASKET_DRAW_MS + 120;
-    if (elapsed >= nameAt + 450) {
-      nameFade.setValue(1);
-    } else {
-      Animated.timing(nameFade, {
-        toValue: 1,
-        duration: 450,
-        delay: Math.max(0, nameAt - elapsed),
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start();
-    }
+    let alive = true;
+    const run = (reduce: boolean) => {
+      if (!alive) return;
+      if (reduce) {
+        // «Уменьшение движения»: сразу кадр 5, без анимации.
+        [dot, open, logo, sticker, loading].forEach(v => v.setValue(1));
+        return;
+      }
+      play(dot, 0, 500, Easing.out(Easing.quad), false);
+      play(open, 500, 600, Easing.bezier(0.2, 0.8, 0.2, 1), false);
+      play(logo, 1100, 700, Easing.linear, true);
+      play(sticker, 1700, 700, Easing.out(Easing.quad), true);
+      play(loading, SPLASH_BAR_FROM, 500, Easing.out(Easing.quad), true);
+    };
+    AccessibilityInfo.isReduceMotionEnabled().then(run).catch(() => run(false));
+    return () => { alive = false; };
   }, []);
 
+  // Точка 18 pt = 0.13 плашки: сначала растёт до неё, потом раскрывается.
+  const plateScale = Animated.add(
+    dot.interpolate({ inputRange: [0, 1], outputRange: [0, 0.13] }),
+    open.interpolate({ inputRange: [0, 1], outputRange: [0, 0.87] }),
+  );
+  const radius = open.interpolate({ inputRange: [0, 1], outputRange: [PLATE / 2, rs(36)] });
+  // Цвет оранжевый → белый: оранжевый слой гаснет над белой плашкой.
+  const orange = open.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  // Отскок scale 0.6 → 1.08 → 1 (cubic-bezier(.3,1.4,.5,1) макета).
+  const logoScale = logo.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.6, 1.08, 1] });
+  const logoOpacity = logo.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 1, 1] });
+  const shadowShift = sticker.interpolate({ inputRange: [0, 1], outputRange: [0, rs(6)] });
+  const tagShift = sticker.interpolate({ inputRange: [0, 1], outputRange: [rs(10), 0] });
+
+  const pct = Math.max(0, Math.min(100, Math.round(percent)));
+  const fillW = Math.round((BAR_W - 4) * pct / 100);
+
   return (
-    <View style={styles.root}>
-      <View style={[styles.artWrap, { width: ART_W, height: ART_H }]}>
-        {/* товары рисуем первыми — корзина ложится поверх и «прячет» их низ */}
-        {PRODUCTS.map((p, i) => (
-          <FallingProduct key={i} p={p} index={i} />
-        ))}
-        <Svg
-          width={ART_W}
-          height={ART_H}
-          viewBox={`0 0 ${ART_VB_W} ${ART_VB_H}`}
-          style={StyleSheet.absoluteFill}
-        >
-          {BASKET_STROKES.map((s, i) => (
-            <DrawnStroke key={i} stroke={s} progress={progress} />
-          ))}
-          {SPARK_STROKES.map((s, i) => (
-            <DrawnStroke key={`sp${i}`} stroke={s} progress={sparks} />
-          ))}
-        </Svg>
+    <View style={styles.root} accessibilityLabel="Загрузка JobToo">
+      <View style={styles.slot}>
+        {/* Тень-наклейка: чёрная копия плашки, выезжает на 6 pt вправо-вниз */}
+        <Animated.View
+          style={[styles.plateBox, styles.shadow, {
+            opacity: sticker,
+            transform: [{ translateX: shadowShift }, { translateY: shadowShift }],
+          }]}
+        />
+        <Animated.View style={[styles.plateBox, styles.plate, { borderRadius: radius, transform: [{ scale: plateScale }] }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: ACCENT, opacity: orange }]} />
+          <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
+            <Image source={require('@/assets/images/splash-mark.png')} style={styles.logo} resizeMode="contain" />
+          </Animated.View>
+        </Animated.View>
       </View>
 
-      <View style={styles.bottom}>
-        <Animated.Text style={[styles.name, { opacity: nameFade }]}>JobToo</Animated.Text>
-        {/* Счётчик виден с первого кадра — отсчёт начинается с единицы */}
-        <Text style={styles.percent}>{Math.round(percent)}%</Text>
+      <View style={styles.below}>
+        <Animated.Text style={[styles.tag, { opacity: sticker, transform: [{ translateY: tagShift }] }]}>
+          Работа в IT — свайпом
+        </Animated.Text>
+        <Animated.View style={[styles.bar, { opacity: loading }]} accessibilityRole="progressbar"
+          accessibilityValue={{ min: 0, max: 100, now: pct }}>
+          <View style={[styles.fill, { width: fillW }, pct > 0 && pct < 100 && styles.fillEdge]} />
+        </Animated.View>
+        <Animated.Text style={[styles.caption, { opacity: loading }]}>Подбираем вакансии…</Animated.Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: ORANGE,
+  root: { ...StyleSheet.absoluteFillObject, backgroundColor: '#F5EFE6' },
+  slot: {
+    position: 'absolute', left: 0, right: 0, top: CENTER_Y - PLATE / 2, height: PLATE,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  artWrap: { position: 'relative' },
-  bottom: { alignItems: 'center', marginTop: rs(24) },
-  name: { fontSize: rf(32), fontWeight: '800', letterSpacing: -0.8, color: WHITE },
-  percent: {
-    marginTop: rs(10),
-    fontSize: rf(17),
-    fontWeight: '700',
-    fontStyle: 'italic',      // намёк на рукописный счётчик из референса
-    letterSpacing: 1.5,
-    color: 'rgba(255,255,255,0.85)',
+  plateBox: { position: 'absolute', width: PLATE, height: PLATE, borderRadius: rs(36) },
+  shadow: { backgroundColor: INK },
+  plate: {
+    backgroundColor: WHITE, borderWidth: 2, borderColor: INK, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
   },
+  logo: { width: LOGO_W, height: LOGO_W * 186 / 288 },
+  below: {
+    position: 'absolute', left: 0, right: 0, top: CENTER_Y + rs(106),
+    alignItems: 'center', paddingHorizontal: 16,
+  },
+  tag: {
+    fontFamily: 'Unbounded_700Bold', fontSize: rf(18), letterSpacing: -0.18, color: INK, textAlign: 'center',
+  },
+  bar: {
+    marginTop: rs(26), width: BAR_W, height: 14, borderWidth: 2, borderColor: INK, borderRadius: 7,
+    backgroundColor: WHITE, overflow: 'hidden',
+  },
+  fill: { height: '100%', backgroundColor: ACCENT },
+  fillEdge: { borderRightWidth: 2, borderRightColor: INK },
+  caption: { marginTop: 10, fontFamily: 'Manrope_700Bold', fontSize: rf(13), color: '#6B645C', textAlign: 'center' },
 });

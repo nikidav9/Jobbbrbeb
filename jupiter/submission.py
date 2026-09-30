@@ -296,6 +296,10 @@ def collect_evidence(
 
 def score_evidence(evidence: list[SubmissionEvidence]) -> float:
     """Вес самого сильного доказательства плюс надбавка за подтверждение."""
+    # Отказ API страницы перевешивает любой текст: «спасибо» может висеть на
+    # экране, пока сервер ответил «телефон неверный».
+    if any(item.type == "API_ERROR" for item in evidence):
+        return 0.0
     positives = [item.confidence for item in evidence if item.confidence > 0]
     if not positives:
         return 0.0

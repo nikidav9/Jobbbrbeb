@@ -92,6 +92,9 @@ class ControlState:
     # него нет ни label, ни name.
     section: str = ""
     options: list[OptionState] = field(default_factory=list)
+    # Метка элемента в живой странице браузерного движка (browser_engine.py,
+    # атрибут data-jt-ref). HTTP-движку не нужна и остаётся пустой.
+    dom_ref: str = ""
     file_path: str | None = None
     file_paths: list[str] = field(default_factory=list)
 
@@ -330,6 +333,7 @@ class _SemanticParser(HTMLParser):
             formmethod=(attrs.get("formmethod", "") or "").lower(),
             formenctype=(attrs.get("formenctype", "") or "").lower(),
             formnovalidate="formnovalidate" in attrs,
+            dom_ref=attrs.get("data-jt-ref", ""),
         )
         self.controls.append(c)
         if self.current_form is not None:
@@ -541,28 +545,55 @@ class _SemanticParser(HTMLParser):
         )
 
 
-def _pinned_connection(base, pinned_ip: str | None):
+def _pinned_connection(base, pinned_ip: str | None, aia: "_AiaTrust | None" = None):
     """Соединение ровно на тот адрес, который прошёл проверку.
 
     Между проверкой DNS и подключением остаётся окно, в которое бьёт DNS
     rebinding: первый ответ безобидный, второй указывает внутрь сети. Окно
     закрывается тем, что подключаемся по уже проверенному адресу, а имя
     оставляем для заголовка Host и для TLS.
+
+    aia — догрузка промежуточного сертификата, если сервер отдал неполную
+    цепочку (см. _AiaTrust).
     """
 
     class _Pinned(base):
-        def connect(self):
-            target = pinned_ip or self.host
-            self.sock = socket.create_connection(
-                (target, self.port), self.timeout, self.source_address
+        def _raw_socket(self):
+            sock = socket.create_connection(
+                (pinned_ip or self.host, self.port), self.timeout, self.source_address
             )
             if getattr(self, "_tunnel_host", None):
+                self.sock = sock
                 self._tunnel()
+            return sock
+
+        def _leaf_der(self) -> bytes:
+            # Сертификат листа БЕЗ проверки — только чтобы прочитать из него
+            # адрес издателя (AIA). Ни одного байта данных в это соединение
+            # не уходит, и ему ничего не доверяется.
+            probe = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            probe.check_hostname = False
+            probe.verify_mode = ssl.CERT_NONE
+            raw = self._raw_socket()
+            raw.settimeout(_AIA_TIMEOUT)
+            with probe.wrap_socket(raw, server_hostname=self.host) as tls:
+                return tls.getpeercert(binary_form=True) or b""
+
+        def connect(self):
             context = getattr(self, "_context", None)
-            if context is not None:
-                self.sock = context.wrap_socket(
-                    self.sock, server_hostname=self.host
-                )
+            self.sock = self._raw_socket()
+            if context is None:
+                return
+            try:
+                self.sock = context.wrap_socket(self.sock, server_hostname=self.host)
+            except ssl.SSLCertVerificationError as exc:
+                if (
+                    aia is None
+                    or exc.verify_code != _X509_UNABLE_TO_GET_ISSUER_LOCALLY
+                    or getattr(self, "_tunnel_host", None)
+                ):
+                    raise
+                self.sock = aia.retry(self, exc)
 
     return _Pinned
 
@@ -580,16 +611,19 @@ class _PinnedHTTPHandler(urllib.request.HTTPHandler):
         )
 
 
-# Т-Банк, Альфа-Банк и Точка подписаны центром Минцифры (Russian Trusted CA),
-# которого нет в системном списке, и без него их анкеты не открыть даже из
-# Москвы. Решение владельца 26.09.2026 — то же, что у сборщика вакансий
-# (php-proxy/safe_url.php, JT_RU_CA_HOSTS): для этих доменов и их поддоменов
-# доверяем ТОЛЬКО этому центру (он заменяет системный список, а не дополняет),
-# для остальных сайтов не меняется ничего. Проверка сертификата и имени хоста
-# остаётся включённой.
+# Центр сертификации Минцифры (Russian Trusted CA) не входит в системный
+# список, а им подписаны многие российские карьерные сайты — без него Юпитер
+# их не открывает. Сначала (26.09.2026) доверяли ему только для трёх банков
+# (RU_CA_HOSTS — тот же список, что JT_RU_CA_HOSTS у сборщика вакансий в
+# php-proxy/safe_url.php). Решение владельца 29.09.2026: для ВСЕХ исходящих
+# запросов Юпитера к сайтам работодателей контекст = системные корни + два
+# сертификата Минцифры. Банки стали частным случаем. Проверка сертификата и
+# имени хоста остаётся обязательной; вход и база приложения этому центру
+# по-прежнему не доверяют.
 RU_CA_HOSTS = ("tbank.ru", "alfabank.ru", "tochka.com")
 _RU_CA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ru_trusted_ca.pem")
 _ru_ca_context: ssl.SSLContext | None = None
+_trust_context: ssl.SSLContext | None = None
 
 
 def needs_ru_ca(host: str) -> bool:
@@ -598,6 +632,7 @@ def needs_ru_ca(host: str) -> bool:
 
 
 def ru_ca_context() -> ssl.SSLContext:
+    """Контекст, доверяющий ТОЛЬКО Минцифры (для сверки и тестов)."""
     global _ru_ca_context
     if _ru_ca_context is None:
         # cafile вместо системного списка: create_default_context не грузит
@@ -606,17 +641,275 @@ def ru_ca_context() -> ssl.SSLContext:
     return _ru_ca_context
 
 
+def new_trust_context() -> ssl.SSLContext:
+    """Свежий контекст: системные корни + Минцифры, проверка обязательна."""
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=_RU_CA_FILE)
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    return context
+
+
+def trust_context() -> ssl.SSLContext:
+    """Общий на процесс контекст для всех хостов Юпитера."""
+    global _trust_context
+    if _trust_context is None:
+        _trust_context = new_trust_context()
+    return _trust_context
+
+
+# --- AIA: догрузка промежуточного сертификата, как в браузерах ---------------
+#
+# Часть сайтов отдаёт только свой сертификат без промежуточного. Браузер в
+# этом случае берёт адрес издателя из расширения Authority Information Access
+# (caIssuers) и скачивает промежуточный сам; Python так не умеет и падает с
+# «unable to get local issuer certificate». Делаем то же, что браузер, но
+# осторожно: скачанный сертификат попадает в хранилище контекста, а всё, что
+# лежит в хранилище OpenSSL, — кандидат в якоря доверия. Поэтому:
+# - самоподписанный (issuer == subject) не грузим вовсе;
+# - флаг PARTIAL_CHAIN снят: несамоподписанный сертификат из хранилища сам
+#   якорем не становится, цепочка обязана дойти до корня;
+# - после рукопожатия смотрим проверенную цепочку: её вершина обязана быть
+#   НЕ скачанным сертификатом (то есть системным корнем или Минцифры). Иначе
+#   соединение закрывается до отправки хоть одного байта запроса.
+_X509_UNABLE_TO_GET_ISSUER_LOCALLY = 20
+_AIA_MAX_BYTES = 64 * 1024
+_AIA_TIMEOUT = 10.0
+_AIA_MAX_URLS = 3
+_OID_AIA = bytes.fromhex("2b06010505070101")          # 1.3.6.1.5.5.7.1.1
+_OID_CA_ISSUERS = bytes.fromhex("2b06010505073002")   # 1.3.6.1.5.5.7.48.2
+# Скачанные промежуточные: URL → DER. Память процесса, без срока жизни.
+_aia_cache: dict[str, bytes] = {}
+
+
+def _der_tlv(buf: bytes, pos: int, end: int) -> tuple[int, int, int]:
+    """(тег, начало значения, конец значения) элемента DER в buf[pos:end]."""
+    if pos + 2 > end:
+        raise ValueError("DER: обрыв")
+    tag = buf[pos]
+    length = buf[pos + 1]
+    pos += 2
+    if length & 0x80:
+        count = length & 0x7F
+        if count == 0 or count > 4 or pos + count > end:
+            raise ValueError("DER: длина")
+        length = int.from_bytes(buf[pos:pos + count], "big")
+        pos += count
+    if pos + length > end:
+        raise ValueError("DER: значение за границей")
+    return tag, pos, pos + length
+
+
+def _der_children(buf: bytes, start: int, end: int) -> list[tuple[int, int, int]]:
+    items = []
+    while start < end:
+        item = _der_tlv(buf, start, end)
+        items.append(item)
+        start = item[2]
+    return items
+
+
+def _tbs_fields(der: bytes) -> list[tuple[int, int, int]]:
+    tag, start, end = _der_tlv(der, 0, len(der))
+    if tag != 0x30 or end != len(der):
+        raise ValueError("не сертификат")
+    parts = _der_children(der, start, end)
+    if len(parts) != 3 or parts[0][0] != 0x30:
+        raise ValueError("не сертификат")
+    fields = _der_children(der, parts[0][1], parts[0][2])
+    if fields and fields[0][0] == 0xA0:  # [0] version
+        fields = fields[1:]
+    # serial, signature, issuer, validity, subject, spki, [1], [2], [3]
+    if len(fields) < 6:
+        raise ValueError("TBS: мало полей")
+    return fields
+
+
+def cert_issuer_subject(der: bytes) -> tuple[bytes, bytes]:
+    fields = _tbs_fields(der)
+    issuer, subject = fields[2], fields[4]
+    return der[issuer[1]:issuer[2]], der[subject[1]:subject[2]]
+
+
+def aia_ca_issuer_urls(der: bytes) -> list[str]:
+    """Адреса caIssuers из расширения AIA сертификата (только http/https)."""
+    try:
+        fields = _tbs_fields(der)
+        urls: list[str] = []
+        for tag, start, end in fields[6:]:
+            if tag != 0xA3:  # [3] extensions
+                continue
+            (seq_tag, seq_start, seq_end), = _der_children(der, start, end)
+            for _, ext_start, ext_end in _der_children(der, seq_start, seq_end):
+                ext = _der_children(der, ext_start, ext_end)
+                if not ext or ext[0][0] != 0x06 or der[ext[0][1]:ext[0][2]] != _OID_AIA:
+                    continue
+                octets = ext[-1]
+                if octets[0] != 0x04:
+                    continue
+                (_, aia_start, aia_end), = _der_children(der, octets[1], octets[2])
+                for _, ad_start, ad_end in _der_children(der, aia_start, aia_end):
+                    method, name = _der_children(der, ad_start, ad_end)[:2]
+                    if der[method[1]:method[2]] != _OID_CA_ISSUERS or name[0] != 0x86:
+                        continue
+                    url = der[name[1]:name[2]].decode("ascii", "strict")
+                    if urllib.parse.urlparse(url).scheme.lower() in ("http", "https"):
+                        urls.append(url)
+        return urls
+    except (ValueError, UnicodeDecodeError):
+        return []
+
+
+def _fetch_ca_issuer(url: str, *, allow_private: bool, base_context: ssl.SSLContext) -> bytes:
+    """Скачать сертификат издателя. Возвращает DER. Та же сетевая политика,
+    что у запросов к работодателям: внутренние адреса запрещены, соединение
+    идёт на проверенный IP. Без переадресаций, не больше 64 КБ, 10 секунд."""
+    if url in _aia_cache:
+        return _aia_cache[url]
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    try:
+        addresses = NetworkPolicy({host}, allow_private=allow_private).check_url(url)
+    except PolicyError as exc:
+        raise EngineSecurityError(f"AIA: {exc}") from exc
+    if parsed.scheme.lower() == "https":
+        conn = _pinned_connection(http.client.HTTPSConnection, addresses[0])(
+            host, parsed.port, timeout=_AIA_TIMEOUT, context=base_context
+        )
+    else:
+        conn = _pinned_connection(http.client.HTTPConnection, addresses[0])(
+            host, parsed.port, timeout=_AIA_TIMEOUT
+        )
+    try:
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        conn.request("GET", path, headers={
+            "User-Agent": JupiterWebEngine.user_agent,
+            "Accept": "application/pkix-cert, application/x-x509-ca-cert, */*;q=0.1",
+        })
+        response = conn.getresponse()
+        if response.status != 200:
+            raise EngineError(f"AIA: HTTP {response.status}")
+        body = response.read(_AIA_MAX_BYTES + 1)
+    finally:
+        conn.close()
+    if len(body) > _AIA_MAX_BYTES:
+        raise EngineError("AIA: сертификат больше 64 КБ")
+    if b"-----BEGIN CERTIFICATE-----" in body:
+        pem = re.search(
+            rb"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", body, re.S
+        )
+        if not pem:
+            raise EngineError("AIA: битый PEM")
+        der = ssl.PEM_cert_to_DER_cert(pem.group(0).decode("ascii"))
+    else:
+        der = body  # PKCS#7 (.p7c) не поддерживается: разбор упадёт ниже
+    try:
+        issuer, subject = cert_issuer_subject(der)
+    except ValueError as exc:
+        raise EngineError(f"AIA: не сертификат X.509 ({exc})") from exc
+    if issuer == subject:
+        # Самоподписанный в хранилище = якорь доверия. Корни берём только из
+        # системы и файла Минцифры, никогда из сети.
+        raise EngineSecurityError("AIA: издатель самоподписанный, не доверяем")
+    _aia_cache[url] = der
+    return der
+
+
+def _verified_chain_der(tls: ssl.SSLSocket) -> list[bytes]:
+    getter = getattr(tls, "get_verified_chain", None)  # Python 3.13+
+    if getter is None:
+        getter = getattr(getattr(tls, "_sslobj", None), "get_verified_chain", None)
+    if getter is None:
+        raise ssl.SSLError("AIA: нельзя проверить вершину цепочки в этой версии Python")
+    chain = []
+    for cert in getter() or []:
+        if isinstance(cert, (bytes, bytearray)):
+            chain.append(bytes(cert))
+        else:
+            chain.append(cert.public_bytes(ssl._ssl.ENCODING_DER))
+    return chain
+
+
+class _AiaTrust:
+    """Повторное рукопожатие с догруженным промежуточным сертификатом."""
+
+    def __init__(self, make_context: Callable[[], ssl.SSLContext], *, allow_private: bool):
+        self.make_context = make_context
+        self.allow_private = allow_private
+        self._base: ssl.SSLContext | None = None
+        self._contexts: dict[bytes, ssl.SSLContext] = {}
+
+    def base(self) -> ssl.SSLContext:
+        if self._base is None:
+            self._base = self.make_context()
+        return self._base
+
+    def context_with(self, intermediate: bytes) -> ssl.SSLContext:
+        context = self._contexts.get(intermediate)
+        if context is None:
+            context = self.make_context()
+            partial = getattr(ssl, "VERIFY_X509_PARTIAL_CHAIN", 0)
+            context.verify_flags &= ~partial
+            context.load_verify_locations(cadata=intermediate)
+            self._contexts[intermediate] = context
+        return context
+
+    def retry(self, conn, original: ssl.SSLCertVerificationError) -> ssl.SSLSocket:
+        try:
+            urls = aia_ca_issuer_urls(conn._leaf_der())
+        except (OSError, ssl.SSLError):
+            raise original
+        for url in urls[:_AIA_MAX_URLS]:
+            try:
+                intermediate = _fetch_ca_issuer(
+                    url, allow_private=self.allow_private, base_context=self.base()
+                )
+            except (EngineError, OSError, ssl.SSLError, http.client.HTTPException, ValueError):
+                continue
+            raw = conn._raw_socket()
+            try:
+                tls = self.context_with(intermediate).wrap_socket(
+                    raw, server_hostname=conn.host
+                )
+            except ssl.SSLError:
+                raw.close()
+                continue
+            try:
+                chain = _verified_chain_der(tls)
+                if not chain or chain[-1] == intermediate:
+                    raise ssl.SSLCertVerificationError(
+                        "AIA: цепочка не дошла до доверенного корня"
+                    )
+            except BaseException:
+                tls.close()
+                raise
+            return tls
+        raise original
+
+
 class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
-    def __init__(self, pins: dict[str, str]):
+    def __init__(
+        self,
+        pins: dict[str, str],
+        *,
+        allow_private: bool = False,
+        make_context: Callable[[], ssl.SSLContext] | None = None,
+    ):
         super().__init__()
         self.pins = pins
+        # make_context — только для тестов (свой тестовый корень). В бою —
+        # общий контекст «системные корни + Минцифры» для всех хостов.
+        self._context = make_context() if make_context else trust_context()
+        self._aia = _AiaTrust(make_context or new_trust_context, allow_private=allow_private)
 
     def https_open(self, req):
         host = (req.host or "").split(":")[0].lower()
         return self.do_open(
-            _pinned_connection(http.client.HTTPSConnection, self.pins.get(host)),
+            _pinned_connection(http.client.HTTPSConnection, self.pins.get(host), self._aia),
             req,
-            context=ru_ca_context() if needs_ru_ca(host) else self._context,
+            context=self._context,
         )
 
 
@@ -675,7 +968,9 @@ class JupiterWebEngine:
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies),
             _PinnedHTTPHandler(self._pins),
-            _PinnedHTTPSHandler(self._pins),
+            _PinnedHTTPSHandler(
+                self._pins, allow_private=self.allow_private_addresses
+            ),
             _SafeRedirectHandler(self.assert_reachable),
         )
         self.page: PageState | None = None

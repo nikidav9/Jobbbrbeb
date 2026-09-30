@@ -11,6 +11,7 @@
  * Разделы описания — из текста вакансии (`## Заголовок`, `• пункт`), пустые
  * не показываются. Фактов «опыт», «занятость» у карьерных вакансий нет —
  * в сетке остаются только известные (формат, уровень, отклик).
+ * «Сохранить» — закладка (services/extSaved.ts, миграция 129).
  */
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Share, Platform, Linking } from 'react-native';
@@ -27,6 +28,8 @@ import { agoRu } from '@/services/time';
 import { parseDescriptionBlocks, type DescriptionBlock } from '@/services/descriptionBlocks';
 import { VACANCY_FORMATS, VACANCY_LEVELS, vacancyFormat, vacancyLevel } from '@/services/vacancyFacets';
 import { getOpenedExtVacancy, setDeckAction } from '@/services/extVacancyHandoff';
+import { toggleExtSaved, useExtSaved } from '@/services/extSaved';
+import { useApp } from '@/hooks/useApp';
 
 type Section = { title: string | null; blocks: DescriptionBlock[] };
 
@@ -55,6 +58,9 @@ export default function ExtVacancyScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const ev = getOpenedExtVacancy(id);
+  const { currentUser, showToast } = useApp();
+  const saved = useExtSaved().some(i => i.vacancy.id === ev?.id);
+  const [saving, setSaving] = React.useState(false);
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'));
 
@@ -98,6 +104,22 @@ export default function ExtVacancyScreen() {
     }
   };
 
+  // Гость сохранить не может — как и откликнуться: решение уходит ленте,
+  // она попросит зарегистрироваться (тот же путь, что у ♥).
+  const toggleSave = async () => {
+    if (!currentUser || saving) return;
+    if (currentUser.isGuest) { act('want'); return; }
+    setSaving(true);
+    try {
+      const now = await toggleExtSaved(currentUser.id, ev);
+      showToast(now ? 'Сохранено в избранное' : 'Убрано из избранного', 'success');
+    } catch {
+      showToast('Не удалось сохранить. Проверьте связь.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const report = () => {
     const subject = encodeURIComponent('Жалоба на вакансию');
     const body = encodeURIComponent(`${ev.title} — ${company}\n${ev.url}\n\nЧто не так:`);
@@ -112,9 +134,18 @@ export default function ExtVacancyScreen() {
       >
         <View style={s.top}>
           <BackButton onPress={close} style={jtBackStyle} label="Назад к ленте" />
-          <TouchableOpacity style={s.round} onPress={share} accessibilityRole="button" accessibilityLabel="Поделиться">
-            <Ionicons name="share-outline" size={rs(20)} color={JT.ink} />
-          </TouchableOpacity>
+          <View style={s.topRight}>
+            <TouchableOpacity style={s.round} onPress={share} accessibilityRole="button" accessibilityLabel="Поделиться">
+              <Ionicons name="share-outline" size={rs(20)} color={JT.ink} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.round, saved && s.roundOn]} onPress={() => { void toggleSave(); }}
+              accessibilityRole="button" accessibilityLabel={saved ? 'Убрать из избранного' : 'Сохранить вакансию'}
+              accessibilityState={{ selected: saved, busy: saving }} testID="detail-save"
+            >
+              <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={rs(20)} color={JT.ink} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={s.head}>
@@ -130,7 +161,7 @@ export default function ExtVacancyScreen() {
         <View style={s.tags}>
           <View style={s.tag}>
             <Ionicons name="location-outline" size={rs(15)} color={JT.ink} />
-            <Text style={s.tagTxt}>{place}</Text>
+            <Text style={s.tagTxt} numberOfLines={1}>{place}</Text>
           </View>
           {format ? <View style={s.tag}><Text style={s.tagTxt}>{format}</Text></View> : null}
           {level ? <View style={s.tag}><Text style={s.tagTxt}>{level}</Text></View> : null}
@@ -244,6 +275,8 @@ const s = StyleSheet.create({
     width: rs(44), height: rs(44), borderRadius: rs(22), borderWidth: 2, borderColor: JT.ink,
     backgroundColor: JT.surface, alignItems: 'center', justifyContent: 'center',
   },
+  topRight: { flexDirection: 'row', gap: rs(8) },
+  roundOn: { backgroundColor: JT.accent },
   head: { flexDirection: 'row', alignItems: 'center', gap: rs(12), marginTop: rs(22) },
   company: { fontFamily: JT_FONT.heavy, fontSize: rf(17), color: JT.ink },
   meta: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
@@ -254,9 +287,9 @@ const s = StyleSheet.create({
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6), marginTop: rs(14) },
   tag: {
     flexDirection: 'row', alignItems: 'center', gap: rs(5), height: rs(30), paddingHorizontal: rs(11),
-    borderRadius: rs(10), backgroundColor: JT.surface,
+    borderRadius: rs(10), backgroundColor: JT.surface, maxWidth: '100%',
   },
-  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink },
+  tagTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink, flexShrink: 1 },
 
   salaryWrap: { marginTop: rs(18), marginRight: rs(4), marginBottom: rs(4) },
   salaryShadow: {
@@ -289,11 +322,12 @@ const s = StyleSheet.create({
   bullet: { flexDirection: 'row', gap: rs(10) },
   dot: { width: rs(8), height: rs(8), borderRadius: 2, marginTop: rs(8) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6) },
+  // Чип не шире карточки: навык длиннее строки переносится, а не вылезает.
   chip: {
-    height: rs(32), paddingHorizontal: rs(12), borderRadius: rs(16), borderWidth: 1.5, borderColor: JT.ink,
-    alignItems: 'center', justifyContent: 'center',
+    minHeight: rs(32), paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: rs(16),
+    borderWidth: 1.5, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center', maxWidth: '100%',
   },
-  chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink },
+  chipTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink, flexShrink: 1 },
 
   linkCard: {
     marginTop: rs(12), flexDirection: 'row', alignItems: 'center', gap: rs(12),

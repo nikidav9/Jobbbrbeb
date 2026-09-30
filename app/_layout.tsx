@@ -15,6 +15,9 @@ import {
 import {
   Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
 } from '@expo-google-fonts/onest';
+import {
+  Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
+} from '@expo-google-fonts/manrope';
 import { AlertProvider } from '@/template';
 import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
@@ -228,6 +231,9 @@ export default function RootLayout() {
     'Manrope-800': require('../assets/fonts/Manrope-800.ttf'),
     Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
     Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
+    // Manrope — экраны редактирования профиля (constants/profileEditTheme.ts,
+    // эталон docs/design/profile-edit). Тот же неблокирующий способ.
+    Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
   });
   useOTAUpdates();
 

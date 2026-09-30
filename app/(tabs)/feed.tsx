@@ -2,22 +2,23 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
-  TextInput, ActivityIndicator, Share, Platform, Linking, Pressable,
+  TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
 import {
   GestureDetector,
   ScrollView as GHScrollView,
   RefreshControl as GHRefreshControl,
 } from 'react-native-gesture-handler';
-import Reanimated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import Reanimated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
-import { requestJupiterLive } from '@/services/jupiterLive';
 import { DAILY_ENERGY } from '@/services/energy';
 import { User, PermVacancy, ExtVacancy } from '@/constants/types';
 import { SECTION_BY_WORK_TYPE } from '@/constants/jobSections';
@@ -26,6 +27,11 @@ import { normalizeCompany } from '@/services/company';
 import { agoRu } from '@/services/time';
 import { sectionOfPerm, rankOwn, interleaveDeck } from '@/services/feedMix';
 import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
+import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
+import { FORMATS, GRADES } from '@/components/filters/kit';
+import { JTBolt } from '@/components/ui/JTBolt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
+import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
 import { JT, JT_FONT } from '@/constants/jt';
 import {
@@ -53,11 +59,8 @@ import {
   dbPermUnswipe,
   dbGetPermSwipes,
   jupiterEnqueue,
-  jupiterMyApplications,
 } from '@/services/db';
-import { fillHostFor, jupiterManualEligible } from '@/services/jupiterFill';
 import { ensureResumeForApply } from '@/services/resumeGate';
-import { confirmAsync } from '@/services/confirm';
 import * as Crypto from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -177,6 +180,14 @@ function cleanDescription(text?: string): string {
   return text;
 }
 
+// Поиск по своим вакансиям — то же правило, что на сервере для карьерных
+// (ext_feed_match): каждое слово запроса есть в тексте, без регистра.
+function matchesSearch(text: string, query: string): boolean {
+  if (!query) return true;
+  const hay = text.toLowerCase();
+  return query.toLowerCase().split(/[\s,;]+/).filter(Boolean).slice(0, 6).every(w => hay.includes(w));
+}
+
 // Превью описания на карточке — вступление до первого раздела (`## `), как
 // «О команде» на макете; нет вступления — первые строки без разметки.
 // Дальше текст обрезает сама карточка.
@@ -187,29 +198,7 @@ function previewText(text: string): string {
   return intro.map(l => l.replace(/^(## |• |- |\* )/, '')).join(' ');
 }
 
-// Строка с галочкой — общий вид для списков множественного выбора в
-// шторках фильтров (специализация, компания): карточка, подпись, чек справа.
-const mp = StyleSheet.create({
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    marginHorizontal: rs(16), marginTop: rs(8),
-    paddingHorizontal: rs(14), paddingVertical: rs(14),
-    borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: rs(14), backgroundColor: Colors.bg,
-  },
-  cardOn: { borderColor: Colors.primary },
-  name: { fontSize: rf(15), color: Colors.textPrimary, fontWeight: '500' },
-  sub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
-  check: {
-    width: rs(22), height: rs(22), borderRadius: rs(6),
-    borderWidth: 1.5, borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
-  },
-  checkOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  emptyWrap: { padding: rs(24), alignItems: 'center' },
-  emptyTxt: { fontSize: rf(14), color: Colors.textMuted },
-});
 
-
-type VacancyCompanyOption = { name: string; count: number };
 
 type FeedCard =
   | { _ext: false; v: PermVacancy }
@@ -217,29 +206,12 @@ type FeedCard =
 
 // ─────────────────────────────────────────────────
 // Полоса чипов над колодой (решение владельца 27.09.2026 вместо шестерёнки
-// и общей шторки PermFilterSheet). Один компонент шторки на все шесть
-// фильтров — ниже, FilterSheet; полоса только показывает текущий выбор и
-// открывает нужную шторку.
+// и общей шторки PermFilterSheet). Чип открывает отдельный экран фильтра
+// (app/filters/*, макет «JT-filters»), крестик сбрасывает фильтр сразу.
 // ─────────────────────────────────────────────────
 type FilterSheetKind = 'salary' | 'spec' | 'level' | 'format' | 'company' | 'posted';
 
-const FILTER_SHEET_TITLES: Record<FilterSheetKind, string> = {
-  salary: 'Зарплата',
-  spec: 'Специализация',
-  level: 'Уровень',
-  format: 'Формат работы',
-  company: 'Компания',
-  posted: 'Дата публикации',
-};
 
-const SALARY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: 'Любая' },
-  { value: 100000, label: 'от 100 000' },
-  { value: 150000, label: 'от 150 000' },
-  { value: 200000, label: 'от 200 000' },
-  { value: 250000, label: 'от 250 000' },
-  { value: 350000, label: 'от 350 000' },
-];
 
 const POSTED_OPTIONS: { id: FeedFilters['posted']; label: string }[] = [
   { id: 'all', label: 'За всё время' },
@@ -268,15 +240,16 @@ function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string;
       return { label: n === 1 ? one : `Специализация · ${n}`, active: true };
     }
     case 'level': {
-      const n = f.levels.length;
-      if (!n) return { label: 'Уровень', active: false };
-      const one = VACANCY_LEVELS.find(l => l.id === f.levels[0])?.label ?? '';
-      return { label: n === 1 ? one : `Уровень · ${n}`, active: true };
+      // Грейды макета: Junior = стажёр + junior, поэтому считаем кнопки, а не id.
+      const on = GRADES.filter(g => g.ids.every(id => f.levels.includes(id)));
+      if (!f.levels.length) return { label: 'Грейд', active: false };
+      if (on.length === 1) return { label: on[0].label, active: true };
+      return { label: `Грейд · ${on.length || f.levels.length}`, active: true };
     }
     case 'format': {
       const n = f.formats.length;
       if (!n) return { label: 'Формат работы', active: false };
-      const one = VACANCY_FORMATS.find(v => v.id === f.formats[0])?.label ?? '';
+      const one = FORMATS.find(v => v.id === f.formats[0])?.chip ?? '';
       return { label: n === 1 ? one : `Формат работы · ${n}`, active: true };
     }
     case 'company': {
@@ -291,7 +264,8 @@ function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string;
   }
 }
 
-const FILTER_CHIP_KINDS: FilterSheetKind[] = ['salary', 'spec', 'level', 'format', 'company', 'posted'];
+// Компании в фильтрах больше нет (макет «JT-filters», решение владельца).
+const FILTER_CHIP_KINDS: FilterSheetKind[] = ['salary', 'spec', 'level', 'format', 'posted'];
 
 /**
  * Прокрутка вбок отдельная от свайпа карточки: полоса стоит НАД карточкой,
@@ -378,304 +352,6 @@ const fb = StyleSheet.create({
   chipClear: { paddingRight: rs(12), paddingLeft: rs(0), height: '100%', justifyContent: 'center' },
 
 });
-
-/**
- * «Все фильтры» — чёрная кнопка слева от чипов (макет JT-design). Список
- * шести фильтров с текущим выбором; строка открывает шторку этого фильтра.
- */
-function AllFiltersSheet({ filters, onPick, onReset, onClose, bottomInset }: {
-  filters: FeedFilters;
-  onPick: (kind: FilterSheetKind) => void;
-  onReset: () => void;
-  onClose: () => void;
-  bottomInset: number;
-}) {
-  const anyActive = FILTER_CHIP_KINDS.some(k => filterChipInfo(k, filters).active);
-  return (
-    <Reanimated.View
-      entering={FadeIn.duration(180)}
-      exiting={FadeOut.duration(160)}
-      style={[styles.filterOverlay, { bottom: bottomInset }]}
-    >
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтры" />
-      <Reanimated.View
-        entering={SlideInDown.springify().damping(20).stiffness(180)}
-        exiting={SlideOutDown.duration(200)}
-        style={[styles.filterSheet, { maxHeight: '80%' }]}
-        testID="filter-all-sheet"
-      >
-        <SheetHandle />
-        <View style={styles.filterSheetHeader}>
-          <Text style={styles.filterSheetTitle}>Фильтры</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.filterClose}>✕</Text>
-          </TouchableOpacity>
-        </View>
-        {FILTER_CHIP_KINDS.map(kind => {
-          const { label, active } = filterChipInfo(kind, filters);
-          return (
-            <TouchableOpacity
-              key={kind}
-              style={afs.row}
-              activeOpacity={0.75}
-              onPress={() => onPick(kind)}
-              accessibilityRole="button"
-              accessibilityLabel={`${FILTER_SHEET_TITLES[kind]}: ${active ? label : 'не выбрано'}`}
-            >
-              <Text style={afs.title}>{FILTER_SHEET_TITLES[kind]}</Text>
-              <Text style={[afs.value, active && afs.valueOn]} numberOfLines={1}>{active ? label : 'Любой'}</Text>
-              <Ionicons name="chevron-forward" size={rs(18)} color={JT.textTertiary} />
-            </TouchableOpacity>
-          );
-        })}
-        {anyActive ? (
-          <TouchableOpacity style={[fst.cta, { marginBottom: rs(16) }]} activeOpacity={0.85} onPress={() => { onReset(); onClose(); }}>
-            <Text style={fst.ctaTxt}>Сбросить все</Text>
-          </TouchableOpacity>
-        ) : <View style={{ height: rs(16) }} />}
-      </Reanimated.View>
-    </Reanimated.View>
-  );
-}
-
-const afs = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(16), paddingVertical: rs(14),
-    borderBottomWidth: 1, borderBottomColor: Colors.divider,
-  },
-  title: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink },
-  value: { maxWidth: '45%', fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary },
-  valueOn: { color: JT.accent, fontFamily: JT_FONT.bold },
-});
-
-const fst = StyleSheet.create({
-  label: { fontSize: rf(13.5), fontWeight: '800', color: Colors.textMuted, paddingHorizontal: rs(16), paddingTop: rs(14), paddingBottom: rs(8) },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), paddingHorizontal: rs(16) },
-  chip: { paddingHorizontal: rs(13), paddingVertical: rs(9), borderRadius: rs(100), backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.divider },
-  chipOn: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryBorder },
-  chipTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.textPrimary },
-  chipTxtOn: { color: Colors.primary },
-  cta: { margin: rs(16), backgroundColor: Colors.primary, borderRadius: rs(16), alignItems: 'center', paddingVertical: rs(15) },
-  ctaTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-});
-
-const pfl = StyleSheet.create({
-  searchWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), marginTop: rs(12), marginBottom: rs(4),
-    backgroundColor: Colors.surface, borderRadius: rs(12),
-    paddingHorizontal: rs(12), paddingVertical: rs(11),
-    borderWidth: 1, borderColor: Colors.inputBorder,
-  },
-  searchInput: { flex: 1, fontSize: rf(15), color: Colors.textPrimary, padding: 0 },
-});
-
-/**
- * Одна шторка на все шесть фильтров: заголовок и тело меняются по kind,
- * низ — общая кнопка «Применить». Черновик применяется только по ней; тап
- * по затемнению закрывает без применения — тот же приём, что был у
- * PermFilterSheet (styles.filterOverlay, fst.*), плюс общая ручка шторки
- * и смахивание вниз из components/ui/Sheet — раньше своя шторка их не звала.
- */
-function FilterSheet({
-  kind, initial, companyOptions, onApply, onClose, bottomInset,
-}: {
-  kind: FilterSheetKind;
-  initial: FeedFilters;
-  companyOptions: VacancyCompanyOption[];
-  onApply: (f: FeedFilters) => void;
-  onClose: () => void;
-  bottomInset: number;
-}) {
-  const [draft, setDraft] = useState<FeedFilters>(initial);
-  const [companyQuery, setCompanyQuery] = useState('');
-  // useSwipeToDismiss уводит окно вниз своей translateY-анимацией. Раньше её
-  // onClose вызывал закрытие напрямую — React убирал <FilterSheet/> из
-  // разметки, и Reanimated поверх уже уехавшего окна заново проигрывал
-  // exiting (FadeOut/SlideOutDown), отчего окно дёргалось: свайп, потом ещё
-  // раз «уезжает». Флаг говорит: окна на экране уже нет, повторная exiting-
-  // анимация не нужна — unmount происходит следующим рендером, когда
-  // Reanimated уже видит exiting=undefined.
-  const [swipedAway, setSwipedAway] = useState(false);
-  const swipe = useSwipeToDismiss(() => setSwipedAway(true));
-  // Звать onClose ровно один раз, когда свайп долистал до закрытия, а не при
-  // каждой смене ссылки на сам onClose (проп пересоздаётся в родителе на
-  // каждый рендер).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (swipedAway) onClose(); }, [swipedAway]);
-
-  const companyRows = useMemo(() => {
-    const q = companyQuery.trim().toLocaleLowerCase('ru-RU');
-    return q ? companyOptions.filter(x => x.name.toLocaleLowerCase('ru-RU').includes(q)) : companyOptions;
-  }, [companyOptions, companyQuery]);
-
-  const Check = ({ on }: { on: boolean }) => (
-    <View style={[mp.check, on && mp.checkOn]}>
-      {on ? <Ionicons name="checkmark" size={rf(14)} color="#fff" /> : null}
-    </View>
-  );
-
-  function toggled<T>(list: T[], id: T): T[] {
-    return list.includes(id) ? list.filter(x => x !== id) : [...list, id];
-  }
-
-  return (
-    // Как у Sorce: фон затемняется, шторка выезжает снизу и уезжает обратно
-    // при закрытии (exiting срабатывает, потому что шторку снимают с экрана
-    // условием в разметке). Тап по затемнению закрывает без применения.
-    <Reanimated.View
-      entering={FadeIn.duration(180)}
-      exiting={swipedAway ? undefined : FadeOut.duration(160)}
-      style={[styles.filterOverlay, { bottom: bottomInset }]}
-    >
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть фильтр" />
-      <Reanimated.View
-        entering={SlideInDown.springify().damping(20).stiffness(180)}
-        exiting={swipedAway ? undefined : SlideOutDown.duration(200)}
-        style={[styles.filterSheet, { maxHeight: '80%' }]}
-        testID="filter-sheet"
-      >
-        <Animated.View style={swipe.animStyle}>
-          <View {...swipe.panHandlers}>
-            <SheetHandle />
-            <View style={styles.filterSheetHeader}>
-              <Text style={styles.filterSheetTitle}>{FILTER_SHEET_TITLES[kind]}</Text>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.filterClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {kind === 'salary' ? (
-            <>
-              <Text style={fst.label}>₽ в месяц на руки</Text>
-              <View style={[fst.chipsWrap, { paddingBottom: rs(8) }]}>
-                {SALARY_OPTIONS.map(({ value, label }) => {
-                  const on = draft.salaryFrom === value;
-                  return (
-                    <TouchableOpacity key={value} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                      onPress={() => setDraft(d => ({ ...d, salaryFrom: value }))}>
-                      <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </>
-          ) : kind === 'level' ? (
-            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
-              {VACANCY_LEVELS.map(({ id, label }) => {
-                const on = draft.levels.includes(id);
-                return (
-                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, levels: toggled(d.levels, id) }))}>
-                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : kind === 'format' ? (
-            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
-              {VACANCY_FORMATS.map(({ id, label }) => {
-                const on = draft.formats.includes(id);
-                return (
-                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, formats: toggled(d.formats, id) }))}>
-                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : kind === 'posted' ? (
-            <View style={[fst.chipsWrap, { paddingTop: rs(14), paddingBottom: rs(8) }]}>
-              {POSTED_OPTIONS.map(({ id, label }) => {
-                const on = draft.posted === id;
-                return (
-                  <TouchableOpacity key={id} style={[fst.chip, on && fst.chipOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, posted: id }))}>
-                    <Text style={[fst.chipTxt, on && fst.chipTxtOn]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : kind === 'spec' ? (
-            <FlatList
-              data={VACANCY_SPECS}
-              keyExtractor={s => s.id}
-              // Список длиннее, чем помещается над кнопкой «Применить»: без
-              // ограничения по высоте FlatList растягивается по содержимому
-              // и сама кнопка уезжает за пределы видимой части шторки.
-              style={{ maxHeight: rs(340) }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingTop: rs(8), paddingBottom: rs(12) }}
-              renderItem={({ item }) => {
-                const on = draft.specs.includes(item.id);
-                return (
-                  <TouchableOpacity style={[mp.card, on && mp.cardOn]} activeOpacity={0.8}
-                    onPress={() => setDraft(d => ({ ...d, specs: toggled(d.specs, item.id) }))}>
-                    <Ionicons name={item.icon as any} size={20} color={on ? Colors.primary : Colors.textSecondary} />
-                    <Text style={[mp.name, { flex: 1 }]}>{item.label}</Text>
-                    <Check on={on} />
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          ) : (
-            <>
-              <View style={pfl.searchWrap}>
-                <Ionicons name="search" size={rf(16)} color={Colors.textMuted} />
-                <TextInput
-                  style={pfl.searchInput}
-                  placeholder="Название компании"
-                  placeholderTextColor={Colors.textMuted}
-                  value={companyQuery}
-                  onChangeText={setCompanyQuery}
-                  clearButtonMode="while-editing"
-                />
-              </View>
-              <FlatList
-                data={companyRows}
-                keyExtractor={item => item.name}
-                // Компаний может быть много больше, чем помещается над
-                // кнопкой «Применить» — тот же приём, что и у списка
-                // специализаций: список скроллится внутри своей высоты.
-                style={{ maxHeight: rs(300) }}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: rs(12) }}
-                renderItem={({ item }) => {
-                  const on = draft.companies.includes(item.name);
-                  return (
-                    <TouchableOpacity style={[mp.card, on && mp.cardOn]} activeOpacity={0.8}
-                      onPress={() => setDraft(d => ({ ...d, companies: toggled(d.companies, item.name) }))}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={mp.name} numberOfLines={1}>{item.name}</Text>
-                        <Text style={mp.sub}>{item.count} {pluralVacancies(item.count)}</Text>
-                      </View>
-                      <Check on={on} />
-                    </TouchableOpacity>
-                  );
-                }}
-                ListEmptyComponent={<View style={mp.emptyWrap}><Text style={mp.emptyTxt}>Компания не найдена</Text></View>}
-              />
-            </>
-          )}
-
-          <TouchableOpacity
-            style={[fst.cta, { marginBottom: rs(16) }]}
-            activeOpacity={0.85}
-            testID="filter-apply"
-            onPress={() => { onApply(draft); onClose(); }}
-          >
-            <Text style={fst.ctaTxt}>Применить</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </Reanimated.View>
-    </Reanimated.View>
-  );
-}
-
 
 // ─────────────────────────────────────────────────
 // Разовая / Регулярная — панель над лентой смен
@@ -936,10 +612,13 @@ function PermDeckViewRecorder({ vacancy, userId, isGuest }: {
 // теперь идёт через полосу чипов под шапкой, а не по слову. Освободившееся
 // место не растягиваем пустотой: марка слева, кнопки справа, между ними
 // гибкий пробел.
-function FeedSearchHeader({ energy, onEnergyPress }: {
+function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
   /** Сколько откликов осталось на сегодня. */
   energy: number;
   onEnergyPress: () => void;
+  /** Поиск «Вакансия или стек» (доска «Лента вакансий», 27.09.2026). */
+  query: string;
+  onQuery: (q: string) => void;
 }) {
   return (
     <View style={fh.row}>
@@ -951,7 +630,27 @@ function FeedSearchHeader({ energy, onEnergyPress }: {
         />
       </View>
 
-      <View style={fh.spacer} />
+      <View style={fh.search}>
+        <Ionicons name="search" size={rs(18)} color={JT.ink} />
+        <TextInput
+          value={query}
+          onChangeText={onQuery}
+          placeholder="Вакансия или стек"
+          placeholderTextColor={JT.textTertiary}
+          style={fh.searchInput}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+          maxLength={120}
+          accessibilityLabel="Поиск вакансий"
+          testID="feed-search"
+        />
+        {query ? (
+          <TouchableOpacity onPress={() => onQuery('')} hitSlop={8} accessibilityLabel="Очистить поиск">
+            <Ionicons name="close-circle" size={rs(18)} color={JT.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       {/* Сколько откликов осталось на сегодня. Не «сколько вакансий»: число
           вакансий человеку ни о чём не говорит, а вот что запас кончается —
@@ -963,7 +662,7 @@ function FeedSearchHeader({ energy, onEnergyPress }: {
         accessibilityRole="button"
         accessibilityLabel={`Откликов осталось на сегодня: ${energy}`}
       >
-        <Ionicons name="flash" size={rs(20)} color={energy > 0 ? JT.accent : JT.muted} />
+        <JTBolt size={rs(20)} fill={energy > 0 ? JT.accent : JT.muted} />
         <Text style={[fh.countTxt, energy <= 0 && fh.countTxtEmpty]}>{energy}</Text>
       </TouchableOpacity>
     </View>
@@ -980,15 +679,22 @@ const fh = StyleSheet.create({
   },
   logoWrap: { height: rs(44), justifyContent: 'center', flexShrink: 0 },
   // assets/images/jt-logo-wide.png — логотип макета, 600×387.
-  logoImage: { width: rs(53), height: rs(34) },
-  spacer: { flex: 1, minWidth: rs(8) },
+  logoImage: { width: rs(47), height: rs(30) },
+  search: {
+    flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    height: rs(44), paddingHorizontal: rs(12), borderRadius: rs(22),
+    backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink,
+  },
+  searchInput: {
+    flex: 1, minWidth: 0, padding: 0, fontFamily: JT_FONT.bold, fontSize: rf(14), color: JT.ink,
+  },
   count: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
     backgroundColor: JT.surface, borderRadius: rs(22),
     borderWidth: 2, borderColor: JT.ink,
-    paddingHorizontal: rs(16), height: rs(44), flexShrink: 0,
+    paddingLeft: rs(10), paddingRight: rs(14), height: rs(44), flexShrink: 0,
   },
-  countTxt: { fontFamily: JT_FONT.bold, fontSize: rf(18), color: JT.ink },
+  countTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(17), color: JT.ink },
   countEmpty: { backgroundColor: JT.stack1 },
   countTxtEmpty: { color: JT.textTertiary },
 });
@@ -1124,8 +830,10 @@ function WorkerPermMode() {
   // общую шторку PermFilterSheet: один объект фильтров, шторка открывается
   // под конкретный чип. Поиск по слову, метро, график, разделы и сортировка
   // убраны совсем — решение владельца.
-  const [filters, setFilters] = useState<FeedFilters>(EMPTY_FEED_FILTERS);
-  const [openSheet, setOpenSheet] = useState<FilterSheetKind | 'all' | null>(null);
+  // Фильтры — общее хранилище: их правят отдельные экраны app/filters/*
+  // (макет «JT-filters»), лента только читает и сбрасывает крестиком.
+  const filters = useAppliedFilters();
+  const setFilters = setAppliedFilters;
   // Дневной запас свайпов и плашка «на сегодня всё».
   const energy = useEnergy();
   const [limitOpen, setLimitOpen] = useState(false);
@@ -1151,7 +859,6 @@ function WorkerPermMode() {
   // Сервер знает весь пул, а не только пришедшую порцию — «Всего N» и список
   // компаний в шторке считаются от него, не от того, что успело загрузиться.
   const [careerTotal, setCareerTotal] = useState(0);
-  const [careerCompanies, setCareerCompanies] = useState<{ company: string; count: number }[]>([]);
   const [careerLoading, setCareerLoading] = useState(false);
   // Свои вакансии, смахнутые влево и записанные на сервере, — их колода
   // больше не показывает (та же идея, что у extLeftSwipes ниже).
@@ -1173,41 +880,22 @@ function WorkerPermMode() {
   // слитые по имени. Свои считаются при всех фильтрах, КРОМЕ самой компании —
   // иначе выбор одной компании убрал бы остальные из списка, как раньше было
   // с картой станций.
-  const ownCompanyCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    const applied = new Set(permApplications.filter(a => a.workerId === currentUser?.id).map(a => a.vacancyId));
-    const now = Date.now();
-    const filtersNoCompany: FeedFilters = { ...filters, companies: [] };
-    // Свои — только те, что колода может показать: IT, не отклик и не свайп
-    // влево. Иначе в списке оставались работодатели с не-IT вакансиями
-    // (жалоба 26.09: «выбрал Лавку — пусто»), выбор давал пустую колоду.
-    permVacancies.forEach(v => {
-      const shown = v.status === 'open' && sectionOfPerm(v.workType) === 'it'
-        && !applied.has(v.id) && !permSwiped.has(v.id)
-        && matchOwnVacancy(v, filtersNoCompany, now);
-      const name = shown ? v.company.trim() : '';
-      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
-    });
-    return counts;
-  }, [permVacancies, permApplications, currentUser?.id, permSwiped, filters]);
-
-  const permCompanyOptions = useMemo(() => {
-    const counts = new Map(ownCompanyCounts);
-    careerCompanies.forEach(({ company, count }) => {
-      const name = company.trim();
-      if (!name) return;
-      counts.set(name, (counts.get(name) ?? 0) + count);
-    });
-    return Array.from(counts, ([name, count]) => ({ name, count }))
-      .filter(item => item.count > 0)
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [ownCompanyCounts, careerCompanies]);
 
   // Карьерная лента фильтруется на сервере (php-proxy/ext_feed.php) — клиент
   // только передаёт текущий выбор и заменяет колоду целиком под ответ. Ключ —
   // строка, а не объект: объект фильтров новая ссылка на каждый рендер,
   // эффект гонял бы запрос без остановки.
-  const filtersKey = JSON.stringify(filters);
+  // Поиск уходит на сервер с паузой 400 мс после последней буквы — не
+  // запрос на каждое нажатие. Пустая строка — поиска нет.
+  const [searchText, setSearchText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchText.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchText]);
+  useEffect(() => { setFeedQuery(searchQuery); }, [searchQuery]);
+  const extFilters = () => ({ ...toExtFeedFilters(filters), query: searchQuery });
+  const filtersKey = JSON.stringify([filters, searchQuery]);
   // Поколение выборки: растёт при каждой смене фильтров. Дозагрузка, начатая
   // при прежних фильтрах, по возвращении видит чужое поколение и не
   // подмешивает карточки старого выбора в новую колоду.
@@ -1217,11 +905,10 @@ function WorkerPermMode() {
     let cancelled = false;
     careerGen.current += 1;
     setCareerLoading(true);
-    dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
+    dbGetExtFeed(60, extFilters()).then(res => {
       if (cancelled) return;
       setCareerVacancies(res.items);
       setCareerTotal(res.total);
-      setCareerCompanies(res.companies);
     }).catch(() => {
       if (cancelled) return;
       // Сбой под новыми чипами не должен оставлять колоду и «Всего N» от
@@ -1229,7 +916,6 @@ function WorkerPermMode() {
       // сейчас выбрано. Пустое состояние само предложит обновить.
       setCareerVacancies([]);
       setCareerTotal(0);
-      setCareerCompanies([]);
       showToast('Не удалось обновить вакансии. Проверьте связь.', 'error');
     }).finally(() => { if (!cancelled) setCareerLoading(false); });
     return () => { cancelled = true; };
@@ -1242,10 +928,9 @@ function WorkerPermMode() {
     try {
       const promises: Promise<void>[] = [
         refreshPermVacancies(), refreshPermApplications(),
-        dbGetExtFeed(60, toExtFeedFilters(filters)).then(res => {
+        dbGetExtFeed(60, extFilters()).then(res => {
           setCareerVacancies(res.items);
           setCareerTotal(res.total);
-          setCareerCompanies(res.companies);
           // swSkipped обнуляется, поэтому смахнутые за сессию свои переносим в
           // permSwiped — иначе они вернулись бы в колоду. Не при самом свайпе:
           // тогда своя пропадала бы из чередования и следующая своя вставала
@@ -1271,6 +956,14 @@ function WorkerPermMode() {
   const [swLastSkipped, setSwLastSkipped] = useState<string | null>(null);
   const swWantRef = useRef<(vx?: number) => void>(() => {});
   const swSkipRef = useRef<(vx?: number) => void>(() => {});
+  const extSaved = useExtSaved();
+  const extSavedIds = useMemo(() => new Set(extSaved.map(i => i.vacancy.id)), [extSaved]);
+  const extSaving = useRef(new Set<string>());
+  useEffect(() => {
+    if (!currentUser?.id || currentUser.isGuest) return;
+    // Сбой загрузки закладок не мешает ленте: кнопка просто без отметки.
+    loadExtSaved(currentUser.id).catch(() => {});
+  }, [currentUser?.id, currentUser?.isGuest]);
   // Возврат с «Вакансии подробно»: ✕ и «Откликнуться» там работают как свайп
   // (README макета). Смахиваем ту же карточку, если она всё ещё сверху;
   // пауза — чтобы анимация шла уже на видимом экране, а не под переходом.
@@ -1318,15 +1011,13 @@ function WorkerPermMode() {
   // тихо берём следующую. Сервер уже не отдаёт свайпнутое, а на случай
   // гонки (свайп ещё не записан) повторы отсекаются по id.
   const careerRefilling = useRef(false);
-  // Когда последний раз предлагали открыть отложенную анкету (см. followUpApplication).
-  const lastFollowUp = useRef(0);
   useEffect(() => {
     if (careerRefilling.current || careerVacancies.length === 0) return;
     const left = careerVacancies.filter(v => !swSkipped.has(v.id)).length;
     if (left > 5) return;
     careerRefilling.current = true;
     const gen = careerGen.current;
-    dbGetExtFeed(60, toExtFeedFilters(filters))
+    dbGetExtFeed(60, extFilters())
       .then(res => gen === careerGen.current && setCareerVacancies(cur => {
         const seen = new Set(cur.map(v => v.id));
         const add = res.items.filter(v => !seen.has(v.id));
@@ -1340,9 +1031,20 @@ function WorkerPermMode() {
 
   const myApps = permApplications.filter(a => a.workerId === currentUser.id);
   const myAppVacIds = new Set(myApps.map(a => a.vacancyId));
-  const permFiltersActive = isFilterActive(filters);
+  // Поиск считается фильтром: «по вашим фильтрам», «ничего не нашлось», сброс.
+  const permFiltersActive = isFilterActive(filters) || searchQuery !== '';
 
-  const openFilterSheet = (kind: FilterSheetKind) => setOpenSheet(kind);
+  // Каждый чип открывает свой отдельный экран: зарплата, специализация,
+  // формат (макет), грейд и дата публикации (решение владельца 28.09.2026 —
+  // как у остальных фильтров). Чёрная кнопка — «Фильтры» со всем сразу.
+  const openFilterSheet = (kind: FilterSheetKind) => {
+    if (kind === 'company') return;
+    router.push({ pathname: `/filters/${kind}`, params: { from: 'feed' } });
+  };
+  const openAllFilters = () => {
+    beginDraft();
+    router.push('/filters');
+  };
   const applyFilters = (next: FeedFilters) => setFilters(next);
   // «×» на включённом чипе сбрасывает ровно этот фильтр, не открывая шторку.
   const clearFilter = (kind: FilterSheetKind) => setFilters(f => {
@@ -1364,8 +1066,10 @@ function WorkerPermMode() {
   // одной чистой функцией из services/feedFilters.ts, той же, что тестируется
   // node:test-ом отдельно от React.
   const now = Date.now();
-  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id) && !permSwiped.has(v.id)
-    && sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now));
+  const openVacancies = permVacancies.filter(v => v.status === 'open' && !myAppVacIds.has(v.id)
+    && (!filters.hideSeen || !permSwiped.has(v.id))
+    && sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now)
+    && matchesSearch(`${v.title} ${v.company} ${v.description ?? ''}`, searchQuery));
 
   // Своя лента ранжируется под вкус (виды работ, метро) и чередуется с
   // карьерной — «своя, карьерная, карьерная, своя, …» (services/feedMix.ts).
@@ -1386,42 +1090,14 @@ function WorkerPermMode() {
   // предлагаем открыть анкету: Юпитер заполнит её на глазах, отправит
   // человек сам (app/jupiter-fill.tsx). Не чаще раза в 2 минуты — листать
   // ленту это не должно мешать; остальные ждут в «Откликах».
-  // На вебе (сайт, Телеграм) встроенного браузера нет: jupiter-fill открывает
-  // анкету компании в новой вкладке, и заполнить её придётся самому — поэтому
-  // и текст другой. Раньше на вебе подсказки не было вовсе, и заявка молча
-  // ждала в «Откликах».
-  const followUpApplication = (applicationId: string, company?: string | null) => {
-    if (!currentUser) return;
-    const userId = currentUser.id;
-    setTimeout(async () => {
-      if (Date.now() - lastFollowUp.current < 120000) return;
-      try {
-        const own = (await jupiterMyApplications(userId)).find(a => a.id === applicationId);
-        if (!own || own.state !== 'action_required' || !jupiterManualEligible(own) || !fillHostFor(own.vacancyUrl)) return;
-        lastFollowUp.current = Date.now();
-        const open = await confirmAsync({
-          title: company || 'Отклик',
-          body: Platform.OS === 'web'
-            ? 'Сайт компании не принимает отклик от Юпитера. Откройте анкету и отправьте отклик сами — это пара минут.'
-            : 'Сайт не принимает отклик с сервера. Юпитер заполнит анкету у вас на глазах — останется нажать «Отправить».',
-          confirmLabel: 'Открыть',
-          cancelLabel: 'Позже',
-        });
-        if (open) router.push({ pathname: '/jupiter-fill', params: { id: own.id, company: own.company ?? '' } });
-      } catch { /* не вышло — заявка ждёт в «Откликах» */ }
-    }, 40000);
-  };
-
-  // Отклик на карьерную вакансию — в два шага. Сначала то, что может
-  // остановить отклик диалогом: резюме и поручение Юпитеру. Обе проверки
-  // помнят успех 10 минут, поэтому после первого свайпа они мгновенные.
-  // Затем заявка уходит в фоне, а колода уже показывает следующую карточку:
-  // раньше она стояла, пока шли четыре запроса подряд.
+  // Отклик на карьерную вакансию — через телефон (решение владельца
+  // 28.09.2026): свайп только копит заявку в «Нужны вы», анкеты потом
+  // заполняются пачкой в app/jupiter-fill.tsx. Перед свайпом — лишь проверка
+  // резюме; заявка уходит в фоне, колода уже показывает следующую карточку.
   const prepareExtApply = async (): Promise<boolean> => {
     if (!currentUser || currentUser.isGuest) return false;
     try {
-      if (!await ensureResumeForApply()) return false;
-      return await requestJupiterLive(currentUser.id);
+      return await ensureResumeForApply();
     } catch (e: any) {
       const msg = e?.message ?? '';
       console.warn('[prepareExtApply]', msg);
@@ -1434,10 +1110,9 @@ function WorkerPermMode() {
     if (!currentUser) return false;
     try {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
-      showToast(application.state === 'queued'
-        ? 'Юпитер готовит и отправляет отклик. Статус — в «Откликах».'
+      showToast(application.reasonCode === 'PHONE_FILL'
+        ? 'Сохранено в «Нужны вы» — отправите пачкой в «Откликах».'
         : 'Заявка уже есть. Статус — в «Откликах».', 'success');
-      if (application.state === 'queued') followUpApplication(application.id, ev.company);
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';
@@ -1484,6 +1159,23 @@ function WorkerPermMode() {
 
   // Тот же набор, что видит директор в своей шторке, — и так же иконками,
   // а не смайликами: их рисует система, и на каждом телефоне по-своему.
+  // Закладки карьерных вакансий (миграция 129): отметка читается из общего
+  // хранилища services/extSaved.ts — оно же у «Вакансии подробно» и избранного.
+  const toggleExtSave = async (v: ExtVacancy) => {
+    if (!currentUser) return;
+    if (currentUser.isGuest) { promptRegister({ vacancyKind: 'permanent' }); return; }
+    if (extSaving.current.has(v.id)) return;
+    extSaving.current.add(v.id);
+    try {
+      const now = await toggleExtSaved(currentUser.id, v);
+      showToast(now ? 'Сохранено в избранное' : 'Убрано из избранного', 'success');
+    } catch {
+      showToast('Не удалось сохранить. Проверьте связь.', 'error');
+    } finally {
+      extSaving.current.delete(v.id);
+    }
+  };
+
   const toggleSaved = async (v: PermVacancy) => {
     if (!currentUser) return;
     if (currentUser.isGuest) {
@@ -2032,12 +1724,15 @@ function WorkerPermMode() {
           onUndo={swLastSkipped ? swUndo : null}
           onSkip={() => swSkip(0.5)}
           onWant={() => swWant(0.5)}
+          saved={extSavedIds.has(ev.id)}
+          onSave={() => { void toggleExtSave(ev); }}
         />
       </View>
     );
   };
 
   return (
+    <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
     <View style={{ flex: 1 }}>
       {isGuest && (
         <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister({ vacancyKind: 'permanent' })}>
@@ -2050,13 +1745,15 @@ function WorkerPermMode() {
       <FeedSearchHeader
         energy={energy.left}
         onEnergyPress={() => setLimitOpen(true)}
+        query={searchText}
+        onQuery={setSearchText}
       />
 
       {/* Полоса чипов вместо шестерёнки и общей шторки (решение владельца
           27.09.2026): всегда на экране, даже когда колода пуста или ещё
           грузится — иначе пустой фильтр был бы тупиком. */}
       <OnboardingTarget targetKey="worker.feed.filter">
-        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} onOpenAll={() => setOpenSheet('all')} />
+        <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} onOpenAll={() => openAllFilters()} />
       </OnboardingTarget>
       {/* Пустая колода без загрузки прячет счётчик: он мог остаться от
           прежнего выбора чипов (свежий пул ещё не разложился в карточки),
@@ -2072,8 +1769,10 @@ function WorkerPermMode() {
 
       {backendOffline ? (
         <View style={pS.offlineBar}>
-          <Ionicons name="cloud-offline-outline" size={14} color="#92400E" />
-          <Text style={pS.offlineTxt}>Нет связи с сервером — показаны последние данные. Потяните вниз, чтобы обновить.</Text>
+          <Ionicons name="cloud-offline-outline" size={rs(18)} color={JT.ink} />
+          <Text style={pS.offlineTxt}>
+            <Text style={pS.offlineStrong}>Нет связи с сервером.</Text> Показаны последние данные — потяните вниз, чтобы обновить.
+          </Text>
         </View>
       ) : null}
 
@@ -2083,55 +1782,48 @@ function WorkerPermMode() {
           предлагаем: обещать покупку, которой не существует, нельзя. */}
       {limitOpen ? (
         <View style={pS.limitOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLimitOpen(false)} />
-          <View style={[pS.limitCard, { marginBottom: tabBarHeight + rs(16) }]}>
-            <View style={pS.limitIcon}>
-              <Ionicons name="flash" size={26} color={Colors.primary} />
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setLimitOpen(false)} />
+          <HardShadowBox style={pS.limitWrap} offset={6} radius={rs(28)}>
+            <View style={pS.limitCard}>
+              <View style={pS.limitIcon}>
+                <JTBolt size={rs(36)} />
+              </View>
+              {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
+                  ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
+              <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
+              <Text style={pS.limitBody}>
+                {energy.left > 0
+                  ? 'Каждый отклик тратит одну молнию, а пропуск вакансии — бесплатный. '
+                  : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
+                    + 'сейчас — это молнии не тратит. '}
+                Завтра снова будет {DAILY_ENERGY} — запас не копится.
+              </Text>
+              <View style={pS.limitStats}>
+                <View style={pS.limitStat}>
+                  <Text style={pS.limitStatNum}>{energy.left}</Text>
+                  <Text style={pS.limitStatLbl}>осталось сегодня</Text>
+                </View>
+                <View style={pS.limitStat}>
+                  <Text style={pS.limitStatNum}>00:00</Text>
+                  <Text style={pS.limitStatLbl}>снова {DAILY_ENERGY}</Text>
+                </View>
+              </View>
+              <HardShadowBox style={pS.limitBtnWrap} offset={4} radius={rs(29)}>
+                <TouchableOpacity
+                  style={pS.limitBtn}
+                  onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
+                </TouchableOpacity>
+              </HardShadowBox>
+              <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
+                <Text style={pS.limitCloseTxt}>Закрыть</Text>
+              </TouchableOpacity>
             </View>
-            {/* Та же плашка открывается и по нажатию на счётчик, когда молнии
-                ещё есть, — тогда «на сегодня всё» было бы неправдой. */}
-            <Text style={pS.limitTitle}>{energy.left > 0 ? 'Молния — это отклик' : 'На сегодня всё'}</Text>
-            <Text style={pS.limitBody}>
-              {energy.left > 0
-                ? `Осталось ${energy.left} на сегодня. Каждый отклик тратит одну молнию, `
-                  + 'а пропуск вакансии — бесплатный. '
-                : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
-                  + 'сейчас — это молнии не тратит. '}
-              Завтра снова будет {DAILY_ENERGY} — запас не копится.
-            </Text>
-            <TouchableOpacity
-              style={pS.limitBtn}
-              onPress={() => { setLimitOpen(false); router.push('/(tabs)/matches'); }}
-              activeOpacity={0.85}
-            >
-              <Text style={pS.limitBtnTxt}>Посмотреть свои отклики</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pS.limitClose} onPress={() => setLimitOpen(false)} activeOpacity={0.7}>
-              <Text style={pS.limitCloseTxt}>Закрыть</Text>
-            </TouchableOpacity>
-          </View>
+          </HardShadowBox>
         </View>
       ) : null}
-
-      {openSheet === 'all' && (
-        <AllFiltersSheet
-          filters={filters}
-          onPick={kind => setOpenSheet(kind)}
-          onReset={() => applyFilters(EMPTY_FEED_FILTERS)}
-          onClose={() => setOpenSheet(null)}
-          bottomInset={tabBarHeight}
-        />
-      )}
-      {openSheet && openSheet !== 'all' && (
-        <FilterSheet
-          kind={openSheet}
-          initial={filters}
-          companyOptions={permCompanyOptions}
-          bottomInset={tabBarHeight}
-          onApply={applyFilters}
-          onClose={() => setOpenSheet(null)}
-        />
-      )}
 
       {/* Лента — всегда колода: вкладок «Отклики»/«Избранное» здесь больше нет,
           они уехали на свой экран, и списочный режим стал недостижим. */}
@@ -2143,7 +1835,7 @@ function WorkerPermMode() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
-          <Ionicons name={backendOffline ? 'cloud-offline-outline' : careerLoading ? 'hourglass-outline' : 'search-outline'} size={48} color={Colors.textMuted} />
+          <Ionicons name={backendOffline ? 'cloud-offline-outline' : careerLoading ? 'hourglass-outline' : 'search-outline'} size={48} color={JT.ink} />
           <Text style={styles.emptyTitle}>
             {backendOffline ? 'Нет связи с сервером'
               : careerLoading ? 'Загружаем вакансии…'
@@ -2158,7 +1850,7 @@ function WorkerPermMode() {
           </Text>
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
-              <Ionicons name="refresh" size={16} color="#fff" />
+              <Ionicons name="refresh" size={16} color={JT.ink} />
               <Text style={pS.retryTxt}>Попробовать снова</Text>
             </TouchableOpacity>
           ) : !careerLoading && permFiltersActive ? (
@@ -2168,7 +1860,7 @@ function WorkerPermMode() {
             <TouchableOpacity
               style={pS.retryBtn}
               activeOpacity={0.85}
-              onPress={() => applyFilters(EMPTY_FEED_FILTERS)}
+              onPress={() => { applyFilters(EMPTY_FEED_FILTERS); setSearchText(''); setSearchQuery(''); }}
               accessibilityLabel="Сбросить фильтры"
               testID="empty-reset-filters"
             >
@@ -2195,6 +1887,7 @@ function WorkerPermMode() {
       />
 
     </View>
+    </JTPullRefresh>
   );
 }
 
@@ -2456,31 +2149,8 @@ function EmployerHome() {
 function WorkerCareer() {
   const { currentUser } = useApp();
 
-  // В установленной iOS PWA цвет системной зоны (время / сеть / батарея)
-  // берётся из theme-color. На экране вакансий он должен продолжать тёплую
-  // подложку, а при уходе на другие вкладки — возвращаться к светлому фону.
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-      const meta = document.querySelector('meta[name="theme-color"]');
-      const previousTheme = meta?.getAttribute('content') ?? null;
-      const previousHtmlBg = document.documentElement.style.backgroundColor;
-      const previousBodyBg = document.body.style.backgroundColor;
-
-      // iOS standalone PWA берёт фон зоны со временем из подложки документа,
-      // а не только из theme-color. Поэтому красим и HTML/BODY, пока активна
-      // вкладка вакансий. Родительский Stack для tabs прозрачный (см. _layout).
-      if (meta) meta.setAttribute('content', JT.background);
-      document.documentElement.style.backgroundColor = JT.background;
-      document.body.style.backgroundColor = JT.background;
-
-      return () => {
-        if (meta) meta.setAttribute('content', previousTheme || '#F5F7FA');
-        document.documentElement.style.backgroundColor = previousHtmlBg;
-        document.body.style.backgroundColor = previousBodyBg;
-      };
-    }, [])
-  );
+  // Тёплая зона со временем в iOS PWA — общий хук, тот же на других вкладках.
+  useWarmSystemBar();
 
   if (!currentUser) return <View style={{ flex: 1, backgroundColor: JT.background }} />;
 
@@ -2622,19 +2292,23 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(20), paddingBottom: rs(6),
   },
 
+  // Плашка в стиле JT (29.09.2026): наклейка с контуром, как чипы и карточки.
   offlineBar: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    backgroundColor: '#FEF3C7', paddingHorizontal: rs(14), paddingVertical: rs(8),
+    flexDirection: 'row', alignItems: 'center', gap: rs(10),
+    marginHorizontal: rs(20), marginBottom: rs(8),
+    backgroundColor: JT.accentSoft, borderWidth: 2, borderColor: JT.ink, borderRadius: rs(16),
+    paddingHorizontal: rs(14), paddingVertical: rs(10),
   },
-  offlineTxt: { flex: 1, fontSize: rf(12), color: '#92400E', lineHeight: rf(16) },
+  offlineTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.ink, lineHeight: rf(18) },
+  offlineStrong: { fontFamily: JT_FONT.heavy },
   // Кнопка, а не только «потяните вниз»: на пустом экране жест обновления
   // не виден, а тупик человеку хуже ошибки.
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7),
-    marginTop: rs(16), backgroundColor: Colors.primary,
-    paddingHorizontal: rs(20), paddingVertical: rs(11), borderRadius: rs(14),
+    marginTop: rs(16), backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+    paddingHorizontal: rs(22), paddingVertical: rs(12), borderRadius: rs(24),
   },
-  retryTxt: { color: '#fff', fontSize: rf(14), fontWeight: '800' },
+  retryTxt: { color: JT.ink, fontFamily: JT_FONT.bold, fontSize: rf(15) },
   // Ширина по карточке, а не по экрану: карточка отступает на rs(13) плюс
   // рамка, и растворение должно кончаться ровно на её краю. bottom задаётся
   // рядом с карточкой через deckBottomReserve, чтобы совпадать на всех safe area.
@@ -2649,24 +2323,41 @@ const pS = StyleSheet.create({
     paddingHorizontal: rs(13), paddingVertical: rs(8), ...Shadow.card,
   },
   scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
-  limitOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.35)', justifyContent: 'flex-end', zIndex: 50 },
+  limitOverlay: {
+    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.5)',
+    justifyContent: 'center', paddingHorizontal: rs(20), zIndex: 50,
+  },
+  limitWrap: { alignSelf: 'stretch' },
   limitCard: {
-    backgroundColor: Colors.bg, borderRadius: rs(24), marginHorizontal: rs(16),
-    padding: rs(22), alignItems: 'center', gap: rs(8), ...Shadow.strong,
+    backgroundColor: JT.surface, borderRadius: rs(28), borderWidth: 2, borderColor: JT.ink,
+    paddingTop: rs(28), paddingHorizontal: rs(22), paddingBottom: rs(18), alignItems: 'center',
   },
   limitIcon: {
-    width: rs(56), height: rs(56), borderRadius: rs(28),
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryLight,
+    width: rs(76), height: rs(76), borderRadius: rs(38), borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: JT.accentSoft,
   },
-  limitTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(4) },
-  limitBody: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
+  limitTitle: {
+    fontFamily: JT_FONT.head, fontSize: rf(22), color: JT.ink, marginTop: rs(18), textAlign: 'center',
+  },
+  limitBody: {
+    fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textSecondary,
+    textAlign: 'center', lineHeight: rf(22), marginTop: rs(12),
+  },
+  limitStats: { flexDirection: 'row', gap: rs(8), alignSelf: 'stretch', marginTop: rs(18) },
+  limitStat: {
+    flex: 1, paddingVertical: rs(12), paddingHorizontal: rs(12), borderRadius: rs(16),
+    backgroundColor: JT.background, alignItems: 'center', gap: rs(2),
+  },
+  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink },
+  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
+  limitBtnWrap: { alignSelf: 'stretch', marginTop: rs(20) },
   limitBtn: {
-    alignSelf: 'stretch', marginTop: rs(8), backgroundColor: Colors.primary,
-    borderRadius: rs(14), paddingVertical: rs(13), alignItems: 'center',
+    height: rs(58), borderRadius: rs(29), borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.accent, alignItems: 'center', justifyContent: 'center',
   },
-  limitBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-  limitClose: { paddingVertical: rs(8) },
-  limitCloseTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
+  limitBtnTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink },
+  limitClose: { height: rs(48), marginTop: rs(4), alignItems: 'center', justifyContent: 'center' },
+  limitCloseTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(15), color: JT.textTertiary },
   deckUtilitySpacer: { width: rs(100), height: rs(52), flexShrink: 0 },
   deckCompanyLogoOverlay: {
     position: 'absolute',
@@ -3019,8 +2710,8 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(24), paddingBottom: rs(180) },
   emptyCharContainer: { width: SW - 40, height: Math.round((SW - 40) * 1.216), marginBottom: rs(8) },
   emptyCharImg: { width: '100%', height: '100%' },
-  emptyTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  emptySubtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(4), textAlign: 'center', lineHeight: rf(20) },
+  emptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), lineHeight: rf(24), color: JT.ink, textAlign: 'center', marginTop: rs(10) },
+  emptySubtitle: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6), textAlign: 'center', lineHeight: rf(20) },
   filterOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, justifyContent: 'flex-end' },
   filterSheet: { backgroundColor: Colors.bg, borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20), paddingBottom: rs(40), maxHeight: '70%' },
   filterSheetHandle: { alignSelf: 'center', width: rs(40), height: rs(5), borderRadius: rs(3), backgroundColor: Colors.divider, marginTop: rs(8) },

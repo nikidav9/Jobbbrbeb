@@ -259,6 +259,7 @@ services:
       # если секрет почему-то не создался.
       SESSION_SECRET: ${SESSION_SECRET:-}
       JUPITER_MAIL_VERIFIED: ${JUPITER_MAIL_VERIFIED:-0}
+      JUPITER_BROWSER_ENABLED: ${JUPITER_BROWSER_ENABLED:-0}
       # Письма с кодами входа (php-proxy/mailer.php): SMTP Timeweb с того же
       # ящика support@jobtoo.ru, которым Jupiter читает входящие. Отдельного
       # секрета не заводим — он уже лежит в /opt/jobtoo-secrets/env.

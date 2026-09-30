@@ -68,20 +68,26 @@ export function vacancyFormat(schedule: string | null | undefined, text?: string
 // паритет держит общий tests/fixtures/vacancy_facets_cases.json.
 export type VacancySpec =
   | 'backend' | 'frontend' | 'mobile' | 'qa' | 'devops' | 'data'
-  | 'analytics' | 'design' | 'management' | 'security' | 'support' | 'onec';
+  | 'analytics' | 'design' | 'management' | 'security' | 'support' | 'onec'
+  | 'hr' | 'top';
 
+// Порядок и названия — экран «Специализация» макета «JT-filters» (27.09.2026):
+// 13 пунктов макета и «1С» последним (решение владельца). id прежние —
+// 'management' теперь подписан «Product, Project, Architecture».
 export const VACANCY_SPECS: { id: VacancySpec; label: string; icon: string }[] = [
-  { id: 'backend', label: 'Бэкенд', icon: 'server-outline' },
-  { id: 'frontend', label: 'Фронтенд', icon: 'browsers-outline' },
-  { id: 'mobile', label: 'Мобильная разработка', icon: 'phone-portrait-outline' },
-  { id: 'qa', label: 'Тестирование', icon: 'bug-outline' },
-  { id: 'devops', label: 'DevOps и SRE', icon: 'git-network-outline' },
-  { id: 'data', label: 'Data Science и ML', icon: 'analytics-outline' },
-  { id: 'analytics', label: 'Аналитика', icon: 'bar-chart-outline' },
-  { id: 'design', label: 'Дизайн', icon: 'color-palette-outline' },
-  { id: 'management', label: 'Менеджмент', icon: 'people-outline' },
-  { id: 'security', label: 'Безопасность', icon: 'shield-checkmark-outline' },
-  { id: 'support', label: 'Поддержка', icon: 'headset-outline' },
+  { id: 'backend', label: 'Backend', icon: 'server-outline' },
+  { id: 'frontend', label: 'Frontend', icon: 'browsers-outline' },
+  { id: 'mobile', label: 'Mobile', icon: 'phone-portrait-outline' },
+  { id: 'qa', label: 'QA', icon: 'bug-outline' },
+  { id: 'management', label: 'Product, Project, Architecture', icon: 'grid-outline' },
+  { id: 'design', label: 'Design & UX', icon: 'color-palette-outline' },
+  { id: 'analytics', label: 'Analytics', icon: 'bar-chart-outline' },
+  { id: 'devops', label: 'Infrastructure & DevOps', icon: 'terminal-outline' },
+  { id: 'security', label: 'Information Security', icon: 'shield-outline' },
+  { id: 'support', label: 'Support', icon: 'headset-outline' },
+  { id: 'data', label: 'Data & ML', icon: 'hardware-chip-outline' },
+  { id: 'hr', label: 'HR & Recruitment', icon: 'person-circle-outline' },
+  { id: 'top', label: 'Top Management', icon: 'trophy-outline' },
   { id: 'onec', label: '1С', icon: 'calculator-outline' },
 ];
 
@@ -94,6 +100,9 @@ export const VACANCY_SPECS: { id: VacancySpec; label: string; icon: string }[] =
 // «Разработчик»/«программист»/developer сами по себе ничего не значат — иначе
 // любая вакансия разработчика молча становилась бы бэкендом.
 const SPEC_RULES: [VacancySpec[], RegExp][] = [
+  // Первым: «Head of Product» и «Директор по ИБ» — это топ-менеджмент.
+  [['top'], /\bc[teiop]o\b|\bcfo\b|chief\s+\S+\s+officer|head\s+of|директор|вице-президент|\bvp\b|руководител\S* (отдела|направлени|департамент|управлени|службы|центра)/iu],
+  [['hr'], /\bhr\b|\bhrbp\b|рекрут|recruit|headhunter|talent\s+acquisition|подбор\S* персонал|кадров/iu],
   [['onec'], /(^|[^a-zа-яё0-9])1[сc]([^a-zа-яё0-9]|$)/iu],
   [['security'], /\bsecurity\b|безопасност|\bpentest\b|\bappsec\b|\bdevsecops\b|soc[\s-]*аналитик/iu],
   [['frontend', 'backend'], /\bfull[\s-]?stack\b|фулстек|фулстак/iu],
@@ -104,7 +113,7 @@ const SPEC_RULES: [VacancySpec[], RegExp][] = [
   [['analytics'], /аналитик|analyst|\bbi\b/iu],
   [['design'], /дизайн|designer|\bux\b|ui\/ux/iu],
   [['frontend'], /frontend|front-end|фронтенд|\breact\b|\bvue\b|\bangular\b|верстальщик/iu],
-  [['management'], /product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|delivery\s+manager|\bscrum\b|\bcto\b|head\s+of/iu],
+  [['management'], /product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор/iu],
   [['support'], /поддержк|\bsupport\b|helpdesk|service\s+desk/iu],
   [['backend'], /backend|back-end|бэкенд|бекенд|\bjava\b|golang|\bgo\b|\bpython\b|\bphp\b|c#|\.net|c\+\+|\bnode\b|\bruby\b|\bscala\b|\brust\b|\bkotlin\b/iu],
 ];

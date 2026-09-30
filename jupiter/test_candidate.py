@@ -5,7 +5,8 @@ from __future__ import annotations
 import unittest
 
 from candidate import (
-    FieldClass, classify_key, consent_kinds, decide_consent, provenance_for,
+    FieldClass, classify_key, consent_kinds, decide_consent, looks_like_consent,
+    provenance_for,
 )
 
 
@@ -54,6 +55,24 @@ class ConsentRecognition(unittest.TestCase):
 
     def test_ordinary_checkbox_is_not_a_consent(self):
         self.assertEqual(self.kinds("Готов к командировкам"), [])
+
+    def test_resume_is_true_is_the_accuracy_confirmation(self):
+        # Avito (разведка 29.09): та же достоверность анкеты другими словами.
+        self.assertEqual(
+            self.kinds("Подтверждаю, что предоставленные мной данные в резюме "
+                       "соответствуют действительности"),
+            ["data_accuracy_confirmation"],
+        )
+
+    def test_unnamed_consent_checkbox_looks_like_consent(self):
+        # IBS «agree», Targem «policy», Bell «Я ознакомлен и согласен».
+        for text in ("agree", "policy", "Я ознакомлен и согласен field_oznakomlen",
+                     "soglasie_pd", "accept_terms"):
+            self.assertTrue(looks_like_consent(text), text)
+
+    def test_ordinary_checkbox_does_not_look_like_consent(self):
+        for text in ("Готов к командировкам", "remote", "Есть водительские права"):
+            self.assertFalse(looks_like_consent(text), text)
 
     def test_mixed_checkbox_reports_both_kinds(self):
         kinds = self.kinds(

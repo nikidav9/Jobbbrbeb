@@ -2,7 +2,7 @@
 // device is online. This prevents an installed iOS/Android PWA from holding an
 // old JavaScript bundle after a successful production deploy.
 const SHELL_CACHE = 'jobtoo-app-shell-v8';
-const SHELL_STATIC = ['/manifest.json', '/favicon.ico', '/jt-logo.jpg'];
+const SHELL_STATIC = ['/manifest.json', '/favicon.ico', '/icon-192.png'];
 
 async function fetchWithTimeout(request, timeoutMs) {
   const controller = new AbortController();
@@ -129,7 +129,7 @@ self.addEventListener('push', (event) => {
     }
     await self.registration.showNotification(data.title || 'JobToo', {
       body: data.body || '',
-      icon: '/jt-logo.jpg',
+      icon: '/icon-192.png',
       badge: '/favicon.ico',
       data: data.data || {},
       vibrate: [200, 100, 200],

@@ -13,6 +13,7 @@ import threading
 from typing import Callable
 
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
+from captcha_loop import continue_through_captcha
 from tasks import ApplicationTask, TaskQueueProto, TaskState, SubmissionAuthorizationRevoked
 
 # Что имеет смысл повторить: связь, время ожидания, дроссель на той стороне.
@@ -54,10 +55,13 @@ def fill_summary(trajectory: list[dict]) -> dict:
         key = item.get("key")
         if isinstance(key, str) and key and key not in keys:
             keys.append(key)
+    opened = next((item for item in trajectory if item.get("action") == "open"), {})
     return {
         "fields": len(fields),
         "keys": keys[:30],
         "resume": any(item.get("action") == "upload" for item in trajectory),
+        # Каким движком шла заявка — карточка «По движку» в дашборде.
+        "engine": str(opened.get("engine") or ""),
     }
 
 
@@ -173,6 +177,8 @@ def run_once(
                 result = agent.resume(task.resume_token, resolved)
             else:
                 result = agent.run(task.vacancy_url, resolved)
+            # Капча: показать человеку в приложении и продолжить с той же страницы.
+            result = continue_through_captcha(agent, queue, task.id, resolved, result)
         except SubmissionAuthorizationRevoked:
             queue.finish(task.id, TaskState.ACTION_REQUIRED,
                          reason_code="LIVE_AUTHORIZATION_REVOKED")

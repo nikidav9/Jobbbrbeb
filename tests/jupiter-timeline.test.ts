@@ -27,6 +27,16 @@ test('история: новое сверху, внутренние шаги н�
   assert.equal(steps[0].note, '2 поля: телефон · резюме');
 });
 
+test('у шага есть тип события — по нему экран выбирает кружок', () => {
+  const steps = buildTimeline([
+    { kind: 'created', reason_code: null, detail: null, created_at: '1' },
+    { kind: 'submitted', reason_code: 'MANUAL_WEBVIEW', detail: null, created_at: '2' },
+    { kind: 'submitted', reason_code: null, detail: null, created_at: '3' },
+    { kind: 'action_required', reason_code: null, detail: null, created_at: '4' },
+  ]);
+  assert.deepEqual(steps.map(s => s.kind), ['action_required', 'submitted', 'submitted_manual', 'created']);
+});
+
 test('ручная отправка и причины «нужны вы»', () => {
   const [manual] = buildTimeline([{ kind: 'submitted', reason_code: 'MANUAL_WEBVIEW', detail: null, created_at: '1' }]);
   assert.equal(manual.title, 'Вы отправили отклик');
@@ -89,4 +99,18 @@ test('вакансия закрыта работодателем: статус, 
   const sent = { ...parked, state: 'submitted', reasonCode: null };
   assert.equal(jupiterVacancyClosed(sent), false);
   assert.equal(jupiterBadge(sent).tone, 'sent');
+});
+
+test('капча человеку (CAPTCHA_HUMAN): «Нужна проверка сайта», отклик уйдёт сразу', async () => {
+  const { jupiterNeedsCaptcha } = await import('../services/jupiterTimeline.ts');
+  const a = app({ state: 'action_required', reasonCode: 'CAPTCHA_HUMAN' });
+  assert.equal(jupiterNeedsCaptcha(a), true);
+  assert.equal(jupiterStatus(a).label, 'Нужна проверка сайта');
+  assert.deepEqual(jupiterBadge(a), { label: 'НУЖНЫ ВЫ', tone: 'needs_you' });
+  assert.equal(jupiterRowSummary(a), 'Введите слово с картинки — отклик уйдёт сразу');
+  const [step] = buildTimeline([{ kind: 'action_required', reason_code: 'CAPTCHA_HUMAN', detail: null, created_at: '1' }]);
+  assert.equal(step.note, 'Введите слово с картинки — отклик уйдёт сразу');
+  // Капча уже не ждёт человека — заявка не в «проверке сайта».
+  assert.equal(jupiterNeedsCaptcha(app({ state: 'queued', reasonCode: 'CAPTCHA_HUMAN' })), false);
+  assert.equal(jupiterNeedsCaptcha(app({ state: 'action_required', reasonCode: 'CAPTCHA_REQUIRED' })), false);
 });

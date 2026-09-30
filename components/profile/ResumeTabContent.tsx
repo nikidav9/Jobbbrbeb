@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, LayoutAnimation } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
 import { HardShadowCard } from './HardShadowCard';
 import { SectionCard } from './SectionCard';
 import { AddRow } from './AddRow';
@@ -36,7 +37,7 @@ function splitBullets(text: string): string[] {
   return parts.length ? parts : [text.trim()];
 }
 
-function ExperienceEntry({ item, last }: { item: ResumeExperience; last: boolean }) {
+function ExperienceEntry({ item, last, onEdit }: { item: ResumeExperience; last: boolean; onEdit: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const bullets = item.description ? splitBullets(item.description) : [];
   const shown = expanded ? bullets : bullets.slice(0, 4);
@@ -53,6 +54,9 @@ function ExperienceEntry({ item, last }: { item: ResumeExperience; last: boolean
           {item.company ? <Text style={et.company}>{item.company}</Text> : null}
           <Text style={et.period}>{item.start} — {item.end}{item.duration ? ` · ${item.duration}` : ''}</Text>
         </View>
+        <TouchableOpacity style={s.editBtn} onPress={onEdit} activeOpacity={0.72} accessibilityRole="button" accessibilityLabel={`Редактировать: ${item.position || item.company || 'место работы'}`}>
+          <EditIcon size={15} color={ProfileColors.ink} />
+        </TouchableOpacity>
       </View>
 
       {bullets.length ? (
@@ -76,27 +80,27 @@ function ExperienceEntry({ item, last }: { item: ResumeExperience; last: boolean
 }
 
 function EntryItem({
-  title, subtitle, meta, description, last,
-}: { title: string; subtitle?: string; meta?: string; description?: string; last: boolean }) {
+  title, subtitle, meta, description, last, onPress,
+}: { title: string; subtitle?: string; meta?: string; description?: string; last: boolean; onPress: () => void }) {
   return (
-    <View style={[en.wrap, !last && en.border]}>
+    <TouchableOpacity style={[en.wrap, !last && en.border]} onPress={onPress} activeOpacity={0.72} accessibilityRole="button" accessibilityLabel={`Редактировать: ${title}`}>
       <Text style={en.title}>{title}</Text>
       {subtitle ? <Text style={en.subtitle}>{subtitle}</Text> : null}
       {meta ? <Text style={en.meta}>{meta}</Text> : null}
       {description ? <Text style={en.description}>{description}</Text> : null}
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function ExamRow({ item, last }: { item: ResumeExam; last: boolean }) {
+function ExamRow({ item, last, onPress }: { item: ResumeExam; last: boolean; onPress: () => void }) {
   return (
-    <View style={[er.row, !last && er.border]}>
+    <TouchableOpacity style={[er.row, !last && er.border]} onPress={onPress} activeOpacity={0.72} accessibilityRole="button" accessibilityLabel={`Редактировать: ${item.name}`}>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={er.name}>{item.name}</Text>
         {item.date ? <Text style={er.date}>{item.date}</Text> : null}
       </View>
       {item.score ? <Text style={er.score}>{item.score}</Text> : null}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -118,18 +122,23 @@ function ChipsBlock({ items }: { items: string[] }) {
   );
 }
 
+// Экраны редактирования — docs/design/profile-edit/README.md, «Какой экран куда ведёт».
 const EMPTY_SECTIONS: {
   key: keyof ResumeProfile;
   icon: React.ReactNode;
   title: string;
   accessibilityLabel: string;
+  route: Href;
 }[] = [
-  { key: 'education', icon: <GradCapIcon size={18} color={ProfileColors.ink} />, title: 'Образование', accessibilityLabel: 'Добавить образование' },
-  { key: 'exams', icon: <ExamIcon size={18} color={ProfileColors.ink} />, title: 'Экзамены и тесты', accessibilityLabel: 'Добавить экзамен' },
-  { key: 'certifications', icon: <CertIcon size={18} color={ProfileColors.ink} />, title: 'Лицензии и сертификаты', accessibilityLabel: 'Добавить сертификат' },
-  { key: 'coursework', icon: <CourseIcon size={18} color={ProfileColors.ink} />, title: 'Курсы', accessibilityLabel: 'Добавить курс' },
-  { key: 'awards', icon: <StarIcon size={18} color={ProfileColors.ink} />, title: 'Награды', accessibilityLabel: 'Добавить награду' },
-  { key: 'interests', icon: <HeartIcon size={18} color={ProfileColors.ink} />, title: 'Интересы', accessibilityLabel: 'Добавить интересы' },
+  { key: 'experience', icon: <BriefcaseIcon size={18} color={ProfileColors.ink} />, title: 'Опыт работы', accessibilityLabel: 'Добавить место работы', route: '/profile-edit/work-place' },
+  { key: 'languages', icon: <GlobeIcon size={18} color={ProfileColors.ink} />, title: 'Языки', accessibilityLabel: 'Добавить языки', route: '/profile-edit/languages' },
+  { key: 'skills', icon: <SparkleSkillIcon size={18} />, title: 'Навыки', accessibilityLabel: 'Добавить навыки', route: '/profile-edit/skills' },
+  { key: 'education', icon: <GradCapIcon size={18} color={ProfileColors.ink} />, title: 'Образование', accessibilityLabel: 'Добавить образование', route: '/profile-edit/education' },
+  { key: 'exams', icon: <ExamIcon size={18} color={ProfileColors.ink} />, title: 'Экзамены и тесты', accessibilityLabel: 'Добавить экзамен', route: '/profile-edit/exam' },
+  { key: 'certifications', icon: <CertIcon size={18} color={ProfileColors.ink} />, title: 'Лицензии и сертификаты', accessibilityLabel: 'Добавить сертификат', route: '/profile-edit/certificate' },
+  { key: 'coursework', icon: <CourseIcon size={18} color={ProfileColors.ink} />, title: 'Курсы', accessibilityLabel: 'Добавить курс', route: '/profile-edit/course' },
+  { key: 'awards', icon: <StarIcon size={18} color={ProfileColors.ink} />, title: 'Награды', accessibilityLabel: 'Добавить награду', route: '/profile-edit/award' },
+  { key: 'interests', icon: <HeartIcon size={18} color={ProfileColors.ink} />, title: 'Интересы', accessibilityLabel: 'Добавить интересы', route: '/profile-edit/interests' },
 ];
 
 export function ResumeTabContent({
@@ -139,6 +148,11 @@ export function ResumeTabContent({
   importing: boolean;
   onImport: () => void;
 }) {
+  const router = useRouter();
+  const open = (pathname: Href, index?: number) => {
+    if (index == null) router.push(pathname);
+    else router.push({ pathname: pathname as never, params: { index: String(index) } });
+  };
   const experience = resume?.experience ?? [];
   const languages = resume?.languages ?? [];
   const skills = resume?.skills ?? [];
@@ -181,28 +195,28 @@ export function ResumeTabContent({
         <View style={s.emptyResume}>
           <Text style={s.emptyResumeTitle}>Резюме пока не заполнено</Text>
           <Text style={s.emptyResumeText}>
-            Загрузите PDF — опыт, образование, языки, навыки и дополнительные разделы появятся автоматически.
+            Загрузите PDF — опыт, образование, языки, навыки и дополнительные разделы появятся автоматически. Или заполните разделы ниже вручную.
           </Text>
         </View>
-      ) : (
+      ) : null}
         <>
           <View style={s.headlineCard}>
             <View style={s.headlineTop}>
               <Text style={s.eyebrow}>ЖЕЛАЕМАЯ ДОЛЖНОСТЬ</Text>
-              <TouchableOpacity style={s.editBtn} onPress={onImport} activeOpacity={0.72} accessibilityLabel="Изменить должность">
+              <TouchableOpacity style={s.editBtn} onPress={() => open('/profile-edit/desired-position')} activeOpacity={0.72} accessibilityRole="button" accessibilityLabel="Изменить должность">
                 <EditIcon size={15} color={ProfileColors.ink} />
               </TouchableOpacity>
             </View>
-            <Text style={s.h2}>{resume.desiredPosition || 'Не указано'}</Text>
+            <Text style={s.h2}>{resume?.desiredPosition || 'Не указано'}</Text>
 
-            {resume.salary ? (
+            {resume?.salary ? (
               <HardShadowCard offset={3} radius={14} shadowColor={ProfileColors.ink} backgroundColor={ProfileColors.peach}>
                 <View style={s.salaryRow}>
                   <View>
                     <Text style={s.salaryLabel}>ЗАРПЛАТА</Text>
-                    <Text style={s.salaryValue}>{resume.salary.replace(/\s*на руки\s*$/i, '')}</Text>
+                    <Text style={s.salaryValue}>{resume.salary.replace(/\s*(на руки|до вычета налогов)\s*$/i, '')}</Text>
                   </View>
-                  <Text style={s.salaryHint}>на руки</Text>
+                  <Text style={s.salaryHint}>{resume.salaryNet === false || /до вычета/i.test(resume.salary) ? 'до вычета налогов' : 'на руки'}</Text>
                 </View>
               </HardShadowCard>
             ) : null}
@@ -220,11 +234,11 @@ export function ResumeTabContent({
           </View>
 
           {experience.length ? (
-            <SectionCard icon={<BriefcaseIcon size={18} color={ProfileColors.ink} />} title="Опыт работы" count={experience.length} onEdit={onImport} editLabel="Редактировать опыт" gap={10}>
+            <SectionCard icon={<BriefcaseIcon size={18} color={ProfileColors.ink} />} title="Опыт работы" count={experience.length} gap={10}>
               {experience.map((item, i) => (
-                <ExperienceEntry key={`${item.company}-${item.position}-${i}`} item={item} last={i === experience.length - 1} />
+                <ExperienceEntry key={`${item.company}-${item.position}-${i}`} item={item} last={i === experience.length - 1} onEdit={() => open('/profile-edit/work-place', i)} />
               ))}
-              <TouchableOpacity style={s.addWorkBtn} onPress={onImport} activeOpacity={0.78}>
+              <TouchableOpacity style={s.addWorkBtn} onPress={() => open('/profile-edit/work-place')} activeOpacity={0.78} accessibilityRole="button">
                 <Text style={s.addWorkPlus}>+</Text>
                 <Text style={s.addWorkText}>Добавить место работы</Text>
               </TouchableOpacity>
@@ -232,7 +246,7 @@ export function ResumeTabContent({
           ) : null}
 
           {languages.length ? (
-            <SectionCard icon={<GlobeIcon size={18} color={ProfileColors.ink} />} title="Языки" count={languages.length} onEdit={onImport} editLabel="Редактировать языки" gap={0}>
+            <SectionCard icon={<GlobeIcon size={18} color={ProfileColors.ink} />} title="Языки" count={languages.length} onEdit={() => open('/profile-edit/languages')} editLabel="Редактировать языки" gap={0}>
               {languages.map((item, i) => (
                 <LanguageLevel key={`${item.name}-${i}`} name={item.name} level={item.level} last={i === languages.length - 1} />
               ))}
@@ -240,13 +254,13 @@ export function ResumeTabContent({
           ) : null}
 
           {skills.length ? (
-            <SectionCard icon={<SparkleSkillIcon size={18} />} title="Навыки" count={skills.length} onEdit={onImport} editLabel="Редактировать навыки">
+            <SectionCard icon={<SparkleSkillIcon size={18} />} title="Навыки" count={skills.length} onEdit={() => open('/profile-edit/skills')} editLabel="Редактировать навыки">
               <ChipsBlock items={skills} />
             </SectionCard>
           ) : null}
 
           {education.length ? (
-            <SectionCard icon={<GradCapIcon size={18} color={ProfileColors.ink} />} title="Образование" count={education.length} onEdit={onImport} gap={10}>
+            <SectionCard icon={<GradCapIcon size={18} color={ProfileColors.ink} />} title="Образование" count={education.length} onAdd={() => open('/profile-edit/education')} gap={10}>
               {education.map((item: ResumeEducation, i) => (
                 <EntryItem
                   key={`${item.institution ?? item.level}-${i}`}
@@ -254,19 +268,20 @@ export function ResumeTabContent({
                   subtitle={[item.level && item.institution ? item.level : null, item.specialty].filter(Boolean).join(' · ') || undefined}
                   meta={item.period}
                   last={i === education.length - 1}
+                  onPress={() => open('/profile-edit/education', i)}
                 />
               ))}
             </SectionCard>
           ) : null}
 
           {exams.length ? (
-            <SectionCard icon={<ExamIcon size={18} color={ProfileColors.ink} />} title="Экзамены и тесты" count={exams.length} onEdit={onImport} gap={0}>
-              {exams.map((item, i) => <ExamRow key={`${item.name}-${i}`} item={item} last={i === exams.length - 1} />)}
+            <SectionCard icon={<ExamIcon size={18} color={ProfileColors.ink} />} title="Экзамены и тесты" count={exams.length} onAdd={() => open('/profile-edit/exam')} gap={0}>
+              {exams.map((item, i) => <ExamRow key={`${item.name}-${i}`} item={item} last={i === exams.length - 1} onPress={() => open('/profile-edit/exam', i)} />)}
             </SectionCard>
           ) : null}
 
           {certifications.length ? (
-            <SectionCard icon={<CertIcon size={18} color={ProfileColors.ink} />} title="Лицензии и сертификаты" count={certifications.length} onEdit={onImport} gap={10}>
+            <SectionCard icon={<CertIcon size={18} color={ProfileColors.ink} />} title="Лицензии и сертификаты" count={certifications.length} onAdd={() => open('/profile-edit/certificate')} gap={10}>
               {certifications.map((item: ResumeCertification, i) => (
                 <EntryItem
                   key={`${item.name}-${i}`}
@@ -274,13 +289,14 @@ export function ResumeTabContent({
                   subtitle={item.issuer}
                   meta={[item.date, item.expiration].filter(Boolean).join(' — ') || undefined}
                   last={i === certifications.length - 1}
+                  onPress={() => open('/profile-edit/certificate', i)}
                 />
               ))}
             </SectionCard>
           ) : null}
 
           {coursework.length ? (
-            <SectionCard icon={<CourseIcon size={18} color={ProfileColors.ink} />} title="Курсы" count={coursework.length} onEdit={onImport} gap={10}>
+            <SectionCard icon={<CourseIcon size={18} color={ProfileColors.ink} />} title="Курсы" count={coursework.length} onAdd={() => open('/profile-edit/course')} gap={10}>
               {coursework.map((item: ResumeCoursework, i) => (
                 <EntryItem
                   key={`${item.name}-${i}`}
@@ -289,13 +305,14 @@ export function ResumeTabContent({
                   meta={item.period}
                   description={item.description}
                   last={i === coursework.length - 1}
+                  onPress={() => open('/profile-edit/course', i)}
                 />
               ))}
             </SectionCard>
           ) : null}
 
           {awards.length ? (
-            <SectionCard icon={<StarIcon size={18} color={ProfileColors.ink} />} title="Награды" count={awards.length} onEdit={onImport} gap={10}>
+            <SectionCard icon={<StarIcon size={18} color={ProfileColors.ink} />} title="Награды" count={awards.length} onAdd={() => open('/profile-edit/award')} gap={10}>
               {awards.map((item: ResumeAward, i) => (
                 <EntryItem
                   key={`${item.name}-${i}`}
@@ -304,13 +321,14 @@ export function ResumeTabContent({
                   meta={item.date}
                   description={item.description}
                   last={i === awards.length - 1}
+                  onPress={() => open('/profile-edit/award', i)}
                 />
               ))}
             </SectionCard>
           ) : null}
 
           {interests.length ? (
-            <SectionCard icon={<HeartIcon size={18} color={ProfileColors.ink} />} title="Интересы" count={interests.length} onEdit={onImport}>
+            <SectionCard icon={<HeartIcon size={18} color={ProfileColors.ink} />} title="Интересы" count={interests.length} onEdit={() => open('/profile-edit/interests')}>
               <ChipsBlock items={interests} />
             </SectionCard>
           ) : null}
@@ -318,7 +336,7 @@ export function ResumeTabContent({
           {emptySections.length ? (
             <View style={s.moreCard}>
               <Text style={s.eyebrow}>ЕЩЁ МОЖНО ДОБАВИТЬ</Text>
-              <Text style={s.moreSub}>Этого не нашлось в загруженном PDF</Text>
+              <Text style={s.moreSub}>{resume ? 'Этого не нашлось в загруженном PDF' : 'Нажмите, чтобы заполнить'}</Text>
               {emptySections.map((section, i) => (
                 <AddRow
                   key={String(section.key)}
@@ -326,7 +344,7 @@ export function ResumeTabContent({
                   iconBg={ProfileColors.subtleBg}
                   iconSize={36}
                   title={section.title}
-                  onPress={onImport}
+                  onPress={() => open(section.route)}
                   last={i === emptySections.length - 1}
                   accessibilityLabel={section.accessibilityLabel}
                 />
@@ -334,7 +352,7 @@ export function ResumeTabContent({
             </View>
           ) : null}
 
-          {resume.sourceFileName ? (
+          {resume?.sourceFileName ? (
             <View style={s.sourceCaption}>
               <DocPageIcon size={14} color={ProfileColors.muted} />
               <Text style={s.sourceText}>
@@ -344,7 +362,6 @@ export function ResumeTabContent({
             </View>
           ) : null}
         </>
-      )}
     </View>
   );
 }

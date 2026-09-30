@@ -28,6 +28,7 @@ const VF_FORMATS = ['remote', 'hybrid', 'office'];
 const VF_SPECS = [
     'backend', 'frontend', 'mobile', 'qa', 'devops', 'data',
     'analytics', 'design', 'management', 'security', 'support', 'onec',
+    'hr', 'top',
 ];
 
 const VF_LEVEL_RULES = [
@@ -70,6 +71,8 @@ function vf_format(?string $schedule, ?string $text = null): ?string
 // Порядок важен: первое совпавшее правило побеждает — см. комментарий в
 // vacancyFacets.ts к SPEC_RULES, здесь то же самое дословно.
 const VF_SPEC_RULES = [
+    [['top'], '~(*UTF)\bc[teiop]o\b|\bcfo\b|chief\s+\S+\s+officer|head\s+of|директор|вице-президент|\bvp\b|руководител\S* (отдела|направлени|департамент|управлени|службы|центра)~i'],
+    [['hr'], '~(*UTF)\bhr\b|\bhrbp\b|рекрут|recruit|headhunter|talent\s+acquisition|подбор\S* персонал|кадров~i'],
     [['onec'], '~(*UTF)(^|[^a-zа-яё0-9])1[сc]([^a-zа-яё0-9]|$)~i'],
     [['security'], '~(*UTF)\bsecurity\b|безопасност|\bpentest\b|\bappsec\b|\bdevsecops\b|soc[\s-]*аналитик~i'],
     [['frontend', 'backend'], '~(*UTF)\bfull[\s-]?stack\b|фулстек|фулстак~i'],
@@ -80,7 +83,7 @@ const VF_SPEC_RULES = [
     [['analytics'], '~(*UTF)аналитик|analyst|\bbi\b~i'],
     [['design'], '~(*UTF)дизайн|designer|\bux\b|ui/ux~i'],
     [['frontend'], '~(*UTF)frontend|front-end|фронтенд|\breact\b|\bvue\b|\bangular\b|верстальщик~i'],
-    [['management'], '~(*UTF)product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|delivery\s+manager|\bscrum\b|\bcto\b|head\s+of~i'],
+    [['management'], '~(*UTF)product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор~i'],
     [['support'], '~(*UTF)поддержк|\bsupport\b|helpdesk|service\s+desk~i'],
     [['backend'], '~(*UTF)backend|back-end|бэкенд|бекенд|\bjava\b|golang|\bgo\b|\bpython\b|\bphp\b|c#|\.net|c\+\+|\bnode\b|\bruby\b|\bscala\b|\brust\b|\bkotlin\b~i'],
 ];

@@ -169,5 +169,38 @@ class Evidence(unittest.TestCase):
         self.assertFalse(any(i.type == "URL" for i in items))
 
 
+class ApiEvidence(unittest.TestCase):
+    """Ответ API страницы на отправку (браузерный движок)."""
+
+    @staticmethod
+    def page(text="Анкета кандидата"):
+        from engine import PageState
+        return PageState("http://e.ru/apply", 200, {}, "", "", text, [], [], True)
+
+    def run_evidence(self, api_result, after_text="Анкета кандидата"):
+        from agent import JupiterAgent
+        return JupiterAgent._evidence(self.page(), self.page(after_text), False, api_result)
+
+    def test_spa_confirmed_only_by_api_json(self):
+        items = self.run_evidence({
+            "api_success": True, "api_error": None,
+            "evidence": ["api_success POST /api/apply 200"],
+        })
+        self.assertTrue(is_confirmed(items))
+        self.assertTrue(any(i.type == "API_RESPONSE" for i in items))
+
+    def test_api_refusal_outweighs_thank_you_on_screen(self):
+        items = self.run_evidence(
+            {"api_success": False, "api_error": "HTTP 422: phone",
+             "evidence": ["api_error POST /api/apply 422"]},
+            after_text="Анкета кандидата Спасибо за отклик",
+        )
+        self.assertFalse(is_confirmed(items))
+        self.assertEqual(score_evidence(items), 0.0)
+
+    def test_no_api_result_changes_nothing(self):
+        self.assertFalse(is_confirmed(self.run_evidence(None)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

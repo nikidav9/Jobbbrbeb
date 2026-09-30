@@ -1,19 +1,22 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { ProfileColors, ProfileFonts, HAIRLINE, ProfileRadius } from '@/constants/profileTheme';
-import { EditIcon } from './icons';
+import { EditIcon, PlusIcon } from './icons';
 
 /**
  * Белая карточка-секция резюме: иконка в персиковом квадрате, заголовок,
  * счётчик, круглая кнопка редактирования — «Опыт работы», «Языки», «Навыки».
+ * У разделов-списков (образование, курсы…) вместо карандаша «+»: каждая запись
+ * открывается своим тапом, а кнопка в шапке добавляет новую.
  */
 export function SectionCard({
-  icon, title, count, onEdit, editLabel, children, gap = 16,
+  icon, title, count, onEdit, onAdd, editLabel, children, gap = 16,
 }: {
   icon: React.ReactNode;
   title: string;
   count?: number;
   onEdit?: () => void;
+  onAdd?: () => void;
   editLabel?: string;
   children?: React.ReactNode;
   gap?: number;
@@ -35,6 +38,17 @@ export function SectionCard({
             accessibilityLabel={editLabel ?? `Редактировать: ${title}`}
           >
             <EditIcon size={15} color={ProfileColors.ink} />
+          </TouchableOpacity>
+        ) : null}
+        {onAdd ? (
+          <TouchableOpacity
+            onPress={onAdd}
+            style={s.editBtn}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+            accessibilityLabel={`Добавить: ${title}`}
+          >
+            <PlusIcon size={15} color={ProfileColors.ink} />
           </TouchableOpacity>
         ) : null}
       </View>

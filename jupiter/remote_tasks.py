@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tempfile
@@ -21,6 +22,9 @@ from agent import CandidateProfile
 from tasks import ApplicationTask, TaskState, BACKOFF_BASE_SECONDS, MAX_ATTEMPTS, SubmissionAuthorizationRevoked
 
 DEFAULT_LEASE_SECONDS = 300
+# Предел сервера для jupiterCaptchaPost: длина строки base64, не байты PNG.
+CAPTCHA_MAX_BASE64 = 200000
+CAPTCHA_OUTCOMES = ("solved", "failed")
 
 
 class RemoteError(Exception):
@@ -40,8 +44,12 @@ class RemoteTaskQueue:
         app_secret: str,
         *,
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        engine: str = "http",
     ):
         self._url = base_url.rstrip("/") + "/api/db.php"
+        # Воркер берёт только заявки своего движка (миграция 136): иначе
+        # HTTP- и браузерный воркер хватали бы одни и те же.
+        self._engine = engine
         self._token = admin_token
         self._app_secret = app_secret
         self._lease_seconds = lease_seconds
@@ -90,7 +98,7 @@ class RemoteTaskQueue:
 
     def lease(self, worker: str) -> ApplicationTask | None:
         self._worker = worker
-        result = self._call("jupiterLease", [worker, self._lease_seconds])
+        result = self._call("jupiterLease", [worker, self._lease_seconds, self._engine])
         if result is None:
             return None
         # PostgreSQL functions returning a composite row can be serialized by
@@ -134,6 +142,36 @@ class RemoteTaskQueue:
             return 0
         result = self._call("jupiterRequeueSiteReady", [hosts])
         return int(result.get("moved", 0)) if isinstance(result, dict) else 0
+
+    # ── капча человеку (миграция 135) ─────────────────────────────────────
+    # Ответ капчи — данные кандидата: не логируем его и не кладём в исключения.
+
+    def captcha_post(self, task_id: str, png: bytes) -> str:
+        """Отдаёт PNG капчи кандидату; возвращает id записи на сервере."""
+        encoded = base64.b64encode(png).decode("ascii")
+        if len(encoded) > CAPTCHA_MAX_BASE64:
+            raise ValueError(
+                f"Картинка капчи слишком большая: {len(encoded)} символов base64, "
+                f"сервер принимает не больше {CAPTCHA_MAX_BASE64}"
+            )
+        result = self._call("jupiterCaptchaPost", [task_id, encoded])
+        if not isinstance(result, dict) or result.get("ok") is not True or not result.get("id"):
+            raise RemoteError(0, "jupiterCaptchaPost: bad response")
+        return str(result["id"])
+
+    def captcha_poll(self, task_id: str) -> tuple[str, str | None]:
+        """(status, answer): none|pending|answered|expired|solved|failed."""
+        result = self._call("jupiterCaptchaPoll", [task_id])
+        if not isinstance(result, dict) or not isinstance(result.get("status"), str):
+            raise RemoteError(0, "jupiterCaptchaPoll: bad response")
+        answer = result.get("answer")
+        return result["status"], answer if isinstance(answer, str) else None
+
+    def captcha_result(self, task_id: str, outcome: str) -> None:
+        """Итог: ответ кандидата подошёл (solved) или нет (failed)."""
+        if outcome not in CAPTCHA_OUTCOMES:
+            raise ValueError(f"Исход капчи только solved или failed, получено: {outcome!r}")
+        self._call("jupiterCaptchaResult", [task_id, outcome])
 
     def checkpoint(self, task_id: str, state: str, data: dict[str, Any]) -> None:
         if self._worker is None:

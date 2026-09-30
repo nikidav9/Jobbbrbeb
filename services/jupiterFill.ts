@@ -27,7 +27,10 @@ export function jupiterManualEligible(a: JupiterApplication): boolean {
     && ['CONSENT_REQUIRED', 'UNSUPPORTED_SCRIPT'].includes(a.reasonCode ?? '');
   return ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'].includes(a.state)
     && !needsSberConsent
-    && a.reasonCode !== 'LIVE_AUTHORIZATION_REVOKED';
+    && a.reasonCode !== 'LIVE_AUTHORIZATION_REVOKED'
+    // Ждёт капчу: Юпитер сам допишет отклик после ответа человека — ручная
+    // анкета параллельно отправила бы его второй раз.
+    && a.reasonCode !== 'CAPTCHA_HUMAN';
 }
 
 /**

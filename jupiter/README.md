@@ -2,8 +2,10 @@
 
 Jupiter is JobToo's own application agent for external job applications.
 
-The current runtime has no Chromium, Playwright, Selenium, external AI service,
-or ATS integration. The HTTP client, cookie jar, HTML/form parser, field
+The HTTP runtime below has no Chromium, Playwright, Selenium, external AI
+service, or ATS integration. Since 28.09.2026 there is also an optional
+browser engine (`browser_engine.py`, Chromium via Python-Playwright) with the
+same `open/submit/load_html` interface — see «Browser engine» below. The HTTP client, cookie jar, HTML/form parser, field
 mapping, multipart upload, navigation policy, submit flow and success
 verification live in this repository.
 
@@ -569,3 +571,27 @@ Use:
 A successful verification returns `ready_to_submit`. The trajectory must
 contain `ready_to_submit` and must not contain `click_submit`,
 `http_submit`, `script_submit` or `script_network_submit`.
+
+
+## Browser engine (`browser_engine.py`)
+
+Owner decision 28.09.2026: many career sites are SPAs — the application form
+appears only after an «Откликнуться» button, fields live outside `<form>`,
+submission goes through `fetch`. The HTTP engine cannot reach such forms.
+
+`JupiterBrowserEngine` keeps the `JupiterWebEngine` interface, so all agent
+logic (field meaning, delegated consents, «never invent facts», success
+verification, receipts) is reused unchanged. The engine:
+
+1. opens the page in Chromium and clicks an apply button when no candidate
+   form is visible;
+2. snapshots the rendered DOM for the same `_SemanticParser`: invisible fields
+   are removed, formless fields are wrapped in a virtual form
+   (`data-jt-virtual`), every control gets `data-jt-ref` → `ControlState.dom_ref`;
+3. on `submit()` copies the values chosen by the agent into the live page by
+   those refs and clicks the button — the site submits itself.
+
+Invariants: `read_only` blocks `submit()` and aborts every non-GET request in
+the browser; navigations only to allowed hosts; internal addresses blocked;
+CAPTCHA is never bypassed. Playwright is optional: the rest of Jupiter stays
+stdlib-only. Tests: `test_browser_engine.py` (CI job `jupiter-browser`).

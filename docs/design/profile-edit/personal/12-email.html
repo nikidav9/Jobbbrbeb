@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job2 — Email для связи</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+  /* Экран под ширину 390 (iPhone 14/15). Тёмный фон вокруг — только для просмотра в браузере. */
+  html,body{margin:0}
+  body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif}
+  .screen{border-radius:40px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  a{color:#141414} a:hover{color:#C2410C}
+  input::placeholder,textarea::placeholder{color:#9A9086}
+</style>
+</head>
+<body>
+<div class="screen">
+<div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; background: #F5EFE6; color: #141414; font-family: 'Manrope', system-ui, sans-serif; overflow: hidden">
+<div style="padding: 70px 20px 0; display: flex; flex-direction: column; gap: 14px" aria-hidden="true">
+<span style="font-size: 13px; font-weight: 800; letter-spacing: 0.08em; color: #6B645C">КОНТАКТЫ</span>
+<div style="height: 250px; border-radius: 22px; background: #FFFFFF"></div>
+<span style="font-size: 13px; font-weight: 800; letter-spacing: 0.08em; color: #6B645C">РАЗРЕШЕНИЕ НА РАБОТУ</span>
+<div style="height: 170px; border-radius: 22px; background: #FFFFFF"></div>
+</div>
+<div style="position: absolute; inset: 0; background: rgba(20,20,20,0.5)"></div>
+
+<div role="dialog" aria-label="Email для связи" style="position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; padding: 10px 20px 34px; border-radius: 28px 28px 0 0; background: #FFFFFF; border-top: 2px solid #141414; display: flex; flex-direction: column">
+<span style="align-self: center; width: 44px; height: 5px; border-radius: 3px; background: #CFC4B6"></span>
+<div style="margin-top: 16px; display: flex; align-items: center; gap: 12px">
+<span style="flex-shrink: 0; width: 44px; height: 44px; border-radius: 13px; background: #FFE2CC; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M4 7l8 6l8-6"/></svg></span>
+<h2 style="margin: 0; flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 19px">Email для связи</h2>
+<button aria-label="Закрыть" style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 20px; border: 1.5px solid #CFC4B6; background: #FFFFFF; display: flex; align-items: center; justify-content: center; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+<p style="margin: 12px 0 0; font-size: 14px; line-height: 1.45; font-weight: 600; color: #4A443D">Сюда работодатели пришлют ответ на отклик и приглашение на собеседование</p>
+<input type="email" value="name@mail.ru" aria-label="Email для связи" style="margin-top: 18px; height: 56px; box-sizing: border-box; padding: 0 16px; border-radius: 16px; border: 2px solid #141414; box-shadow: 3px 3px 0 #FF6B1A; background: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 700; color: #141414; outline: none">
+<div style="margin-top: 14px; display: flex; gap: 8px; align-items: flex-start">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B645C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+<span style="font-size: 13px; line-height: 1.45; font-weight: 600; color: #6B645C">Почта для входа не меняется — она задаётся в настройках безопасности</span>
+</div>
+<button style="margin-top: 22px; height: 58px; border-radius: 29px; border: 2px solid #141414; background: #FF6B1A; box-shadow: 4px 4px 0 #141414; font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #141414; cursor: pointer">Сохранить</button>
+</div>
+</div>
+</div>
+</body>
+</html>

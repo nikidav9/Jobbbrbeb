@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job2 — Водительские права</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+  /* Экран под ширину 390 (iPhone 14/15). Тёмный фон вокруг — только для просмотра в браузере. */
+  html,body{margin:0}
+  body{background:#2B2926;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;box-sizing:border-box;font-family:'Manrope',system-ui,sans-serif}
+  .screen{border-radius:40px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  a{color:#141414} a:hover{color:#C2410C}
+  input::placeholder,textarea::placeholder{color:#9A9086}
+</style>
+</head>
+<body>
+<div class="screen">
+<div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; background: #F5EFE6; color: #141414; font-family: 'Manrope', system-ui, sans-serif; overflow: hidden">
+<div style="padding: 56px 20px 0; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 14px; height: 44px">
+<a href="#" aria-label="Назад в профиль" style="flex-shrink: 0; width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></a>
+<h1 style="margin: 0; flex-grow: 1; min-width: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.01em">Водительские права</h1>
+</div>
+
+<div style="margin-top: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px" role="radiogroup" aria-label="Наличие прав">
+<label style="height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 18px; background: #FFFFFF; border: 1.5px solid #E3D9CC; cursor: pointer">
+<span style="flex-shrink: 0; width: 24px; height: 24px; box-sizing: border-box; border-radius: 12px; border: 2px solid #141414; background: #FFFFFF"></span>
+<span style="font-size: 15px; font-weight: 800">Нет прав</span>
+</label>
+<label style="height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 18px; background: #FFFFFF; border: 2px solid #141414; box-shadow: 4px 4px 0 #141414; cursor: pointer">
+<span style="flex-shrink: 0; width: 24px; height: 24px; box-sizing: border-box; border-radius: 12px; border: 2px solid #141414; background: #FFFFFF; display: flex; align-items: center; justify-content: center"><span style="width: 11px; height: 11px; border-radius: 6px; background: #FF6B1A"></span></span>
+<span style="font-size: 15px; font-weight: 800">Есть права</span>
+</label>
+</div>
+
+<div style="margin-top: 26px; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 14px; font-weight: 700; color: #4A443D">Категории <span style="font-weight: 600; color: #6B645C">· можно несколько</span></span>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">A</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 2px solid #141414; background: #FF6B1A; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">B</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">C</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">D</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">E</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">BE</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">CE</button>
+<button style="width: 56px; height: 48px; border-radius: 16px; border: 1.5px solid #CFC4B6; background: #FFFFFF; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 16px; color: #141414">M</button>
+</div>
+</div>
+
+<label style="margin-top: 26px; min-height: 64px; box-sizing: border-box; padding: 10px 14px 10px 16px; border-radius: 18px; background: #FFFFFF; display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer">
+<span style="display: flex; align-items: center; gap: 12px">
+<span style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; background: #FFE2CC; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14v-4l-2-5H7l-2 5z"/><path d="M5 13h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg></span>
+<span style="font-size: 15px; font-weight: 800">Есть личный автомобиль</span>
+</span>
+<span role="switch" aria-checked="true" style="flex-shrink: 0; width: 52px; height: 32px; box-sizing: border-box; border-radius: 16px; border: 2px solid #141414; background: #FF6B1A; display: flex; align-items: center; justify-content: flex-end; padding: 0 3px"><span style="width: 22px; height: 22px; border-radius: 11px; background: #FFFFFF; border: 2px solid #141414; box-sizing: border-box"></span></span>
+</label>
+</div>
+<button style="position: absolute; left: 20px; right: 20px; bottom: 32px; height: 60px; border-radius: 30px; border: 2px solid #141414; background: #FF6B1A; box-shadow: 4px 4px 0 #141414; font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #141414; cursor: pointer">Сохранить</button>
+</div>
+</div>
+</body>
+</html>

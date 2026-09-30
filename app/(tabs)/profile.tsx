@@ -3,9 +3,11 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput,
-  ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated,
+  ActivityIndicator, FlatList, LayoutAnimation, UIManager, Animated, RefreshControl,
 } from 'react-native';
+import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -38,6 +40,7 @@ import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
+import { JT, JT_FONT } from '@/constants/jt';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { rs, rf } from '@/constants/scale';
@@ -47,6 +50,8 @@ import { PERSONAL_FIELD_LABELS, PERSONAL_MULTILINE, PERSONAL_FIELD_CHOICES, PERS
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { ProfileTabs } from '@/components/profile/ProfileTabs';
 import { ResumeTabContent } from '@/components/profile/ResumeTabContent';
+import { EmailSheet } from '@/components/profile/edit/sheets/EmailSheet';
+import { PhoneSheet } from '@/components/profile/edit/sheets/PhoneSheet';
 import { PersonalTabContent } from '@/components/profile/PersonalTabContent';
 import { FilesTabContent } from '@/components/profile/FilesTabContent';
 import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
@@ -279,7 +284,19 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { tab } = useLocalSearchParams<{ tab?: string }>();
   const tabBarHeight = useBottomTabBarHeight();
-  const { currentUser, logout, users, showToast, updateUser, unreadCount } = useApp();
+  const { currentUser, logout, users, showToast, updateUser, unreadCount, refreshUsers, refreshNotifications } = useApp();
+  // Потянуть вниз — свежие данные профиля и колокольчик (как в «Вакансиях»
+  // и «Откликах»). Ошибку не показываем: на экране остаются прежние данные.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try { await Promise.all([refreshUsers(), refreshNotifications()]); } catch { /* прежние данные */ }
+    finally { setRefreshing(false); }
+  };
+  useWarmSystemBar(currentUser?.role === 'worker', ProfileColors.bg);
+  // Шторки «Email для связи» и «Телефон» вкладки «Личные» (docs/design/profile-edit, 12–13).
+  const [contactSheet, setContactSheet] = useState<'email' | 'phone' | null>(null);
   const [editSection, setEditSection] = useState<EditSection>(null);
   const [profileTab, setProfileTab] = useState<ProfileTab>('resume');
   useEffect(() => { if (tab === 'files') setProfileTab('files'); }, [tab]);
@@ -379,21 +396,6 @@ export default function ProfileScreen() {
   const avatarColor = nameColorFromString(currentUser.id);
   const line = METRO_LINES.find(l => l.id === currentUser.metroLineId);
 
-  const personalFallback = (field: PersonalFieldKey): string => {
-    const resume = currentUser.resume;
-    if (field === 'contactEmail') return resume?.email ?? '';
-    if (field === 'citizenship') return resume?.citizenship ?? '';
-    if (field === 'workAuthorization') return resume?.workPermit ?? '';
-    if (field === 'location') return resume?.city ?? '';
-    if (field === 'workAvailability') {
-      return [resume?.employmentType, resume?.workFormat].filter(Boolean).join(' · ');
-    }
-    if (field === 'relocation') {
-      return resume?.businessTrips?.match(/(?:не\s+)?готов[а]?\s+к\s+переезд\w*/i)?.[0] ?? '';
-    }
-    return '';
-  };
-
   const toggleSection = (key: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.create(
       200, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity,
@@ -416,15 +418,6 @@ export default function ProfileScreen() {
     setEditAge(currentUser.age ? String(currentUser.age) : '');
   };
 
-  const openPersonalField = (field: PersonalFieldKey) => {
-    setEditSection(null);
-    setPersonalField(field);
-    setPersonalEditValue(
-      (currentUser.personalDetails?.[field] as string | undefined)
-      ?? personalFallback(field)
-      ?? '',
-    );
-  };
 
   const saveEdit = async () => {
     if (savingEdit) return;
@@ -717,8 +710,12 @@ export default function ProfileScreen() {
           }
         />
       ) : null}
+      <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />
+        }
         // The profile now scrolls to the physical bottom under the floating
         // navigation, but its last section can still clear the pill on scroll.
         contentContainerStyle={[
@@ -762,9 +759,8 @@ export default function ProfileScreen() {
             {profileTab === 'personal' ? (
               <PersonalTabContent
                 user={currentUser}
-                onEditCore={() => openEdit('personal')}
-                onEditField={openPersonalField}
-                onEditMetro={() => openEdit('metro')}
+                onEditEmail={() => setContactSheet('email')}
+                onEditPhone={() => setContactSheet('phone')}
               />
             ) : null}
 
@@ -1038,6 +1034,7 @@ export default function ProfileScreen() {
         <View style={{ height: 8 }} />
       </ScrollView>
       </OnboardingTarget>
+      </JTPullRefresh>
 
       {/* Photo source picker */}
       {showPhotoSource ? (
@@ -1082,6 +1079,9 @@ export default function ProfileScreen() {
           onClose={() => setShowRatings(false)}
         />
       ) : null}
+
+      <EmailSheet visible={contactSheet === 'email'} onClose={() => setContactSheet(null)} />
+      <PhoneSheet visible={contactSheet === 'phone'} onClose={() => setContactSheet(null)} />
 
       {/* Edit modal */}
       <Modal statusBarTranslucent navigationBarTranslucent visible={!!editSection || !!personalField} animationType="slide" transparent>
@@ -1321,15 +1321,23 @@ export default function ProfileScreen() {
       {/* Notifications modal */}
       <Modal statusBarTranslucent navigationBarTranslucent visible={showNotifications} transparent animationType="slide" onRequestClose={() => setShowNotifications(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowNotifications(false)}>
-          <Animated.View style={[styles.modalSheet, notifSwipe.animStyle]} onStartShouldSetResponder={() => true}>
+          <Animated.View style={[styles.notifSheet, notifSwipe.animStyle]} onStartShouldSetResponder={() => true}>
+            {/* Шторка в стиле JT (макет settings-help): ручка 44×5, плитка с
+                иконкой, заголовок Unbounded, крестик 40×40. */}
             <View {...notifSwipe.panHandlers}>
-              <SheetHandle />
-              <Text style={styles.modalTitle}>Уведомления</Text>
+              <View style={styles.notifGrab} />
+              <View style={styles.notifHead}>
+                <View style={styles.notifTile}><Ionicons name="notifications-outline" size={rs(22)} color={JT.ink} /></View>
+                <Text style={styles.notifTitle}>Уведомления</Text>
+                <TouchableOpacity style={styles.notifClose} onPress={() => setShowNotifications(false)} accessibilityRole="button" accessibilityLabel="Закрыть">
+                  <Ionicons name="close" size={rs(20)} color={JT.ink} />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={{ alignItems: 'center', paddingVertical: 48, gap: 12 }}>
-              <Ionicons name="notifications-outline" size={56} color={Colors.textMuted} />
-              <Text style={{ fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary }}>Уведомлений пока нет</Text>
-              <Text style={{ fontSize: rf(13), color: Colors.textMuted, textAlign: 'center' }}>
+            <View style={styles.notifEmpty}>
+              <View style={styles.notifBell}><Ionicons name="notifications" size={rs(32)} color={JT.ink} /></View>
+              <Text style={styles.notifEmptyTitle}>Уведомлений пока нет</Text>
+              <Text style={styles.notifEmptyText}>
                 Здесь будут появляться уведомления и новости от приложения
               </Text>
             </View>
@@ -1625,6 +1633,29 @@ const styles = StyleSheet.create({
   modalSheet: { backgroundColor: Colors.bg, borderTopLeftRadius: rs(24), borderTopRightRadius: rs(24), padding: rs(24), paddingBottom: rs(40), gap: rs(12) },
   handle: { width: rs(36), height: rs(4), backgroundColor: Colors.inputBorder, borderRadius: rs(2), alignSelf: 'center', marginBottom: rs(8) },
   modalTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
+  notifSheet: {
+    backgroundColor: JT.surface, borderTopLeftRadius: rs(28), borderTopRightRadius: rs(28),
+    borderWidth: 2, borderBottomWidth: 0, borderColor: JT.ink,
+    paddingHorizontal: rs(20), paddingTop: rs(10), paddingBottom: rs(44),
+  },
+  notifGrab: { width: 44, height: 5, borderRadius: 3, backgroundColor: JT.stack2, alignSelf: 'center', marginBottom: rs(14) },
+  notifHead: { flexDirection: 'row', alignItems: 'center', gap: rs(12) },
+  notifTile: { width: rs(40), height: rs(40), borderRadius: rs(12), backgroundColor: JT.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  notifTitle: { flex: 1, fontFamily: JT_FONT.head, fontSize: rf(20), color: JT.ink },
+  notifClose: {
+    width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: JT.borderSoft,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: JT.surface,
+  },
+  notifEmpty: { alignItems: 'center', paddingTop: rs(36), paddingBottom: rs(12), paddingHorizontal: rs(12) },
+  notifBell: {
+    width: rs(76), height: rs(76), borderRadius: rs(38), backgroundColor: JT.accentSoft,
+    borderWidth: 2, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center', marginBottom: rs(18),
+  },
+  notifEmptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), color: JT.ink, textAlign: 'center' },
+  notifEmptyText: {
+    marginTop: rs(8), fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(22),
+    color: JT.textSecondary, textAlign: 'center',
+  },
   metroRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10), padding: rs(14), borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(12) },
   dot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
   metroVal: { flex: 1, fontSize: rf(15), fontWeight: '600', color: Colors.textPrimary },

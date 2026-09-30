@@ -141,6 +141,15 @@ export const MailIcon = icon([
   { type: 'path', d: 'M3 7l9 6 9-6' },
 ]);
 
+export const BookmarkIcon = icon([
+  { type: 'path', d: 'M6 4h12v17l-6-4-6 4z' },
+]);
+
+export const SearchIcon = icon([
+  { type: 'circle', cx: 11, cy: 11, r: 6.5 },
+  { type: 'path', d: 'M16 16l4.5 4.5' },
+]);
+
 export const PhoneIcon = icon([
   { type: 'path', d: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z' },
 ]);

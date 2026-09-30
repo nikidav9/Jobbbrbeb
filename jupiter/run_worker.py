@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 import signal
@@ -20,13 +21,17 @@ import socket
 import sys
 import time
 
-from agent import CandidateProfile, JupiterAgent
+from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
 from handoff import HandoffStore
 from remote_tasks import RemoteTaskQueue
 from site_compat import AUDITED_SITES, live_ready, recon_ok_hosts
 from submission import ReceiptStore
-from tasks import ApplicationTask
+from tasks import ApplicationTask, SubmissionAuthorizationRevoked
+import browser_engine
+import browser_limits
+import browser_planner
 import worker
+import yandex_gpt
 
 log = logging.getLogger("jupiter")
 
@@ -37,6 +42,12 @@ DELEGATED_CONSENTS = (
 # Раз в столько секунд воркер снимает с паузы отклики на сайты, которые
 # разведка успела подключить (SITE_NOT_VERIFIED → queued).
 REQUEUE_EVERY = 3600
+# Сторож браузерной задачи: столько секунд на один заход агента (открыть и
+# заполнить; ожидание капчи человеком сюда не входит — у него свой срок).
+DEFAULT_TASK_TIMEOUT_S = 240.0
+# Итоги, которые остаются в силе, даже если сторож успел сработать: отклик
+# уже ушёл (или мог уйти) — повтор недопустим.
+_KEEP_AFTER_TIMEOUT = ("submitted", "duplicate", "submission_unknown")
 
 _stop = False
 
@@ -52,6 +63,61 @@ def _require_env(name: str) -> str:
     if not val:
         sys.exit(f"переменная {name} не задана")
     return val
+
+
+def _memory_allows_browser() -> bool:
+    """Хватит ли свободной памяти ещё на один Chromium.
+
+    Не max_parallel_browsers(): она нарочно не опускается ниже 1. Здесь та же
+    формула без этого пола. Без /proc (не Linux) память не проверяем.
+    """
+    if not os.path.exists("/proc/meminfo"):
+        return True
+    free = browser_limits.read_available_mb() - browser_limits.RESERVE_MB
+    return free // browser_limits.PER_BROWSER_MB >= 1
+
+
+def _timeout_result(timeout: float) -> AgentResult:
+    # NAVIGATION_FAILED — в worker.RETRYABLE_CODES: задача уйдёт на повтор,
+    # а если отправка уже началась, worker сам переведёт её в SUBMISSION_UNKNOWN.
+    reason = f"Jupiter task timed out after {timeout:.0f}s, browser killed"
+    return AgentResult(
+        "failed", reason,
+        [{"action": "failed", "reason": reason, "reason_code": Reason.NAVIGATION_FAILED}],
+        Reason.NAVIGATION_FAILED,
+    )
+
+
+def _watch_agent(agent: JupiterAgent, engine: object, timeout: float) -> None:
+    """Каждый заход агента (run, resume, продолжение после капчи) — под
+    сторожем browser_limits. Сработал сторож — итог «временная ошибка»."""
+    depth = [0]  # run() зовёт _run_from_page() — сторож только на внешнем вызове
+
+    def wrap(method):
+        def guarded(*args, **kwargs):
+            if depth[0]:
+                return method(*args, **kwargs)
+            depth[0] += 1
+            watchdog = browser_limits.watch_engine(engine, timeout)
+            result = None
+            try:
+                with watchdog:
+                    result = method(*args, **kwargs)
+            except SubmissionAuthorizationRevoked:
+                raise
+            except Exception:
+                if not watchdog.fired:
+                    raise
+            finally:
+                depth[0] -= 1
+            if watchdog.fired and getattr(result, "status", None) not in _KEEP_AFTER_TIMEOUT:
+                log.warning("задача превысила %.0f с, браузер убит сторожем", timeout)
+                return _timeout_result(timeout)
+            return result
+        return guarded
+
+    for name in ("run", "resume", "_run_from_page"):
+        setattr(agent, name, wrap(getattr(agent, name)))
 
 
 def main() -> int:
@@ -79,12 +145,40 @@ def main() -> int:
     handoffs_path = os.environ.get("JUPITER_HANDOFFS", "").strip() or None
     lease_seconds = int(os.environ.get("JUPITER_LEASE_SECONDS", "300"))
 
+    engine_kind = os.environ.get("JUPITER_ENGINE", "http").strip().lower() or "http"
+    if engine_kind not in ("http", "browser"):
+        sys.exit(f"JUPITER_ENGINE должен быть http или browser, а не {engine_kind!r}")
+    chromium_path = os.environ.get("JUPITER_CHROMIUM", "").strip() or None
+    if engine_kind == "browser" and browser_engine.sync_playwright is None:
+        # Ошибка при старте, а не посреди задачи.
+        sys.exit(
+            "JUPITER_ENGINE=browser требует Playwright: pip install playwright "
+            "(и Chromium — JUPITER_CHROMIUM или playwright install chromium)"
+        )
+    task_timeout = float(os.environ.get("JUPITER_TASK_TIMEOUT_S", "").strip()
+                         or DEFAULT_TASK_TIMEOUT_S)
+    if engine_kind == "browser":
+        # До первого Chromium: по метке потом видно, чьи процессы добивать.
+        browser_limits.mark_owner()
+    # Браузерные движки, созданные фабрикой; закрываются после каждой задачи.
+    open_engines: list = []
+
+    # YandexGPT — только если на сервере есть ключ. Видит подписи полей и
+    # названия ключей профиля, но не данные кандидата (browser_planner).
+    llm = yandex_gpt.YandexGPT.from_env()
+    agent_extra: dict = {}
+    if llm is not None and "field_mapper" in inspect.signature(JupiterAgent).parameters:
+        def field_mapper(fields: list[dict], allowed_keys: list[str]) -> dict[str, str]:
+            return browser_planner.suggest_field_keys(llm, fields, allowed_keys)
+        agent_extra["field_mapper"] = field_mapper
+
     receipts = ReceiptStore(receipts_path)
     handoffs = HandoffStore(handoffs_path)
 
     queue = RemoteTaskQueue(
         base_url, admin_token, _require_env("EXPO_PUBLIC_APP_SECRET"),
         lease_seconds=lease_seconds,
+        engine=engine_kind,
     )
 
     def profile_factory(task: ApplicationTask) -> CandidateProfile:
@@ -102,21 +196,61 @@ def main() -> int:
         return profile
 
     def agent_factory(task: ApplicationTask) -> JupiterAgent:
-        return JupiterAgent(
+        dry_run = not bool(task.submission_authorized_at)
+        engine = None
+        if engine_kind == "browser":
+            engine = browser_engine.JupiterBrowserEngine(
+                allowed_hosts=set(),
+                read_only=dry_run,
+                executable_path=chromium_path,
+            )
+            open_engines.append(engine)
+        agent = JupiterAgent(
             allowed_hosts=set(),
             max_steps=max_steps,
-            dry_run=not bool(task.submission_authorized_at),
+            dry_run=dry_run,
             receipts=receipts,
             handoffs=handoffs,
+            **({"engine": engine} if engine is not None else {}),
+            **agent_extra,
         )
+        if engine is not None:
+            _watch_agent(agent, engine, task_timeout)
+        return agent
+
+    def close_engines() -> None:
+        # Одна браузерная задача за раз: после каждой Chromium закрывается.
+        while open_engines:
+            engine = open_engines.pop()
+            try:
+                engine.close()
+            except Exception:
+                log.exception("не удалось закрыть браузерный движок")
+        if engine_kind == "browser":
+            # Остатки Chromium (зависший close, убитый сторожем браузер) —
+            # только наши процессы, чужие браузеры не трогаются.
+            killed = browser_limits.kill_stray_chromium()
+            if killed:
+                log.warning("добиты оставшиеся процессы Chromium: %d", len(killed))
 
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT, _on_signal)
 
     log.info(
-        "воркер %s запущен, сервер %s, режим по согласию заявки",
-        worker_id, base_url,
+        "воркер %s запущен, сервер %s, движок %s, режим по согласию заявки",
+        worker_id, base_url, engine_kind,
     )
+    # Только да/нет: ключ и каталог YandexGPT в журнал не пишем.
+    log.info("YandexGPT для незнакомых полей: %s", (
+        "да" if agent_extra else
+        "ключ есть, но агент ещё не принимает field_mapper" if llm is not None else "нет"
+    ))
+    if engine_kind == "browser":
+        log.info(
+            "память: свободно %d МБ, браузеров параллельно до %d, таймаут задачи %.0f с",
+            browser_limits.read_available_mb(), browser_limits.max_parallel_browsers(),
+            task_timeout,
+        )
 
     last_requeue = 0.0
     while not _stop:
@@ -131,6 +265,11 @@ def main() -> int:
                     log.info("сняты с паузы %d откликов на подключённых сайтах", moved)
             except Exception:
                 log.exception("не удалось снять с паузы отклики SITE_NOT_VERIFIED")
+        if engine_kind == "browser" and not _memory_allows_browser():
+            log.warning("мало свободной памяти для Chromium, задачу не беру, жду %d сек",
+                        poll_interval)
+            time.sleep(poll_interval)
+            continue
         try:
             result = worker.run_once(
                 queue, profile_factory, agent_factory, worker_id,
@@ -140,6 +279,8 @@ def main() -> int:
             log.exception("ошибка в run_once")
             time.sleep(poll_interval)
             continue
+        finally:
+            close_engines()
 
         if result is None:
             log.debug("очередь пуста, жду %d сек", poll_interval)

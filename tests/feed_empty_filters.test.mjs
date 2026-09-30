@@ -14,7 +14,8 @@ test('пустой экран при фильтрах сам сбрасывае�
   assert.ok(empty.length > 0, 'пустое состояние ленты не найдено');
   assert.match(empty, /permFiltersActive \? \(/);
   assert.match(empty, /testID="empty-reset-filters"/);
-  assert.match(empty, /onPress=\{\(\) => applyFilters\(EMPTY_FEED_FILTERS\)\}/);
+  // Сброс снимает и фильтры, и поиск «Вакансия или стек».
+  assert.match(empty, /onPress=\{\(\) => \{ applyFilters\(EMPTY_FEED_FILTERS\); setSearchText\(''\); setSearchQuery\(''\); \}\}/);
 });
 
 test('«изменить фильтры» из пустого экрана убрано — полоса чипов уже на экране', () => {
@@ -35,12 +36,22 @@ test('подпись «Всего N» прячется у пустой недо�
   assert.match(beforeEmpty, /\(swTop \|\| careerLoading\) \? \(/);
 });
 
-test('шторка и сброс применяют фильтры одной функцией', () => {
-  assert.match(src, /onApply=\{applyFilters\}/);
+test('фильтры — отдельные экраны, а не шторка поверх ленты (макет «JT-filters»)', () => {
+  assert.doesNotMatch(src, /<FilterSheet\b|<AllFiltersSheet\b/);
+  assert.match(src, /router\.push\(\{ pathname: `\/filters\/\$\{kind\}`, params: \{ from: 'feed' \} \}\)/);
+  for (const screen of ['index', 'spec', 'format', 'salary', 'level', 'posted']) {
+    assert.ok(fs.existsSync(path.resolve(import.meta.dirname, `../app/filters/${screen}.tsx`)), screen);
+  }
 });
 
-test('в списке компаний только те, чьи вакансии колода может показать', () => {
-  const memo = src.slice(src.indexOf('const ownCompanyCounts = useMemo'), src.indexOf('const permCompanyOptions = useMemo'));
-  assert.match(memo, /sectionOfPerm\(v\.workType\) === 'it'/);
-  assert.match(memo, /!permSwiped\.has\(v\.id\)/);
+test('у «Грейда» и «Даты публикации» свои экраны, как у остальных фильтров (решение владельца)', () => {
+  for (const screen of ['level', 'posted']) {
+    assert.ok(fs.existsSync(path.resolve(import.meta.dirname, `../app/filters/${screen}.tsx`)), screen);
+  }
+  const open = src.slice(src.indexOf('const openFilterSheet = '), src.indexOf('const openAllFilters = '));
+  assert.doesNotMatch(open, /openAllFilters\(/);
+});
+
+test('фильтра по компании больше нет (решение владельца)', () => {
+  assert.doesNotMatch(src, /FILTER_CHIP_KINDS: FilterSheetKind\[\] = \[[^\]]*'company'/);
 });

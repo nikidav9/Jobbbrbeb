@@ -9,8 +9,8 @@ import SplashLoader, { useLoadingPercent, bootElapsed, SPLASH_MIN_MS } from '@/c
 
 // Тот же минимум, что и у стартового экрана — чтобы анимация докрутилась
 const MIN_SHOW_MS = SPLASH_MIN_MS;
-const MAX_SHOW_MS = 3200;  // dissolve even if data is still loading
-const FADE_MS = 450;
+const MAX_SHOW_MS = SPLASH_MIN_MS + 1600;  // уходим, даже если данные ещё едут
+const FADE_MS = 700;  // плавный уход после ~5 с заставки
 
 export default function EntryTransition() {
   const app = useApp();
@@ -79,7 +79,7 @@ export default function EntryTransition() {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FF6B1A',
+    backgroundColor: '#F5EFE6',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 999,

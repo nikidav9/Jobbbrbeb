@@ -378,6 +378,56 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0))
 
+    def test_food_order_is_not_an_application(self):
+        # Хлеб Насущный (разведка 29.09): заказ доставки спрашивает имя и
+        # телефон — агент брал его за анкету.
+        page = parse(
+            '<form action="/order" method="post">'
+            '<input name="Имя" required>'
+            '<input type="tel" name="Phone" required>'
+            '<select name="Количество персон"><option>1</option></select>'
+            '<label><input type="radio" name="Вариант доставки:" required> Ко времени</label>'
+            '<button type="submit">Заказать</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_ask_a_question_is_not_an_application(self):
+        # Айтуби, Oxygen: «Задайте вопрос» / «Тема заявки» на странице вакансии.
+        for question in ("Задайте вопрос", "Тема заявки"):
+            page = parse(
+                '<form action="/feedback" method="post">'
+                '<label>Ваше имя <input name="name" required></label>'
+                '<label>Телефон <input name="tel" required></label>'
+                f'<label>{question} <textarea name="message" required></textarea></label>'
+                '<button type="submit">Отправить</button>'
+                "</form>"
+            )
+            self.assertFalse(is_application_form(page, 0), question)
+
+    def test_question_field_next_to_resume_is_still_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Резюме <input type="file" name="cv"></label>'
+            '<label>Ваш вопрос <textarea name="q"></textarea></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_courier_vacancy_mentioning_delivery_is_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Вакансия <input name="vacancy" value="Курьер доставки"></label>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_vacancy_filter_is_not_an_application_form(self):
         page = parse(
             '<form action="/search" method="get">'
@@ -458,6 +508,43 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0, require_contact=False))
 
+    def test_mts_vacancy_subscription_with_selects_is_not_an_application_form(self):
+        # job.mts.ru (разведка браузером 29.09.2026): «Укажи свой e-mail» и
+        # выбор города с направлением — подписка на вакансии. Select'ы делали
+        # её «формой с вопросами», и агент принимал её за анкету.
+        page = parse(
+            '<form action="/api/vacancy-alerts" method="post">'
+            '<label>Город <select name="city"><option value="msk">Москва</option>'
+            '<option value="spb">Санкт-Петербург</option></select></label>'
+            '<label>Направление <select name="direction">'
+            '<option value="it">IT</option><option value="sales">Продажи</option>'
+            "</select></label>"
+            '<input type="email" name="email" placeholder="Укажи свой e-mail">'
+            '<button type="submit">Подписаться на новые вакансии</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+        self.assertFalse(is_application_form(page, 0, require_contact=False))
+
+    def test_email_only_submit_application_form_stays_an_application(self):
+        page = parse(
+            '<form action="/jobs/42/apply" method="post">'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<button type="submit">Submit application</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_email_and_select_application_without_subscription_words_stays(self):
+        page = parse(
+            '<form action="/jobs/42/apply" method="post">'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<label>Город <select name="city"><option value="msk">Москва</option></select></label>'
+            '<button type="submit">Submit application</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_dry_run_does_not_report_ready_to_submit_for_a_subscription_only_page(self):
         # Тот самый случай из разведки: единственная форма на странице —
         # подписка с полем email name=subscribe. Анкеты нет вовсе, и агент
@@ -523,6 +610,67 @@ class FieldMeaning(unittest.TestCase):
         self.assertIsNone(self.key_for('<label>Должность <input name="work_history[position]"></label>'))
         self.assertIsNone(self.key_for('<label>Компания <input name="experiences[company]"></label>'))
 
+
+
+class BareNameField(unittest.TestCase):
+    """Поле имени без подписи: разведка 29.09 — Верный, ЭФКО, Русагро, KDL,
+    Major Express, АМ Винотеки стояли на «нет данных» при заполненном профиле."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров",
+        "email": "i@example.com", "phone": "+79990000000",
+    })
+
+    def key_for(self, form_html: str, name: str) -> str | None:
+        page = parse(f"<form method=post>{form_html}<button>Отправить</button></form>")
+        return choose_key(control(page, name), self.PROFILE, "https://employer.example/job", page)
+
+    def test_bare_name_alone_is_the_whole_name(self):
+        for name in ("name", "userNamePop", "modal_name", "form_text_12"):
+            html = f'<input name="{name}" id="4-popup-form-name"><input name="phone">'
+            self.assertEqual(self.key_for(html, name), "full_name", name)
+
+    def test_fio_token_in_internal_name(self):
+        self.assertEqual(self.key_for('<input name="responce-fio"><input name="email">', "responce-fio"), "full_name")
+
+    def test_bare_name_next_to_surname_is_first_name_only(self):
+        html = '<input name="name"><input name="surname"><input name="phone">'
+        self.assertEqual(self.key_for(html, "name"), "first_name")
+        html = '<input name="name"><label>Фамилия <input name="f2"></label>'
+        self.assertEqual(self.key_for(html, "name"), "first_name")
+
+    def test_other_names_are_not_the_candidate(self):
+        for name in ("company_name", "vacancy-name", "fileName", "org_name"):
+            self.assertIsNone(self.key_for(f'<input name="{name}"><input name="phone">', name), name)
+
+    def test_label_still_wins(self):
+        # Подпись «Город» при name="name" — это город, не имя.
+        profile = CandidateProfile(values={**self.PROFILE.values, "city": "Москва"})
+        page = parse('<form method=post><label>Город <input name="name"></label><button>Ок</button></form>')
+        self.assertEqual(choose_key(control(page, "name"), profile, "https://e.example/", page), "city")
+
+
+class UnknownConsentStopsAsConsent(unittest.TestCase):
+    """Обязательная галочка «agree» без подписи — не «заполните профиль», а
+    согласие, которое ставит сам человек (разведка 29.09: IBS, Targem, Bell)."""
+
+    def test_unnamed_required_consent_is_consent_required(self):
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = parse(
+            '<form method=post><input name="phone" type="tel" value="+7999">'
+            '<input type="checkbox" name="agree" required>'
+            '<button>Откликнуться</button></form>'
+        )
+        self.assertEqual(agent._missing_reason_code(page, 0), "CONSENT_REQUIRED")
+
+    def test_ordinary_required_checkbox_is_still_missing_data(self):
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = parse(
+            '<form method=post><input name="phone" type="tel" value="+7999">'
+            '<label><input type="checkbox" name="trips" required> Готов к командировкам</label>'
+            '<button>Откликнуться</button></form>'
+        )
+        self.assertNotEqual(agent._missing_reason_code(page, 0), "CONSENT_REQUIRED")
 
 
 class ValueFitsField(unittest.TestCase):
@@ -652,6 +800,74 @@ class KonturLessons(unittest.TestCase):
         box = control(page, "relocation")
         self.agent.fill_control(page, box, profile, [])
         self.assertTrue(box.checked)
+
+
+class BrowserSurveyRegressions(unittest.TestCase):
+    """Ошибки, найденные прогоном браузерного агента на живых сайтах 29.09.2026."""
+
+    def test_email_only_newsletter_form_is_not_an_application(self):
+        page = parse(
+            '<form action="/subscribe" method="post">'
+            '<input type="email" name="EMAIL" placeholder="Ваш e-mail">'
+            '<label><input type="checkbox" name="agree"> Согласен получать рассылку</label>'
+            '<button type="submit">Подписаться</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_email_only_form_with_newsletter_words_only_around_it_is_not_an_application(self):
+        page = parse(
+            '<h3>Подпишитесь на рассылку</h3>'
+            '<form action="/api/sub" method="post">'
+            '<input type="email" name="email">'
+            '<label><input type="checkbox" name="terms"> Я даю согласие на обработку персональных данных</label>'
+            '<button type="submit">OK</button>'
+            "</form>"
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_email_only_apply_form_without_newsletter_words_stays_an_application(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<input type="email" name="email" required>'
+            '<button type="submit">Откликнуться</button>'
+            "</form>"
+        )
+        self.assertTrue(is_application_form(page, 0))
+
+    def test_vacancy_slug_distinguishes_neighbour_vacancies(self):
+        from agent import _vacancy_slug
+        self.assertEqual(_vacancy_slug("https://mish.design/vacancies/118-marketing-lead"), "118-marketing-lead")
+        self.assertEqual(_vacancy_slug("https://mish.design/vacancies/118-marketing-lead/apply"), "118-marketing-lead")
+        self.assertEqual(_vacancy_slug("https://x.ru/jobs/apply?id=1"), "")
+        self.assertEqual(_vacancy_slug("https://x.ru/about"), "")
+
+    def test_agent_does_not_walk_to_a_neighbour_vacancy(self):
+        engine = JupiterWebEngine({"127.0.0.1"}, read_only=True)
+        agent = JupiterAgent({"127.0.0.1"}, engine=engine, dry_run=True)
+        agent._root_url = "http://127.0.0.1/vacancies/118-marketing-lead"
+        page = engine.load_html(
+            '<h1>Marketing lead</h1>'
+            '<a href="/vacancies/121-sistemnyj-analitik">Вакансия: системный аналитик</a>'
+            '<a href="/vacancies/118-marketing-lead/apply">Откликнуться</a>',
+            agent._root_url,
+        )
+        best = agent._best_navigation(page, {page.url})
+        self.assertEqual(best[0], "http://127.0.0.1/vacancies/118-marketing-lead/apply")
+        page2 = engine.load_html(
+            '<a href="/vacancies/121-sistemnyj-analitik">Откликнуться на похожую</a>', agent._root_url)
+        self.assertIsNone(agent._best_navigation(page2, {page2.url}))
+
+    def test_dry_run_without_any_filled_field_is_not_ready(self):
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        result = agent.run_loaded_html(
+            '<form action="/apply" method="post">'
+            '<input type="email" name="email" value="prefilled@example.com" required>'
+            '<button type="submit">Отправить отклик</button></form>',
+            "http://127.0.0.1/apply",
+            CandidateProfile(values={"phone": "+79990000000"}),
+        )
+        self.assertNotEqual(result.status, "ready_to_submit", result.as_dict())
 
 
 if __name__ == "__main__":

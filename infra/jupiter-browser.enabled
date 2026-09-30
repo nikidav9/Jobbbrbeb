@@ -1,0 +1,6 @@
+# Переключатель браузерного воркера Jupiter (JUPITER_ENGINE=browser).
+# Файл есть — infra/bootstrap.sh на сервере ставит флаг
+# /etc/jobtoo/jupiter-browser.enabled, Playwright и Chromium, запускает
+# jt-jupiter-browser и браузерную разведку, серверу PHP даёт
+# JUPITER_BROWSER_ENABLED=1. Удалить файл — всё это выключается при выкладке.
+# Включён по решению владельца 29.09.2026.
