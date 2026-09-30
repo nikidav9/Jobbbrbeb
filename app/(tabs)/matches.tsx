@@ -20,7 +20,7 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterMailUnread,
+  jupiterMailUnread, jupiterQuestions, type JupiterQuestion,
 } from '@/services/db';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
@@ -359,6 +359,9 @@ function WorkerMatches() {
   const [search, setSearch] = useState('');
   const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
   const [jupiterError, setJupiterError] = useState(false);
+  // Вопросы от работодателей (решение владельца 30.09.2026): ответ — и
+  // отклик уйдёт сам. Сбой или старый сервер — просто без карточки.
+  const [questions, setQuestions] = useState<JupiterQuestion[]>([]);
   // Непрочитанные письма на почте JobToo для откликов — точка на конверте.
   const [unreadMail, setUnreadMail] = useState(0);
   const tabBarHeight = useBottomTabBarHeight();
@@ -369,6 +372,7 @@ function WorkerMatches() {
     try {
       setJupiterApps(await jupiterMyApplications(currentUserId));
       setJupiterError(false);
+      jupiterQuestions(currentUserId).then(setQuestions, () => setQuestions([]));
     } catch (error) {
       console.warn('[jupiterMyApplications]', error);
       setJupiterError(true);
@@ -495,6 +499,10 @@ function WorkerMatches() {
     // Капча ждёт человека не дольше 10 минут — её первой.
     if (captchaApp) {
       router.push({ pathname: '/jupiter-captcha', params: { id: captchaApp.id } });
+      return;
+    }
+    if (questions.length > 0) {
+      router.push('/jupiter-questions');
       return;
     }
     if (Platform.OS !== 'web' && manualJupiterApps.length > 0) {
@@ -662,6 +670,29 @@ function WorkerMatches() {
               );
             })}
           </ScrollView>
+
+          {questions.length > 0 && (filter === 'all' || filter === 'needs') ? (
+            <View style={[wm.bannerWrap, { marginBottom: rs(12) }]}>
+              <View style={[wm.bannerShadow, { backgroundColor: JT.ink }]} pointerEvents="none" />
+              <TouchableOpacity style={wm.qCard} activeOpacity={0.85}
+                onPress={() => router.push('/jupiter-questions')} testID="questions-card"
+                accessibilityLabel={`${questions.length} ${plural(questions.length, 'вопрос', 'вопроса', 'вопросов')} от работодателей`}>
+                <View style={wm.qIcon}><Ionicons name="chatbubbles-outline" size={rs(24)} color={JT.ink} /></View>
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                  <Text style={wm.qTitle}>
+                    {questions.length} {plural(questions.length, 'вопрос', 'вопроса', 'вопросов')} от работодателей
+                  </Text>
+                  <Text style={wm.qSub} numberOfLines={2}>
+                    {(() => {
+                      const apps = new Set(questions.map(q => q.application_id)).size;
+                      return `Ответьте — и ${apps} ${plural(apps, 'отклик уйдёт', 'отклика уйдут', 'откликов уйдут')} сами`;
+                    })()}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={rs(20)} color={JT.ink} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {needs.length > 0 && (filter === 'all' || filter === 'needs') ? (
             <View style={wm.bannerWrap}>
@@ -836,6 +867,16 @@ const wm = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   bannerTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.surface },
+  qCard: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14),
+    borderRadius: rs(22), backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+  },
+  qIcon: {
+    width: rs(48), height: rs(48), borderRadius: rs(14), backgroundColor: JT.surface,
+    borderWidth: 2, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center',
+  },
+  qTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink },
+  qSub: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink },
   bannerSub: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.borderSoft },
   bannerMarks: { flexDirection: 'row', alignItems: 'center' },
   bannerMark: {
