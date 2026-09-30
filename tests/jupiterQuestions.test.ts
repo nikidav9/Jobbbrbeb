@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dateAfter, usableDraft } from '../services/jupiterQuestions.ts';
+import { dateAfter, questionTitle, usableDraft } from '../services/jupiterQuestions.ts';
 import { routeForNotification } from '../services/notificationRoute.ts';
 
 test('дата выхода — в формате, который Юпитер вводит и в поле даты, и в текст', () => {
@@ -21,4 +21,12 @@ test('черновик списка — только если такой вар�
 test('пуш о вопросах ведёт в очередь вопросов, об ушедшем отклике — в «Отклики»', () => {
   assert.deepEqual(routeForNotification('jupiter_questions'), { pathname: '/jupiter-questions' });
   assert.deepEqual(routeForNotification('jupiter_sent'), { pathname: '/(tabs)/matches' });
+});
+
+test('заголовок вопроса: понятный текст от YandexGPT, иначе подпись без крика заглавными', () => {
+  assert.equal(questionTitle({ question: 'КОМПАНИЯ', display: 'В какой компании вы сейчас работаете?' }),
+    'В какой компании вы сейчас работаете?');
+  assert.equal(questionTitle({ question: 'КОМПАНИЯ' }), 'Компания');
+  assert.equal(questionTitle({ question: 'Ваш Telegram', display: null }), 'Ваш Telegram');
+  assert.equal(questionTitle({ question: 'HR', display: '' }), 'HR');
 });
