@@ -191,6 +191,18 @@ check('jupiterMarkManualSubmitted не трогает чужие заявки и
 check('jupiterMarkManualSubmitted помечает заявку MANUAL_WEBVIEW',
     str_contains($markManual, "'reason_code' => 'MANUAL_WEBVIEW'")
     && str_contains($markManual, "'state' => 'submitted'"));
+check('«Я отправил сам» доступно и для «Скорее всего, ушёл»',
+    str_contains($markManual, "'ready_to_submit', 'submission_unknown']"));
+
+$requeue = substr($db, strpos($db, "case 'jupiterRequeueLive':"), 3200);
+check('«Попробовать ещё раз» — только «Не ушёл» (failed), не «Скорее всего, ушёл»',
+    str_contains($requeue, "|| \$existing['state'] === 'failed'")
+    && !str_contains($requeue, "=== 'submission_unknown'"));
+check('повтор «Не ушёл» — только при серверной отправке',
+    str_contains($requeue, "\$existing['state'] === 'failed' && !jt_jupiter_server_sends(\$uidArg)"));
+$liveStatus = substr($db, strpos($db, "case 'jupiterLiveStatus':"), 800);
+check('jupiterLiveStatus сообщает, отправляет ли Юпитер с сервера',
+    str_contains($liveStatus, "'serverSends' => jt_jupiter_server_sends("));
 
 // ── Защита таблицы ──────────────────────────────────────────────────────────
 check('таблица закрыта построчной защитой',
