@@ -3146,6 +3146,40 @@ function jt_questions_release(string $uid, string $appId): void {
     }
 }
 
+// Пуш о вопросах — не чаще раза в сутки (решение владельца 30.09.2026): вопросы
+// копятся пачками по мере того, как Юпитер обходит сайты, а будить человека
+// каждой анкетой — верный путь к выключенным уведомлениям. Очередь и так видна
+// карточкой на «Откликах».
+function jt_questions_notify(string $uid): void {
+    if ($uid === '') return;
+    $recent = sb_select('jm_notifications', [
+        'user_id' => 'eq.' . $uid, 'type' => 'eq.jupiter_questions',
+        'created_at' => 'gte.' . gmdate('Y-m-d\TH:i:s\Z', time() - 86400),
+    ], 'id');
+    if ($recent) return;
+    $open = sb_select('jm_jupiter_questions', [
+        'user_id' => 'eq.' . $uid, 'status' => 'eq.open',
+    ], 'question_key');
+    $n = count(array_unique(array_column($open, 'question_key')));
+    if ($n === 0) return;
+    notify_user($uid, '❓ Вопросы от работодателей',
+        'Работодатели задали вопросов: ' . $n . '. Ответьте — и отклики уйдут сами',
+        'jupiter_questions');
+}
+
+// Отклик ушёл после ответов человека — замыкаем обещание «ответьте, и уйдёт
+// само». Обычные отклики Юпитера так не объявляются: их десятки.
+function jt_questions_sent_notify(string $uid, string $appId, string $company): void {
+    if ($uid === '') return;
+    $answered = sb_select('jm_jupiter_questions', [
+        'application_id' => 'eq.' . $appId, 'user_id' => 'eq.' . $uid, 'status' => 'eq.answered',
+    ], 'id');
+    if (!$answered) return;
+    $company = trim($company) !== '' ? trim($company) : 'компанию';
+    notify_user($uid, '✅ Отклик в ' . $company . ' ушёл',
+        'Юпитер подставил ваши ответы и отправил отклик', 'jupiter_sent');
+}
+
 function sb_in_list(array $values): string
 {
     $quoted = [];
@@ -7607,7 +7641,7 @@ try {
                 jt_respond(['error' => 'Unknown state'], 400); exit;
             }
             $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
-                'lease_owner,user_id,engine,submission_authorized_at');
+                'lease_owner,user_id,engine,submission_authorized_at,company');
             if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
                 jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
             }
@@ -7642,6 +7676,12 @@ try {
                 $patch['verified_at'] = now_iso();
             }
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
+            // Пуш не должен ронять итог воркера: заявка уже записана.
+            try {
+                $owner = (string)($task['user_id'] ?? '');
+                if (($patch['reason_code'] ?? '') === 'NEEDS_ANSWERS') jt_questions_notify($owner);
+                if ($state === 'submitted') jt_questions_sent_notify($owner, $id, (string)($task['company'] ?? ''));
+            } catch (Throwable $e) { /* см. выше */ }
             jt_respond(['ok' => true]); exit;
         }
 
