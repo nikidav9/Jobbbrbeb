@@ -3374,6 +3374,61 @@ function jt_jupiter_escalate_to_browser(string $id, array $task, string $state, 
     return true;
 }
 
+/**
+ * Пилот «сервер отправляет сам» (решение владельца 01.10.2026): вместо
+ * «Нужны вы» с PHONE_FILL свайп ставит отклик в очередь серверного Юпитера,
+ * SPA вроде МТС уходит на браузерный движок. Сначала — только аккаунты из
+ * этого списка (коды приглашения, их и так раздают ссылкой), чтобы увидеть
+ * настоящие отправки до включения всем. В PWA встроенного браузера нет, и
+ * без сервера такой отклик не уходил никогда.
+ */
+const JT_SERVER_SEND_PILOT = ['SMYFERND']; // владелец (01.10.2026)
+
+function jt_jupiter_server_sends(string $uid): bool
+{
+    if ($uid === '' || !JT_SERVER_SEND_PILOT) return false;
+    $user = sb_single('jm_users', ['id' => 'eq.' . $uid],
+        'jupiter_live_enabled_at,is_blocked,referral_code');
+    return $user && !empty($user['jupiter_live_enabled_at']) && empty($user['is_blocked'])
+        && in_array(strtoupper(trim((string)($user['referral_code'] ?? ''))), JT_SERVER_SEND_PILOT, true)
+        && jt_browser_delegated($uid);
+}
+
+/** Патч заявки «в очередь сервера на отправку». */
+function jt_jupiter_server_patch(string $uid, string $vacancyUrl, string $now): array
+{
+    $patch = ['state' => 'queued', 'reason_code' => null, 'not_before' => null,
+        'submission_authorized_at' => $now, 'updated_at' => $now];
+    if (jt_employer_delegated($uid)) $patch += jt_employer_consent_fields($vacancyUrl, $now);
+    return $patch;
+}
+
+/**
+ * Отклики пилота, отложенные «на телефон» (PHONE_FILL), — серверу. Зовётся
+ * при открытии «Откликов»: застрявшие отклики уходят без отдельной миграции.
+ */
+function jt_jupiter_phone_fill_to_server(string $uid): void
+{
+    try {
+        if (!jt_jupiter_server_sends($uid)) return;
+        $rows = sb_select('jm_jupiter_applications', [
+            'user_id' => 'eq.' . $uid, 'state' => 'eq.action_required',
+            'reason_code' => 'eq.PHONE_FILL', 'lease_owner' => 'is.null', 'limit' => '200',
+        ], 'id,vacancy_url');
+        $now = now_iso();
+        foreach ($rows as $row) {
+            sb_update('jm_jupiter_applications', [
+                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uid,
+                'state' => 'eq.action_required', 'reason_code' => 'eq.PHONE_FILL',
+                'lease_owner' => 'is.null',
+            ], jt_jupiter_server_patch($uid, (string)$row['vacancy_url'], $now));
+        }
+        if ($rows) rt_touch('jm_jupiter_applications');
+    } catch (Throwable $e) {
+        // Список откликов важнее: перевод повторится при следующем открытии.
+    }
+}
+
 /** Поля заявки, которыми фиксируется поручение на согласия работодателю. */
 function jt_employer_consent_fields(string $vacancyUrl, string $now): array
 {
@@ -7451,11 +7506,19 @@ try {
             // jupiterRequeueSiteReady, ни jt_employer_requeue_consent — они
             // смотрят на свои причины. Поэтому без разрешения на автоотправку
             // и без поручения на согласия: их даёт сам человек на сайте.
+            // Исключение — пилот JT_SERVER_SEND_PILOT: там отправляет сервер.
+            $serverSends = jt_jupiter_server_sends($uidArg);
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) {
+                if ($serverSends) {
+                    jt_jupiter_phone_fill_to_server($uidArg);
+                    $existing = sb_single('jm_jupiter_applications', [
+                        'id' => 'eq.' . $existing['id'], 'user_id' => 'eq.' . $uidArg,
+                    ]) ?: $existing;
+                }
                 $data = $existing;
                 break;
             }
@@ -7471,6 +7534,7 @@ try {
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
+            if ($serverSends) $row = jt_jupiter_server_patch($uidArg, $url, now_iso()) + $row;
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.
@@ -7498,6 +7562,7 @@ try {
         }
 
         case 'jupiterMyApplications': {
+            jt_jupiter_phone_fill_to_server((string)($args[0] ?? ''));
             $data = sb_select(
                 'jm_jupiter_applications',
                 ['user_id' => 'eq.' . (string)($args[0] ?? '')],
