@@ -150,6 +150,7 @@ const ACTION_REASONS: Record<string, string> = {
   CONSENT_REQUIRED: 'Работодатель просит согласие на обработку данных',
   UNSUPPORTED_SCRIPT: 'Сайту нужен браузер — отправьте сами',
   MISSING_PROFILE_FIELD: 'На сайте есть вопрос, ответа на который нет в профиле',
+  NEEDS_ANSWERS: 'Работодатель задал вопросы — ответьте, и отклик уйдёт сам',
   LIVE_AUTHORIZATION_REVOKED: 'Автоотклик выключен — отклик не отправлен',
 };
 

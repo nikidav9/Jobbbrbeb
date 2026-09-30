@@ -95,6 +95,7 @@ def apply_result(
             None,
         ),
         summary=fill_summary(result.trajectory),
+        questions=result.questions or None,
     )
     return state
 

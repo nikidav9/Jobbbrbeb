@@ -190,10 +190,15 @@ class RemoteTaskQueue:
         resume_token: str | None = None,
         receipt_key: str | None = None,
         summary: dict | None = None,
+        questions: list | None = None,
     ) -> None:
         if self._worker is None:
             return
         extra: dict[str, Any] = {}
+        # Вопросы работодателя человеку (NEEDS_ANSWERS) — сервер ставит их в
+        # очередь «Вопросы от работодателей» и вернёт отклик, когда ответят.
+        if questions:
+            extra["questions"] = questions
         # Сводка заполнения ложится в checkpoint: триггер базы переносит её в
         # историю отклика (jm_jupiter_events), когда меняется состояние.
         if summary is not None:
@@ -234,11 +239,16 @@ class RemoteTaskQueue:
 
     # ── профиль кандидата ──────────────────────────────────────────────────
 
-    def fetch_profile(self, user_id: str) -> CandidateProfile:
-        """Собрать профиль кандидата из данных в базе."""
+    def fetch_profile(self, user_id: str, application_id: str | None = None) -> CandidateProfile:
+        """Собрать профиль кандидата из данных в базе.
+
+        С application_id сервер отдаёт и ответы человека на вопросы
+        работодателя: банк фактов и ответы именно для этого отклика.
+        """
         if not user_id or not user_id.strip():
             raise ValueError("candidate_id пуст — задача без привязки к пользователю")
-        raw = self._call("jupiterGetCandidateProfile", [user_id])
+        args = [user_id, application_id] if application_id else [user_id]
+        raw = self._call("jupiterGetCandidateProfile", args)
         if not isinstance(raw, dict) or raw.get("error"):
             raise RemoteError(0, raw.get("error", "empty profile") if isinstance(raw, dict) else "bad response")
         values: dict[str, Any] = {}
@@ -273,6 +283,12 @@ class RemoteTaskQueue:
             for key, val in rd.items():
                 if key not in values and val not in (None, ""):
                     values[key] = val
+        answers = raw.get("answers")
+        if isinstance(answers, dict) and answers:
+            values["answers"] = {
+                str(k): v for k, v in answers.items()
+                if isinstance(k, str) and k.startswith("q:") and v not in (None, "")
+            }
         # JobToo's own consent does not accept a third party's legal terms.
         for key in ("consent", "personal_data_consent", "privacy_consent", "terms_consent"):
             values.pop(key, None)

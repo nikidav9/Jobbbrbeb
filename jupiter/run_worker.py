@@ -182,7 +182,7 @@ def main() -> int:
     )
 
     def profile_factory(task: ApplicationTask) -> CandidateProfile:
-        profile = queue.fetch_profile(task.candidate_id)
+        profile = queue.fetch_profile(task.candidate_id, task.id)
         # Third-party legal consent is intentionally scoped to one application
         # row. It is never copied from JobToo's own consent or reused globally.
         # Поручение (Соглашение п. 8.3) покрывает только то, без чего отклик

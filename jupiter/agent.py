@@ -20,6 +20,7 @@ from engine import (
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from questions import answer_for, extract_questions, is_special, question_text
 from candidate import (
     FieldClass, classify_key, consent_kinds, decide_consent, looks_like_consent, provenance_for,
 )
@@ -252,6 +253,8 @@ class Reason:
     SUBMIT_FAILED = "SUBMIT_FAILED"
     VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
     MAX_STEPS = "MAX_STEPS"
+    # Анкете нужны ответы человека — вопросы ушли в приложение (questions.py).
+    NEEDS_ANSWERS = "NEEDS_ANSWERS"
     MULTI_STEP_DRY_RUN_LIMIT = "MULTI_STEP_DRY_RUN_LIMIT"
     STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
     DUPLICATE_BLOCKED = "DUPLICATE_BLOCKED"
@@ -289,6 +292,8 @@ class AgentResult:
     trajectory: list[dict[str, Any]] = field(default_factory=list)
     reason_code: str | None = None
     human_action: dict[str, Any] | None = None
+    # Вопросы работодателя человеку (NEEDS_ANSWERS): questions.Question.as_dict.
+    questions: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -296,6 +301,7 @@ class AgentResult:
             "reason": self.reason,
             "reason_code": self.reason_code,
             "human_action": self.human_action,
+            "questions": self.questions,
             "trajectory": self.trajectory,
         }
 
@@ -920,6 +926,59 @@ class JupiterAgent:
                 "provenance": {"field_class": FieldClass.FACT, "source": "SITE_DEFAULT"},
             })
 
+    def _fill_from_answer(
+        self,
+        page: PageState,
+        control: ControlState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+    ) -> bool:
+        """Подставить ответ, который человек дал на этот вопрос в приложении.
+
+        Только его собственный ответ (questions.answer_for); вариант списка —
+        лишь тот, что есть на сайте, иначе поле остаётся вопросом.
+        """
+        answers = profile.values.get("answers")
+        if not isinstance(answers, dict) or not answers:
+            return False
+        text = question_text(control, self.descriptor)
+        value = answer_for(text, answers)
+        if value is None or is_special(text):
+            return False
+        wanted = str(value).strip()
+        if control.tag == "select":
+            match = next((o for o in control.options if not o.disabled and wanted and (
+                wanted == str(o.value) or normalize(wanted) == normalize(o.label))), None)
+            if match is None:
+                return False
+            control.value = match.value
+            for option in control.options:
+                option.selected = option is match
+        elif control.type == "radio":
+            group = [p for p in page.controls
+                     if p.type == "radio" and p.name == control.name and p.form_index == control.form_index]
+            if any(p.checked for p in group):
+                return False
+            match = next((p for p in group if wanted == str(p.value)
+                          or normalize(wanted) == normalize(p.label or p.text)), None)
+            if match is None:
+                return False
+            for peer in group:
+                peer.checked = peer is match
+        elif control.type == "checkbox":
+            if looks_like_consent(text) or not _is_yes(value):
+                return False
+            control.checked = True
+        else:
+            control.value = _date_for_html(wanted) if control.type == "date" else wanted
+        trajectory.append({
+            "action": "check" if control.type in {"checkbox", "radio"} else "fill",
+            "field": text,
+            "key": "answer",
+            "provenance": {"field_class": FieldClass.FACT, "source": "USER_ANSWER"},
+        })
+        return True
+
     def fill_control(
         self,
         page: PageState,
@@ -993,6 +1052,10 @@ class JupiterAgent:
             return False
 
         key = key_override or choose_key(control, profile, page.url, page)
+        if (not key or profile.values.get(key) in (None, "")) and self._fill_from_answer(
+            page, control, profile, trajectory,
+        ):
+            return True
         if not key:
             if control.tag == "select" and control.required:
                 real_options = [
@@ -2165,6 +2228,22 @@ class JupiterAgent:
             if has_application_form or filled_any:
                 if missing:
                     code = self._missing_reason_code(page, target_form_index)
+                    if code != Reason.CONSENT_REQUIRED:
+                        questions, special = extract_questions(
+                            page, target_form_index, self.descriptor,
+                        )
+                        # Особые категории — только на сайте, самим человеком.
+                        if questions and not special:
+                            result = self._handoff(
+                                page, trajectory,
+                                action_type=HumanAction.UNKNOWN_FIELD,
+                                prompt="Employer questions need the candidate's answers: "
+                                       + "; ".join(q.text for q in questions),
+                                reason_code=Reason.NEEDS_ANSWERS,
+                                field_name=questions[0].text,
+                            )
+                            result.questions = [q.as_dict() for q in questions]
+                            return result
                     action_type = {
                         Reason.CONSENT_REQUIRED: HumanAction.CONSENT,
                         Reason.UNKNOWN_REQUIRED_QUESTION:
