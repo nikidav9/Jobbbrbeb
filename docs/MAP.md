@@ -492,9 +492,11 @@ react-native-web не умеет `RefreshControl`, поэтому на сайт�
   главная: `router.back()` там молчит, и человек застревал. Свою логику
   (шаг регистрации, закрыть письмо, выбор линии метро) передают в `onPress`.
 - Своих стрелок на экранах нет — сторож `tests/back_button.test.mjs`.
-- **Вопросы «да/нет» — только `confirmAsync`** (`services/confirm.ts`): на
-  телефоне системный Alert, на вебе своё окно `components/ui/ConfirmHost.tsx`
-  (смонтировано в `app/_layout.tsx`). `Alert.alert` в react-native-web —
+- **Вопросы «да/нет» — только `confirmAsync`** (`services/confirm.ts`): своё
+  окно `components/ui/ConfirmHost.tsx` → `ConfirmDialog` в стиле JT (кремовая
+  карточка, контур, жёсткая тень, кнопки столбиком) на всех поверхностях с
+  01.10.2026, смонтировано в `app/_layout.tsx`; системный Alert — только пока
+  окно не смонтировано. `Alert.alert` в react-native-web —
   пустышка: «Удалить резюме» и «Удалить переписку» на сайте молча не работали.
   Сторож — `tests/confirm_web.test.mjs`. Кнопка «Удалить всех кроме админа»
   из `app/admin.tsx` убрана 27.09 — сторож следит, чтобы не вернулась.
