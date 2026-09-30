@@ -285,9 +285,19 @@ def _pick(options: list[dict], wanted: str) -> int | None:
 
 
 def _shows_choice(page, sel: str, text: str) -> bool:
+    # Кнопка-стрелка Headless UI (job.mts.ru, 01.10.2026) пустая: выбор виден
+    # в соседнем поле role=combobox того же виджета — смотрим и туда.
     shown = page.evaluate(
         """s => { const w = document.querySelector(s); if (!w) return null;
-          return (w.tagName === 'INPUT' ? w.value : w.textContent) || ''; }""",
+          let t = (w.tagName === 'INPUT' ? w.value : w.textContent) || '';
+          if (w.tagName !== 'INPUT') {
+            let box = w.parentElement;
+            for (let i = 0; i < 4 && box; i++, box = box.parentElement) {
+              const inp = box.querySelector('input[role=combobox]');
+              if (inp) { t += ' ' + (inp.value || ''); break; }
+            }
+          }
+          return t; }""",
         sel,
     )
     if shown is None:

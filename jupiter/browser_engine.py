@@ -729,11 +729,20 @@ class JupiterBrowserEngine:
                         loc.evaluate(UNCHECK_JS)
                 elif control.type in {"checkbox", "radio"}:
                     if loc.is_checked() != control.checked:
-                        loc.set_checked(control.checked, force=True)
+                        try:
+                            loc.set_checked(control.checked, force=True)
+                        except PlaywrightError:
+                            # Настоящий флажок спрятан за край экрана, видна
+                            # нарисованная рамка (job.mts.ru, 01.10.2026) —
+                            # Playwright его не кликает. Клик средствами самой
+                            # страницы шлёт те же click/change, что и мышь.
+                            loc.evaluate("el => el.click()")
+                            if loc.is_checked() != control.checked:
+                                raise
                 elif control.tag == "select" and loc.get_attribute("data-jt-cs") is not None:
                     chosen = next((o.label for o in control.options if o.selected and o.value), "")
                     if chosen and not apply_custom_select(self._tab, control.dom_ref, chosen):
-                        raise EngineTransportError(
+                        raise EngineError(
                             f"Не выбран вариант {chosen!r} в списке {control.label or control.name!r}")
                 elif control.tag == "select":
                     values = control.selected_values
@@ -751,7 +760,10 @@ class JupiterBrowserEngine:
                             fill_masked(self._tab, loc, control.value)
                         loc.evaluate(AFTER_FILL_JS)
             except PlaywrightError as exc:
-                raise EngineTransportError(
+                # До клика «Отправить» — отклик точно не ушёл. Обычная ошибка,
+                # а не обрыв после отправки: иначе агент пишет «исход
+                # неизвестен» и больше не пробует (МТС, 01.10.2026).
+                raise EngineError(
                     f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"
                 ) from exc
 

@@ -151,6 +151,33 @@ class CustomControlsTest(unittest.TestCase):
         self.assertEqual(self.page.locator("#grade").inner_text(), "Не выбран")
         self.assertEqual(self.page.locator("#portal").count(), 0)
 
+    def test_apply_headless_combobox_via_arrow_button(self):
+        # job.mts.ru (01.10.2026): Headless UI — поле role=combobox и рядом
+        # пустая кнопка-стрелка aria-haspopup=listbox. Выбор виден в поле, а
+        # не в кнопке; раньше Юпитер считал, что город не выбрался, и
+        # прерывал отправку ещё до нажатия «Отправить».
+        self.page.set_content("""<!doctype html><meta charset="utf-8">
+<div role="group"><label>Город</label>
+<div class="h-combobox"><input id="cityinput" role="combobox" placeholder="Не выбран" value="">
+<button id="arrow" type="button" aria-haspopup="listbox" aria-label="Город"><svg></svg></button></div></div>
+<script>
+const inp = document.getElementById('cityinput'), btn = document.getElementById('arrow');
+btn.addEventListener('click', () => {
+  if (document.getElementById('opts')) { document.getElementById('opts').remove(); return; }
+  const ul = document.createElement('ul'); ul.id = 'opts'; ul.setAttribute('role', 'listbox');
+  for (const t of ['Москва', 'Санкт-Петербург']) {
+    const li = document.createElement('li'); li.setAttribute('role', 'option'); li.textContent = t;
+    li.addEventListener('click', () => { inp.value = t; ul.remove(); });
+    ul.appendChild(li);
+  }
+  btn.parentElement.appendChild(ul);
+});
+</script>""")
+        discover_custom_selects(self.page)
+        self.page.evaluate("document.querySelectorAll('[data-jt-cs]').forEach(e => e.setAttribute('data-jt-ref', e.id))")
+        self.assertTrue(apply_custom_select(self.page, "arrow", "Москва"))
+        self.assertEqual(self.page.locator("#cityinput").input_value(), "Москва")
+
     def test_phone_mask_with_country_code(self):
         loc = self.page.locator("#phone")
         self.assertTrue(fill_masked(self.page, loc, "+7 999 123-45-67"))
