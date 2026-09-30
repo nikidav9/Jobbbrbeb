@@ -181,11 +181,16 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("РУСАЛ", ("rusal.ru",), ("career.enplusrusal.ru",)),
     SiteProfile(
         "Додо Пицца",
-        ("rabotavdodo.ru",),
+        # 30.09.2026: вакансии переехали на dodoteam.ru, анкета уходит в API
+        # job-site-backend.dodo-ai-platform.io; даты рождения в новой форме нет.
+        ("rabotavdodo.ru", "dodoteam.ru"),
+        ("job-site-backend.dodo-ai-platform.io",),
         field_overrides={
             "name": "first_name",
             "lastname": "last_name",
             "date": "birth_date",
+            "about_yourself": "cover_letter",
+            "resume_link": "resume_url",
         },
     ),
     SiteProfile("Вкусно — и точка", ("rabotaitochka.ru",)),
@@ -311,7 +316,23 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     # Разведка 29.09: раздел вакансий уводит на свой же карьерный домен.
     SiteProfile("SUNLIGHT", ("job.sunlight.net",), ("rabota.sunlight.net",)),
     SiteProfile("Тануки", ("job.tanuki.ru",), ("tanukifamily.ru", "www.tanukifamily.ru")),
-    SiteProfile("Спортс", ("sports.ru",), ("careers.sports.ru",)),
+    SiteProfile("Спортс", ("sports.ru", "careers.sports.ru"), ("forms.tildaapi.com",)),
+    # Поле userFull по подписи — «Фамилия», а имя поля обещает ФИО (30.09).
+    SiteProfile(
+        "Читай-город",
+        ("rabota.chitai-gorod.ru",),
+        field_overrides={
+            "userfull": "last_name",
+            "username": "first_name",
+            "userjobtitle": "desired_role",
+            "userphone": "phone",
+            "useremail": "email",
+            "userbirthday": "birth_date",
+            "usercountry": "citizenship",
+            "usercity": "city",
+            "userfilelink": "resume_url",
+        },
+    ),
 )
 
 
@@ -475,7 +496,7 @@ AUDITED_SOURCE_URLS: dict[str, str] = {
     "Норникель": "https://career.nornickel.ru/vacancies/",
     "ФосАгро": "https://www.phosagro.ru/career-education/vacancies/",
     "РУСАЛ": "https://www.rusal.ru/career/vacancies/",
-    "Додо Пицца": "https://rabotavdodo.ru/",
+    "Додо Пицца": "https://dodoteam.ru/vacancy/",
     "Вкусно — и точка": "https://rabotaitochka.ru/",
     "ROSTIC'S": "https://rostics.ru/ru/career",
     "Burger King Россия": "https://burgerkingrus.ru/rabota",
