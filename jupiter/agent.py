@@ -875,6 +875,39 @@ class JupiterAgent:
             "provenance": {"field_class": FieldClass.CONSENT, "source": "SITE_DEFAULT"},
         })
 
+    def drop_preselected_radios(
+        self,
+        page: PageState,
+        form_index: int,
+        trajectory: list[dict[str, Any]],
+    ) -> None:
+        """Снять выбор, который сайт сделал за человека в группе радиокнопок.
+
+        У Полюса «Готовность к вахтовому методу» заранее стоит на «Готов» — и
+        ушла бы ответом кандидата, которого он не давал. Снятую группу дальше
+        заполняет профиль как обычно; не знает ответа — обязательный вопрос
+        уходит человеку, необязательный не отправляется вовсе. Группу из
+        одной кнопки не трогаем: выбора там нет, это фиксированное значение.
+        """
+        groups: dict[str, list[ControlState]] = {}
+        for control in page.controls:
+            if control.form_index == form_index and control.type == "radio" and control.name:
+                groups.setdefault(control.name, []).append(control)
+        for name, group in groups.items():
+            if len(group) < 2:
+                continue
+            chosen = [c for c in group if c.checked and not c.disabled and not c.readonly]
+            if not chosen:
+                continue
+            for control in chosen:
+                control.checked = False
+            trajectory.append({
+                "action": "radio_default_cleared",
+                "field": name,
+                "value": chosen[0].value,
+                "provenance": {"field_class": FieldClass.FACT, "source": "SITE_DEFAULT"},
+            })
+
     def fill_control(
         self,
         page: PageState,
@@ -2075,6 +2108,7 @@ class JupiterAgent:
                     "step_index": flow.step_index,
                     "score": self._form_score(page, target_form_index, profile),
                 })
+                self.drop_preselected_radios(page, target_form_index, trajectory)
                 for control in page.controls:
                     if control.form_index != target_form_index:
                         continue

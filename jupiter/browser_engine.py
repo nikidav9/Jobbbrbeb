@@ -278,6 +278,7 @@ DIRECT_VALUE_JS = r"""
 # После обычного ввода: change и blur. fill() шлёт только input, а часть
 # форм проверяет поле и снимает ошибку по change/blur.
 AFTER_FILL_JS = "el => { el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); }"
+UNCHECK_JS = "el => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); }"
 
 # Элементы с обработчиками клика (addEventListener) — видны только через
 # DevTools-API getEventListeners (CDP, includeCommandLineAPI). Помечаем их
@@ -705,6 +706,11 @@ class JupiterBrowserEngine:
                     paths = control.file_paths or ([control.file_path] if control.file_path else [])
                     if paths:
                         loc.set_input_files(paths)
+                elif control.type == "radio" and not control.checked:
+                    # Playwright не снимает радиокнопку (set_checked(False)
+                    # падает), а выбор сайта агент снимает намеренно.
+                    if loc.is_checked():
+                        loc.evaluate(UNCHECK_JS)
                 elif control.type in {"checkbox", "radio"}:
                     if loc.is_checked() != control.checked:
                         loc.set_checked(control.checked, force=True)
