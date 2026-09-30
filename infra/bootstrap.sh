@@ -1054,6 +1054,31 @@ if [ -n "${ADMIN_TOKEN_VAL:-}" ] \
   echo "ADMIN_API_TOKEN=$ADMIN_TOKEN_VAL" >> "$SECRETS"
 fi
 
+# Ключ YandexGPT — из yandex_gpt.php (доставляет deploy.php из секретов
+# репозитория) в /etc/jobtoo/yandex-gpt.env, который читают оба воркера
+# Юпитера. Меняется файл — перезапускаем их, иначе ключ подхватится только
+# после следующего падения.
+YGPT_CONF=$( (cd "$REPO/infra" && docker compose exec -T php php -r '
+  $s = @include "/var/www/api/yandex_gpt.php";
+  if (!is_array($s)) exit;
+  printf("%s\n%s\n", $s["api_key"] ?? "", $s["folder_id"] ?? "");') 2>/dev/null || true)
+YGPT_KEY=$(printf '%s' "$YGPT_CONF" | sed -n 1p)
+YGPT_FOLDER=$(printf '%s' "$YGPT_CONF" | sed -n 2p)
+if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then
+  YGPT_NEW=$(printf 'YANDEX_GPT_API_KEY=%s\nYANDEX_GPT_FOLDER_ID=%s\n' "$YGPT_KEY" "$YGPT_FOLDER")
+  if [ "$(cat /etc/jobtoo/yandex-gpt.env 2>/dev/null)" != "$(printf '%s' "$YGPT_NEW")" ]; then
+    mkdir -p /etc/jobtoo
+    ( umask 077; printf '%s' "$YGPT_NEW" > /etc/jobtoo/yandex-gpt.env.new )
+    chown root:root /etc/jobtoo/yandex-gpt.env.new
+    mv -f /etc/jobtoo/yandex-gpt.env.new /etc/jobtoo/yandex-gpt.env
+    for svc in jt-jupiter.service jt-jupiter-browser.service; do
+      systemctl is-active --quiet "$svc" 2>/dev/null && systemctl restart "$svc" >/dev/null 2>&1 || true
+    done
+    say "jupiter" "ключ YandexGPT принят из секретов репозитория, воркеры перезапущены"
+  fi
+fi
+unset YGPT_CONF YGPT_KEY YGPT_FOLDER YGPT_NEW
+
 # Ключи к объектному хранилищу — туда же, в файл переменных: скрипт копий
 # читает именно его. Приезжают они тем же каналом, что и остальные секреты
 # (deploy.php), и лежат в backup_s3.php рядом с прочими.

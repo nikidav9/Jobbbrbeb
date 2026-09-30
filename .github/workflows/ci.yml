@@ -257,6 +257,7 @@ jobs:
           python3 tests/career_full_catalog_test.py
           python3 tests/career_discover_run_test.py
           python3 tests/deploy_webhook_order_test.py
+          python3 tests/yandex_gpt_delivery_test.py
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py
           python3 tests/perm_app_atomicity_test.py

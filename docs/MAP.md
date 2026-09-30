@@ -1389,7 +1389,10 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 `JUPITER_BROWSER_ENABLED=1` для PHP (`infra/docker-compose.yml`), таймер
 браузерной разведки `jt-recon-browser`; состояние —
 `/var/www/html/jupiter-browser-status.json` (наружу — `https://147.45.184.99.sslip.io/jupiter-browser-status.json`, location в `infra/nginx-tls.conf`). YandexGPT — файл
-`/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам. Капча человеку —
+`/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам; ключ приезжает сам
+(01.10.2026): секреты `YANDEX_GPT_API_KEY`/`YANDEX_GPT_FOLDER_ID` → `deploy.php`
+(`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл и перезапускает воркеры;
+проверка — `tests/yandex_gpt_delivery_test.py`. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
