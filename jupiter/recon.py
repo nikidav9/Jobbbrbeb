@@ -326,7 +326,7 @@ def classify(status: str, code: str | None, page: PageState | None, aggregators:
     if application and code in {
         Reason.MISSING_PROFILE_FIELD, Reason.UNKNOWN_REQUIRED_QUESTION,
         Reason.CONSENT_REQUIRED, Reason.VALIDATION_FAILED,
-        Reason.MULTI_STEP_DRY_RUN_LIMIT,
+        Reason.MULTI_STEP_DRY_RUN_LIMIT, Reason.NEEDS_ANSWERS,
     }:
         return "form_unmapped"
     if code == Reason.NAVIGATION_FAILED and page is None:

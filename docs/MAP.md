@@ -1404,6 +1404,19 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 `docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
 анкет из 33 с формой) и список правок движка — `docs/jupiter-browser-survey.md`.
 
+**Вопросы от работодателей** (миграция 137, решение владельца 30.09.2026):
+`jupiterFinish` принимает от воркера `questions` при `action_required`
+(`jt_questions_store`: до 30 вопросов, до 50 вариантов, ключ `q:…`) и кладёт их
+в `jm_jupiter_questions`; банк ответов-фактов — `jm_jupiter_answers`. Человеку
+(`$selfArgFns`): `jupiterQuestions` (открытые вопросы с компанией, черновиком и
+числом ждущих откликов), `jupiterAnswerQuestion` (факт — в банк и во все
+ждущие отклики с тем же вопросом; вариант — только из вариантов сайта),
+`jupiterSkipQuestion` (заполню сам — отклик в «Ждут вас», `MISSING_PROFILE_FIELD`),
+`jupiterAnswers`/`jupiterAnswerDelete`. Все вопросы отклика отвечены —
+`jt_questions_release` возвращает его в `queued`; воркер берёт ответы из
+`jupiterGetCandidateProfile(uid, applicationId).answers`. Проверка —
+`tests/jupiter_questions_test.php`. Экраны — второй срез.
+
 | Файл | Что внутри |
 |---|---|
 | `jupiter/engine.py` | HTTP, cookie, разбор HTML в семантическую модель (`PageState`/`FormState`/`ControlState`), сборка и отправка формы; TLS — системные корни + Минцифры (`ru_trusted_ca.pem`) для всех хостов и AIA-догрузка промежуточного |
@@ -1417,6 +1430,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `jupiter/run_worker.py` | Точка входа: цикл `run_once`, профиль кандидата из базы по `user_id` задачи; `JUPITER_ENGINE=browser` — сторож задачи `browser_limits.watch_engine` (`JUPITER_TASK_TIMEOUT_S`, 240 с; сработал → `NAVIGATION_FAILED`/повтор), проверка памяти перед задачей (~1,6 ГБ свободно), добивание своих Chromium; YandexGPT (`YANDEX_GPT_*` в env) → `field_mapper` агента |
 | `services/jupiterTimeline.ts` | Статус, метка и строка отклика Юпитера. `jupiterVacancyClosed`: сбор погасил вакансию (`vacancy_active=false` из `jupiterMyApplications`), а отклик не ушёл — «Вакансия закрыта работодателем», без «Открыть анкету», не в «Ждут вас» (решение владельца 26.09) |
 | `jupiter/worker.py` | Воркер: берёт задачу и доводит её агентом; боевую задачу на сайт без `live_ready` не исполняет, а паркует с `SITE_NOT_VERIFIED` («Сайт ещё подключаем» в «Откликах») |
+| `jupiter/questions.py` | Вопросы от работодателей (решение владельца 30.09.2026): пустые обязательные поля анкеты — вопросами человеку (`extract_questions`: текст без вариантов списка, тип `text/text_long/choice/yesno/date/number/phone/email/url`, варианты сайта, вид `fact`/`vacancy` по смыслу, при сомнении — `vacancy`); ключ — смысл подписи (`question_key`, `q:` + sha1); особые категории 152-ФЗ (здоровье, судимость…) и согласия вопросами не бывают — такой отклик человек заполняет на сайте сам. Агент останавливается с `NEEDS_ANSWERS` и `AgentResult.questions`; при повторном заходе подставляет ответ человека (`_fill_from_answer`: вариант списка — только существующий на сайте). Тест — `jupiter/test_questions.py` |
 | `jupiter/handoff.py` | Просьба к человеку и состояние возврата: токен, куки, адрес шага |
 | `jupiter/candidate.py` | Классы знаний о кандидате, разбор согласий, provenance |
 | `jupiter/submission.py` | Доказательства отправки, отпечаток отклика и журнал поданных |
