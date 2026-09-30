@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { dateAfter, usableDraft } from '../services/jupiterQuestions.ts';
+import { routeForNotification } from '../services/notificationRoute.ts';
 
 test('дата выхода — в формате, который Юпитер вводит и в поле даты, и в текст', () => {
   const from = new Date(2026, 8, 30);
@@ -15,4 +16,9 @@ test('черновик списка — только если такой вар�
   assert.equal(usableDraft({ type: 'choice', options, draft: 'Из рекламы' }), '');
   assert.equal(usableDraft({ type: 'text', options: [], draft: '  @nikita ' }), '@nikita');
   assert.equal(usableDraft({ type: 'text', options: [], draft: null }), '');
+});
+
+test('пуш о вопросах ведёт в очередь вопросов, об ушедшем отклике — в «Отклики»', () => {
+  assert.deepEqual(routeForNotification('jupiter_questions'), { pathname: '/jupiter-questions' });
+  assert.deepEqual(routeForNotification('jupiter_sent'), { pathname: '/(tabs)/matches' });
 });

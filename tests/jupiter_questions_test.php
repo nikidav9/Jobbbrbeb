@@ -68,6 +68,16 @@ check('в очередь — только отклик, ждавший отве�
     && str_contains($db, "'state' => 'queued', 'reason_code' => null"));
 check('пропуск отдаёт отклик человеку', str_contains($db, "['reason_code' => 'MISSING_PROFILE_FIELD'"));
 
+// ── Пуши ────────────────────────────────────────────────────────────────────
+$notifyQ = substr($db, strpos($db, 'function jt_questions_notify('), 1200);
+$notifySent = substr($db, strpos($db, 'function jt_questions_sent_notify('), 900);
+check('пуш о вопросах — из итога воркера', str_contains($finish, 'jt_questions_notify($owner)'));
+check('пуш о вопросах — не чаще раза в сутки',
+    str_contains($notifyQ, "'type' => 'eq.jupiter_questions'") && str_contains($notifyQ, 'time() - 86400'));
+check('пуш об ушедшем — только если человек отвечал',
+    str_contains($finish, 'jt_questions_sent_notify(') && str_contains($notifySent, "'status' => 'eq.answered'"));
+check('пуш не роняет итог воркера', str_contains($finish, 'catch (Throwable $e)'));
+
 // ── База ────────────────────────────────────────────────────────────────────
 foreach (['jm_jupiter_questions', 'jm_jupiter_answers'] as $t) {
     check("$t под RLS", str_contains($sql, "alter table public.$t enable row level security")

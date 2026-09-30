@@ -1424,7 +1424,14 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 длинный текст), черновик прежнего ответа, «Пропустить — заполню на сайте сам».
 `app/jupiter-answers.tsx` — «Мои ответы для работодателей» из настроек профиля,
 с удалением. Чистая логика — `services/jupiterQuestions.ts` (`dateAfter`,
-`usableDraft`), тест — `tests/jupiterQuestions.test.ts`. Пуш — третий срез.
+`usableDraft`), тест — `tests/jupiterQuestions.test.ts`.
+
+Пуши (из `jupiterFinish`, ошибка пуша итог не роняет): `jt_questions_notify` —
+«❓ Вопросы от работодателей», тип `jupiter_questions`, не чаще раза в сутки
+(ищет такой же колокольчик за 24 ч), ведёт на `/jupiter-questions`;
+`jt_questions_sent_notify` — «✅ Отклик в <компания> ушёл», тип `jupiter_sent`,
+только для отклика, где человек отвечал на вопросы, ведёт в «Отклики».
+Маршруты — `services/notificationRoute.ts`.
 
 | Файл | Что внутри |
 |---|---|
