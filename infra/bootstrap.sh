@@ -487,6 +487,10 @@ fi
 JB_FLAG=/etc/jobtoo/jupiter-browser.enabled
 JB_BASE=/opt/jupiter-browser
 JB_POLICY=/etc/chromium/policies/managed/jobtoo-ru-ca.json
+# Playwright 1.63 ставит под именем chromium Chrome for Testing, а он читает
+# политики из своей папки, не из /etc/chromium (проверено 30.09 на той же
+# сборке 153.0.8010.12: только отсюда УЦ Минцифры и начинает работать).
+JB_POLICY_CFT=/etc/opt/chrome_for_testing/policies/managed/jobtoo-ru-ca.json
 YGPT_ENV=/etc/jobtoo/yandex-gpt.env
 mkdir -p /etc/jobtoo
 # Ключ YandexGPT: только root. Файла нет — воркеры идут без YandexGPT.
@@ -565,13 +569,16 @@ SVCEOF
 
   if [ -f "$JB_FLAG" ]; then
     # Доверие к УЦ Минцифры: политика Chromium, не флаг командной строки.
-    mkdir -p "$(dirname "$JB_POLICY")"
     if python3 "$REPO/infra/jupiter-browser-ca-policy.py" "$REPO/jupiter/ru_trusted_ca.pem" \
-         > /tmp/jt-ru-ca.json 2>/dev/null \
-       && ! cmp -s /tmp/jt-ru-ca.json "$JB_POLICY"; then
-      install -m 644 -o root -g root /tmp/jt-ru-ca.json "$JB_POLICY"
-      JB_CHANGED=1
-      say "jupiter-browser" "политика Chromium с УЦ Минцифры обновлена"
+         > /tmp/jt-ru-ca.json 2>/dev/null; then
+      for jb_pol in "$JB_POLICY" "$JB_POLICY_CFT"; do
+        if ! cmp -s /tmp/jt-ru-ca.json "$jb_pol"; then
+          mkdir -p "$(dirname "$jb_pol")"
+          install -m 644 -o root -g root /tmp/jt-ru-ca.json "$jb_pol"
+          JB_CHANGED=1
+          say "jupiter-browser" "политика с УЦ Минцифры обновлена: $jb_pol"
+        fi
+      done
     fi
     rm -f /tmp/jt-ru-ca.json
     systemctl enable jt-jupiter-browser.service >/dev/null 2>&1 || true
@@ -594,7 +601,9 @@ SVCEOF
       say "jupiter-browser" "служба остановлена"
     fi
     systemctl disable jt-jupiter-browser.service >/dev/null 2>&1 || true
-    [ -f "$JB_POLICY" ] && rm -f "$JB_POLICY" && say "jupiter-browser" "политика Chromium снята"
+    for jb_pol in "$JB_POLICY" "$JB_POLICY_CFT"; do
+      [ -f "$jb_pol" ] && rm -f "$jb_pol" && say "jupiter-browser" "политика снята: $jb_pol"
+    done
   fi
 
   # Браузерная разведка анкет (infra/recon-browser-run.sh) — раз в сутки после
@@ -684,7 +693,7 @@ SVCEOF
     "$(date -Is)" "$([ -f "$JB_FLAG" ] && echo true || echo false)" \
     "$(jb_prop ActiveState)/$(jb_prop SubState)" "$(jb_prop NRestarts)" \
     "$(jb_prop ActiveEnterTimestamp)" "$(cat "$JB_BASE/.installed" 2>/dev/null || echo нет)" \
-    "$JB_PHP" "$([ -f "$JB_POLICY" ] && echo true || echo false)" \
+    "$JB_PHP" "$([ -f "$JB_POLICY" ] && [ -f "$JB_POLICY_CFT" ] && echo true || echo false)" \
     "$([ -f "$YGPT_ENV" ] && echo true || echo false)" \
     "$(systemctl is-active jt-jupiter.service 2>/dev/null || true)" \
     > /var/www/html/jupiter-browser-status.json.tmp 2>/dev/null \
