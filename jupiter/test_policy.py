@@ -176,5 +176,33 @@ class StartHostVariants(unittest.TestCase):
         self.assertNotIn("evil-famil.ru", hosts)
 
 
+
+class SiteFieldMaps30(unittest.TestCase):
+    """Карты полей по разбору анкет 30.09: имя поля на сайте → ключ профиля."""
+
+    def test_maps(self):
+        from site_compat import field_override
+        cases = [
+            ("https://www.invitro.ru/moscow/about/vacancy/", "form_text_221", "last_name"),
+            ("https://whoosh-bike.ru/job_form_hq", "ФИО", "full_name"),
+            ("https://geropharm-career.ru/", "link", "resume_url"),
+            ("https://www.naumen.ru/ajax/resume.php?ref=7896", "form_text_2159", "first_name"),
+            ("https://www.moysklad.ru/company/careers/vacancy/x/", "form_text_6329", "resume_url"),
+            ("https://tk-kit.ru/vacancy/front-office/11", "VacancyCallback[body]", "cover_letter"),
+            ("https://www.karma-group.ru/forms/vacancies/form.php?ID=28", "FIO", "full_name"),
+            ("https://www.rendez-vous.ru/vacancy/1-x/", "JobResponses[resume_link]", "resume_url"),
+            ("https://prideinbrains.com/Java-developer/", "wb_input_5", "cover_letter"),
+            ("https://karavaevi.ru/vakansii/", "PROPERTY[29][0]", "phone"),
+            ("https://crosstech.ru/vacancies/a/b/", "MESSAGE_LINK", "resume_url"),
+            ("https://globus-ltd.ru/vacancies?id=33", "userMessage", "cover_letter"),
+            ("https://www.efko.ru/career/", "message", "cover_letter"),
+        ]
+        for url, name, key in cases:
+            self.assertEqual(field_override(url, name), key, (url, name))
+
+    def test_generic_name_is_mapped_only_on_its_own_site(self):
+        from site_compat import field_override
+        self.assertIsNone(field_override("https://example.ru/job", "message"))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

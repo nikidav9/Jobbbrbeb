@@ -333,6 +333,101 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "userfilelink": "resume_url",
         },
     ),
+    # Карты полей по разбору анкет 30.09. Поля, которых нет в профиле
+    # (вопросы работодателя, тип вакансии из списка), не отображаются: их
+    # заполняет человек. Капча, где она есть, — тоже его.
+    SiteProfile(
+        "Инвитро",
+        ("invitro.ru",),
+        field_overrides={
+            "form_text_221": "last_name", "form_text_222": "first_name",
+            "form_text_223": "patronymic", "form_text_224": "desired_role",
+            "form_text_226": "phone", "form_text_227": "email",
+            "form_text_228": "birth_date", "form_text_229": "citizenship",
+            "form_text_230": "city", "form_text_231": "education",
+        },
+    ),
+    # Tilda: имена полей — русские подписи.
+    SiteProfile(
+        "Whoosh",
+        ("whoosh-bike.ru",),
+        ("forms.tildaapi.com",),
+        field_overrides={
+            "фио": "full_name", "телефон": "phone", "email": "email",
+            "город": "city", "вакансия": "desired_role", "о себе": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Герофарм",
+        ("geropharm.ru", "geropharm-career.ru"),
+        ("forms.tildaapi.com",),
+        field_overrides={"link": "resume_url", "vacancy": "desired_role"},
+    ),
+    SiteProfile(
+        "Наумен",
+        ("naumen.ru",),
+        field_overrides={
+            "form_text_2158": "last_name", "form_text_2159": "first_name",
+            "form_text_2160": "patronymic", "form_text_419": "phone",
+            "form_email_2115": "email", "form_textarea_903": "desired_role",
+            "form_textarea_420": "cover_letter",
+        },
+    ),
+    # Анкета в два шага; на втором — вопросы работодателя, они к человеку.
+    SiteProfile(
+        "МойСклад",
+        ("moysklad.ru",),
+        field_overrides={
+            "form_text_6319": "full_name", "form_text_6320": "phone",
+            "form_email_6321": "email", "form_text_6322": "citizenship",
+            "form_text_6323": "city", "form_text_6329": "resume_url",
+        },
+    ),
+    SiteProfile(
+        "ТК КИТ",
+        ("tk-kit.ru",),
+        field_overrides={
+            "vacancycallback[name]": "full_name", "vacancycallback[phone]": "phone",
+            "vacancycallback[city]": "city", "vacancycallback[email]": "email",
+            "vacancycallback[body]": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Карма Групп",
+        ("karma-group.ru",),
+        field_overrides={
+            "fio": "full_name", "phone": "phone", "email": "email", "text": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Rendez-Vous",
+        ("rendez-vous.ru",),
+        field_overrides={
+            "jobresponses[name]": "full_name", "jobresponses[phone]": "phone",
+            "jobresponses[email]": "email", "jobresponses[resume_link]": "resume_url",
+        },
+    ),
+    # Подписи лежат в скрытых полях с тем же именем; wb_input_4 («Как вы нас
+    # нашли?») скрыт и не заполняется.
+    SiteProfile(
+        "PrideInBrains",
+        ("prideinbrains.com",),
+        field_overrides={
+            "wb_input_0": "full_name", "wb_input_1": "email",
+            "wb_input_3": "city", "wb_input_5": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Братья Караваевы",
+        ("karavaevi.ru",),
+        field_overrides={
+            "property[name][0]": "full_name", "property[29][0]": "phone",
+            "property[30][0]": "email", "property[31]": "desired_role",
+        },
+    ),
+    SiteProfile("Crosstech", ("crosstech.ru",), field_overrides={"message_link": "resume_url"}),
+    SiteProfile("Globus IT", ("globus-ltd.ru",), field_overrides={"usermessage": "cover_letter"}),
+    SiteProfile("ЭФКО", ("efko.ru",), field_overrides={"message": "cover_letter"}),
 )
 
 
