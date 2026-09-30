@@ -32,4 +32,9 @@ $patch = substr($db, (int)strpos($db, 'function jt_jupiter_server_patch('), 500)
 check(str_contains($patch, "'submission_authorized_at' => \$now"), 'разрешение на отправку ставится');
 check(str_contains($patch, 'if (jt_employer_delegated($uid))'), 'согласия — только по поручению');
 
+$mts = substr($db, (int)strpos($db, "'vacancy_url' => 'like.https://job.mts.ru/*'") - 200, 900);
+check(str_contains($mts, "'state' => 'eq.submission_unknown'"), 'возврат МТС — только «исход неизвестен»');
+check(str_contains($mts, "'updated_at' => 'lt.2026-09-30T22:45:00Z'"), 'возврат МТС — только до исправления');
+check(str_contains($mts, "'lease_owner' => 'is.null'"), 'возврат МТС — не взятые воркером');
+
 echo "jupiter server send: OK\n";

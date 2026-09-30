@@ -884,6 +884,44 @@ mkdir -p /opt/jobtoo-php
 printf '[www]\nlisten = 127.0.0.1:9000\n' > /opt/jobtoo-php/zz-listen.conf
 chmod 644 /opt/jobtoo-php/zz-listen.conf
 
+# Разово (решение владельца 01.10.2026): отклики на job.mts.ru, которые до
+# PR #317 браузерный движок останавливал ДО клика «Отправить» (город из
+# списка Headless UI, спрятанный флажок), были записаны как «исход
+# неизвестен» — и повтор запрещён. До МТС они не дошли. Убираем только эти
+# записи, до 22:45 UTC 30.09. Воркеры держат журнал в памяти и при записи
+# вернули бы старое — поэтому стоп, правка, старт. Выполняется до выкладки
+# PHP: вернуть отклики в очередь сервер сможет только после этого.
+RCPT_FIX=/var/lib/jobtoo/receipts-mts-0930.done
+if [ ! -f "$RCPT_FIX" ]; then
+  mkdir -p /var/lib/jobtoo
+  for pair in jt-jupiter-browser.service:/var/lib/jt-jupiter-browser/receipts.json \
+              jt-jupiter.service:/var/lib/jupiter/receipts.json; do
+    svc=${pair%%:*}; file=${pair#*:}
+    [ -f "$file" ] || continue
+    was_active=0
+    systemctl is-active --quiet "$svc" 2>/dev/null && was_active=1
+    [ "$was_active" = 1 ] && systemctl stop "$svc" >/dev/null 2>&1
+    removed=$(python3 - "$file" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+keep = {k: v for k, v in data.items()
+        if not (v.get("status") == "submission_unknown"
+                and "job.mts.ru" in str(v.get("apply_url", ""))
+                and float(v.get("submitted_at") or 0) < 1790808300)}
+if len(keep) != len(data):
+    tmp = path + ".new"
+    json.dump(keep, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    import os; os.replace(tmp, path)
+print(len(data) - len(keep))
+PY
+) || removed="ошибка"
+    [ "$was_active" = 1 ] && systemctl start "$svc" >/dev/null 2>&1
+    say "jupiter" "$svc: снято записей «исход неизвестен» по МТС: $removed"
+  done
+  touch "$RCPT_FIX"
+fi
+
 PROXY=/opt/jobtoo-proxy
 mkdir -p "$PROXY"
 MIGRATIONS_READY=1

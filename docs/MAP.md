@@ -1517,7 +1517,10 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   `queued` с `submission_authorized_at` (`jt_jupiter_server_patch`, согласия —
   только по поручению), SPA уходит на браузерный движок эскалацией; застрявшие
   PHONE_FILL переводятся при открытии «Откликов»
-  (`jt_jupiter_phone_fill_to_server`). Сейчас в списке только владелец;
+  (`jt_jupiter_phone_fill_to_server`; там же разовый возврат откликов МТС,
+  остановленных до #317 как «исход неизвестен», — записи в журнале воркера
+  снимает `infra/bootstrap.sh`, метка `/var/lib/jobtoo/receipts-mts-0930.done`).
+  Сейчас в списке только владелец;
   у остальных поведение прежнее.
   Проверка — `tests/jupiter_server_send_test.php`.
 - **Свайп не ждёт чужой сайт.** Задача кладётся в очередь (`tasks.py`), её

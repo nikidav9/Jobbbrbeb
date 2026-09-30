@@ -3424,6 +3424,25 @@ function jt_jupiter_phone_fill_to_server(string $uid): void
             ], jt_jupiter_server_patch($uid, (string)$row['vacancy_url'], $now));
         }
         if ($rows) rt_touch('jm_jupiter_applications');
+
+        // Разово (решение владельца 01.10.2026): отклики на job.mts.ru, которые
+        // браузерный движок до PR #317 останавливал ДО клика «Отправить», но
+        // записывал как «исход неизвестен». До МТС они не дошли; записи о них
+        // в журнале воркера снимает infra/bootstrap.sh. Отсечка по времени —
+        // новые «неизвестные» так не возвращаются.
+        $stuck = sb_select('jm_jupiter_applications', [
+            'user_id' => 'eq.' . $uid, 'state' => 'eq.submission_unknown',
+            'vacancy_url' => 'like.https://job.mts.ru/*', 'lease_owner' => 'is.null',
+            'updated_at' => 'lt.2026-09-30T22:45:00Z', 'limit' => '20',
+        ], 'id');
+        foreach ($stuck as $row) {
+            sb_update('jm_jupiter_applications', [
+                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uid,
+                'state' => 'eq.submission_unknown', 'lease_owner' => 'is.null',
+            ], ['state' => 'queued', 'reason_code' => null, 'engine' => 'browser',
+                'attempt_count' => 0, 'not_before' => null, 'updated_at' => $now]);
+        }
+        if ($stuck) rt_touch('jm_jupiter_applications');
     } catch (Throwable $e) {
         // Список откликов важнее: перевод повторится при следующем открытии.
     }
