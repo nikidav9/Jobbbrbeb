@@ -671,6 +671,9 @@ def is_application_form(
     # Признак кандидата словами (резюме, вакансия, «о себе»), а не просто поле
     # для файла: вложение бывает и у обратной связи (Верный, 30.09).
     has_candidate_text = False
+    # Какими словами форма похожа на анкету: «должность» рядом с «компанией» —
+    # должность клиента, а не желаемая (Синимекс, 01.10.2026).
+    candidate_words: set[str] = set()
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -718,16 +721,21 @@ def is_application_form(
         # признак сразу. Обязательная «компания» — только если в форме нет
         # ни одного поля кандидата (резюме, вакансия, «о себе»; проверка после
         # цикла): в IT-анкетах бывает обязательная «текущая компания».
-        if control.required:
+        # Обязательность — атрибутом или звёздочкой в подписи: Digital Design
+        # (01.10.2026) пишет «Компания *», не помечая поле required.
+        starred = (control.label or "").rstrip().endswith("*")
+        if control.required or starred:
             tokens = set(haystack.split())
             if "inn" in tokens or "инн" in tokens:
                 return False
             if any(marker in haystack for marker in _COMPANY_FIELD_MARKERS):
                 requires_company = True
-        if any(marker in haystack.split() or len(marker) > 3 and marker in haystack
-               for marker in _CANDIDATE_FIELD_MARKERS):
+        hits = [marker for marker in _CANDIDATE_FIELD_MARKERS
+                if marker in haystack.split() or len(marker) > 3 and marker in haystack]
+        if hits:
             has_candidate_field = True
             has_candidate_text = True
+            candidate_words.update(hits)
 
         if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
             has_contact = True
@@ -738,6 +746,10 @@ def is_application_form(
             only_text_is_email = text_fields == 1 and has_email_only
 
     if requires_company and not has_candidate_field:
+        return False
+    # Компания и только «должность/position» — форма «свяжитесь с нами»:
+    # в анкете кандидата рядом было бы резюме, вакансия или «о себе».
+    if requires_company and not has_file and candidate_words and candidate_words <= {"должност", "position"}:
         return False
     if is_question and not has_candidate_text:
         return False
