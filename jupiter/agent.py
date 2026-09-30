@@ -112,6 +112,9 @@ _ORDER_FORM_MARKERS = (
 )
 # Вопрос или обращение («задайте вопрос», «тема заявки») — не анкета, если в
 # форме нет ничего от кандидата: ни резюме, ни вакансии.
+# Бриф и заявка клиента (Extyl, Oxygen — разведка 30.09): бюджет, тип
+# проекта, тендер. Анкетой такая форма не бывает, даже с полем для файла.
+_CLIENT_FORM_MARKERS = ("бюджет", "тип проекта", "тендер", "коммерческое предложение")
 _QUESTION_FORM_MARKERS = (
     "задайте вопрос", "ваш вопрос", "какой вопрос", "тема заявки", "тема обращения",
     "тема сообщения",
@@ -414,6 +417,11 @@ def choose_key(
             return override
         return override if override in profile.values else None
 
+    if control.type == "file":
+        # Файл — это резюме или вложение, а не телефон: id=file_input-brief-mobile
+        # у Globus IT сопоставлялся с номером (разведка 30.09).
+        return None
+
     section = _SECTION_FIELD_RE.fullmatch((control.name or "").strip().lower())
     # Почта и телефон — контакт кандидата, биографией они не бывают.
     if section and control.type not in {"email", "tel"}:
@@ -450,6 +458,14 @@ def choose_key(
     }
     if autocomplete in autocomplete_map:
         key = autocomplete_map[autocomplete]
+        if key == "full_name" and page is not None and any(
+            other is not control and other.form_index == control.form_index
+            and _is_last_name_control(other)
+            for other in page.controls
+        ):
+            # «Имя» с autocomplete=name рядом с отдельной фамилией — только имя,
+            # иначе фамилия уйдёт в анкету дважды (Селектел, 30.09).
+            key = "first_name"
         if key in profile.values:
             return key
 
@@ -527,6 +543,18 @@ _NAME_NEUTRAL_TOKENS = {
 _LAST_NAME_TOKENS = {"surname", "lastname", "lname", "family"}
 
 
+def _is_last_name_control(control: ControlState) -> bool:
+    """Отдельное поле фамилии: surname, last_name (IBS), lname, family-name
+    (Селектел), подпись «Фамилия»."""
+    tokens = set(_name_tokens(control.name) + _name_tokens(control.id))
+    return bool(
+        _LAST_NAME_TOKENS & tokens
+        or {"last", "name"} <= tokens
+        or normalize(control.autocomplete) == "family name"
+        or "фамил" in normalize(" ".join((control.label, control.placeholder)))
+    )
+
+
 def _name_tokens(raw: str) -> list[str]:
     spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", raw or "")
     return [t for t in re.split(r"[^a-z0-9]+", spaced.lower()) if t and not t.isdigit()]
@@ -559,10 +587,7 @@ def _bare_name_key(
         has_last_name = page is not None and any(
             other is not control
             and other.form_index == control.form_index
-            and (
-                _LAST_NAME_TOKENS & set(_name_tokens(other.name) + _name_tokens(other.id))
-                or "фамил" in normalize(" ".join((other.label, other.placeholder)))
-            )
+            and _is_last_name_control(other)
             for other in page.controls
         )
         key = "first_name" if has_last_name else "full_name"
@@ -620,6 +645,9 @@ def is_application_form(
     text_fields = 0  # поля для ввода текста (не select)
     only_text_is_email = False
     is_question = False
+    # Признак кандидата словами (резюме, вакансия, «о себе»), а не просто поле
+    # для файла: вложение бывает и у обратной связи (Верный, 30.09).
+    has_candidate_text = False
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -637,6 +665,9 @@ def is_application_form(
         if control.type == "file":
             has_candidate_field = True  # резюме или портфолио файлом
             has_file = True
+            file_text = normalize(" ".join((control.name, control.id, control.label, control.accept)))
+            if any(marker in file_text for marker in ("resume", "резюм", "cv", "портфолио", "portfolio")):
+                has_candidate_text = True
         if control.type == "radio":
             questions += 1  # выбор из вариантов — вопрос анкеты, у подписки его нет
         if control.type in _STRUCTURAL_CONTROL_TYPES:
@@ -655,7 +686,7 @@ def is_application_form(
             ) if value
         ))
 
-        if any(marker in haystack for marker in _ORDER_FORM_MARKERS):
+        if any(marker in haystack for marker in _ORDER_FORM_MARKERS + _CLIENT_FORM_MARKERS):
             return False
         if any(marker in haystack for marker in _QUESTION_FORM_MARKERS):
             is_question = True
@@ -673,6 +704,7 @@ def is_application_form(
         if any(marker in haystack.split() or len(marker) > 3 and marker in haystack
                for marker in _CANDIDATE_FIELD_MARKERS):
             has_candidate_field = True
+            has_candidate_text = True
 
         if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
             has_contact = True
@@ -682,7 +714,9 @@ def is_application_form(
             text_fields += 1
             only_text_is_email = text_fields == 1 and has_email_only
 
-    if (requires_company or is_question) and not has_candidate_field:
+    if requires_company and not has_candidate_field:
+        return False
+    if is_question and not has_candidate_text:
         return False
     # Подписка на вакансии: единственное текстовое поле — почта, рядом только
     # select'ы (город, направление), ни имени, ни телефона, ни резюме. Такую
@@ -856,6 +890,11 @@ class JupiterAgent:
             # Затирать его нельзя: там обычно то, что он сам и подставил.
             return False
         if _looks_like_captcha(control):
+            return False
+        if control.css_hidden and not control.required:
+            # Ловушка для ботов: невидимое человеку поле. Человек бы его не
+            # заполнил — и мы не заполняем.
+            trajectory.append({"action": "skip_hidden_field", "field": control.name or control.id})
             return False
 
         descriptor = self.descriptor(control)

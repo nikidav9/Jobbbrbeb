@@ -132,6 +132,8 @@ for key in ('"включён"', '"служба"', '"перезапуски"', '"
 nginx = (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
 assert "location = /jupiter-browser-status.json" in nginx
 assert "alias /var/www/html/jupiter-browser-status.json;" in nginx
+assert "location = /jupiter-recon-browser.json" in nginx
+assert "alias /var/www/html/jupiter-recon-browser.json;" in nginx
 
 # Инвариант проекта: обычный Jupiter браузер не получает.
 assert "jt-jupiter.service" in bootstrap
