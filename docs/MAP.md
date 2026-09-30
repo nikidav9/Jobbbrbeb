@@ -1415,7 +1415,16 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 `jupiterAnswers`/`jupiterAnswerDelete`. Все вопросы отклика отвечены —
 `jt_questions_release` возвращает его в `queued`; воркер берёт ответы из
 `jupiterGetCandidateProfile(uid, applicationId).answers`. Проверка —
-`tests/jupiter_questions_test.php`. Экраны — второй срез.
+`tests/jupiter_questions_test.php`.
+
+Экраны: на «Откликах» (`app/(tabs)/matches.tsx`, `testID=questions-card`) оранжевая
+карточка «N вопросов от работодателей» над «Ждут вас»; «Нужны вы» открывает сначала
+капчу, потом вопросы, потом встроенный браузер. `app/jupiter-questions.tsx` — по
+одному вопросу, ввод по типу (варианты сайта, Да/Нет, дата с быстрыми кнопками,
+длинный текст), черновик прежнего ответа, «Пропустить — заполню на сайте сам».
+`app/jupiter-answers.tsx` — «Мои ответы для работодателей» из настроек профиля,
+с удалением. Чистая логика — `services/jupiterQuestions.ts` (`dateAfter`,
+`usableDraft`), тест — `tests/jupiterQuestions.test.ts`. Пуш — третий срез.
 
 | Файл | Что внутри |
 |---|---|

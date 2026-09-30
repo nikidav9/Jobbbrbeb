@@ -615,6 +615,12 @@ export default function ProfileSettingsScreen() {
             icon={<ChatIcon />}
             onPress={() => router.push('/support')}
           />
+          {/* Банк ответов на вопросы работодателей: что Юпитер подставит сам. */}
+          <Row
+            label="Мои ответы для работодателей"
+            ionIcon="document-text-outline"
+            onPress={() => router.push('/jupiter-answers')}
+          />
           <Row
             label="Уведомления"
             icon={<BellIcon />}
