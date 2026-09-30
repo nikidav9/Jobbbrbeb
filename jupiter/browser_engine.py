@@ -126,6 +126,20 @@ SNAPSHOT_JS = r"""
       c.setAttribute('name', el.id || ('jt-' + c.getAttribute('data-jt-ref')));
     if (type === 'checkbox' || type === 'radio') {
       if (el.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
+      // Галочка без своей подписи, текст — в соседнем блоке общей обёртки
+      // (Huntflow: «Я даю согласие на обработку перс. данных…», 01.10.2026).
+      // Берём текст ближайшей обёртки, где нет других полей, — иначе
+      // согласие не узнать и форма не уходит.
+      const own = (el.labels && el.labels[0] && el.labels[0].innerText.trim())
+        || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby');
+      if (!own && type === 'checkbox') {
+        let box = el.parentElement;
+        for (let i = 0; i < 3 && box; i++, box = box.parentElement) {
+          if (box.querySelectorAll('input,select,textarea').length > 1) break;
+          const text = (box.innerText || '').replace(/\s+/g, ' ').trim();
+          if (text) { if (text.length <= 300) c.setAttribute('aria-label', text); break; }
+        }
+      }
     }
     if (tag === 'textarea') c.textContent = el.value || '';
     if (tag === 'select') {

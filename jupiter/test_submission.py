@@ -46,6 +46,12 @@ class RealSiteConfirmations(unittest.TestCase):
                       success_markers=SUCCESS_MARKERS)
         self.assertTrue(is_confirmed(ev), ev)
 
+    def test_twinby_thanks_confirms_the_application(self):
+        from agent import SUCCESS_MARKERS
+        ev = evidence(after_text="Анкета кандидата\nСпасибо!\nМы все изучим и ответим тебе по почте",
+                      success_markers=SUCCESS_MARKERS)
+        self.assertTrue(is_confirmed(ev), ev)
+
     def test_bare_otpravleno_is_not_a_confirmation(self):
         from agent import SUCCESS_MARKERS
         ev = evidence(after_text="Анкета кандидата\nОтправлено", success_markers=SUCCESS_MARKERS)

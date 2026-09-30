@@ -41,6 +41,14 @@ class ConsentRecognition(unittest.TestCase):
             ["personal_data_consent"],
         )
 
+    def test_huntflow_abbreviated_consent_is_recognised(self):
+        # Huntflow (MobileUp, Flowwow, 01.10.2026): сокращённо и «политикой».
+        self.assertEqual(
+            self.kinds("Я даю согласие на обработку перс. данных в соответствии "
+                       "с политикой конфиденциальности MobileUp"),
+            ["personal_data_consent", "privacy_consent"],
+        )
+
     def test_marketing_is_not_personal_data(self):
         self.assertEqual(
             self.kinds("Хочу получать рекламные рассылки"),

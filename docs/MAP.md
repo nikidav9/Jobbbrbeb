@@ -1364,7 +1364,8 @@ HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`, но с�
 `browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
 все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`;
 у кнопки-стрелки Headless UI выбор проверяется в соседнем поле — job.mts.ru)
-и поля с маской; флажок за краем экрана отмечается кликом страницы; сбой
+и поля с маской; флажок за краем экрана отмечается кликом страницы; у
+галочки без подписи подписью считается текст обёртки без других полей (Huntflow); сбой
 заполнения до «Отправить» — `EngineError` (отклик не ушёл, повтор возможен), а
 не «исход неизвестен»; `browser_success.py` — успех по ответу API и тостам;
 `browser_sessions.py` — парковка сессии на время капчи; `browser_captcha.py` —
@@ -1394,7 +1395,9 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 `/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам; ключ приезжает сам
 (01.10.2026): секреты `YANDEX_GPT_API_KEY`/`YANDEX_GPT_FOLDER_ID` → `deploy.php`
 (`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл и перезапускает воркеры;
-проверка — `tests/yandex_gpt_delivery_test.py`. Капча человеку —
+проверка — `tests/yandex_gpt_delivery_test.py`. Работает ли на деле — в
+`jupiter-browser-status.json`: `yandex_gpt_проверка` (сервер раз в час сам спрашивает
+модель, пишет код и время) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
