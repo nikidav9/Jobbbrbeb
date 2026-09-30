@@ -46,7 +46,10 @@ test('в админке нет массового удаления пользо�
   assert.doesNotMatch(admin, /deleteAllUsersExceptAdmin|Удалить всех/);
 });
 
-test('окно вопросов смонтировано в корне для веба', () => {
+// С 01.10.2026 окно фирменное на всех поверхностях, не только на вебе:
+// системный Alert на телефоне выглядел чужим (согласие для Сбера).
+test('окно вопросов смонтировано в корне для всех поверхностей', () => {
   const layout = fs.readFileSync(path.join(root, 'app', '_layout.tsx'), 'utf8');
-  assert.match(layout, /Platform\.OS === 'web' \? <ConfirmHost \/> : null/);
+  assert.match(layout, /^\s*<ConfirmHost \/>$/m);
+  assert.doesNotMatch(layout, /Platform\.OS === 'web' \? <ConfirmHost/);
 });

@@ -298,7 +298,8 @@ export default function RootLayout() {
           {/* Баннер cookie/Метрики — только веб; грузит аналитику после согласия. */}
           <CookieConsent />
           <ToastLayer />
-          {Platform.OS === 'web' ? <ConfirmHost /> : null}
+          {/* Окно вопросов confirmAsync — фирменное на всех поверхностях. */}
+          <ConfirmHost />
         </AppProvider>
       </SafeAreaProvider>
     </AlertProvider>
