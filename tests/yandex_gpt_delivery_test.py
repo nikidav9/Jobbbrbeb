@@ -35,8 +35,12 @@ check("пустые секреты ничего не стирают", 'if [ -n "
 check("воркеры читают тот же файл", "EnvironmentFile=-$YGPT_ENV" in boot)
 
 check("раз в час сервер сам проверяет модель", "YGPT_PING=/var/lib/jobtoo/ygpt-ping.txt" in boot
-      and "-mmin +60" in boot and "foundationModels/v1/completion" in boot)
-check("проверка пишет только код и время, не ответ", "-o /dev/null -w '%{http_code}'" in boot)
+      and "-mmin +$YGPT_AGE" in boot and "YGPT_AGE=60" in boot
+      and "foundationModels/v1/completion" in boot)
+check("неудачная проверка повторяется через 10 минут", "YGPT_AGE=10" in boot)
+check("при ошибке — причина словами Яндекса, ключ вырезан, файл ответа удалён",
+      'm = m.replace(k, "***")' in boot and 'rm -f "$body"' in boot
+      and '[^\\w .,:;()/+=-]' in boot)
 check("в статусе — проверка и реальные вызовы за сутки",
       '"yandex_gpt_проверка"' in boot and '"yandex_gpt_вызовов_за_сутки"' in boot
       and "grep -c 'YandexGPT: вызов, статус'" in boot)

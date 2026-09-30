@@ -692,16 +692,39 @@ SVCEOF
   # Плюс сколько раз за сутки к ней реально обращались воркеры и сколько с
   # ошибкой — по их журналу (там только код и время, без текста).
   YGPT_PING=/var/lib/jobtoo/ygpt-ping.txt
-  if [ -f "$YGPT_ENV" ] && { [ ! -f "$YGPT_PING" ] || [ -n "$(find "$YGPT_PING" -mmin +60 2>/dev/null)" ]; }; then
+  # Удачный пинг — раз в час, неудачный — через 10 минут: починку видно быстро.
+  YGPT_AGE=60
+  [ -f "$YGPT_PING" ] && ! grep -q '^200 ' "$YGPT_PING" && YGPT_AGE=10
+  if [ -f "$YGPT_ENV" ] && { [ ! -f "$YGPT_PING" ] || [ -n "$(find "$YGPT_PING" -mmin +$YGPT_AGE 2>/dev/null)" ]; }; then
     mkdir -p /var/lib/jobtoo
     ( set +e
       . "$YGPT_ENV"
+      body=$(mktemp)
       code=$(printf '{"modelUri":"gpt://%s/yandexgpt-lite/latest","completionOptions":{"temperature":0,"maxTokens":"5"},"messages":[{"role":"user","text":"Ответь одним словом: ok"}]}' "$YANDEX_GPT_FOLDER_ID" \
-        | curl -s -o /dev/null -w '%{http_code}' -m 15 \
+        | curl -s -o "$body" -w '%{http_code}' -m 15 \
             -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" -H "x-folder-id: $YANDEX_GPT_FOLDER_ID" \
             -H 'Content-Type: application/json' --data-binary @- \
             https://llm.api.cloud.yandex.net/foundationModels/v1/completion)
-      printf '%s в %s' "${code:-000}" "$(date +%H:%M)" > "$YGPT_PING" )
+      # Не 200 — рядом причина словами Яндекса (сообщение сервиса, не наш
+      # текст): по одному коду не понять, ключ это, каталог или роль.
+      why=""
+      if [ "${code:-000}" != "200" ]; then
+        why=$(YGPT_K="$YANDEX_GPT_API_KEY" python3 -c '
+import json, os, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    e = d.get("error", d) if isinstance(d, dict) else {}
+    m = str(e.get("message") or e.get("error") or "")
+except Exception:
+    m = open(sys.argv[1], errors="replace").read()
+k = os.environ.get("YGPT_K", "")
+if k:
+    m = m.replace(k, "***")
+print(re.sub(r"[^\w .,:;()/+=-]", " ", m)[:200].strip())
+' "$body" 2>/dev/null || true)
+      fi
+      rm -f "$body"
+      printf '%s в %s%s' "${code:-000}" "$(date +%H:%M)" "${why:+ — $why}" > "$YGPT_PING" )
   fi
   YGPT_CALLS=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
     | grep -c 'YandexGPT: вызов, статус' || true)
