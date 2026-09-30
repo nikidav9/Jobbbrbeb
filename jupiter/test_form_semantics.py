@@ -673,6 +673,73 @@ class UnknownConsentStopsAsConsent(unittest.TestCase):
         self.assertNotEqual(agent._missing_reason_code(page, 0), "CONSENT_REQUIRED")
 
 
+class RecoveredFromRecon30(unittest.TestCase):
+    """Ошибки, найденные разбором разведки 30.09."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров",
+        "email": "i@example.com", "phone": "+79990000000",
+    })
+
+    def key(self, html, name):
+        page = parse(f"<form method=post>{html}<button>Откликнуться</button></form>")
+        return choose_key(control(page, name), self.PROFILE, "https://e.example/job", page)
+
+    def test_last_name_by_parts_keeps_name_as_first_name(self):
+        # IBS: name + last_name — фамилия не должна уйти дважды.
+        self.assertEqual(self.key('<input name="name"><input name="last_name">', "name"), "first_name")
+
+    def test_autocomplete_name_next_to_family_name_is_first_name(self):
+        # Селектел: autocomplete=name рядом с family-name.
+        html = '<input name="a" autocomplete="name"><input name="b" autocomplete="family-name">'
+        self.assertEqual(self.key(html, "a"), "first_name")
+        self.assertEqual(self.key('<input name="a" autocomplete="name">', "a"), "full_name")
+
+    def test_file_field_is_never_a_phone(self):
+        # Globus IT: id=file_input-brief-mobile.
+        self.assertIsNone(self.key('<input type="file" name="f" id="file_input-brief-mobile">', "f"))
+
+    def test_feedback_with_attachment_is_not_an_application(self):
+        # Верный: «Тема сообщения» + вложение — обратная связь покупателей.
+        page = parse(
+            '<form action="/feedback" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Тема сообщения <select name="topic"><option>Пожелания</option></select></label>'
+            '<input type="file" name="attachment">'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_client_brief_is_not_an_application(self):
+        # Extyl: бриф клиента — тип проекта и бюджет.
+        page = parse(
+            '<form action="/brief" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<label>Бюджет <input name="budget"></label>'
+            '<label>Должность <input name="position"></label>'
+            '<input type="file" name="tz">'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_honeypot_is_not_filled(self):
+        # Targem: <input name="email" style="display: none;"> — ловушка для ботов.
+        from engine import JupiterWebEngine
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = JupiterWebEngine({"e.example"}).load_html(
+            '<form method=post><label>Почта <input type="email" name="mails" required></label>'
+            '<input type="text" name="email" style="display: none;">'
+            '<button>Откликнуться</button></form>', "https://e.example/job")
+        trap = control(page, "email")
+        self.assertTrue(trap.css_hidden)
+        trajectory = []
+        self.assertFalse(agent.fill_control(page, trap, self.PROFILE, trajectory))
+        self.assertEqual(trajectory[0]["action"], "skip_hidden_field")
+        self.assertTrue(agent.fill_control(page, control(page, "mails"), self.PROFILE, []))
+
+
 class ValueFitsField(unittest.TestCase):
     """Значение профиля в записи, которую поле примет."""
 

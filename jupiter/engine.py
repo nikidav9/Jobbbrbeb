@@ -91,6 +91,10 @@ class ControlState:
     # Заголовок <legend> раздела: ещё одна подсказка о смысле поля, когда у
     # него нет ни label, ни name.
     section: str = ""
+    # Поле скрыто стилем (своим или обёртки): display:none, visibility:hidden,
+    # атрибут hidden. Необязательное такое поле — обычно ловушка для ботов
+    # (Targem, 30.09): заполнить её — значит назваться ботом.
+    css_hidden: bool = False
     options: list[OptionState] = field(default_factory=list)
     # Метка элемента в живой странице браузерного движка (browser_engine.py,
     # атрибут data-jt-ref). HTTP-движку не нужна и остаётся пустой.
@@ -257,15 +261,17 @@ class _SemanticParser(HTMLParser):
     def hidden(self) -> bool:
         return bool(self.hidden_tags)
 
-    def _push_hidden(self, tag: str, attrs: dict[str, str]) -> None:
+    @staticmethod
+    def _styled_hidden(attrs: dict[str, str]) -> bool:
         style = attrs.get("style", "").replace(" ", "").lower()
-        hidden = (
-            tag in {"script", "style", "template"}
-            or "hidden" in attrs
-            or "display:none" in style
-            or "visibility:hidden" in style
-        )
-        if hidden:
+        return "hidden" in attrs or "display:none" in style or "visibility:hidden" in style
+
+    def _push_hidden(self, tag: str, attrs: dict[str, str]) -> None:
+        # У одиночных тегов нет закрывающего — в стек они не идут, иначе
+        # скрытый <input> «прятал» бы весь текст страницы после себя.
+        if tag in _VOID_TAGS:
+            return
+        if tag in {"script", "style", "template"} or self._styled_hidden(attrs):
             self.hidden_tags.append(tag)
 
     def _new_control(self, tag: str, attrs: dict[str, str]) -> int:
@@ -335,6 +341,7 @@ class _SemanticParser(HTMLParser):
             formnovalidate="formnovalidate" in attrs,
             dom_ref=attrs.get("data-jt-ref", ""),
         )
+        c.css_hidden = self.hidden or self._styled_hidden(attrs)
         self.controls.append(c)
         if self.current_form is not None:
             self.forms[self.current_form].control_indices.append(c.index)
