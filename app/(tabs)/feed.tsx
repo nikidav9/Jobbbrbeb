@@ -1112,7 +1112,9 @@ function WorkerPermMode() {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
       showToast(application.reasonCode === 'PHONE_FILL'
         ? 'Сохранено в «Нужны вы» — отправите пачкой в «Откликах».'
-        : 'Заявка уже есть. Статус — в «Откликах».', 'success');
+        : application.state === 'queued'
+          ? 'Юпитер отправит отклик сам. Статус — в «Откликах».'
+          : 'Заявка уже есть. Статус — в «Откликах».', 'success');
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';

@@ -112,6 +112,7 @@ check('уникальность заявки закреплена индексо
 // Отклик через телефон (решение владельца 28.09.2026): свайп копит заявку в
 // «Нужны вы», серверу на автоотправку она не достаётся.
 $enq = substr($db, strpos($db, "case 'jupiterEnqueue': {"), 5000);
+// Кроме пилота JT_SERVER_SEND_PILOT — см. tests/jupiter_server_send_test.php.
 check('свайп кладёт заявку в «Нужны вы», а не в очередь сервера',
     str_contains($enq, "'state' => 'action_required',")
     && str_contains($enq, "'reason_code' => 'PHONE_FILL',")
@@ -126,7 +127,7 @@ check('старая очередь переведена в «Нужны вы», 
     && str_contains($m133, "reason_code = 'PHONE_FILL'"));
 check('публичные методы Jupiter возвращают data как другие методы db.php',
     str_contains($db, "\$data = \$inserted[0] ?? sb_single('jm_jupiter_applications'")
-    && str_contains($db, "case 'jupiterMyApplications': {\n            \$data = sb_select(")
+    && str_contains($db, "case 'jupiterMyApplications': {\n            jt_jupiter_phone_fill_to_server((string)(\$args[0] ?? ''));\n            \$data = sb_select(")
     && str_contains($db, "jt_respond(['data' => \$data]);"));
 check('гонка двух свайпов не возвращает отправленную заявку в очередь',
     str_contains($db, 'resolution=ignore-duplicates,return=representation')
