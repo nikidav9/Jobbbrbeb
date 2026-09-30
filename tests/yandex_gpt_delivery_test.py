@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Ключ YandexGPT: секреты репозитория → deploy.php → /etc/jobtoo/yandex-gpt.env.
+
+Статическая проверка цепочки, как соседние infra-тесты: ключ доезжает до
+воркеров Юпитера сам, файл закрыт (600, root), пустые секреты ничего не стирают.
+"""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+wf = (ROOT / ".github/workflows/deploy-regru.yml").read_text(encoding="utf-8")
+dep = (ROOT / "php-proxy/deploy.php").read_text(encoding="utf-8")
+boot = (ROOT / "infra/bootstrap.sh").read_text(encoding="utf-8")
+
+fails = []
+
+
+def check(name: str, ok: bool) -> None:
+    if not ok:
+        fails.append(name)
+
+
+check("workflow берёт оба секрета",
+      "YANDEX_GPT_API_KEY: ${{ secrets.YANDEX_GPT_API_KEY }}" in wf
+      and "YANDEX_GPT_FOLDER_ID: ${{ secrets.YANDEX_GPT_FOLDER_ID }}" in wf)
+check("workflow кладёт их в тело запроса", '"yandex_gpt": {' in wf and '"api_key": e("YANDEX_GPT_API_KEY", "")' in wf)
+check("deploy.php пишет файл только при обоих значениях",
+      "!empty($yg['api_key']) && !empty($yg['folder_id'])" in dep and "'/yandex_gpt.php'" in dep)
+check("deploy.php пишет через literal (base64), не сырой строкой", "literal((string) $yg['api_key'])" in dep)
+check("bootstrap читает yandex_gpt.php", '@include "/var/www/api/yandex_gpt.php"' in boot)
+check("bootstrap пишет env закрытым", "umask 077" in boot and "chown root:root /etc/jobtoo/yandex-gpt.env.new" in boot)
+check("bootstrap меняет файл атомарно", "mv -f /etc/jobtoo/yandex-gpt.env.new /etc/jobtoo/yandex-gpt.env" in boot)
+check("bootstrap перезапускает оба воркера",
+      "for svc in jt-jupiter.service jt-jupiter-browser.service" in boot)
+check("пустые секреты ничего не стирают", 'if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then' in boot)
+check("воркеры читают тот же файл", "EnvironmentFile=-$YGPT_ENV" in boot)
+
+if fails:
+    raise SystemExit("yandex gpt delivery: ПРОВАЛЫ\n  - " + "\n  - ".join(fails))
+print("yandex gpt delivery: OK")
