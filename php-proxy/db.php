@@ -3382,7 +3382,7 @@ function jt_jupiter_escalate_to_browser(string $id, array $task, string $state, 
  * настоящие отправки до включения всем. В PWA встроенного браузера нет, и
  * без сервера такой отклик не уходил никогда.
  */
-const JT_SERVER_SEND_PILOT = [];
+const JT_SERVER_SEND_PILOT = ['SMYFERND']; // владелец (01.10.2026)
 
 function jt_jupiter_server_sends(string $uid): bool
 {
