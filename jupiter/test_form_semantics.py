@@ -978,5 +978,53 @@ class PreselectedRadioIsNotTheCandidatesAnswer(unittest.TestCase):
         chosen = [c.value for c in self.page.controls if c.name == "relocation" and c.checked]
         self.assertEqual(chosen, ["нет"])
 
+
+class FilterLinksAreNotAnEndlessRoad(unittest.TestCase):
+    """Т-Банк IT, 30.09: список вакансий дорисовывает JS, а в HTML остались
+    только ссылки-фильтры ?direction=…; каждый шаг — новая их комбинация, и
+    разведка упиралась в MAX_STEPS вместо «нужен браузер»."""
+
+    BASE = "http://127.0.0.1/career/vacancies/all/moscow/"
+
+    def page(self, url):
+        return parse(
+            f'<a href="{self.BASE}?direction=it">IT</a>'
+            f'<a href="{self.BASE}?direction=it&direction=qa">QA</a>'
+            f'<a href="{self.BASE}?direction=it&direction=qa&direction=data">Данные</a>',
+            url,
+        )
+
+    def setUp(self):
+        self.agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        self.agent._root_url = "http://127.0.0.1/career/vacancies/it"
+
+    def test_same_path_is_visited_at_most_twice(self):
+        visited = {self.agent._root_url, self.BASE, self.BASE + "?direction=it"}
+        self.assertIsNone(self.agent._best_navigation(self.page(self.BASE + "?direction=it"), visited))
+
+    def test_list_root_leads_to_a_real_vacancy_not_a_filter(self):
+        root = self.agent._root_url
+        card = "http://127.0.0.1/career/it/vacancy/moscow/golang-razrabotchik/77db7580/"
+        page = parse(
+            f'<a href="{self.BASE}?direction=it">IT</a>'
+            f'<a href="{card}">Golang-разработчик</a>',
+            root,
+        )
+        nxt = self.agent._best_navigation(page, {root})
+        self.assertEqual(nxt[0], card)
+
+    def test_list_words_are_not_vacancy_ids(self):
+        from agent import _vacancy_slug
+        self.assertEqual(_vacancy_slug("https://www.tbank.ru/career/vacancies/it"), "")
+        self.assertEqual(_vacancy_slug("https://www.tbank.ru/career/vacancies/all/moscow/"), "")
+        self.assertEqual(_vacancy_slug("https://prideinbrains.com/vacancies/java-developer/"), "java-developer")
+
+    def test_second_visit_with_a_query_is_allowed(self):
+        # /vacancies?id=33 у Globus IT — это вакансия, а не фильтр.
+        visited = {self.agent._root_url, self.BASE}
+        nxt = self.agent._best_navigation(self.page(self.BASE), visited)
+        self.assertIsNotNone(nxt)
+        self.assertTrue(nxt[0].startswith(self.BASE + "?"))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
