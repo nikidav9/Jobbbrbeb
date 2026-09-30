@@ -333,8 +333,11 @@ export default function JupiterApplicationScreen() {
                 <Text style={[s.vacancyTitle, closed && { color: C.label }]}>{vacancyTitle}</Text>
               ) : null}
               <Text style={vacancyTitle ? s.company : s.vacancyTitle} numberOfLines={2}>{company}</Text>
+              {/* Отклик ждёт человека — сайт открываем во встроенном браузере с
+                  автопилотом: во внешнем браузере анкету никто не заполнит, и
+                  человек видел пустую форму (МТС, 30.09.2026). */}
               <UnderlinedLink
-                onPress={openSite}
+                onPress={canFill && Platform.OS !== 'web' ? openForm : openSite}
                 label="Открыть сайт вакансии"
                 color={closed ? C.label : C.ink}
                 underline={closed ? C.border : C.accent}
@@ -354,6 +357,12 @@ export default function JupiterApplicationScreen() {
 
               {needsCaptcha ? <PrimaryButton label="Ввести слово с картинки" onPress={openCaptcha} /> : null}
               {canFill ? <PrimaryButton label="Открыть анкету и отправить" onPress={openForm} arrow /> : null}
+              {canFill && Platform.OS !== 'web' ? (
+                <TouchableOpacity onPress={openSite} hitSlop={8} style={s.browserLink}
+                  accessibilityRole="link" accessibilityLabel="Открыть в браузере телефона, без автозаполнения">
+                  <Text style={s.browserLinkTxt}>Открыть в браузере телефона — без автозаполнения</Text>
+                </TouchableOpacity>
+              ) : null}
               {needsRequeue ? <PrimaryButton label="Отправить через Юпитер" onPress={() => void requeueLive()} /> : null}
               {needsSberConsent ? (
                 <>
@@ -424,6 +433,8 @@ export default function JupiterApplicationScreen() {
 }
 
 const s = StyleSheet.create({
+  browserLink: { marginTop: 12, alignSelf: 'center' },
+  browserLinkTxt: { fontFamily: F.text600, fontSize: 13, color: C.label, textDecorationLine: 'underline' },
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     height: 44, marginTop: 12, marginHorizontal: 20, justifyContent: 'center', alignItems: 'flex-start',
