@@ -21,7 +21,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     // This code will only run on the client side
     const savedTheme = localStorage.getItem("theme") as Theme | null;
-    const initialTheme = savedTheme || "light"; // Default to light theme
+    // Тёмной темы в дизайн-системе JT нет: старое сохранённое значение игнорируем.
+    void savedTheme;
+    const initialTheme: Theme = "light";
 
     setTheme(initialTheme);
     setIsInitialized(true);

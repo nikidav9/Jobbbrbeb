@@ -62,7 +62,7 @@ export default function KpiCard({
   return (
     <div className="kpi-card jt-rise" style={{
       background: 'var(--bg-elev)',
-      border: '1px solid var(--line)',
+      border: '2px solid var(--ink)',
       borderRadius: 'var(--radius)',
       boxShadow: 'var(--shadow-sm)',
       padding: '14px 16px 16px',
@@ -73,14 +73,14 @@ export default function KpiCard({
     }}>
       <div className="kpi-label" style={{
         fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em',
-        fontFamily: 'Geist Mono, monospace',
-        color: 'var(--ink-3)', fontWeight: 500,
+        fontFamily: 'Manrope, sans-serif',
+        color: 'var(--ink-3)', fontWeight: 700,
         minWidth: 0, wordBreak: 'break-word', lineHeight: 1.35,
       }}>{label}</div>
 
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
         <div className="kpi-value num" style={{
-          fontSize: 30, fontWeight: 620,
+          fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700,
           letterSpacing: '-0.02em',
           color: parsed.kind === 'empty' ? 'var(--ink-4)' : 'var(--ink)',
           lineHeight: 1,
@@ -88,7 +88,7 @@ export default function KpiCard({
         {delta && (
           <span className="kpi-delta" style={{
             display: 'inline-flex', alignItems: 'center',
-            padding: '2px 6px', borderRadius: 6,
+            padding: '2px 8px', borderRadius: 999,
             fontSize: 11, fontWeight: 550,
             color: chip.color, background: chip.bg,
             border: `1px solid ${chip.border}`,

@@ -65,13 +65,13 @@ export const WORK_TYPE_LABELS: Record<string, string> = {
  *  на контраст к белой карточке (≥ 4.5:1), потому что подписи на графиках
  *  красятся в цвет ряда. */
 export const PALETTE = {
-  orange: '#BE4C16', // = --accent
+  orange: '#FF6B1A', // = --accent (DS.accent)
   blue: '#2C6FB5',   // = --info
   green: '#1E7A4C',  // = --positive
-  red: '#B8342A',    // = --negative
-  gray: '#8B94A1',   // = --ink-4, только заливкой
+  red: '#C8321B',    // = --negative (DS.danger)
+  gray: '#9A9086',   // = --ink-4, только заливкой
   purple: '#5F4BB6',
-  amber: '#8A5A12',
+  amber: '#B8801F',
   cyan: '#0E7490',
   pink: '#9D2060',
 }
@@ -283,7 +283,7 @@ export async function fetchUsers() {
   const [{ data: users }, { data: webPushRows }] = await Promise.all([
     supabase
       .from('jm_users')
-      .select('id,role,first_name,last_name,phone,metro_station,metro_line_id,is_blocked,created_at,company,push_token')
+      .select('id,role,first_name,last_name,phone,email,metro_station,metro_line_id,is_blocked,created_at,company,push_token')
       .order('created_at', { ascending: false }),
     supabase
       .from('jm_web_push_subscriptions')
@@ -337,6 +337,7 @@ export async function fetchUsers() {
   const recent = u.map((x: any) => ({
     name: `${x.first_name ?? ''} ${x.last_name ?? ''}`.trim(),
     phone: x.phone,
+    email: x.email ?? null,
     role: x.role,
     metro: x.metro_station ?? '—',
     company: x.company ?? '—',
@@ -607,77 +608,6 @@ export async function fetchVacancies() {
   }
 }
 
-// ─── matching ────────────────────────────────────────────────────────────────
-
-export async function fetchMatching() {
-  const [{ data: likes }, { data: tv }] = await Promise.all([
-    supabase.from('jm_likes').select('id,is_match,matched_at,worker_confirmed,employer_confirmed,shift_completed,worker_liked,employer_liked,worker_skipped,created_at,vacancy_id'),
-    supabase.from('jm_vacancies').select('id,work_type'),
-  ])
-
-  const lk = likes ?? []
-  const vacMap: Record<string, string> = {}
-  for (const v of tv ?? []) vacMap[(v as any).id] = WORK_TYPE_LABELS[(v as any).work_type ?? ''] ?? (v as any).work_type ?? '?'
-
-  // В jm_likes лежат и отклики (worker_liked), и скипы (worker_skipped) —
-  // для метрик мэтчей считаем только реальные отклики
-  const realLikes = lk.filter((x: any) => x.worker_liked)
-  const matches = lk.filter((x: any) => x.is_match)
-  const confirmed = lk.filter((x: any) => x.worker_confirmed && x.employer_confirmed)
-  const completed = lk.filter((x: any) => x.shift_completed)
-
-  const days30 = dayRange(30)
-  const matchByDay = groupByDate(
-    matches.map((x: any) => ({ created_at: x.matched_at ?? x.created_at })),
-    'created_at'
-  )
-  const likeByDay = groupByDate(realLikes, 'created_at')
-
-  const daily30 = days30.map(d => ({
-    date: toDayLabel(d),
-    likes: likeByDay[d] ?? 0,
-    matches: matchByDay[d] ?? 0,
-  }))
-
-  const wtLikes: Record<string, number> = {}
-  const wtMatches: Record<string, number> = {}
-  for (const l of realLikes) {
-    const wt = vacMap[(l as any).vacancy_id] ?? 'Другое'
-    wtLikes[wt] = (wtLikes[wt] ?? 0) + 1
-    if ((l as any).is_match) wtMatches[wt] = (wtMatches[wt] ?? 0) + 1
-  }
-  const matchByWorkType = Object.keys(wtLikes).map(wt => ({
-    name: wt,
-    likes: wtLikes[wt],
-    matches: wtMatches[wt] ?? 0,
-    rate: wtLikes[wt] > 0 ? Math.round(((wtMatches[wt] ?? 0) / wtLikes[wt]) * 100) : 0,
-  })).sort((a, b) => b.likes - a.likes)
-
-  const funnel = [
-    { name: 'Показы', value: lk.length, fill: PALETTE.blue },
-    { name: 'Отклики', value: realLikes.length, fill: PALETTE.cyan },
-    { name: 'Мэтчи', value: matches.length, fill: PALETTE.purple },
-    { name: 'Подтверждено', value: confirmed.length, fill: PALETTE.orange },
-    { name: 'Завершено', value: completed.length, fill: PALETTE.green },
-  ]
-
-  return {
-    kpi: {
-      totalLikes: realLikes.length,
-      totalMatches: matches.length,
-      matchRate: realLikes.length > 0 ? ((matches.length / realLikes.length) * 100).toFixed(1) : '0',
-      confirmed: confirmed.length,
-      confirmRate: matches.length > 0 ? ((confirmed.length / matches.length) * 100).toFixed(1) : '0',
-      completed: completed.length,
-      completionRate: confirmed.length > 0 ? ((completed.length / confirmed.length) * 100).toFixed(1) : '0',
-      skipped: lk.filter((x: any) => x.worker_skipped).length,
-    },
-    daily30,
-    funnel,
-    matchByWorkType,
-  }
-}
-
 // ─── engagement ──────────────────────────────────────────────────────────────
 
 export async function fetchEngagement() {
@@ -732,182 +662,6 @@ export async function fetchEngagement() {
     daily90,
     msgDist,
   }
-}
-
-// ─── quality ─────────────────────────────────────────────────────────────────
-
-export async function fetchQuality() {
-  const [{ data: ratings }, { data: complaints }, { data: applications }] = await Promise.all([
-    supabase.from('jm_ratings').select('id,rating,role,created_at,review_text').order('created_at', { ascending: false }),
-    supabase.from('jm_complaints').select('id,complaint_type,description,created_at,reporter_phone,target_phone,reporter_company,target_company').order('created_at', { ascending: false }),
-    supabase.from('jm_perm_applications').select('id,status,created_at').order('created_at', { ascending: false }),
-  ])
-
-  const rt = ratings ?? []
-  const cp = complaints ?? []
-  const ap = applications ?? []
-
-  const avgRating = rt.length > 0
-    ? rt.reduce((s: number, r: any) => s + Number(r.rating), 0) / rt.length
-    : 0
-
-  const workerRatings = rt.filter((x: any) => x.role === 'worker')
-  const employerRatings = rt.filter((x: any) => x.role === 'employer')
-
-  const avgWorkerRating = workerRatings.length > 0
-    ? workerRatings.reduce((s: number, r: any) => s + Number(r.rating), 0) / workerRatings.length
-    : 0
-  const avgEmployerRating = employerRatings.length > 0
-    ? employerRatings.reduce((s: number, r: any) => s + Number(r.rating), 0) / employerRatings.length
-    : 0
-
-  const rMap: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
-  for (const r of rt) rMap[Math.round(Number((r as any).rating))]++
-  // Подпись оси — цифрой, а не рядом звёзд: символ ★ разной ширины на разных
-  // устройствах, и пять подписей от «★» до «★★★★★» разъезжают ось по ширине.
-  const ratingDist = [1, 2, 3, 4, 5].map(v => ({
-    name: String(v),
-    value: rMap[v] ?? 0,
-    workers: workerRatings.filter((r: any) => Math.round(Number(r.rating)) === v).length,
-    employers: employerRatings.filter((r: any) => Math.round(Number(r.rating)) === v).length,
-  }))
-
-  const days30 = dayRange(30)
-  const rtByDay: Record<string, number[]> = {}
-  for (const r of rt) {
-    const d = (r as any).created_at?.slice(0, 10)
-    if (d) {
-      if (!rtByDay[d]) rtByDay[d] = []
-      rtByDay[d].push(Number((r as any).rating))
-    }
-  }
-  const ratingTrend = days30.map(d => ({
-    date: toDayLabel(d),
-    avg: rtByDay[d] ? rtByDay[d].reduce((s, v) => s + v, 0) / rtByDay[d].length : null,
-    count: rtByDay[d]?.length ?? 0,
-  }))
-
-  const workerComplaints = cp.filter((x: any) => x.complaint_type === 'worker')
-  const employerComplaints = cp.filter((x: any) => x.complaint_type === 'employer')
-
-  const cpByDay = groupByDate(cp, 'created_at')
-  const complaintTrend = days30.map(d => ({
-    date: toDayLabel(d),
-    count: cpByDay[d] ?? 0,
-  }))
-
-  const appStatus = [
-    { name: 'Ожидает', value: ap.filter((x: any) => x.status === 'pending').length, fill: PALETTE.amber },
-    { name: 'Одобрено', value: ap.filter((x: any) => x.status === 'approved').length, fill: PALETTE.green },
-    { name: 'Отклонено', value: ap.filter((x: any) => x.status === 'rejected').length, fill: PALETTE.red },
-  ]
-
-  const recentComplaints = cp.slice(0, 15).map((x: any) => ({
-    type: x.complaint_type,
-    reporter: x.reporter_phone,
-    target: x.target_phone,
-    company: x.reporter_company ?? x.target_company ?? '—',
-    desc: x.description ?? '—',
-    date: x.created_at?.slice(0, 10),
-  }))
-
-  return {
-    kpi: {
-      avgRating: avgRating.toFixed(2),
-      avgWorkerRating: avgWorkerRating.toFixed(2),
-      avgEmployerRating: avgEmployerRating.toFixed(2),
-      totalRatings: rt.length,
-      totalComplaints: cp.length,
-      workerComplaints: workerComplaints.length,
-      employerComplaints: employerComplaints.length,
-      totalApplications: ap.length,
-      pendingApplications: ap.filter((x: any) => x.status === 'pending').length,
-    },
-    ratingDist,
-    ratingTrend,
-    complaintTrend,
-    appStatus,
-    complaintSplit: [
-      { name: 'На работников', value: workerComplaints.length, fill: PALETTE.orange },
-      { name: 'На работодателей', value: employerComplaints.length, fill: PALETTE.blue },
-    ],
-    recentComplaints,
-  }
-}
-
-// ─── reviews ─────────────────────────────────────────────────────────────────
-
-export async function fetchReviews() {
-  const [{ data: ratings }, { data: users }, { data: tv }, { data: pv }] = await Promise.all([
-    supabase.from('jm_ratings').select('id,from_user_id,to_user_id,vacancy_id,rating,role,review_text,created_at').order('created_at', { ascending: false }),
-    supabase.from('jm_users').select('id,first_name,last_name,phone,role,company'),
-    supabase.from('jm_vacancies').select('id,work_type_label,work_type,company,status,address,metro_station'),
-    supabase.from('jm_perm_vacancies').select('id,title,company,status,address,metro_station'),
-  ])
-
-  const rt = ratings ?? []
-  const us = users ?? []
-  const tempMap: Record<string, any> = {}
-  const permMap: Record<string, any> = {}
-  for (const v of tv ?? []) tempMap[v.id] = { ...v, vacType: 'temp' }
-  for (const v of pv ?? []) permMap[v.id] = { ...v, vacType: 'perm' }
-
-  const userMap: Record<string, any> = {}
-  for (const u of us) userMap[u.id] = u
-
-  function userName(u: any) {
-    if (!u) return '—'
-    const fn = (u.first_name ?? '').trim()
-    const ln = (u.last_name ?? '').trim()
-    if (fn || ln) return [fn, ln].filter(Boolean).join(' ')
-    return u.phone ?? '—'
-  }
-
-  const WORK_LABELS: Record<string, string> = {
-    stocker: 'Кладовщик', cook: 'Повар', shift_supervisor: 'Менеджер', picker: 'Комплектовщик',
-  }
-
-  const list = rt.map((r: any) => {
-    const from = userMap[r.from_user_id]
-    const to = userMap[r.to_user_id]
-    const tempVac = tempMap[r.vacancy_id]
-    const permVac = permMap[r.vacancy_id]
-    const vac = tempVac ?? permVac ?? null
-    return {
-      id: r.id,
-      rating: Number(r.rating),
-      role: r.role as 'worker' | 'employer',
-      reviewText: r.review_text ?? null,
-      createdAt: r.created_at?.slice(0, 10) ?? '',
-      fromName: userName(from),
-      fromRole: from?.role ?? r.role,
-      toName: userName(to),
-      toRole: to?.role ?? (r.role === 'employer' ? 'worker' : 'employer'),
-      vacTitle: vac ? (vac.title ?? vac.work_type_label ?? WORK_LABELS[vac.work_type ?? ''] ?? 'Вакансия') : '—',
-      vacCompany: vac?.company ?? '—',
-      vacStatus: vac?.status ?? null,
-      vacType: vac?.vacType ?? null,
-      vacAddress: vac?.address ?? null,
-      vacMetro: vac?.metro_station ?? null,
-    }
-  })
-
-  const avgRating = list.length > 0
-    ? (list.reduce((s: number, r: any) => s + r.rating, 0) / list.length).toFixed(2)
-    : '—'
-
-  const withText = list.filter((r: any) => r.reviewText).length
-
-  // Сколько отзывов на каждую оценку — чтобы фильтр показывал, что за ним
-  // лежит, и не приходилось нажимать наугад.
-  const byStars: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
-  for (const r of list as any[]) if (byStars[r.rating] !== undefined) byStars[r.rating]++
-  const byRole = {
-    worker: (list as any[]).filter(r => r.fromRole === 'worker').length,
-    employer: (list as any[]).filter(r => r.fromRole === 'employer').length,
-  }
-
-  return { list, avgRating, total: list.length, withText, byStars, byRole }
 }
 
 // ─── user profile ────────────────────────────────────────────────────────────
@@ -1443,64 +1197,6 @@ export async function fetchChats() {
   })
 
   return chatList
-}
-
-// ─── geo ─────────────────────────────────────────────────────────────────────
-
-export async function fetchGeo() {
-  const [{ data: users }, { data: vacancies }, { data: permVacancies }] = await Promise.all([
-    supabase.from('jm_users').select('id,role,metro_station'),
-    supabase.from('jm_vacancies').select('id,metro_station,status'),
-    supabase.from('jm_perm_vacancies').select('id,metro_station,status'),
-  ])
-
-  const u = users ?? []
-  const tv = vacancies ?? []
-  const pv = permVacancies ?? []
-
-  const userMetroMap: Record<string, { workers: number; employers: number }> = {}
-  for (const user of u) {
-    const s = (user as any).metro_station
-    if (!s) continue
-    if (!userMetroMap[s]) userMetroMap[s] = { workers: 0, employers: 0 }
-    if ((user as any).role === 'worker') userMetroMap[s].workers++
-    else userMetroMap[s].employers++
-  }
-
-  const userMetroTop = Object.entries(userMetroMap)
-    .map(([station, counts]) => ({ station, ...counts, total: counts.workers + counts.employers }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 15)
-
-  const vacMetroMap: Record<string, number> = {}
-  for (const v of [...tv, ...pv]) {
-    const s = (v as any).metro_station
-    if (!s) continue
-    vacMetroMap[s] = (vacMetroMap[s] ?? 0) + 1
-  }
-
-  const vacMetroTop = Object.entries(vacMetroMap)
-    .map(([station, value]) => ({ station, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 15)
-
-  const withMetro = u.filter((x: any) => x.metro_station).length
-  const withoutMetro = u.filter((x: any) => !x.metro_station).length
-  const vacsWithMetro = [...tv, ...pv].filter((x: any) => x.metro_station).length
-
-  return {
-    kpi: {
-      totalUsers: u.length,
-      withMetro,
-      withoutMetro,
-      metroFill: u.length > 0 ? ((withMetro / u.length) * 100).toFixed(0) : '0',
-      uniqueStations: Object.keys(userMetroMap).length,
-      totalVacancies: tv.length + pv.length,
-      vacsWithMetro,
-    },
-    userMetroTop,
-    vacMetroTop,
-  }
 }
 
 // ─── exchange (биржа) ────────────────────────────────────────────────────────

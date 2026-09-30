@@ -251,7 +251,7 @@ export default function TicketsPage() {
 
                     {/* Status actions */}
                     <div>
-                      <div style={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>Изменить статус</div>
+                      <div style={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'Manrope, sans-serif' }}>Изменить статус</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {(['pending', 'in_review', 'resolved', 'dismissed'] as const).filter(s => s !== c.status).map(s => (
                           <Button key={s} onClick={() => handleStatus(c, s)} disabled={aSt?.s === 'loading'}
@@ -267,7 +267,7 @@ export default function TicketsPage() {
                     {/* Target actions */}
                     {c.targetId && (
                       <div>
-                        <div style={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>Действия с обвиняемым</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'Manrope, sans-serif' }}>Действия с обвиняемым</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                           {aBlock?.s === 'ok'
                             ? <span style={{ fontSize: 13, color: 'var(--positive)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 5 }}><IconCheck size={13} />{aBlock.msg}</span>
@@ -292,7 +292,7 @@ export default function TicketsPage() {
 
                     {/* Admin note */}
                     <div>
-                      <div style={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>Заметка администратора</div>
+                      <div style={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'Manrope, sans-serif' }}>Заметка администратора</div>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <input
                           placeholder="Добавить заметку к тикету..."

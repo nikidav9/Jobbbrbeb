@@ -18,7 +18,7 @@ export default function ChartCard({ title, sub, children, action, chip }: Props)
   return (
     <div style={{
       background: 'var(--bg-elev)',
-      border: '1px solid var(--line)',
+      border: '2px solid var(--ink)',
       borderRadius: 'var(--radius)',
       boxShadow: 'var(--shadow-sm)',
       overflow: 'hidden',
@@ -31,7 +31,7 @@ export default function ChartCard({ title, sub, children, action, chip }: Props)
         display: 'flex', alignItems: 'flex-start', gap: 10,
       }}>
         <div>
-          <div style={{ fontWeight: 550, fontSize: 13.5, letterSpacing: '-0.005em', color: 'var(--ink)' }}>{title}</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '-0.01em', color: 'var(--ink)' }}>{title}</div>
           {sub && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>{sub}</div>}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>

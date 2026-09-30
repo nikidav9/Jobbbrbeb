@@ -59,7 +59,7 @@ export default function FunnelPage() {
 
       <div className="page-content">
         {/* Гостевой просмотр */}
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Geist Mono, monospace', paddingBottom: 2 }}>
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Manrope, sans-serif', paddingBottom: 2 }}>
           Гости без регистрации · 30 дней
         </div>
         <div className="g-4">
@@ -96,7 +96,7 @@ export default function FunnelPage() {
         </div>
 
         {/* Telegram-привлечение */}
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Geist Mono, monospace', paddingBottom: 2 }}>
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Manrope, sans-serif', paddingBottom: 2 }}>
           Telegram · 30 дней
         </div>
         <div className="g-4">
@@ -114,7 +114,7 @@ export default function FunnelPage() {
         </ChartCard>
 
         {/* Органические рекомендации */}
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Geist Mono, monospace', paddingBottom: 2 }}>
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Manrope, sans-serif', paddingBottom: 2 }}>
           Рекомендации пользователей · 30 дней
         </div>
         <div className="g-4">
@@ -132,7 +132,7 @@ export default function FunnelPage() {
         </ChartCard>
 
         {/* Активация */}
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Geist Mono, monospace', paddingBottom: 2 }}>
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Manrope, sans-serif', paddingBottom: 2 }}>
           Активация
         </div>
         <div className="g-4">
@@ -157,7 +157,7 @@ export default function FunnelPage() {
         </div>
 
         {/* Конверсия */}
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Geist Mono, monospace', paddingBottom: 2, paddingTop: 4 }}>
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Manrope, sans-serif', paddingBottom: 2, paddingTop: 4 }}>
           Конверсия
         </div>
         <div className="g-4">
@@ -171,7 +171,7 @@ export default function FunnelPage() {
         </div>
 
         {/* Удержание */}
-        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Geist Mono, monospace', paddingBottom: 2, paddingTop: 4 }}>
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', fontWeight: 500, fontFamily: 'Manrope, sans-serif', paddingBottom: 2, paddingTop: 4 }}>
           Удержание
         </div>
         <div className="g-4">
@@ -270,7 +270,7 @@ export default function FunnelPage() {
           <div style={{ marginTop: 16, display: 'flex', gap: 32, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
             <div>
               <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>% одобрения</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: PALETTE.green, fontFamily: 'Geist Mono, monospace' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: PALETTE.green, fontFamily: 'Manrope, sans-serif' }}>
                 {d.kpi.permApplications > 0
                   ? ((d.kpi.permApproved / d.kpi.permApplications) * 100).toFixed(1)
                   : 0}%
@@ -278,7 +278,7 @@ export default function FunnelPage() {
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>Всего заявок</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', fontFamily: 'Manrope, sans-serif' }}>
                 {d.kpi.permApplications.toLocaleString('ru')}
               </div>
             </div>

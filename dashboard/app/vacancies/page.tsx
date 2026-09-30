@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useState } from 'react'
-import { fetchVacancies, PALETTE, CHART_COLORS } from '@/lib/queries'
+import { fetchVacancies, PALETTE } from '@/lib/queries'
 import { useRealtime } from '@/lib/useRealtime'
 import KpiCard from '@/components/KpiCard'
 import Donut from '@/components/Donut'
@@ -9,7 +9,7 @@ import { IconCheck } from '@/components/icons'
 import ChartCard from '@/components/ChartCard'
 import PageHeader from '@/components/PageHeader'
 import PageSkeleton from '@/components/PageSkeleton'
-import { updateTempVacancy, updatePermVacancy, deleteVacancy, deletePermVacancy, setVacancyStatus, setPermVacancyStatus } from '@/lib/admin-actions'
+import { updatePermVacancy, deletePermVacancy, setPermVacancyStatus } from '@/lib/admin-actions'
 import { downloadCSV } from '@/lib/csv-export'
 import {
   AreaChart, Area, BarChart, Bar, Cell,
@@ -24,28 +24,6 @@ export default function VacanciesPage() {
     tables: ['jm_vacancies', 'jm_perm_vacancies', 'jm_perm_applications', 'jm_vacancy_views', 'jm_perm_vacancy_views'],
     intervalSec: 30,
   })
-
-  function exportTempCSV() {
-    if (!d) return
-    const rows = d.tempVacancyCards.map((c: any) => ({
-      Название: c.title,
-      Компания: c.company,
-      Статус: c.status,
-      Срочно: c.isUrgent ? 'Да' : 'Нет',
-      Зарплата: c.salary || '',
-      Дата: c.shiftDate || '',
-      Начало: c.timeStart || '',
-      Конец: c.timeEnd || '',
-      Адрес: c.address || '',
-      Метро: c.metro || '',
-      'Нужно работников': c.workersNeeded || '',
-      'Найдено работников': c.workersFound || 0,
-      'Откликов': c.apps.total,
-      'Совпадений': c.apps.matched,
-      Опубликовано: c.createdAt || '',
-    }))
-    downloadCSV(rows, `temp_vacancies_${new Date().toISOString().slice(0, 10)}.csv`)
-  }
 
   function exportPermCSV() {
     if (!d) return
@@ -73,25 +51,17 @@ export default function VacanciesPage() {
 
       <div className="page-content">
         <div className="g-4">
-          <KpiCard label="Смен" value={d.kpi.totalTemp}
-            sub={`${d.kpi.openTemp} открыто из ${d.kpi.totalTemp}`} sparkColor={PALETTE.orange} />
           <KpiCard label="Постоянных вакансий" value={d.kpi.totalPerm}
             sub={`${d.kpi.openPerm} открыто из ${d.kpi.totalPerm}`} sparkColor={PALETTE.blue} />
-          <KpiCard label="Срочных смен" value={d.kpi.urgentTemp}
-            sub={d.kpi.totalTemp ? `${Math.round(d.kpi.urgentTemp / d.kpi.totalTemp * 100)}% всех смен` : '—'}
-            sparkColor={PALETTE.red} />
           {/* Чип «+N» рядом с числом N повторял его же. */}
           <KpiCard label="Новых за месяц" value={d.kpi.newMonth}
-            sub={`из ${d.kpi.totalTemp + d.kpi.totalPerm} за всё время`} />
+            sub={`из ${d.kpi.totalPerm} за всё время`} />
         </div>
 
-        <ChartCard title="Публикация вакансий" sub="Временные и постоянные по дням · 90 дней">
+        <ChartCard title="Публикация вакансий" sub="Постоянные по дням · 90 дней">
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={d.daily90} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
               <defs>
-                <linearGradient id="gT" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={PALETTE.orange} stopOpacity={0.2} /><stop offset="95%" stopColor={PALETTE.orange} stopOpacity={0} />
-                </linearGradient>
                 <linearGradient id="gP" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={PALETTE.blue} stopOpacity={0.2} /><stop offset="95%" stopColor={PALETTE.blue} stopOpacity={0} />
                 </linearGradient>
@@ -101,7 +71,6 @@ export default function VacanciesPage() {
               <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip contentStyle={TT} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND} />
-              <Area type="monotone" dataKey="temp" name="Временные" stroke={PALETTE.orange} fill="url(#gT)" strokeWidth={1.7} dot={false} />
               <Area type="monotone" dataKey="perm" name="Постоянные" stroke={PALETTE.blue} fill="url(#gP)" strokeWidth={1.7} dot={false} />
             </AreaChart>
           </ResponsiveContainer>
@@ -114,9 +83,6 @@ export default function VacanciesPage() {
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={d.viewsDaily30} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
               <defs>
-                <linearGradient id="gVT" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={0.2} /><stop offset="95%" stopColor={PALETTE.amber} stopOpacity={0} />
-                </linearGradient>
                 <linearGradient id="gVP" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={PALETTE.cyan} stopOpacity={0.2} /><stop offset="95%" stopColor={PALETTE.cyan} stopOpacity={0} />
                 </linearGradient>
@@ -126,34 +92,12 @@ export default function VacanciesPage() {
               <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip contentStyle={TT} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND} />
-              <Area type="monotone" dataKey="temp" name="Смены (подработки)" stroke={PALETTE.amber} fill="url(#gVT)" strokeWidth={1.7} dot={false} />
               <Area type="monotone" dataKey="perm" name="Постоянные" stroke={PALETTE.cyan} fill="url(#gVP)" strokeWidth={1.7} dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
 
-        <div className="g-3">
-          <ChartCard title="Типы работ" sub="Временные вакансии">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={d.workTypeDist} layout="vertical" margin={{ left: 0, right: 16, top: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
-                <XAxis type="number" tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" tick={AXIS_CAT} tickLine={false} axisLine={false} width={80} />
-                <Tooltip contentStyle={TT} />
-                <Bar dataKey="value" name="Вакансий" radius={[0, 4, 4, 0]}>
-                  {d.workTypeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          <ChartCard title="Смены" sub="Открыто и закрыто">
-            <Donut
-              data={d.tempStatus.map((e: any) => ({ name: e.name, value: e.value, color: e.fill }))}
-              caption="смен"
-            />
-          </ChartCard>
-
+        <div className="g-2">
           <ChartCard title="Постоянные вакансии" sub="Открыто и закрыто">
             <Donut
               data={d.permStatus.map((e: any) => ({ name: e.name, value: e.value, color: e.fill }))}
@@ -161,8 +105,6 @@ export default function VacanciesPage() {
             />
           </ChartCard>
         </div>
-
-        <TempVacancyCards cards={d.tempVacancyCards} onExport={exportTempCSV} onRefresh={refresh} />
 
         <PermVacancyCards cards={d.permVacancyCards} onExport={exportPermCSV} onRefresh={refresh} />
 
@@ -214,247 +156,6 @@ export default function VacanciesPage() {
 
 type AppInfo = { id: string; name: string; phone: string; status: string; date: string }
 
-// ─── Временные вакансии ────────────────────────────────────────────────────
-
-type TempCardData = {
-  id: string
-  title: string
-  company: string
-  salary: string | null
-  status: string
-  isUrgent: boolean
-  workersNeeded: number | null
-  workersFound: number
-  shiftDate: string | null
-  timeStart: string | null
-  timeEnd: string | null
-  address: string | null
-  metro: string | null
-  createdAt: string | null
-  apps: { total: number; matched: number; pending: number; rejected: number }
-  applicants: AppInfo[]
-}
-
-function TempVacancyCards({ cards, onExport, onRefresh }: { cards: TempCardData[]; onExport: () => void; onRefresh: () => void }) {
-  if (!cards || cards.length === 0) return null
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>
-          Временные вакансии
-          <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 400, color: 'var(--ink-3)' }}>
-            {cards.length} всего · сортировка по откликам
-          </span>
-        </div>
-        <button onClick={onExport} style={{ height: 30, padding: '0 12px', borderRadius: 7, border: '1px solid var(--line)', background: 'var(--bg-elev)', color: 'var(--ink-2)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg>
-          CSV
-        </button>
-      </div>
-      <div className="perm-vac-grid">
-        {cards.map(c => <TempCard key={c.id} c={c} onRefresh={onRefresh} />)}
-      </div>
-    </div>
-  )
-}
-
-function TempCard({ c, onRefresh }: { c: TempCardData; onRefresh: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [editFields, setEditFields] = useState({
-    status: c.status as 'open' | 'closed',
-    is_urgent: c.isUrgent,
-    address: c.address ?? '',
-    metro_station: c.metro ?? '',
-    date: c.shiftDate ?? '',
-    time_start: c.timeStart ?? '',
-    time_end: c.timeEnd ?? '',
-    salary: c.salary ? c.salary.replace(/[^\d]/g, '') : '',
-    workers_needed: c.workersNeeded ? String(c.workersNeeded) : '',
-  })
-
-  async function handleSave() {
-    setSaving(true)
-    try {
-      await updateTempVacancy(c.id, {
-        status: editFields.status,
-        is_urgent: editFields.is_urgent,
-        address: editFields.address || undefined,
-        metro_station: editFields.metro_station || undefined,
-        date: editFields.date || undefined,
-        time_start: editFields.time_start || undefined,
-        time_end: editFields.time_end || undefined,
-        salary: editFields.salary ? Number(editFields.salary) : null,
-        workers_needed: editFields.workers_needed ? Number(editFields.workers_needed) : null,
-      })
-      setEditing(false)
-      onRefresh()
-    } catch { } finally { setSaving(false) }
-  }
-
-  const isOpen = editing ? editFields.status === 'open' : c.status === 'open'
-  const hasApps = c.apps.total > 0
-  const matchedPct = hasApps ? Math.round(c.apps.matched / c.apps.total * 100) : 0
-
-  const matched  = c.applicants.filter(a => a.status === 'matched')
-  const pending  = c.applicants.filter(a => a.status === 'pending')
-  const rejected = c.applicants.filter(a => a.status === 'rejected')
-
-  return (
-    <div className="perm-vac-card">
-      {/* header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 9, flexShrink: 0,
-          background: isOpen ? 'var(--accent-soft)' : 'var(--bg-sunken)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconBriefcase color={isOpen ? PALETTE.orange : 'var(--ink-4)'} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.3, wordBreak: 'break-word' }}>
-            {c.title}
-            {(editing ? editFields.is_urgent : c.isUrgent) && <Chip tone="negative" style={{ marginLeft: 6, fontSize: 10.5, padding: '1px 6px' }}>Срочно</Chip>}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>{c.company}</div>
-        </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={() => setEditing(e => !e)} className="jt-icon-btn"
-            title={editing ? 'Закончить правку' : 'Править вакансию'}
-            style={{ width: 26, height: 26,
-              background: editing ? 'var(--accent-soft)' : undefined,
-              borderColor: editing ? 'var(--accent-line)' : undefined,
-              color: editing ? 'var(--accent)' : undefined }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 20h4L19 9a2.1 2.1 0 00-3-3L5 17v3z" />
-            </svg>
-          </button>
-          <Chip tone={isOpen ? 'accent' : 'neutral'}>{isOpen ? 'Открыта' : 'Закрыта'}</Chip>
-        </div>
-      </div>
-
-      {/* Inline edit form */}
-      {editing && (
-        <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-sunken)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-              <span style={{ color: 'var(--ink-3)' }}>Статус:</span>
-              <select value={editFields.status} onChange={e => setEditFields(f => ({ ...f, status: e.target.value as any }))}
-                style={{ height: 28, padding: '0 6px', border: '1px solid var(--line)', borderRadius: 5, background: 'var(--bg-elev)', color: 'var(--ink)', fontSize: 12, outline: 'none' }}>
-                <option value="open">Открыта</option>
-                <option value="closed">Закрыта</option>
-              </select>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
-              <input type="checkbox" checked={editFields.is_urgent} onChange={e => setEditFields(f => ({ ...f, is_urgent: e.target.checked }))} />
-              <span>Срочно</span>
-            </label>
-          </div>
-          {[
-            ['Адрес', 'address'],
-            ['Метро', 'metro_station'],
-            ['Дата смены', 'date'],
-            ['Начало', 'time_start'],
-            ['Конец', 'time_end'],
-            ['Зарплата', 'salary'],
-            ['Нужно чел.', 'workers_needed'],
-          ].map(([label, key]) => (
-            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-              <span style={{ color: 'var(--ink-3)', minWidth: 80 }}>{label}</span>
-              <input
-                value={(editFields as any)[key]}
-                onChange={e => setEditFields(f => ({ ...f, [key]: e.target.value }))}
-                style={{ flex: 1, height: 28, padding: '0 8px', border: '1px solid var(--line)', borderRadius: 5, background: 'var(--bg-elev)', color: 'var(--ink)', fontSize: 12, outline: 'none' }}
-              />
-            </label>
-          ))}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={handleSave} disabled={saving}
-              style={{ height: 30, padding: '0 14px', borderRadius: 6, border: 'none', background: 'var(--positive)', color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
-              {saving ? '…' : <><IconCheck size={12} />Сохранить</>}
-            </button>
-            <button onClick={() => setEditing(false)}
-              style={{ height: 30, padding: '0 12px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-elev)', color: 'var(--ink-2)', fontSize: 12.5, cursor: 'pointer' }}>
-              Отмена
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* meta */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 10 }}>
-        {c.salary && <span style={{ fontSize: 12, fontWeight: 600, color: PALETTE.blue }}>{c.salary}</span>}
-        {c.workersNeeded && (
-          <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-            {c.workersFound}/{c.workersNeeded} найдено
-          </span>
-        )}
-        {c.createdAt && <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 'auto' }}>Опубл. {c.createdAt}</span>}
-      </div>
-
-      {/* shift info row */}
-      {(c.shiftDate || c.address || c.metro) && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, padding: '8px 10px', background: 'var(--bg-sunken)', borderRadius: 8 }}>
-          {c.shiftDate && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <IconCalendar />
-              <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{c.shiftDate}</span>
-              {c.timeStart && <span style={{ color: 'var(--ink-3)' }}>{c.timeStart}{c.timeEnd ? ` – ${c.timeEnd}` : ''}</span>}
-            </div>
-          )}
-          {(c.metro || c.address) && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11.5, color: 'var(--ink-2)' }}>
-              <IconPin />
-              <span>{[c.metro, c.address].filter(Boolean).join(', ')}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={{ height: 1, background: 'var(--line)', marginBottom: 10 }} />
-
-      {/* clicks row */}
-      <button
-        onClick={() => hasApps && setOpen(o => !o)}
-        style={{ all: 'unset', display: 'flex', alignItems: 'center', gap: 8, width: '100%', cursor: hasApps ? 'pointer' : 'default' }}
-      >
-        <IconPeople color={hasApps ? PALETTE.orange : 'var(--ink-4)'} />
-        <span style={{ fontSize: 18, fontWeight: 700, color: hasApps ? 'var(--ink)' : 'var(--ink-3)', lineHeight: 1 }}>
-          {c.apps.total}
-        </span>
-        <span style={{ fontSize: 11.5, color: 'var(--ink-3)', flex: 1 }}>
-          {c.apps.total === 1 ? 'лайк' : c.apps.total >= 2 && c.apps.total <= 4 ? 'лайка' : 'лайков'}
-        </span>
-        {hasApps && (
-          <>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <Pill color={PALETTE.green}  label="совп." value={c.apps.matched} />
-              <Pill color={PALETTE.amber}  label="ожид." value={c.apps.pending} />
-              <Pill color={PALETTE.red}    label="откл." value={c.apps.rejected} />
-            </div>
-            <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 2 }}>{open ? '▲' : '▼'}</span>
-          </>
-        )}
-      </button>
-
-      {hasApps && (
-        <div style={{ marginTop: 8, height: 3, borderRadius: 2, background: 'var(--bg-sunken)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', borderRadius: 2, background: PALETTE.green, width: `${matchedPct}%` }} />
-        </div>
-      )}
-
-      {open && hasApps && (
-        <div style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {matched.length  > 0 && <ApplicantGroup title="Совпадение" color={PALETTE.green}  people={matched} />}
-          {pending.length  > 0 && <ApplicantGroup title="Ожидают"    color={PALETTE.amber}  people={pending} />}
-          {rejected.length > 0 && <ApplicantGroup title="Отказали"   color={PALETTE.red}    people={rejected} />}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ─── Постоянные вакансии ───────────────────────────────────────────────────
 
@@ -749,7 +450,7 @@ function ApplicantGroup({ title, color, people }: { title: string; color: string
               <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {p.name}
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>{p.phone}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>{p.phone}</div>
             </div>
             <div style={{ fontSize: 10.5, color: 'var(--ink-3)', flexShrink: 0 }}>{p.date}</div>
           </div>

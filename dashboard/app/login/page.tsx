@@ -41,16 +41,17 @@ export default function LoginPage() {
       <div style={{
         width: 360,
         background: 'var(--bg-elev)',
-        border: '1px solid var(--line)',
-        borderRadius: 14,
-        boxShadow: 'var(--shadow-md)',
+        border: '2px solid var(--ink)',
+        borderRadius: 26,
+        boxShadow: '5px 5px 0 var(--ink)',
         padding: '36px 32px 32px',
       }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
           <div style={{
-            width: 34, height: 34, borderRadius: 9,
-            background: 'var(--ink)', color: 'var(--bg)',
+            width: 38, height: 38, borderRadius: 12,
+            background: 'var(--accent)', color: 'var(--ink)', border: '2px solid var(--ink)',
+            fontFamily: 'var(--font-display)',
             display: 'grid', placeItems: 'center',
             fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em',
           }}>J</div>
@@ -60,7 +61,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '0 0 6px' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--ink)', margin: '0 0 6px' }}>
           Вход
         </h1>
         <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: '0 0 24px' }}>
@@ -79,15 +80,15 @@ export default function LoginPage() {
               placeholder="логин"
               autoComplete="username"
               style={{
-                width: '100%', height: 36, padding: '0 12px',
-                border: `1px solid ${error ? 'var(--negative)' : 'var(--line)'}`,
-                borderRadius: 8, background: 'var(--bg-elev)',
+                width: '100%', height: 44, padding: '0 14px',
+                border: `2px solid ${error ? 'var(--negative)' : 'var(--line-strong)'}`,
+                borderRadius: 14, background: 'var(--bg-elev)',
                 color: 'var(--ink)', font: 'inherit', fontSize: 13,
                 outline: 'none', boxSizing: 'border-box',
                 transition: 'border-color .12s',
               }}
-              onFocus={e => { if (!error) e.target.style.borderColor = 'var(--ink-3)' }}
-              onBlur={e => { e.target.style.borderColor = error ? 'var(--negative)' : 'var(--line)' }}
+              onFocus={e => { if (!error) e.target.style.borderColor = 'var(--ink)' }}
+              onBlur={e => { e.target.style.borderColor = error ? 'var(--negative)' : 'var(--line-strong)' }}
             />
           </div>
 
@@ -102,15 +103,15 @@ export default function LoginPage() {
               placeholder="пароль"
               autoComplete="current-password"
               style={{
-                width: '100%', height: 36, padding: '0 12px',
-                border: `1px solid ${error ? 'var(--negative)' : 'var(--line)'}`,
-                borderRadius: 8, background: 'var(--bg-elev)',
+                width: '100%', height: 44, padding: '0 14px',
+                border: `2px solid ${error ? 'var(--negative)' : 'var(--line-strong)'}`,
+                borderRadius: 14, background: 'var(--bg-elev)',
                 color: 'var(--ink)', font: 'inherit', fontSize: 13,
                 outline: 'none', boxSizing: 'border-box',
                 transition: 'border-color .12s',
               }}
-              onFocus={e => { if (!error) e.target.style.borderColor = 'var(--ink-3)' }}
-              onBlur={e => { e.target.style.borderColor = error ? 'var(--negative)' : 'var(--line)' }}
+              onFocus={e => { if (!error) e.target.style.borderColor = 'var(--ink)' }}
+              onBlur={e => { e.target.style.borderColor = error ? 'var(--negative)' : 'var(--line-strong)' }}
             />
           </div>
 
@@ -128,9 +129,9 @@ export default function LoginPage() {
             type="submit"
             disabled={loading || !login || !password}
             style={{
-              height: 38, borderRadius: 8, border: '1px solid var(--ink)',
-              background: loading ? 'var(--ink-2)' : 'var(--ink)',
-              color: 'var(--bg)', font: 'inherit', fontSize: 13.5, fontWeight: 500,
+              height: 46, borderRadius: 999, border: '2px solid var(--ink)',
+              background: 'var(--accent)', boxShadow: '3px 3px 0 var(--ink)',
+              color: 'var(--ink)', font: 'inherit', fontSize: 14, fontWeight: 700,
               cursor: loading ? 'default' : 'pointer',
               opacity: !login || !password ? 0.5 : 1,
               marginTop: 4, transition: 'opacity .12s, background .12s',

@@ -92,7 +92,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         <path d="M12 3.5L21.5 20H2.5L12 3.5z" /><path d="M12 10v4M12 17h.01" />
       </svg>
       <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Не удалось загрузить данные</div>
-      <div style={{ fontSize: 12, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace', maxWidth: 400, textAlign: 'center' }}>{message}</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif', maxWidth: 400, textAlign: 'center' }}>{message}</div>
       <button onClick={onRetry} className="jt-btn jt-btn-secondary" style={{ marginTop: 8 }}>
         Повторить
       </button>
