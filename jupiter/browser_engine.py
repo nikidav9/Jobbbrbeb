@@ -280,6 +280,24 @@ DIRECT_VALUE_JS = r"""
 AFTER_FILL_JS = "el => { el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); }"
 UNCHECK_JS = "el => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); }"
 
+
+def launch_options(headless: bool, executable_path: str | None) -> dict[str, Any]:
+    """Как запускать Chromium.
+
+    Без явного браузера — полный Chromium (channel="chromium"), а не
+    chrome-headless-shell, который Playwright берёт для headless по умолчанию.
+    Shell не читает политики /etc/chromium/policies, а доверие к УЦ Минцифры
+    приходит именно политикой (infra/jupiter-browser-ca-policy.py). 30.09 из-за
+    этого браузерная разведка теряла 30 сайтов — банки, Т-Банк, Positive
+    Technologies, Газпром — на ERR_CERT_AUTHORITY_INVALID.
+    """
+    options: dict[str, Any] = {"headless": headless, "args": browser_guard.CHROMIUM_SAFE_ARGS}
+    if executable_path:
+        options["executable_path"] = executable_path
+    else:
+        options["channel"] = "chromium"
+    return options
+
 # Элементы с обработчиками клика (addEventListener) — видны только через
 # DevTools-API getEventListeners (CDP, includeCommandLineAPI). Помечаем их
 # data-jt-click для FIND_APPLY_JS.
@@ -350,11 +368,8 @@ class JupiterBrowserEngine:
         self._last_status = 200
         self._pw = sync_playwright().start()
         try:
-            self._browser = self._pw.chromium.launch(
-                headless=headless,
-                executable_path=executable_path or os.environ.get("JUPITER_CHROMIUM") or None,
-                args=browser_guard.CHROMIUM_SAFE_ARGS,
-            )
+            self._browser = self._pw.chromium.launch(**launch_options(
+                headless, executable_path or os.environ.get("JUPITER_CHROMIUM") or None))
             probe = self._browser.new_page()
             ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
             probe.close()

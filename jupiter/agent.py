@@ -601,12 +601,24 @@ _VACANCY_PATH_RE = re.compile(r"/(?:vacanc(?:y|ies)|jobs?|career/vacanc\w*)/([^/
 _APPLY_SLUGS = {"apply", "application", "response", "questionary", "form", "otklik", "anketa"}
 
 
+def _path_key(url: str) -> str:
+    """Адрес без параметров и якоря: хост и путь."""
+    parsed = urllib.parse.urlparse(url or "")
+    return f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
+
+
 def _vacancy_slug(url: str) -> str:
     """Идентификатор вакансии в адресе: /vacancies/118-marketing-lead → 118-marketing-lead."""
     match = _VACANCY_PATH_RE.search(urllib.parse.urlparse(url or "").path)
     slug = match.group(1).lower() if match else ""
     # /jobs/apply?id=1 — это отклик, а не другая вакансия.
-    return "" if slug in _APPLY_SLUGS else slug
+    if slug in _APPLY_SLUGS:
+        return ""
+    # Раздел списка — не вакансия: /career/vacancies/it, /vacancies/all/moscow.
+    # У карточки в адресе номер или составное имя (118-marketing-lead,
+    # java-developer). Иначе правило «с карточки — только к своему отклику»
+    # отрезало со страницы списка все настоящие вакансии (Т-Банк, 30.09).
+    return slug if re.search(r"[\d_-]", slug) else ""
 
 
 def is_application_form(
@@ -1667,9 +1679,17 @@ class JupiterAgent:
             (self._spa_links(page), "spa_state", 0),
         ]
         own_vacancy = _vacancy_slug(self._root_url)
+        # Один путь с разными параметрами — не больше двух заходов: второй
+        # бывает вакансией (/vacancies?id=33), дальше это перебор фильтров
+        # (?direction=…), и разведка упиралась в MAX_STEPS вместо «нужен
+        # браузер» (Т-Банк IT, 30.09).
+        path_visits: dict[str, int] = {}
+        for seen in visited:
+            key = _path_key(seen)
+            path_visits[key] = path_visits.get(key, 0) + 1
         for candidates, origin, priority in sources:
             for url, text in candidates:
-                if url in visited:
+                if url in visited or path_visits.get(_path_key(url), 0) >= 2:
                     continue
                 # С карточки вакансии — только к отклику на неё же. Соседняя
                 # вакансия в «похожих» набирает те же очки, и агент заполнял

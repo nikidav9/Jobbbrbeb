@@ -186,5 +186,22 @@ class WatchdogTest(unittest.TestCase):
         self.assertEqual(seen, ["stray"])
 
 
+
+class LaunchUsesFullChromium(unittest.TestCase):
+    """headless_shell не читает политику с УЦ Минцифры — запускаем полный Chromium."""
+
+    def test_default_is_full_chromium_channel(self):
+        from browser_engine import launch_options
+        opts = launch_options(True, None)
+        self.assertEqual(opts["channel"], "chromium")
+        self.assertNotIn("executable_path", opts)
+        self.assertTrue(opts["headless"])
+
+    def test_explicit_binary_wins(self):
+        from browser_engine import launch_options
+        opts = launch_options(True, "/opt/chrome")
+        self.assertEqual(opts["executable_path"], "/opt/chrome")
+        self.assertNotIn("channel", opts)
+
 if __name__ == "__main__":
     unittest.main()
