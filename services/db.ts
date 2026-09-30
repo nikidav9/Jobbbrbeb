@@ -2503,7 +2503,12 @@ export type JupiterQuestionType =
 export interface JupiterQuestion {
   id: string;
   application_id: string;
+  /** Подпись поля на сайте работодателя — как есть. */
   question: string;
+  /** Понятная формулировка от YandexGPT (миграция 138); null — не было. */
+  display?: string | null;
+  /** Пояснение, что туда обычно пишут; null — не было. */
+  hint?: string | null;
   type: JupiterQuestionType;
   /** fact — сохранится и подставится сам; vacancy — только для этого отклика. */
   kind: 'fact' | 'vacancy';

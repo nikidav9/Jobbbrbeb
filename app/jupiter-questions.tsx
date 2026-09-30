@@ -22,7 +22,7 @@ import { BackIcon } from '@/components/profile/edit/icons';
 import {
   jupiterAnswerQuestion, jupiterQuestions, jupiterSkipQuestion, type JupiterQuestion,
 } from '@/services/db';
-import { dateAfter, usableDraft } from '@/services/jupiterQuestions';
+import { dateAfter, questionTitle, usableDraft } from '@/services/jupiterQuestions';
 
 const KEYBOARD: Partial<Record<JupiterQuestion['type'], KeyboardTypeOptions>> = {
   number: 'numeric', phone: 'phone-pad', email: 'email-address', url: 'url', date: 'numbers-and-punctuation',
@@ -173,23 +173,25 @@ export default function JupiterQuestionsScreen() {
           ) : (
             <>
               <JTProgress step={Math.min(step, total)} total={Math.max(total, 1)} />
-              <Text style={s.question} testID="question-text">{current.question}</Text>
+              {/* Кто спрашивает — подпись, а не карточка: в рамке с тенью она
+                  выглядела вторым полем ввода (владелец, 01.10.2026). */}
+              <Text style={s.asker} numberOfLines={1} testID="question-company">
+                Спрашивает {current.company?.trim() || 'работодатель'}
+                {current.applications_waiting > 1 ? ` · ждут ответа ${current.applications_waiting} откл.` : ''}
+              </Text>
+              <Text style={s.question} testID="question-text">{questionTitle(current)}</Text>
+              {current.hint ? <Text style={s.explain} testID="question-hint">{current.hint}</Text> : null}
+              {current.display ? (
+                <Text style={s.siteLabel} numberOfLines={2}>На сайте поле называется «{current.question}»</Text>
+              ) : null}
+
+              <View style={s.answerBox}>{renderInput(current)}</View>
+
               <Text style={s.hint}>
                 {current.kind === 'fact'
                   ? 'Сохраним ответ и дальше подставим сами — поправить можно в профиле.'
                   : 'Этот ответ — только для этой вакансии.'}
               </Text>
-
-              <View style={s.answerBox}>{renderInput(current)}</View>
-
-              <HardShadowBox offset={4} radius={18} style={{ marginTop: 22 }}>
-                <View style={s.appCard}>
-                  <Text style={s.appCompany} numberOfLines={1}>{current.company?.trim() || 'Карьерный сайт'}</Text>
-                  {current.applications_waiting > 1 ? (
-                    <Text style={s.appWaiting}>Ждут этого ответа: {current.applications_waiting} откл.</Text>
-                  ) : null}
-                </View>
-              </HardShadowBox>
 
               <JTButton label="Ответить" arrow={false} onPress={() => void answer()}
                 disabled={!value.trim()} busy={busy} style={{ marginTop: 22 }} testID="answer-button" />
@@ -232,8 +234,11 @@ const s = StyleSheet.create({
     position: 'absolute', left: 0, right: 0, textAlign: 'center', fontFamily: JT_FONT.head, fontSize: 17, color: JT.ink,
   },
   content: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 40, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  question: { marginTop: 22, fontFamily: JT_FONT.head, fontSize: 22, lineHeight: 29, color: JT.ink, letterSpacing: -0.3 },
-  hint: { marginTop: 8, fontFamily: JT_FONT.medium, fontSize: 14, lineHeight: 20, color: JT.textSecondary },
+  question: { marginTop: 8, fontFamily: JT_FONT.head, fontSize: 22, lineHeight: 29, color: JT.ink, letterSpacing: -0.3 },
+  hint: { marginTop: 12, fontFamily: JT_FONT.medium, fontSize: 13, lineHeight: 18, color: JT.textTertiary },
+  asker: { marginTop: 22, fontFamily: JT_FONT.bold, fontSize: 14, color: JT.textSecondary },
+  explain: { marginTop: 10, fontFamily: JT_FONT.medium, fontSize: 15, lineHeight: 21, color: JT.textSecondary },
+  siteLabel: { marginTop: 8, fontFamily: JT_FONT.medium, fontSize: 12, lineHeight: 17, color: JT.textTertiary },
   answerBox: { marginTop: 18 },
   input: {
     marginTop: 12, minHeight: 56, borderRadius: 18, borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.surface,
@@ -251,11 +256,6 @@ const s = StyleSheet.create({
   choiceOn: { backgroundColor: JT.accent },
   choiceTxt: { fontFamily: JT_FONT.bold, fontSize: 16, color: JT.ink, textAlign: 'center' },
   choiceTxtSmall: { fontSize: 14 },
-  appCard: {
-    padding: 14, borderRadius: 18, borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.surface, gap: 4,
-  },
-  appCompany: { fontFamily: JT_FONT.heavy, fontSize: 15, color: JT.ink },
-  appWaiting: { fontFamily: JT_FONT.medium, fontSize: 13, color: JT.textTertiary },
   skip: { marginTop: 10, alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 16 },
   skipTxt: { fontFamily: JT_FONT.bold, fontSize: 15, color: JT.textTertiary },
   card: { padding: 22, borderRadius: 24, backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink },

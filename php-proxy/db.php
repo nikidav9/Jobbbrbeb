@@ -3110,6 +3110,9 @@ function jt_questions_store(string $appId, string $uid, array $questions): int {
             'application_id' => $appId, 'user_id' => $uid, 'question_key' => $key,
             'question_text' => mb_substr($text, 0, 300), 'field_type' => $type,
             'kind' => $kind, 'options' => $options, 'status' => 'open',
+            // Понятный текст и пояснение от YandexGPT (миграция 138); нет — null.
+            'question_display' => ($d = trim((string)($q['display'] ?? ''))) !== '' ? mb_substr($d, 0, 200) : null,
+            'question_hint' => ($h = trim((string)($q['hint'] ?? ''))) !== '' ? mb_substr($h, 0, 400) : null,
         ];
     }
     // Вопросы, которых в анкете больше нет, не держим открытыми.
@@ -7981,7 +7984,7 @@ try {
             $uidArg = (string)($args[0] ?? '');
             $rows = sb_select('jm_jupiter_questions', [
                 'user_id' => 'eq.' . $uidArg, 'status' => 'eq.open', 'limit' => '200',
-            ], 'id,application_id,question_key,question_text,field_type,kind,options,answer,created_at',
+            ], 'id,application_id,question_key,question_text,question_display,question_hint,field_type,kind,options,answer,created_at',
                 'created_at.asc');
             $bank = [];
             foreach (sb_select('jm_jupiter_answers', ['user_id' => 'eq.' . $uidArg], 'question_key,answer') as $a) {
@@ -8003,6 +8006,7 @@ try {
                 return [
                     'id' => $r['id'], 'application_id' => $r['application_id'],
                     'question' => $r['question_text'], 'type' => $r['field_type'],
+                    'display' => $r['question_display'] ?? null, 'hint' => $r['question_hint'] ?? null,
                     'kind' => $r['kind'], 'options' => $r['options'] ?? [],
                     'draft' => $r['answer'] ?? ($bank[$r['question_key']] ?? null),
                     'company' => $app['company'] ?? null, 'vacancy_url' => $app['vacancy_url'] ?? null,

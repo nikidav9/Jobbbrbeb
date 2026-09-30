@@ -19,3 +19,20 @@ export function usableDraft(q: Pick<JupiterQuestion, 'type' | 'options' | 'draft
   }
   return draft;
 }
+
+/**
+ * Заголовок вопроса: понятная формулировка YandexGPT, если есть; иначе подпись
+ * сайта. Подпись заглавными («КОМПАНИЯ») приводим к обычному виду — крик
+ * заглавными читался как ошибка (владелец, 01.10.2026).
+ */
+export function questionTitle(q: { question: string; display?: string | null }): string {
+  const display = (q.display ?? '').trim();
+  if (display) return display;
+  const raw = (q.question ?? '').trim();
+  const letters = raw.replace(/[^A-Za-zА-Яа-яЁё]/g, '');
+  if (letters.length > 3 && letters === letters.toUpperCase()) {
+    const lower = raw.toLocaleLowerCase('ru-RU');
+    return lower.charAt(0).toLocaleUpperCase('ru-RU') + lower.slice(1);
+  }
+  return raw;
+}

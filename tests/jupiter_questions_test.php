@@ -78,6 +78,16 @@ check('пуш об ушедшем — только если человек от�
     str_contains($finish, 'jt_questions_sent_notify(') && str_contains($notifySent, "'status' => 'eq.answered'"));
 check('пуш не роняет итог воркера', str_contains($finish, 'catch (Throwable $e)'));
 
+// ── Понятный вопрос от YandexGPT (миграция 138) ─────────────────────────────
+$m138 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/138_jupiter_question_display.sql');
+check('миграция добавляет понятный текст и пояснение',
+    str_contains($m138, 'add column if not exists question_display text')
+    && str_contains($m138, 'add column if not exists question_hint text'));
+check('сервер хранит их с ограничением длины',
+    str_contains($db, "'question_display' => (\$d = trim((string)(\$q['display'] ?? ''))) !== '' ? mb_substr(\$d, 0, 200) : null")
+    && str_contains($db, "mb_substr(\$h, 0, 400)"));
+check('приложение их получает', str_contains($list, "'display' => \$r['question_display'] ?? null"));
+
 // ── База ────────────────────────────────────────────────────────────────────
 foreach (['jm_jupiter_questions', 'jm_jupiter_answers'] as $t) {
     check("$t под RLS", str_contains($sql, "alter table public.$t enable row level security")

@@ -52,6 +52,9 @@ SUCCESS_MARKERS = (
     "резюме отправлено",
     "мы получили ваш отклик",
     "мы получили вашу заявку",
+    # job.2gis.ru (01.10.2026): окно «Отправлено — Твой отклик уже у нас».
+    # Одно «отправлено» — нет: так подписаны и кнопки, и шаги анкет.
+    "отклик уже у нас",
 )
 
 SUBMIT_MARKERS = (
@@ -782,6 +785,7 @@ class JupiterAgent:
         handoffs: HandoffStore | None = None,
         before_submit: Callable[[str, bool], None] | None = None,
         field_mapper: Callable[[list[dict], list[str]], dict[str, str]] | None = None,
+        question_explainer: Callable[[list[dict], dict], dict[str, dict[str, str]]] | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -800,6 +804,10 @@ class JupiterAgent:
         # {имя поля: ключ}. Значения кандидата и полей ей не показываются,
         # согласия и галочки она не трогает. См. _map_unknown_fields.
         self.field_mapper = field_mapper
+        # Нейросеть переписывает вопросы работодателя понятнее (01.10.2026):
+        # видит подписи полей формы и заголовок страницы, не данные кандидата.
+        # Ключ вопроса не меняет. См. _explain_questions.
+        self.question_explainer = question_explainer
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -1427,6 +1435,46 @@ class JupiterAgent:
                     filled = True
                     break
         return filled
+
+    def _explain_questions(
+        self, page: PageState, form_index: int | None, questions: list[dict],
+    ) -> list[dict]:
+        """Понятный текст и пояснение к вопросам — если есть нейросеть.
+
+        Добавляет display/hint и уточняет kind; key и text (подпись сайта) не
+        трогает. Любой сбой — вопросы как есть.
+        """
+        if self.question_explainer is None or not questions:
+            return questions
+        fields = []
+        for control in page.controls:
+            if form_index is not None and control.form_index != form_index:
+                continue
+            if control.type in {"hidden", "submit", "image", "button", "reset"}:
+                continue
+            label = str(self.descriptor(control) or "").strip()
+            if label and label not in fields:
+                fields.append(label)
+        context = {
+            "host": urllib.parse.urlparse(page.url).hostname or "",
+            "title": page.title, "fields": fields,
+        }
+        try:
+            answer = self.question_explainer(questions, context)
+        except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+            return questions
+        if not isinstance(answer, dict):
+            return questions
+        for q in questions:
+            extra = answer.get(q.get("key"))
+            if not isinstance(extra, dict) or not extra.get("question"):
+                continue
+            q["display"] = str(extra["question"])[:200]
+            if extra.get("hint"):
+                q["hint"] = str(extra["hint"])[:400]
+            if extra.get("kind") in ("fact", "vacancy"):
+                q["kind"] = extra["kind"]
+        return questions
 
     def _missing_reason_code(
         self,
@@ -2242,7 +2290,9 @@ class JupiterAgent:
                                 reason_code=Reason.NEEDS_ANSWERS,
                                 field_name=questions[0].text,
                             )
-                            result.questions = [q.as_dict() for q in questions]
+                            result.questions = self._explain_questions(
+                                page, target_form_index, [q.as_dict() for q in questions],
+                            )
                             return result
                     action_type = {
                         Reason.CONSENT_REQUIRED: HumanAction.CONSENT,

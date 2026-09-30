@@ -1428,6 +1428,15 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 `jupiterGetCandidateProfile(uid, applicationId).answers`. Проверка —
 `tests/jupiter_questions_test.php`.
 
+Понятный вопрос (миграция 138, 01.10.2026): воркер отдаёт вопросы YandexGPT
+(`browser_planner.explain_questions`, агент — `question_explainer`) — модель видит
+подпись поля, соседние поля формы и заголовок страницы, не данные кандидата — и
+получает `display` (понятный вопрос), `hint` (что писать) и уточнённый `kind`.
+Ключ вопроса — по подписи сайта, как раньше. Сервер хранит их в
+`question_display`/`question_hint`; экран показывает «Спрашивает <компания>»,
+понятный вопрос, пояснение и мелко подпись сайта (`questionTitle`: без ИИ —
+подпись без крика заглавными).
+
 Экраны: на «Откликах» (`app/(tabs)/matches.tsx`, `testID=questions-card`) оранжевая
 карточка «N вопросов от работодателей» над «Ждут вас»; «Нужны вы» открывает сначала
 капчу, потом вопросы, потом встроенный браузер. `app/jupiter-questions.tsx` — по

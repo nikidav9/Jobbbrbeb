@@ -11,6 +11,7 @@ from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent, Reason
 from engine import JupiterWebEngine
+import browser_planner
 from questions import extract_questions, is_special, question_key, question_kind
 
 FORM = """<!doctype html><meta charset="utf-8"><title>Отклик</title>
@@ -145,6 +146,77 @@ class AgentAsksAndThenUsesAnswers(unittest.TestCase):
         result = self.run_agent("/vacancy/3", answers)
         self.assertEqual(result.reason_code, Reason.NEEDS_ANSWERS)
         self.assertEqual([q["name"] for q in result.questions], ["source"])
+
+
+class _FakeLLM:
+    """Подставная нейросеть: запоминает, что ей показали, и отвечает заготовкой."""
+
+    def __init__(self, answer):
+        self.answer = answer
+        self.seen = []
+
+    def complete_json(self, system, user, schema_hint=""):
+        self.seen.append(user)
+        return self.answer
+
+
+class YandexGPTExplainsQuestions(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        cls.server.posts = []
+        cls.port = cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        browser_planner._QUESTION_CACHE.clear()
+        self.questions = [
+            {"key": question_key("КОМПАНИЯ"), "text": "КОМПАНИЯ", "type": "text", "kind": "vacancy", "options": []},
+        ]
+
+    def test_unclear_label_gets_a_clear_question_and_hint(self):
+        llm = _FakeLLM({"questions": {"q0": {
+            "question": "В какой компании вы сейчас работаете?",
+            "hint": "Название текущего работодателя. Если не работаете — так и напишите.",
+            "kind": "fact"}}})
+        got = browser_planner.explain_questions(llm, self.questions, {
+            "host": "www.it-one.ru", "title": "Вакансии IT_One",
+            "fields": ["ИМЯ", "ФАМИЛИЯ", "EMAIL", "ТЕЛЕФОН", "КОМПАНИЯ"]})
+        item = got[question_key("КОМПАНИЯ")]
+        self.assertEqual(item["question"], "В какой компании вы сейчас работаете?")
+        self.assertEqual(item["kind"], "fact")
+        self.assertIn("КОМПАНИЯ", llm.seen[0])
+
+    def test_garbage_answer_leaves_the_question_as_is(self):
+        for bad in ({}, {"questions": "нет"}, {"questions": {"q0": {"question": ""}}},
+                    {"questions": {"q9": {"question": "Чужой вопрос?"}}}):
+            browser_planner._QUESTION_CACHE.clear()
+            self.assertEqual(browser_planner.explain_questions(_FakeLLM(bad), self.questions, {}), {})
+
+    def test_agent_adds_display_without_touching_key_and_hides_candidate(self):
+        llm = _FakeLLM({"questions": {
+            "q0": {"question": "Ваш ник в Телеграме для связи?", "hint": "Например, @ivan.", "kind": "fact"},
+        }})
+        values = {"first_name": "Никита", "email": "n@reply.jobtoo.ru", "personal_data_consent": True}
+        with tempfile.TemporaryDirectory() as tmp:
+            resume = Path(tmp) / "cv.pdf"
+            resume.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            agent = JupiterAgent({"127.0.0.1"}, dry_run=True, question_explainer=lambda qs, ctx:
+                                 browser_planner.explain_questions(llm, qs, ctx))
+            result = agent.run(f"http://127.0.0.1:{self.port}/vacancy/9",
+                               CandidateProfile(values=values, resume_path=str(resume)))
+        self.assertEqual(result.reason_code, Reason.NEEDS_ANSWERS, result.reason)
+        tg = next(q for q in result.questions if q["name"] == "tg")
+        self.assertEqual(tg["key"], question_key("Телеграм для связи"))
+        self.assertEqual(tg["display"], "Ваш ник в Телеграме для связи?")
+        # Данные кандидата нейросеть не видит.
+        self.assertTrue(llm.seen)
+        for secret in ("Никита", "n@reply.jobtoo.ru"):
+            self.assertNotIn(secret, llm.seen[0])
 
 
 if __name__ == "__main__":
