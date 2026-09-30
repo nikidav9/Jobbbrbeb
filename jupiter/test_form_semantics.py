@@ -937,5 +937,46 @@ class BrowserSurveyRegressions(unittest.TestCase):
         self.assertNotEqual(result.status, "ready_to_submit", result.as_dict())
 
 
+
+class PreselectedRadioIsNotTheCandidatesAnswer(unittest.TestCase):
+    """Полюс, 30.09: «Готовность к вахтовому методу» сайт ставит на «Готов»."""
+
+    HTML = (
+        '<form><input name="fio" placeholder="ФИО">'
+        '<p>Готовность к вахтовому методу</p>'
+        '<label><input type="radio" name="shift" value="yes" checked required>Готов</label>'
+        '<label><input type="radio" name="shift" value="no" required>Не готов</label>'
+        '<p>Готовность к переезду</p>'
+        '<label><input type="radio" name="relocation" value="да" checked>Да</label>'
+        '<label><input type="radio" name="relocation" value="нет">Нет</label>'
+        '<input type="radio" name="kind" value="resume" checked>'
+        '<button type="submit">Отправить</button></form>'
+    )
+
+    def setUp(self):
+        self.page = parse(self.HTML)
+        self.agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        self.trajectory: list = []
+        self.agent.drop_preselected_radios(self.page, 0, self.trajectory)
+
+    def test_site_choice_is_cleared_and_required_question_goes_to_the_human(self):
+        self.assertFalse(any(c.checked for c in self.page.controls if c.name == "shift"))
+        missing = self.agent._required_missing(self.page, 0)
+        self.assertEqual(len(missing), 2, missing)  # обе кнопки группы «вахта»
+        self.assertIn(
+            "radio_default_cleared", [t["action"] for t in self.trajectory]
+        )
+
+    def test_single_radio_is_a_fixed_value_and_stays(self):
+        self.assertTrue(control(self.page, "kind").checked)
+
+    def test_profile_answer_is_put_back(self):
+        profile = CandidateProfile(values={"relocation": "нет"})
+        for c in self.page.controls:
+            if c.name == "relocation":
+                self.agent.fill_control(self.page, c, profile, self.trajectory)
+        chosen = [c.value for c in self.page.controls if c.name == "relocation" and c.checked]
+        self.assertEqual(chosen, ["нет"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
