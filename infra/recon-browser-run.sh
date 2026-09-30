@@ -45,7 +45,9 @@ flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
 
 # Сначала HTTP: браузер берёт только то, что тот не прошёл.
 waited=0
-while systemctl is-active --quiet jt-recon.service 2>/dev/null; do
+# oneshot-служба, пока работает, в состоянии activating, а не active.
+while case "$(systemctl show -p ActiveState --value jt-recon.service 2>/dev/null)" in
+        active|activating) true ;; *) false ;; esac; do
   if [ "$waited" -ge "$WAIT_HTTP_MINUTES" ]; then
     say "HTTP-разведка идёт дольше $WAIT_HTTP_MINUTES мин, пропускаю день"
     exit 0

@@ -643,6 +643,32 @@ SVCEOF
     say "recon-browser" "таймер выключен вместе с браузером"
   fi
 
+  # Разведка по запросу, не дожидаясь ночи: новое содержимое infra/recon-now
+  # (любая строка — дата и причина) запускает HTTP-разведку один раз, а
+  # браузерную — следом, когда HTTP закончится. Только чтение, как ночью.
+  RN_FILE="$REPO/infra/recon-now"
+  RN_DIR=/var/lib/jobtoo
+  if [ -f "$RN_FILE" ] && [ -f /etc/systemd/system/jt-recon.service ]; then
+    mkdir -p "$RN_DIR"
+    rn_sha=$(sha256sum "$RN_FILE" | cut -d' ' -f1)
+    if [ "$rn_sha" != "$(cat "$RN_DIR/recon-now.sha" 2>/dev/null || true)" ]; then
+      echo "$rn_sha" > "$RN_DIR/recon-now.sha"
+      touch "$RN_DIR/recon-browser.pending"
+      systemctl start --no-block jt-recon.service >/dev/null 2>&1 || true
+      say "recon" "разведка по запросу запущена: $(head -c 120 "$RN_FILE")"
+    fi
+  fi
+  if [ -f "$RN_DIR/recon-browser.pending" ]; then
+    rn_state=$(systemctl show -p ActiveState --value jt-recon.service 2>/dev/null || true)
+    if [ "$rn_state" != active ] && [ "$rn_state" != activating ]; then
+      rm -f "$RN_DIR/recon-browser.pending"
+      if [ -f /etc/systemd/system/jt-recon-browser.service ]; then
+        systemctl start --no-block jt-recon-browser.service >/dev/null 2>&1 || true
+        say "recon-browser" "браузерная разведка по запросу запущена"
+      fi
+    fi
+  fi
+
   # Серверу PHP: переводить ли заявки на браузер. Доезжает до контейнера
   # через --env-file в общем docker compose up ниже (как JUPITER_MAIL_VERIFIED).
   if [ -f "$JB_FLAG" ] && [ -f "$JB_BASE/.installed" ]; then JB_PHP=1; else JB_PHP=0; fi
