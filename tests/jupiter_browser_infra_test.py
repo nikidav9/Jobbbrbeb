@@ -91,8 +91,11 @@ assert bootstrap.index("JUPITER_BROWSER_ENABLED=$JB_PHP") < bootstrap.index(
 
 # ── Доверие к УЦ Минцифры: политика Chromium, не флаг ────────────────────────
 assert "JB_POLICY=/etc/chromium/policies/managed/jobtoo-ru-ca.json" in section
-assert 'install -m 644 -o root -g root /tmp/jt-ru-ca.json "$JB_POLICY"' in section
-assert 'rm -f "$JB_POLICY"' in section
+# Chrome for Testing (Playwright 1.63 «chromium») читает только свою папку.
+assert "JB_POLICY_CFT=/etc/opt/chrome_for_testing/policies/managed/jobtoo-ru-ca.json" in section
+assert 'for jb_pol in "$JB_POLICY" "$JB_POLICY_CFT"' in section
+assert 'install -m 644 -o root -g root /tmp/jt-ru-ca.json "$jb_pol"' in section
+assert 'rm -f "$jb_pol"' in section
 for text in (run, section, bootstrap,
              (ROOT / "infra" / "jupiter-browser-ca-policy.py").read_text(encoding="utf-8").split('"""')[2]):
     assert "ignore-certificate" not in text.lower()

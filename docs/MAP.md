@@ -630,7 +630,7 @@ SPA-сайтов страница вакансии пустая, поэтому 
 не грузится, вершина проверенной цепочки обязана быть корнем — тест
 `jupiter/test_tls_trust.py`). `RU_CA_HOSTS`/`ru_ca_context()` сохранены для
 сверки с PHP. Браузер — политикой Chromium `CACertificatesWithConstraints`
-(`infra/jupiter-browser-ca-policy.py`); политику читает только полный Chromium, поэтому движок запускает его `channel="chromium"` (`browser_engine.launch_options`), а не `chrome-headless-shell` — с shell 30.09 браузерная разведка теряла 30 сайтов на ERR_CERT_AUTHORITY_INVALID; флаг `--ignore-certificate-errors-spki-list`
+(`infra/jupiter-browser-ca-policy.py`); политику читает только полный браузер, поэтому движок запускает его `channel="chromium"`; в Playwright 1.63 это Chrome for Testing, и политику он берёт из `/etc/opt/chrome_for_testing/policies/managed/` — `bootstrap.sh` кладёт её и туда, и в `/etc/chromium/policies/managed/` (`browser_engine.launch_options`), а не `chrome-headless-shell` — с shell 30.09 браузерная разведка теряла 30 сайтов на ERR_CERT_AUTHORITY_INVALID; флаг `--ignore-certificate-errors-spki-list`
 запрещён: проверено, что он отключает всю проверку цепочки с этим ключом. PEM — копия в `jupiter/ru_trusted_ca.pem` (в `.gitignore` для неё исключение из
 `*.pem`); что копия и список хостов совпадают с PHP, сторожит
 `jupiter/test_ru_ca.py`. Вход и база этому центру не доверяют.

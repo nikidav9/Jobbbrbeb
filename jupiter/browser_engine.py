@@ -286,8 +286,9 @@ def launch_options(headless: bool, executable_path: str | None) -> dict[str, Any
 
     Без явного браузера — полный Chromium (channel="chromium"), а не
     chrome-headless-shell, который Playwright берёт для headless по умолчанию.
-    Shell не читает политики /etc/chromium/policies, а доверие к УЦ Минцифры
-    приходит именно политикой (infra/jupiter-browser-ca-policy.py). 30.09 из-за
+    Shell не читает политики вовсе, а доверие к УЦ Минцифры приходит именно
+    политикой (infra/jupiter-browser-ca-policy.py). Полный браузер Playwright
+    1.63 — Chrome for Testing, его папка /etc/opt/chrome_for_testing/policies. 30.09 из-за
     этого браузерная разведка теряла 30 сайтов — банки, Т-Банк, Positive
     Technologies, Газпром — на ERR_CERT_AUTHORITY_INVALID.
     """
