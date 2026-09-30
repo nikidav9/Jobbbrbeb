@@ -30,11 +30,13 @@ check(str_contains($mine, 'jt_jupiter_phone_fill_to_server('), 'застрявш
 
 $patch = substr($db, (int)strpos($db, 'function jt_jupiter_server_patch('), 500);
 check(str_contains($patch, "'submission_authorized_at' => \$now"), 'разрешение на отправку ставится');
-check(str_contains($patch, 'if (jt_employer_delegated($uid))'), 'согласия — только по поручению');
+check(str_contains($patch, 'if ($delegated ?? jt_employer_delegated($uid))'), 'согласия — только по поручению');
 
-$mts = substr($db, (int)strpos($db, "'vacancy_url' => 'like.https://job.mts.ru/*'") - 200, 900);
-check(str_contains($mts, "'state' => 'eq.submission_unknown'"), 'возврат МТС — только «исход неизвестен»');
-check(str_contains($mts, "'updated_at' => 'lt.2026-09-30T22:45:00Z'"), 'возврат МТС — только до исправления');
-check(str_contains($mts, "'lease_owner' => 'is.null'"), 'возврат МТС — не взятые воркером');
+$move2 = substr($db, (int)strpos($db, 'function jt_jupiter_phone_fill_to_server('), 1600);
+check(str_contains($move2, "if (\$uid === '' || !JT_SERVER_SEND_PILOT) return;"), 'без пилота — ни одного запроса');
+check(str_contains($move2, 'if (!$rows || !jt_jupiter_server_sends($uid)) return;'), 'нечего переводить — один запрос');
+check(str_contains($move2, '$delegated = jt_employer_delegated($uid);'), 'поручение проверяется один раз');
+check(str_contains($move2, "'id' => sb_in_list(\$ids)"), 'заявки переводятся пачкой, а не по одной');
+check(!str_contains($db, 'job.mts.ru/*'), 'разовый возврат МТС убран');
 
 echo "jupiter server send: OK\n";

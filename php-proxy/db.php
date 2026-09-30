@@ -3397,55 +3397,51 @@ function jt_jupiter_server_sends(string $uid): bool
         && jt_browser_delegated($uid);
 }
 
-/** Патч заявки «в очередь сервера на отправку». */
-function jt_jupiter_server_patch(string $uid, string $vacancyUrl, string $now): array
+/**
+ * Патч заявки «в очередь сервера на отправку». $delegated — дано ли поручение
+ * на согласия; null — узнать (один запрос). Перевод пачкой узнаёт его один
+ * раз на всех.
+ */
+function jt_jupiter_server_patch(string $uid, string $vacancyUrl, string $now, ?bool $delegated = null): array
 {
     $patch = ['state' => 'queued', 'reason_code' => null, 'not_before' => null,
         'submission_authorized_at' => $now, 'updated_at' => $now];
-    if (jt_employer_delegated($uid)) $patch += jt_employer_consent_fields($vacancyUrl, $now);
+    if ($delegated ?? jt_employer_delegated($uid)) $patch += jt_employer_consent_fields($vacancyUrl, $now);
     return $patch;
 }
 
 /**
  * Отклики пилота, отложенные «на телефон» (PHONE_FILL), — серверу. Зовётся
- * при открытии «Откликов»: застрявшие отклики уходят без отдельной миграции.
+ * при открытии «Откликов», поэтому дёшево: пилота нет или переводить нечего
+ * — один запрос или ни одного. Поручение проверяется один раз, заявки
+ * переводятся пачками по адресу условий работодателя, а не по одной: на
+ * первом открытии их бывают десятки, и ответ не укладывался во время
+ * («Не удалось обновить отклики», 01.10.2026).
  */
 function jt_jupiter_phone_fill_to_server(string $uid): void
 {
     try {
-        if (!jt_jupiter_server_sends($uid)) return;
+        if ($uid === '' || !JT_SERVER_SEND_PILOT) return;
         $rows = sb_select('jm_jupiter_applications', [
             'user_id' => 'eq.' . $uid, 'state' => 'eq.action_required',
             'reason_code' => 'eq.PHONE_FILL', 'lease_owner' => 'is.null', 'limit' => '200',
         ], 'id,vacancy_url');
+        if (!$rows || !jt_jupiter_server_sends($uid)) return;
         $now = now_iso();
+        $delegated = jt_employer_delegated($uid);
+        $groups = [];
         foreach ($rows as $row) {
+            $patch = jt_jupiter_server_patch($uid, (string)$row['vacancy_url'], $now, $delegated);
+            $groups[json_encode($patch)][] = (string)$row['id'];
+        }
+        foreach ($groups as $patchJson => $ids) {
             sb_update('jm_jupiter_applications', [
-                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uid,
+                'id' => sb_in_list($ids), 'user_id' => 'eq.' . $uid,
                 'state' => 'eq.action_required', 'reason_code' => 'eq.PHONE_FILL',
                 'lease_owner' => 'is.null',
-            ], jt_jupiter_server_patch($uid, (string)$row['vacancy_url'], $now));
+            ], json_decode($patchJson, true));
         }
-        if ($rows) rt_touch('jm_jupiter_applications');
-
-        // Разово (решение владельца 01.10.2026): отклики на job.mts.ru, которые
-        // браузерный движок до PR #317 останавливал ДО клика «Отправить», но
-        // записывал как «исход неизвестен». До МТС они не дошли; записи о них
-        // в журнале воркера снимает infra/bootstrap.sh. Отсечка по времени —
-        // новые «неизвестные» так не возвращаются.
-        $stuck = sb_select('jm_jupiter_applications', [
-            'user_id' => 'eq.' . $uid, 'state' => 'eq.submission_unknown',
-            'vacancy_url' => 'like.https://job.mts.ru/*', 'lease_owner' => 'is.null',
-            'updated_at' => 'lt.2026-09-30T22:45:00Z', 'limit' => '20',
-        ], 'id');
-        foreach ($stuck as $row) {
-            sb_update('jm_jupiter_applications', [
-                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uid,
-                'state' => 'eq.submission_unknown', 'lease_owner' => 'is.null',
-            ], ['state' => 'queued', 'reason_code' => null, 'engine' => 'browser',
-                'attempt_count' => 0, 'not_before' => null, 'updated_at' => $now]);
-        }
-        if ($stuck) rt_touch('jm_jupiter_applications');
+        rt_touch('jm_jupiter_applications');
     } catch (Throwable $e) {
         // Список откликов важнее: перевод повторится при следующем открытии.
     }

@@ -687,14 +687,36 @@ SVCEOF
     say "jupiter-browser" "серверу PHP: JUPITER_BROWSER_ENABLED=$JB_PHP"
   fi
 
+  # YandexGPT работает на деле, а не только «ключ лежит» (владелец, 01.10.2026).
+  # Раз в час — пустяковый запрос к модели с тем же ключом: код ответа и время.
+  # Плюс сколько раз за сутки к ней реально обращались воркеры и сколько с
+  # ошибкой — по их журналу (там только код и время, без текста).
+  YGPT_PING=/var/lib/jobtoo/ygpt-ping.txt
+  if [ -f "$YGPT_ENV" ] && { [ ! -f "$YGPT_PING" ] || [ -n "$(find "$YGPT_PING" -mmin +60 2>/dev/null)" ]; }; then
+    mkdir -p /var/lib/jobtoo
+    ( set +e
+      . "$YGPT_ENV"
+      code=$(printf '{"modelUri":"gpt://%s/yandexgpt-lite/latest","completionOptions":{"temperature":0,"maxTokens":"5"},"messages":[{"role":"user","text":"Ответь одним словом: ok"}]}' "$YANDEX_GPT_FOLDER_ID" \
+        | curl -s -o /dev/null -w '%{http_code}' -m 15 \
+            -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" -H "x-folder-id: $YANDEX_GPT_FOLDER_ID" \
+            -H 'Content-Type: application/json' --data-binary @- \
+            https://llm.api.cloud.yandex.net/foundationModels/v1/completion)
+      printf '%s в %s' "${code:-000}" "$(date +%H:%M)" > "$YGPT_PING" )
+  fi
+  YGPT_CALLS=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
+    | grep -c 'YandexGPT: вызов, статус' || true)
+  YGPT_OK=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
+    | grep -c 'YandexGPT: вызов, статус 200' || true)
+
   # Жив ли браузерный воркер — рядом с status.json, без секретов.
   jb_prop() { systemctl show -p "$1" --value jt-jupiter-browser.service 2>/dev/null || true; }
-  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"http_воркер":"%s"}\n' \
+  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"yandex_gpt_проверка":"%s","yandex_gpt_вызовов_за_сутки":%s,"yandex_gpt_ошибок_за_сутки":%s,"http_воркер":"%s"}\n' \
     "$(date -Is)" "$([ -f "$JB_FLAG" ] && echo true || echo false)" \
     "$(jb_prop ActiveState)/$(jb_prop SubState)" "$(jb_prop NRestarts)" \
     "$(jb_prop ActiveEnterTimestamp)" "$(cat "$JB_BASE/.installed" 2>/dev/null || echo нет)" \
     "$JB_PHP" "$([ -f "$JB_POLICY" ] && [ -f "$JB_POLICY_CFT" ] && echo true || echo false)" \
     "$([ -f "$YGPT_ENV" ] && echo true || echo false)" \
+    "$(cat "$YGPT_PING" 2>/dev/null || echo нет)" "${YGPT_CALLS:-0}" "$(( ${YGPT_CALLS:-0} - ${YGPT_OK:-0} ))" \
     "$(systemctl is-active jt-jupiter.service 2>/dev/null || true)" \
     > /var/www/html/jupiter-browser-status.json.tmp 2>/dev/null \
     && mv -f /var/www/html/jupiter-browser-status.json.tmp /var/www/html/jupiter-browser-status.json || true

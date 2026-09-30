@@ -1364,7 +1364,8 @@ HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`, но с�
 `browser_overlays.py` — cookie-баннеры и модалки (жмёт отказ/крестик, «Принять
 все» — никогда); `browser_custom_controls.py` — самописные списки (`role=combobox`;
 у кнопки-стрелки Headless UI выбор проверяется в соседнем поле — job.mts.ru)
-и поля с маской; флажок за краем экрана отмечается кликом страницы; сбой
+и поля с маской; флажок за краем экрана отмечается кликом страницы; у
+галочки без подписи подписью считается текст обёртки без других полей (Huntflow); сбой
 заполнения до «Отправить» — `EngineError` (отклик не ушёл, повтор возможен), а
 не «исход неизвестен»; `browser_success.py` — успех по ответу API и тостам;
 `browser_sessions.py` — парковка сессии на время капчи; `browser_captcha.py` —
@@ -1394,7 +1395,9 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 `/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам; ключ приезжает сам
 (01.10.2026): секреты `YANDEX_GPT_API_KEY`/`YANDEX_GPT_FOLDER_ID` → `deploy.php`
 (`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл и перезапускает воркеры;
-проверка — `tests/yandex_gpt_delivery_test.py`. Капча человеку —
+проверка — `tests/yandex_gpt_delivery_test.py`. Работает ли на деле — в
+`jupiter-browser-status.json`: `yandex_gpt_проверка` (сервер раз в час сам спрашивает
+модель, пишет код и время) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
@@ -1467,6 +1470,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `services/jupiterTimeline.ts` | Статус, метка и строка отклика Юпитера. `jupiterVacancyClosed`: сбор погасил вакансию (`vacancy_active=false` из `jupiterMyApplications`), а отклик не ушёл — «Вакансия закрыта работодателем», без «Открыть анкету», не в «Ждут вас» (решение владельца 26.09) |
 | `jupiter/worker.py` | Воркер: берёт задачу и доводит её агентом; боевую задачу на сайт без `live_ready` не исполняет, а паркует с `SITE_NOT_VERIFIED` («Сайт ещё подключаем» в «Откликах») |
 | `jupiter/questions.py` | Вопросы от работодателей (решение владельца 30.09.2026): пустые обязательные поля анкеты — вопросами человеку (`extract_questions`: текст без вариантов списка, тип `text/text_long/choice/yesno/date/number/phone/email/url`, варианты сайта, вид `fact`/`vacancy` по смыслу, при сомнении — `vacancy`); ключ — смысл подписи (`question_key`, `q:` + sha1); особые категории 152-ФЗ (здоровье, судимость…) и согласия вопросами не бывают — такой отклик человек заполняет на сайте сам. Агент останавливается с `NEEDS_ANSWERS` и `AgentResult.questions`; при повторном заходе подставляет ответ человека (`_fill_from_answer`: вариант списка — только существующий на сайте). Тест — `jupiter/test_questions.py` |
+| `jupiter/agent.py` · `is_application_form` | Анкета или чужая форма: форма для клиентов — обязательная «Компания» (атрибутом или «*» в подписи) без полей кандидата или только с «Должность» рядом (Digital Design, Синимекс, 01.10.2026); тесты — `test_form_semantics.py` |
 | `jupiter/handoff.py` | Просьба к человеку и состояние возврата: токен, куки, адрес шага |
 | `jupiter/candidate.py` | Классы знаний о кандидате, разбор согласий, provenance |
 | `jupiter/submission.py` | Доказательства отправки, отпечаток отклика и журнал поданных |
@@ -1528,9 +1532,9 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   `queued` с `submission_authorized_at` (`jt_jupiter_server_patch`, согласия —
   только по поручению), SPA уходит на браузерный движок эскалацией; застрявшие
   PHONE_FILL переводятся при открытии «Откликов»
-  (`jt_jupiter_phone_fill_to_server`; там же разовый возврат откликов МТС,
-  остановленных до #317 как «исход неизвестен», — записи в журнале воркера
-  снимает `infra/bootstrap.sh`, метка `/var/lib/jobtoo/receipts-mts-0930.done`).
+  (`jt_jupiter_phone_fill_to_server`: без пилота — ни одного запроса, нечего
+  переводить — один, поручение — один раз, перевод пачкой; разовый возврат
+  МТС отработал 01.10 и убран, метка в bootstrap — `receipts-mts-0930.done`).
   Сейчас в списке только владелец;
   у остальных поведение прежнее.
   Проверка — `tests/jupiter_server_send_test.php`.

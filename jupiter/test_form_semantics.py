@@ -508,6 +508,47 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0, require_contact=False))
 
+    def test_contact_form_with_starred_company_is_not_an_application(self):
+        # digdes.ru/career (01.10.2026): «Компания *» — звёздочка в подписи,
+        # без атрибута required. Это форма «свяжитесь с нами» для клиентов.
+        page = parse(
+            '<form action="/feedback" method="post">'
+            '<label>Имя * <input name="name"></label>'
+            '<label>Фамилия * <input name="surname"></label>'
+            '<label>Компания * <input name="company"></label>'
+            '<label>Телефон * <input name="phone" type="tel"></label>'
+            '<label>Почта * <input name="mail" type="email"></label>'
+            '<label>Комментарий <textarea name="comment"></textarea></label>'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_company_and_job_title_is_a_client_form(self):
+        # cinimex.ru (01.10.2026): «Компания*» и «Должность*» — должность
+        # клиента, а не желаемая должность кандидата.
+        page = parse(
+            '<form action="/request" method="post">'
+            '<label>ФИО* <input name="fio" required></label>'
+            '<label>Компания* <input name="company" required></label>'
+            '<label>Должность* <input name="position" required></label>'
+            '<label>E-mail* <input name="email" type="email" required></label>'
+            '<label>Номер телефона* <input name="phone" type="tel" required></label>'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_it_application_with_resume_and_current_company_stays(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя* <input name="name" required></label>'
+            '<label>Текущая компания* <input name="company" required></label>'
+            '<label>Должность <input name="position"></label>'
+            '<label>Email* <input name="email" type="email" required></label>'
+            '<label>Резюме <input name="cv" type="file"></label>'
+            '<button type="submit">Откликнуться</button></form>'
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_mts_vacancy_subscription_with_selects_is_not_an_application_form(self):
         # job.mts.ru (разведка браузером 29.09.2026): «Укажи свой e-mail» и
         # выбор города с направлением — подписка на вакансии. Select'ы делали

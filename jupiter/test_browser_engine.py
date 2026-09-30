@@ -269,7 +269,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         pages = {"/vacancy": SPA_VACANCY, "/challenge": SPA_VACANCY, "/combo": COMBO_VACANCY,
                  "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
-                 "/lazy": LAZY_VACANCY, "/radio": RADIO_VACANCY, "/hiddenbox": HIDDENBOX_VACANCY, "/stuckbox": STUCKBOX_VACANCY,
+                 "/lazy": LAZY_VACANCY, "/radio": RADIO_VACANCY, "/hiddenbox": HIDDENBOX_VACANCY, "/stuckbox": STUCKBOX_VACANCY, "/policybox": POLICYBOX_VACANCY,
                  "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
@@ -287,7 +287,7 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length)
         self.server.state["posts"].append((self.path, raw))
-        if self.path in {"/api/frame-apply", "/api/search-apply", "/api/radio-apply", "/api/hiddenbox-apply"}:
+        if self.path in {"/api/frame-apply", "/api/search-apply", "/api/radio-apply", "/api/hiddenbox-apply", "/api/policybox-apply"}:
             body = "<!doctype html><meta charset=utf-8><h2>Спасибо! Ваш отклик получен</h2>".encode()
             ctype = "text/html; charset=utf-8"
         else:
@@ -345,6 +345,23 @@ HIDDENBOX_VACANCY = """<!doctype html>
 STUCKBOX_VACANCY = HIDDENBOX_VACANCY.replace(
     'name="agree" type="checkbox" required', 'name="agree" type="checkbox" required onclick="return false"'
 ).replace("/api/hiddenbox-apply", "/api/stuckbox-apply")
+
+
+# Huntflow (01.10.2026): у галочки нет своей подписи, текст согласия — в
+# соседнем блоке общей обёртки. Без него согласие не узнать, и форма не уходила.
+POLICYBOX_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Аналитик — Карьера</title>
+<h1>Аналитик</h1>
+<form method="post" action="/api/policybox-apply">
+  <label>Имя <input name="fn" required></label>
+  <label>Фамилия <input name="ln" required></label>
+  <label>Email <input name="em" type="email" required></label>
+  <div class="policy"><div class="checkbox"><input type="checkbox" name="agreement" required></div>
+    <div class="info">Я даю согласие на обработку перс. данных в соответствии с политикой конфиденциальности</div></div>
+  <button type="submit">Откликнуться</button>
+</form>
+"""
 
 
 PROFILE = {
@@ -446,6 +463,16 @@ class BrowserEngineTest(unittest.TestCase):
         self.assertEqual(result.status, "failed", dump)
         self.assertEqual(result.reason_code, "SUBMIT_FAILED", dump)
         self.assertEqual([p for p, _ in self.server.state["posts"] if p == "/api/stuckbox-apply"], [])
+
+    def test_consent_text_next_to_an_unlabeled_checkbox_is_used(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/policybox", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        applies = [raw for path, raw in self.server.state["posts"] if path == "/api/policybox-apply"]
+        self.assertEqual(len(applies), 1, dump)
+        self.assertEqual(urllib.parse.parse_qs(applies[0].decode()).get("agreement"), ["on"])
 
     def test_dry_run_fills_but_the_browser_sends_nothing(self):
         eng = self.engine(read_only=True)
