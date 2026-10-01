@@ -27,7 +27,7 @@ const VF_LEVELS = ['intern', 'junior', 'middle', 'senior', 'lead', 'head'];
 const VF_FORMATS = ['remote', 'hybrid', 'office'];
 const VF_SPECS = [
     'backend', 'frontend', 'mobile', 'qa', 'devops', 'data',
-    'analytics', 'design', 'management', 'security', 'support', 'onec',
+    'analytics', 'design', 'marketing', 'management', 'security', 'support', 'onec',
     'hr', 'top',
 ];
 
@@ -82,8 +82,9 @@ const VF_SPEC_RULES = [
     [['data'], '~(*UTF)data\s*scien|machine\s+learning|\bml\b|машинн|data\s+engineer|инженер данных|\bdwh\b|big\s+data|\bnlp\b|computer\s+vision|\bllm\b~i'],
     [['analytics'], '~(*UTF)аналитик|analyst|\bbi\b~i'],
     [['design'], '~(*UTF)дизайн|designer|\bux\b|ui/ux~i'],
+    [['marketing'], '~(*UTF)(^|[^а-яё])маркет(олог|инг)|\bmarketing\b|\bsmm\b|\bseo\b|\bpr\b|копирайт|редактор|контент|\bcontent\b|таргетолог|бренд|\bbrand\b~i'],
     [['frontend'], '~(*UTF)frontend|front-end|фронтенд|\breact\b|\bvue\b|\bangular\b|верстальщик~i'],
-    [['management'], '~(*UTF)product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор~i'],
+    [['management'], '~(*UTF)product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|менеджер\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор~i'],
     [['support'], '~(*UTF)поддержк|\bsupport\b|helpdesk|service\s+desk~i'],
     [['backend'], '~(*UTF)backend|back-end|бэкенд|бекенд|\bjava\b|golang|\bgo\b|\bpython\b|\bphp\b|c#|\.net|c\+\+|\bnode\b|\bruby\b|\bscala\b|\brust\b|\bkotlin\b~i'],
 ];
