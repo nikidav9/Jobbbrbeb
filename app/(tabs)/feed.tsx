@@ -1939,8 +1939,13 @@ function EmployerHome() {
   const onRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    await refreshAll();
-    setRefreshing(false);
+    try {
+      await refreshAll();
+    } catch {
+      showToast('Нет связи — показаны последние вакансии', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useFocusEffect(
