@@ -54,12 +54,33 @@ disc = [{"name": "A", "url": "https://a.ru", "status": "нет данных"},
 check("очередь: только без вакансий, давно не смотренные первыми",
       [d["name"] for d in s.targets(disc, {"A": 100.0, "C": 50.0}, 5)] == ["C", "A"])
 check("очередь: предел", len(s.targets(disc, {}, 1)) == 1)
+check("очередь: компании, уже собираемые в ленту, пропускаются",
+      [d["name"] for d in s.targets(disc, {}, 5, {"a", "Яндекс"})] == ["C"])
 
 llm = LLM({"url": "https://career.lenta.com/vacancies"})
 out = s.scout([{"name": "Лента", "url": "https://career.lenta.com", "status": "нет данных"}], "k", "f", llm,
               pause=0, searcher=lambda q, k, f: s.parse_search_xml(XML))
 check("разведка: кандидаты и выбор", out[0]["pick"] == "https://career.lenta.com/vacancies" and len(out[0]["candidates"]) == 2)
 check("модели уходит только компания и выдача", "резюме" not in llm.seen[0] and json.loads(llm.seen[0])["company"] == "Лента")
+
+PAGES = """<yandexsearch><response><results><grouping>
+<group><doc><url>https://career.lenta.com/vacancy/kassir-123</url><title>Кассир — Лента</title></doc></group>
+<group><doc><url>https://career.lenta.com/</url><title>Карьера</title></doc></group>
+<group><doc><url>https://career.lenta.com/vacancies</url><title>Вакансии</title></doc></group>
+<group><doc><url>https://career.lenta.com/about</url><title>О нас</title></doc></group>
+<group><doc><url>https://hh.ru/vacancy/1</url><title>Кассир</title></doc></group>
+</grouping></results></response></yandexsearch>"""
+vp = s.vacancy_pages(s.parse_search_xml(PAGES), "https://career.lenta.com", ["https://career.lenta.com/vacancies"])
+check("страницы вакансий: своя глубокая страница, без корня, списка, «о нас» и чужих",
+      [p["url"] for p in vp] == ["https://career.lenta.com/vacancy/kassir-123"])
+queries = []
+def two(q, k, f):
+    queries.append(q)
+    return s.parse_search_xml(PAGES if q.startswith("site:") else XML)
+out = s.scout([{"name": "Лента", "url": "https://career.lenta.com", "status": "нет данных"}], "k", "f", None,
+              pause=0, searcher=two)
+check("второй запрос — site:хост вакансия", queries == ["Лента вакансии", "site:career.lenta.com вакансия"])
+check("страницы вакансий в итоге", [p["url"] for p in out[0]["vacancy_pages"]] == ["https://career.lenta.com/vacancy/kassir-123"])
 
 def boom(q, k, f):
     raise OSError("сеть")

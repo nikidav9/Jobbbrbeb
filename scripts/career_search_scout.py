@@ -89,6 +89,23 @@ def own_jobby(results: list[dict[str, str]], site_url: str) -> list[dict[str, st
     return keep
 
 
+def vacancy_pages(results: list[dict[str, str]], site_url: str, listing_urls: list[str]) -> list[dict[str, str]]:
+    """Отдельные страницы вакансий из выдачи «site:<хост> вакансия»: свой хост,
+    путь глубже корня, не страница списка. По ним видно, можно ли собирать
+    вакансии сайта-приложения поштучно, без его скрипта (01.10.2026)."""
+    domain = base_domain(urllib.parse.urlsplit(site_url).hostname or "")
+    listings = {u.rstrip("/") for u in listing_urls} | {site_url.rstrip("/")}
+    out = []
+    for item in results:
+        parts = urllib.parse.urlsplit(item["url"])
+        if base_domain(parts.hostname or "") != domain or item["url"].rstrip("/") in listings:
+            continue
+        if len([p for p in parts.path.split("/") if p]) < 2:
+            continue
+        out.append(item)
+    return out
+
+
 def search(query: str, key: str, folder: str, timeout: float = 20.0) -> list[dict[str, str]]:
     body = json.dumps({
         "query": {"searchType": "SEARCH_TYPE_RU", "queryText": query},
@@ -114,10 +131,23 @@ def pick_listing(llm: Any, company: str, candidates: list[dict[str, str]]) -> st
     return url if url in {c["url"] for c in candidates} else None
 
 
-def targets(discovery: list[dict], state: dict[str, float], limit: int) -> list[dict]:
-    """Компании без вакансий — сначала те, кого дольше всего не смотрели."""
+def _norm(name: str) -> str:
+    return re.sub(r"\s*[·(].*$", "", str(name)).strip().lower()
+
+
+def targets(discovery: list[dict], state: dict[str, float], limit: int,
+            in_feed: set[str] | None = None) -> list[dict]:
+    """Компании без вакансий — сначала те, кого дольше всего не смотрели.
+
+    in_feed — компании, у которых вакансии в ленте уже есть (выгрузка
+    infra/recon-run.sh): итог недельного поиска бывает устаревшим, и без
+    этой сверки разведчик тратил запросы на Lamoda и 2ГИС, которые давно
+    собираются из своих API.
+    """
+    feed = {_norm(n) for n in (in_feed or set())}
     items = [d for d in discovery if isinstance(d, dict) and d.get("status") in STATUSES
-             and d.get("name") and str(d.get("url", "")).startswith("http")]
+             and d.get("name") and str(d.get("url", "")).startswith("http")
+             and _norm(d["name"]) not in feed]
     items.sort(key=lambda d: state.get(str(d["name"]), 0.0))
     return items[:limit]
 
@@ -136,6 +166,15 @@ def scout(items: list[dict], key: str, folder: str, llm: Any, *, pause: float = 
             continue
         entry["candidates"] = own_jobby(results, url)[:8]
         entry["pick"] = pick_listing(llm, name, entry["candidates"])
+        # Второй запрос — отдельные страницы вакансий на сайте компании.
+        host = urllib.parse.urlsplit(url).hostname or ""
+        try:
+            pages = searcher(f"site:{host} вакансия", key, folder)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            pages = []
+            entry["pages_error"] = f"{type(exc).__name__}: {exc}"[:200]
+        entry["vacancy_pages"] = vacancy_pages(
+            pages, url, [c["url"] for c in entry["candidates"]])[:10]
         out.append(entry)
         time.sleep(pause)
     return out
@@ -147,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--state", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int, default=40)
+    ap.add_argument("--feed", help="вакансии ленты {компания: [адреса]} — эти компании пропустить")
     args = ap.parse_args(argv)
     key = os.environ.get("YANDEX_GPT_API_KEY", "").strip()
     folder = os.environ.get("YANDEX_GPT_FOLDER_ID", "").strip()
@@ -165,7 +205,13 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jupiter"))
     import yandex_gpt
     llm = yandex_gpt.YandexGPT.from_env()
-    items = targets(discovery if isinstance(discovery, list) else [], state, args.limit)
+    in_feed: set[str] = set()
+    if args.feed:
+        try:
+            in_feed = set(json.loads(Path(args.feed).read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            in_feed = set()
+    items = targets(discovery if isinstance(discovery, list) else [], state, args.limit, in_feed)
     results = scout(items, key, folder, llm)
     now = time.time()
     for item in items:
@@ -184,8 +230,9 @@ def main(argv: list[str] | None = None) -> int:
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     found = sum(1 for e in results if e.get("candidates"))
+    pages = sum(len(e.get("vacancy_pages") or []) for e in results)
     print(f"разведчик: {len(results)} компаний, со страницами вакансий — {found}, выбрано моделью — "
-          f"{sum(1 for e in results if e.get('pick'))}")
+          f"{sum(1 for e in results if e.get('pick'))}, страниц вакансий — {pages}")
     return 0
 
 

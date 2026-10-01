@@ -61,7 +61,7 @@ if timeout 5h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
       timeout 30m python3 "$REPO/scripts/career_search_scout.py" \
         --discovery /var/www/html/career-discovery.json \
         --state /var/lib/jobtoo/scout-state.json \
-        --out /var/www/html/career-search-scout.json --limit 40 ) >>"$LOG" 2>&1 \
+        --out /var/www/html/career-search-scout.json --limit 40 --feed "$FEED" ) >>"$LOG" 2>&1 \
       || echo "$(date -Is) разведчик источников не прошёл" >>"$LOG"
   fi
 else
