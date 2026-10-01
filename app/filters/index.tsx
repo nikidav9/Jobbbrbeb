@@ -18,8 +18,12 @@ import { EMPTY_FEED_FILTERS, pluralVacancies, toExtFeedFilters } from '@/service
 import { VACANCY_SPECS } from '@/services/vacancyFacets';
 import { dbCountExtFeed } from '@/services/db';
 
-// Короткие подписи для плашек в поле «Специализация» (как в макете).
-const SPEC_SHORT: Record<string, string> = { management: 'Product, Project', devops: 'DevOps', security: 'Security', data: 'Data & ML', hr: 'HR', top: 'Top Management' };
+
+// Короткая подпись для плашки в поле «Специализация» (как в макете).
+function specShort(id: string): string {
+  const s = VACANCY_SPECS.find(x => x.id === id);
+  return s?.short ?? s?.label ?? id;
+}
 
 export default function AllFilters() {
   const router = useRouter();
@@ -68,7 +72,7 @@ export default function AllFilters() {
           {f.specs.length ? f.specs.map(id => (
             <View key={id} style={{ height: rs(28), paddingHorizontal: rs(10), borderRadius: rs(14), backgroundColor: JT.accentSoft, justifyContent: 'center', maxWidth: '100%' }}>
               <Text style={{ fontFamily: JT_FONT.heavy, fontSize: rf(13), color: JT.ink }} numberOfLines={1}>
-                {SPEC_SHORT[id] ?? VACANCY_SPECS.find(s => s.id === id)?.label ?? id}
+                {specShort(id)}
               </Text>
             </View>
           )) : <Text style={{ fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textTertiary }}>Любая</Text>}

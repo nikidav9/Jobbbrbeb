@@ -236,7 +236,8 @@ function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string;
     case 'spec': {
       const n = f.specs.length;
       if (!n) return { label: 'Специализация', active: false };
-      const one = VACANCY_SPECS.find(s => s.id === f.specs[0])?.label ?? '';
+      const sp = VACANCY_SPECS.find(s => s.id === f.specs[0]);
+      const one = sp?.short ?? sp?.label ?? '';
       return { label: n === 1 ? one : `Специализация · ${n}`, active: true };
     }
     case 'level': {
