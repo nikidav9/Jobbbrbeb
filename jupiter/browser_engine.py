@@ -316,6 +316,44 @@ def launch_options(headless: bool, executable_path: str | None) -> dict[str, Any
 # Элементы с обработчиками клика (addEventListener) — видны только через
 # DevTools-API getEventListeners (CDP, includeCommandLineAPI). Помечаем их
 # data-jt-click для FIND_APPLY_JS.
+# Что сайт сказал после «Отправить» (01.10.2026): репетиция показала, что
+# у 33 сайтов из 42 нажатие не отправляло анкету вовсе — форма не проходила
+# проверку, а Юпитер писал «скорее всего, ушёл». Поля ЭТОЙ формы (по
+# data-jt-ref), которые браузер или сайт пометили неверными: подпись, тип и
+# стандартный текст ошибки браузера — значения полей не читаются. И видимые
+# тексты ошибок страницы — их видит только YandexGPT, через redact().
+SUBMIT_FEEDBACK_JS = r"""
+(refs) => {
+  const cut = (s, n) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const visible = el => { const st = getComputedStyle(el); return st.display !== 'none' && st.visibility !== 'hidden' && el.getClientRects().length > 0; };
+  const invalid = [];
+  for (const ref of refs) {
+    const el = document.querySelector(`[data-jt-ref="${ref}"]`);
+    if (!el) continue;
+    // :user-invalid — ошибка, которую браузер показал после попытки отправки;
+    // после очистки формы (так сайты отвечают на успех) она снимается, а
+    // голый validity.valid у пустого обязательного поля — нет.
+    let shown = false;
+    try { shown = el.matches(':user-invalid'); } catch (e) { shown = false; }
+    const bad = shown || el.getAttribute('aria-invalid') === 'true';
+    if (!bad) continue;
+    let label = el.labels && el.labels.length ? el.labels[0].innerText : '';
+    label = label || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || '';
+    invalid.push({ label: cut(label, 80), type: (el.type || el.tagName || '').toLowerCase(), message: cut(el.validationMessage, 120) });
+  }
+  const errors = [];
+  const seen = new Set();
+  document.querySelectorAll('[role=alert],[aria-live=assertive],[class*="error" i],[class*="invalid" i]').forEach(el => {
+    if (errors.length >= 10 || !visible(el)) return;
+    const t = cut(el.innerText, 150);
+    if (t.length < 3 || seen.has(t)) return;
+    seen.add(t);
+    errors.push(t);
+  });
+  return { invalid: invalid.slice(0, 20), errors };
+}
+"""
+
 MARK_CLICK_LISTENERS_JS = r"""
 (() => {
   if (typeof getEventListeners !== 'function') return -1;
@@ -393,6 +431,8 @@ class JupiterBrowserEngine:
         self.page: PageState | None = None
         self.script_history: list[dict[str, str]] = []
         self.last_submit_mode = "none"
+        # SUBMIT_FEEDBACK_JS после последнего «Отправить»: {"invalid": [...], "errors": [...]}.
+        self.last_submit_feedback: dict[str, Any] | None = None
         # Что движок сделал сам (нажал «Откликнуться», оборвал запрос) —
         # для журнала и отладки; агент ведёт свою траекторию отдельно.
         self.actions: list[dict[str, Any]] = []
@@ -871,6 +911,7 @@ class JupiterBrowserEngine:
         self._rehearsal_armed = bool(self.rehearsal_markers)
         before = self._tab.url
         self.last_api_result = None
+        self.last_submit_feedback = None
         recorder = browser_success.ResponseRecorder(self.allowed_hosts).start(self._tab)
         toasts: list[str] = []
         try:
@@ -897,6 +938,16 @@ class JupiterBrowserEngine:
         self._record_api_result(responses)
         if self._tab.url != before:
             self.assert_allowed(self._tab.url)
+        refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
+        try:
+            feedback = self._tab.evaluate(SUBMIT_FEEDBACK_JS, refs)
+        except PlaywrightError:
+            feedback = None
+        if isinstance(feedback, dict) and (feedback.get("invalid") or feedback.get("errors")):
+            self.last_submit_feedback = feedback
+            self.actions.append({"action": "submit_feedback",
+                                 "invalid": [f.get("label", "") for f in feedback.get("invalid", [])][:10],
+                                 "errors": len(feedback.get("errors", []))})
         result = self._snapshot()
         if toasts:
             # «Спасибо, отклик получен» во всплывашке исчезает раньше снимка —

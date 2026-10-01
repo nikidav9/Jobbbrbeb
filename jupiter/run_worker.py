@@ -179,7 +179,8 @@ def main() -> int:
         hooks = knowledge.advisor_hooks(advisor)
         out = {}
         for hook, part in (("apply_advisor", "apply"), ("field_mapper", "fields"),
-                           ("question_explainer", "questions")):
+                           ("question_explainer", "questions"),
+                           ("outcome_judge", "judge")):
             if (llm is not None or advisor.entry.get(part)) and (hook == "apply_advisor" or hook in agent_params):
                 out[hook] = hooks[hook]
         return out

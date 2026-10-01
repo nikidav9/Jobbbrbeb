@@ -168,7 +168,8 @@ def recon_site_browser(
     hooks = knowledge.advisor_hooks(advisor)
     extra: dict[str, Any] = {}
     for hook, part in (("apply_advisor", "apply"), ("field_mapper", "fields"),
-                       ("question_explainer", "questions")):
+                       ("question_explainer", "questions"),
+                       ("outcome_judge", "judge")):
         if llm is not None or advisor.entry.get(part):
             extra[hook] = hooks[hook]
     try:
@@ -254,6 +255,11 @@ def _rehearse(url: str, hosts: set[str], resume: str, timeout: float,
             "reason": (outcome.reason or "")[:200],
             # Что сайт показал после нажатия: ошибка поля, «спасибо»…
             "page_text": " ".join(((page.text if page else "") or "").split())[:300],
+            # Почему форма не ушла (01.10.2026): поля, которые сайт пометил
+            # неверными, и вывод сайта/модели (outcome_judged).
+            "invalid_fields": [f.get("label", "") for f in
+                               ((getattr(engine, "last_submit_feedback", None) or {}).get("invalid") or [])][:10],
+            "judged": next((t for t in reversed(outcome.trajectory) if t.get("action") == "outcome_judged"), None),
         }
     finally:
         engine.close()

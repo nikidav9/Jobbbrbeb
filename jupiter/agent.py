@@ -254,6 +254,10 @@ class Reason:
     DOMAIN_BLOCKED = "DOMAIN_BLOCKED"
     UNSUPPORTED_SCRIPT = "UNSUPPORTED_SCRIPT"
     SUCCESS_NOT_CONFIRMED = "SUCCESS_NOT_CONFIRMED"
+    # После «Отправить» сайт не принял анкету (01.10.2026): подсветил поля
+    # или сообщил об ошибке — отклик точно не ушёл, это не «скорее всего, ушёл».
+    SITE_NEEDS_FIX = "SITE_NEEDS_FIX"
+    SITE_REJECTED = "SITE_REJECTED"
     NAVIGATION_FAILED = "NAVIGATION_FAILED"
     SUBMIT_FAILED = "SUBMIT_FAILED"
     VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
@@ -800,6 +804,7 @@ class JupiterAgent:
         before_submit: Callable[[str, bool], None] | None = None,
         field_mapper: Callable[[list[dict], list[str]], dict[str, str]] | None = None,
         question_explainer: Callable[[list[dict], dict], dict[str, dict[str, str]]] | None = None,
+        outcome_judge: Callable[[dict, list[str]], dict | None] | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -822,6 +827,11 @@ class JupiterAgent:
         # видит подписи полей формы и заголовок страницы, не данные кандидата.
         # Ключ вопроса не меняет. См. _explain_questions.
         self.question_explainer = question_explainer
+        # Исход отправки без явного подтверждения (решение владельца
+        # 01.10.2026): нейросеть читает страницу после «Отправить» — значения
+        # кандидата вырезаются (второй довод — что вырезать). Успех — только с
+        # дословной цитатой страницы. См. _site_verdict.
+        self.outcome_judge = outcome_judge
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -2132,6 +2142,65 @@ class JupiterAgent:
         })
         return AgentResult(status, reason, trajectory, code)
 
+    def _site_verdict(self, page: PageState, profile: CandidateProfile) -> dict | None:
+        """Что сайт сказал после «Отправить», когда явного подтверждения нет.
+
+        Сначала сам сайт: поля этой формы, помеченные неверными (браузерный
+        движок, last_submit_feedback), — отклик точно не ушёл. Иначе — нейросеть
+        по странице, без значений кандидата. None — сказать нечего.
+        """
+        feedback = getattr(self.engine, "last_submit_feedback", None) or {}
+        invalid = [f for f in (feedback.get("invalid") or []) if isinstance(f, dict)]
+        if invalid:
+            labels = [str(f.get("label") or f.get("type") or "поле")[:80] for f in invalid][:10]
+            return {"verdict": "needs_fix", "fields": labels, "quote": "", "source": "site"}
+        if self.outcome_judge is None:
+            return None
+        secrets = [str(v) for v in profile.values.values()
+                   if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip()]
+        try:
+            got = self.outcome_judge({
+                "title": page.title, "text": page.text,
+                "errors": feedback.get("errors") or [], "invalid": invalid,
+            }, secrets)
+        except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+            return None
+        return dict(got, source="llm") if isinstance(got, dict) else None
+
+    def _apply_verdict(
+        self,
+        verdict: dict,
+        fingerprint: ApplicationFingerprint | None,
+        page: PageState,
+        evidence: list[SubmissionEvidence],
+        trajectory: list[dict[str, Any]],
+    ) -> AgentResult | None:
+        kind = verdict.get("verdict")
+        fields = [str(f) for f in (verdict.get("fields") or [])][:10]
+        quote = str(verdict.get("quote") or "")[:200]
+        trajectory.append({
+            "action": "outcome_judged", "source": verdict.get("source"),
+            "verdict": kind, "fields": fields, "quote": quote,
+        })
+        if kind == "accepted" and quote:
+            evidence = [*evidence, SubmissionEvidence("PAGE_JUDGED", quote, 0.9, page.url)]
+            if fingerprint is not None:
+                self._record_receipt(fingerprint, "submitted", page.url, evidence)
+            trajectory.append({"action": "success_detected", "url": page.url,
+                               "status": page.status, "by": "outcome_judge"})
+            return AgentResult("submitted", trajectory=trajectory)
+        if kind == "needs_fix":
+            reason = ("Site did not accept the form; it asks to fix: "
+                      + (", ".join(f"«{f}»" for f in fields) if fields else "fields of the form"))
+            code = Reason.SITE_NEEDS_FIX
+        elif kind == "error" and quote:
+            reason = f"Site answered with an error: «{quote}»"
+            code = Reason.SITE_REJECTED
+        else:
+            return None
+        trajectory.append({"action": "action_required", "reason": reason, "reason_code": code})
+        return AgentResult("action_required", reason, trajectory, code)
+
     def _unknown_outcome(
         self,
         before: PageState,
@@ -2730,6 +2799,12 @@ class JupiterAgent:
                     "status": page.status,
                 })
                 return AgentResult("submitted", trajectory=trajectory)
+
+            if not clicked_next:
+                verdict = self._site_verdict(page, profile)
+                judged = self._apply_verdict(verdict, fingerprint, page, evidence, trajectory) if verdict else None
+                if judged is not None:
+                    return judged
 
             if self._same_page(before, page):
                 if clicked_next:

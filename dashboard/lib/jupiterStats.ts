@@ -337,6 +337,8 @@ export const REASON_LABEL: Record<string, string> = {
   VALIDATION_FAILED: 'Сайт не принял поля',
   SUBMIT_FAILED: 'Отправка не прошла',
   SUCCESS_NOT_CONFIRMED: 'Успех не подтверждён',
+  SITE_NEEDS_FIX: 'Сайт просит исправить поля',
+  SITE_REJECTED: 'Сайт ответил ошибкой',
   POST_OUTCOME_UNCERTAIN: 'Исход отправки неизвестен',
   STEP_DID_NOT_ADVANCE: 'Шаг анкеты не сменился',
   FORM_GONE: 'Анкета пропала',
