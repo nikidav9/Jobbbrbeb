@@ -31,6 +31,14 @@ assert "consentVersion: '2026-10-02'" in privacy
 assert "version: '2026-10-02'" in consent
 assert "consentVersion: '2026-10-02'" in consent
 
+# «Ответы для откликов» (applyAnswers): срок выхода и ник в Telegram названы во
+# всех трёх перечнях данных.
+dpolicy = legal[legal.index("  dataPolicy: {"):legal.index("  marketing: {")]
+for doc in (privacy, consent, dpolicy):
+    assert "«Ответы для откликов»" in doc
+    assert "срок выхода на работу" in doc
+    assert "ник в Telegram" in doc
+
 # Приватный PDF/email/личная анкета не должны внезапно стать публичными.
 public_cols = db[db.index("define('USER_PUBLIC_COLS'"):db.index("define('USER_SELF_COLS'")]
 assert "resume_data" in public_cols
