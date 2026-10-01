@@ -8,7 +8,7 @@ const TO_MATCHES = new Set([
   'new_applicant', 'match_employer', 'match_worker',
   'shift_confirmed_by_employer', 'shift_cancelled',
   'new_perm_applicant', 'perm_approved', 'perm_rejected',
-  'jupiter_sent',
+  'jupiter_sent', 'jupiter_failed',
 ]);
 
 const TO_FEED = new Set(['nearby_shift', 'nearby_perm']);

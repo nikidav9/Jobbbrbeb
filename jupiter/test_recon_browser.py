@@ -17,7 +17,7 @@ from pathlib import Path
 
 import site_compat
 from recon_browser import (
-    recon_site_browser,
+    recon_site_browser, rehearsal_markers, rehearsal_verdict, sites_to_rehearse,
     compare, order_by_previous, run_recon, select_sites, sites_needing_browser, write_atomic, _llm_trace, llm_sites,
 )
 
@@ -155,6 +155,25 @@ class ReconBrowserTest(unittest.TestCase):
         self.assertNotIn("@", "".join(llm.prompts))
         self.assertEqual(server.posts, [])
 
+    def test_rehearsal_tells_would_send_from_empty_request(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        server.posts = []
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        with tempfile.TemporaryDirectory() as tmp:
+            resume = Path(tmp) / "r.pdf"
+            resume.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            plain = recon_site_browser("plain", f"{base}/plain", [], str(resume), timeout=15,
+                                       chromium=CHROMIUM, rehearse=True)
+            spa = recon_site_browser("spa", f"{base}/spa", [], str(resume), timeout=15,
+                                     chromium=CHROMIUM, rehearse=True)
+        self.assertEqual(plain.klass, "dry_run_ok")
+        self.assertEqual(plain.rehearsal.get("verdict"), "would_send", plain.rehearsal)
+        # Страница шлёт «x» — запрос есть, а анкеты в нём нет: так и пишем.
+        self.assertEqual(spa.rehearsal.get("verdict"), "request_without_candidate", spa.rehearsal)
+        self.assertEqual(server.posts, [])
+
     def test_deadline_turns_into_blocked_result(self):
         [item] = run_recon([("x", "http://127.0.0.1:9/")], timeout=5, site_deadline=0.01, chromium=CHROMIUM)
         self.assertEqual(item.klass, "blocked")
@@ -214,6 +233,49 @@ class PureTest(unittest.TestCase):
         self.assertEqual(trace, [{"action": "llm_apply_click", "label": "Стать частью команды"},
                                  {"action": "llm_map", "field": "q1", "key": "city"}])
         self.assertNotIn("Москва", json.dumps(trace, ensure_ascii=False))
+
+    def test_rehearsal_takes_sites_http_already_passed(self):
+        http = [{"name": "ok", "url": "https://ok.ru/jobs", "klass": "dry_run_ok"},
+                {"name": "ok", "url": "https://ok.ru/jobs", "klass": "dry_run_ok"},
+                {"name": "spa", "url": "https://spa.ru/jobs", "klass": "spa"}]
+        self.assertEqual(sites_to_rehearse(http), [("ok", "https://ok.ru/jobs")])
+
+    def test_rehearsal_markers_and_verdicts(self):
+        marks = rehearsal_markers({"email": "recon@example.com", "last_name": "Тестов"})
+        self.assertIn("recon%40example.com", marks)
+        self.assertIn("\\u0422\\u0435\\u0441\\u0442\\u043e\\u0432", marks)
+        self.assertEqual(rehearsal_verdict([]), "no_request")
+        self.assertEqual(rehearsal_verdict([{"carries_candidate": False}]), "request_without_candidate")
+        self.assertEqual(rehearsal_verdict([{"carries_candidate": False}, {"carries_candidate": True}]), "would_send")
+
+    def test_child_from_newer_version_does_not_break_parent(self):
+        import recon_browser
+        from unittest import mock
+        line = recon_browser.RESULT_MARK + json.dumps(
+            {"name": "x", "url": "u", "start_url": "u", "klass": "dry_run_ok", "brand_new_field": 1})
+        done = mock.Mock(stdout=line + "\n", stderr="", returncode=0)
+        with mock.patch.object(recon_browser.subprocess, "run", return_value=done):
+            item = recon_browser._run_child("x", "u", 5, 10, None)
+        self.assertEqual(item.klass, "dry_run_ok")
+
+    def test_recon_starts_from_the_vacancy_people_swipe(self):
+        from recon import feed_vacancy_for, load_feed_vacancies
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "feed.json"
+            path.write_text(json.dumps({"Газпром": ["https://www.gazprom.ru/careers/v/1"],
+                                        "Яндекс": ["https://yandex.ru/jobs/vacancies/42"],
+                                        "Чужая": ["javascript:alert(1)"]}, ensure_ascii=False), encoding="utf-8")
+            feed = load_feed_vacancies(str(path))
+        self.assertEqual(feed_vacancy_for("Газпром", "https://www.gazprom.ru/", feed),
+                         "https://www.gazprom.ru/careers/v/1")
+        # Раздел каталога «Яндекс · /jobs» — та же компания.
+        self.assertEqual(feed_vacancy_for("Яндекс · /jobs", "https://yandex.ru/jobs", feed),
+                         "https://yandex.ru/jobs/vacancies/42")
+        # Имя не совпало — по хосту сайта.
+        self.assertEqual(feed_vacancy_for("Yandex", "https://yandex.ru/jobs", feed),
+                         "https://yandex.ru/jobs/vacancies/42")
+        self.assertIsNone(feed_vacancy_for("Чужая", "https://other.example", feed))
+        self.assertEqual(load_feed_vacancies("/nonexistent.json"), {})
 
     def test_time_budget_stops_new_sites(self):
         # Срок уже вышел — ни один процесс не запускается, итог пуст.

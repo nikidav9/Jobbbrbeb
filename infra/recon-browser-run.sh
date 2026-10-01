@@ -32,9 +32,11 @@ HTTP_RECON=${HTTP_RECON:-/var/www/html/jupiter-recon.json}
 OUT=${OUT:-/var/www/html/jupiter-recon-browser.json}
 LOG=${LOG:-/var/log/jt-recon-browser.log}
 LOCK=${LOCK:-/run/jt-recon-browser.lock}
-MAX_MINUTES=${MAX_MINUTES:-150}
-# Сколько ждать, если HTTP-разведка ещё идёт (её предел — 5 часов).
-WAIT_HTTP_MINUTES=${WAIT_HTTP_MINUTES:-240}
+# 240: с 01.10.2026 ещё и репетиция отправки (анкета нажимается второй раз).
+MAX_MINUTES=${MAX_MINUTES:-240}
+# Сколько ждать, если HTTP-разведка ещё идёт (обычно ~10 мин). 150 + 240 + 15
+# укладываются в TimeoutStartSec=7h юнита.
+WAIT_HTTP_MINUTES=${WAIT_HTTP_MINUTES:-150}
 
 say() { printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG"; }
 
@@ -64,6 +66,11 @@ fi
 
 mkdir -p "$WORK"
 cp -f "$HTTP_RECON" "$WORK/http.json"
+# Вакансии ленты выгружает HTTP-разведка (infra/recon-run.sh); копия — чтобы
+# обход от nobody её прочитал.
+FEED=/var/lib/jobtoo/feed-vacancies.json
+rm -f "$WORK/feed.json"
+[ -s "$FEED" ] && cp -f "$FEED" "$WORK/feed.json"
 # Вчерашний итог — чтобы сперва подтвердить прежние dry_run_ok.
 if [ -s "$OUT" ]; then cp -f "$OUT" "$WORK/browser.json"; fi
 rm -f "$WORK"/browser.json.*.tmp
@@ -89,10 +96,10 @@ say "начинаю: срок $MAX_MINUTES мин, YandexGPT на $LLM_SITES р�
 if (cd "$REPO/jupiter" && timeout "$((MAX_MINUTES + 15))m" \
       setpriv --reuid=nobody --regid=nogroup --clear-groups \
       env HOME="$WORK" PYTHONDONTWRITEBYTECODE=1 PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
-      "${YGPT_VARS[@]}" \
+      "${YGPT_VARS[@]}" JUPITER_FEED_VACANCIES="$WORK/feed.json" \
       "$VENV/bin/python" recon_browser.py --from-http "$WORK/http.json" \
         --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES" \
-        --llm-sites "$LLM_SITES") >>"$LOG" 2>&1
+        --llm-sites "$LLM_SITES" --rehearse --site-deadline 200) >>"$LOG" 2>&1
 then
   [ -s "$WORK/browser.json" ] || { say "пустой результат"; exit 1; }
   # Атомарно: копия рядом с итогом, затем rename в пределах одного каталога.

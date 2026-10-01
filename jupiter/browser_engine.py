@@ -353,6 +353,7 @@ class JupiterBrowserEngine:
         max_apply_clicks: int = 2,
         ignore_https_errors: bool = False,
         apply_advisor: Any = None,
+        rehearsal_markers: list[str] | None = None,
     ):
         if sync_playwright is None:
             raise EngineError(
@@ -377,6 +378,18 @@ class JupiterBrowserEngine:
         # suggest_apply_click). Видит только тексты кнопок, без данных
         # кандидата; вход, регистрацию и оплату отсекает сам планировщик.
         self.apply_advisor = apply_advisor
+        # Репетиция отправки (ночная проверка, 01.10.2026): с метками движок
+        # нажимает «Отправить» даже в read_only, но сеть по-прежнему режет
+        # любой не-GET, а после нажатия — и GET с данными тестового кандидата
+        # (метки — его почта и фамилия). Что оборвано — в rehearsal_log: по
+        # нему видно, ушла бы анкета или форма даже не отправилась. Метки
+        # бывают только у синтетического кандидата разведки, боевой воркер
+        # их не передаёт.
+        if rehearsal_markers and not read_only:
+            raise ValueError("Репетиция отправки — только с read_only=True")
+        self.rehearsal_markers = [m for m in (rehearsal_markers or []) if m]
+        self.rehearsal_log: list[dict[str, Any]] = []
+        self._rehearsal_armed = False
         self.page: PageState | None = None
         self.script_history: list[dict[str, str]] = []
         self.last_submit_mode = "none"
@@ -470,15 +483,35 @@ class JupiterBrowserEngine:
             reason = "host_not_allowed"
         elif self.read_only and request.method.upper() not in SAFE_METHODS:
             reason = "read_only"
+        elif self._rehearsal_armed and self._carries_candidate(request):
+            reason = "rehearsal_get_with_candidate"
         elif request.resource_type in {"media", "font"}:
             route.abort()
             return
         if reason:
             self.actions.append({"action": "blocked_request", "url": url[:300], "reason": reason,
                                  "method": request.method})
+            if self._rehearsal_armed and reason in {"read_only", "rehearsal_get_with_candidate"}:
+                self.rehearsal_log.append({
+                    "method": request.method, "host": host, "path": parsed.path[:120],
+                    "carries_candidate": self._carries_candidate(request),
+                })
             route.abort("blockedbyclient")
             return
         route.continue_()
+
+    def _carries_candidate(self, request) -> bool:  # pragma: no cover - вызывает браузер
+        """Есть ли в адресе или теле запроса метки тестового кандидата."""
+        if not self.rehearsal_markers:
+            return False
+        blob = request.url
+        try:
+            body = request.post_data_buffer
+        except Exception:  # noqa: BLE001 - тело бывает недоступно (поток, бинарь)
+            body = None
+        if body:
+            blob += body.decode("utf-8", "ignore")
+        return any(m in blob for m in self.rehearsal_markers)
 
     def _main_navigation(self, request) -> bool:  # pragma: no cover - вызывает браузер
         try:
@@ -671,7 +704,12 @@ class JupiterBrowserEngine:
                 return page
             self._dismiss_overlays()  # баннер мог появиться с задержкой и перехватить клик
             target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
-            label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            try:
+                label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            except PlaywrightError:
+                # Подпись — только для журнала; кнопка могла перерисоваться
+                # (Rubius, 01.10.2026: весь обход сайта падал на этом).
+                label = ""
             try:
                 target.click(timeout=5000)
             except PlaywrightError:
@@ -827,9 +865,10 @@ class JupiterBrowserEngine:
         form: FormState,
         submit_control: ControlState | None = None,
     ) -> PageState:
-        if self.read_only:
+        if self.read_only and not self.rehearsal_markers:
             raise EngineSecurityError("Read-only Jupiter engine blocked form submission")
         self._apply_values(page, form)
+        self._rehearsal_armed = bool(self.rehearsal_markers)
         before = self._tab.url
         self.last_api_result = None
         recorder = browser_success.ResponseRecorder(self.allowed_hosts).start(self._tab)

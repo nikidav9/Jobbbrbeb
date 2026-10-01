@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -113,6 +114,44 @@ def load_sites(path: Path = SITES_TSV) -> list[tuple[str, str]]:
 
 def _base_name(name: str) -> str:
     return re.sub(r"\s*\(.*\)\s*$", "", name).strip().lower()
+
+
+# Вакансии из ленты (01.10.2026): разведка проверяет ту же вакансию, на которую
+# свайпают люди, а не страницу списка. Файл {компания: [адрес, …]} выгружает
+# infra/recon-run.sh из jm_ext_vacancies перед обходом; без файла — как раньше.
+FEED_VACANCIES_ENV = "JUPITER_FEED_VACANCIES"
+
+
+def load_feed_vacancies(path: str | None = None) -> dict[str, list[str]]:
+    path = path or os.environ.get(FEED_VACANCIES_ENV, "")
+    if not path:
+        return {}
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(k).strip().lower(): [str(u) for u in (v if isinstance(v, list) else [v]) if str(u).startswith("http")]
+        for k, v in data.items() if k
+    }
+
+
+def feed_vacancy_for(name: str, url: str, feed: dict[str, list[str]]) -> str | None:
+    """Живая вакансия этой компании из ленты: по названию, иначе по хосту сайта."""
+    if not feed:
+        return None
+    wanted = _base_name(re.sub(r"\s*·.*$", "", name))
+    for key in (wanted, _base_name(name)):
+        if feed.get(key):
+            return feed[key][0]
+    host = normalize_host(url)
+    for urls in feed.values():
+        for candidate in urls:
+            if normalize_host(candidate) == host:
+                return candidate
+    return None
 
 
 def endpoint_for(name: str, url: str, endpoints: list[dict]) -> dict | None:
@@ -377,8 +416,11 @@ def recon_site(name: str, url: str, endpoints: list[dict], resume: str, net: Net
         has_overrides=bool(profile and profile.field_overrides),
     )
     probe = make_engine({normalize_host(url)}, net)
+    feed_vacancy = feed_vacancy_for(name, url, load_feed_vacancies())
     endpoint = endpoint_for(name, url, endpoints)
-    if endpoint:
+    if feed_vacancy:
+        result.start_url = feed_vacancy
+    elif endpoint:
         vacancy = vacancy_from_endpoint(probe, endpoint)
         if vacancy:
             result.start_url = vacancy

@@ -22,6 +22,27 @@ LOG=/var/log/jt-recon.log
 
 cd "$REPO/jupiter" || exit 0
 echo "$(date -Is) start" >>"$LOG"
+
+# Вакансии из ленты (01.10.2026): по одной живой на компанию — разведка
+# проверяет ту же вакансию, на которую свайпают люди, а не страницу списка
+# (у многих компаний это была главная сайта, и выходило «вакансия не
+# найдена»). Только название компании и адрес вакансии — ничего о людях.
+FEED=/var/lib/jobtoo/feed-vacancies.json
+SECRETS=/opt/jobtoo-secrets/env
+mkdir -p /var/lib/jobtoo
+if [ -r "$SECRETS" ]; then
+  ( set -a; . "$SECRETS"; set +a
+    cd "$REPO/infra" && docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+      psql -v ON_ERROR_STOP=1 -U supabase_admin -d postgres -tA -c \
+      "select coalesce(json_object_agg(company, urls), '{}'::json) from (
+         select company, json_agg(url) as urls from (
+           select company, url, row_number() over (partition by company order by last_seen_at desc) as n
+           from jm_ext_vacancies where active and company is not null and url like 'http%'
+         ) v where n <= 3 group by company) t" ) > "$FEED.tmp" 2>>"$LOG" \
+    && [ -s "$FEED.tmp" ] && mv -f "$FEED.tmp" "$FEED" && chmod 644 "$FEED" \
+    || { rm -f "$FEED.tmp"; echo "$(date -Is) вакансии ленты не выгрузились — разведка по источникам" >>"$LOG"; }
+fi
+[ -s "$FEED" ] && export JUPITER_FEED_VACANCIES="$FEED"
 tmp=$(mktemp /var/www/html/jupiter-recon.json.XXXXXX)
 # Предел 5 часов: с 25.09.2026 в каталоге 415 разделов, а не 170, и прежних
 # трёх часов на четыре потока могло не хватить — оборванный прогон не пишет

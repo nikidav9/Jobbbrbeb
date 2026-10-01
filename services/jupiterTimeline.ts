@@ -63,6 +63,8 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   if (a.reasonCode === 'PHONE_FILL') return { label: 'Ждёт отправки · анкета заполнится сама', ...WAIT };
   if (a.reasonCode === 'SITE_NOT_VERIFIED') return { label: 'Сайт ещё подключаем · отклик сохранён', ...INFO };
   if (a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW') return { label: 'Отправлено вами', ...DONE };
+  // Было «Скорее всего, ушёл», а компания написала на адрес JobToo — дошло.
+  if (a.state === 'submitted' && a.reasonCode === 'MAIL_CONFIRMED') return { label: 'Отправлено · компания ответила', ...DONE };
   return stateStatus(a.state);
 }
 
@@ -85,7 +87,9 @@ export function jupiterRowSummary(a: JupiterApplication): string {
   if (jupiterNeedsSberConsent(a)) return 'Нужно ваше согласие для Сбера';
   switch (a.state) {
     case 'submitted':
-      return a.reasonCode === 'MANUAL_WEBVIEW' ? 'Вы отправили отклик сами' : 'Анкета заполнена и отправлена';
+      if (a.reasonCode === 'MANUAL_WEBVIEW') return 'Вы отправили отклик сами';
+      if (a.reasonCode === 'MAIL_CONFIRMED') return 'Компания ответила письмом — отклик дошёл';
+      return 'Анкета заполнена и отправлена';
     case 'duplicate': return 'Вы уже откликались на эту вакансию';
     case 'failed': return 'Юпитер споткнулся до отправки — отправьте сами за минуту';
     case 'retryable_failed': return 'Не получилось — Юпитер попробует ещё раз';
@@ -165,9 +169,11 @@ function stepFor(e: JupiterEvent): TimelineStep | null {
     case 'queued': return { kind: 'queued', title: 'В очереди Юпитера', at, tone: 'info' };
     case 'ready_to_submit': return { kind: 'ready_to_submit', title: 'Анкета заполнена, ждёт отправки', note: fillNote(e.detail), at, tone: 'wait' };
     case 'submitted':
-      return e.reason_code === 'MANUAL_WEBVIEW'
-        ? { kind: 'submitted_manual', title: 'Вы отправили отклик', at, tone: 'done' }
-        : { kind: 'submitted', title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
+      if (e.reason_code === 'MANUAL_WEBVIEW') return { kind: 'submitted_manual', title: 'Вы отправили отклик', at, tone: 'done' };
+      if (e.reason_code === 'MAIL_CONFIRMED') {
+        return { kind: 'submitted', title: 'Компания ответила письмом — отклик дошёл', note: 'Письмо — в разделе «Почта»', at, tone: 'done' };
+      }
+      return { kind: 'submitted', title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
     case 'action_required':
       return {
         kind: 'action_required',

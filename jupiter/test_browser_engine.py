@@ -242,6 +242,21 @@ new IntersectionObserver((entries, obs) => {
 """
 
 
+# Кнопка «Отправить» ничего не отправляет (сломанный обработчик): репетиция
+# должна сказать «no_request», а не «ушла бы».
+DEADBTN_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Курьер — Карьера</title>
+<h1>Курьер</h1>
+<form onsubmit="return false">
+  <label>Имя <input name="fn" required></label>
+  <label>Фамилия <input name="ln" required></label>
+  <label>Email <input name="em" type="email" required></label>
+  <label>Телефон <input name="ph" type="tel" required></label>
+  <button type="button">Отправить отклик</button>
+</form>
+"""
+
 # Кнопка отклика с текстом, которого правила движка не знают, рядом «Войти»:
 # найти её может только подсказка YandexGPT (apply_advisor, 01.10.2026).
 ODDBTN_VACANCY = """<!doctype html>
@@ -292,7 +307,7 @@ class _Handler(BaseHTTPRequestHandler):
         pages = {"/vacancy": SPA_VACANCY, "/challenge": SPA_VACANCY, "/combo": COMBO_VACANCY,
                  "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
                  "/lazy": LAZY_VACANCY, "/radio": RADIO_VACANCY, "/hiddenbox": HIDDENBOX_VACANCY, "/stuckbox": STUCKBOX_VACANCY, "/policybox": POLICYBOX_VACANCY,
-                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM, "/oddbtn": ODDBTN_VACANCY}
+                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM, "/oddbtn": ODDBTN_VACANCY, "/deadbtn": DEADBTN_VACANCY}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
             body = page.encode("utf-8")
@@ -437,6 +452,38 @@ class BrowserEngineTest(unittest.TestCase):
 
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}/vacancy/42"
+
+    def rehearsal_engine(self) -> "JupiterBrowserEngine":
+        eng = JupiterBrowserEngine({"127.0.0.1"}, read_only=True, executable_path=CHROMIUM,
+                                   settle_ms=200, rehearsal_markers=[PROFILE["email"]])
+        self.addCleanup(eng.close)
+        return eng
+
+    def test_rehearsal_clicks_submit_but_network_cuts_the_application(self):
+        eng = self.rehearsal_engine()
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        agent.run(self.url(), self.profile)
+        self.assertEqual(self.server.state["posts"], [])  # до сервера не дошло ничего
+        self.assertTrue(any(r["carries_candidate"] and r["path"] == "/api/apply" for r in eng.rehearsal_log),
+                        eng.rehearsal_log)
+
+    def test_rehearsal_reports_button_that_sends_nothing(self):
+        eng = self.rehearsal_engine()
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        agent.run(f"http://127.0.0.1:{self.port}/deadbtn/1", self.profile)
+        self.assertEqual(eng.rehearsal_log, [])
+        self.assertEqual(self.server.state["posts"], [])
+
+    def test_read_only_without_markers_still_refuses_to_submit(self):
+        eng = self.engine(read_only=True)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(self.url(), self.profile)
+        self.assertNotEqual(result.status, "submitted")
+        self.assertEqual(self.server.state["posts"], [])
+        self.assertEqual(eng.rehearsal_log, [])
+        with self.assertRaises(ValueError):
+            JupiterBrowserEngine({"127.0.0.1"}, read_only=False, executable_path=CHROMIUM,
+                                 rehearsal_markers=["x@y.ru"])
 
     def test_llm_advisor_finds_apply_button_rules_do_not_know(self):
         seen: list[dict] = []

@@ -54,6 +54,17 @@ for name in ("TOKEN", "SECRET", "EnvironmentFile"):
 assert "YGPT_ENV=/etc/jobtoo/yandex-gpt.env" in run
 assert 'case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac' in run
 assert '"${YGPT_VARS[@]}"' in run and '--llm-sites "$LLM_SITES"' in run
+# Репетиция отправки: нажатие есть, но обход по-прежнему read_only (сеть
+# обрывает не-GET) — боевых переключателей в скрипте нет, см. выше.
+assert "--rehearse" in run
+# Вакансии ленты: HTTP-разведка выгружает их из базы (только компания и
+# адрес вакансии), браузерная читает копию от nobody.
+recon_run = (ROOT / "infra" / "recon-run.sh").read_text(encoding="utf-8")
+assert "from jm_ext_vacancies where active" in recon_run and 'export JUPITER_FEED_VACANCIES="$FEED"' in recon_run
+assert "select company, url" in recon_run and "email" not in recon_run and "user_id" not in recon_run
+assert 'JUPITER_FEED_VACANCIES="$WORK/feed.json"' in run
+assert "rehearsal_markers=rehearsal_markers(TEST_CANDIDATE)" in recon_browser
+assert 'if rehearsal_markers and not read_only:' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
 
 print("recon-browser infra: ok")

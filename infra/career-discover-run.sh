@@ -128,6 +128,20 @@ PY
 exec 9>"$LOCK"
 flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
 
+# Остановка службы (TimeoutStartSec, ручной stop) убивала скрипт без следа:
+# 27.09.2026 статус так и остался «обход сайтов» на много дней, находки
+# пропали, а контейнер с браузером мог жить дальше. Теперь — убрать
+# контейнер, сохранить сделанное и честно написать «прерван».
+CONTAINER=jt-career-discover
+interrupted() {
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    [ -n "${tmp:-}" ] && save_partial
+    say "прерван сигналом"
+    state error "прерван (остановка службы или таймаут); частичный результат — $OUT.partial, если успел"
+    exit 1
+}
+trap interrupted TERM INT
+
 command -v docker >/dev/null || fail "docker не установлен"
 # Браузер в 1 ГБ на машине в 4 ГБ, где живут сайт и база: без запаса памяти
 # не стартуем (27.09.2026 сайт задохнулся, когда шли два браузера сразу).
@@ -174,7 +188,10 @@ rm -f "$tmp"
 # Потолок ресурсов — контейнер идёт раз в неделю на боевой машине рядом с
 # остальными службами, свалить их себе не должен.
 state running "обход сайтов"
-docker run --rm \
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+# Свой предел раньше службы (6 ч): обход сам укладывается в 270 мин, но
+# повисший браузер не должен держать прогон до убийства systemd.
+timeout --kill-after=2m 300m docker run --rm --name "$CONTAINER" \
   --memory 1g --cpus 1 \
   -v "$REPO:/repo:ro" \
   -v "$(dirname "$MODULES"):/deps" \
@@ -204,6 +221,8 @@ docker run --rm \
        /repo/scripts/career-sites.tsv /deps/run/
     cd /deps/run && node career-discover.mjs
   " >>"$LOG" 2>&1 || {
+    # timeout мог убить клиента docker, а контейнер — пережить его.
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
     save_partial
     msg="разведка упала, подробности в $LOG"
     [ -s "$OUT.partial" ] && msg="$msg; частичный результат сохранён в $OUT.partial"

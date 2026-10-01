@@ -32,6 +32,13 @@ check("список компаний уходит в контейнер как D
 check("список компаний лежит в /deps/run рядом со скриптом",
       'run_dir="$(dirname "$MODULES")/run"' in run)
 
+# 27.09.2026 служба прервала обход, а статус на дни остался «обход сайтов».
+check("остановка службы ловится и пишет «прерван»",
+      "trap interrupted TERM INT" in run and 'state error "прерван' in run)
+check("контейнер именован и убирается при прерывании и сбое",
+      '--name "$CONTAINER"' in run and run.count('docker rm -f "$CONTAINER"') >= 3)
+check("свой предел обхода раньше TimeoutStartSec=6h",
+      "timeout --kill-after=2m 300m docker run" in run)
 check("контейнер разведки ограничен по памяти", "--memory 1g" in run)
 check("контейнер разведки ограничен по CPU", "--cpus 1" in run)
 check("DISCOVER_CONCURRENCY по умолчанию 3",
@@ -232,6 +239,41 @@ check("частичный успех: у Б fails+1 (было 1 → 2, удал�
       not any(e["company"] == "Б" for e in mixed_merged))
 check("частичный успех: у В fails+1 (было 0 → 1, осталась)", mixed_v.get("fails") == 1)
 check("частичный успех: removed=1 (Б удалена)", mixed_removed == 1)
+
+
+# ── Поведение: TERM посреди обхода → статус «прерван», кусок сохранён ───────
+import tempfile, textwrap, time
+def _func(name: str) -> str:
+    start = run.index(f"{name}() {{")
+    depth, i = 0, run.index("{", start)
+    while True:
+        depth += {"{": 1, "}": -1}.get(run[i], 0)
+        if depth == 0:
+            return run[start:i + 1]
+        i += 1
+with tempfile.TemporaryDirectory() as d:
+    script = textwrap.dedent(f"""
+        set -Eeuo pipefail
+        OUT={d}/out.json; STATUS={d}/status.json; LOG={d}/log; CONTAINER=x
+        tmp="$OUT.tmp"; echo '[{{"name":"a"}}]' > "$tmp"
+        docker() {{ :; }}
+        say() {{ echo "$*" >> "$LOG"; }}
+    """) + "\n".join(_func(n) for n in ("state", "save_partial", "interrupted")) + textwrap.dedent("""
+        trap interrupted TERM INT
+        state running "обход сайтов"
+        echo ready
+        sleep 30 & wait
+    """)
+    proc = subprocess.Popen(["bash", "-c", script], stdout=subprocess.PIPE, text=True)
+    proc.stdout.readline()
+    proc.terminate()
+    proc.wait(timeout=10)
+    status = Path(d, "status.json").read_text(encoding="utf-8")
+    import json as _json
+    status = _json.loads(status)
+    check("по TERM статус становится error «прерван»",
+          status["state"] == "error" and "прерван" in status["message"])
+    check("по TERM частичный результат сохранён", Path(d, "out.json.partial").exists())
 
 if failures:
     print("career discover run: ПРОВАЛЫ")

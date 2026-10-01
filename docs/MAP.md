@@ -887,7 +887,10 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 списком из репозитория при каждой синхронизации: репозиторий главнее,
 служебные `company`/`discovered_at` в `connector_config` не попадают,
 `discovered_count` виден в конфиге источника. Защиту от ботов и CAPTCHA
-разведка не обходит — такой сайт получает статус «закрыт». Тот же недельный
+разведка не обходит — такой сайт получает статус «закрыт». Остановка службы
+(таймаут, stop) ловится: контейнер `jt-career-discover` убирается, сделанное
+уходит в `career-discovery.json.partial`, статус — error «прерван» (27.09.2026
+статус на дни застрял на «обход сайтов»); свой предел обхода — 300 мин. Тот же недельный
 прогон заодно перепроверяет уже накопленное: у каждой записи копится `fails`
 (подряд идущие провалы), два подряд убирают её из `discovered.json`; если
 среди перепроверенных СТАРЫХ записей набралось ≥3 и ни одна не прошла —
@@ -1399,7 +1402,19 @@ YandexGPT помогает и боевому движку, и разведке: 
 действие `llm_apply_click`); разведка на `--llm-sites` разделах (сервер — 60,
 сперва работодатели с вакансиями в ленте) идёт с теми же подсказками полей и
 вопросов, что воркер, и пишет `llm_used`/`llm_actions`. Ключ обходу передаёт
-`infra/recon-browser-run.sh` переменными окружения, не в журнал.
+`infra/recon-browser-run.sh` переменными окружения, не в журнал. Репетиция отправки
+(`--rehearse`, на сервере каждую ночь, 01.10.2026): анкета, дошедшая до
+«Отправить» (в том числе разделы, которые HTTP-движок уже прошёл, —
+`sites_to_rehearse`), проходится ещё раз с нажатием; движок с
+`rehearsal_markers` (почта и фамилия синтетического кандидата) в read_only
+нажимает кнопку, сеть обрывает любой не-GET и GET с метками. Итог —
+`rehearsal.verdict`: `would_send` (в оборванном запросе анкета),
+`request_without_candidate`, `no_request` (нажатие ничего не отправило), плюс
+текст страницы после нажатия. Вакансия для проверки — из ленты
+(`recon.feed_vacancy_for`, файл `/var/lib/jobtoo/feed-vacancies.json`, до трёх
+живых вакансий на компанию из `jm_ext_vacancies`, выгружает
+`infra/recon-run.sh`, путь — `JUPITER_FEED_VACANCIES`): та же вакансия, что у
+людей, а не страница списка; без файла — источник, как раньше.
 Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
 `run_worker.py`; служба `jt-jupiter-browser` (`infra/jupiter-browser-run.sh`
 setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
@@ -1414,7 +1429,7 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 (`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл (кириллицу-двойника меняет на латиницу, остальное — только печатаемый ASCII: русская «А» в ключе давала 500, а выброшенная — 401; каталог не вида `b1g…` заменяет каталогом JobToo `b1g1bkcqqko80h5kqen1`) и перезапускает воркеры;
 проверка — `tests/yandex_gpt_delivery_test.py`. Работает ли на деле — в
 `jupiter-browser-status.json`: `yandex_gpt_проверка` (сервер раз в час сам спрашивает
-модель «2+2?», пишет код, время и её ответ; новый ключ — сразу; не 200 — ещё и причину словами Яндекса, повтор через 10 мин) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
+модель «2+2?», пишет код, время и её ответ; рядом `yandex_search_проверка` — пробный запрос в Search API v2 тем же ключом и число ссылок; новый ключ — сразу; не 200 — ещё и причину словами Яндекса, повтор через 10 мин) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
@@ -1500,7 +1515,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 | `jupiter/site_compat.py` | Реестр работодателей: 62 источника владельца + сайты каталога; доверенные хосты подачи, переопределения полей и `live_ready` — куда разрешена боевая подача: флаг владельца (30 сайтов; последним 26.09 — Контур, поля сверены вручную) **или** `dry_run_ok` в свежей (≤3 сут, `JUPITER_RECON_MAX_AGE_DAYS`) ежедневной разведке `/var/www/html/jupiter-recon.json` (`JUPITER_RECON_FILE`, `recon_ok_hosts`) **или** в браузерной разведке `/var/www/html/jupiter-recon-browser.json` (наружу — `/jupiter-recon-browser.json`) (`JUPITER_RECON_BROWSER_FILE`; `infra/recon-browser-run.sh`, таймер `jt-recon-browser` после `jt-recon`, от nobody, dry-run, только разделы spa/captcha/form_unmapped/no_vacancy и blocked с отказом в доступе 401/403/429/503 — `BROWSER_RETRY_BLOCKS`); `live_ready_source` → owner/http/browser. Карьерный домен работодателя на другом хосте — `trusted_apply_hosts` профиля (ROSTIC'S, SUNLIGHT, Тануки, Спортс — 29.09; Додо — `dodoteam.ru` с API `job-site-backend.dodo-ai-platform.io`, 30.09); карта полей формы Tilda у Читай-города (`userFull`→фамилия и т. п., 30.09); карты полей по разбору анкет 30.09 — Инвитро, Whoosh, Герофарм, Наумен, МойСклад, ТК КИТ, Карма Групп, Rendez-Vous, PrideInBrains, Братья Караваевы, Crosstech, Globus IT, ЭФКО (сверка — `test_policy.SiteFieldMaps30`); стартовый хост агент разрешает вместе с вариантом `www.`/без него (`_expand_policy_for_start`). Воркер раз в час снимает с паузы `SITE_NOT_VERIFIED` на подключённых хостах (`jupiterRequeueSiteReady`, только админ) |
 | `jupiter/recon.py` | Разведка форм отклика по всем 602 разделам `scripts/career-sites.tsv` (на сервере — ежедневно, `infra/recon-run.sh` → `/jupiter-recon.json`; `dry_run_ok` из свежего итога сам открывает боевую подачу через `site_compat.live_ready`): Jupiter в dry-run с синтетическим кандидатом, класс раздела и снимок полей. Итог — `docs/разведка-форм.md`; `--via-proxy` только для облачного контейнера |
 | `infra/recon-run.sh` | Та же разведка на московском сервере раз в сутки (таймер `jt-recon`, в 04:40; первый прогон сразу, пока журнал пуст; состояние — `recon_state`/`recon_last` в `security-status.json`): честная подпись Jupiter, 4 потока, только чтение; итог — открытый `https://147.45.184.99.sslip.io/jupiter-recon.json` (адреса работодателей и устройство анкет, без людей); разведка по запросу, не дожидаясь ночи: новое содержимое `infra/recon-now` (строка — дата и причина) — `bootstrap.sh` запускает `jt-recon` один раз, а `jt-recon-browser` — когда HTTP-разведка закончится (метка `/var/lib/jobtoo/recon-browser.pending`) |
-| `jupiter/mail_sync.py` | «Почта JobToo»: служба `jt-jupiter-mail` читает общий ящик Timeweb по IMAP и раскладывает письма по людям (`jupiterMailIngest`); адресата берёт только из первого `Received` публичного MX Timeweb. Адреса — `имя.фамилия@jobtoo.ru`, выдаёт `jt_jupiter_mailbox()` в `db.php` по правилам `php-proxy/jupiter_mail_address.php`; подробности — `docs/jupiter-mail.md` |
+| `jupiter/mail_sync.py` | «Почта JobToo»: служба `jt-jupiter-mail` читает общий ящик Timeweb по IMAP и раскладывает письма по людям (`jupiterMailIngest`); адресата берёт только из первого `Received` публичного MX Timeweb. Адреса — `имя.фамилия@jobtoo.ru`, выдаёт `jt_jupiter_mailbox()` в `db.php` по правилам `php-proxy/jupiter_mail_address.php`; подробности — `docs/jupiter-mail.md`. Письмо компании подтверждает отклик «Скорее всего, ушёл»: `jupiterMailIngest` → `jt_mail_confirm_applications` (домен отправителя или название компании + слова об отклике) → `submitted`, `MAIL_CONFIRMED` (с 01.10.2026; сторож — `tests/jupiter_mail_confirm_test.php`). Итог воркера `failed` — пуш «Отклик в … не ушёл» (`jt_failed_notify`, тип `jupiter_failed` → «Отклики», не чаще раза в сутки) |
 | `jupiter/test_recon.py` | Классы разведки на синтетическом сайте; ни одного POST за весь обход |
 | `jupiter/test_e2e.py` | E2E на синтетическом сервере работодателя |
 | `jupiter/test_form_semantics.py` | Семантика формы и валидация, без сети |
