@@ -2204,6 +2204,7 @@ function expo_push(array $messages): void {
  * директор оставался без карточки, как и без самого уведомления.
  */
 function tg_new_application_card(string $employerId, string $workerId, string $vacancyId, string $vTitle): bool {
+            if (!JT_TG_EVENTS) return false;
             if (!jt_has_crossborder_consent($employerId)) return false;
             $emp = sb_single('jm_users', ['id' => 'eq.' . $employerId], 'telegram_id');
             if (!$emp || empty($emp['telegram_id'])) return false;
@@ -2296,6 +2297,12 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  * пределах минуты. notify_user на этом останавливается — раз строки нет, то
  * и слать нечего.
  */
+// Уведомления о событиях в Telegram выключены: от Telegram ушли (решение
+// владельца 01.10.2026). Людям о событиях пишут пуш, web-push и письмо-сводка.
+// Посты в группу, отчёт владельцу и ответы бота — не уведомления, их это не
+// касается.
+const JT_TG_EVENTS = false;
+
 const JT_DIGEST_MAX = 100; // писем за раз: лимит Timeweb 2000 в сутки — вместе с кодами входа
 
 /** Тема и текст сводки. Только число — что пришло, видно в приложении. */
@@ -2407,7 +2414,8 @@ function notify_user(string $userId, string $title, string $body, string $type =
         // согласия. Нативный push ниже содержит только нейтральный сигнал.
         $crossBorderAllowed = jt_has_crossborder_consent($userId);
 
-        if ($crossBorderAllowed && !empty($u['telegram_id'])) {
+        $tgSent = JT_TG_EVENTS && $crossBorderAllowed && !empty($u['telegram_id']);
+        if ($tgSent) {
             $tgTitle = $pushTitle ?? $title;
             $tgBody = $pushBody ?? $body;
             tg_send_message((int)$u['telegram_id'],
@@ -2430,7 +2438,7 @@ function notify_user(string $userId, string $title, string $body, string $type =
         // Запасной путь, а не добавочный: у кого есть телеграм или приложение, тот
         // уже извещён, и второй звонок о том же — это ровно то «просто так», от
         // которого выключают уведомления.
-        if (empty($u['telegram_id']) && empty($u['push_token'])) {
+        if (!$tgSent && empty($u['push_token'])) {
             web_push_to([$userId => true], $pushTitle ?? $title, $pushBody ?? $body, $type);
         }
     });
@@ -2605,7 +2613,7 @@ function notify_workers(string $title, string $body,
         // сравниваем со строгим «больше», а не «больше или равно».
         if (($seen[$w['id']] ?? 0) > NEARBY_MAX_PER_DAY) { $capped++; continue; }
 
-        if (!empty($w['telegram_id'])) {
+        if (JT_TG_EVENTS && !empty($w['telegram_id'])) {
             if (tg_send_message((int)$w['telegram_id'], $tgHtml, $btnUrl)) $tgOk++;
         } elseif (!empty($w['push_token'])) {
             $pushMsgs[] = ['to' => $w['push_token'], 'title' => $title, 'body' => $body,
@@ -5640,7 +5648,7 @@ try {
                     . ' автоматически, и кандидат уходит к другим.';
                 // type — чтобы нажатие в колокольчике вело в «Отклики» (routeForNotification).
                 sb_insert('jm_notifications', ['user_id' => $eid, 'title' => $title, 'body' => $body, 'type' => 'pending_apps']);
-                if (jt_has_crossborder_consent((string)$eid) && $emp && !empty($emp['telegram_id'])) {
+                if (JT_TG_EVENTS && jt_has_crossborder_consent((string)$eid) && $emp && !empty($emp['telegram_id'])) {
                     tg_send_message((int)$emp['telegram_id'], $title . "\n\n" . $body, true);
                 } elseif ($emp && !empty($emp['push_token'])) {
                     expo_push([[ 'to' => $emp['push_token'], 'title' => $title, 'body' => $body,
@@ -5696,7 +5704,7 @@ try {
                     . 'Не ждите — посмотрите другие вакансии, отклик в два тапа.';
                 sb_insert('jm_notifications', ['user_id' => $srow['worker_id'], 'title' => $wTitle, 'body' => $wBody, 'type' => 'app_auto_rejected']);
                 $wu = sb_single('jm_users', ['id' => 'eq.' . $srow['worker_id']], 'telegram_id,push_token');
-                if ($wu && jt_has_crossborder_consent((string)$srow['worker_id']) && !empty($wu['telegram_id'])) {
+                if (JT_TG_EVENTS && $wu && jt_has_crossborder_consent((string)$srow['worker_id']) && !empty($wu['telegram_id'])) {
                     tg_send_message((int)$wu['telegram_id'], $wTitle . "\n\n" . $wBody, true);
                 } elseif ($wu && !empty($wu['push_token'])) {
                     expo_push([[ 'to' => $wu['push_token'], 'title' => $wTitle, 'body' => $wBody,

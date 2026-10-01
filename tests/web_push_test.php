@@ -35,8 +35,12 @@ check('веб-пуш подключён к личным уведомлениям
 // ЗАПАСНОЙ путь, а не добавочный. У кого есть телеграм или приложение, тот уже
 // извещён, и второй звонок о том же — то самое «просто так», от которого
 // выключают уведомления целиком.
+// С 01.10.2026 Telegram о событиях не пишет (JT_TG_EVENTS, решение владельца):
+// привязанный Telegram больше не путь, и браузер — запасной после пуша.
 check('веб-пуш только когда других путей нет',
-    str_contains($full, "if (empty(\$u['telegram_id']) && empty(\$u['push_token'])) {"));
+    str_contains($full, "if (!\$tgSent && empty(\$u['push_token'])) {")
+    && str_contains($full, "\$tgSent = JT_TG_EVENTS && \$crossBorderAllowed && !empty(\$u['telegram_id']);"));
+check('Telegram о событиях выключен', str_contains($db, 'const JT_TG_EVENTS = false;'));
 // Порядок: сначала телеграм и Expo, браузер последним. Иначе «запасной» путь
 // сработал бы раньше основного.
 $tgAt = strpos($full, 'tg_send_message(');
