@@ -131,10 +131,23 @@ def pick_listing(llm: Any, company: str, candidates: list[dict[str, str]]) -> st
     return url if url in {c["url"] for c in candidates} else None
 
 
-def targets(discovery: list[dict], state: dict[str, float], limit: int) -> list[dict]:
-    """Компании без вакансий — сначала те, кого дольше всего не смотрели."""
+def _norm(name: str) -> str:
+    return re.sub(r"\s*[·(].*$", "", str(name)).strip().lower()
+
+
+def targets(discovery: list[dict], state: dict[str, float], limit: int,
+            in_feed: set[str] | None = None) -> list[dict]:
+    """Компании без вакансий — сначала те, кого дольше всего не смотрели.
+
+    in_feed — компании, у которых вакансии в ленте уже есть (выгрузка
+    infra/recon-run.sh): итог недельного поиска бывает устаревшим, и без
+    этой сверки разведчик тратил запросы на Lamoda и 2ГИС, которые давно
+    собираются из своих API.
+    """
+    feed = {_norm(n) for n in (in_feed or set())}
     items = [d for d in discovery if isinstance(d, dict) and d.get("status") in STATUSES
-             and d.get("name") and str(d.get("url", "")).startswith("http")]
+             and d.get("name") and str(d.get("url", "")).startswith("http")
+             and _norm(d["name"]) not in feed]
     items.sort(key=lambda d: state.get(str(d["name"]), 0.0))
     return items[:limit]
 
@@ -173,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--state", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int, default=40)
+    ap.add_argument("--feed", help="вакансии ленты {компания: [адреса]} — эти компании пропустить")
     args = ap.parse_args(argv)
     key = os.environ.get("YANDEX_GPT_API_KEY", "").strip()
     folder = os.environ.get("YANDEX_GPT_FOLDER_ID", "").strip()
@@ -191,7 +205,13 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jupiter"))
     import yandex_gpt
     llm = yandex_gpt.YandexGPT.from_env()
-    items = targets(discovery if isinstance(discovery, list) else [], state, args.limit)
+    in_feed: set[str] = set()
+    if args.feed:
+        try:
+            in_feed = set(json.loads(Path(args.feed).read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            in_feed = set()
+    items = targets(discovery if isinstance(discovery, list) else [], state, args.limit, in_feed)
     results = scout(items, key, folder, llm)
     now = time.time()
     for item in items:
