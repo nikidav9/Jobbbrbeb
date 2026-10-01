@@ -73,6 +73,15 @@ test('итог строки — что сделано или чего не хв�
     'Автоотклик выключен — отправьте сами');
 });
 
+test('письмо компании превращает «скорее всего, ушёл» в «отправлено»', () => {
+  const sent = app({ state: 'submitted', reasonCode: 'MAIL_CONFIRMED' });
+  assert.equal(jupiterStatus(sent).label, 'Отправлено · компания ответила');
+  assert.deepEqual(jupiterBadge(sent), { label: 'ОТПРАВЛЕНО', tone: 'sent' });
+  assert.match(jupiterRowSummary(sent), /письмом/);
+  const [step] = buildTimeline([{ kind: 'submitted', reason_code: 'MAIL_CONFIRMED', detail: null, created_at: '1' }]);
+  assert.match(step.title, /письмом/);
+});
+
 test('честные исходы: «скорее всего, ушёл» и «не ушёл» различаются', () => {
   assert.equal(jupiterStatus(app({ state: 'submission_unknown' })).label, 'Скорее всего, ушёл');
   assert.equal(jupiterStatus(app({ state: 'failed' })).label, 'Не ушёл');

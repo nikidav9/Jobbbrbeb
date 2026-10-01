@@ -356,7 +356,7 @@ export const JUPITER_EMPLOYERS: [name: string, host: string][] = [
   ["Читай-город", "rabota.chitai-gorod.ru"],
   ["Шереметьево", "job.svo.su"],
   ["Шинсервис", "shinservice.ru"],
-  ["Шоколадница", "regions.shoko.ru"],
+  ["Шоколадница", "shoko.ru"],
   ["Эволюция автолизинга", "evoleasing.ru"],
   ["Эвотор", "evotor.ru"],
   ["Экономический Олимп", "economolymp.ru"],
