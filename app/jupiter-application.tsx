@@ -487,8 +487,9 @@ export default function JupiterApplicationScreen() {
                 onPress={openEmployerTerms}
                 label="Условия и политика работодателя"
                 style={{ alignSelf: 'flex-start' }}
+                trailing={<ExternalLinkIcon color={C.ink} />}
               >
-                Условия и политика работодателя ↗
+                Условия и политика работодателя
               </UnderlinedLink>
             </View>
           </View>

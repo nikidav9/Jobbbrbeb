@@ -218,6 +218,10 @@ const screens = [
   { id: 'perm-detail', url: '/perm-vacancy-detail?vacancyId=small-p1', who: worker, back: true, backTo: /^\/feed$/ },
   { id: 'company', url: '/(tabs)/company?company=%D0%9B%D0%B0%D0%B2%D0%BA%D0%B0', who: worker, back: true, backTo: /^\/feed$/ },
   { id: 'saved', url: '/saved', who: worker, back: true, backTo: /^\/feed$/ },
+  // Русские названия специализаций (01.10.2026) длиннее английских. «Все
+  // фильтры» (/filters) сюда пока не входят: при прямом заходе там React #418
+  // (расхождение с предотрисовкой) — было и до русификации, отдельная задача.
+  { id: 'filters-spec', url: '/filters/spec?from=feed', who: worker, back: true, backTo: /^\/feed$/ },
   { id: 'mail', url: '/mail', who: worker, back: true, backTo: /^\/feed$/ },
   { id: 'support', url: '/support', who: worker, back: true, backTo: /^\/profile$/ },
   { id: 'settings-worker', url: '/profile-settings', who: worker, back: true, backTo: /^\/profile$/ },
