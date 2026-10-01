@@ -1043,7 +1043,7 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   `jt_try_*` (`mail`, `code`).
 - **Письма** — `php-proxy/mailer.php`, свой SMTP-клиент: Timeweb с ящика
   `support@jobtoo.ru`, логин и пароль — `JUPITER_MAIL_IMAP_*` из секретов,
-  в PHP приходят как `MAIL_SMTP_*` (`infra/docker-compose.yml`).
+  в PHP приходят как `MAIL_SMTP_*` (`infra/docker-compose.yml`). Кроме кодов входа шлёт отклики письмом (`jupiter_email_apply.php`, раздел Jupiter).
 - **Вход** (`app/login.tsx`, решение владельца 27.09.2026) — по умолчанию код
   из письма (`EmailCodeStep purpose="login"` → `services/db.ts:
   dbAuthLoginByCode`), пароль — запасной вариант по ссылке «Войти по паролю»
@@ -1434,7 +1434,7 @@ worker, изоляция контекстов; `browser_planner.py` + `yandex_gp
 `JupiterAgent(field_mapper=…)`: только обязательные незнакомые поля, без
 галочек/согласий/капчи/файлов и без юридических ключей профиля, в траектории
 `llm_map` без значений; `ats_hosts.py` — домены
-ATS-платформ, куда вакансия может увести анкету; `huntflow.py` — адаптер Huntflow (п.3, 01.10.2026: самая частая ATS ленты, 32 источника сбора из ~180): `agent.run` для `https://*.huntflow.io/vacancy/<slug>` идёт в API сайта (`/api/vacancy/{slug}` → `/upload` резюме → `/response` JSON), без чужого JS; галочка `agreement` — только по поручению (`personal_data_consent`), dry-run не шлёт ничего, кроме GET; API не ответил — обычный разбор страницы; тест `test_huntflow.py`; `browser_limits.py` — пределы ресурсов (сколько браузеров
+ATS-платформ, куда вакансия может увести анкету; `email_apply.py` — отклик письмом (п.4, решение владельца 01.10.2026: у ~20% сайтов без анкеты есть HR-почта): анкеты нет, а на странице почта на домене самой вакансии (HR-имя ящика или «резюме» рядом) → `action_required`/`EMAIL_APPLY` с `email_to`; разведка считает такой сайт подключённым (`site_compat._recon_ready`); письмо шлёт сервер в `jupiterFinish` — `php-proxy/jupiter_email_apply.php`: только при `submission_authorized_at`, домен перепроверяется, PDF-резюме во вложении, «Имя Фамилия через JobToo» <ящик SMTP>, `Reply-To` — личный `имя.фамилия@jobtoo.ru` (ответ придёт в «Почту JobToo»), потолок 60 писем в час; итог `submitted`/`EMAIL_SENT`; `mailer.php` умеет `from_name`, `reply_to`, вложения; тесты `test_email_apply.py`, `tests/jupiter_email_apply_test.php`; `huntflow.py` — адаптер Huntflow (п.3, 01.10.2026: самая частая ATS ленты, 32 источника сбора из ~180): `agent.run` для `https://*.huntflow.io/vacancy/<slug>` идёт в API сайта (`/api/vacancy/{slug}` → `/upload` резюме → `/response` JSON), без чужого JS; галочка `agreement` — только по поручению (`personal_data_consent`), dry-run не шлёт ничего, кроме GET; API не ответил — обычный разбор страницы; тест `test_huntflow.py`; `browser_limits.py` — пределы ресурсов (сколько браузеров
 по памяти, сторож задачи, добивание своих зависших Chromium; замер —
 `scripts/browser-bench.py`); `recon_browser.py` — разведка
 браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало»; ход обхода — открытый `/jupiter-recon-browser-progress.json` (`--progress`, класс `Progress`: пройдено, осталось, классы, вердикты репетиции, `llm_used`, `eta_at`; обёртка выкладывает его раз в 30 с, состояния «ждёт HTTP-разведку», «пропущен», «сбой», «готово», «срок вышел»). С 01.10.2026

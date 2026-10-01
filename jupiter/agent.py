@@ -6,6 +6,7 @@ import json
 import re
 import urllib.parse
 
+import email_apply
 import huntflow
 import sber
 from dataclasses import dataclass, field, replace
@@ -279,6 +280,9 @@ class Reason:
     SUBMISSION_UNKNOWN = "SUBMISSION_UNKNOWN"
     CONSENT_REQUIRED = "CONSENT_REQUIRED"
     UNKNOWN_REQUIRED_QUESTION = "UNKNOWN_REQUIRED_QUESTION"
+    # Анкеты нет, а на странице — HR-почта компании: письмо шлёт сервер
+    # (п.4, решение владельца 01.10.2026; jupiter/email_apply.py).
+    EMAIL_APPLY = "EMAIL_APPLY"
 
 
 @dataclass
@@ -312,6 +316,8 @@ class AgentResult:
     human_action: dict[str, Any] | None = None
     # Вопросы работодателя человеку (NEEDS_ANSWERS): questions.Question.as_dict.
     questions: list[dict[str, Any]] = field(default_factory=list)
+    # Адрес для отклика письмом (EMAIL_APPLY).
+    email_to: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -320,6 +326,7 @@ class AgentResult:
             "reason_code": self.reason_code,
             "human_action": self.human_action,
             "questions": self.questions,
+            "email_to": self.email_to,
             "trajectory": self.trajectory,
         }
 
@@ -2755,6 +2762,14 @@ class JupiterAgent:
                     return AgentResult(
                         "action_required", reason, trajectory, Reason.UNSUPPORTED_SCRIPT
                     )
+                hr_email = email_apply.find_hr_email(page.html, page.text, self._root_url or page.url)
+                if hr_email:
+                    reason = "Employer takes applications by email"
+                    trajectory.append({"action": "email_apply", "to": hr_email, "url": page.url,
+                                       "reason_code": Reason.EMAIL_APPLY})
+                    result = AgentResult("action_required", reason, trajectory, Reason.EMAIL_APPLY)
+                    result.email_to = hr_email
+                    return result
                 reason = "No explicit application form or apply navigation found"
                 trajectory.append({
                     "action": "failed",

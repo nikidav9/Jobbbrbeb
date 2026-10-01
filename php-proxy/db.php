@@ -26,6 +26,7 @@ require_once __DIR__ . '/job_sections.php';
 // Вход по почте: коды из писем и их отправка (решение владельца 25.09.2026).
 require_once __DIR__ . '/auth_email.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/jupiter_email_apply.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -8085,7 +8086,7 @@ try {
                 jt_respond(['error' => 'Unknown state'], 400); exit;
             }
             $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
-                'lease_owner,user_id,engine,submission_authorized_at,company');
+                'lease_owner,user_id,engine,submission_authorized_at,company,vacancy_url');
             if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
                 jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
             }
@@ -8113,6 +8114,21 @@ try {
                 // остановка: пусть человек заполнит анкету сам.
                 if ($stored === 0 && ($patch['reason_code'] ?? '') === 'NEEDS_ANSWERS') {
                     $patch['reason_code'] = 'MISSING_PROFILE_FIELD';
+                }
+            }
+            // Отклик письмом (п.4, jupiter_email_apply.php): анкеты нет, есть
+            // HR-почта компании. Отправка разрешена — письмо уходит сейчас;
+            // нет — остаётся «Нужны вы», уйдёт после разрешения.
+            if ($state === 'action_required' && ($patch['reason_code'] ?? '') === 'EMAIL_APPLY'
+                && !empty($task['submission_authorized_at'])) {
+                $err = jt_email_apply_send($task, (string)($extra['email_to'] ?? ''));
+                if ($err === null) {
+                    $state = 'submitted';
+                    $patch['state'] = 'submitted';
+                    $patch['reason_code'] = 'EMAIL_SENT';
+                    $extra['verified'] = true;   // письмо принял почтовый сервер
+                } else {
+                    $patch['last_error'] = mb_substr('Письмо не ушло: ' . $err, 0, 500);
                 }
             }
             if ($state === 'submitted') $patch['submitted_at'] = now_iso();

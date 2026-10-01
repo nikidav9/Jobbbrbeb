@@ -455,7 +455,8 @@ def _recon_ready(item: dict) -> bool:
     анкета заполнена, не хватало только ответов человека)."""
     captcha = item.get("captcha") if isinstance(item.get("captcha"), dict) else {}
     return item.get("klass") == "dry_run_ok" or (
-        item.get("reason_code") == "NEEDS_ANSWERS" and item.get("status") == "action_required") or (
+        item.get("reason_code") in ("NEEDS_ANSWERS", "EMAIL_APPLY")
+        and item.get("status") == "action_required") or (
         # Анкета заполнена, осталась картинка с текстом — её вводит человек в
         # приложении (captcha_loop). Галочки и reCAPTCHA сюда не относятся.
         item.get("klass") == "captcha" and captcha.get("transferable") is True)

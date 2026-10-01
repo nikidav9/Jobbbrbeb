@@ -65,6 +65,7 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   if (a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW') return { label: 'Отправлено вами', ...DONE };
   // Было «Скорее всего, ушёл», а компания написала на адрес JobToo — дошло.
   if (a.state === 'submitted' && a.reasonCode === 'MAIL_CONFIRMED') return { label: 'Отправлено · компания ответила', ...DONE };
+  if (a.state === 'submitted' && a.reasonCode === 'EMAIL_SENT') return { label: 'Отправлено письмом', ...DONE };
   return stateStatus(a.state);
 }
 
@@ -89,6 +90,7 @@ export function jupiterRowSummary(a: JupiterApplication): string {
     case 'submitted':
       if (a.reasonCode === 'MANUAL_WEBVIEW') return 'Вы отправили отклик сами';
       if (a.reasonCode === 'MAIL_CONFIRMED') return 'Компания ответила письмом — отклик дошёл';
+      if (a.reasonCode === 'EMAIL_SENT') return 'Анкеты нет — резюме ушло письмом на почту компании';
       return 'Анкета заполнена и отправлена';
     case 'duplicate': return 'Вы уже откликались на эту вакансию';
     case 'failed': return 'Юпитер споткнулся до отправки — отправьте сами за минуту';
@@ -162,6 +164,8 @@ const ACTION_REASONS: Record<string, string> = {
   MISSING_PROFILE_FIELD: 'На сайте есть вопрос, ответа на который нет в профиле',
   NEEDS_ANSWERS: 'Работодатель задал вопросы — ответьте, и отклик уйдёт сам',
   LIVE_AUTHORIZATION_REVOKED: 'Автоотклик выключен — отклик не отправлен',
+  // Анкеты нет, компания принимает резюме на почту (п.4, 01.10.2026).
+  EMAIL_APPLY: 'Компания принимает резюме письмом — Юпитер отправит его при включённом автоотклике',
 };
 
 function stepFor(e: JupiterEvent): TimelineStep | null {
@@ -175,6 +179,9 @@ function stepFor(e: JupiterEvent): TimelineStep | null {
       if (e.reason_code === 'MANUAL_WEBVIEW') return { kind: 'submitted_manual', title: 'Вы отправили отклик', at, tone: 'done' };
       if (e.reason_code === 'MAIL_CONFIRMED') {
         return { kind: 'submitted', title: 'Компания ответила письмом — отклик дошёл', note: 'Письмо — в разделе «Почта»', at, tone: 'done' };
+      }
+      if (e.reason_code === 'EMAIL_SENT') {
+        return { kind: 'submitted', title: 'Юпитер отправил резюме письмом', note: 'Ответ компании придёт в «Почту»', at, tone: 'done' };
       }
       return { kind: 'submitted', title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
     case 'action_required':
