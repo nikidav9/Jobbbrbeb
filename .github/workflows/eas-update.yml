@@ -7,6 +7,9 @@ on:
       - 'docs/**'
       - '**/*.md'
       - '.gitignore'
+      # Команды серверу, а не приложению: сбор и разведка по запросу.
+      - 'infra/ingest-now'
+      - 'infra/recon-now'
   workflow_dispatch:
 
 # Only the newest production bundle may publish. Without this, several rapid
