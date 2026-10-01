@@ -2296,6 +2296,53 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  * пределах минуты. notify_user на этом останавливается — раз строки нет, то
  * и слать нечего.
  */
+const JT_DIGEST_MAX = 100; // писем за раз: лимит Timeweb 2000 в сутки — вместе с кодами входа
+
+/** Тема и текст сводки. Только число — что пришло, видно в приложении. */
+function jt_unread_digest_mail(int $n): array {
+    $m10 = $n % 10; $m100 = $n % 100;
+    $word = ($m10 === 1 && $m100 !== 11) ? 'новое уведомление'
+        : (($m10 >= 2 && $m10 <= 4 && ($m100 < 12 || $m100 > 14)) ? 'новых уведомления' : 'новых уведомлений');
+    return ['Новые уведомления в JobToo',
+        "У вас {$n} {$word} в JobToo: сообщения, отклики или ответы работодателей.\n\n"
+        . "Открыть: https://jobtoo.ru\n\n"
+        . "Это письмо приходит не чаще раза в день и только если в приложении есть\n"
+        . "непрочитанное. Чтобы узнавать сразу, включите уведомления в приложении.\n\n"
+        . "— JobToo, jobtoo.ru\n"];
+}
+
+/**
+ * Раз в день: у кого за сутки появились непрочитанные уведомления, а другого
+ * пути нет (ни Telegram с согласием, ни пуша, ни web-push), — одно письмо на
+ * подтверждённую почту. У кого канал есть, тот уже извещён.
+ */
+function jt_unread_digest(): array {
+    $since = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
+    $count = [];
+    foreach (sb_select_all('jm_notifications', ['is_read' => 'eq.false', 'created_at' => 'gte.' . $since], 'user_id') as $r) {
+        $uid = (string)($r['user_id'] ?? '');
+        if ($uid !== '') $count[$uid] = ($count[$uid] ?? 0) + 1;
+    }
+    $sent = 0; $skipped = 0;
+    foreach (array_chunk(array_keys($count), 100) as $ids) {
+        $in = sb_in_list($ids);
+        $web = [];
+        foreach (sb_select('jm_web_push_subscriptions', ['user_id' => $in], 'user_id') as $w) $web[(string)$w['user_id']] = true;
+        foreach (sb_select('jm_users', ['id' => $in], 'id,email,email_verified_at,telegram_id,push_token,is_blocked') as $u) {
+            $uid = (string)$u['id'];
+            $hasChannel = !empty($u['push_token']) || isset($web[$uid])
+                || (!empty($u['telegram_id']) && jt_has_crossborder_consent($uid));
+            if ($hasChannel || !empty($u['is_blocked']) || empty($u['email']) || empty($u['email_verified_at'])) { $skipped++; continue; }
+            if ($sent >= JT_DIGEST_MAX) { $skipped++; continue; }
+            [$subject, $text] = jt_unread_digest_mail($count[$uid]);
+            $err = jt_mail_send((string)$u['email'], $subject, $text);
+            if ($err === null) $sent++;
+            else error_log('[digest] ' . $err);
+        }
+    }
+    return ['sent' => $sent, 'skipped' => $skipped];
+}
+
 const JT_KEEP_NOTIFICATIONS_DAYS = 90;
 const JT_KEEP_LEFT_SWIPES_DAYS = 30;
 
@@ -5688,6 +5735,12 @@ try {
             // пропущенная вакансия может вернуться в ленту, человек мог
             // передумать. Свайпы «вправо» — это отклики, их не трогаем никогда.
             $result['cleanup'] = jt_cleanup_old();
+
+            // ── 3. Письмо-сводка тем, кого больше нечем известить ──
+            // Решение владельца 01.10.2026: раз в день, без содержания.
+            // Уходит после ответа: сто писем по SMTP — дольше, чем ждёт cron.
+            jt_defer(static function () { jt_unread_digest(); });
+            $result['unreadDigest'] = 'queued';
 
             $data = $result;
             break;

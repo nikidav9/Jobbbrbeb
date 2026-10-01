@@ -211,6 +211,9 @@ jobs:
       - name: Ночная чистка — уведомления 90 дней, свайпы «влево» 30, отклики никогда
         run: php tests/cleanup_test.php
 
+      - name: Письмо-сводка о непрочитанном — раз в день, без содержания, только без другого канала
+        run: php tests/unread_digest_test.php
+
       - name: Нативный push не раскрывает данные события
         run: php tests/push_privacy_test.php
 
