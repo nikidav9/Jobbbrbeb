@@ -41,12 +41,12 @@ foreach (['plain', 'plain', 'plain', 'push', 'web', 'tgok', 'tgnoconsent', 'unve
 $r = jt_unread_digest();
 $to = array_column($MAIL, 0);
 check('письмо тому, у кого нет канала', in_array('plain@x.ru', $to, true));
-check('Telegram без согласия — не канал', in_array('tgnoconsent@x.ru', $to, true));
-check('с пушем, web-push или Telegram — без письма',
-    !array_intersect($to, ['push@x.ru', 'web@x.ru', 'tgok@x.ru']));
+check('Telegram каналом не считается (от него ушли)',
+    in_array('tgok@x.ru', $to, true) && in_array('tgnoconsent@x.ru', $to, true));
+check('с пушем или web-push — без письма', !array_intersect($to, ['push@x.ru', 'web@x.ru']));
 check('без подтверждённой почты и заблокированным — без письма',
     !array_intersect($to, ['unverified@x.ru', 'blocked@x.ru']));
-check('одно письмо на человека', count($to) === count(array_unique($to)) && $r['sent'] === 2);
+check('одно письмо на человека', count($to) === count(array_unique($to)) && $r['sent'] === 3);
 $plain = $MAIL[array_search('plain@x.ru', $to, true)];
 check('в письме число и склонение', str_contains($plain[2], 'У вас 3 новых уведомления'));
 check('в письме ссылка', str_contains($plain[2], 'https://jobtoo.ru'));

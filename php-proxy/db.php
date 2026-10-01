@@ -2313,7 +2313,7 @@ function jt_unread_digest_mail(int $n): array {
 
 /**
  * Раз в день: у кого за сутки появились непрочитанные уведомления, а другого
- * пути нет (ни Telegram с согласием, ни пуша, ни web-push), — одно письмо на
+ * пути нет (ни пуша, ни web-push), — одно письмо на
  * подтверждённую почту. У кого канал есть, тот уже извещён.
  */
 function jt_unread_digest(): array {
@@ -2328,10 +2328,10 @@ function jt_unread_digest(): array {
         $in = sb_in_list($ids);
         $web = [];
         foreach (sb_select('jm_web_push_subscriptions', ['user_id' => $in], 'user_id') as $w) $web[(string)$w['user_id']] = true;
-        foreach (sb_select('jm_users', ['id' => $in], 'id,email,email_verified_at,telegram_id,push_token,is_blocked') as $u) {
+        foreach (sb_select('jm_users', ['id' => $in], 'id,email,email_verified_at,push_token,is_blocked') as $u) {
             $uid = (string)$u['id'];
-            $hasChannel = !empty($u['push_token']) || isset($web[$uid])
-                || (!empty($u['telegram_id']) && jt_has_crossborder_consent($uid));
+            // Telegram каналом не считается: от него ушли (решение владельца 01.10.2026).
+            $hasChannel = !empty($u['push_token']) || isset($web[$uid]);
             if ($hasChannel || !empty($u['is_blocked']) || empty($u['email']) || empty($u['email_verified_at'])) { $skipped++; continue; }
             if ($sent >= JT_DIGEST_MAX) { $skipped++; continue; }
             [$subject, $text] = jt_unread_digest_mail($count[$uid]);
