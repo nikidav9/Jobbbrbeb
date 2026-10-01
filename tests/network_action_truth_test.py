@@ -39,7 +39,7 @@ sheet_reject = perm[sheet_reject_start:sheet_render_start] if sheet_reject_start
 
 rating_write = 'const { bothRated } = await dbSubmitRatingAndMaybeDelete({'
 rating_refresh = "try {\n        await refreshAll();\n      } catch {\n        // Следующий обычный refresh подтянет уже сохранённое состояние.\n      }"
-rating_success = "showToast('Оценка сохранена! Спасибо 🌟', 'success');"
+rating_success = "showToast('Оценка сохранена! Спасибо', 'success');"
 
 checks = {
     'чаты отпускают refresh в finally': "showToast('Не удалось обновить переписки. Проверьте связь.', 'error');\n    } finally {\n      setRefreshing(false);" in chats,
@@ -68,11 +68,11 @@ checks = {
     'постоянный отклик ждёт серверную запись': "await dbApplyPermVacancy(vacancy.id, currentUser.id, vacancy.employerId, message);" in perm_apply,
     'успешный постоянный отклик фиксируется локально до refresh': "setApplySubmitted(true);" in perm_apply and perm_apply.find('await dbApplyPermVacancy') < perm_apply.find('setApplySubmitted(true);'),
     'refresh постоянного отклика изолирован после записи': "try {\n        await refreshPermApplications();\n      } catch {" in perm_apply and perm_apply.find('setApplySubmitted(true);') < perm_apply.find('await refreshPermApplications();'),
-    'сбой refresh не отменяет успех постоянного отклика': "showToast('Отклик отправлен! 📨', 'success');" in perm_apply and perm_apply.find('await refreshPermApplications();') < perm_apply.find("showToast('Отклик отправлен! 📨', 'success');"),
+    'сбой refresh не отменяет успех постоянного отклика': "showToast('Отклик отправлен!', 'success');" in perm_apply and perm_apply.find('await refreshPermApplications();') < perm_apply.find("showToast('Отклик отправлен!', 'success');"),
     'после подтверждённой записи нельзя отправить постоянный отклик повторно': "const isApplied = !!myApp || applySubmitted;" in perm_detail,
     'локально подтверждённый отклик показывает ожидание': "const appStatus = myApp ? STATUS_MAP[myApp.status] : (applySubmitted ? STATUS_MAP.pending : null);" in perm_detail,
     'одобрение постоянного кандидата фиксирует локальный статус после RPC': "setLocalPermStatus(prev => ({ ...prev, [app.id]: 'approved' }));" in employer_approve and employer_approve.find('await dbApprovePermApplication') < employer_approve.find('setLocalPermStatus'),
-    'refresh после одобрения не отменяет успех': "refreshPermApplications().catch(() => {})" in employer_approve and "refreshChats(currentUser).catch(() => {})" in employer_approve and employer_approve.find("showToast('Одобрено! Чат открыт 🎉'") > employer_approve.find('refreshChats'),
+    'refresh после одобрения не отменяет успех': "refreshPermApplications().catch(() => {})" in employer_approve and "refreshChats(currentUser).catch(() => {})" in employer_approve and employer_approve.find("showToast('Одобрено! Чат открыт'") > employer_approve.find('refreshChats'),
     'отказ постоянному кандидату фиксируется до refresh': "[app.id]: 'rejected'" in employer_reject and employer_reject.find("await dbSetPermApplicationStatus(app.id, 'rejected');") < employer_reject.find("[app.id]: 'rejected'"),
     'refresh после отказа изолирован': "try {\n        await refreshPermApplications();\n      } catch {" in employer_reject and employer_reject.find("showToast('Отклонено', 'success');") > employer_reject.find('await refreshPermApplications();'),
     'завершение постоянного кандидата фиксируется до refresh': "[app.id]: 'hired'" in employer_finish and employer_finish.find("await dbSetPermApplicationStatus(app.id, 'hired');") < employer_finish.find("[app.id]: 'hired'"),
