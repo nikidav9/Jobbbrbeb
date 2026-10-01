@@ -131,6 +131,20 @@ export interface PersonalDetails {
   hasOwnCar?: boolean;
   /** Есть ли ограничения по трудоустройству — экран `personal/20-restrictions.html`. Легаси `employmentRestrictions` хранит описание. */
   hasEmploymentRestrictions?: boolean;
+  /** Ответы на частые вопросы работодателей — экран «Ответы для откликов» (01.10.2026). Юпитер подставляет их в анкеты (jupiter/remote_tasks.profile_answers). */
+  applyAnswers?: ApplyAnswers;
+  /** Человек закрыл карточку «Ответьте один раз» в ленте. */
+  applyAnswersPromptDismissed?: boolean;
+}
+
+/** Частые вопросы анкет: зарплата, дата выхода, Telegram, английский, переезд, формат. */
+export interface ApplyAnswers {
+  desiredSalary?: string;
+  noticePeriod?: string;
+  telegram?: string;
+  englishLevel?: string;
+  relocation?: string;
+  workFormat?: string;
 }
 
 export interface ResumeProfile {
