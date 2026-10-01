@@ -67,6 +67,8 @@ assert 'JUPITER_FEED_VACANCIES="$WORK/feed.json"' in run
 # Разведчик источников: после HTTP-разведки, ключ — из файла, только 40 компаний.
 assert "scripts/career_search_scout.py" in recon_run and "--limit 40" in recon_run
 assert "/career-search-scout.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert "scripts/career_quarantine_recheck.py" in recon_run
+assert "/career-quarantine-check.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
 assert "rehearsal_markers=rehearsal_markers(TEST_CANDIDATE)" in recon_browser
 assert 'if rehearsal_markers and not read_only:' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
