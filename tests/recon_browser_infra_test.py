@@ -73,4 +73,19 @@ assert "rehearsal_markers=rehearsal_markers(TEST_CANDIDATE)" in recon_browser
 assert 'if rehearsal_markers and not read_only:' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
 
+# Ход обхода: обход пишет файл после каждого раздела, root выкладывает его
+# наружу; ранние выходы и сбой не оставляют вечное «идёт».
+assert '--progress "$WORK/progress.json"' in run and "publish_progress" in run
+assert run.count("progress_state ") >= 4, "ждёт HTTP, два пропуска, сбой"
+assert "/jupiter-recon-browser-progress.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert 'kill "$COPIER"' in run
+
+# База знаний Алисы: обход читает и пополняет копию, после обхода (и после
+# сбоя) она публикуется; все сайты, потолок вызовов, Pro в пинге.
+assert '--knowledge "$WORK/knowledge.json"' in run and '--llm-calls "$LLM_CALLS"' in run
+assert "LLM_SITES=${LLM_SITES:-1000}" in run and "LLM_CALLS=${LLM_CALLS:-1300}" in run
+assert run.count("publish_knowledge") >= 3, "определение, после успеха и после сбоя"
+assert "/jupiter-knowledge.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert "gpt://%s/yandexgpt/latest" in (ROOT / "infra" / "bootstrap.sh").read_text(encoding="utf-8")
+
 print("recon-browser infra: ok")

@@ -751,5 +751,83 @@
     "specs": [
       "management"
     ]
+  },
+  {
+    "title": "Бизнес-маркетолог",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "marketing"
+    ]
+  },
+  {
+    "title": "Head of content / Креативный SMM-стратег",
+    "schedule": null,
+    "text": null,
+    "level": "head",
+    "format": null,
+    "specs": [
+      "top"
+    ]
+  },
+  {
+    "title": "SMM-менеджер",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "marketing"
+    ]
+  },
+  {
+    "title": "Пишущий редактор / Автор",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "marketing"
+    ]
+  },
+  {
+    "title": "Телемаркетолог В2С",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": []
+  },
+  {
+    "title": "Менеджер проектов (3PL, контрактная логистика)",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "management"
+    ]
+  },
+  {
+    "title": "Графический дизайнер",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "design"
+    ]
+  },
+  {
+    "title": "Продакт менеджер (ноутбуки)",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "management"
+    ]
   }
 ]

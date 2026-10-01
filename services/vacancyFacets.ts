@@ -68,7 +68,7 @@ export function vacancyFormat(schedule: string | null | undefined, text?: string
 // паритет держит общий tests/fixtures/vacancy_facets_cases.json.
 export type VacancySpec =
   | 'backend' | 'frontend' | 'mobile' | 'qa' | 'devops' | 'data'
-  | 'analytics' | 'design' | 'management' | 'security' | 'support' | 'onec'
+  | 'analytics' | 'design' | 'marketing' | 'management' | 'security' | 'support' | 'onec'
   | 'hr' | 'top';
 
 // Порядок и названия — экран «Специализация» макета «JT-filters» (27.09.2026):
@@ -81,6 +81,8 @@ export const VACANCY_SPECS: { id: VacancySpec; label: string; icon: string }[] =
   { id: 'qa', label: 'QA', icon: 'bug-outline' },
   { id: 'management', label: 'Product, Project, Architecture', icon: 'grid-outline' },
   { id: 'design', label: 'Design & UX', icon: 'color-palette-outline' },
+  // «Ближнее к IT» в ленте (решение владельца 01.10.2026): маркетинг, контент, SMM.
+  { id: 'marketing', label: 'Маркетинг и контент', icon: 'megaphone-outline' },
   { id: 'analytics', label: 'Analytics', icon: 'bar-chart-outline' },
   { id: 'devops', label: 'Infrastructure & DevOps', icon: 'terminal-outline' },
   { id: 'security', label: 'Information Security', icon: 'shield-outline' },
@@ -112,8 +114,10 @@ const SPEC_RULES: [VacancySpec[], RegExp][] = [
   [['data'], /data\s*scien|machine\s+learning|\bml\b|машинн|data\s+engineer|инженер данных|\bdwh\b|big\s+data|\bnlp\b|computer\s+vision|\bllm\b/iu],
   [['analytics'], /аналитик|analyst|\bbi\b/iu],
   [['design'], /дизайн|designer|\bux\b|ui\/ux/iu],
+  // «Телемаркетолог» — колл-центр, не маркетинг: только с начала слова.
+  [['marketing'], /(^|[^а-яё])маркет(олог|инг)|\bmarketing\b|\bsmm\b|\bseo\b|\bpr\b|копирайт|редактор|контент|\bcontent\b|таргетолог|бренд|\bbrand\b/iu],
   [['frontend'], /frontend|front-end|фронтенд|\breact\b|\bvue\b|\bangular\b|верстальщик/iu],
-  [['management'], /product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор/iu],
+  [['management'], /product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|менеджер\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор/iu],
   [['support'], /поддержк|\bsupport\b|helpdesk|service\s+desk/iu],
   [['backend'], /backend|back-end|бэкенд|бекенд|\bjava\b|golang|\bgo\b|\bpython\b|\bphp\b|c#|\.net|c\+\+|\bnode\b|\bruby\b|\bscala\b|\brust\b|\bkotlin\b/iu],
 ];

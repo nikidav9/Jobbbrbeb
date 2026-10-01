@@ -301,6 +301,7 @@ jobs:
           (cd jupiter && python3 test_recon.py)
           (cd jupiter && python3 test_js_engine.py)
           (cd jupiter && python3 test_yandex_gpt.py)
+          (cd jupiter && python3 test_knowledge.py)
           (cd jupiter && python3 test_ats_hosts.py)
           (cd jupiter && python3 test_browser_limits.py)
           (cd jupiter && python3 test_captcha_loop.py)

@@ -924,9 +924,9 @@
     "url": "https://yandex.ru/jobs/api/publications?cities=moscow&page_size=20",
     "mode": "json",
     "paging": {
-      "type": "cursor_b64",
+      "type": "cursor_next",
       "param": "cursor",
-      "template": "o={offset}&p={page}",
+      "next_field": "next",
       "limit": 20,
       "limit_param": "page_size",
       "max_pages": 80

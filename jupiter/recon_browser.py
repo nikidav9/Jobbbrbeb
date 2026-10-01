@@ -77,11 +77,17 @@ class BrowserReconResult(ReconResult):
     # request_without_candidate — запрос был, но без анкеты; no_request —
     # нажатие ничего не отправило (поле не принято, не та кнопка).
     rehearsal: dict[str, Any] = field(default_factory=dict)
+    # База знаний Алисы (knowledge.py): что выучено на сайте, пригодилось ли
+    # прежнее знание и сколько стоило вызовов модели.
+    learned: dict[str, Any] = field(default_factory=dict)
+    knowledge_used: bool = False
+    llm_calls: int = 0
 
 
-# Ночью YandexGPT подключается не ко всем сайтам: каждый вызов платный.
-# Сначала — работодатели, чьи вакансии есть в ленте (у них есть источник).
-DEFAULT_LLM_SITES = 60
+# С 01.10.2026 YandexGPT — на всех сайтах (решение владельца), расход держит
+# потолок вызовов --llm-calls и база знаний. Порядок — сперва работодатели,
+# чьи вакансии есть в ленте (у них есть источник).
+DEFAULT_LLM_SITES = 1000
 
 
 def llm_sites(sites: list[tuple[str, str]], endpoints: list[dict], limit: int) -> set[str]:
@@ -133,7 +139,7 @@ def recon_site_browser(
     llm — клиент YandexGPT: с ним разведка проходит сайт так же, как боевой
     Юпитер (кнопка отклика, поля, вопросы — browser_planner).
     """
-    import browser_planner
+    import knowledge
     from agent import CandidateProfile, JupiterAgent
     from browser_engine import JupiterBrowserEngine
     from engine import EngineError, EngineSecurityError
@@ -156,9 +162,15 @@ def recon_site_browser(
         except Exception:
             pass
     hosts = {normalize_host(result.start_url), normalize_host(url)}
+    # Сначала база знаний, Алиса — только о новом (knowledge.Advisor).
+    counting = knowledge.CountingLLM(llm) if llm is not None else None
+    advisor = knowledge.Advisor(knowledge.Knowledge.load(), normalize_host(result.start_url), counting)
+    hooks = knowledge.advisor_hooks(advisor)
     extra: dict[str, Any] = {}
-    if llm is not None:
-        extra["apply_advisor"] = lambda outline: browser_planner.suggest_apply_click(llm, outline)
+    for hook, part in (("apply_advisor", "apply"), ("field_mapper", "fields"),
+                       ("question_explainer", "questions")):
+        if llm is not None or advisor.entry.get(part):
+            extra[hook] = hooks[hook]
     try:
         engine = JupiterBrowserEngine(
             hosts, read_only=True, timeout=timeout, executable_path=chromium,
@@ -168,10 +180,7 @@ def recon_site_browser(
         result.reason = f"browser: {exc}"[:300]
         return result
     try:
-        if llm is not None:
-            extra["field_mapper"] = lambda fields, keys: browser_planner.suggest_field_keys(llm, fields, keys)
-            extra["question_explainer"] = lambda qs, ctx: browser_planner.explain_questions(llm, qs, ctx)
-            result.llm_used = True
+        result.llm_used = llm is not None
         agent = JupiterAgent(
             set(hosts), max_steps=10, engine=engine, dry_run=True,
             receipts=ReceiptStore(None), **{k: v for k, v in extra.items() if k != "apply_advisor"},
@@ -203,6 +212,9 @@ def recon_site_browser(
         engine.close()
     if rehearse and result.klass == "dry_run_ok":
         result.rehearsal = _rehearse(result.start_url, hosts, resume, timeout, chromium, extra)
+    result.learned = {k: v for k, v in advisor.learned.items() if v}
+    result.knowledge_used = advisor.used
+    result.llm_calls = counting.calls if counting is not None else 0
     return result
 
 
@@ -284,18 +296,27 @@ def run_recon(
     sites: list[tuple[str, str]], *, timeout: float = 30.0, site_deadline: float = 120.0,
     workers: int = MAX_BROWSERS, chromium: str | None = None,
     max_seconds: float | None = None, with_llm: set[str] | None = None,
-    rehearse: bool = False,
+    rehearse: bool = False, progress: Any = None, llm_calls: int | None = None,
 ) -> list[BrowserReconResult]:
     """Обход. С max_seconds новые разделы после срока не начинаются (начатый
-    доживает до site_deadline) и в итог не попадают."""
+    доживает до site_deadline) и в итог не попадают. progress(result) — после
+    каждого пройденного раздела (файл хода, база знаний). llm_calls — потолок
+    вызовов YandexGPT на обход: когда истрачен, следующие сайты идут без модели
+    (начатый может превысить его на несколько вызовов)."""
     workers = max(1, min(workers, MAX_BROWSERS))
     stop_at = time.monotonic() + max_seconds if max_seconds is not None else None
+    spent = [0]
 
     def one(site: tuple[str, str]) -> BrowserReconResult | None:
         if stop_at is not None and time.monotonic() >= stop_at:
             return None
-        return _run_child(site[0], site[1], timeout, site_deadline, chromium,
-                          use_llm=site[1] in (with_llm or set()), rehearse=rehearse)
+        use_llm = site[1] in (with_llm or set()) and (llm_calls is None or spent[0] < llm_calls)
+        res = _run_child(site[0], site[1], timeout, site_deadline, chromium,
+                         use_llm=use_llm, rehearse=rehearse)
+        spent[0] += res.llm_calls
+        if progress is not None:
+            progress(res)
+        return res
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [r for r in pool.map(one, sites) if r is not None]
@@ -359,6 +380,64 @@ def order_by_previous(sites: list[tuple[str, str]], previous: list[dict]) -> lis
         return 0 if klass == "dry_run_ok" else 1 if klass is None else 2
 
     return sorted(sites, key=rank)
+
+
+class Progress:
+    """Открытый файл хода обхода (01.10.2026): итог пишется только в конце,
+    а обход идёт до четырёх часов — снаружи казалось, что он не кончается.
+    Только числа, классы и имена работодателей — ничего о людях."""
+
+    def __init__(self, path: str, total: int, max_seconds: float | None, site_deadline: float,
+                 now: Any = time.time) -> None:
+        import threading
+        self.path, self.total, self.now = path, total, now
+        self.started = now()
+        self.deadline = self.started + max_seconds + site_deadline if max_seconds is not None else None
+        self.done = 0
+        self.klass: dict[str, int] = {}
+        self.rehearsal: dict[str, int] = {}
+        self.llm_used = 0
+        self.llm_calls = 0
+        self.last = ""
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _iso(ts: float) -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+    def snapshot(self, state: str = "идёт") -> dict[str, Any]:
+        now = self.now()
+        left = self.total - self.done
+        data: dict[str, Any] = {
+            "state": state, "started_at": self._iso(self.started), "updated_at": self._iso(now),
+            "total": self.total, "done": self.done, "left": left, "last": self.last,
+            "classes": dict(self.klass), "rehearsal": dict(self.rehearsal), "llm_used": self.llm_used,
+            "llm_calls": self.llm_calls,
+        }
+        if self.deadline is not None:
+            data["deadline_at"] = self._iso(self.deadline)
+        if state == "идёт" and self.done and left:
+            eta = now + (now - self.started) / self.done * left
+            data["eta_at"] = self._iso(min(eta, self.deadline) if self.deadline is not None else eta)
+        return data
+
+    def __call__(self, res: BrowserReconResult) -> None:
+        with self._lock:
+            self.done += 1
+            self.last = res.name
+            self.klass[res.klass] = self.klass.get(res.klass, 0) + 1
+            verdict = (res.rehearsal or {}).get("verdict")
+            if verdict:
+                self.rehearsal[verdict] = self.rehearsal.get(verdict, 0) + 1
+            self.llm_used += 1 if res.llm_used else 0
+            self.llm_calls += res.llm_calls
+            self.write()
+
+    def write(self, state: str = "идёт") -> None:
+        try:
+            write_atomic(self.path, self.snapshot(state))
+        except OSError:
+            pass  # ход — подсказка человеку, обход из-за него не падает
 
 
 def write_atomic(path: str, data: Any) -> None:
@@ -427,6 +506,10 @@ def main(argv: list[str] | None = None) -> int:
         help="на скольких разделах подключать YandexGPT (ключ — YANDEX_GPT_* в окружении); "
              f"на сервере {DEFAULT_LLM_SITES}",
     )
+    parser.add_argument("--progress", metavar="FILE", help="файл хода: пройдено, осталось, примерный конец")
+    parser.add_argument("--knowledge", metavar="FILE",
+                        help="база знаний Алисы (knowledge.py): читается сайтами, пополняется после каждого")
+    parser.add_argument("--llm-calls", type=int, help="потолок вызовов YandexGPT на обход")
     parser.add_argument("--_one", nargs=2, metavar=("NAME", "URL"), help=argparse.SUPPRESS)
     parser.add_argument("--_llm", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -470,12 +553,32 @@ def main(argv: list[str] | None = None) -> int:
     if args.llm_sites > 0 and os.environ.get("YANDEX_GPT_API_KEY"):
         endpoints = json.loads(ENDPOINTS_JSON.read_text(encoding="utf-8"))
         with_llm = llm_sites(sites, endpoints, args.llm_sites)
+    max_seconds = args.max_minutes * 60 if args.max_minutes is not None else None
+    progress = Progress(args.progress, len(sites), max_seconds, args.site_deadline) if args.progress else None
+    if progress is not None:
+        progress.write()
+    after = progress
+    if args.knowledge:
+        import knowledge
+        kb = knowledge.Knowledge.load(args.knowledge)
+        os.environ[knowledge.ENV] = args.knowledge  # дочерние процессы читают тот же файл
+
+        def after(res: BrowserReconResult) -> None:
+            kb.learn(normalize_host(res.start_url), res.learned, used=res.knowledge_used,
+                     klass=res.klass, verdict=str((res.rehearsal or {}).get("verdict") or ""))
+            try:
+                kb.save(args.knowledge)
+            except OSError as exc:
+                print(f"база знаний не записана: {exc}", file=sys.stderr)
+            if progress is not None:
+                progress(res)
     results = run_recon(
         sites, timeout=args.timeout, site_deadline=args.site_deadline,
-        workers=args.workers, chromium=args.chromium,
-        max_seconds=args.max_minutes * 60 if args.max_minutes is not None else None,
-        with_llm=with_llm, rehearse=args.rehearse,
+        workers=args.workers, chromium=args.chromium, max_seconds=max_seconds,
+        with_llm=with_llm, rehearse=args.rehearse, progress=after, llm_calls=args.llm_calls,
     )
+    if progress is not None:
+        progress.write("готово" if len(results) == len(sites) else "срок вышел")
     if len(results) < len(sites):
         print(f"Срок вышел: пройдено {len(results)} из {len(sites)} разделов.", file=sys.stderr)
     for item in results:

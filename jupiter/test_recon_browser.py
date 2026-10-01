@@ -17,6 +17,8 @@ from pathlib import Path
 
 import site_compat
 from recon_browser import (
+    BrowserReconResult,
+    Progress,
     recon_site_browser, rehearsal_markers, rehearsal_verdict, sites_to_rehearse,
     compare, order_by_previous, run_recon, select_sites, sites_needing_browser, write_atomic, _llm_trace, llm_sites,
 )
@@ -280,6 +282,35 @@ class PureTest(unittest.TestCase):
     def test_time_budget_stops_new_sites(self):
         # Срок уже вышел — ни один процесс не запускается, итог пуст.
         self.assertEqual(run_recon([("x", "https://x.ru")], max_seconds=0), [])
+
+    def test_progress_file_counts_sites_and_estimates_end(self):
+        clock = [1000.0]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "progress.json"
+            prog = Progress(str(out), 4, 3600, 200, now=lambda: clock[0])
+            prog.write()
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["done"], 0)
+            clock[0] += 100
+            prog(BrowserReconResult(name="Альфа", url="https://a.ru", start_url="https://a.ru", klass="dry_run_ok",
+                                    llm_used=True, rehearsal={"verdict": "would_send"}))
+            clock[0] += 100
+            prog(BrowserReconResult(name="Бета", url="https://b.ru", start_url="https://b.ru", klass="captcha"))
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual((data["state"], data["done"], data["left"], data["last"]), ("идёт", 2, 2, "Бета"))
+            self.assertEqual(data["classes"], {"dry_run_ok": 1, "captcha": 1})
+            self.assertEqual((data["rehearsal"], data["llm_used"]), ({"would_send": 1}, 1))
+            # 200 с на два раздела — ещё два займут 200 с.
+            self.assertEqual(data["eta_at"], Progress._iso(1400.0))
+            self.assertEqual(data["deadline_at"], Progress._iso(1000.0 + 3600 + 200))
+            prog.write("срок вышел")
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["state"], "срок вышел")
+            self.assertNotIn("eta_at", data)
+
+    def test_run_recon_reports_progress_only_for_started_sites(self):
+        seen = []
+        self.assertEqual(run_recon([("x", "https://x.ru")], max_seconds=0, progress=seen.append), [])
+        self.assertEqual(seen, [])
 
     def test_write_atomic_replaces_whole_file(self):
         with tempfile.TemporaryDirectory() as tmp:

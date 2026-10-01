@@ -183,6 +183,8 @@ const SPEC_ICON: Record<VacancySpec, React.ReactNode> = {
   management: <><Rect x={4} y={4} width={7} height={7} rx={1.5} {...S} /><Rect x={13} y={4} width={7} height={7} rx={1.5} {...S} /><Rect x={4} y={13} width={7} height={7} rx={1.5} {...S} /><Rect x={13} y={13} width={7} height={7} rx={1.5} {...S} /></>,
   design: <><Path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.8 1.6-1.6c0-1.3-1-1.5-1-2.7c0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z" {...S} /><Circle cx={7.5} cy={11} r={1.2} {...S} /><Circle cx={10.5} cy={7} r={1.2} {...S} /><Circle cx={15} cy={7.5} r={1.2} {...S} /></>,
   analytics: <Path d="M5 20v-5M11 20V9M17 20V4M3 20h18" {...S} />,
+  // Рупор в том же штрихе — «Маркетинг и контент» (01.10.2026).
+  marketing: <><Path d="M4 10v4a1 1 0 0 0 1 1h3l7 4V5L8 9H5a1 1 0 0 0-1 1z" {...S} /><Path d="M8 15l1.5 5M18.5 9.5a3.5 3.5 0 0 1 0 5" {...S} /></>,
   devops: <><Rect x={3} y={4} width={18} height={16} rx={2.5} {...S} /><Path d="M7 9l3 3l-3 3M13 15h4" {...S} /></>,
   security: <Path d="M12 3l8 3v6c0 4.5-3.4 8-8 9c-4.6-1-8-4.5-8-9V6z" {...S} />,
   support: <><Path d="M4 14v-2a8 8 0 0 1 16 0v2" {...S} /><Rect x={3} y={13} width={4} height={6} rx={1.5} {...S} /><Rect x={17} y={13} width={4} height={6} rx={1.5} {...S} /><Path d="M19 19c0 1.5-1.5 2-4 2h-2" {...S} /></>,
