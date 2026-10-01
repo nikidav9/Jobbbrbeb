@@ -51,6 +51,19 @@ if timeout 5h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
   chmod 644 "$tmp"
   mv -f "$tmp" "$OUT"
   echo "$(date -Is) ok" >>"$LOG"
+  # Разведчик источников вакансий через поиск Яндекса (01.10.2026): для
+  # компаний, у которых недельный поиск источников не нашёл вакансий, —
+  # кандидаты страниц вакансий и выбор YandexGPT. Только предложения: в
+  # каталог их вносят через PR. Не больше 40 компаний за проход (платно).
+  YGPT_ENV=/etc/jobtoo/yandex-gpt.env
+  if [ -r "$YGPT_ENV" ] && [ -s /var/www/html/career-discovery.json ]; then
+    ( set -a; . "$YGPT_ENV"; set +a
+      timeout 30m python3 "$REPO/scripts/career_search_scout.py" \
+        --discovery /var/www/html/career-discovery.json \
+        --state /var/lib/jobtoo/scout-state.json \
+        --out /var/www/html/career-search-scout.json --limit 40 ) >>"$LOG" 2>&1 \
+      || echo "$(date -Is) разведчик источников не прошёл" >>"$LOG"
+  fi
 else
   rm -f "$tmp"
   echo "$(date -Is) failed" >>"$LOG"

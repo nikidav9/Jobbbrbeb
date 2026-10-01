@@ -296,6 +296,7 @@ jobs:
           python3 tests/jupiter_private_lab_infra_test.py
           python3 tests/jupiter_browser_infra_test.py
           python3 tests/recon_browser_infra_test.py
+          python3 tests/career_search_scout_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build
