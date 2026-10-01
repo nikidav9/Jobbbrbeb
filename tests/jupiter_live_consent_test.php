@@ -92,8 +92,11 @@ check('миграция добавляет jupiter_live_revoked_at',
 $legal = (string)file_get_contents(__DIR__ . '/../constants/legal.ts');
 check('константа редакции с согласиями работодателю есть',
     str_contains($db, "define('JT_EMPLOYER_CONSENT_FROM', '2026-09-26-2');"));
+// Редакция Согласия растёт (2026-10-02 — YandexGPT среди обработчиков), а
+// граница сервера остаётся: проверяем «не ниже», а не равенство.
 check('клиентская редакция не ниже серверной границы',
-    (bool)preg_match("~consent: \\{\\s*title: '[^']+',\\s*version: '2026-09-26-2',\\s*consentVersion: '2026-09-26-2'~", $legal));
+    (bool)preg_match("~consent: \\{\\s*title: '[^']+',\\s*version: '([^']+)',\\s*consentVersion: '([^']+)'~", $legal, $cm)
+    && strcmp($cm[1], '2026-09-26-2') >= 0 && strcmp($cm[2], '2026-09-26-2') >= 0);
 $employerOk = fn_body($db, 'jt_employer_stamp_ok');
 check('jt_employer_stamp_ok найдена', $employerOk !== '');
 if ($employerOk !== '') {

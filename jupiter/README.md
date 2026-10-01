@@ -9,6 +9,22 @@ same `open/submit/load_html` interface — see «Browser engine» below. The HTT
 mapping, multipart upload, navigation policy, submit flow and success
 verification live in this repository.
 
+## Neural network (YandexGPT) and candidate data
+
+Owner's decision of 02.10.2026, recorded in the user documents (Terms 8.2,
+Privacy Policy, Consent, data policy 9.2):
+
+- the only model is YandexGPT (Yandex Cloud, servers in Russia, processing on
+  the operator's instruction); every request carries
+  `x-data-logging-enabled: false`, so Yandex neither stores it nor trains on it;
+- our deterministic code fills known forms first; the model is called where
+  the code is stuck, and may then see the candidate profile and resume to fill
+  fields and answer employer questions;
+- answers come only from the profile and resume; if they do not contain the
+  answer, the question goes to the candidate;
+- special categories (health, criminal record) and passport data are never sent;
+- CAPTCHA, `read_only`, consent limits of Terms 8.3 stay as before.
+
 ## What Jupiter Web Engine v1 does
 
 - opens HTTP/HTTPS pages with a strict host allow-list;
