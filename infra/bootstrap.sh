@@ -1144,7 +1144,11 @@ fi
 YGPT_CONF=$( (cd "$REPO/infra" && docker compose exec -T php php -r '
   $s = @include "/var/www/api/yandex_gpt.php";
   if (!is_array($s)) exit;
-  printf("%s\n%s\n", $s["api_key"] ?? "", $s["folder_id"] ?? "");') 2>/dev/null || true)
+  // Только печатаемый ASCII без пробелов: вставленный в секрет перевод строки
+  // или невидимый символ ломал заголовок Authorization (Яндекс отвечал 500,
+  // 01.10.2026). Ни в ключе, ни в номере каталога других символов не бывает.
+  $c = fn($v) => preg_replace("/[^!-~]/", "", (string)$v);
+  printf("%s\n%s\n", $c($s["api_key"] ?? ""), $c($s["folder_id"] ?? ""));') 2>/dev/null || true)
 YGPT_KEY=$(printf '%s' "$YGPT_CONF" | sed -n 1p)
 YGPT_FOLDER=$(printf '%s' "$YGPT_CONF" | sed -n 2p)
 if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then
