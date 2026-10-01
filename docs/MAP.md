@@ -825,7 +825,8 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   Охрана — `tests/referral_hired_test.php`.
 - `referral_worked` — денормализация ради одного экрана: карточку кандидата
   работодатель видит списком. Входит в `USER_PUBLIC_COLS`, показывается в
-  `app/candidates.tsx` и `app/user-profile.tsx`. Источник правды — журнал,
+  `app/user-profile.tsx` (экраны смен `candidates`, `match`, `skill-test`
+  удалены 01.10.2026 по решению владельца). Источник правды — журнал,
   миграция `065` пересчитывает счётчик из него.
 - Ссылка приглашения — `startapp=ref_<КОД>`, разбирается в `app/_layout.tsx`,
   переживает путь до регистрации в `services/storage.ts` и применяется в
