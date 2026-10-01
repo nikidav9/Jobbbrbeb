@@ -3200,6 +3200,52 @@ function jt_questions_sent_notify(string $uid, string $appId, string $company): 
         'Юпитер подставил ваши ответы и отправил отклик', 'jupiter_sent');
 }
 
+/**
+ * Письмо компании на адрес JobToo — доказательство, что анкета дошла (план
+ * Юпитера, часть 2, шаг 4; решение владельца 01.10.2026). Отклик в состоянии
+ * «Скорее всего, ушёл» (submission_unknown) к этой компании становится
+ * «Отправлено» с причиной MAIL_CONFIRMED. Подходит любое письмо об отклике,
+ * даже отказ: значит, анкету получили.
+ *
+ * Компания — по домену отправителя (job.mts.ru ↔ mts.ru) или по названию в
+ * отправителе и теме: письма из Huntflow, Potok приходят с чужого домена.
+ * Тема или начало текста должны говорить об отклике, иначе рассылка.
+ * Возвращает id подтверждённых заявок.
+ */
+function jt_mail_base_domain(string $host): string {
+    $host = strtolower(trim($host, ". \t"));
+    $parts = array_values(array_filter(explode('.', $host), 'strlen'));
+    return count($parts) >= 2 ? implode('.', array_slice($parts, -2)) : $host;
+}
+
+function jt_mail_confirm_applications(string $uid, array $content): array {
+    $sender = mb_strtolower((string)($content['sender'] ?? ''));
+    $subject = mb_strtolower((string)($content['subject'] ?? ''));
+    $head = $subject . ' ' . mb_substr(mb_strtolower((string)($content['body'] ?? '')), 0, 3000);
+    if (!preg_match('/отклик|резюме|заявк|кандидат|ваканси|application|resume/u', $head)) return [];
+    $senderDomain = preg_match('/@([a-z0-9.-]+)/', $sender, $m) ? jt_mail_base_domain($m[1]) : '';
+    $apps = sb_select('jm_jupiter_applications', [
+        'user_id' => 'eq.' . $uid, 'state' => 'eq.submission_unknown',
+        'updated_at' => 'gte.' . gmdate('c', time() - 30 * 86400),
+    ], 'id,company,vacancy_url');
+    $confirmed = [];
+    foreach ($apps ?: [] as $app) {
+        $host = (string)(parse_url((string)($app['vacancy_url'] ?? ''), PHP_URL_HOST) ?? '');
+        $company = mb_strtolower(trim((string)($app['company'] ?? '')));
+        $byDomain = $senderDomain !== '' && $host !== '' && jt_mail_base_domain($host) === $senderDomain;
+        $byName = mb_strlen($company) >= 3
+            && (mb_strpos($sender, $company) !== false || mb_strpos($subject, $company) !== false);
+        if (!$byDomain && !$byName) continue;
+        $now = now_iso();
+        sb_update('jm_jupiter_applications', [
+            'id' => 'eq.' . $app['id'], 'user_id' => 'eq.' . $uid, 'state' => 'eq.submission_unknown',
+        ], ['state' => 'submitted', 'reason_code' => 'MAIL_CONFIRMED', 'submitted_at' => $now, 'updated_at' => $now]);
+        $confirmed[] = (string)$app['id'];
+    }
+    if ($confirmed) rt_touch('jm_jupiter_applications');
+    return $confirmed;
+}
+
 function sb_in_list(array $values): string
 {
     $quoted = [];
@@ -7223,7 +7269,15 @@ try {
                     'imap_uid' => 'eq.' . $key, 'user_id' => 'eq.' . $box['user_id'],
                 ], $content);
             }
-            $data = ['stored' => true];
+            // Письмо компании подтверждает отклик «Скорее всего, ушёл». Сбой
+            // здесь не должен терять само письмо — оно уже сохранено.
+            $confirmed = [];
+            try {
+                $confirmed = jt_mail_confirm_applications((string)$box['user_id'], $content);
+            } catch (Throwable $e) {
+                error_log('jt_mail_confirm_applications: ' . $e->getMessage());
+            }
+            $data = ['stored' => true, 'confirmed' => count($confirmed)];
             break;
         }
 

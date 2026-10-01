@@ -109,6 +109,9 @@ jobs:
       - name: Юпитер — пилот «сервер отправляет сам» только по списку, с автоотправкой и поручением
         run: php tests/jupiter_server_send_test.php
 
+      - name: Письмо компании подтверждает отклик «Скорее всего, ушёл»
+        run: php tests/jupiter_mail_confirm_test.php
+
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
 
