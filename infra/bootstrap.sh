@@ -700,15 +700,26 @@ SVCEOF
     ( set +e
       . "$YGPT_ENV"
       body=$(mktemp)
-      code=$(printf '{"modelUri":"gpt://%s/yandexgpt-lite/latest","completionOptions":{"temperature":0,"maxTokens":"5"},"messages":[{"role":"user","text":"Ответь одним словом: ok"}]}' "$YANDEX_GPT_FOLDER_ID" \
+      code=$(printf '{"modelUri":"gpt://%s/yandexgpt-lite/latest","completionOptions":{"temperature":0,"maxTokens":"10"},"messages":[{"role":"user","text":"Сколько будет 2+2? Ответь только числом."}]}' "$YANDEX_GPT_FOLDER_ID" \
         | curl -s -o "$body" -w '%{http_code}' -m 15 \
             -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" -H "x-folder-id: $YANDEX_GPT_FOLDER_ID" \
             -H 'Content-Type: application/json' --data-binary @- \
             https://llm.api.cloud.yandex.net/foundationModels/v1/completion)
-      # Не 200 — рядом причина словами Яндекса (сообщение сервиса, не наш
-      # текст): по одному коду не понять, ключ это, каталог или роль.
+      # 200 — рядом ответ модели на пробную задачу (видно, что она думает, а
+      # не только пускает). Не 200 — причина словами Яндекса (сообщение
+      # сервиса, не наш текст): по одному коду не понять, ключ это, каталог
+      # или роль.
       why=""
-      if [ "${code:-000}" != "200" ]; then
+      if [ "${code:-000}" = "200" ]; then
+        why=$(python3 -c '
+import json, re, sys
+try:
+    t = json.load(open(sys.argv[1]))["result"]["alternatives"][0]["message"]["text"]
+except Exception:
+    t = "?"
+print("2+2 = " + re.sub(r"[^\w .,:;()/+=-]", " ", str(t))[:40].strip())
+' "$body" 2>/dev/null || true)
+      else
         why=$(YGPT_K="$YANDEX_GPT_API_KEY" python3 -c '
 import json, os, re, sys
 try:
@@ -1162,6 +1173,8 @@ if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then
     ( umask 077; printf '%s' "$YGPT_NEW" > /etc/jobtoo/yandex-gpt.env.new )
     chown root:root /etc/jobtoo/yandex-gpt.env.new
     mv -f /etc/jobtoo/yandex-gpt.env.new /etc/jobtoo/yandex-gpt.env
+    # Новый ключ — проверить его на следующем же проходе, не ждать 10–60 минут.
+    rm -f /var/lib/jobtoo/ygpt-ping.txt
     for svc in jt-jupiter.service jt-jupiter-browser.service; do
       systemctl is-active --quiet "$svc" 2>/dev/null && systemctl restart "$svc" >/dev/null 2>&1 || true
     done
