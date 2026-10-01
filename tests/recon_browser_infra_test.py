@@ -73,4 +73,11 @@ assert "rehearsal_markers=rehearsal_markers(TEST_CANDIDATE)" in recon_browser
 assert 'if rehearsal_markers and not read_only:' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
 
+# Ход обхода: обход пишет файл после каждого раздела, root выкладывает его
+# наружу; ранние выходы и сбой не оставляют вечное «идёт».
+assert '--progress "$WORK/progress.json"' in run and "publish_progress" in run
+assert run.count("progress_state ") >= 4, "ждёт HTTP, два пропуска, сбой"
+assert "/jupiter-recon-browser-progress.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert 'kill "$COPIER"' in run
+
 print("recon-browser infra: ok")

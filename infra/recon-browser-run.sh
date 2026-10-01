@@ -38,7 +38,27 @@ MAX_MINUTES=${MAX_MINUTES:-240}
 # укладываются в TimeoutStartSec=7h юнита.
 WAIT_HTTP_MINUTES=${WAIT_HTTP_MINUTES:-150}
 
+# Ход обхода (01.10.2026): итог выше пишется только в конце, а обход идёт до
+# четырёх часов. Обход (от nobody) пишет $WORK/progress.json после каждого
+# раздела, отсюда (root) он раз в 30 с выкладывается наружу.
+PROGRESS_OUT=${PROGRESS_OUT:-/var/www/html/jupiter-recon-browser-progress.json}
+
 say() { printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG"; }
+
+publish_progress() {
+  [ -s "$WORK/progress.json" ] || return 0
+  local t
+  t=$(mktemp "$PROGRESS_OUT.XXXXXX") || return 0
+  cp -f "$WORK/progress.json" "$t" && chmod 644 "$t" && mv -f "$t" "$PROGRESS_OUT" || rm -f "$t"
+}
+
+# Состояние без обхода: ждём HTTP-разведку, сбой. Только слово и время.
+progress_state() {
+  local t
+  t=$(mktemp "$PROGRESS_OUT.XXXXXX") || return 0
+  printf '{"state": "%s", "updated_at": "%s"}\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$t"
+  chmod 644 "$t" && mv -f "$t" "$PROGRESS_OUT" || rm -f "$t"
+}
 
 exec 9>"$LOCK"
 flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
@@ -46,18 +66,20 @@ flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
 [ -r "$REPO/jupiter/recon_browser.py" ] || { say "нет $REPO/jupiter/recon_browser.py"; exit 1; }
 
 # Сначала HTTP: браузер берёт только то, что тот не прошёл.
+progress_state "ждёт HTTP-разведку"
 waited=0
 # oneshot-служба, пока работает, в состоянии activating, а не active.
 while case "$(systemctl show -p ActiveState --value jt-recon.service 2>/dev/null)" in
         active|activating) true ;; *) false ;; esac; do
   if [ "$waited" -ge "$WAIT_HTTP_MINUTES" ]; then
     say "HTTP-разведка идёт дольше $WAIT_HTTP_MINUTES мин, пропускаю день"
+    progress_state "пропущен: HTTP-разведка не закончилась за $WAIT_HTTP_MINUTES мин"
     exit 0
   fi
   sleep 300
   waited=$((waited + 5))
 done
-[ -s "$HTTP_RECON" ] || { say "нет итога HTTP-разведки $HTTP_RECON"; exit 0; }
+[ -s "$HTTP_RECON" ] || { say "нет итога HTTP-разведки $HTTP_RECON"; progress_state "пропущен: нет итога HTTP-разведки"; exit 0; }
 
 if [ ! -x "$VENV/bin/python" ]; then
   say "нет $VENV — ставлю окружение браузерного воркера"
@@ -95,6 +117,10 @@ fi
 [ "${#YGPT_VARS[@]}" -eq 2 ] || LLM_SITES=0
 
 say "начинаю: срок $MAX_MINUTES мин, YandexGPT на $LLM_SITES разделах"
+rm -f "$WORK/progress.json"
+( while sleep 30; do publish_progress; done ) &
+COPIER=$!
+trap 'kill "$COPIER" 2>/dev/null || true' EXIT
 # Внешний предел — срок обхода плюс запас на начатый сайт.
 if (cd "$REPO/jupiter" && timeout "$((MAX_MINUTES + 15))m" \
       setpriv --reuid=nobody --regid=nogroup --clear-groups \
@@ -102,8 +128,11 @@ if (cd "$REPO/jupiter" && timeout "$((MAX_MINUTES + 15))m" \
       "${YGPT_VARS[@]}" JUPITER_FEED_VACANCIES="$WORK/feed.json" \
       "$VENV/bin/python" recon_browser.py --from-http "$WORK/http.json" \
         --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES" \
-        --llm-sites "$LLM_SITES" --rehearse --site-deadline 200) >>"$LOG" 2>&1
+        --llm-sites "$LLM_SITES" --rehearse --site-deadline 200 \
+        --progress "$WORK/progress.json") >>"$LOG" 2>&1
 then
+  kill "$COPIER" 2>/dev/null || true
+  publish_progress
   [ -s "$WORK/browser.json" ] || { say "пустой результат"; exit 1; }
   # Атомарно: копия рядом с итогом, затем rename в пределах одного каталога.
   tmp=$(mktemp "$OUT.XXXXXX")
@@ -112,6 +141,8 @@ then
   mv -f "$tmp" "$OUT"
   say "ok"
 else
+  kill "$COPIER" 2>/dev/null || true
+  progress_state "сбой — смотри $LOG"
   say "failed"
   exit 1
 fi

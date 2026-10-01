@@ -284,18 +284,22 @@ def run_recon(
     sites: list[tuple[str, str]], *, timeout: float = 30.0, site_deadline: float = 120.0,
     workers: int = MAX_BROWSERS, chromium: str | None = None,
     max_seconds: float | None = None, with_llm: set[str] | None = None,
-    rehearse: bool = False,
+    rehearse: bool = False, progress: Any = None,
 ) -> list[BrowserReconResult]:
     """Обход. С max_seconds новые разделы после срока не начинаются (начатый
-    доживает до site_deadline) и в итог не попадают."""
+    доживает до site_deadline) и в итог не попадают. progress(result) — после
+    каждого пройденного раздела (файл хода, Progress)."""
     workers = max(1, min(workers, MAX_BROWSERS))
     stop_at = time.monotonic() + max_seconds if max_seconds is not None else None
 
     def one(site: tuple[str, str]) -> BrowserReconResult | None:
         if stop_at is not None and time.monotonic() >= stop_at:
             return None
-        return _run_child(site[0], site[1], timeout, site_deadline, chromium,
-                          use_llm=site[1] in (with_llm or set()), rehearse=rehearse)
+        res = _run_child(site[0], site[1], timeout, site_deadline, chromium,
+                         use_llm=site[1] in (with_llm or set()), rehearse=rehearse)
+        if progress is not None:
+            progress(res)
+        return res
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [r for r in pool.map(one, sites) if r is not None]
@@ -359,6 +363,61 @@ def order_by_previous(sites: list[tuple[str, str]], previous: list[dict]) -> lis
         return 0 if klass == "dry_run_ok" else 1 if klass is None else 2
 
     return sorted(sites, key=rank)
+
+
+class Progress:
+    """Открытый файл хода обхода (01.10.2026): итог пишется только в конце,
+    а обход идёт до четырёх часов — снаружи казалось, что он не кончается.
+    Только числа, классы и имена работодателей — ничего о людях."""
+
+    def __init__(self, path: str, total: int, max_seconds: float | None, site_deadline: float,
+                 now: Any = time.time) -> None:
+        import threading
+        self.path, self.total, self.now = path, total, now
+        self.started = now()
+        self.deadline = self.started + max_seconds + site_deadline if max_seconds is not None else None
+        self.done = 0
+        self.klass: dict[str, int] = {}
+        self.rehearsal: dict[str, int] = {}
+        self.llm_used = 0
+        self.last = ""
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _iso(ts: float) -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+    def snapshot(self, state: str = "идёт") -> dict[str, Any]:
+        now = self.now()
+        left = self.total - self.done
+        data: dict[str, Any] = {
+            "state": state, "started_at": self._iso(self.started), "updated_at": self._iso(now),
+            "total": self.total, "done": self.done, "left": left, "last": self.last,
+            "classes": dict(self.klass), "rehearsal": dict(self.rehearsal), "llm_used": self.llm_used,
+        }
+        if self.deadline is not None:
+            data["deadline_at"] = self._iso(self.deadline)
+        if state == "идёт" and self.done and left:
+            eta = now + (now - self.started) / self.done * left
+            data["eta_at"] = self._iso(min(eta, self.deadline) if self.deadline is not None else eta)
+        return data
+
+    def __call__(self, res: BrowserReconResult) -> None:
+        with self._lock:
+            self.done += 1
+            self.last = res.name
+            self.klass[res.klass] = self.klass.get(res.klass, 0) + 1
+            verdict = (res.rehearsal or {}).get("verdict")
+            if verdict:
+                self.rehearsal[verdict] = self.rehearsal.get(verdict, 0) + 1
+            self.llm_used += 1 if res.llm_used else 0
+            self.write()
+
+    def write(self, state: str = "идёт") -> None:
+        try:
+            write_atomic(self.path, self.snapshot(state))
+        except OSError:
+            pass  # ход — подсказка человеку, обход из-за него не падает
 
 
 def write_atomic(path: str, data: Any) -> None:
@@ -427,6 +486,7 @@ def main(argv: list[str] | None = None) -> int:
         help="на скольких разделах подключать YandexGPT (ключ — YANDEX_GPT_* в окружении); "
              f"на сервере {DEFAULT_LLM_SITES}",
     )
+    parser.add_argument("--progress", metavar="FILE", help="файл хода: пройдено, осталось, примерный конец")
     parser.add_argument("--_one", nargs=2, metavar=("NAME", "URL"), help=argparse.SUPPRESS)
     parser.add_argument("--_llm", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -470,12 +530,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.llm_sites > 0 and os.environ.get("YANDEX_GPT_API_KEY"):
         endpoints = json.loads(ENDPOINTS_JSON.read_text(encoding="utf-8"))
         with_llm = llm_sites(sites, endpoints, args.llm_sites)
+    max_seconds = args.max_minutes * 60 if args.max_minutes is not None else None
+    progress = Progress(args.progress, len(sites), max_seconds, args.site_deadline) if args.progress else None
+    if progress is not None:
+        progress.write()
     results = run_recon(
         sites, timeout=args.timeout, site_deadline=args.site_deadline,
-        workers=args.workers, chromium=args.chromium,
-        max_seconds=args.max_minutes * 60 if args.max_minutes is not None else None,
-        with_llm=with_llm, rehearse=args.rehearse,
+        workers=args.workers, chromium=args.chromium, max_seconds=max_seconds,
+        with_llm=with_llm, rehearse=args.rehearse, progress=progress,
     )
+    if progress is not None:
+        progress.write("готово" if len(results) == len(sites) else "срок вышел")
     if len(results) < len(sites):
         print(f"Срок вышел: пройдено {len(results)} из {len(sites)} разделов.", file=sys.stderr)
     for item in results:
