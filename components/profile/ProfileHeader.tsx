@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { HardShadowCard } from './HardShadowCard';
+import { TabLogo, TAB_TOP } from '@/components/ui/TabLogo';
 import { HelpIcon, BellIcon, GearIcon, CameraIcon, StarIcon } from './icons';
 import {
   ProfileColors, ProfileFonts, HAIRLINE, ProfileRadius,
@@ -31,16 +32,38 @@ function HeaderIconButton({
   );
 }
 
-export function ProfileHeader({
-  onHelp, onNotifications, onSettings, hasUnread,
-  name, roleLabel, email, avatarUrl, initials,
-  uploading, onAvatarPress,
-  ratingAvg, ratingCount, onRatingsPress,
-}: {
+// Верхняя строка профиля: логотип и кнопки «Помощь», «Уведомления»,
+// «Настройки». Стоит над прокруткой, а не в ней — как шапки ленты и
+// «Откликов» (просьба владельца 01.10.2026); логотип и поля — общие (TAB_TOP).
+export function ProfileTopBar({ onHelp, onNotifications, onSettings, hasUnread }: {
   onHelp: () => void;
   onNotifications: () => void;
   onSettings: () => void;
   hasUnread: boolean;
+}) {
+  return (
+    <View style={[TAB_TOP.row, s.topRow]}>
+      <TabLogo />
+      <View style={s.iconRow}>
+        <HeaderIconButton onPress={onHelp} accessibilityLabel="Помощь">
+          <HelpIcon size={18} color={ProfileColors.ink} />
+        </HeaderIconButton>
+        <HeaderIconButton onPress={onNotifications} accessibilityLabel="Уведомления" hasDot={hasUnread}>
+          <BellIcon size={18} color={ProfileColors.ink} />
+        </HeaderIconButton>
+        <HeaderIconButton onPress={onSettings} accessibilityLabel="Настройки">
+          <GearIcon size={18} color={ProfileColors.ink} />
+        </HeaderIconButton>
+      </View>
+    </View>
+  );
+}
+
+export function ProfileHeader({
+  name, roleLabel, email, avatarUrl, initials,
+  uploading, onAvatarPress,
+  ratingAvg, ratingCount, onRatingsPress,
+}: {
   name: string;
   roleLabel: string;
   email?: string;
@@ -54,27 +77,6 @@ export function ProfileHeader({
 }) {
   return (
     <View style={s.wrap}>
-      <View style={s.topRow}>
-        <View style={s.logoWrap} accessibilityLabel="JobToo">
-          <Image
-            source={require('@/assets/images/header-jt-logo.png')}
-            style={s.logoImage}
-            contentFit="contain"
-          />
-        </View>
-        <View style={s.iconRow}>
-          <HeaderIconButton onPress={onHelp} accessibilityLabel="Помощь">
-            <HelpIcon size={18} color={ProfileColors.ink} />
-          </HeaderIconButton>
-          <HeaderIconButton onPress={onNotifications} accessibilityLabel="Уведомления" hasDot={hasUnread}>
-            <BellIcon size={18} color={ProfileColors.ink} />
-          </HeaderIconButton>
-          <HeaderIconButton onPress={onSettings} accessibilityLabel="Настройки">
-            <GearIcon size={18} color={ProfileColors.ink} />
-          </HeaderIconButton>
-        </View>
-      </View>
-
       <View style={s.titleWrap}>
         <Text style={s.title}>Профиль</Text>
         <Text style={s.subtitle}>Так вас видят работодатели</Text>
@@ -128,11 +130,7 @@ export function ProfileHeader({
 
 const s = StyleSheet.create({
   wrap: { gap: 14 },
-  topRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44,
-  },
-  logoWrap: { width: 40, height: 28, justifyContent: 'center' },
-  logoImage: { width: 40, height: 26 },
+  topRow: { justifyContent: 'space-between' },
   iconRow: { flexDirection: 'row', gap: 8 },
   iconBtn: {
     width: CIRCLE_BTN, height: CIRCLE_BTN, borderRadius: ProfileRadius.pill,
