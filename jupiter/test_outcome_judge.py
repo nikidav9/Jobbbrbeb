@@ -54,6 +54,15 @@ class JudgeOutcome(unittest.TestCase):
         self.assertEqual(got, {"verdict": "needs_fix", "quote": "", "fields": ["Телефон"]})
 
 
+class ApplyClick(unittest.TestCase):
+    def test_section_link_is_not_an_apply_button(self):
+        from browser_planner import suggest_apply_click
+        outline = {"clickables": [{"jt": "p0", "text": "Вакансии", "role": "a"},
+                                  {"jt": "p1", "text": "Откликнуться", "role": "button"}]}
+        self.assertIsNone(suggest_apply_click(FakeLLM({"label": "p0"}), outline))
+        self.assertEqual(suggest_apply_click(FakeLLM({"label": "p1"}), outline), "p1")
+
+
 class AgentVerdict(unittest.TestCase):
     def agent(self, judge=None):
         return JupiterAgent({"career.example.ru"}, engine=FakeEngine(), receipts=ReceiptStore(None),
