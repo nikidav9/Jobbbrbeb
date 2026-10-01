@@ -43,6 +43,27 @@ foreach (['Продуктовый дизайнер', 'HR BP', 'Юрист', 'М�
     check("«{$t}» у IT-компании остаётся", !in_array(job_section($t), JOB_SECTIONS_BLUE_COLLAR, true));
 }
 
+// «Ближнее к IT» (решение владельца 01.10.2026, миграция 143): к it добавлен
+// marketing; список в SQL совпадает с JOB_SECTIONS_FEED.
+$mig143 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/143_feed_near_it.sql');
+preg_match("~not p_it_only or c\.section in \(([^)]*)\)~", $mig143, $m);
+$feedSql = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
+sort($feedSql);
+$feedPhp = JOB_SECTIONS_FEED;
+sort($feedPhp);
+check('миграция 143: разделы ленты те же, что JOB_SECTIONS_FEED', $feedSql === $feedPhp && in_array('it', $feedPhp, true));
+preg_match("~c\.section not in \(([^)]*)\)~", $mig143, $m);
+$blue143 = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
+sort($blue143);
+check('миграция 143 не потеряла рабочие разделы IT-компаний', $blue143 === $phpList);
+check('рабочие разделы в ленту не идут', !array_intersect(JOB_SECTIONS_FEED, JOB_SECTIONS_BLUE_COLLAR));
+foreach (['Графический дизайнер', 'Бизнес-маркетолог', 'SMM-менеджер', 'Продакт менеджер (ноутбуки)'] as $t) {
+    check("«{$t}» — в ленте", in_array(job_section($t), JOB_SECTIONS_FEED, true));
+}
+foreach (['Телемаркетолог В2С', 'Администратор магазина', 'Кассир'] as $t) {
+    check("«{$t}» — не в ленте", !in_array(job_section($t), JOB_SECTIONS_FEED, true));
+}
+
 check('свои вакансии — только IT в колоде', str_contains($feed, "&& sectionOfPerm(v.workType) === 'it' && matchOwnVacancy(v, filters, now)"));
 // «Показать N вакансий» теперь считает сервер (dbCountExtFeed, тот же пул
 // jm_ext_feed_pool с p_it_only) — экран фильтров app/filters/index.tsx.

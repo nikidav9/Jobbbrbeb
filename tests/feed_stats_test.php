@@ -34,6 +34,9 @@ check('лента IT: раздел it плюс IT-компания целико�
 check('рабочие вакансии IT-компании в ленту не идут',
     fs_aggregate([['company' => 'Яндекс', 'section' => 'warehouse'], ['company' => 'Яндекс', 'section' => 'office'],
                   ['company' => 'Яндекс', 'section' => 'it']], 'x', ['Яндекс'])['it_feed_total'] === 2);
+check('раздел marketing — в ленте (миграция 143)',
+    fs_aggregate([['company' => 'X5 Group', 'section' => 'marketing', 'address' => 'Москва'],
+                  ['company' => 'X5 Group', 'section' => 'finance', 'address' => 'Москва']], 'x')['feed_total'] === 1);
 check('пустая таблица', fs_aggregate([], 'x')['total'] === 0 && fs_aggregate([], 'x')['it_total'] === 0);
 
 check('в ленту по Москве не идут другие города',
@@ -54,9 +57,10 @@ check('аналитик — аналитика', fs_office_group('Аналити
 check('администратор — не офис в программах', fs_office_group('Администратор магазина') === null);
 check('продавец-консультант — нет', fs_office_group('Продавец-консультант') === null);
 $o = fs_aggregate([
-    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Дизайнер', 'address' => 'Москва'],
-    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Дизайнер', 'address' => 'Москва'],
-    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Дизайнер', 'address' => 'Казань'],
+    ['company' => 'X5 Group', 'section' => 'other', 'title' => 'Дизайнер', 'address' => 'Москва'],
+    ['company' => 'X5 Group', 'section' => 'other', 'title' => 'Дизайнер', 'address' => 'Москва'],
+    ['company' => 'X5 Group', 'section' => 'other', 'title' => 'Дизайнер', 'address' => 'Казань'],
+    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Маркетолог', 'address' => 'Москва'],
     ['company' => 'X5 Group', 'section' => 'office', 'title' => 'Администратор', 'address' => 'Москва'],
     ['company' => 'X5 Group', 'section' => 'it', 'title' => 'Аналитик данных', 'address' => 'Москва'],
 ], 'x')['outside_feed_moscow'];

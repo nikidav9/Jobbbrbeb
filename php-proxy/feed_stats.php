@@ -81,9 +81,9 @@ function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [])
         $byCompany[$company] ??= ['company' => $company, 'total' => 0, 'it' => 0];
         $byCompany[$company]['total']++;
         if ($section === 'it') $byCompany[$company]['it']++;
-        // То, что реально видит соискатель: раздел it или IT-компания без
-        // «рабочих» разделов (миграция 132).
-        if ($section === 'it' || (isset($itSet[$company]) && !in_array($section, JOB_SECTIONS_BLUE_COLLAR, true))) {
+        // То, что реально видит соискатель: разделы ленты (it и marketing,
+        // миграция 143) или IT-компания без «рабочих» разделов (миграция 132).
+        if (in_array($section, JOB_SECTIONS_FEED, true) || (isset($itSet[$company]) && !in_array($section, JOB_SECTIONS_BLUE_COLLAR, true))) {
             $feed++;
             if (fs_is_moscow($r)) $feedMoscow++;
         } elseif (fs_is_moscow($r)) {
