@@ -835,7 +835,7 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
         made = self._recording_agent(accepts_mapper=True)
         calls = []
 
-        def fake_suggest(llm, fields, allowed_keys):
+        def fake_suggest(llm, fields, allowed_keys, host="", examples=None):
             calls.append((llm, fields, allowed_keys))
             return {"plan-f0": "phone"}
         self.bp.suggest_field_keys = fake_suggest
@@ -845,7 +845,8 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
         fields = [{"jt": "plan-f0", "label": "Мобильный"}]
         self.assertEqual(mapper(fields, ["phone", "email"]), {"plan-f0": "phone"})
         llm, got_fields, got_keys = calls[0]
-        self.assertIsInstance(llm, yandex_gpt.YandexGPT)
+        # Клиент в обёртке со счётчиком дневного потолка (knowledge.CountingLLM).
+        self.assertIsInstance(llm.llm, yandex_gpt.YandexGPT)
         self.assertEqual(got_fields, fields)
         self.assertEqual(got_keys, ["phone", "email"])
         self.assertIn("YandexGPT для незнакомых полей: да", out)

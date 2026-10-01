@@ -700,7 +700,7 @@ SVCEOF
     ( set +e
       . "$YGPT_ENV"
       body=$(mktemp)
-      code=$(printf '{"modelUri":"gpt://%s/yandexgpt-lite/latest","completionOptions":{"temperature":0,"maxTokens":"10"},"messages":[{"role":"user","text":"Сколько будет 2+2? Ответь только числом."}]}' "$YANDEX_GPT_FOLDER_ID" \
+      code=$(printf '{"modelUri":"gpt://%s/yandexgpt/latest","completionOptions":{"temperature":0,"maxTokens":"10"},"messages":[{"role":"user","text":"Сколько будет 2+2? Ответь только числом."}]}' "$YANDEX_GPT_FOLDER_ID" \
         | curl -s -o "$body" -w '%{http_code}' -m 15 \
             -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" -H "x-folder-id: $YANDEX_GPT_FOLDER_ID" \
             -H 'Content-Type: application/json' --data-binary @- \

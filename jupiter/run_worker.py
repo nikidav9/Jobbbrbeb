@@ -24,12 +24,12 @@ import time
 from agent import AgentResult, CandidateProfile, JupiterAgent, Reason
 from handoff import HandoffStore
 from remote_tasks import RemoteTaskQueue
-from site_compat import AUDITED_SITES, live_ready, recon_ok_hosts
+from site_compat import AUDITED_SITES, live_ready, normalize_host, recon_ok_hosts
 from submission import ReceiptStore
 from tasks import ApplicationTask, SubmissionAuthorizationRevoked
 import browser_engine
 import browser_limits
-import browser_planner
+import knowledge
 import worker
 import yandex_gpt
 
@@ -165,16 +165,24 @@ def main() -> int:
 
     # YandexGPT — только если на сервере есть ключ. Видит подписи полей и
     # названия ключей профиля, но не данные кандидата (browser_planner).
-    llm = yandex_gpt.YandexGPT.from_env()
-    agent_extra: dict = {}
-    if llm is not None and "field_mapper" in inspect.signature(JupiterAgent).parameters:
-        def field_mapper(fields: list[dict], allowed_keys: list[str]) -> dict[str, str]:
-            return browser_planner.suggest_field_keys(llm, fields, allowed_keys)
-        agent_extra["field_mapper"] = field_mapper
-    if llm is not None and "question_explainer" in inspect.signature(JupiterAgent).parameters:
-        def question_explainer(questions: list[dict], context: dict) -> dict:
-            return browser_planner.explain_questions(llm, questions, context)
-        agent_extra["question_explainer"] = question_explainer
+    # База знаний Алисы (knowledge.py): в настоящих откликах — только знание,
+    # подтверждённое ночной репетицией; остальное спрашивается у модели, как
+    # раньше. Свой дневной потолок вызовов: остальное от 1500 — ночной разведке.
+    raw_llm = yandex_gpt.YandexGPT.from_env()
+    llm = knowledge.CountingLLM(raw_llm, int(os.environ.get("YANDEX_GPT_MAX_CALLS_PER_DAY", "200") or 200)) \
+        if raw_llm is not None else None
+    agent_params = inspect.signature(JupiterAgent).parameters
+
+    def advisor_hooks(task: ApplicationTask) -> dict:
+        advisor = knowledge.Advisor(knowledge.Knowledge.load(), normalize_host(task.vacancy_url) or "",
+                                    llm, live=True)
+        hooks = knowledge.advisor_hooks(advisor)
+        out = {}
+        for hook, part in (("apply_advisor", "apply"), ("field_mapper", "fields"),
+                           ("question_explainer", "questions")):
+            if (llm is not None or advisor.entry.get(part)) and (hook == "apply_advisor" or hook in agent_params):
+                out[hook] = hooks[hook]
+        return out
 
     receipts = ReceiptStore(receipts_path)
     handoffs = HandoffStore(handoffs_path)
@@ -201,15 +209,16 @@ def main() -> int:
 
     def agent_factory(task: ApplicationTask) -> JupiterAgent:
         dry_run = not bool(task.submission_authorized_at)
+        agent_extra = advisor_hooks(task)
+        apply_advisor = agent_extra.pop("apply_advisor", None)
         engine = None
         if engine_kind == "browser":
             engine = browser_engine.JupiterBrowserEngine(
                 allowed_hosts=set(),
                 read_only=dry_run,
                 executable_path=chromium_path,
-                # Кнопку «Откликнуться» правила не нашли — её выбирает YandexGPT.
-                apply_advisor=(lambda outline: browser_planner.suggest_apply_click(llm, outline))
-                if llm is not None else None,
+                # Кнопку «Откликнуться» правила не нашли — из базы знаний или YandexGPT.
+                apply_advisor=apply_advisor,
             )
             open_engines.append(engine)
         agent = JupiterAgent(
@@ -248,10 +257,8 @@ def main() -> int:
         worker_id, base_url, engine_kind,
     )
     # Только да/нет: ключ и каталог YandexGPT в журнал не пишем.
-    log.info("YandexGPT для незнакомых полей: %s", (
-        "да" if agent_extra else
-        "ключ есть, но агент ещё не принимает field_mapper" if llm is not None else "нет"
-    ))
+    log.info("YandexGPT для незнакомых полей: %s; база знаний: %s", "да" if llm is not None else "нет",
+             os.environ.get(knowledge.ENV) or knowledge.DEFAULT_FILE)
     if engine_kind == "browser":
         log.info(
             "память: свободно %d МБ, браузеров параллельно до %d, таймаут задачи %.0f с",

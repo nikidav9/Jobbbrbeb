@@ -164,6 +164,11 @@ class YandexGPTTest(unittest.TestCase):
             self.assertIsNone(YandexGPT.from_env())
         with mock.patch.dict(os.environ, {"YANDEX_GPT_API_KEY": "k", "YANDEX_GPT_FOLDER_ID": "f"}, clear=True):
             self.assertIsNotNone(YandexGPT.from_env())
+            # Решение владельца 01.10.2026: на сервере — YandexGPT Pro.
+            self.assertEqual(YandexGPT.from_env().model, "yandexgpt")
+        with mock.patch.dict(os.environ, {"YANDEX_GPT_API_KEY": "k", "YANDEX_GPT_FOLDER_ID": "f",
+                                          "YANDEX_GPT_MODEL": "yandexgpt-lite"}, clear=True):
+            self.assertEqual(YandexGPT.from_env().model, "yandexgpt-lite")
 
 
 if __name__ == "__main__":
