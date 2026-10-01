@@ -23,7 +23,9 @@ consent = legal[legal.index("  consent: {"):legal.index("  dataPolicy: {")]
 # Редакция 2026-09-26-2 (согласия работодателю по поручению) снова подняла
 # consentVersion — расширение резюме 2026-09-21, Юпитер 2026-09-25 и почта
 # 2026-09-26 покрыты ею же, повторное согласие спросится.
-assert "version: '2026-09-26-2'" in privacy
+# 2026-10-01: в политику добавлено письмо-сводку о непрочитанном (служебное) —
+# поднят только version, повторное согласие не нужно.
+assert "version: '2026-10-01'" in privacy
 assert "consentVersion: '2026-09-26-2'" in privacy
 assert "version: '2026-09-26-2'" in consent
 assert "consentVersion: '2026-09-26-2'" in consent
