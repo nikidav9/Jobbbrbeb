@@ -317,7 +317,7 @@ $selfArgFns = [
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
-    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0,
+    'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0, 'jupiterMailHtml' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
     'jupiterApplicationEvents' => 0,
     // Капча человеку: видит и отвечает только владелец заявки.
@@ -7440,6 +7440,16 @@ try {
             break;
         }
 
+        // Письмо целиком для показа как в почте — одно и только своё. В список
+        // HTML не входит: с картинками письмо весит до 2 МБ.
+        case 'jupiterMailHtml': {
+            $row = sb_single('jm_jupiter_emails', [
+                'id' => 'eq.' . (string)($args[1] ?? ''), 'user_id' => 'eq.' . (string)$args[0],
+            ], 'html');
+            $data = ['html' => (string)($row['html'] ?? '')];
+            break;
+        }
+
         case 'jupiterMailRead': {
             $uidArg = (string)$args[0];
             $id = (string)($args[1] ?? '');
@@ -7463,18 +7473,21 @@ try {
                 'subject' => mb_substr((string)($message['subject'] ?? ''), 0, 998),
                 'body' => mb_substr((string)($message['body'] ?? ''), 0, 100000),
             ];
+            // Письмо целиком (01.10.2026) — отдельно от $content: подтверждению
+            // отклика оно не нужно, а весит до 2 МБ.
+            $stored = $content + ['html' => mb_substr((string)($message['html'] ?? ''), 0, 2000000)];
             $rows = sb('POST', 'jm_jupiter_emails', ['on_conflict' => 'imap_uid'], [
                 'id' => uid(), 'user_id' => $box['user_id'], 'mailbox_address' => $recipient,
                 'imap_uid' => $key,
                 'received_at' => $message['received_at'] ?? now_iso(),
-            ] + $content, ['Prefer: resolution=ignore-duplicates,return=representation']);
+            ] + $stored, ['Prefer: resolution=ignore-duplicates,return=representation']);
             if (!$rows) {
                 // Письмо уже было: служба перечитала ящик после улучшения
                 // разбора (ссылки, полная HTML-версия). Обновляем текст, но
                 // только у того же человека и не трогая id и отметку прочтения.
                 sb_update('jm_jupiter_emails', [
                     'imap_uid' => 'eq.' . $key, 'user_id' => 'eq.' . $box['user_id'],
-                ], $content);
+                ], $stored);
             }
             // Письмо компании подтверждает отклик «Скорее всего, ушёл». Сбой
             // здесь не должен терять само письмо — оно уже сохранено.

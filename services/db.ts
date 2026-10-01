@@ -1882,6 +1882,12 @@ export async function jupiterMailList(userId: string): Promise<JupiterEmail[]> {
   return proxy('jupiterMailList', [userId]);
 }
 
+/** Письмо целиком (HTML) — для показа как в почте. Пусто — у письма нет HTML-версии. */
+export async function jupiterMailHtml(userId: string, id: string): Promise<string> {
+  const r = await proxy<{ html?: string }>('jupiterMailHtml', [userId, id]);
+  return typeof r?.html === 'string' ? r.html : '';
+}
+
 /** Сколько непрочитанных писем на почте JobToo для откликов (для точки на конверте). */
 export async function jupiterMailUnread(userId: string): Promise<number> {
   const r = await proxy<{ unread?: number }>('jupiterMailUnread', [userId]);

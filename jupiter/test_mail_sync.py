@@ -1,7 +1,8 @@
 """Incoming mail routing must use Timeweb's trusted envelope recipient."""
+import base64
 import unittest
 
-from mail_sync import check_ingest_response, parse_message
+from mail_sync import HTML_MAX, check_ingest_response, embed_inline_images, parse_message
 
 
 class MailRoutingTests(unittest.TestCase):
@@ -81,6 +82,39 @@ class HtmlBodyTests(unittest.TestCase):
         self.assertEqual(body.count("https://x.example/y"), 1)
         self.assertNotIn("javascript:", body)
         self.assertNotIn("\u0410\u043d\u043a\u0435\u0442\u0430\n", body)
+
+
+class FullHtmlTests(unittest.TestCase):
+    """Письмо целиком — для показа как в почте (01.10.2026)."""
+
+    def test_full_html_is_kept(self):
+        _, letter = parse_message(HtmlBodyTests.RAW, "1", "2")
+        self.assertIn("<table><tr><td><p>Hello</p>", letter["html"])
+        self.assertIn('href="https://pulse.sber.example/form?id=1"', letter["html"])
+
+    def test_inline_image_is_embedded(self):
+        png = base64.b64encode(b"\x89PNG fake").decode()
+        raw = (b"Received: from s.example by mx1.timeweb.ru\r\n"
+               b"\tfor <nikita.davydov@jobtoo.ru>; Thu, 25 Sep 2026 10:18:42 +0300\r\n"
+               b"MIME-Version: 1.0\r\n"
+               b"Content-Type: multipart/related; boundary=r\r\n\r\n"
+               b"--r\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+               b"<p><img src=\"cid:logo@x\"></p>\r\n"
+               b"--r\r\nContent-Type: image/png\r\nContent-ID: <logo@x>\r\n"
+               b"Content-Transfer-Encoding: base64\r\n\r\n" + png.encode() + b"\r\n--r--\r\n")
+        _, letter = parse_message(raw, "2", "2")
+        self.assertIn('src="data:image/png;base64,' + png, letter["html"])
+        self.assertNotIn("cid:", letter["html"])
+
+    def test_plain_letter_has_no_html(self):
+        raw = (b"Received: from s.example by mx1.timeweb.ru\r\n"
+               b"\tfor <nikita.davydov@jobtoo.ru>; Thu, 25 Sep 2026 10:18:42 +0300\r\n"
+               b"Subject: Hi\r\n\r\nJust text")
+        _, letter = parse_message(raw, "3", "2")
+        self.assertEqual(letter["html"], "")
+
+    def test_oversized_html_is_dropped(self):
+        self.assertEqual(embed_inline_images("x" * (HTML_MAX + 1), {}), "")
 
 
 class IngestResponseTests(unittest.TestCase):
