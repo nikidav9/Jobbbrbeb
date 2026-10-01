@@ -10,7 +10,7 @@ import { useApp } from '@/hooks/useApp';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
   dbChangePassword, dbDeleteAccount, dbClearPushToken,
-  dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
+  dbDeleteWebPushSubscription,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -365,13 +365,9 @@ export default function ProfileSettingsScreen() {
     setNotificationBusy(true);
     setNotificationMessage('');
     try {
-      const crossBorder = await dbGetCrossBorderConsent(currentUser.id).catch(() => null);
-      if (crossBorder?.accepted !== true) {
-        setNotificationState('error');
-        setNotificationMessage('Сначала подтвердите отдельное согласие на трансграничную передачу данных для push-уведомлений.');
-        return;
-      }
-
+      // Отдельное согласие на трансграничную передачу для пушей больше не
+      // нужно: пуш обезличен (push_privacy.php, docs/MAP.md). Проверка здесь
+      // оставалась и не давала включить уведомления — дать согласие было негде.
       await AsyncStorage.removeItem(NOTIFICATION_DISABLED_KEY).catch(() => {});
       let ok = false;
 

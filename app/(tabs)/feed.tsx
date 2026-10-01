@@ -864,6 +864,10 @@ function WorkerPermMode() {
   // больше не показывает (та же идея, что у extLeftSwipes ниже).
   const [permSwiped, setPermSwiped] = useState<Set<string>>(new Set());
   const swDecisionPending = useRef(false);
+  // Окно отклика открыто свайпом: молния уже списана, карточка ушла из колоды.
+  // Закрыли окно без отправки — молнию возвращаем, карточку можно достать
+  // «Вернуть». Раньше молния сгорала впустую.
+  const permApplyFromSwipe = useRef(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -1131,7 +1135,11 @@ function WorkerPermMode() {
       promptRegister({ vacancyId: v.id, vacancyKind: 'permanent' });
       return;
     }
-    if (myAppVacIds.has(v.id) || applying === v.id) { showToast('Уже откликнулись', 'success'); return; }
+    if (myAppVacIds.has(v.id) || applying === v.id) {
+      if (permApplyFromSwipe.current) { permApplyFromSwipe.current = false; energy.refundOne(); }
+      showToast('Уже откликнулись', 'success');
+      return;
+    }
     setPermApplyFor(v);
   };
 
@@ -1142,6 +1150,7 @@ function WorkerPermMode() {
     try {
       await dbApplyPermVacancy(v.id, currentUser.id, v.employerId, message);
       showToast('Отклик отправлен', 'success');
+      permApplyFromSwipe.current = false;
       setPermApplyFor(null);
       await Promise.all([
         refreshPermApplications().catch(() => {}),
@@ -1211,7 +1220,9 @@ function WorkerPermMode() {
 
   const shareVacancy = async (v: PermVacancy) => {
     const shareCampaignId = Crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-    const url = `https://t.me/JobToo_bot/app?startapp=share_perm_${v.id}_${shareCampaignId}`;
+    // Адрес сайта, а не ссылка мини-приложения: t.me открывается только в
+    // Телеграме, а у многих его нет. Метка c= доезжает до экрана вакансии.
+    const url = `https://jobtoo.ru/v/${encodeURIComponent(v.id)}?c=${shareCampaignId}`;
     const message = [
       `${v.title} — ${v.company}`,
       v.metroStation ? `м. ${v.metroStation}` : '',
@@ -1303,6 +1314,7 @@ function WorkerPermMode() {
             resetCardScroll();
             setSwSkipped(s => new Set(s).add(c.v.id));
             setSwLastSkipped(null);
+            permApplyFromSwipe.current = true;
             applyTo(c.v);
           } else {
             energy.refundOne();
@@ -1881,7 +1893,14 @@ function WorkerPermMode() {
 
       <ApplySheet
         visible={!!permApplyFor}
-        onClose={() => setPermApplyFor(null)}
+        onClose={() => {
+          if (permApplyFromSwipe.current && permApplyFor) {
+            permApplyFromSwipe.current = false;
+            energy.refundOne();
+            setSwLastSkipped(permApplyFor.id);
+          }
+          setPermApplyFor(null);
+        }}
         onSend={sendPermApply}
         title="Отклик на вакансию"
         info={permApplyFor ? permVacancyInfoLines(permApplyFor) : []}

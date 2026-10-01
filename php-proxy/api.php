@@ -141,7 +141,7 @@ function api_perm(array $r): array
         'schedule'    => $r['schedule'] ?? null,
         'description' => $r['description'] ?? null,
         'status'      => $r['status'] ?? null,
-        'url'         => 'https://jobtoo.ru/perm-vacancy-detail?id=' . rawurlencode((string)$r['id']),
+        'url'         => 'https://jobtoo.ru/perm-vacancy-detail?vacancyId=' . rawurlencode((string)$r['id']),
         'created_at'  => $r['created_at'] ?? null,
         'updated_at'  => $r['created_at'] ?? null,
     ];

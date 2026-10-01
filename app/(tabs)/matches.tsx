@@ -472,7 +472,7 @@ function WorkerMatches() {
       bucket: unread > 0 ? 'needs' : answered ? 'other' : 'review',
       open: () => (unread > 0 && chat
         ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } })
-        : router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })),
+        : router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: a.vacancyId } })),
     };
   });
   const allItems = [...jupiterItems, ...permItems]

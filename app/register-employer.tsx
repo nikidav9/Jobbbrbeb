@@ -31,8 +31,6 @@ import { JT, JT_FONT } from '@/constants/jt';
 // профиль/настройки, если понадобятся.
 // Путь по телефону (SMTP ещё не готов) — прежние 5 шагов без изменений:
 // 1-Телефон, 2-Пароль, 3-Имя+Компания, 4-Согласие, 5-О компании.
-const COMPANY_OPTIONS = ['Лавка'] as const;
-type CompanyOption = typeof COMPANY_OPTIONS[number];
 
 export default function RegisterEmployer() {
   const router = useRouter();
@@ -55,7 +53,7 @@ export default function RegisterEmployer() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [company, setCompany] = useState<CompanyOption | ''>('');
+  const [company, setCompany] = useState('');
   // Шаг 2 короткого пути по почте — свободное название компании, без списка.
   const [companyName, setCompanyName] = useState('');
   const [age, setAge] = useState('');
@@ -143,7 +141,7 @@ export default function RegisterEmployer() {
         password,
         lastName,
         firstName,
-        company: company || '',
+        company: company.trim(),
         age: Number(age),
         bio: bio.trim(),
         avatarUrl,
@@ -275,7 +273,7 @@ export default function RegisterEmployer() {
                 label="Название компании"
                 value={companyName}
                 onChangeText={setCompanyName}
-                placeholder="Лавка"
+                placeholder="Например, Т-Банк"
                 autoFocus
               />
               <View style={{ marginTop: 4 }}>
@@ -327,22 +325,9 @@ export default function RegisterEmployer() {
               <Text style={styles.title}>Как вас зовут?</Text>
               <AppInput value={lastName} onChangeText={setLastName} placeholder="Иванов" label="Фамилия" autoFocus />
               <AppInput value={firstName} onChangeText={setFirstName} placeholder="Дмитрий" label="Имя" />
-              <Text style={[styles.subtitle, { marginTop: 8 }]}>Название компании</Text>
-              {COMPANY_OPTIONS.map(opt => (
-                <TouchableOpacity
-                  key={opt}
-                  style={[styles.companyOption, company === opt && styles.companyOptionActive]}
-                  onPress={() => setCompany(opt)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.companyRadio, company === opt && styles.companyRadioActive]}>
-                    {company === opt ? <View style={styles.companyRadioDot} /> : null}
-                  </View>
-                  <Text style={[styles.companyLabel, company === opt && styles.companyLabelActive]}>{opt}</Text>
-                </TouchableOpacity>
-              ))}
+              <AppInput value={company} onChangeText={setCompany} placeholder="Например, Т-Банк" label="Название компании" />
               <View style={{ marginTop: 4 }}>
-                <PrimaryButton label="Продолжить →" onPress={next} disabled={!lastName.trim() || !firstName.trim() || !company} />
+                <PrimaryButton label="Продолжить →" onPress={next} disabled={!lastName.trim() || !firstName.trim() || !company.trim()} />
               </View>
             </View>
           )}
@@ -400,18 +385,4 @@ const styles = StyleSheet.create({
   fieldError: { fontSize: rf(13), color: Colors.red, lineHeight: rf(18) },
   loginHintTxt: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: JT.ink, textAlign: 'center', marginTop: rs(4) },
   link: { color: Colors.primary, fontWeight: '600', textDecorationLine: 'underline' },
-  companyOption: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(14),
-    padding: rs(16), borderRadius: rs(12), borderWidth: 1.5, borderColor: Colors.inputBorder,
-    backgroundColor: Colors.surface,
-  },
-  companyOptionActive: { borderColor: Colors.primary, backgroundColor: '#F0EEFF' },
-  companyRadio: {
-    width: rs(22), height: rs(22), borderRadius: rs(11), borderWidth: 2, borderColor: Colors.inputBorder,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  companyRadioActive: { borderColor: Colors.primary },
-  companyRadioDot: { width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: Colors.primary },
-  companyLabel: { fontSize: rf(16), color: Colors.textPrimary, fontWeight: '500' },
-  companyLabelActive: { color: Colors.primary, fontWeight: '700' },
 });

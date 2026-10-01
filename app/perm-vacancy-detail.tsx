@@ -230,7 +230,9 @@ export default function PermVacancyDetailScreen() {
   const shareVacancy = async () => {
     if (!vacancy) return;
     const shareCampaignId = Crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-    const url = `https://t.me/JobToo_bot/app?startapp=share_perm_${vacancy.id}_${shareCampaignId}`;
+    // Адрес сайта, а не ссылка мини-приложения: t.me открывается только в
+    // Телеграме, а у многих его нет. Метка c= доезжает до экрана вакансии.
+    const url = `https://jobtoo.ru/v/${encodeURIComponent(vacancy.id)}?c=${shareCampaignId}`;
     const message = [
       `${vacancy.title} — ${vacancy.company}`,
       vacancy.metroStation ? `м. ${vacancy.metroStation}` : '',

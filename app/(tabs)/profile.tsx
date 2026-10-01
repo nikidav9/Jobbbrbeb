@@ -57,8 +57,6 @@ import { FilesTabContent } from '@/components/profile/FilesTabContent';
 import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
 import { ProfileColors } from '@/constants/profileTheme';
 
-const COMPANY_OPTIONS = ['Лавка'] as const;
-type CompanyOption = typeof COMPANY_OPTIONS[number];
 
 type EditSection = 'personal' | 'metro' | 'company' | 'bio' | null;
 type ProfileTab = 'resume' | 'personal' | 'files' | 'reviews';
@@ -385,7 +383,7 @@ export default function ProfileScreen() {
   const [editMetroLineId, setEditMetroLineId] = useState('');
   const [editMetroLineName, setEditMetroLineName] = useState('');
   const [editMetroStation, setEditMetroStation] = useState('');
-  const [editCompany, setEditCompany] = useState<CompanyOption | ''>('');
+  const [editCompany, setEditCompany] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editAge, setEditAge] = useState('');
 
@@ -412,8 +410,9 @@ export default function ProfileScreen() {
     setEditMetroLineId(currentUser.metroLineId ?? '');
     setEditMetroStation(currentUser.metroStation ?? '');
     setEditMetroLineName(line?.name ?? '');
-    const savedCompany = currentUser.company ?? '';
-    setEditCompany(COMPANY_OPTIONS.includes(savedCompany as CompanyOption) ? savedCompany as CompanyOption : '');
+    // Раньше поле было переключателем с одним вариантом «Лавка»: любое другое
+    // название открывалось пустым и стиралось при сохранении.
+    setEditCompany(currentUser.company ?? '');
     setEditBio(currentUser.bio ?? '');
     setEditAge(currentUser.age ? String(currentUser.age) : '');
   };
@@ -442,7 +441,7 @@ export default function ProfileScreen() {
         updated.age = editAge.trim() === '' ? undefined : Number(editAge);
       }
       if (editSection === 'metro') { updated.metroLineId = editMetroLineId; updated.metroStation = editMetroStation; }
-      if (editSection === 'company') { updated.company = editCompany; updated.bio = editBio; }
+      if (editSection === 'company') { updated.company = editCompany.trim() || currentUser.company; updated.bio = editBio; }
       if (editSection === 'bio') updated.bio = editBio;
       await updateUser(updated);
       setEditSection(null);
@@ -1179,20 +1178,7 @@ export default function ProfileScreen() {
             )}
             {editSection === 'company' && (
               <View style={{ gap: 12 }}>
-                <Text style={{ fontSize: rf(13), fontWeight: '500', color: Colors.textSecondary }}>Название компании</Text>
-                {COMPANY_OPTIONS.map(opt => (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[pStyles.companyOption, editCompany === opt && pStyles.companyOptionActive]}
-                    onPress={() => setEditCompany(opt)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[pStyles.companyRadio, editCompany === opt && pStyles.companyRadioActive]}>
-                      {editCompany === opt ? <View style={pStyles.companyRadioDot} /> : null}
-                    </View>
-                    <Text style={[pStyles.companyLabel, editCompany === opt && pStyles.companyLabelActive]}>{opt}</Text>
-                  </TouchableOpacity>
-                ))}
+                <AppInput label="Название компании" value={editCompany} onChangeText={setEditCompany} placeholder="Например, Т-Банк" />
                 <AppInput label="О компании" value={editBio} onChangeText={setEditBio} placeholder="Расскажите о компании..." multiline numberOfLines={4} />
               </View>
             )}
@@ -1719,18 +1705,4 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 }
 
 const pStyles = StyleSheet.create({
-  companyOption: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(14),
-    padding: rs(16), borderRadius: rs(12), borderWidth: 1.5, borderColor: Colors.inputBorder,
-    backgroundColor: Colors.surface,
-  },
-  companyOptionActive: { borderColor: Colors.primary, backgroundColor: '#F0EEFF' },
-  companyRadio: {
-    width: rs(22), height: rs(22), borderRadius: rs(11), borderWidth: 2, borderColor: Colors.inputBorder,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  companyRadioActive: { borderColor: Colors.primary },
-  companyRadioDot: { width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: Colors.primary },
-  companyLabel: { fontSize: rf(16), color: Colors.textPrimary, fontWeight: '500' },
-  companyLabelActive: { color: Colors.primary, fontWeight: '700' },
 });
