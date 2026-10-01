@@ -626,6 +626,27 @@ def _path_key(url: str) -> str:
     return f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
 
 
+def _climbs_up(url: str, root: str) -> bool:
+    """Ссылка уводит со страницы вакансии в её раздел: старт глубже одного
+    уровня (/vakansii/analitik-1s/), ссылка — его предок (/vakansii/) и не
+    несёт хвост адреса вакансии в параметрах (/vakansii/?apply=analitik-1s —
+    это отклик, его оставляем)."""
+    segments = [p for p in urllib.parse.urlparse(root or "").path.split("/") if p]
+    if len(segments) < 2 or not _is_ancestor_path(url, root):
+        return False
+    return segments[-1].lower() not in urllib.parse.unquote(urllib.parse.urlparse(url).query).lower()
+
+
+def _is_ancestor_path(url: str, root: str) -> bool:
+    """url — раздел, в котором лежит root (тот же хост, путь root глубже)."""
+    a, b = urllib.parse.urlparse(url), urllib.parse.urlparse(root)
+    if (a.hostname or "").lower().removeprefix("www.") != (b.hostname or "").lower().removeprefix("www."):
+        return False
+    parent = (a.path or "/").rstrip("/") + "/"
+    child = (b.path or "/").rstrip("/") + "/"
+    return child != parent and child.startswith(parent)
+
+
 def _vacancy_slug(url: str) -> str:
     """Идентификатор вакансии в адресе: /vacancies/118-marketing-lead → 118-marketing-lead."""
     match = _VACANCY_PATH_RE.search(urllib.parse.urlparse(url or "").path)
@@ -1835,6 +1856,11 @@ class JupiterAgent:
                 # анкету на чужую позицию (mish.design, infotecs; 29.09.2026).
                 slug = _vacancy_slug(url)
                 if own_vacancy and slug and slug != own_vacancy:
+                    continue
+                # И не «на уровень выше»: со страницы вакансии ссылка на её же
+                # раздел (/vakansii/ с /vakansii/analitik-1s/) уводила в общий
+                # список, где анкеты нет — 29 сайтов «не нашёл анкету» (01.10.2026).
+                if _climbs_up(url, self._root_url):
                     continue
                 parsed = urllib.parse.urlparse(url)
                 if (parsed.hostname or "").lower() not in self.engine.allowed_hosts:
