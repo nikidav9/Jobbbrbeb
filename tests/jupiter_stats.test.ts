@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   JUPITER_COLUMNS, CAPTCHA_COLUMNS, bucketOf, siteOf, buildReport, lastDays, engineOf,
-  buildEngineReport, buildCaptchaReport, formatDuration, type JupiterRow, type CaptchaRow,
+  buildEngineReport, buildCaptchaReport, buildUnknownReport, formatDuration, UNKNOWN_REASON_LABEL,
+  type JupiterRow, type CaptchaRow,
 } from '../dashboard/lib/jupiterStats.ts';
 
 const row = (over: Partial<JupiterRow>): JupiterRow => ({
@@ -153,4 +154,29 @@ test('капча: показано, решено, неверно, не успе�
   assert.equal(formatDuration(42), '42 с');
   assert.equal(formatDuration(185), '3 мин 5 с');
   assert.equal(formatDuration(120), '2 мин');
+});
+
+test('«Скорее всего, ушёл»: причины по сайтам, только за период, без новых колонок', () => {
+  const now = new Date('2026-10-02T12:00:00Z');
+  const rows = [
+    row({ state: 'submission_unknown', reason_code: 'POST_OUTCOME_UNCERTAIN', engine: 'browser',
+      canonical_url: 'https://www.moysklad.ru/v/1', company: 'МойСклад', created_at: '2026-10-01T10:00:00Z' }),
+    row({ state: 'submission_unknown', reason_code: 'POST_OUTCOME_UNCERTAIN', engine: 'browser',
+      canonical_url: 'https://moysklad.ru/v/2', company: 'МойСклад', created_at: '2026-10-02T09:00:00Z' }),
+    row({ state: 'submission_unknown', reason_code: 'SUBMISSION_UNKNOWN', engine: 'http',
+      canonical_url: 'https://kontur.ru/v/3', created_at: '2026-10-02T08:00:00Z' }),
+    row({ state: 'submitted', created_at: '2026-10-02T08:00:00Z' }),
+    // Старше недели — в период 7 дней не входит.
+    row({ state: 'submission_unknown', reason_code: 'SUBMISSION_UNKNOWN', created_at: '2026-09-01T08:00:00Z' }),
+  ];
+  const r = buildUnknownReport(rows, 7, now);
+  assert.equal(r.total, 3);
+  assert.equal(r.ofAll, 4);
+  assert.deepEqual(r.reasons, [{ code: 'POST_OUTCOME_UNCERTAIN', count: 2 }, { code: 'SUBMISSION_UNKNOWN', count: 1 }]);
+  assert.equal(r.sites[0].site, 'moysklad.ru');
+  assert.equal(r.sites[0].company, 'МойСклад');
+  assert.equal(r.sites[0].total, 2);
+  assert.equal(r.sites[0].browser, 2);
+  assert.equal(buildUnknownReport(rows, 0, now).total, 4);
+  for (const code of ['POST_OUTCOME_UNCERTAIN', 'SUBMISSION_UNKNOWN']) assert.ok(UNKNOWN_REASON_LABEL[code], code);
 });

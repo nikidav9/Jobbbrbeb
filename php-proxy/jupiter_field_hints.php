@@ -143,7 +143,11 @@ function jt_fh_ask_gpt(array $fields, string $host): ?array {
         CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 10, CURLOPT_CONNECTTIMEOUT => 4,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json',
-            'Authorization: Api-Key ' . $cred['api_key'], 'x-folder-id: ' . $cred['folder_id']],
+            'Authorization: Api-Key ' . $cred['api_key'], 'x-folder-id: ' . $cred['folder_id'],
+            // Не хранить запрос у Яндекса и не учить на нём модели: без этого
+            // заголовка YandexGPT сохраняет текст запросов (AI Studio, «Отключить
+            // логирование»; решение владельца 02.10.2026).
+            'x-data-logging-enabled: false'],
     ]);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);

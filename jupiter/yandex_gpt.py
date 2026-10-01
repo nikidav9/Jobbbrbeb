@@ -189,7 +189,12 @@ class YandexGPT:
             self.base_url + COMPLETION_PATH, data=body,
             headers={"Content-Type": "application/json",
                      "Authorization": f"Api-Key {self.api_key}",
-                     "x-folder-id": self.folder_id},
+                     "x-folder-id": self.folder_id,
+                     # Не хранить запрос у Яндекса и не учить на нём модели:
+                     # без этого заголовка YandexGPT сохраняет текст запросов
+                     # (AI Studio, «Отключить логирование»; решение владельца
+                     # 02.10.2026).
+                     "x-data-logging-enabled": "false"},
             method="POST")
         started = time.monotonic()
         status = "сеть"
