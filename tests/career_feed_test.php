@@ -591,6 +591,14 @@ check('корневые, абсолютные и mailto не трогаем',
     && cf_resolve_relative('https://y.ru/1', 'https://x.ru/v/', '') === 'https://y.ru/1'
     && cf_resolve_relative('mailto:hr@x.ru', 'https://x.ru/v/', '') === 'mailto:hr@x.ru');
 
+// Срок порции сбора меньше ожидания приёмника (01.10.2026): иначе один
+// медленный сайт обрывал весь круг на первой странице.
+$ingestSrc = (string)file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
+preg_match('~function ing_fetch_page.*?CURLOPT_TIMEOUT\s*=>\s*(\d+)~s', $ingestSrc, $m);
+preg_match('~const CF_UNIT_BUDGET = (\d+);~', (string)file_get_contents(__DIR__ . '/../php-proxy/career_unit.php'), $b);
+check('срок порции career.php меньше ожидания ingest.php',
+    isset($m[1], $b[1]) && (int)$b[1] + 10 <= (int)$m[1]);
+
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
