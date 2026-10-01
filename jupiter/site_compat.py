@@ -448,6 +448,19 @@ def profile_for_url(url: str) -> SiteProfile | None:
     return None
 
 
+def _recon_ready(item: dict) -> bool:
+    """Анкета пройдена до конца (dry_run_ok) или до вопросов работодателя,
+    на которые ответит человек (NEEDS_ANSWERS, решение владельца 01.10.2026:
+    «сайт ещё подключаем» стоял у Норникеля, Наумена, Skyeng, МойСклад —
+    анкета заполнена, не хватало только ответов человека)."""
+    captcha = item.get("captcha") if isinstance(item.get("captcha"), dict) else {}
+    return item.get("klass") == "dry_run_ok" or (
+        item.get("reason_code") == "NEEDS_ANSWERS" and item.get("status") == "action_required") or (
+        # Анкета заполнена, осталась картинка с текстом — её вводит человек в
+        # приложении (captcha_loop). Галочки и reCAPTCHA сюда не относятся.
+        item.get("klass") == "captcha" and captcha.get("transferable") is True)
+
+
 def _file_ok_hosts(path: str, now: float | None = None) -> frozenset[str]:
     """Хосты с dry_run_ok в одном файле разведки. Нет файла или он протух —
     пусто. Кэш по mtime: воркер спрашивает на каждую задачу."""
@@ -467,7 +480,7 @@ def _file_ok_hosts(path: str, now: float | None = None) -> frozenset[str]:
     except (OSError, ValueError):
         items = []
     for item in items if isinstance(items, list) else []:
-        if isinstance(item, dict) and item.get("klass") == "dry_run_ok":
+        if isinstance(item, dict) and _recon_ready(item):
             for key in ("url", "start_url"):
                 host = normalize_host(str(item.get(key) or ""))
                 if host:

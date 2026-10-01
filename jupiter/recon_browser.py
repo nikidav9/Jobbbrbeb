@@ -82,6 +82,9 @@ class BrowserReconResult(ReconResult):
     learned: dict[str, Any] = field(default_factory=dict)
     knowledge_used: bool = False
     llm_calls: int = 0
+    # Вид CAPTCHA на анкете (01.10.2026): картинку с текстом человек вводит в
+    # приложении — такой сайт подключается (site_compat._recon_ready).
+    captcha: dict[str, Any] = field(default_factory=dict)
 
 
 # С 01.10.2026 YandexGPT — на всех сайтах (решение владельца), расход держит
@@ -209,6 +212,11 @@ def recon_site_browser(
         result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links)
         if result.klass == "blocked":
             result.block_kind = block_kind(result.reason)
+        if result.klass == "captcha":
+            info = engine.captcha()
+            if info is not None:
+                result.captcha = {"vendor": info.vendor, "kind": info.kind,
+                                  "transferable": info.transferable}
     finally:
         engine.close()
     if rehearse and result.klass == "dry_run_ok":
