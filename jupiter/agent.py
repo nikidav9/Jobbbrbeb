@@ -681,6 +681,27 @@ def _is_ancestor_path(url: str, root: str) -> bool:
     return child != parent and child.startswith(parent)
 
 
+def _card_like(url: str) -> bool:
+    """Последний сегмент пути — карточка вакансии: номер (3+ цифры) или
+    составное имя из трёх и больше слов (sistemnyj-inzhener-nova-core).
+    Город или направление (/moscow/, /saint-petersburg/) — нет."""
+    segments = [p for p in urllib.parse.urlparse(url or "").path.split("/") if p]
+    if not segments:
+        return False
+    last = urllib.parse.unquote(segments[-1]).lower()
+    return bool(re.search(r"\d{3,}", last)) or len(re.findall(r"[-_]", last)) >= 2
+
+
+def _is_sibling(url: str, current: str) -> bool:
+    """Соседний раздел того же уровня: /vacancies/kazan/ рядом с /vacancies/moscow/."""
+    a, b = urllib.parse.urlparse(url), urllib.parse.urlparse(current)
+    if (a.hostname or "").lower() != (b.hostname or "").lower():
+        return False
+    pa = [p for p in a.path.split("/") if p]
+    pb = [p for p in b.path.split("/") if p]
+    return len(pa) == len(pb) >= 2 and pa[:-1] == pb[:-1] and pa[-1] != pb[-1]
+
+
 def _vacancy_slug(url: str) -> str:
     """Идентификатор вакансии в адресе: /vacancies/118-marketing-lead → 118-marketing-lead."""
     match = _VACANCY_PATH_RE.search(urllib.parse.urlparse(url or "").path)
@@ -1878,6 +1899,12 @@ class JupiterAgent:
             (self._spa_links(page), "spa_state", 0),
         ]
         own_vacancy = _vacancy_slug(self._root_url)
+        # Со списка дошли до карточки — дальше она и есть вакансия: соседние
+        # карточки не перебираем (СИБУР ходил по ним до MAX_STEPS, 02.10.2026).
+        card_root = self._root_url
+        if not own_vacancy and _card_like(page.url):
+            own_vacancy = _vacancy_slug(page.url)
+            card_root = page.url
         # Один путь с разными параметрами — не больше двух заходов: второй
         # бывает вакансией (/vacancies?id=33), дальше это перебор фильтров
         # (?direction=…), и разведка упиралась в MAX_STEPS вместо «нужен
@@ -1899,13 +1926,20 @@ class JupiterAgent:
                 # И не «на уровень выше»: со страницы вакансии ссылка на её же
                 # раздел (/vakansii/ с /vakansii/analitik-1s/) уводила в общий
                 # список, где анкеты нет — 29 сайтов «не нашёл анкету» (01.10.2026).
-                if _climbs_up(url, self._root_url):
+                if _climbs_up(url, self._root_url) or _climbs_up(url, card_root):
                     continue
                 parsed = urllib.parse.urlparse(url)
                 if (parsed.hostname or "").lower() not in self.engine.allowed_hosts:
                     continue
                 score = self._navigation_score(url, text)
                 if score > 0:
+                    # Со списка — в карточку, а не по соседним фильтрам: СИБУР
+                    # перебирал города (/vacancies/moscow/ → /kazan/ → …) до
+                    # MAX_STEPS (разбор 220 «анкета не найдена», 02.10.2026).
+                    if _card_like(url):
+                        score += 40
+                    elif _is_sibling(url, page.url):
+                        score -= 40
                     ranked.append((score, priority, url, origin))
         if not ranked:
             return None
