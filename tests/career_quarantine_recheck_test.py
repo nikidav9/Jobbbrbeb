@@ -65,6 +65,18 @@ post = q.probe({"url": base + "/api/post"}, {"url": base + "/api/post", "method"
 check("POST-источник — с его телом", post["items"] == 1 and json.loads(seen.get("post", "{}")) == {"a": 1})
 dead = q.probe({"url": "http://127.0.0.1:9/x"}, None, timeout=2)
 check("сеть недоступна — статус «сеть», не падаем", dead["status"] == "сеть" and not dead["looks_ok"])
+import tempfile
+with tempfile.TemporaryDirectory() as d:
+    feed = Path(d) / "feed.json"
+    feed.write_text(json.dumps({"Сбер": ["u"], "Wildberries / РВБ": ["u"]}, ensure_ascii=False), encoding="utf-8")
+    eps = [{"url": "https://a/1", "map": {"company_const": "Северсталь"}},
+           {"url": "https://a/2", "map": {"company_const": "Сбер"}},
+           {"url": "https://a/3", "company_hint": "Wildberries"},
+           {"url": "https://a/4", "map": {"company_const": "Hoff"}}]
+    miss = q.missing_from_feed(eps, {"https://a/4"}, str(feed))
+    check("нет в ленте: только компании без вакансий, без карантина, с учётом «/ РВБ»",
+          [m["company"] for m in miss] == ["северсталь"] and miss[0]["kind"] == "нет в ленте")
+    check("без файла ленты — только карантин", q.missing_from_feed(eps, set(), None) == [])
 srv.shutdown()
 
 if fails:

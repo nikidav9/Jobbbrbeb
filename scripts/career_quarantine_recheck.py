@@ -99,20 +99,49 @@ def probe(entry: dict, endpoint: dict | None, timeout: float = 25.0, opener=None
     return result
 
 
+def _company(endpoint: dict) -> str:
+    raw = endpoint.get("company_hint") or (endpoint.get("map") or {}).get("company_const") or ""
+    return re.sub(r"\s*[·(/].*$", "", str(raw)).strip().lower()
+
+
+def missing_from_feed(endpoints: list[dict], skip_urls: set, feed_path: str | None) -> list[dict]:
+    """Источники вне карантина, чьей компании нет в ленте: настроены, но
+    вакансий не дают. С сервера видно, отказывает ли сайт или вакансии
+    теряются внутри сбора (01.10.2026: таких 25, из облака 20 из них
+    отвечали 200 с вакансиями)."""
+    if not feed_path:
+        return []
+    try:
+        feed = {re.sub(r"\s*[·(/].*$", "", str(k)).strip().lower()
+                for k in json.loads(Path(feed_path).read_text(encoding="utf-8"))}
+    except (OSError, ValueError, TypeError):
+        return []
+    out = []
+    for e in endpoints:
+        company = _company(e)
+        if company and company not in feed and e.get("url") not in skip_urls:
+            out.append({"url": e["url"], "company": company, "kind": "нет в ленте"})
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True)
+    ap.add_argument("--feed", help="вакансии ленты {компания: [адреса]}: проверить и источники, "
+                                   "чьих компаний в ленте нет")
     args = ap.parse_args(argv)
     quarantine = json.loads(QUARANTINE.read_text(encoding="utf-8"))
     endpoints = {e["url"]: e for e in json.loads(ENDPOINTS.read_text(encoding="utf-8"))}
-    results = [probe(entry, endpoints.get(entry.get("url"))) for entry in quarantine]
+    entries = [dict(e, kind="карантин") for e in quarantine]
+    entries += missing_from_feed(list(endpoints.values()), {e.get("url") for e in quarantine}, args.feed)
+    results = [dict(probe(entry, endpoints.get(entry.get("url"))), kind=entry["kind"]) for entry in entries]
     payload = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "ok": sum(1 for r in results if r["looks_ok"]), "total": len(results), "sources": results}
     tmp = args.out + ".tmp"
     Path(tmp).write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(tmp, 0o644)
     os.replace(tmp, args.out)
-    print(f"карантин: {payload['ok']} из {payload['total']} источников снова отвечают с вакансиями")
+    print(f"проверка источников: {payload['ok']} из {payload['total']} отвечают с вакансиями")
     return 0
 
 

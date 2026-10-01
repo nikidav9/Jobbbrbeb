@@ -914,7 +914,7 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 Пятёрочка, Wildberries, МегаФон, Ростелеком, Lamoda и др.):
 `scripts/career_quarantine_recheck.py` делает тот же первый запрос, что сбор
 (подпись JobToo, метод и тело из `career-endpoints.json`), и считает вакансии;
-итог — открытый `/career-quarantine-check.json` (`looks_ok`), выпуск из
+итог — открытый `/career-quarantine-check.json` (`looks_ok`; с `--feed` — ещё и источники вне карантина, чьих компаний нет в ленте, `kind` «нет в ленте»), выпуск из
 карантина — через PR. Сторож — `tests/career_quarantine_recheck_test.py`. Тот же недельный
 прогон заодно перепроверяет уже накопленное: у каждой записи копится `fails`
 (подряд идущие провалы), два подряд убирают её из `discovered.json`; если
