@@ -553,6 +553,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (what && onChange[what]) onChange[what]();
       })
     );
+    // Свой канал: личные разделы общим каналом больше не объявляются
+    // (php-proxy/db.php, rt_user_signal). Сигнал приходит, когда у человека
+    // новое событие, — перечитываем всё личное, что оно могло задеть.
+    safeSub(
+      supabase.channel(`jt:u:${user.id}`).on('broadcast', { event: 'changed' }, () => {
+        refreshNotifications();
+        refreshChats(user);
+        refreshPermApplications(user);
+        refreshLikes(user);
+      })
+    );
 
     return () => {
       subs.forEach(s => { try { s.unsubscribe(); } catch {} });
@@ -695,14 +706,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Тот же канал сигналов, что и на вебе: подписка на таблицу требует
       // права её читать, а ключ приложения лежит в каждой сборке.
       //
-      // Отбора по человеку здесь больше нет — сигнал общий. Значит уведомления
-      // перечитает и тот, кому ничего не пришло: один дешёвый запрос вместо
-      // права читать чужие уведомления. Обмен того стоит.
+      // Канал свой — jt:u:<id> (rt_user_signal в php-proxy/db.php): сигнал
+      // приходит только тому, у кого событие, и без данных. Перечитываем всё
+      // личное, что оно могло задеть.
       const client = getSupabaseClient();
+      const me = currentUser;
       ch = client
-        .channel('jt')
-        .on('broadcast', { event: 'changed' }, ({ payload }: { payload?: { что?: string } }) => {
-          if (payload?.что === 'notifications') refreshNotifications();
+        .channel(`jt:u:${me.id}`)
+        .on('broadcast', { event: 'changed' }, () => {
+          refreshNotifications();
+          refreshChats(me);
+          refreshPermApplications(me);
+          refreshLikes(me);
         });
       ch.subscribe();
     } catch (e) {
