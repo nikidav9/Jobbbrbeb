@@ -263,6 +263,13 @@ class Advisor:
                     self.learned["fields"][sigs[ref]] = key
         return out
 
+    def judge(self, summary: dict, secrets: list[str]) -> dict | None:
+        """Исход отправки по странице — только модель, в базу не пишется:
+        у каждой отправки он свой."""
+        if self.llm is None:
+            return None
+        return self.planner.judge_outcome(self.llm, summary, secrets)
+
     def questions(self, questions: list[dict], context: dict) -> dict[str, dict[str, str]]:
         known = self.entry.get("questions") or {}
         out: dict[str, dict[str, str]] = {}
@@ -282,7 +289,8 @@ class Advisor:
 
 
 def advisor_hooks(advisor: Advisor) -> dict[str, Callable]:
-    """apply_advisor для движка, field_mapper и question_explainer для агента."""
+    """apply_advisor для движка, field_mapper, question_explainer и
+    outcome_judge для агента."""
     return {"apply_advisor": advisor.apply, "field_mapper": advisor.fields,
-            "question_explainer": advisor.questions}
+            "question_explainer": advisor.questions, "outcome_judge": advisor.judge}
 

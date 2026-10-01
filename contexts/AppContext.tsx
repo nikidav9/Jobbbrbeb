@@ -962,21 +962,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshAll = useCallback(async () => {
     if (!currentUser) return;
     const user = currentUser;
-    await Promise.all([
-      refreshUsers(),
-      refreshVacancies(),
-      refreshLikes(user),
-      refreshPermVacancies(user),
+    const jobs: [string, Promise<unknown>][] = [
+      ['users', refreshUsers()],
+      ['vacancies', refreshVacancies()],
+      ['likes', refreshLikes(user)],
+      ['permVacancies', refreshPermVacancies(user)],
       // Отклики на постоянные вакансии не обновлялись даже здесь — человек
       // тянул экран вниз, а список оставался прежним.
-      refreshPermApplications(user),
-      refreshChats(user),
-      refreshNotifications(),
-      refreshVacancyStats(),
-      refreshPermVacancyViews(),
-      refreshSaved(user),
-      refreshPermSaved(user),
-    ]);
+      ['permApplications', refreshPermApplications(user)],
+      ['chats', refreshChats(user)],
+      ['notifications', refreshNotifications()],
+      ['vacancyStats', refreshVacancyStats()],
+      ['permVacancyViews', refreshPermVacancyViews()],
+      ['saved', refreshSaved(user)],
+      ['permSaved', refreshPermSaved(user)],
+    ];
+    // Каждый запрос — до конца, независимо от соседей (01.10.2026): раньше
+    // сбой одного второстепенного (уведомления, счётчики) ронял обновление
+    // целиком — «Не удалось обновить отклики», хотя отклики загрузились, — а
+    // на ленте без try крутилка висела навсегда. Что не пришло, остаётся из
+    // кэша; ошибка наружу — только когда не ответил ни один (нет связи).
+    const results = await Promise.allSettled(jobs.map(([, job]) => job));
+    const failed = jobs.filter((_, i) => results[i].status === 'rejected').map(([name]) => name);
+    if (failed.length) console.warn('[refreshAll] не обновилось:', failed.join(', '));
+    if (failed.length === jobs.length) throw new Error('refreshAll: нет ответа ни от одного запроса');
   }, [currentUser]);
 
   const refreshSaved = async (u?: User) => {

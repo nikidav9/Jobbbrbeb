@@ -249,7 +249,32 @@ document.getElementById('f').addEventListener('submit', e => {
 });
 </script>"""
 
+# 9. Сайт сам подсвечивает поле, которое в разметке не обязательное
+# (01.10.2026): так 33 сайта из 42 молча не пускали анкету, а Юпитер писал
+# «скорее всего, ушёл». Telegram в профиле нет — значит, вопрос человеку.
+SITE_FLAG_FORM = HEAD + TITLE + """
+<form action="javascript:void(0)" id="f">""" + CONTACT_FIELDS + """
+  <label>Telegram <input name="tg" id="tg"></label>
+  <span class="field-error" id="tgerr" hidden></span>
+  <label><input name="agree" type="checkbox" value="yes" required> Согласен на обработку персональных данных</label>
+  <button type="submit">Отправить отклик</button>
+</form>
+<script>
+""" + FETCH_SEND + """
+document.getElementById('f').addEventListener('submit', e => {
+  e.preventDefault();
+  const tg = document.getElementById('tg');
+  if (!tg.value.trim()) {
+    tg.setAttribute('aria-invalid', 'true');
+    const err = document.getElementById('tgerr'); err.hidden = false; err.textContent = 'Укажите Telegram';
+    return;
+  }
+  sendFd(new FormData(e.target));
+});
+</script>"""
+
 PAGES = {
+    "/siteflag": SITE_FLAG_FORM,
     "/wizard": WIZARD,
     "/controlled": CONTROLLED,
     "/modal": MODAL,
@@ -435,6 +460,20 @@ class BrowserZooTest(unittest.TestCase):
 
     def test_8_unknown_required_salary_dry(self):
         self._check_salary(False)
+
+
+    # ── 9. сайт подсветил поле -> не «скорее всего, ушёл», а вопрос ─────────
+    def test_9_site_flagged_field_live(self):
+        _eng, result, dump = self.run_site("/siteflag", live=True)
+        self.assertEqual(self.server.state["posts"], [], dump)
+        self.assertEqual(result.status, "action_required", dump)
+        self.assertNotEqual(result.reason_code, "SUCCESS_NOT_CONFIRMED", dump)
+        actions = [t.get("action") for t in result.trajectory]
+        self.assertIn("site_fix_retry", actions, dump)
+        # Ничего не выдумано: в Telegram агент не писал.
+        for item in result.trajectory:
+            if item.get("action") == "fill":
+                self.assertNotIn("tg", json.dumps(item, ensure_ascii=False).lower(), dump)
 
 
 if __name__ == "__main__":
