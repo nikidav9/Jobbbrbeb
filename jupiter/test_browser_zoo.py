@@ -273,6 +273,29 @@ document.getElementById('f').addEventListener('submit', e => {
 });
 </script>"""
 
+# 10. Окно отклика уже в разметке, но скрыто (Orion soft, ФОРС, 02.10.2026):
+# в снимок до клика попадают только файл и галочки — «Откликнуться» всё равно
+# надо нажать, иначе анкета «не найдена».
+HIDDEN_MODAL = HEAD + TITLE + """
+<button type="button" id="open">Откликнуться</button>
+<div id="root"><div id="dlg" style="display:none">
+<form action="javascript:void(0)" id="f">""" + CONTACT_FIELDS + """
+  <input id="cv" name="cv" type="file" style="opacity:0;position:absolute;width:1px;height:1px">
+  <label><input name="agree" type="checkbox" required> Согласен на обработку персональных данных</label>
+  <button type="submit">Отправить отклик</button>
+</form></div></div>
+<script>
+""" + FETCH_SEND + """
+document.getElementById('open').onclick = () => { document.getElementById('dlg').style.display = 'block'; };
+document.getElementById('f').addEventListener('submit', e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  fd.set('agree', e.target.agree.checked ? 'yes' : 'no');
+  sendFd(fd);
+});
+</script>"""
+
+
 PAGES = {
     "/siteflag": SITE_FLAG_FORM,
     "/wizard": WIZARD,
@@ -285,6 +308,7 @@ PAGES = {
     "/redirect": REDIRECT_FORM,
     "/thanks": THANKS,
     "/salary": SALARY_FORM,
+    "/hiddenmodal": HIDDEN_MODAL,
 }
 
 
@@ -475,6 +499,15 @@ class BrowserZooTest(unittest.TestCase):
             if item.get("action") == "fill":
                 self.assertNotIn("tg", json.dumps(item, ensure_ascii=False).lower(), dump)
 
+
+    # ── 10. скрытое окно с файлом уже в разметке ───────────────────────────
+    def test_10_hidden_modal_with_file_dry(self):
+        eng, _ = self.check_dry("/hiddenmodal")
+        self.assertIn({"action": "apply_click", "label": "Откликнуться"}, eng.actions)
+
+    def test_10_hidden_modal_with_file_live(self):
+        eng, _ = self.check_live("/hiddenmodal")
+        self.assertIn({"action": "apply_click", "label": "Откликнуться"}, eng.actions)
 
 if __name__ == "__main__":
     unittest.main()

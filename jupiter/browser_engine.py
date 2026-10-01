@@ -88,7 +88,11 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Кнопки, открывающие анкету. Порядок — от самых точных.
 APPLY_TEXT_RE = (
     r"откликнуться|отправить резюме|подать заявку|отклик на вакансию|"
-    r"хочу у вас работать|хочу в команду|respond|apply( now)?$|^apply"
+    r"хочу у вас работать|хочу в команду|respond|apply( now)?$|^apply|"
+    # Разбор 220 «анкета не найдена» (02.10.2026): Монетка, Винотеки, 585,
+    # Ангара, BINOM, Первый ОФД и др. «Анкет» — только в связке: «Банкеты» не жмём.
+    r"заполнить анкету|анкета соискателя|анкет[ау] кандидата|хочу работать|"
+    r"отправить отклик|оставить отклик"
 )
 # Опрос всплывашек после отправки: тост живёт секунду-другую, дольше settle.
 TOAST_POLL_MS = 200
@@ -633,9 +637,17 @@ class JupiterBrowserEngine:
         # Поиск и фильтры вакансий — тоже формы с текстовыми полями; из-за них
         # «Откликнуться» не нажимался (job.rt.ru, metro, gum.ru; 29.09.2026).
         # Анкета — только то, что агент сам признает анкетой кандидата.
+        # Поле файла — анкета «только резюме», но лишь рядом с полем ввода.
+        # Скрытое окно отклика (Orion soft, ФОРС, 02.10.2026) отдаёт в снимок
+        # только файл и галочки: поля ФИО и почты невидимы, пока окно не
+        # открыто, — и «Откликнуться» не нажималось вовсе.
+        typed = {"text", "email", "tel", "textarea", "select-one", "select-multiple", "number", "url", ""}
         return any(
             is_application_form(page, form.index)
-            or any(page.controls[i].type == "file" for i in form.control_indices)
+            or (any(page.controls[i].type == "file" for i in form.control_indices)
+                and any((page.controls[i].tag in ("textarea", "select")
+                         or page.controls[i].type in typed) and page.controls[i].tag != "button"
+                        for i in form.control_indices))
             for form in page.forms
         )
 
