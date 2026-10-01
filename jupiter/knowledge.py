@@ -270,6 +270,12 @@ class Advisor:
             return None
         return self.planner.judge_outcome(self.llm, summary, secrets)
 
+    def fix(self, field: dict, secrets: list[str]) -> str | None:
+        """Как записать отвергнутое сайтом поле — только модель, в базу не пишется."""
+        if self.llm is None:
+            return None
+        return self.planner.suggest_fix_format(self.llm, field, secrets)
+
     def questions(self, questions: list[dict], context: dict) -> dict[str, dict[str, str]]:
         known = self.entry.get("questions") or {}
         out: dict[str, dict[str, str]] = {}
@@ -289,8 +295,9 @@ class Advisor:
 
 
 def advisor_hooks(advisor: Advisor) -> dict[str, Callable]:
-    """apply_advisor для движка, field_mapper, question_explainer и
-    outcome_judge для агента."""
+    """apply_advisor для движка, field_mapper, question_explainer,
+    outcome_judge и fix_advisor для агента."""
     return {"apply_advisor": advisor.apply, "field_mapper": advisor.fields,
-            "question_explainer": advisor.questions, "outcome_judge": advisor.judge}
+            "question_explainer": advisor.questions, "outcome_judge": advisor.judge,
+            "fix_advisor": advisor.fix}
 

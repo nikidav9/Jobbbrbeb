@@ -95,6 +95,10 @@ class ControlState:
     # атрибут hidden. Необязательное такое поле — обычно ловушка для ботов
     # (Targem, 30.09): заполнить её — значит назваться ботом.
     css_hidden: bool = False
+    # Круг исправления после «Отправить» и запись, подсказанная для него
+    # (agent._site_fix): на повторе поле пишется иначе, чем отверг сайт.
+    fix_round: int = 0
+    fix_format: str = ""
     options: list[OptionState] = field(default_factory=list)
     # Метка элемента в живой странице браузерного движка (browser_engine.py,
     # атрибут data-jt-ref). HTTP-движку не нужна и остаётся пустой.
@@ -1253,11 +1257,13 @@ class JupiterWebEngine:
         method: str = "GET",
         payload: dict | list | None = None,
         headers: dict[str, str] | None = None,
+        files: list[tuple[str, Path]] | None = None,
     ) -> tuple[int, object]:
         """JSON request with the same network/read-only policy as HTML navigation.
 
         This exists for employer public APIs used by their own application UI.
         It does not execute page JavaScript and it never weakens read_only.
+        files — multipart upload (the site's own resume upload), answer is JSON.
         """
         self.assert_reachable(url)
         method = method.upper()
@@ -1270,7 +1276,9 @@ class JupiterWebEngine:
             "Accept": "application/json",
         }
         data = None
-        if payload is not None:
+        if files:
+            data, request_headers["Content-Type"] = self._multipart([], files)
+        elif payload is not None:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             request_headers["Content-Type"] = "application/json"
         request_headers.update(headers or {})

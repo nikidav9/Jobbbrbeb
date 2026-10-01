@@ -153,6 +153,28 @@ function jtSuccessText(text) {
 function jtIsCaptchaText(text) {
   return /captcha|капч|я не робот|not a robot|введите (символы|код с картинки)/.test(jtFlat(text));
 }
+
+// Вариант списка под ответ человека: точный текст; иначе «Готов»/«Не готов»
+// как «Да»/«Нет» и уровень языка по коду («B2 — выше среднего» ↔ «B2 (Upper)»).
+// Не нашли — поле остаётся человеку, вариант не выдумываем.
+function jtPickOption(options, value) {
+  function norm(t) { return String(t || '').trim().toLowerCase().replace(/ё/g, 'е'); }
+  var v = norm(value), want = [v];
+  if (v === 'готов') want.push('да', 'yes');
+  if (v === 'не готов') want.push('нет', 'no');
+  var code = /^([abc][12])\\s+—/.exec(v);
+  for (var w = 0; w < want.length; w++) {
+    for (var o = 0; o < options.length; o++) {
+      if (norm(options[o].textContent) === want[w]) return o;
+    }
+  }
+  if (code) {
+    for (var c = 0; c < options.length; c++) {
+      if (norm(options[c].textContent).split(/[^a-zа-я0-9]+/)[0] === code[1]) return c;
+    }
+  }
+  return -1;
+}
 `;
 
 /**
@@ -352,13 +374,11 @@ ${AUTOPILOT_CORE}
       var v = CFG.profile[key];
       if (v == null || String(v).trim() === '') continue;
       if (tag === 'SELECT') {
-        for (var o = 0; o < el.options.length; o++) {
-          if ((el.options[o].textContent || '').trim().toLowerCase() === String(v).trim().toLowerCase()) {
-            el.value = el.options[o].value;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            n++;
-            break;
-          }
+        var idx = jtPickOption(el.options, String(v));
+        if (idx >= 0) {
+          el.value = el.options[idx].value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          n++;
         }
         continue;
       }

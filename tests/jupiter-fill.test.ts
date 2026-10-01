@@ -60,15 +60,31 @@ test('buildFillScript не падает на профиле без даты ро
   assert.ok(script.trim().endsWith('true;'));
 });
 
-test('мессенджер, компания, ИНН и рекомендатель не заполняются', () => {
-  assert.equal(jtKeyForField('Telegram', undefined, 'telegram'), null);
+test('мессенджер — свой ключ, компания, ИНН и рекомендатель не заполняются', () => {
+  // Telegram — из «Ответьте один раз», не телефон ("tel" внутри "telegram").
+  assert.equal(jtKeyForField('Telegram', undefined, 'telegram'), 'telegram');
+  assert.equal(jtKeyForField('Ник в Telegram', 'tel', 'tg'), 'telegram');
   // Составное «Telegram или телефон» — номер туда вписать можно.
   assert.equal(jtKeyForField('Telegram или телефон', 'text', 'contact'), 'phone');
-  assert.equal(jtKeyForField('Телеграм, чтобы с вами было проще связаться'), null);
+  assert.equal(jtKeyForField('Телеграм, чтобы с вами было проще связаться'), 'telegram');
   assert.equal(jtKeyForField('Компания'), null);
   assert.equal(jtKeyForField('ИНН*'), null);
   assert.equal(jtKeyForField('Имя рекомендателя', undefined, 'referrer_name'), null);
   assert.equal(jtKeyForField('Контроль качества'), null);
+});
+
+test('частые вопросы работодателей — ключи «Ответьте один раз»', () => {
+  assert.equal(jtKeyForField('Желаемая зарплата'), 'desired_salary');
+  assert.equal(jtKeyForField('Ожидаемый уровень дохода, ₽'), 'desired_salary');
+  assert.equal(jtKeyForField('Когда готовы приступить к работе?'), 'notice_period');
+  assert.equal(jtKeyForField('Уровень английского языка'), 'english_level');
+  assert.equal(jtKeyForField('Готовы к переезду?'), 'relocation');
+  assert.equal(jtKeyForField('Предпочтительный формат работы'), 'work_format');
+  // Свободный вопрос об ожиданиях — не зарплата.
+  assert.equal(jtKeyForField('Ваши ожидания от работы'), null);
+  assert.equal(jtKeyForField('Дата рождения'), 'birth_date');
+  assert.equal(jtKeyForField('Эл.почта'), 'email');
+  assert.equal(jtKeyForField('Предпочтительный город'), 'city');
 });
 
 test('скрипт собирается в валидный JavaScript', () => {

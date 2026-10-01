@@ -172,7 +172,7 @@ def recon_site_browser(
     extra: dict[str, Any] = {}
     for hook, part in (("apply_advisor", "apply"), ("field_mapper", "fields"),
                        ("question_explainer", "questions"),
-                       ("outcome_judge", "judge")):
+                       ("outcome_judge", "judge"), ("fix_advisor", "fix")):
         if llm is not None or advisor.entry.get(part):
             extra[hook] = hooks[hook]
     try:

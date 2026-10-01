@@ -1924,6 +1924,13 @@ export type JupiterFillProfile = {
    */
   resume_url?: string | null;
   resume_name?: string | null;
+  /** «Ответьте один раз» — подставляет приложение из профиля, не сервер. */
+  desired_salary?: string;
+  notice_period?: string;
+  telegram?: string;
+  english_level?: string;
+  relocation?: string;
+  work_format?: string;
 };
 
 /**

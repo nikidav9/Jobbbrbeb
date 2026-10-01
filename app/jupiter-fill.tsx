@@ -20,6 +20,7 @@ import {
 } from '@/services/db';
 import type { JupiterApplication } from '@/constants/types';
 import { fillHostFor, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
+import { applyAnswersFor } from '@/lib/applyAnswers';
 import {
   buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult, type AutopilotUnknownField,
 } from '@/services/jupiterAutopilot';
@@ -152,15 +153,27 @@ export default function JupiterFillScreen() {
   // Подсказки сервера (YandexGPT) для полей, которые автопилот не узнал.
   // Спрашиваем один раз на анкету: второй прогон идёт уже с подсказками.
   const [hints, setHints] = useState<Record<string, string | null> | null>(null);
+  // «Ответьте один раз» — из профиля в приложении. Строкой: смена объекта
+  // пользователя без смены ответов не пересобирает скрипт анкеты.
+  const answersJson = useMemo(() => {
+    const a = applyAnswersFor(currentUser);
+    return JSON.stringify({
+      desired_salary: a.desiredSalary, notice_period: a.noticePeriod, telegram: a.telegram,
+      english_level: a.englishLevel, relocation: a.relocation, work_format: a.workFormat,
+    });
+  }, [currentUser]);
   const fillScript = useMemo(() => {
     if (!profile || !fillHost) return null;
     // Ссылка на резюме в страницу работодателя не уходит — только содержимое.
     const { resume_url: _u, resume_name: _n, ...values } = profile;
-    return buildAutopilotScript(values as JupiterFillProfile, fillHost, {
+    // Пустые ответы не передаём: автозаполнение пропустит поле, впишет человек.
+    const answers = Object.fromEntries(Object.entries(JSON.parse(answersJson) as Record<string, string | undefined>)
+      .filter(([, v]) => (v ?? '').trim() !== ''));
+    return buildAutopilotScript({ ...values, ...answers } as JupiterFillProfile, fillHost, {
       submit: false, delegated, resumeBase64: resume?.b64 ?? null, resumeName: resume?.name ?? null, deadlineMs: 45000,
       hints: hints ?? {}, askHints: hints === null,
     });
-  }, [profile, fillHost, delegated, resume, hints]);
+  }, [profile, fillHost, delegated, resume, hints, answersJson]);
 
   // Сигнал от автопилота: обязательные поля, которые он не узнал. Сервер
   // смотрит свои подсказки по сайту и спрашивает YandexGPT. Есть что

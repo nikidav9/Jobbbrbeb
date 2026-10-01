@@ -122,5 +122,71 @@ class AgentVerdict(unittest.TestCase):
         self.assertIsNone(self.agent(boom)._site_verdict(page("x"), CandidateProfile(values={})))
 
 
+class SiteFix(unittest.TestCase):
+    """Поле, отвергнутое сайтом, пишется иначе (п.1, 01.10.2026)."""
+
+    def control(self, **kw):
+        from engine import ControlState
+        base = dict(index=0, form_index=0, tag="input", type="tel", name="phone", label="Телефон",
+                    dom_ref="r1", value="+79991234567")
+        base.update(kw)
+        return ControlState(**base)
+
+    def test_phone_changes_record_each_round_and_follows_hint(self):
+        from agent import _phone_for_control
+        c = self.control()
+        self.assertEqual(_phone_for_control("+79991234567", c), "+79991234567")
+        c.fix_round = 1
+        self.assertEqual(_phone_for_control("+79991234567", c), "79991234567")
+        c.fix_round = 2
+        self.assertEqual(_phone_for_control("+79991234567", c), "89991234567")
+        c.fix_format = "phone_mask"
+        self.assertEqual(_phone_for_control("+79991234567", c), "+7 (999) 123-45-67")
+        # Шаблон сайта главнее круга: подходят только цифры без кода.
+        c2 = self.control(pattern="[0-9]{10}", fix_round=1)
+        self.assertEqual(_phone_for_control("+79991234567", c2), "9991234567")
+
+    def test_text_date_switches_to_dmy_but_date_input_stays_iso(self):
+        from agent import _date_for_control
+        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text")), "1990-12-31")
+        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text", fix_round=1)), "31.12.1990")
+        self.assertEqual(_date_for_control("31.12.1990", self.control(type="date", fix_round=1)), "1990-12-31")
+
+    def test_site_fix_clears_marked_field_and_hint_sees_no_candidate_data(self):
+        seen = {}
+
+        def advisor(field, secrets):
+            seen["field"], seen["secrets"] = field, secrets
+            return "phone_8"
+        agent = JupiterAgent({"career.example.ru"}, engine=FakeEngine(), receipts=ReceiptStore(None),
+                             fix_advisor=advisor)
+        c = self.control()
+        other = self.control(dom_ref="r2", name="email", type="email", value="a@b.ru")
+        pg = page("Анкета")
+        pg.controls = [c, other]
+        profile = CandidateProfile(values={"phone": "+79991234567", "email": "a@b.ru"})
+        verdict = {"verdict": "needs_fix", "refs": ["r1"], "messages": {"r1": "Неверный формат"}}
+        marked = agent._site_fix(pg, verdict, profile, 1)
+        self.assertEqual(marked, [c])
+        self.assertEqual((c.value, c.required, c.fix_round, c.fix_format), ("", True, 1, "phone_8"))
+        self.assertEqual(other.value, "a@b.ru")
+        self.assertNotIn("9991234567", json.dumps(seen["field"], ensure_ascii=False))
+        self.assertEqual(seen["field"]["message"], "Неверный формат")
+        self.assertIn("+79991234567", seen["secrets"])
+        trajectory: list[dict] = []
+        self.assertTrue(agent.fill_control(pg, c, profile, trajectory))
+        self.assertEqual(c.value, "89991234567")
+
+    def test_suggest_fix_format_only_from_list_and_redacted(self):
+        from browser_planner import suggest_fix_format
+        llm = FakeLLM({"format": "phone_10"})
+        got = suggest_fix_format(llm, {"label": "Телефон", "message": "Номер +79991234567 неверен"},
+                                 ["+79991234567"])
+        self.assertEqual(got, "phone_10")
+        self.assertNotIn("9991234567", llm.prompts[0])
+        self.assertIsNone(suggest_fix_format(FakeLLM({"format": "+7 999"}), {"label": "Телефон"}))
+        self.assertIsNone(suggest_fix_format(None, {"label": "Телефон"}))
+
+
 if __name__ == "__main__":
     unittest.main()
