@@ -221,7 +221,8 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "agree": "consent",
         },
     ),
-    SiteProfile("Шоколадница", ("regions.shoko.ru",)),
+    # Поиск Яндекса 01.10.2026: вакансии — на shoko.ru/career/.
+    SiteProfile("Шоколадница", ("shoko.ru", "regions.shoko.ru")),
     SiteProfile("AZIMUT Hotels", ("azimuthotels.com",), ("hh.ru",)),
     SiteProfile("Сбер", ("rabota.sber.ru",), live_ready=True),
     SiteProfile(
@@ -599,7 +600,7 @@ AUDITED_SOURCE_URLS: dict[str, str] = {
     "Burger King Россия": "https://burgerkingrus.ru/rabota",
     "Теремок": "https://rabota.teremok.ru/vacancies/",
     "Кофемания": "https://rabota.coffeemania.ru/",
-    "Шоколадница": "https://regions.shoko.ru/career/",
+    "Шоколадница": "https://shoko.ru/career/",
     "AZIMUT Hotels": "https://azimuthotels.com/ru/info/career",
     "Сбер": "https://rabota.sber.ru/",
     "МегаФон": "https://job.megafon.ru/",
