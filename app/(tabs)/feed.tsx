@@ -1592,13 +1592,13 @@ function WorkerPermMode() {
             pointerEvents="none"
             style={[styles.wantOverlay, swDeck.wantStyle]}
           >
-            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+            <Text style={styles.wantText}>ОТКЛИК</Text>
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="none"
             style={[styles.skipOverlay, swDeck.skipStyle]}
           >
-            <Text style={styles.skipText}>НЕТ ✕</Text>
+            <Text style={styles.skipText}>НЕТ</Text>
           </Reanimated.View>
           </Reanimated.View>
         </OnboardingTarget>
@@ -1725,10 +1725,10 @@ function WorkerPermMode() {
           </GestureDetector>
 
           <Reanimated.View pointerEvents="none" style={[styles.wantOverlay, swDeck.wantStyle]}>
-            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+            <Text style={styles.wantText}>ОТКЛИК</Text>
           </Reanimated.View>
           <Reanimated.View pointerEvents="none" style={[styles.skipOverlay, swDeck.skipStyle]}>
-            <Text style={styles.skipText}>НЕТ ✕</Text>
+            <Text style={styles.skipText}>НЕТ</Text>
           </Reanimated.View>
           </Reanimated.View>
         </View>

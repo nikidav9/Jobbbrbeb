@@ -67,6 +67,9 @@ jobs:
       - name: Аккаунт без пароля видит «Задать пароль», хеш наружу не уходит
         run: php tests/has_password_test.php
 
+      - name: Удаление аккаунта кодом — только своя почта и свой аккаунт
+        run: php tests/delete_by_code_test.php
+
       - name: Объявление в группу доходит, а отказ виден
         run: php tests/group_post_test.php
 
@@ -195,9 +198,6 @@ jobs:
 
       - name: Чужие данные на чтение не отдаются
         run: php tests/read_authz_test.php
-
-      - name: has_password вычисляется, хеш пароля клиенту не уходит
-        run: php tests/has_password_test.php
 
       - name: Уведомление о сообщении собирает сервер, а не телефон
         run: php tests/message_notify_test.php

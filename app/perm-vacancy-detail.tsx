@@ -302,7 +302,7 @@ export default function PermVacancyDetailScreen() {
       // карточкой с кнопками в телеграме. Раньше это делал телефон соискателя
       // уже после записи: старая версия или обрыв связи — и директор не
       // узнавал ничего, а ошибка глоталась молча.
-      showToast('Отклик отправлен! 📨', 'success');
+      showToast('Отклик отправлен!', 'success');
     } catch (e: any) {
       showToast(e?.message || 'Не удалось отправить отклик', 'error');
     } finally {
@@ -321,7 +321,7 @@ export default function PermVacancyDetailScreen() {
       } else {
         await dbAddPermSaved(currentUser.id, vacancy.id);
         optimisticAddPermSaved(vacancy.id);
-        showToast('Сохранено ❤️', 'success');
+        showToast('Сохранено', 'success');
       }
     } catch {
       showToast(isSaved ? 'Не удалось удалить из избранного' : 'Не удалось сохранить вакансию', 'error');

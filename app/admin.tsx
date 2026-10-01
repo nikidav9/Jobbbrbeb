@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   FlatList, ActivityIndicator,
@@ -115,7 +116,7 @@ export default function AdminScreen() {
           <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={styles.center}>
-          <Text style={{ fontSize: rf(48) }}>🔒</Text>
+          <Ionicons name="lock-closed-outline" size={rf(44)} color={Colors.textMuted} />
           <Text style={[styles.emptyTxt, { marginTop: 12, fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary }]}>
             Доступ запрещён
           </Text>
@@ -201,7 +202,7 @@ export default function AdminScreen() {
   const renderUser = ({ item }: { item: AdminUser }) => (
     <View style={[styles.card, item.is_blocked && styles.blockedCard]}>
       <View style={styles.cardRow}>
-        <Text style={styles.cardLabel}>{item.role === 'worker' ? '👷' : '🏢'}</Text>
+        <Ionicons name={item.role === 'worker' ? 'person-outline' : 'business-outline'} size={rf(16)} color={Colors.textSecondary} />
         <Text style={styles.cardVal}>{item.first_name} {item.last_name}</Text>
         {item.is_blocked ? <View style={styles.blockedBadge}><Text style={styles.blockedBadgeTxt}>Заблокирован</Text></View> : null}
         <View style={[styles.roleBadge, { backgroundColor: item.role === 'worker' ? Colors.primaryLight : '#EDE9FE' }]}>
@@ -247,7 +248,7 @@ export default function AdminScreen() {
   const renderVacancy = ({ item }: { item: AdminVacancy }) => (
     <View style={styles.card}>
       <View style={styles.cardRow}>
-        <Text style={styles.cardLabel}>⚡</Text>
+        <Ionicons name="flash-outline" size={rf(16)} color={Colors.textSecondary} />
         <Text style={[styles.cardVal, { flex: 1, fontWeight: '700' }]}>{item.title}</Text>
         <View style={[styles.statusDot, { backgroundColor: item.status === 'open' ? Colors.green : Colors.textMuted }]} />
         <Text style={[styles.cardVal, { color: item.status === 'open' ? Colors.green : Colors.textMuted, fontSize: rf(12) }]}>
@@ -276,7 +277,7 @@ export default function AdminScreen() {
   const renderPermVacancy = ({ item }: { item: AdminPermVacancy }) => (
     <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: '#7C3AED' }]}>
       <View style={styles.cardRow}>
-        <Text style={styles.cardLabel}>💼</Text>
+        <Ionicons name="briefcase-outline" size={rf(16)} color={Colors.textSecondary} />
         <Text style={[styles.cardVal, { flex: 1, fontWeight: '700' }]}>{item.title}</Text>
         <View style={[styles.statusDot, { backgroundColor: item.status === 'open' ? Colors.green : Colors.textMuted }]} />
         <Text style={[styles.cardVal, { color: item.status === 'open' ? Colors.green : Colors.textMuted, fontSize: rf(12) }]}>
@@ -300,7 +301,7 @@ export default function AdminScreen() {
       {item.metro_station ? (
         <View style={styles.cardRow}>
           <Text style={styles.cardLabel}>Метро:</Text>
-          <Text style={styles.cardVal}>🚇 {item.metro_station}</Text>
+          <Text style={styles.cardVal}>{item.metro_station}</Text>
         </View>
       ) : null}
       <Text style={styles.cardDate}>{formatDT(item.created_at)}</Text>
@@ -318,11 +319,11 @@ export default function AdminScreen() {
   );
 
   const TABS: { key: Tab; label: string; count: number }[] = [
-    { key: 'worker-complaints',   label: '👷 Жалобы на работников',     count: workerComplaints.length },
-    { key: 'employer-complaints', label: '🏢 Жалобы на работодателей',   count: employerComplaints.length },
-    { key: 'users',               label: '👥 Пользователи',              count: users.length },
-    { key: 'vacancies',           label: '⚡ Смены',                     count: vacancies.length },
-    { key: 'perm-vacancies',      label: '💼 Постоянные',                count: permVacancies.length },
+    { key: 'worker-complaints',   label: 'Жалобы на работников',     count: workerComplaints.length },
+    { key: 'employer-complaints', label: 'Жалобы на работодателей',   count: employerComplaints.length },
+    { key: 'users',               label: 'Пользователи',              count: users.length },
+    { key: 'vacancies',           label: 'Смены',                     count: vacancies.length },
+    { key: 'perm-vacancies',      label: 'Постоянные',                count: permVacancies.length },
   ];
 
   return (
@@ -335,7 +336,7 @@ export default function AdminScreen() {
             onPress={() => router.push('/analytics' as any)}
             style={{ backgroundColor: Colors.primaryLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}
           >
-            <Text style={{ fontSize: rf(13), color: Colors.primary, fontWeight: '600' }}>📊 Аналитика</Text>
+            <Text style={{ fontSize: rf(13), color: Colors.primary, fontWeight: '600' }}>Аналитика</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={loadAll} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={styles.refreshBtn}>↻</Text>

@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Modal,
-  ActivityIndicator, ScrollView, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, TouchableOpacity, Modal,
+  ScrollView, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Radius } from '@/constants/theme';
+import { JT, JT_FONT } from '@/constants/jt';
+import { JTButton, JTInput } from '@/components/ui/jt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { rs, rf } from '@/constants/scale';
@@ -138,64 +140,60 @@ export default function CompleteProfileSheet() {
 
   const isWorker = currentUser.role === 'worker';
 
+  // Стиль JT (01.10.2026, просьба владельца): кремовая карточка с чёрным
+  // контуром и жёсткой тенью — как окно «да/нет» и окна профиля.
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={close}>
+    <Modal visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
       <View style={st.backdrop}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={st.center}>
-          <View style={[st.card, { paddingBottom: rs(16) + insets.bottom / 2 }]}>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={st.title}>Заполните профиль до конца</Text>
-              <Text style={st.sub}>
-                {isWorker
-                  ? 'Директора чаще отвечают тем, чья карточка не пустая. Это займёт полминуты.'
-                  : 'Работники охотнее откликаются, когда видят, кто за вакансией. Это займёт полминуты.'}
-              </Text>
+          <HardShadowBox offset={5} radius={rs(24)} style={st.cardWrap}>
+            <View style={[st.card, { paddingBottom: rs(12) + insets.bottom / 2 }]}>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <Text style={st.title} accessibilityRole="header">Заполните профиль до конца</Text>
+                <Text style={st.sub}>
+                  {isWorker
+                    ? 'Работодатели чаще отвечают тем, чья карточка не пустая. Это займёт полминуты.'
+                    : 'Работники охотнее откликаются, когда видят, кто за вакансией. Это займёт полминуты.'}
+                </Text>
 
-              {needsPhoto ? (
-                <View style={st.photoRow}>
-                  <TouchableOpacity style={st.photoBtn} onPress={pickPhoto} activeOpacity={0.8}>
-                    {photoUri ? (
-                      <Image source={{ uri: photoUri }} style={st.photo} contentFit="cover" />
-                    ) : (
-                      <Ionicons name="camera-outline" size={rs(24)} color={Colors.textMuted} />
-                    )}
+                {needsPhoto ? (
+                  <TouchableOpacity style={st.photoRow} onPress={pickPhoto} activeOpacity={0.85}
+                    accessibilityRole="button" accessibilityLabel="Добавить фото">
+                    <View style={st.photoBtn}>
+                      {photoUri ? (
+                        <Image source={{ uri: photoUri }} style={st.photo} contentFit="cover" />
+                      ) : (
+                        <Ionicons name="camera-outline" size={rs(24)} color={JT.ink} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={st.photoTitle}>{photoUri ? 'Фото выбрано' : 'Добавить фото'}</Text>
+                      <Text style={st.photoHint}>По желанию — с фото отвечают охотнее</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={rs(18)} color={JT.textTertiary} />
                   </TouchableOpacity>
-                  <View style={{ flex: 1 }}>
-                    <Text style={st.photoTitle}>Фото — по желанию</Text>
-                    <Text style={st.photoHint}>Можно пропустить, но с фото отвечают охотнее.</Text>
-                  </View>
-                </View>
-              ) : null}
+                ) : null}
 
-              {needsAge ? (
-                <>
-                  <Text style={st.label}>Возраст</Text>
-                  <TextInput
+                {needsAge ? (
+                  <JTInput
+                    label="Возраст"
                     value={age}
                     onChangeText={t => setAge(t.replace(/\D/g, '').slice(0, 2))}
                     placeholder="25"
-                    placeholderTextColor="#9CA3AF"
                     keyboardType="number-pad"
-                    style={st.input}
                     maxLength={2}
+                    style={st.ageInput}
                   />
-                </>
-              ) : null}
+                ) : null}
 
-              <TouchableOpacity
-                style={[st.primary, saving && { opacity: 0.6 }]}
-                onPress={save}
-                disabled={saving}
-                activeOpacity={0.85}
-              >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={st.primaryTxt}>Сохранить</Text>}
-              </TouchableOpacity>
+                <JTButton label="Сохранить" onPress={save} busy={saving} arrow={false} style={st.primary} />
 
-              <TouchableOpacity onPress={close} disabled={saving}>
-                <Text style={st.skip}>Не сейчас</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
+                <TouchableOpacity onPress={close} disabled={saving} style={st.skipBtn} accessibilityRole="button">
+                  <Text style={st.skip}>Не сейчас</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </HardShadowBox>
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -203,38 +201,35 @@ export default function CompleteProfileSheet() {
 }
 
 const st = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
-  center: { flex: 1, justifyContent: 'center', paddingHorizontal: rs(20) },
+  backdrop: { flex: 1, backgroundColor: 'rgba(20,20,20,0.45)' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: rs(20) },
+  cardWrap: { width: '100%', maxWidth: 420, maxHeight: '85%' },
   card: {
-    backgroundColor: '#fff', borderRadius: Radius.xl, padding: rs(20), maxHeight: '80%',
+    backgroundColor: JT.background, borderRadius: rs(24), borderWidth: 2, borderColor: JT.ink,
+    paddingHorizontal: rs(22), paddingTop: rs(24),
   },
-  title: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, marginBottom: rs(6) },
-  sub: { fontSize: rf(14), color: Colors.textMuted, lineHeight: rf(19), marginBottom: rs(16) },
+  title: { fontFamily: JT_FONT.head, fontSize: rf(19), lineHeight: rf(24), color: JT.ink },
+  sub: {
+    marginTop: rs(10), marginBottom: rs(18),
+    fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(21), color: JT.textSecondary,
+  },
 
   photoRow: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
-    backgroundColor: '#F9FAFB', borderRadius: Radius.lg, padding: rs(12), marginBottom: rs(16),
+    backgroundColor: JT.surface, borderRadius: rs(18), borderWidth: 2, borderColor: JT.ink,
+    padding: rs(12), marginBottom: rs(16),
   },
   photoBtn: {
-    width: rs(56), height: rs(56), borderRadius: rs(28), overflow: 'hidden',
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
+    width: rs(52), height: rs(52), borderRadius: rs(26), overflow: 'hidden',
+    backgroundColor: JT.accentSoft, borderWidth: 2, borderColor: JT.ink,
     alignItems: 'center', justifyContent: 'center',
   },
   photo: { width: '100%', height: '100%' },
-  photoTitle: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  photoHint: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(16) },
+  photoTitle: { fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink },
+  photoHint: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(2), lineHeight: rf(17) },
 
-  label: { fontSize: rf(13), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(6) },
-  input: {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: Radius.md,
-    paddingHorizontal: rs(14), paddingVertical: rs(12),
-    fontSize: rf(16), color: Colors.textPrimary, width: rs(96), marginBottom: rs(18),
-  },
-
-  primary: {
-    backgroundColor: Colors.primary, borderRadius: Radius.lg,
-    paddingVertical: rs(14), alignItems: 'center', marginBottom: rs(10),
-  },
-  primaryTxt: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
-  skip: { textAlign: 'center', fontSize: rf(14), color: Colors.textMuted, paddingVertical: rs(6) },
+  ageInput: { width: rs(120) },
+  primary: { marginTop: rs(6) },
+  skipBtn: { minHeight: rs(48), alignItems: 'center', justifyContent: 'center', marginTop: rs(6) },
+  skip: { fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textTertiary },
 });

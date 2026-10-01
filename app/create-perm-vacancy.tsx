@@ -123,7 +123,7 @@ export default function CreatePermVacancy() {
 
           {/* Badge */}
           <View style={styles.modeBadge}>
-            <Text style={styles.modeBadgeText}>💼 Постоянная работа</Text>
+            <Text style={styles.modeBadgeText}>Постоянная работа</Text>
           </View>
 
           {/* Work type */}
@@ -148,7 +148,7 @@ export default function CreatePermVacancy() {
               </View>
             ) : (
               <TouchableOpacity style={[styles.pickerField, errors.metro ? styles.inputError : null]} onPress={() => setMetroPicker(true)}>
-                <Text style={styles.pickerFieldTxt}>🚇 Выбрать станцию</Text>
+                <Text style={styles.pickerFieldTxt}>Выбрать станцию</Text>
                 <Text style={{ color: Colors.textMuted, fontSize: rf(20) }}>›</Text>
               </TouchableOpacity>
             )}

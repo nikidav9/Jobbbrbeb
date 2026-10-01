@@ -465,7 +465,7 @@ export async function dbRestoreSession(): Promise<User | null> {
 // вариантом. Код приходит письмом, сверяет сервер; для register/attach/reset
 // в ответ идёт «квитанция», которую предъявляют на последнем шаге, а для
 // login — сразу сессия (см. dbAuthLoginByCode).
-export type EmailCodePurpose = 'register' | 'attach' | 'reset' | 'login';
+export type EmailCodePurpose = 'register' | 'attach' | 'reset' | 'login' | 'delete';
 
 /**
  * Готова ли почта для кодов. Пока нет (26.09 исходящий SMTP у хостинга
@@ -594,6 +594,22 @@ export async function dbUpsertUser(
 export async function dbDeleteAccount(id: string, password: string): Promise<void> {
   const res = await proxy<{ error?: string; 'удалён'?: boolean }>(
     'dbDeleteAccount', [id, password],
+  );
+  if (res?.error) throw new Error(res.error);
+  if (!res?.['удалён']) throw new Error('Не удалось удалить аккаунт');
+}
+
+/**
+ * Удаление кодом из письма (01.10.2026): код уходит на подтверждённую почту
+ * аккаунта — адрес сервер берёт из сессии сам, поэтому сюда его не передаём.
+ */
+export async function dbSendDeleteAccountCode(): Promise<void> {
+  await proxy<{ ok: boolean }>('dbAuthSendCode', ['', 'delete']);
+}
+
+export async function dbDeleteAccountByCode(id: string, code: string): Promise<void> {
+  const res = await proxy<{ error?: string; 'удалён'?: boolean }>(
+    'dbDeleteAccountByCode', [id, code],
   );
   if (res?.error) throw new Error(res.error);
   if (!res?.['удалён']) throw new Error('Не удалось удалить аккаунт');

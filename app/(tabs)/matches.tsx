@@ -1169,7 +1169,7 @@ function EmployerMatches() {
         refreshPermApplications().catch(() => {}),
         refreshChats(currentUser).catch(() => {}),
       ]);
-      showToast('Одобрено! Чат открыт 🎉', 'match');
+      showToast('Одобрено! Чат открыт', 'match');
       router.push({ pathname: '/chat-room', params: { chatId } });
     } catch {
       showToast('Не удалось одобрить кандидата. Проверьте связь и попробуйте ещё раз.', 'error');
@@ -1237,7 +1237,7 @@ function EmployerMatches() {
     return [
       w ? `${w.firstName} ${w.lastName}`.trim() || 'Кандидат' : 'Кандидат',
       `Вакансия: ${vac?.title ?? '—'}`,
-      vac?.metroStation ? `Где: 🚇 ${vac.metroStation}` : `Компания: ${vac?.company ?? '—'}`,
+      vac?.metroStation ? `Где: ${vac.metroStation}` : `Компания: ${vac?.company ?? '—'}`,
     ];
   })();
 

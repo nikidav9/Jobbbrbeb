@@ -41,7 +41,7 @@ export default function Login() {
   const [codePhase, setCodePhase] = useState(false);
 
   const goInside = () => {
-    showToast('Добро пожаловать! 👋', 'success');
+    showToast('Добро пожаловать!', 'success');
     router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
   };
 

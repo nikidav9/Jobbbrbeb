@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -87,7 +88,7 @@ export default function MatchScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <Confetti />
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-          <Text style={styles.emoji}>🎉</Text>
+          <Ionicons name="checkmark-done-circle-outline" size={rf(64)} color={Colors.primary} />
           <Text style={styles.matchTitle}>Мэтч!</Text>
           <Text style={styles.matchSubtitle}>
             {vac.company} хотят взять вас на смену!
@@ -107,12 +108,12 @@ export default function MatchScreen() {
             <View style={styles.divider} />
             <Text style={styles.vacTitle}>{vac.title}</Text>
             <Text style={styles.vacMeta}>
-              🚇 {vac.metroStation} · 📅 {vac.date} · ⏰ {vac.timeStart}–{vac.timeEnd}
+              {vac.metroStation} · {vac.date} · {vac.timeStart}–{vac.timeEnd}
             </Text>
           </View>
 
           <TouchableOpacity style={styles.primaryBtn} onPress={openChat}>
-            <Text style={styles.primaryBtnText}>💬 Открыть чат</Text>
+            <Text style={styles.primaryBtnText}>Открыть чат</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
             <Text style={styles.secondaryBtnText}>Продолжить поиск</Text>

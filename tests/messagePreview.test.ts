@@ -4,8 +4,8 @@ import test from 'node:test';
 import { messagePreview, voiceOf } from '../services/messagePreview.ts';
 
 test('messagePreview replaces attachment payloads with safe labels', () => {
-  assert.equal(messagePreview('[img]https://example.test/private.jpg'), '📷 Фото');
-  assert.equal(messagePreview('[voice]https://example.test/private.ogg|12'), '🎤 Голосовое сообщение');
+  assert.equal(messagePreview('[img]https://example.test/private.jpg'), 'Фото');
+  assert.equal(messagePreview('[voice]https://example.test/private.ogg|12'), 'Голосовое сообщение');
 });
 
 test('messagePreview keeps text and handles empty values', () => {

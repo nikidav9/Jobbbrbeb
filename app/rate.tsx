@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
@@ -49,10 +50,10 @@ export default function RateScreen() {
 
   const ratingLabel =
     rating === 0 ? 'Нажмите на звезду' :
-    rating === 1 ? '😞 Очень плохо' :
-    rating === 2 ? '😐 Плохо' :
-    rating === 3 ? '😊 Нормально' :
-    rating === 4 ? '😃 Хорошо' : '🤩 Отлично!';
+    rating === 1 ? 'Очень плохо' :
+    rating === 2 ? 'Плохо' :
+    rating === 3 ? 'Нормально' :
+    rating === 4 ? 'Хорошо' : 'Отлично!';
 
   const submit = async () => {
     if (!rating || !currentUser) return;
@@ -84,9 +85,9 @@ export default function RateScreen() {
       }
 
       if (bothRated) {
-        showToast('Оценки выставлены. Мэтч завершён! 🏁', 'success');
+        showToast('Оценки выставлены. Мэтч завершён!', 'success');
       } else {
-        showToast('Оценка сохранена! Спасибо 🌟', 'success');
+        showToast('Оценка сохранена! Спасибо', 'success');
       }
       router.replace('/(tabs)');
     } catch {
@@ -110,7 +111,7 @@ export default function RateScreen() {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.emoji}>⭐</Text>
+          <Ionicons name="star-outline" size={rf(56)} color={Colors.primary} />
           <Text style={styles.title}>Как прошла смена?</Text>
           <Text style={styles.sub}>
             Оцените {role === 'worker' ? 'работодателя' : 'работника'}:

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, ScrollView,
@@ -78,7 +79,7 @@ function PublicResumeDescription({ text }: { text: string }) {
           <Text style={styles.resumeDescriptionToggleText}>
             {expanded ? 'Свернуть' : 'Показать полностью'}
           </Text>
-          <Text style={styles.resumeDescriptionChevron}>{expanded ? '⌃' : '⌄'}</Text>
+          <Text style={styles.resumeDescriptionChevron}>{expanded ? '' : ''}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -280,7 +281,7 @@ export default function UserProfileScreen() {
 
           <View style={[styles.roleBadge, { backgroundColor: isWorker ? Colors.primaryLight : '#FEF3C7' }]}>
             <Text style={[styles.roleText, { color: isWorker ? Colors.primary : '#92400E' }]}>
-              {isWorker ? '👤 Работник' : '🏢 Работодатель'}
+              {isWorker ? 'Работник' : 'Работодатель'}
             </Text>
           </View>
 
@@ -291,7 +292,7 @@ export default function UserProfileScreen() {
               спрятанное под вкладку оно на решение не влияет. */}
           {(user.referralWorked ?? 0) > 0 ? (
             <Text style={styles.vouchLine}>
-              🤝 Привёл, устроились: {user.referralWorked}
+              Привёл, устроились: {user.referralWorked}
             </Text>
           ) : null}
         </View>
@@ -492,7 +493,7 @@ export default function UserProfileScreen() {
             ) : (
               <View style={[styles.infoCard, styles.emptyBio]}>
                 <Text style={styles.emptyBioText}>
-                  {isWorker ? '📝 Работник пока не добавил информацию о себе' : '📝 Компания пока не добавила описание'}
+                  {isWorker ? 'Работник пока не добавил информацию о себе' : 'Компания пока не добавила описание'}
                 </Text>
               </View>
             )}
@@ -513,7 +514,7 @@ export default function UserProfileScreen() {
             </View>
           ) : ratings.length === 0 ? (
             <View style={styles.emptyReviews}>
-              <Text style={{ fontSize: rf(40) }}>📭</Text>
+              <Ionicons name="chatbox-ellipses-outline" size={rf(36)} color={Colors.textMuted} />
               <Text style={styles.emptyReviewsTitle}>Пока нет отзывов</Text>
               <Text style={styles.emptyReviewsSub}>Здесь появятся отзывы работодателей</Text>
             </View>
@@ -649,7 +650,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
         <Text style={styles.backText} />
       </View>
       <View style={[styles.center, { padding: 24 }]}>
-        <Text style={{ fontSize: rf(40), marginBottom: 12 }}>😕</Text>
+        <Ionicons name="alert-circle-outline" size={rf(40)} color={Colors.textMuted} style={{ marginBottom: 12 }} />
         <Text style={{ fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary, textAlign: 'center', marginBottom: 8 }}>
           Не удалось загрузить профиль
         </Text>

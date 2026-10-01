@@ -28,7 +28,7 @@ export const voiceOf = (t: string) => {
  */
 export function messagePreview(text: string | null | undefined): string {
   if (!text) return '';
-  if (isVoiceMessage(text)) return '🎤 Голосовое сообщение';
-  if (isImageMessage(text)) return '📷 Фото';
+  if (isVoiceMessage(text)) return 'Голосовое сообщение';
+  if (isImageMessage(text)) return 'Фото';
   return text;
 }
