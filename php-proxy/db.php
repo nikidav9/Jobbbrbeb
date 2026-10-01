@@ -7216,6 +7216,9 @@ try {
             $data = [
                 'enabled' => !empty($user['jupiter_live_enabled_at']),
                 'revoked' => !empty($user['jupiter_live_revoked_at']),
+                // Отправляет ли Юпитер с сервера: от этого зависит кнопка
+                // «Попробовать ещё раз» у «Не ушёл» (иначе — анкета на телефоне).
+                'serverSends' => jt_jupiter_server_sends((string)$args[0]),
             ];
             break;
         }
@@ -7369,11 +7372,19 @@ try {
             $existing = sb_single('jm_jupiter_applications', [
                 'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
             ], 'id,state,lease_owner,submission_authorized_at,reason_code');
+            // «Попробовать ещё раз» у «Не ушёл» (failed): Юпитер споткнулся до
+            // подтверждённой отправки, второй отклик не родится — повтор POST
+            // вслепую сторожит квитанция воркера. submission_unknown сюда не
+            // входит: там заявка могла уже дойти (решение владельца 01.10.2026).
             $canRequeue = $existing && (
                 ($existing['state'] === 'ready_to_submit' && empty($existing['submission_authorized_at']))
+                || $existing['state'] === 'failed'
                 || ($existing['state'] === 'action_required'
                     && ($existing['reason_code'] ?? '') === 'LIVE_AUTHORIZATION_REVOKED')
             );
+            if ($canRequeue && $existing['state'] === 'failed' && !jt_jupiter_server_sends($uidArg)) {
+                jt_respond(['error' => 'Повторить может только анкета на телефоне — нажмите «Открыть анкету и отправить»'], 409); exit;
+            }
             if (!$canRequeue || !empty($existing['lease_owner'])) {
                 jt_respond(['error' => 'Эту заявку нельзя отправить повторно'], 409); exit;
             }
@@ -7468,7 +7479,9 @@ try {
             $existing = sb_single('jm_jupiter_applications', [
                 'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
             ], 'id,state,lease_owner');
-            $allowedStates = ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'];
+            // submission_unknown — «скорее всего, ушёл»: человек увидел письмо
+            // компании или сам отправил с сайта (решение владельца 01.10.2026).
+            $allowedStates = ['action_required', 'failed', 'retryable_failed', 'ready_to_submit', 'submission_unknown'];
             $canMark = $existing && empty($existing['lease_owner'])
                 && in_array((string)($existing['state'] ?? ''), $allowedStates, true);
             if (!$canMark) {

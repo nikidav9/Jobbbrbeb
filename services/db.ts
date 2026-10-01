@@ -1823,9 +1823,12 @@ export async function jupiterLiveStatus(userId: string): Promise<boolean> {
  * (см. jupiterLiveStatus в php-proxy/db.php), поэтому здесь по умолчанию
  * false, а не неизвестно.
  */
-export async function jupiterLiveState(userId: string): Promise<{ enabled: boolean; revoked: boolean }> {
-  const result = await proxy<{ enabled?: boolean; revoked?: boolean }>('jupiterLiveStatus', [userId]);
-  return { enabled: result?.enabled === true, revoked: result?.revoked === true };
+export async function jupiterLiveState(
+  userId: string,
+): Promise<{ enabled: boolean; revoked: boolean; serverSends: boolean }> {
+  const result = await proxy<{ enabled?: boolean; revoked?: boolean; serverSends?: boolean }>('jupiterLiveStatus', [userId]);
+  // serverSends — Юпитер отправляет с сервера; старый сервер его не отдаёт → false.
+  return { enabled: result?.enabled === true, revoked: result?.revoked === true, serverSends: result?.serverSends === true };
 }
 
 export type JupiterEmail = {

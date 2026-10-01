@@ -411,7 +411,14 @@
   списка и карточки. Здесь же — действия, которые раньше были кнопками под
   строкой списка: согласие для Сбера (карточка в стиле «Add experience» у
   Sorce, `jupiterGrantThirdPartyConsent`) и повторная постановка в очередь
-  после включения автоотклика (`jupiterRequeueLive`). Название вакансии в
+  после включения автоотклика (`jupiterRequeueLive`). Честные исходы (решение
+  владельца 01.10.2026): `submission_unknown` — «Скорее всего, ушёл» (заявка
+  ушла на сайт, он промолчал) с кнопками «Открыть вакансию» и «Я отправил сам»
+  (`jupiterMarkManualSubmitted` принимает и его), повтора нет; `failed` — «Не
+  ушёл» с «Попробовать ещё раз» (`jupiterRequeueLive` берёт `failed` только при
+  серверной отправке — `serverSends` из `jupiterLiveStatus`) и анкетой. На вебе
+  и в PWA — ещё «Скопировать мои данные» (`jupiterFillProfile` → буфер).
+  План доводки Юпитера — `docs/план-юпитер.md`. Название вакансии в
   строке и в карточке — `vacancyTitle` (`JupiterApplication`), сервер
   подтягивает его в `jupiterMyApplications` вторым запросом к
   `jm_ext_vacancies` по `vacancy_url`.
