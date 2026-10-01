@@ -2394,12 +2394,15 @@ const pS = StyleSheet.create({
     textAlign: 'center', lineHeight: rf(22), marginTop: rs(12),
   },
   limitStats: { flexDirection: 'row', gap: rs(8), alignSelf: 'stretch', marginTop: rs(18) },
+  // Обе плитки по центру и по горизонтали, и по вертикали: подпись в две
+  // строки («осталось / сегодня») без textAlign прижималась влево, а соседняя
+  // плитка с короткой подписью висела выше (снимок владельца 01.10.2026).
   limitStat: {
     flex: 1, paddingVertical: rs(12), paddingHorizontal: rs(12), borderRadius: rs(16),
-    backgroundColor: JT.background, alignItems: 'center', gap: rs(2),
+    backgroundColor: JT.background, alignItems: 'center', justifyContent: 'center', gap: rs(2),
   },
-  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink },
-  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
+  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink, textAlign: 'center' },
+  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, textAlign: 'center' },
   limitBtnWrap: { alignSelf: 'stretch', marginTop: rs(20) },
   limitBtn: {
     height: rs(58), borderRadius: rs(29), borderWidth: 2, borderColor: JT.ink,
