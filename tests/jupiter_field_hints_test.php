@@ -52,6 +52,8 @@ $case = substr($db, (int)strpos($db, "case 'jupiterFieldHints':"), 3500);
 check('спрашивает модель только о незнакомом', str_contains($case, 'jt_fh_ask_gpt($unknown, $host)'));
 check('pending переспрашивается', str_contains($case, "=== 'pending') continue;"));
 check('лимит на адрес', str_contains($case, "jt_try_blocked('gpt')"));
+check('запрос к YandexGPT не хранится у Яндекса (x-data-logging-enabled: false)',
+    str_contains((string)file_get_contents(__DIR__ . '/../php-proxy/jupiter_field_hints.php'), "'x-data-logging-enabled: false'"));
 check('незнакомое записывается для разбора', str_contains($case, "sb_upsert('jm_jupiter_field_hints'"));
 
 $mig = (string)@file_get_contents(__DIR__ . '/../supabase/migrations/141_jupiter_field_hints.sql');

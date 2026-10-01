@@ -91,6 +91,19 @@ class YandexGPTTest(unittest.TestCase):
                 self.gpt.complete_json("s", "u")
         self.assertEqual(seen["timeout"], 10)
 
+    def test_requests_are_not_logged_by_yandex(self):
+        # Без x-data-logging-enabled: false Яндекс хранит текст запроса и
+        # может учить на нём модели (решение владельца 02.10.2026).
+        seen = {}
+
+        def fake_urlopen(req, timeout):
+            seen["headers"] = {k.lower(): v for k, v in req.header_items()}
+            raise TimeoutError()
+        with mock.patch("yandex_gpt.urllib.request.urlopen", fake_urlopen):
+            with self.assertRaises(YandexGPTTransportError):
+                self.gpt.complete_json("s", "u")
+        self.assertEqual(seen["headers"].get("x-data-logging-enabled"), "false")
+
     def test_budget_per_process(self):
         other = YandexGPT("KEY", "folder1", base_url=self.gpt.base_url, retry_pause=0)
         _H.replies = [(200, "{}"), (200, "{}")]
