@@ -197,8 +197,8 @@ function cf_fetch_unit(array $unit, int $sub): array
         $items = cf_html_blocks($body, $pageUrl, $unit['map'], time());
         $more = false;
     } elseif ($unit['kind'] === 'html_links') {
-        $items = cf_html_links($body, $pageUrl, $unit['map'], time());
-        $more = cf_has_next_sub(count($items), $unit['paging'], $sub);
+        $items = cf_html_links($body, $pageUrl, $unit['map'], time(), $raw);
+        $more = cf_has_next_sub($raw, $unit['paging'], $sub);
     } elseif ($unit['kind'] === 'json') {
         $data = json_decode($body, true);
         if (!is_array($data)) return $fail('источник ответил не JSON');

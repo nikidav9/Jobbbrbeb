@@ -1,32 +1,8 @@
 [
   {
-    "url": "https://rabota5ka.ru/api/vacancy/hire-request",
-    "company": "Пятёрочка",
-    "reason": "production 404",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://rabota5ka.ru/gw/api/vacancy/hire-request?portals%5B0%5D=cross",
-    "company": "Перекрёсток",
-    "reason": "production 404",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://rabota.cdek.ru/vacancies",
-    "company": "CDEK",
-    "reason": "production 405",
-    "observed_at": "2026-09-16"
-  },
-  {
     "url": "https://www.maria-ra.ru/karera-v-seti/vakansii",
     "company": "Мария-Ра",
     "reason": "production TLS certificate mismatch",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://job.rt.ru/backend/api/vacancies",
-    "company": "Ростелеком",
-    "reason": "production 403",
     "observed_at": "2026-09-16"
   },
   {
@@ -48,12 +24,6 @@
     "observed_at": "2026-09-16"
   },
   {
-    "url": "https://job.lamoda.ru/api/hr/vacancies/compact",
-    "company": "Lamoda",
-    "reason": "production 405",
-    "observed_at": "2026-09-16"
-  },
-  {
     "url": "https://vacancies-app.aviasales.ru/api/vacancies?language=ru",
     "company": "Авиасейлс",
     "reason": "production 404",
@@ -66,39 +36,9 @@
     "observed_at": "2026-09-16"
   },
   {
-    "url": "https://bsl.dev/vacancies.html",
-    "company": "BSL",
-    "reason": "production 405",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://cloud.ru/career/vacancies",
-    "company": "Cloud.ru",
-    "reason": "production 403",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://www.ispring.ru/company/jobs/vacancies",
-    "company": "iSpring",
-    "reason": "production 403",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://1c.ru/rus/firm1c/vacan/search",
-    "company": "1С",
-    "reason": "production 405",
-    "observed_at": "2026-09-16"
-  },
-  {
     "url": "https://team.vk.company/vacancy",
     "company": "VK",
     "reason": "production 308 redirect; redirects are intentionally not followed by career fetcher",
-    "observed_at": "2026-09-16"
-  },
-  {
-    "url": "https://career.mvideoeldorado.ru/vacancies",
-    "company": "М.Видео-Эльдорадо",
-    "reason": "production 403",
     "observed_at": "2026-09-16"
   },
   {
@@ -130,5 +70,17 @@
     "company": "Петрович",
     "reason": "на странице только разделы сайта, вакансий нет (аудит ссылок)",
     "observed_at": "2026-09-25"
+  },
+  {
+    "url": "https://www.ispring.ru/company/jobs/vacancies",
+    "company": "iSpring",
+    "reason": "production 403",
+    "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://evotor.ru/page-data/sq/d/754220884.json",
+    "company": "Эвотор",
+    "reason": "не вакансии: разведка приняла список товаров (терминалы) за вакансии, ссылки /vacancies/{id} отдают 404",
+    "observed_at": "2026-10-01"
   }
 ]
