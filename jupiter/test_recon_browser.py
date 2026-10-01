@@ -248,6 +248,16 @@ class PureTest(unittest.TestCase):
         self.assertEqual(rehearsal_verdict([{"carries_candidate": False}]), "request_without_candidate")
         self.assertEqual(rehearsal_verdict([{"carries_candidate": False}, {"carries_candidate": True}]), "would_send")
 
+    def test_child_from_newer_version_does_not_break_parent(self):
+        import recon_browser
+        from unittest import mock
+        line = recon_browser.RESULT_MARK + json.dumps(
+            {"name": "x", "url": "u", "start_url": "u", "klass": "dry_run_ok", "brand_new_field": 1})
+        done = mock.Mock(stdout=line + "\n", stderr="", returncode=0)
+        with mock.patch.object(recon_browser.subprocess, "run", return_value=done):
+            item = recon_browser._run_child("x", "u", 5, 10, None)
+        self.assertEqual(item.klass, "dry_run_ok")
+
     def test_time_budget_stops_new_sites(self):
         # Срок уже вышел — ни один процесс не запускается, итог пуст.
         self.assertEqual(run_recon([("x", "https://x.ru")], max_seconds=0), [])

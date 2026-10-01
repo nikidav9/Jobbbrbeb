@@ -263,7 +263,10 @@ def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: s
         if line.startswith(RESULT_MARK):
             try:
                 data = json.loads(line[len(RESULT_MARK):])
-                return BrowserReconResult(**data)
+                # Дочерний процесс читает файлы заново: если посреди обхода
+                # выложили новую версию, незнакомые поля не ломают итог.
+                known = set(BrowserReconResult.__dataclass_fields__)
+                return BrowserReconResult(**{k: v for k, v in data.items() if k in known})
             except (ValueError, TypeError):
                 break
     result.reason = f"crash: процесс разведки завершился кодом {proc.returncode}: {proc.stderr[-200:]}"
