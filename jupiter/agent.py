@@ -6,6 +6,7 @@ import json
 import re
 import urllib.parse
 
+import huntflow
 import sber
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -2950,9 +2951,96 @@ class JupiterAgent:
         })
         return AgentResult("failed", reason, trajectory, Reason.MAX_STEPS)
 
+    def _run_huntflow(
+        self, vacancy: "huntflow.HuntflowVacancy", url: str, profile: CandidateProfile,
+    ) -> AgentResult | None:
+        """Карьерный сайт Huntflow — через его API (huntflow.py). None — API не
+        ответил как ждали: дальше обычный разбор страницы."""
+        api = self.engine if hasattr(self.engine, "request_json") else JupiterWebEngine(
+            set(self.allowed_hosts), read_only=self.dry_run)
+        tag = {"site_adapter": "huntflow_api"}
+        trajectory: list[dict[str, Any]] = [{"action": "open", "url": url, "dry_run": self.dry_run, **tag}]
+
+        def stop(status: str, reason: str, code: str, **extra: Any) -> AgentResult:
+            trajectory.append({"action": status, "reason": reason, "reason_code": code, **tag, **extra})
+            return AgentResult(status, reason, trajectory, code)
+
+        try:
+            status, body = api.request_json(
+                f"{vacancy.origin}/api/vacancy/{urllib.parse.quote(vacancy.slug)}",
+                headers={"Referer": url})
+        except (EngineError, EngineSecurityError):
+            return None
+        vid, archived = huntflow.vacancy_id(status, body)
+        if vid is None:
+            return None
+        if archived:
+            return stop("action_required", "Huntflow: the vacancy is archived", Reason.VACANCY_NOT_FOUND)
+        missing = huntflow.missing_profile_fields(profile)
+        if missing:
+            return stop("action_required", "Huntflow application requires candidate field(s): "
+                        + ", ".join(missing), Reason.MISSING_PROFILE_FIELD)
+        resume = huntflow.resume_file(profile)
+        if self.dry_run:
+            trajectory.append({"action": "ready_to_submit", "vacancy_id": vid,
+                               "fields": sorted(huntflow.build_payload(profile, None)),
+                               "resume": bool(resume), **tag})
+            return AgentResult("ready_to_submit", trajectory=trajectory)
+        # Поручение отправить отклик — ещё не согласие с условиями работодателя.
+        if not huntflow.has_consent(profile):
+            return stop("action_required", "Huntflow requires explicit consent to personal-data "
+                        "processing before the application can be sent", Reason.CONSENT_REQUIRED)
+        endpoint = f"{vacancy.origin}/api/vacancy/{vid}/response"
+        fingerprint = ApplicationFingerprint.build(
+            candidate_id=self._candidate_id(profile), vacancy_url=url, apply_url=url,
+            control_names=["name", "surname", "phone", "email", "agreement"], action=endpoint)
+        known = self.receipts.find(fingerprint.key())
+        if known is not None:
+            return self._already_submitted(known, fingerprint, trajectory)
+        file_id = None
+        if resume is not None:
+            try:
+                file_id = huntflow.uploaded_file_id(*api.request_json(
+                    f"{vacancy.origin}/api/vacancy/{vid}/upload", method="POST",
+                    files=[("file", resume)], headers={"Referer": url}))
+            except (EngineError, EngineSecurityError):
+                file_id = None
+            trajectory.append({"action": "upload", "source": "resume", "ok": file_id is not None,
+                               "filename": resume.name, **tag})
+        if self.before_submit is not None:
+            self.before_submit(url, False)
+        trajectory.append({"action": "click_submit", "endpoint": endpoint, **tag})
+        try:
+            status, body = api.request_json(endpoint, method="POST",
+                                            payload=huntflow.build_payload(profile, file_id),
+                                            headers={"Origin": vacancy.origin, "Referer": url})
+        except (EngineError, EngineSecurityError) as exc:
+            self._record_receipt(fingerprint, "submission_unknown", url, [])
+            return stop("submission_unknown", f"Huntflow application POST outcome is unknown: {exc}",
+                        Reason.SUBMISSION_UNKNOWN)
+        outcome, message, fields = huntflow.interpret_response(status, body)
+        if outcome == "submitted":
+            evidence = [SubmissionEvidence("API_RESPONSE", f"Huntflow HTTP {status}", 0.95, endpoint)]
+            self._record_receipt(fingerprint, "submitted", url, evidence)
+            trajectory.append({"action": "verify_submission", "confirmed": True,
+                               "evidence": [f"api_status={status}"], **tag})
+            return AgentResult("submitted", trajectory=trajectory)
+        if outcome == "duplicate":
+            return stop("duplicate", "Huntflow reports that this vacancy was already applied to",
+                        Reason.DUPLICATE_BLOCKED)
+        if outcome == "needs_fix":
+            return stop("action_required", "Site did not accept the form; it asks to fix: "
+                        + ", ".join(f"«{f}»" for f in fields), Reason.SITE_NEEDS_FIX, message=message)
+        return stop("action_required", message, Reason.SUBMIT_FAILED)
+
     def run(self, url: str, profile: CandidateProfile) -> AgentResult:
         self._root_url = url
         self._expand_policy_for_start(url)
+        vacancy = huntflow.parse_url(url)
+        if vacancy is not None:
+            result = self._run_huntflow(vacancy, url, profile)
+            if result is not None:
+                return result
         try:
             page = self.engine.open(url)
         except EngineSecurityError as exc:

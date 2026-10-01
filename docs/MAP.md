@@ -1434,7 +1434,7 @@ worker, изоляция контекстов; `browser_planner.py` + `yandex_gp
 `JupiterAgent(field_mapper=…)`: только обязательные незнакомые поля, без
 галочек/согласий/капчи/файлов и без юридических ключей профиля, в траектории
 `llm_map` без значений; `ats_hosts.py` — домены
-ATS-платформ, куда вакансия может увести анкету; `browser_limits.py` — пределы ресурсов (сколько браузеров
+ATS-платформ, куда вакансия может увести анкету; `huntflow.py` — адаптер Huntflow (п.3, 01.10.2026: самая частая ATS ленты, 32 источника сбора из ~180): `agent.run` для `https://*.huntflow.io/vacancy/<slug>` идёт в API сайта (`/api/vacancy/{slug}` → `/upload` резюме → `/response` JSON), без чужого JS; галочка `agreement` — только по поручению (`personal_data_consent`), dry-run не шлёт ничего, кроме GET; API не ответил — обычный разбор страницы; тест `test_huntflow.py`; `browser_limits.py` — пределы ресурсов (сколько браузеров
 по памяти, сторож задачи, добивание своих зависших Chromium; замер —
 `scripts/browser-bench.py`); `recon_browser.py` — разведка
 браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало»; ход обхода — открытый `/jupiter-recon-browser-progress.json` (`--progress`, класс `Progress`: пройдено, осталось, классы, вердикты репетиции, `llm_used`, `eta_at`; обёртка выкладывает его раз в 30 с, состояния «ждёт HTTP-разведку», «пропущен», «сбой», «готово», «срок вышел»). С 01.10.2026

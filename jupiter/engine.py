@@ -1257,11 +1257,13 @@ class JupiterWebEngine:
         method: str = "GET",
         payload: dict | list | None = None,
         headers: dict[str, str] | None = None,
+        files: list[tuple[str, Path]] | None = None,
     ) -> tuple[int, object]:
         """JSON request with the same network/read-only policy as HTML navigation.
 
         This exists for employer public APIs used by their own application UI.
         It does not execute page JavaScript and it never weakens read_only.
+        files — multipart upload (the site's own resume upload), answer is JSON.
         """
         self.assert_reachable(url)
         method = method.upper()
@@ -1274,7 +1276,9 @@ class JupiterWebEngine:
             "Accept": "application/json",
         }
         data = None
-        if payload is not None:
+        if files:
+            data, request_headers["Content-Type"] = self._multipart([], files)
+        elif payload is not None:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             request_headers["Content-Type"] = "application/json"
         request_headers.update(headers or {})
