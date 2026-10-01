@@ -50,3 +50,18 @@ export function routeByTitle(title: string): NotifTarget | null {
   if (t.startsWith('⚡') || t.startsWith('💼')) return { pathname: '/(tabs)/feed' };
   return null;
 }
+
+// Системный пуш обезличен (push_privacy.php шлёт только {type:'refresh'}):
+// что случилось, знает колокольчик. По нажатию берём самое свежее
+// непрочитанное уведомление и ведём туда же, куда повёл бы колокольчик.
+// Нет такого или оно никуда не ведёт — в «Отклики»: туда приходит почти всё.
+export function routeForRefreshPush(
+  notes: { title: string; is_read: boolean; type?: string | null; payload?: any }[],
+): NotifTarget {
+  const fresh = notes.find((n) => !n.is_read);
+  if (fresh) {
+    const t = routeForNotification(fresh.type, fresh.payload) ?? routeByTitle(fresh.title);
+    if (t) return t;
+  }
+  return { pathname: '/(tabs)/matches' };
+}

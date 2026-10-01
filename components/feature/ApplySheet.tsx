@@ -96,7 +96,7 @@ export function ApplySheet({
               style={s.input}
               value={text}
               onChangeText={setText}
-              placeholder={placeholder ?? 'Например: есть опыт на складе, могу выйти в субботу'}
+              placeholder={placeholder ?? 'Например: 3 года во фронтенде, готов выйти через две недели'}
               placeholderTextColor={Colors.textMuted}
               multiline
               maxLength={300}

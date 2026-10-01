@@ -28,10 +28,10 @@ import { ToastLayer } from '@/components/ui/ToastLayer';
 import { ConfirmHost } from '@/components/ui/ConfirmHost';
 import { OnboardingOverlay } from '@/components/OnboardingOverlay';
 import { setupAndroidChannels } from '@/services/notifications';
-import { routeForNotification } from '@/services/notificationRoute';
+import { routeForNotification, routeForRefreshPush } from '@/services/notificationRoute';
 import { hideWebSplash, markWebBundleMounted } from '@/lib/webSplash';
 import { getSessionUser, savePendingReferral } from '@/services/storage';
-import { dbRecordGuestEvent } from '@/services/db';
+import { dbGetNotifications, dbRecordGuestEvent } from '@/services/db';
 import { waitForTelegramMiniApp, initTelegramMiniApp, getTelegramStartParam } from '@/lib/telegram';
 
 // Keep the web/native splash visible until hideAsync() is called from the tabs layout or index screen.
@@ -165,11 +165,17 @@ function NotificationHandler() {
       const type = data?.type as string | undefined;
       const chatId = data?.chatId as string | undefined;
 
-      const target = routeForNotification(type, { chatId });
-      if (!target) return;
-
       const user = await getSessionUser().catch(() => null);
-      router.push((user ? target : '/') as never);
+      if (!user) { router.push('/' as never); return; }
+
+      // Пуш без подробностей ({type:'refresh'}) — экран выбираем по самому
+      // свежему непрочитанному в колокольчике. Раньше такой пуш просто
+      // открывал приложение, а это почти все пуши.
+      const target = type === 'refresh'
+        ? routeForRefreshPush(await dbGetNotifications(user.id).catch(() => []))
+        : routeForNotification(type, { chatId });
+      if (!target) return;
+      router.push(target as never);
     };
 
     // Background/terminated: user tapped the notification

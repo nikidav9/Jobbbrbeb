@@ -4,7 +4,6 @@ import {
   Modal, Animated, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Shadow } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
@@ -85,11 +84,6 @@ export function ProfileGateSheet({ visible, step, user, onUpdateUser, onResolve 
     }
   };
 
-  const handleManual = () => {
-    onResolve(false);
-    router.push({ pathname: '/(tabs)/profile', params: { tab: 'resume' } });
-  };
-
   const canSubmitNames = firstName.trim().length > 0 && lastName.trim().length > 0;
 
   const handleSubmitNames = async () => {
@@ -151,22 +145,6 @@ export function ProfileGateSheet({ visible, step, user, onUpdateUser, onResolve 
                   <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={s.row}
-                  onPress={handleManual}
-                  disabled={importing}
-                  activeOpacity={0.8}
-                  testID="profile-gate-manual"
-                >
-                  <View style={[s.rowIcon, s.rowIconSecondary]}>
-                    <Ionicons name="create-outline" size={rf(20)} color={Colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.rowTitle}>Заполнить самому</Text>
-                    <Text style={s.rowSub}>Имя, опыт и другие разделы — в профиле</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
-                </TouchableOpacity>
               </>
             ) : (
               <View style={s.names}>
@@ -233,7 +211,6 @@ const s = StyleSheet.create({
     width: rs(40), height: rs(40), borderRadius: rs(20),
     backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
   },
-  rowIconSecondary: { backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryBorder },
   rowTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
   rowSub: { fontSize: rf(12.5), color: Colors.textSecondary, marginTop: rs(2) },
 

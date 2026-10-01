@@ -22,6 +22,15 @@ require_once __DIR__ . '/vacancy_url.php';
 
 const VP_SITE = 'https://jobtoo.ru';
 
+/**
+ * Метка рассылки из ссылки «Поделиться» (?c=<16 hex>) — передаётся экрану
+ * вакансии как campaignId, чтобы отклик по чужой ссылке засчитывался ей.
+ */
+function vp_campaign_param(): string {
+    $c = (string)($_GET['c'] ?? '');
+    return preg_match('/^[a-f0-9]{16}$/', $c) ? '&campaignId=' . $c : '';
+}
+
 /** Экранируем всё, что уходит в разметку. Данные вводят работодатели. */
 function vp_e(?string $s): string
 {
@@ -240,12 +249,14 @@ function vp_render(array $v): void
         . '<meta name="description" content="' . vp_e($metaDesc) . '">'
         . '<script type="application/ld+json">' . vp_json_ld($v) . '</script>';
 
-    $body = ($isClosed ? '<div class="closed">Эта вакансия закрыта. Похожие смены и вакансии — в приложении.</div>' : '')
+    $body = ($isClosed ? '<div class="closed">Эта вакансия закрыта. Похожие вакансии — в приложении.</div>' : '')
         . '<h1>' . vp_e($v['title']) . '</h1>'
         . ($v['company'] !== '' ? '<p class="company">' . vp_e($v['company']) . '</p>' : '')
         . ($facts !== '' ? '<ul class="facts">' . $facts . '</ul>' : '')
         . $desc
-        . '<p><a class="btn" href="' . VP_SITE . '/">'
+        // Открытая вакансия ведёт на свой экран в веб-версии, а не на главную:
+        // раньше человек нажимал «Откликнуться» и терял вакансию по дороге.
+        . '<p><a class="btn" href="' . VP_SITE . (($isClosed || $v['kind'] === 'shift') ? '/' : '/perm-vacancy-detail?vacancyId=' . rawurlencode($v['id']) . vp_campaign_param()) . '">'
         . ($isClosed ? 'Смотреть открытые вакансии' : 'Откликнуться в приложении')
         . '</a></p>';
 

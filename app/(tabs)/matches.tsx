@@ -472,7 +472,7 @@ function WorkerMatches() {
       bucket: unread > 0 ? 'needs' : answered ? 'other' : 'review',
       open: () => (unread > 0 && chat
         ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } })
-        : router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })),
+        : router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: a.vacancyId } })),
     };
   });
   const allItems = [...jupiterItems, ...permItems]
@@ -1636,7 +1636,7 @@ function EmployerMatches() {
         <View style={s.empty}>
           <Ionicons name={emptyIcon[tab]} size={56} color={Colors.textMuted} />
           <Text style={s.emptyTitle}>
-            {tab === 'pending' ? 'Нет откликов' : tab === 'matched' ? 'Нет активных мэтчей' : 'Нет завершённых смен'}
+            {tab === 'pending' ? 'Нет откликов' : tab === 'matched' ? 'Нет активных мэтчей' : 'Пока пусто'}
           </Text>
           <Text style={s.emptySub}>
             {tab === 'pending'
@@ -1645,7 +1645,7 @@ function EmployerMatches() {
                   : 'Когда работники откликнутся — они появятся здесь')
               : tab === 'matched'
               ? 'Мэтчи появятся после взаимного подтверждения'
-              : 'Здесь будет история завершённых смен'}
+              : 'Здесь будет история закрытых откликов'}
           </Text>
         </View>
       ) : (

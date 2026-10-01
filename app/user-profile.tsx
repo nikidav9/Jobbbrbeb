@@ -426,7 +426,9 @@ export default function UserProfileScreen() {
                     } />
                   ) : null}
                   {user.age ? <InfoRow label="Возраст" value={<Text style={styles.valText}>{user.age} лет</Text>} /> : null}
-                  <InfoRow label="Специализация" value={<Text style={styles.valText}>📦 Кладовщик</Text>} />
+                  {user.resume?.desiredPosition ? (
+                    <InfoRow label="Желаемая должность" value={<Text style={styles.valText}>{user.resume.desiredPosition}</Text>} />
+                  ) : null}
                   {/* Телефон — только после мэтча, и сразу звонком.
                       До сих пор номер жил единственной строкой в «Мэтчах»:
                       директор, зашедший в профиль, чтобы посмотреть человека
@@ -513,7 +515,7 @@ export default function UserProfileScreen() {
             <View style={styles.emptyReviews}>
               <Text style={{ fontSize: rf(40) }}>📭</Text>
               <Text style={styles.emptyReviewsTitle}>Пока нет отзывов</Text>
-              <Text style={styles.emptyReviewsSub}>Отзывы появятся после завершения смен</Text>
+              <Text style={styles.emptyReviewsSub}>Здесь появятся отзывы работодателей</Text>
             </View>
           ) : (
             <View style={{ gap: 10 }}>
