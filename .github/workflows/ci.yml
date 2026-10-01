@@ -214,6 +214,9 @@ jobs:
       - name: Письмо-сводка о непрочитанном — раз в день, без содержания, только без другого канала
         run: php tests/unread_digest_test.php
 
+      - name: Письмо целиком — хранится при приёме, отдаётся только владельцу
+        run: php tests/mail_html_test.php
+
       - name: Нативный push не раскрывает данные события
         run: php tests/push_privacy_test.php
 

@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '@/hooks/useApp';
-import { JupiterEmail, jupiterMailbox, jupiterMailList, jupiterMailRead } from '@/services/db';
+import { JupiterEmail, jupiterMailbox, jupiterMailHtml, jupiterMailList, jupiterMailRead } from '@/services/db';
+import { MailHtmlView } from '@/components/feature/MailHtmlView';
 import { Colors } from '@/constants/theme';
 import { mailDate, mailPreview, senderName, splitMailLinks } from '@/services/mailLinks';
 import { BackButton } from '@/components/ui/BackButton';
@@ -20,6 +21,9 @@ export default function JupiterMail() {
   // что обновление идёт, а список при этом не исчезает.
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  // Письмо целиком (HTML): null — ещё грузим, '' — у письма только текст.
+  const [html, setHtml] = useState<string | null>(null);
+  const openedId = useRef<string | null>(null);
   const uid = currentUser?.id;
 
   const load = useCallback(async (): Promise<boolean> => {
@@ -49,6 +53,14 @@ export default function JupiterMail() {
 
   const open = async (message: JupiterEmail) => {
     setSelected(message);
+    setHtml(null);
+    if (uid) {
+      // Ответ по прежнему письму не должен лечь в открытое следующим.
+      openedId.current = message.id;
+      jupiterMailHtml(uid, message.id)
+        .then(h => { if (openedId.current === message.id) setHtml(h); })
+        .catch(() => { if (openedId.current === message.id) setHtml(''); });
+    }
     if (!message.read_at && uid) {
       try {
         await jupiterMailRead(uid, message.id);
@@ -69,7 +81,19 @@ export default function JupiterMail() {
             : <Ionicons name="refresh" size={22} color={Colors.textPrimary} />}
         </TouchableOpacity>
       </View>
-      {selected ? (
+      {selected && html ? (
+        // Письмо целиком, как в почте: шапка сверху, само письмо — ниже.
+        <View style={styles.full}>
+          <View style={styles.fullHead}>
+            <Text style={styles.subject} numberOfLines={3}>{selected.subject || '(Без темы)'}</Text>
+            <Text style={styles.sender} numberOfLines={1}>От: {selected.sender}</Text>
+            <Text style={styles.meta}>{new Date(selected.received_at).toLocaleString('ru-RU')}</Text>
+          </View>
+          <MailHtmlView html={html} />
+        </View>
+      ) : selected && html === null ? (
+        <ActivityIndicator style={styles.loading} color={Colors.primary} />
+      ) : selected ? (
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.subject}>{selected.subject || '(Без темы)'}</Text>
           <Text style={styles.sender}>От: {selected.sender}</Text>
@@ -149,5 +173,7 @@ const styles = StyleSheet.create({
   sender: { fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginBottom: 4 },
   meta: { fontFamily: JT_FONT.medium, fontSize: 13, color: '#6B7280', marginBottom: 2 },
   body: { fontFamily: JT_FONT.medium, fontSize: 16, lineHeight: 23, color: Colors.textPrimary, marginTop: 16 },
+  full: { flex: 1 },
+  fullHead: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   link: { color: Colors.primary, textDecorationLine: 'underline' },
 });
