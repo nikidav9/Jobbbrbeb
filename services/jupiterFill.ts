@@ -59,12 +59,14 @@ function jtKeyForField(text, type, name) {
 
   // Капча — отдельная человеческая проверка, её не заполняем.
   if (/captcha|капч/.test(text) || /captcha|капч/.test(nameLower)) return null;
-  // Чужие для кандидата поля: мессенджер (\"tel\" внутри \"telegram\"
-  // дал бы телефон), компания и ИНН (форма для клиентов), рекомендатель.
+  // Чужие для кандидата поля: компания и ИНН (форма для клиентов),
+  // рекомендатель. Мессенджер — раньше телефона: \"tel\" внутри \"telegram\".
   var all = text + ' ' + nameLower;
   // «Telegram или телефон» — составное поле: номер туда вписать честно.
   if (/telegram|телеграм/.test(all) && /телефон|phone/.test(all)) return 'phone';
-  if (/telegram|телеграм|компани|company|организац|(^|[^а-яё])инн([^а-яё]|$)|\\binn\\b|referr|рекомендат/.test(all)) return null;
+  // Мессенджер — свой ключ из «Ответьте один раз» (01.10.2026), не телефон.
+  if (/telegram|телеграм/.test(all)) return 'telegram';
+  if (/компани|company|организац|(^|[^а-яё])инн([^а-яё]|$)|\\binn\\b|referr|рекомендат/.test(all)) return null;
 
   function classify(t) {
     var hasSurname = /фамил/.test(t);
@@ -73,7 +75,8 @@ function jtKeyForField(text, type, name) {
     var parts = (hasSurname ? 1 : 0) + (hasFirst ? 1 : 0) + (hasPatronymic ? 1 : 0);
     if (parts >= 2 || /фио|fio|full ?name/.test(t)) return 'full_name';
 
-    if (/mail|почт/.test(t)) return 'email';
+    // «почт» — с начала слова: «предпочтительный» — не почта.
+    if (/mail|(^|[^а-яё])почт/.test(t)) return 'email';
     if (/phone|tel|телефон/.test(t)) return 'phone';
     if (/отчеств|otchestvo|middle|patronymic/.test(t)) return 'patronymic';
     if (/фамил|surname|last/.test(t)) return 'last_name';
@@ -83,6 +86,12 @@ function jtKeyForField(text, type, name) {
     if (/гражданств|citizenship/.test(t)) return 'citizenship';
     // «роль» — только словом: иначе «контроль» и «пароль» стали бы должностью.
     if (/должност|position|vacancy|(^|[^а-яё])роль/.test(t)) return 'desired_role';
+    // Частые вопросы работодателей — из «Ответьте один раз».
+    if (/зарплат|оклад|доход|salary|compensation/.test(t)) return 'desired_salary';
+    if (/дата выхода|когда (можете|готов)|приступить|notice|start date/.test(t)) return 'notice_period';
+    if (/английск|english/.test(t)) return 'english_level';
+    if (/переезд|relocat/.test(t)) return 'relocation';
+    if (/формат работы|work format/.test(t)) return 'work_format';
     if (/сопроводит|о себе|комментар|сообщени|comment|message|cover/.test(t)) return 'cover_letter';
     return null;
   }
