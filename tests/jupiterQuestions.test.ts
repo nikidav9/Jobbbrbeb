@@ -21,6 +21,7 @@ test('черновик списка — только если такой вар�
 test('пуш о вопросах ведёт в очередь вопросов, об ушедшем отклике — в «Отклики»', () => {
   assert.deepEqual(routeForNotification('jupiter_questions'), { pathname: '/jupiter-questions' });
   assert.deepEqual(routeForNotification('jupiter_sent'), { pathname: '/(tabs)/matches' });
+  assert.deepEqual(routeForNotification('jupiter_failed'), { pathname: '/(tabs)/matches' });
 });
 
 test('заголовок вопроса: понятный текст от YandexGPT, иначе подпись без крика заглавными', () => {

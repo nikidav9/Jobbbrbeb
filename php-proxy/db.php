@@ -3187,6 +3187,21 @@ function jt_questions_notify(string $uid): void {
         'jupiter_questions');
 }
 
+// Отклик не ушёл (failed): человек должен узнать сразу, а не через неделю,
+// и отправить сам за минуту (план Юпитера, часть 2, шаг 3). Не чаще раза в
+// сутки — неудачных может быть несколько подряд.
+function jt_failed_notify(string $uid, string $company): void {
+    if ($uid === '') return;
+    $recent = sb_select('jm_notifications', [
+        'user_id' => 'eq.' . $uid, 'type' => 'eq.jupiter_failed',
+        'created_at' => 'gte.' . gmdate('Y-m-d\TH:i:s\Z', time() - 86400),
+    ], 'id');
+    if ($recent) return;
+    $company = trim($company) !== '' ? trim($company) : 'компанию';
+    notify_user($uid, 'Отклик в ' . $company . ' не ушёл',
+        'Юпитер споткнулся на сайте — откройте отклик и отправьте сами за минуту', 'jupiter_failed');
+}
+
 // Отклик ушёл после ответов человека — замыкаем обещание «ответьте, и уйдёт
 // само». Обычные отклики Юпитера так не объявляются: их десятки.
 function jt_questions_sent_notify(string $uid, string $appId, string $company): void {
@@ -7848,6 +7863,7 @@ try {
                 $owner = (string)($task['user_id'] ?? '');
                 if (($patch['reason_code'] ?? '') === 'NEEDS_ANSWERS') jt_questions_notify($owner);
                 if ($state === 'submitted') jt_questions_sent_notify($owner, $id, (string)($task['company'] ?? ''));
+                if ($state === 'failed') jt_failed_notify($owner, (string)($task['company'] ?? ''));
             } catch (Throwable $e) { /* см. выше */ }
             jt_respond(['ok' => true]); exit;
         }

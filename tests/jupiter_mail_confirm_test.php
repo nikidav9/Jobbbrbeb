@@ -21,16 +21,24 @@ function cut(string $src, string $name): string {
 
 $APPS = [];
 $UPDATES = [];
+$RECENT = [];
+$PUSHES = [];
 function sb_select(string $t, array $f, string $cols) {
-    global $APPS;
+    global $APPS, $RECENT;
+    if ($t === 'jm_notifications') {
+        check($f['type'] === 'eq.jupiter_failed' && $f['user_id'] === 'eq.u1', 'пуш считается по своему типу и человеку');
+        return $RECENT;
+    }
     check($f['user_id'] === 'eq.u1' && $f['state'] === 'eq.submission_unknown', 'выбираются только свои «скорее всего, ушёл»');
     return $APPS;
 }
+function notify_user(string $uid, string $title, string $body, string $type) { global $PUSHES; $PUSHES[] = [$uid, $title, $type]; }
 function sb_update(string $t, array $f, array $patch) { global $UPDATES; $UPDATES[] = [$f, $patch]; return true; }
 function now_iso(): string { return '2026-10-01T12:00:00Z'; }
 function rt_touch(string $t): void {}
 eval(cut($db, 'jt_mail_base_domain'));
 eval(cut($db, 'jt_mail_confirm_applications'));
+eval(cut($db, 'jt_failed_notify'));
 
 $APPS = [
     ['id' => 'a-mts', 'company' => 'МТС', 'vacancy_url' => 'https://job.mts.ru/vacancies/1'],
@@ -68,5 +76,14 @@ check($UPDATES === [], 'в базе ничего не меняется');
 $ingest = substr($db, (int)strpos($db, "case 'jupiterMailIngest': {"), 3000);
 check(str_contains($ingest, 'jt_mail_confirm_applications((string)$box[\'user_id\'], $content)'), 'ingest подтверждает отклики');
 check(str_contains($ingest, 'catch (Throwable $e)'), 'сбой подтверждения не теряет письмо');
+
+// Отклик не ушёл — пуш сразу, но не чаще раза в сутки (часть 2, шаг 3).
+jt_failed_notify('u1', 'МТС');
+check($PUSHES === [['u1', 'Отклик в МТС не ушёл', 'jupiter_failed']], 'пуш о неудаче с названием компании');
+$RECENT = [['id' => 'n1']];
+jt_failed_notify('u1', 'Ozon');
+check(count($PUSHES) === 1, 'второй пуш за сутки не уходит');
+$finish = substr($db, (int)strpos($db, "if (\$state === 'submitted') jt_questions_sent_notify("), 300);
+check(str_contains($finish, "if (\$state === 'failed') jt_failed_notify(\$owner,"), 'итог воркера failed зовёт пуш');
 
 echo "jupiter mail confirm: OK\n";
