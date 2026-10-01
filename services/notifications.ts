@@ -256,24 +256,25 @@ export async function notifyWorkersNewVacancy(params: {
     // в Строгино объявление ушло 19 людям вместо 149. От заваливания теперь
     // защищает не расстояние, а счёт — не больше четырёх объявлений в сутки
     // на человека. Станция стоит в тексте, человек решает сам.
+    // Без эмодзи (решение владельца: смайликов в приложении нет).
     const notifTitle = type === 'permanent'
-      ? '💼 Новая постоянная вакансия!'
-      : '⚡ Новая подработка!';
+      ? 'Новая вакансия рядом с вами'
+      : 'Новая подработка рядом с вами';
     const body = `${title} — ${company}`
       + (dateLabel ? `, ${dateLabel}` : '')
       + (timeLabel ? ` ${timeLabel}` : '')
       + (metroStation ? `, м. ${metroStation}` : '')
       + (salaryLabel ? `, ${salaryLabel}` : '')
-      + '. Откройте и откликнитесь!';
+      + '. Откройте и откликнитесь.';
 
-    const detailsHtml = `\n\n👷 ${title} — ${company}`
-      + (dateLabel ? `\n📅 ${dateLabel}${timeLabel ? `, ${timeLabel}` : ''}` : (timeLabel ? `\n🕐 ${timeLabel}` : ''))
-      + (schedule ? `\n🗓 ${schedule}` : '')
-      + (metroStation ? `\n🚇 м. ${metroStation}` : '')
-      + (salaryLabel ? `\n💰 ${salaryLabel}` : '');
+    const detailsHtml = `\n\n${title} — ${company}`
+      + (dateLabel ? `\n${dateLabel}${timeLabel ? `, ${timeLabel}` : ''}` : (timeLabel ? `\n${timeLabel}` : ''))
+      + (schedule ? `\n${schedule}` : '')
+      + (metroStation ? `\nм. ${metroStation}` : '')
+      + (salaryLabel ? `\n${salaryLabel}` : '');
 
-    const headHtml = type === 'permanent' ? '💼 <b>Новая постоянная вакансия!</b>' : '⚡ <b>Новая подработка!</b>';
-    const tgHtml = headHtml + detailsHtml + '\n\nУспей откликнуться 👇';
+    const headHtml = type === 'permanent' ? '<b>Новая вакансия рядом с вами</b>' : '<b>Новая подработка рядом с вами</b>';
+    const tgHtml = headHtml + detailsHtml + '\n\nУспейте откликнуться.';
     // Текст поста в группу «ПОДРАБОТКИ» здесь больше не собирается: его делает
     // сервер (jt_group_html в php-proxy/db.php) из строки вакансии. Раньше
     // формат жил в двух местах, и второй — догоняющее задание — неизбежно

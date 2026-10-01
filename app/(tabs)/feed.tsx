@@ -2109,7 +2109,10 @@ function EmployerHome() {
                 >
                   <Text style={pS.appStatNum}>{permApplicantCount(v.id)}</Text>
                   <Text style={pS.appStatLabel}>откликов</Text>
-                  <Text style={pS.appStatArrow}>Посмотреть ↗</Text>
+                  <View style={pS.appStatLink}>
+                    <Text style={pS.appStatArrow}>Посмотреть</Text>
+                    <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
+                  </View>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[pS.appStatBtn, { backgroundColor: '#F4F4F5', marginTop: 6 }]}
@@ -2118,7 +2121,10 @@ function EmployerHome() {
                 >
                   <Text style={[pS.appStatNum, { color: Colors.textSecondary }]}>{permVacancyViewsMap[v.id] ?? 0}</Text>
                   <Text style={[pS.appStatLabel, { color: Colors.textSecondary }]}>посмотрели</Text>
-                  <Text style={[pS.appStatArrow, { color: Colors.textSecondary }]}>Посмотреть ↗</Text>
+                  <View style={pS.appStatLink}>
+                    <Text style={[pS.appStatArrow, { color: Colors.textSecondary }]}>Посмотреть</Text>
+                    <Ionicons name="arrow-forward" size={13} color={Colors.textSecondary} />
+                  </View>
                 </TouchableOpacity>
               </View>
             ))
@@ -2564,6 +2570,7 @@ const pS = StyleSheet.create({
   appStatNum: { fontSize: rf(20), fontWeight: '800', color: Colors.primary },
   appStatLabel: { fontSize: rf(12), color: Colors.primary, flex: 1 },
   appStatArrow: { fontSize: rf(12), color: Colors.primary, fontWeight: '600' },
+  appStatLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
 
   // legacy (used by WorkerFeed M-button)
   filterLineDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },
