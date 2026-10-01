@@ -406,5 +406,32 @@ class RemoteTaskQueueTest(unittest.TestCase):
         ])
 
 
+class ProfileAnswers(unittest.TestCase):
+    """Частые вопросы работодателей — из профиля и ответов заранее (01.10.2026)."""
+
+    def test_profile_fields_become_jupiter_keys(self):
+        from remote_tasks import profile_answers
+        got = profile_answers(
+            {"linksList": [{"type": "telegram", "url": "https://t.me/nik_dev"},
+                           {"type": "behance", "url": "https://be.net/x"}],
+             "relocationCities": ["Санкт-Петербург"], "workFormats": ["remote", "hybrid"]},
+            {"salaryAmount": 200000, "languages": [{"name": "Английский", "level": "B2"}],
+             "experience": [{"company": "Old", "position": "Jr"}, {"company": "Now", "position": "Dev", "current": True}]})
+        self.assertEqual(got["desired_salary"], "200000")
+        self.assertEqual(got["telegram"], "@nik_dev")
+        self.assertEqual(got["portfolio"], "https://be.net/x")
+        self.assertEqual(got["relocation"], "Да: Санкт-Петербург")
+        self.assertEqual(got["english_level"], "B2")
+        self.assertEqual((got["current_company"], got["current_title"]), ("Now", "Dev"))
+        self.assertEqual(got["work_format"], "remote, hybrid")
+
+    def test_answers_given_upfront_win_and_nothing_is_invented(self):
+        from remote_tasks import profile_answers
+        got = profile_answers({"applyAnswers": {"desiredSalary": "250000", "noticePeriod": "2 недели", "telegram": ""}},
+                              {"salaryAmount": 200000})
+        self.assertEqual(got, {"desired_salary": "250000", "notice_period": "2 недели"})
+        self.assertEqual(profile_answers({}, {}), {})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

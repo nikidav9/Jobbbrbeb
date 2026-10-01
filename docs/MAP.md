@@ -1491,6 +1491,8 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 `docs/jupiter-browser-legal.md`. Прогон на 60 живых сайтах (dry-run, 18 настоящих
 анкет из 33 с формой) и список правок движка — `docs/jupiter-browser-survey.md`.
 
+**«Ответьте один раз»** (01.10.2026, решение владельца): частые вопросы анкет — зарплата, дата выхода, Telegram, английский, переезд, формат. Экран `app/profile-edit/apply-answers.tsx` (строка «Ответы для откликов» во вкладке «Личные»), хранится в `personal_data.applyAnswers`; шторка `components/feature/ApplyAnswersPrompt.tsx` после свайпа вправо, раз за сессию, пока заполнено меньше 4 из 6 (`lib/applyAnswers.ts`, тест `tests/apply-answers.test.ts`). Воркер (`jupiter/remote_tasks.profile_answers`) переводит профиль и резюме в ключи Юпитера: зарплата, формат, переезд, ссылки (Telegram — `@ник`), английский, текущая работа; `applyAnswers` главнее. Вопрос по смыслу, не по подписи: ключи профиля Юпитер узнаёт по синонимам, незнакомую подпись сопоставляет YandexGPT.
+
 **Вопросы от работодателей** (миграция 137, решение владельца 30.09.2026):
 `jupiterFinish` принимает от воркера `questions` при `action_required`
 (`jt_questions_store`: до 30 вопросов, до 50 вариантов, ключ `q:…`) и кладёт их
