@@ -825,7 +825,8 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
   Охрана — `tests/referral_hired_test.php`.
 - `referral_worked` — денормализация ради одного экрана: карточку кандидата
   работодатель видит списком. Входит в `USER_PUBLIC_COLS`, показывается в
-  `app/candidates.tsx` и `app/user-profile.tsx`. Источник правды — журнал,
+  `app/user-profile.tsx` (экраны смен `candidates`, `match`, `skill-test`
+  удалены 01.10.2026 по решению владельца). Источник правды — журнал,
   миграция `065` пересчитывает счётчик из него.
 - Ссылка приглашения — `startapp=ref_<КОД>`, разбирается в `app/_layout.tsx`,
   переживает путь до регистрации в `services/storage.ts` и применяется в
@@ -1756,6 +1757,10 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   (вакансии, оценки); личные (`RT_PERSONAL`: чаты, отклики, лайки, избранное,
   уведомления) — адресно в `jt:u:<id>` из `notify_bell` (`rt_user_signal`), приложение
   (`AppContext`) слушает свой канал. Проверка — `tests/notify_defer_test.php`.
+  Ночная чистка (`jt_cleanup_old` в `cronDailyNudges`, решение владельца 01.10.2026):
+  уведомления старше 90 дней, свайпы «влево» (`jm_ext_swipes`, `jm_perm_swipes`,
+  `dir = -1`) старше 30; отклики не удаляются никогда. Проверка — `tests/cleanup_test.php`.
+  Лимит неверных паролей с одного адреса — 30 за 15 минут (`JT_TRY_MAX`).
   Сбор вакансий остаётся раз в 6 часов (`tests/ingest_host_deactivation_test.php`
   стережёт расписание): при пуле в 20 процессов он занимает 2–4 из них.
 - `infra/ssh-authorized-keys` — публичные SSH-ключи владельца; `bootstrap.sh` дописывает недостающие в `/root/.ssh/authorized_keys` (вход только по ключу, пароли сервер не принимает). Удаление строки ключ с сервера не убирает.

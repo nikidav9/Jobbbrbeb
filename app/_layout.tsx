@@ -273,9 +273,7 @@ export default function RootLayout() {
             <Stack.Screen name="login" />
             <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
             <Stack.Screen name="legal" />
-            <Stack.Screen name="candidates" />
             <Stack.Screen name="chat-room" />
-            <Stack.Screen name="match" options={{ presentation: 'modal' }} />
             <Stack.Screen name="rate" options={{ presentation: 'modal' }} />
             <Stack.Screen name="admin" />
             <Stack.Screen name="user-profile" />
@@ -287,7 +285,6 @@ export default function RootLayout() {
             {/* Шторкой: тест — короткий заход из профиля, а не место, куда
                 уходят насовсем. Закрыть крестиком и вернуться на прежний
                 экран должно быть очевидно. */}
-            <Stack.Screen name="skill-test" options={{ presentation: 'modal' }} />
           </Stack>
           <OnboardingOverlay />
           {/* Поверх всего, но под всплывающими сообщениями: окно закрывает

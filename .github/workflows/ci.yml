@@ -208,6 +208,9 @@ jobs:
       - name: Пуш, Telegram и web-push — после ответа человеку; личные сигналы — только ему
         run: php tests/notify_defer_test.php
 
+      - name: Ночная чистка — уведомления 90 дней, свайпы «влево» 30, отклики никогда
+        run: php tests/cleanup_test.php
+
       - name: Нативный push не раскрывает данные события
         run: php tests/push_privacy_test.php
 

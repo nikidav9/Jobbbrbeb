@@ -233,7 +233,6 @@ const screens = [
   { id: 'create-perm', url: '/create-perm-vacancy', who: employer, back: true, backTo: /^\/feed$/ },
   // Экран кандидатов на смену мёртв (подработка закрыта 17.09) — проверяем,
   // что старая ссылка не оставляет пустую страницу без выхода.
-  { id: 'candidates-not-found', url: '/candidates?vacancyId=small-p1', who: employer, back: true, backTo: /^\/feed$/ },
   { id: 'settings-employer', url: '/profile-settings', who: employer, back: true, backTo: /^\/profile$/ },
   { id: 'employer-user-profile', url: '/user-profile?userId=small-w1', who: employer, back: true, backTo: /^\/feed$/ },
 ];

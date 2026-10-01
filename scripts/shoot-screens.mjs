@@ -321,7 +321,6 @@ const SHOTS = [
   { id: 'create-vacancy', url: '/create-vacancy', who: EMPLOYER, title: 'Создание смены' },
   { id: 'create-perm-vacancy', url: '/create-perm-vacancy', who: EMPLOYER, title: 'Создание вакансии' },
   { id: 'perm-applications', url: '/perm-applications', who: EMPLOYER, title: 'Отклики на вакансии' },
-  { id: 'candidates', url: '/candidates?vacancyId=v1', who: EMPLOYER, title: 'Кандидаты' },
 ];
 
 // ─── Статика ────────────────────────────────────────────────────────────
