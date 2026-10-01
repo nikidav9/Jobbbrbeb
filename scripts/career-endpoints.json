@@ -2439,5 +2439,16 @@
       "max_pages": 10
     },
     "company_hint": "Level Group"
+  },
+  {
+    "url": "https://evotor.ru/page-data/sq/d/754220884.json",
+    "map": {
+      "list": "data.strapiHeader.products",
+      "title": "title",
+      "id": "id",
+      "url_template": "https://evotor.ru/vacancies/{id}",
+      "company_const": "Эвотор"
+    },
+    "company_hint": "Эвотор"
   }
 ]
