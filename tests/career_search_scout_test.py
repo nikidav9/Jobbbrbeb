@@ -54,6 +54,8 @@ disc = [{"name": "A", "url": "https://a.ru", "status": "нет данных"},
 check("очередь: только без вакансий, давно не смотренные первыми",
       [d["name"] for d in s.targets(disc, {"A": 100.0, "C": 50.0}, 5)] == ["C", "A"])
 check("очередь: предел", len(s.targets(disc, {}, 1)) == 1)
+check("очередь: компании, уже собираемые в ленту, пропускаются",
+      [d["name"] for d in s.targets(disc, {}, 5, {"a", "Яндекс"})] == ["C"])
 
 llm = LLM({"url": "https://career.lenta.com/vacancies"})
 out = s.scout([{"name": "Лента", "url": "https://career.lenta.com", "status": "нет данных"}], "k", "f", llm,
