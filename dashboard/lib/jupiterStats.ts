@@ -333,6 +333,8 @@ export const UNKNOWN_REASON_LABEL: Record<string, string> = {
   // agent._unknown_outcome: связь оборвалась на самой отправке, проверка GET-ом
   // не нашла подтверждения.
   SUBMISSION_UNKNOWN: 'Связь оборвалась на отправке, подтверждения нет',
+  // jupiter_lease_task: воркер пропал, пока задача была в submitting.
+  LEASE_EXPIRED_DURING_SUBMISSION: 'Воркер пропал во время отправки',
 }
 
 export type UnknownSite = {
