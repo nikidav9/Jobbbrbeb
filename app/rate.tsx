@@ -12,6 +12,7 @@ import { dbSubmitRatingAndMaybeDelete } from '@/services/db';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 export default function RateScreen() {
   const router = useRouter();
   const { likeId, toUserId, toName, vacancyId, role } = useLocalSearchParams<{
@@ -201,42 +202,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(14),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  skipTxt: { fontSize: rf(14), color: Colors.textMuted, fontWeight: '500', width: rs(80) },
-  headerTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
+  skipTxt: { fontSize: rf(14), color: Colors.textMuted, fontFamily: JT_FONT.medium, width: rs(80) },
+  headerTitle: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   content: { alignItems: 'center', paddingHorizontal: rs(32), paddingVertical: rs(32), gap: rs(12), flexGrow: 1 },
-  emoji: { fontSize: rf(56) },
-  title: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  sub: { fontSize: rf(15), color: Colors.textMuted, textAlign: 'center' },
-  name: { fontSize: rf(18), fontWeight: '700', color: Colors.primary, textAlign: 'center' },
+  emoji: { fontFamily: JT_FONT.medium, fontSize: rf(56) },
+  title: { fontSize: rf(24), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center' },
+  sub: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textMuted, textAlign: 'center' },
+  name: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.primary, textAlign: 'center' },
   stars: { flexDirection: 'row', gap: rs(8), marginVertical: rs(12) },
-  star: { fontSize: rf(44), color: Colors.divider },
+  star: { fontFamily: JT_FONT.medium, fontSize: rf(44), color: Colors.divider },
   starActive: { color: '#FBBF24' },
-  ratingLabel: { fontSize: rf(16), color: Colors.textSecondary, fontWeight: '500', height: rs(24) },
+  ratingLabel: { fontSize: rf(16), color: Colors.textSecondary, fontFamily: JT_FONT.medium, height: rs(24) },
   extraBlock: {
     width: '100%', marginTop: rs(8), padding: rs(14),
     backgroundColor: Colors.surface, borderRadius: rs(12),
     borderWidth: 1, borderColor: Colors.inputBorder,
   },
-  extraTitle: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  extraSub: { fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(17) },
+  extraTitle: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  extraSub: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(17) },
   extraRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: rs(12),
   },
-  extraLabel: { fontSize: rf(14), color: Colors.textSecondary, fontWeight: '500' },
+  extraLabel: { fontSize: rf(14), color: Colors.textSecondary, fontFamily: JT_FONT.medium },
   extraStars: { flexDirection: 'row', gap: rs(4) },
-  smallStar: { fontSize: rf(24), color: Colors.divider },
+  smallStar: { fontFamily: JT_FONT.medium, fontSize: rf(24), color: Colors.divider },
   reviewBlock: { width: '100%', gap: rs(8), marginTop: rs(8) },
-  reviewTitle: { fontSize: rf(14), fontWeight: '600', color: Colors.textPrimary },
+  reviewTitle: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textPrimary },
   reviewInput: {
     backgroundColor: Colors.surface, borderRadius: rs(12), padding: rs(14),
-    fontSize: rf(14), color: Colors.textPrimary, minHeight: rs(80),
+    fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textPrimary, minHeight: rs(80),
     borderWidth: 1, borderColor: Colors.inputBorder,
   },
-  note: { fontSize: rf(13), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(18), marginTop: rs(8) },
+  note: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(18), marginTop: rs(8) },
   submitBtn: {
     marginTop: rs(20), backgroundColor: Colors.primary, borderRadius: rs(100),
     paddingHorizontal: rs(40), paddingVertical: rs(16), width: '100%', alignItems: 'center',
   },
-  submitBtnTxt: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
+  submitBtnTxt: { color: '#fff', fontSize: rf(16), fontFamily: JT_FONT.bold },
 });

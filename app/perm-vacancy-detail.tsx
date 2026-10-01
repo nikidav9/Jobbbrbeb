@@ -38,6 +38,7 @@ import { permVacancyInfoLines } from '@/services/vacancyCard';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { BackButton } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 export default function PermVacancyDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -212,7 +213,7 @@ export default function PermVacancyDetailScreen() {
                 activeOpacity={0.8}
                 style={{ marginTop: rs(14), backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) }}
               >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Повторить</Text>
+                <Text style={{ color: '#fff', fontFamily: JT_FONT.bold }}>Повторить</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -673,23 +674,23 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: rs(20), paddingTop: rs(30), gap: rs(18) },
 
   statusBadge: { borderRadius: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(8), alignSelf: 'flex-start' },
-  statusTxt: { fontSize: rf(13), fontWeight: '700' },
+  statusTxt: { fontSize: rf(13), fontFamily: JT_FONT.bold },
 
   hero: { gap: rs(14) },
   companyLogo: { alignSelf: 'flex-start', marginBottom: rs(12) },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
-  companyName: { flex: 1, fontSize: rf(14.5), fontWeight: '600', color: Colors.textSecondary },
-  postedAgo: { fontWeight: '500', color: Colors.textMuted },
+  companyName: { flex: 1, fontSize: rf(14.5), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
+  postedAgo: { fontFamily: JT_FONT.medium, color: Colors.textMuted },
   vacancyTitle: {
-    fontSize: rf(27), lineHeight: rf(33), fontWeight: '800',
+    fontSize: rf(27), lineHeight: rf(33), fontFamily: JT_FONT.heavy,
     color: Colors.textPrimary, letterSpacing: -0.5,
   },
   factsGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: rs(12), columnGap: rs(18) },
   fact: { flexDirection: 'row', alignItems: 'center', gap: rs(7), minWidth: '42%' },
-  factText: { flexShrink: 1, fontSize: rf(13), lineHeight: rf(18), fontWeight: '600', color: Colors.textSecondary },
+  factText: { flexShrink: 1, fontSize: rf(13), lineHeight: rf(18), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
   detailCard: { backgroundColor: Colors.card, borderRadius: Radius.xl, padding: rs(16), ...Shadow.card },
   section: { gap: rs(12) },
-  sectionTitle: { fontSize: rf(16), lineHeight: rf(22), fontWeight: '800', color: Colors.textPrimary },
+  sectionTitle: { fontSize: rf(16), lineHeight: rf(22), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
 
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(10), paddingVertical: rs(2) },
   mapBtn: {
@@ -697,33 +698,33 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.primary,
     borderRadius: rs(12), paddingHorizontal: rs(16), paddingVertical: rs(11),
   },
-  mapBtnTxt: { fontSize: rf(13), fontWeight: '700', color: Colors.primary },
-  locationValue: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '500', lineHeight: rf(20) },
+  mapBtnTxt: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: Colors.primary },
+  locationValue: { fontSize: rf(14), color: Colors.textPrimary, fontFamily: JT_FONT.medium, lineHeight: rf(20) },
   metroDot: { width: rs(14), height: rs(14), borderRadius: rs(7), marginTop: rs(3) },
-  metroLineName: { fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(2) },
+  metroLineName: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted, marginBottom: rs(2) },
 
   descText: {
-    fontSize: rf(15), color: Colors.textSecondary, lineHeight: rf(23),
+    fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textSecondary, lineHeight: rf(23),
   },
   readMoreBtn: {
     minHeight: rs(44), borderRadius: rs(100), borderWidth: 1, borderColor: Colors.inputBorder,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6),
   },
-  readMoreText: { fontSize: rf(14), fontWeight: '600', color: Colors.textPrimary },
+  readMoreText: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textPrimary },
 
   employerCard: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
     borderWidth: 1, borderColor: Colors.divider, borderRadius: rs(16), padding: rs(14),
   },
   employerAvatar: { width: rs(48), height: rs(48), borderRadius: rs(24) },
-  employerAvatarTxt: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
-  employerName: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  employerMeta: { fontSize: rf(12), color: Colors.textMuted },
+  employerAvatarTxt: { color: '#fff', fontSize: rf(16), fontFamily: JT_FONT.bold },
+  employerName: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  employerMeta: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted },
   profileBtn: {
     backgroundColor: Colors.primaryLight, borderRadius: rs(10),
     paddingHorizontal: rs(10), paddingVertical: rs(7),
   },
-  profileBtnTxt: { fontSize: rf(12), color: Colors.primary, fontWeight: '600' },
+  profileBtnTxt: { fontSize: rf(12), color: Colors.primary, fontFamily: JT_FONT.semi },
 
   phoneReveal: {
     flexDirection: 'row', alignItems: 'center',
@@ -732,10 +733,10 @@ const styles = StyleSheet.create({
     gap: rs(12),
   },
   phoneRevealLeft: { flex: 1 },
-  phoneRevealLabel: { fontSize: rf(12), color: Colors.green, fontWeight: '600' },
-  phoneRevealNumber: { fontSize: rf(18), fontWeight: '800', color: '#065F46', marginTop: rs(2) },
+  phoneRevealLabel: { fontSize: rf(12), color: Colors.green, fontFamily: JT_FONT.semi },
+  phoneRevealNumber: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: '#065F46', marginTop: rs(2) },
   phoneUnlocked: { backgroundColor: Colors.green, borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(5) },
-  phoneUnlockedTxt: { fontSize: rf(12), color: '#fff', fontWeight: '700' },
+  phoneUnlockedTxt: { fontSize: rf(12), color: '#fff', fontFamily: JT_FONT.bold },
 
   phoneLocked: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
@@ -743,12 +744,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.divider,
     opacity: 0.85,
   },
-  phoneLockedIcon: { fontSize: rf(22) },
-  phoneLockedTitle: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  phoneLockedSub: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(17) },
+  phoneLockedIcon: { fontFamily: JT_FONT.medium, fontSize: rf(22) },
+  phoneLockedTitle: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  phoneLockedSub: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(17) },
 
   emptyCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: rs(12) },
-  emptyTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
+  emptyTitle: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
 
   bottomBar: {
     gap: rs(11), paddingHorizontal: rs(16), paddingTop: rs(12), paddingBottom: rs(8),
@@ -767,14 +768,14 @@ const styles = StyleSheet.create({
     borderRadius: rs(26), alignItems: 'center', justifyContent: 'center',
   },
   applyBtnDone: { backgroundColor: '#D1FAE5' },
-  applyBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
+  applyBtnTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.bold },
   detailNav: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
     paddingHorizontal: rs(6), paddingVertical: rs(5),
     backgroundColor: Colors.card, borderRadius: rs(100), ...Shadow.card,
   },
   detailNavItem: { flex: 1, alignItems: 'center', gap: rs(2), paddingVertical: rs(3) },
-  detailNavText: { fontSize: rf(10), fontWeight: '600', color: Colors.textMuted },
+  detailNavText: { fontSize: rf(10), fontFamily: JT_FONT.semi, color: Colors.textMuted },
   detailNavTextActive: { color: Colors.primary },
 
   guestBar: {
@@ -787,12 +788,12 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: Colors.primary,
     borderRadius: rs(10), paddingVertical: rs(13), alignItems: 'center',
   },
-  guestBtnPrimaryTxt: { color: '#fff', fontSize: rf(15), fontWeight: '600' },
+  guestBtnPrimaryTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.semi },
   guestBtnSecondary: {
     flex: 1, backgroundColor: Colors.primaryLight,
     borderRadius: rs(10), paddingVertical: rs(13), alignItems: 'center',
   },
-  guestBtnSecondaryTxt: { color: Colors.primary, fontSize: rf(15), fontWeight: '600' },
+  guestBtnSecondaryTxt: { color: Colors.primary, fontSize: rf(15), fontFamily: JT_FONT.semi },
 
   authOverlay: {
     flex: 1,
@@ -805,28 +806,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(24), paddingTop: rs(4), paddingBottom: rs(40),
     alignItems: 'center', gap: 0,
   },
-  authCloseTxt: { fontSize: rf(14), color: Colors.textMuted },
-  authEmoji: { fontSize: rf(36), marginBottom: rs(10), marginTop: rs(4) },
-  authTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
+  authCloseTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted },
+  authEmoji: { fontFamily: JT_FONT.medium, fontSize: rf(36), marginBottom: rs(10), marginTop: rs(4) },
+  authTitle: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center' },
   authSub: {
-    fontSize: rf(14), color: Colors.textMuted, textAlign: 'center',
+    fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center',
     marginTop: rs(6), marginBottom: rs(20), lineHeight: rf(20),
   },
   authBtnPrimary: {
     width: '100%', backgroundColor: Colors.primary,
     borderRadius: rs(100), paddingVertical: rs(15), alignItems: 'center',
   },
-  authBtnPrimaryTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
+  authBtnPrimaryTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.bold },
   authDivider: {
     flexDirection: 'row', alignItems: 'center',
     gap: rs(10), marginVertical: rs(14), width: '100%',
   },
   authDividerLine: { flex: 1, height: 1, backgroundColor: Colors.divider },
-  authDividerTxt: { fontSize: rf(13), color: Colors.textMuted },
+  authDividerTxt: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted },
   authBtnSecondary: {
     width: '100%', borderWidth: 1.5, borderColor: Colors.inputBorder,
     borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center',
     backgroundColor: Colors.bg,
   },
-  authBtnSecondaryTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textPrimary },
+  authBtnSecondaryTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textPrimary },
 });

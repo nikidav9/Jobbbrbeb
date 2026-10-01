@@ -31,6 +31,7 @@ import {
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
 
+import { JT_FONT } from '@/constants/jt';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 // Статус подписывался смайликом. Смайлик рисует система, а не наш шрифт:
@@ -275,33 +276,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(14),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  backTxt: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500', width: rs(60) },
-  headerTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary, flex: 1, textAlign: 'center' },
+  backTxt: { fontSize: rf(15), color: Colors.textSecondary, fontFamily: JT_FONT.medium, width: rs(60) },
+  headerTitle: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
   list: { padding: rs(16), gap: rs(12), paddingBottom: rs(100) },
   card: { backgroundColor: Colors.bg, borderRadius: Radius.lg, padding: rs(16), ...Shadow.card, gap: rs(10) },
   workerRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22) },
-  avatarTxt: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
-  name: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  meta: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
+  avatarTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.bold },
+  name: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  meta: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10), marginTop: rs(3), flexWrap: 'wrap' },
   metaBit: { flexDirection: 'row', alignItems: 'center', gap: rs(4), flexShrink: 1 },
-  metaTxt: { fontSize: rf(12), color: Colors.textMuted, flexShrink: 1 },
+  metaTxt: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, flexShrink: 1 },
   arrowRow: { flexDirection: 'row', alignItems: 'center', gap: rs(1) },
-  arrow: { fontSize: rf(12), color: Colors.primary, fontWeight: '600' },
+  arrow: { fontSize: rf(12), color: Colors.primary, fontFamily: JT_FONT.semi },
   emptyIcon: {
     width: rs(64), height: rs(64), borderRadius: rs(32),
     backgroundColor: Colors.divider, alignItems: 'center', justifyContent: 'center',
     marginBottom: rs(4),
   },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: rs(6), borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(6), alignSelf: 'flex-start' },
-  statusTxt: { fontSize: rf(13), fontWeight: '700' },
+  statusTxt: { fontSize: rf(13), fontFamily: JT_FONT.bold },
   btnRow: { flexDirection: 'row', gap: rs(10) },
   rejectBtn: { flex: 1, flexDirection: 'row', gap: rs(5), justifyContent: 'center', borderWidth: 1.5, borderColor: Colors.red, borderRadius: rs(100), paddingVertical: rs(11), alignItems: 'center' },
-  rejectBtnTxt: { color: Colors.red, fontSize: rf(14), fontWeight: '600' },
+  rejectBtnTxt: { color: Colors.red, fontSize: rf(14), fontFamily: JT_FONT.semi },
   approveBtn: { flex: 2, flexDirection: 'row', gap: rs(6), justifyContent: 'center', backgroundColor: Colors.green, borderRadius: rs(100), paddingVertical: rs(11), alignItems: 'center' },
-  approveBtnTxt: { color: '#fff', fontSize: rf(14), fontWeight: '700' },
+  approveBtnTxt: { color: '#fff', fontSize: rf(14), fontFamily: JT_FONT.bold },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(32), paddingBottom: rs(80) },
-  emptyTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary, marginTop: rs(12) },
-  emptySub: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', marginTop: rs(6), lineHeight: rf(20) },
+  emptyTitle: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginTop: rs(12) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', marginTop: rs(6), lineHeight: rf(20) },
 });

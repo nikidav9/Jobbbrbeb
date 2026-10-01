@@ -22,6 +22,8 @@ export const JT = {
 export const JT_FONT = {
   head: 'Unbounded-700',
   medium: 'Manrope-500',
+  // 600 своего файла не имеет — то же начертание из @expo-google-fonts.
+  semi: 'Manrope_600SemiBold',
   bold: 'Manrope-700',
   heavy: 'Manrope-800',
 } as const;

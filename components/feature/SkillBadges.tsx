@@ -10,6 +10,7 @@ import { dbGetSkillResults, SkillResult } from '@/services/db';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { SKILL_TESTS } from '@/constants/skillTests';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Подтверждённые навыки.
  *
@@ -73,7 +74,7 @@ export function SkillBadges({ user, own = false }: { user: User; own?: boolean }
                 size={rf(18)}
                 color={ок ? Colors.green : Colors.textMuted}
               />
-              <Text style={[s.rowTxt, ок ? { fontWeight: '700', color: Colors.textPrimary } : null]}>
+              <Text style={[s.rowTxt, ок ? { fontFamily: JT_FONT.bold, color: Colors.textPrimary } : null]}>
                 {WORK_TYPE_META[w].label}
               </Text>
               {own && !ок ? (
@@ -99,14 +100,14 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.divider,
   },
   head: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
-  title: { fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary },
-  sub: { fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(6), lineHeight: rf(18) },
+  title: { fontSize: rf(15), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  sub: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(6), lineHeight: rf(18) },
   rows: { marginTop: rs(12), gap: rs(10) },
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
-  rowTxt: { flex: 1, fontSize: rf(14), color: Colors.textSecondary },
+  rowTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textSecondary },
   btn: {
     paddingHorizontal: rs(12), paddingVertical: rs(6), borderRadius: rs(100),
     backgroundColor: Colors.primaryLight,
   },
-  btnTxt: { fontSize: rf(12.5), fontWeight: '700', color: Colors.primary },
+  btnTxt: { fontSize: rf(12.5), fontFamily: JT_FONT.bold, color: Colors.primary },
 });

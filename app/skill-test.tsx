@@ -14,6 +14,7 @@ import { SKILL_TESTS, SKILL_PASS, SKILL_ATTEMPTS_PER_DAY } from '@/constants/ski
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { dbSubmitSkillTest } from '@/services/db';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Микро-тест по профессии: пять вопросов, минута времени.
  *
@@ -158,7 +159,7 @@ export default function SkillTestScreen() {
             >
               <Text style={[
                 s.optionTxt,
-                тон === 'good' ? { color: Colors.green, fontWeight: '700' } : null,
+                тон === 'good' ? { color: Colors.green, fontFamily: JT_FONT.bold } : null,
                 тон === 'bad' ? { color: Colors.red } : null,
               ]}>{o}</Text>
               {отвечено && правильный ? (
@@ -205,13 +206,13 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingVertical: rs(14),
   },
-  headerTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
-  counter: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
+  headerTitle: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  counter: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textMuted },
   progress: { height: rs(4), backgroundColor: Colors.surface, marginHorizontal: rs(16), borderRadius: rs(2) },
   progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: rs(2) },
 
   body: { padding: rs(20), gap: rs(10) },
-  question: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(25), marginBottom: rs(6) },
+  question: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary, lineHeight: rf(25), marginBottom: rs(6) },
   option: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
     padding: rs(14), borderRadius: rs(12),
@@ -220,30 +221,30 @@ const s = StyleSheet.create({
   optionPicked: { borderColor: Colors.primary },
   optionGood: { borderColor: Colors.green, backgroundColor: '#F0FDF4' },
   optionBad: { borderColor: Colors.red, backgroundColor: '#FEF2F2' },
-  optionTxt: { flex: 1, fontSize: rf(14.5), color: Colors.textPrimary, lineHeight: rf(20) },
+  optionTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(14.5), color: Colors.textPrimary, lineHeight: rf(20) },
 
   why: {
     marginTop: rs(6), padding: rs(12), borderRadius: rs(10),
     backgroundColor: Colors.surface,
   },
-  whyTxt: { fontSize: rf(13.5), color: Colors.textSecondary, lineHeight: rf(19) },
+  whyTxt: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: Colors.textSecondary, lineHeight: rf(19) },
 
   footer: { padding: rs(20), gap: rs(8) },
   primaryBtn: {
     height: rs(52), borderRadius: rs(14), backgroundColor: Colors.primary,
     alignItems: 'center', justifyContent: 'center', width: '100%',
   },
-  primaryTxt: { fontSize: rf(16), fontWeight: '800', color: '#FFFFFF' },
-  note: { fontSize: rf(12), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(17) },
+  primaryTxt: { fontSize: rf(16), fontFamily: JT_FONT.heavy, color: '#FFFFFF' },
+  note: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(17) },
 
   resultCircle: {
     width: rs(84), height: rs(84), borderRadius: rs(42), borderWidth: rs(3),
     alignItems: 'center', justifyContent: 'center', marginBottom: rs(18),
   },
-  resultTitle: { fontSize: rf(22), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
+  resultTitle: { fontSize: rf(22), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center' },
   resultSub: {
-    fontSize: rf(14.5), color: Colors.textSecondary, textAlign: 'center',
+    fontFamily: JT_FONT.medium, fontSize: rf(14.5), color: Colors.textSecondary, textAlign: 'center',
     lineHeight: rf(21), marginTop: rs(8), marginBottom: rs(24),
   },
-  emptyTxt: { fontSize: rf(15), color: Colors.textMuted, textAlign: 'center', marginBottom: rs(20) },
+  emptyTxt: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textMuted, textAlign: 'center', marginBottom: rs(20) },
 });

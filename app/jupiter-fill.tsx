@@ -27,6 +27,7 @@ import {
 import { rs, rf } from '@/constants/scale';
 import { BackButton } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 type FillStatus =
   | 'loading' | 'filling' | 'ready' | 'captcha' | 'missing' | 'consent'
   | 'no_form' | 'no_submit' | 'login' | 'submitting' | 'unknown' | 'error';
@@ -337,19 +338,19 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(12), paddingVertical: rs(10),
   },
   headerMid: { flex: 1, alignItems: 'center' },
-  headerTitle: { textAlign: 'center', fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
-  headerSub: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2) },
-  skipTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.primary },
+  headerTitle: { textAlign: 'center', fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  headerSub: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2) },
+  skipTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.primary },
   notice: {
     flexDirection: 'row', gap: rs(8), alignItems: 'flex-start',
     marginHorizontal: rs(16), marginBottom: rs(10),
     backgroundColor: Colors.primaryLight, borderRadius: Radius.md, padding: rs(12),
   },
-  noticeTxt: { flex: 1, fontSize: rf(13), lineHeight: rf(18), color: Colors.textPrimary },
+  noticeTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(13), lineHeight: rf(18), color: Colors.textPrimary },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: rs(12), paddingHorizontal: rs(24) },
-  errorTxt: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center' },
+  errorTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center' },
   openBtn: { backgroundColor: Colors.primary, borderRadius: Radius.md, paddingHorizontal: rs(20), paddingVertical: rs(12) },
-  openBtnTxt: { color: '#FFFFFF', fontWeight: '700', fontSize: rf(14) },
+  openBtnTxt: { color: '#FFFFFF', fontFamily: JT_FONT.bold, fontSize: rf(14) },
   footer: {
     flexDirection: 'row', gap: rs(10), padding: rs(16),
     borderTopWidth: 1, borderTopColor: Colors.divider, backgroundColor: Colors.bg,
@@ -358,13 +359,13 @@ const s = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.inputBorder, paddingVertical: rs(13),
   },
-  secondaryBtnTxt: { color: Colors.textPrimary, fontWeight: '700', fontSize: rf(14) },
+  secondaryBtnTxt: { color: Colors.textPrimary, fontFamily: JT_FONT.bold, fontSize: rf(14) },
   primaryBtn: {
     flex: 1.4, alignItems: 'center', justifyContent: 'center',
     borderRadius: Radius.md, backgroundColor: Colors.primary, paddingVertical: rs(13), ...Shadow.card,
   },
-  primaryBtnTxt: { color: '#FFFFFF', fontWeight: '800', fontSize: rf(14) },
+  primaryBtnTxt: { color: '#FFFFFF', fontFamily: JT_FONT.heavy, fontSize: rf(14) },
   manualLink: { alignItems: 'center', paddingBottom: rs(14), backgroundColor: Colors.bg },
-  manualLinkTxt: { fontSize: rf(13), color: Colors.textSecondary, textDecorationLine: 'underline' },
-  webNote: { padding: rs(24), fontSize: rf(15), lineHeight: rf(21), color: Colors.textSecondary, textAlign: 'center' },
+  manualLinkTxt: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary, textDecorationLine: 'underline' },
+  webNote: { padding: rs(24), fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(21), color: Colors.textSecondary, textAlign: 'center' },
 });

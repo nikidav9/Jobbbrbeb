@@ -18,6 +18,7 @@ import {
   dbDeleteNotif, dbDeleteAllNotifs,
 } from '@/services/db';
 
+import { JT_FONT } from '@/constants/jt';
 interface Notif {
   id: string;
   title: string;
@@ -215,11 +216,11 @@ export function NotifBell() {
 
             {!loading && loadFailed && notifs.length > 0 ? (
               <View style={{ paddingHorizontal: rs(20), paddingVertical: rs(10), backgroundColor: Colors.surface, gap: rs(4) }}>
-                <Text style={{ color: Colors.textPrimary, fontWeight: '700', textAlign: 'center', fontSize: rf(12.5) }}>
+                <Text style={{ color: Colors.textPrimary, fontFamily: JT_FONT.bold, textAlign: 'center', fontSize: rf(12.5) }}>
                   Не удалось обновить уведомления
                 </Text>
                 <TouchableOpacity onPress={() => userId && void fetchNotifs(userId)} activeOpacity={0.8}>
-                  <Text style={{ color: Colors.primary, fontWeight: '700', textAlign: 'center', fontSize: rf(12.5) }}>Повторить</Text>
+                  <Text style={{ color: Colors.primary, fontFamily: JT_FONT.bold, textAlign: 'center', fontSize: rf(12.5) }}>Повторить</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -234,7 +235,7 @@ export function NotifBell() {
                   <Text style={s.emptyTitle}>Не удалось загрузить уведомления</Text>
                   <Text style={s.emptySub}>Проверьте связь и попробуйте ещё раз.</Text>
                   <TouchableOpacity onPress={() => userId && void fetchNotifs(userId)} activeOpacity={0.8} style={{ marginTop: rs(12) }}>
-                    <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: rf(14) }}>Повторить</Text>
+                    <Text style={{ color: Colors.primary, fontFamily: JT_FONT.bold, fontSize: rf(14) }}>Повторить</Text>
                   </TouchableOpacity>
                 </View>
               ) : notifs.length === 0 ? (
@@ -288,7 +289,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.primary, borderRadius: rs(10),
     minWidth: rs(16), height: rs(16), alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(3),
   },
-  badgeTxt: { color: '#fff', fontSize: rf(9), fontWeight: '700' },
+  badgeTxt: { color: '#fff', fontSize: rf(9), fontFamily: JT_FONT.bold },
 
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   // Не во весь экран: сверху видно затемнение, и сразу понятно, что окно
@@ -298,7 +299,7 @@ const s = StyleSheet.create({
     borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20),
   },
   header: { paddingHorizontal: rs(20), paddingTop: rs(2), paddingBottom: rs(10) },
-  title: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary },
+  title: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   // Кнопки — отдельной строкой. В одну строку с заголовком они не помещались:
   // «Прочитать все» упиралось в край экрана.
   actions: {
@@ -307,18 +308,18 @@ const s = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
   deleteAllBtn: { paddingVertical: rs(4), paddingHorizontal: rs(8), borderRadius: rs(8), backgroundColor: '#FEE2E2' },
-  deleteAllTxt: { fontSize: rf(12), fontWeight: '600', color: '#DC2626' },
+  deleteAllTxt: { fontSize: rf(12), fontFamily: JT_FONT.semi, color: '#DC2626' },
   cancelBtn: { paddingVertical: rs(4), paddingHorizontal: rs(8), borderRadius: rs(8), backgroundColor: Colors.divider },
-  cancelTxt: { fontSize: rf(12), fontWeight: '600', color: Colors.textSecondary },
+  cancelTxt: { fontSize: rf(12), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
   markAllBtn: { paddingVertical: rs(4), paddingHorizontal: rs(8), borderRadius: rs(8), backgroundColor: Colors.primaryLight },
-  markAllTxt: { fontSize: rf(12), fontWeight: '600', color: Colors.primary },
+  markAllTxt: { fontSize: rf(12), fontFamily: JT_FONT.semi, color: Colors.primary },
 
   list: { paddingVertical: rs(8) },
 
   empty: { alignItems: 'center', paddingTop: rs(80), paddingHorizontal: rs(32) },
-  emptyIcon: { fontSize: rf(48), marginBottom: rs(16) },
-  emptyTitle: { fontSize: rf(17), fontWeight: '600', color: Colors.textPrimary, marginBottom: rs(8) },
-  emptySub: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20) },
+  emptyIcon: { fontFamily: JT_FONT.medium, fontSize: rf(48), marginBottom: rs(16) },
+  emptyTitle: { fontSize: rf(17), fontFamily: JT_FONT.semi, color: Colors.textPrimary, marginBottom: rs(8) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20) },
 
   item: {
     flexDirection: 'row', alignItems: 'center',
@@ -331,9 +332,9 @@ const s = StyleSheet.create({
   itemDot: { width: rs(20), alignItems: 'center', paddingTop: rs(5) },
   dot: { width: rs(8), height: rs(8), borderRadius: rs(4), backgroundColor: Colors.primary },
   itemBody: { flex: 1 },
-  itemTitle: { fontSize: rf(14), color: Colors.textPrimary, marginBottom: rs(3) },
-  itemTitleBold: { fontWeight: '600' },
-  itemText: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18), marginBottom: rs(5) },
-  itemTime: { fontSize: rf(11), color: Colors.textMuted },
+  itemTitle: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textPrimary, marginBottom: rs(3) },
+  itemTitleBold: { fontFamily: JT_FONT.semi },
+  itemText: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18), marginBottom: rs(5) },
+  itemTime: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted },
   deleteBtn: { padding: rs(6), marginLeft: rs(8) },
 });

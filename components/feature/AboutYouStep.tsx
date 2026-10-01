@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Последний шаг регистрации: фото, возраст и пара слов о себе.
  *
@@ -154,8 +155,8 @@ export function isAboutYouComplete(age: string, bio: string): boolean {
 }
 
 const st = StyleSheet.create({
-  title: { fontSize: rf(24), fontWeight: '800', color: Colors.textPrimary, marginBottom: rs(6) },
-  subtitle: { fontSize: rf(14), color: Colors.textMuted, marginBottom: rs(18) },
+  title: { fontSize: rf(24), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, marginBottom: rs(6) },
+  subtitle: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, marginBottom: rs(18) },
 
   photoRow: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
@@ -167,24 +168,24 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   photo: { width: '100%', height: '100%' },
-  photoTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  photoHint: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(16) },
-  photoRemove: { fontSize: rf(12), color: Colors.primary, marginTop: rs(6), fontWeight: '600' },
+  photoTitle: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  photoHint: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2), lineHeight: rf(16) },
+  photoRemove: { fontSize: rf(12), color: Colors.primary, marginTop: rs(6), fontFamily: JT_FONT.semi },
 
-  label: { fontSize: rf(13), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(6) },
+  label: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginBottom: rs(6) },
   ageInput: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: Radius.md,
     paddingHorizontal: rs(14), paddingVertical: rs(12),
-    fontSize: rf(16), color: Colors.textPrimary, width: rs(96), marginBottom: rs(4),
+    fontFamily: JT_FONT.medium, fontSize: rf(16), color: Colors.textPrimary, width: rs(96), marginBottom: rs(4),
   },
   bioInput: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: Radius.md,
     paddingHorizontal: rs(14), paddingVertical: rs(12),
-    fontSize: rf(15), color: Colors.textPrimary, minHeight: rs(96),
+    fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary, minHeight: rs(96),
     textAlignVertical: 'top', marginBottom: rs(4),
   },
-  counter: { fontSize: rf(12), color: Colors.textMuted, marginBottom: rs(14), textAlign: 'right' },
+  counter: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginBottom: rs(14), textAlign: 'right' },
   counterLow: { color: '#B45309' },
-  err: { fontSize: rf(12), color: '#DC2626', marginBottom: rs(10) },
+  err: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: '#DC2626', marginBottom: rs(10) },
 
 });

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 type Contact =
   /** Партнёрская вакансия: показываем домен источника, ведём на саму вакансию. */
   | { kind: 'source'; domain: string; onOpen: () => void }
@@ -81,16 +82,16 @@ export function VacancyContacts({ contact, locked, onLogin }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { gap: rs(8) },
-  head: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  head: { fontSize: rf(17), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
-  link: { fontSize: rf(15), fontWeight: '600', color: Colors.primary },
-  company: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
+  link: { fontSize: rf(15), fontFamily: JT_FONT.semi, color: Colors.primary },
+  company: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   skeleton: { height: rs(16), borderRadius: rs(8), backgroundColor: Colors.divider },
-  lockedNote: { fontSize: rf(13.5), color: Colors.textMuted },
+  lockedNote: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: Colors.textMuted },
   loginBtn: {
     alignSelf: 'flex-start', paddingHorizontal: rs(18), paddingVertical: rs(9),
     borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.primary,
   },
-  loginTxt: { fontSize: rf(14), fontWeight: '700', color: Colors.primary },
+  loginTxt: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.primary },
 });

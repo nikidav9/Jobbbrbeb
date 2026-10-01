@@ -7,6 +7,7 @@ import { METRO_LINES } from '@/constants/metro';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -172,8 +173,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(16), paddingBottom: rs(8),
   },
-  title: { flex: 1, textAlign: 'center', fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary },
-  close: { fontSize: rf(18), color: Colors.textMuted, width: rs(22), textAlign: 'right' },
+  title: { flex: 1, textAlign: 'center', fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  close: { fontFamily: JT_FONT.medium, fontSize: rf(18), color: Colors.textMuted, width: rs(22), textAlign: 'right' },
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     marginHorizontal: rs(16), marginVertical: rs(10),
@@ -181,7 +182,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(12), paddingVertical: rs(10),
     borderWidth: 1, borderColor: Colors.inputBorder,
   },
-  searchInput: { flex: 1, fontSize: rf(15), color: Colors.textPrimary, padding: 0 },
+  searchInput: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary, padding: 0 },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
     marginHorizontal: rs(16), marginTop: rs(8),
@@ -191,9 +192,9 @@ const styles = StyleSheet.create({
   cardOn: { borderColor: Colors.primary },
   bar: { width: rs(5), height: rs(20), borderRadius: rs(3) },
   dot: { width: rs(11), height: rs(11), borderRadius: rs(6) },
-  name: { fontSize: rf(15), color: Colors.textPrimary, fontWeight: '500' },
-  sub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
-  badge: { fontSize: rf(12), fontWeight: '800', color: Colors.primary, marginRight: rs(6) },
+  name: { fontSize: rf(15), color: Colors.textPrimary, fontFamily: JT_FONT.medium },
+  sub: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
+  badge: { fontSize: rf(12), fontFamily: JT_FONT.heavy, color: Colors.primary, marginRight: rs(6) },
   check: {
     width: rs(22), height: rs(22), borderRadius: rs(6),
     borderWidth: 1.5, borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
@@ -201,9 +202,9 @@ const styles = StyleSheet.create({
   checkOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   footer: { padding: rs(16), gap: rs(8), borderTopWidth: 1, borderTopColor: Colors.divider },
   save: { backgroundColor: Colors.primary, borderRadius: rs(14), alignItems: 'center', paddingVertical: rs(14) },
-  saveTxt: { color: '#fff', fontSize: rf(15), fontWeight: '800' },
+  saveTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.heavy },
   reset: { backgroundColor: Colors.primaryLight, borderRadius: rs(14), alignItems: 'center', paddingVertical: rs(13) },
-  resetTxt: { color: Colors.primary, fontSize: rf(14), fontWeight: '700' },
+  resetTxt: { color: Colors.primary, fontSize: rf(14), fontFamily: JT_FONT.bold },
   empty: { padding: rs(24), alignItems: 'center' },
-  emptyTxt: { fontSize: rf(14), color: Colors.textMuted },
+  emptyTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted },
 });

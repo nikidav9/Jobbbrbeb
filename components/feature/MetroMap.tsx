@@ -15,6 +15,7 @@ import { normalizeCompany } from '@/services/storage';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 // Одна карточка в шторке над картой: минимум полей, чтобы список
 // одинаково собирался и для смен, и для постоянных вакансий.
 export type MapListItem = {
@@ -514,14 +515,14 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(16), paddingTop: rs(12), paddingBottom: rs(12),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  title: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary, flex: 1 },
+  title: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, flex: 1 },
   listBtn: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
     backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(14), paddingVertical: rs(8),
   },
-  listTxt: { color: '#fff', fontSize: rf(14), fontWeight: '700' },
+  listTxt: { color: '#fff', fontSize: rf(14), fontFamily: JT_FONT.bold },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: rs(10) },
-  emptyTxt: { fontSize: rf(14), color: Colors.textMuted },
+  emptyTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted },
 
   sheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
@@ -539,8 +540,8 @@ const s = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
   lineDot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
-  sheetTitle: { fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary, lineHeight: rf(20) },
-  sheetSub: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
+  sheetTitle: { fontSize: rf(15), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, lineHeight: rf(20) },
+  sheetSub: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginTop: rs(2) },
   sheetClose: {
     width: rs(30), height: rs(30), borderRadius: rs(15),
     alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg,
@@ -550,14 +551,14 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: rs(12),
     backgroundColor: Colors.bg, borderRadius: rs(14), padding: rs(12),
   },
-  rowTitle: { fontSize: rf(14.5), fontWeight: '700', color: Colors.textPrimary },
-  rowCompany: { fontSize: rf(12.5), color: Colors.textSecondary, marginTop: rs(2) },
-  rowMeta: { fontSize: rf(12), color: Colors.textMuted, marginTop: rs(3) },
-  rowPay: { fontSize: rf(15), fontWeight: '800', color: Colors.primary },
+  rowTitle: { fontSize: rf(14.5), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  rowCompany: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: Colors.textSecondary, marginTop: rs(2) },
+  rowMeta: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginTop: rs(3) },
+  rowPay: { fontSize: rf(15), fontFamily: JT_FONT.heavy, color: Colors.primary },
   allBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8),
     backgroundColor: Colors.primary, borderRadius: rs(14), paddingVertical: rs(12),
     marginHorizontal: rs(14), marginTop: rs(12),
   },
-  allBtnTxt: { color: '#fff', fontSize: rf(14.5), fontWeight: '700' },
+  allBtnTxt: { color: '#fff', fontSize: rf(14.5), fontFamily: JT_FONT.bold },
 });
