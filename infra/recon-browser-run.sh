@@ -85,7 +85,10 @@ LLM_SITES=${LLM_SITES:-60}
 YGPT_ENV=/etc/jobtoo/yandex-gpt.env
 YGPT_VARS=()
 if [ -r "$YGPT_ENV" ]; then
-  while IFS='=' read -r k v; do
+  # «|| [ -n "$k" ]»: bootstrap пишет файл без перевода строки в конце, и без
+  # этого последняя строка (каталог) терялась — модель ни разу не включилась
+  # (разведка 01.10.2026: llm_used 0 из 435).
+  while IFS='=' read -r k v || [ -n "$k" ]; do
     case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac
   done < "$YGPT_ENV"
 fi
