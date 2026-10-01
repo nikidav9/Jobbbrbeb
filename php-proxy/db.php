@@ -1102,9 +1102,11 @@ function jt_b64url_decode(string $raw): string|false {
 // ронять из-за счётчика нельзя. REMOTE_ADDR — настоящий адрес клиента: nginx
 // отдаёт PHP по FastCGI и стоит на краю, без второго прокси перед собой.
 const JT_TRY_WINDOW = 900;          // 15 минут
+// login — неверные пароли с одного адреса: 30, а не 10 (решение владельца
+// 01.10.2026) — у общего Wi-Fi и мобильного интернета адрес один на многих.
 // mail — письма с кодами с одного адреса; code — неверные коды с одного адреса.
 // gpt — запросы подсказок YandexGPT телефонному автопилоту с одного адреса.
-const JT_TRY_MAX = ['login' => 10, 'phone' => 30, 'mail' => 20, 'code' => 30, 'gpt' => 30];
+const JT_TRY_MAX = ['login' => 30, 'phone' => 30, 'mail' => 20, 'code' => 30, 'gpt' => 30];
 
 function jt_try_file(string $kind): string {
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
