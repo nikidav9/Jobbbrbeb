@@ -205,6 +205,9 @@ jobs:
       - name: Уведомление о сообщении собирает сервер, а не телефон
         run: php tests/message_notify_test.php
 
+      - name: Пуш, Telegram и web-push — после ответа человеку; личные сигналы — только ему
+        run: php tests/notify_defer_test.php
+
       - name: Нативный push не раскрывает данные события
         run: php tests/push_privacy_test.php
 

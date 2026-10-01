@@ -34,6 +34,29 @@ function jt_respond(mixed $payload, int $code = 200): void {
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
 }
 
+/**
+ * Отложить внешнюю отправку (Telegram, Expo, web-push) до момента, когда
+ * ответ уже ушёл человеку. Раньше отправитель сообщения или отклика ждал,
+ * пока ответит exp.host (до 15 с) и каждая web-подписка (до 6 с). Под FPM
+ * ответ закрывается fastcgi_finish_request(), отправки идут следом в том же
+ * процессе; в CLI и тестах — сразу, как раньше. Аудит 01.10.2026, п. 9.
+ */
+function jt_defer(callable $fn): void {
+    static $queue = null;
+    if (PHP_SAPI !== 'fpm-fcgi' || !function_exists('fastcgi_finish_request')) { $fn(); return; }
+    if ($queue === null) {
+        $queue = new ArrayObject();
+        register_shutdown_function(static function () use ($queue) {
+            fastcgi_finish_request();
+            @set_time_limit(120);
+            foreach ($queue as $job) {
+                try { $job(); } catch (Throwable $e) { error_log('[jt_defer] ' . $e->getMessage()); }
+            }
+        });
+    }
+    $queue->append($fn);
+}
+
 // Адрес бэкенда — из секрета, как и ключ рядом.
 //
 // Так переключение между облаком и своим сервером (и откат обратно) — это
@@ -1234,6 +1257,11 @@ function rt_touch(string $table): void {
     if ($broken) return;
 
     $what = RT_SECTIONS[$table] ?? null;
+    // Личные разделы общим каналом больше не объявляются: сигнал «чаты
+    // изменились» заставлял все открытые приложения перечитывать свои чаты
+    // после каждого чужого сообщения. Получатель узнаёт о своём событии
+    // адресно — rt_user_signal из notify_bell (аудит 01.10.2026, п. 5).
+    if (in_array($what, RT_PERSONAL, true)) return;
     if ($what === null || isset($sent[$what])) return;
     $sent[$what] = true;
 
@@ -1241,6 +1269,22 @@ function rt_touch(string $table): void {
     // одиннадцать разделов по четыре секунды тайм-аута превратятся в
     // сорок секунд ожидания у человека, отправившего одно сообщение.
     if (!rt_broadcast('jt', 'changed', ['что' => $what])) $broken = true;
+}
+
+const RT_PERSONAL = ['chats', 'likes', 'perm_applications', 'saved', 'perm_saved', 'notifications'];
+
+/**
+ * Адресный сигнал «у тебя новое»: канал jt:u:<id> слушает только приложение
+ * этого человека и перечитывает уведомления, чаты и отклики. В сигнале нет
+ * данных — только имя раздела, как и в общем канале. Уходит после ответа.
+ */
+function rt_user_signal(string $userId): void {
+    static $sent = [];
+    if ($userId === '' || isset($sent[$userId])) return;
+    $sent[$userId] = true;
+    jt_defer(static function () use ($userId) {
+        rt_broadcast('jt:u:' . $userId, 'changed', ['что' => 'notifications']);
+    });
 }
 
 function rt_broadcast(string $topic, string $event, array $payload = []): bool {
@@ -2252,6 +2296,9 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  */
 function notify_bell(string $userId, string $title, string $body, string $type = ''): bool {
     if ($userId === '') return false;
+    // Событие случилось, даже если колокольчик ниже отсеет повтор за минуту:
+    // второе сообщение подряд тоже должно обновить список чатов получателя.
+    rt_user_signal($userId);
 
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 60);
     $dup = sb_select('jm_notifications', [
@@ -2277,39 +2324,42 @@ function notify_user(string $userId, string $title, string $body, string $type =
                      ?string $pushTitle = null, ?string $channelId = null): void {
     if (!notify_bell($userId, $title, $body, $type)) return;
 
-    $u = sb_single('jm_users', ['id' => 'eq.' . $userId], 'telegram_id,push_token');
-    if (!$u) return;
+    // Колокольчик записан выше, до ответа. Внешние каналы — после него.
+    jt_defer(static function () use ($userId, $title, $body, $type, $data, $pushBody, $pushTitle, $channelId) {
+        $u = sb_single('jm_users', ['id' => 'eq.' . $userId], 'telegram_id,push_token');
+        if (!$u) return;
 
-    // Telegram остаётся отдельным каналом и сохраняет собственную проверку
-    // согласия. Нативный push ниже содержит только нейтральный сигнал.
-    $crossBorderAllowed = jt_has_crossborder_consent($userId);
+        // Telegram остаётся отдельным каналом и сохраняет собственную проверку
+        // согласия. Нативный push ниже содержит только нейтральный сигнал.
+        $crossBorderAllowed = jt_has_crossborder_consent($userId);
 
-    if ($crossBorderAllowed && !empty($u['telegram_id'])) {
-        $tgTitle = $pushTitle ?? $title;
-        $tgBody = $pushBody ?? $body;
-        tg_send_message((int)$u['telegram_id'],
-            '<b>' . htmlspecialchars($tgTitle, ENT_QUOTES, 'UTF-8') . "</b>\n\n"
-            . htmlspecialchars($tgBody, ENT_QUOTES, 'UTF-8'), true, '🚀 Открыть JobToo');
-    }
-    if (!empty($u['push_token'])) {
-        expo_push([[
-            'to' => $u['push_token'], 'title' => $pushTitle ?? $title, 'body' => $pushBody ?? $body,
-            'sound' => 'default', 'priority' => 'high', 'channelId' => $channelId ?? 'matches',
-            'data' => array_merge(['type' => $type], $data),
-        ]]);
-    }
-    // Ни телеграма, ни приложения — остаётся браузер. До этой правки такой
-    // человек не получал НИ ОДНОГО внешнего сигнала о личных событиях: о
-    // мэтче, о сообщении, об итоге своей смены. Веб-пуш на сервере был и
-    // работал, но звали его из одного места — массовой рассылки о новой
-    // вакансии. То есть о чужой смене человек узнавал, а о своём мэтче нет.
-    //
-    // Запасной путь, а не добавочный: у кого есть телеграм или приложение, тот
-    // уже извещён, и второй звонок о том же — это ровно то «просто так», от
-    // которого выключают уведомления.
-    if (empty($u['telegram_id']) && empty($u['push_token'])) {
-        web_push_to([$userId => true], $pushTitle ?? $title, $pushBody ?? $body, $type);
-    }
+        if ($crossBorderAllowed && !empty($u['telegram_id'])) {
+            $tgTitle = $pushTitle ?? $title;
+            $tgBody = $pushBody ?? $body;
+            tg_send_message((int)$u['telegram_id'],
+                '<b>' . htmlspecialchars($tgTitle, ENT_QUOTES, 'UTF-8') . "</b>\n\n"
+                . htmlspecialchars($tgBody, ENT_QUOTES, 'UTF-8'), true, '🚀 Открыть JobToo');
+        }
+        if (!empty($u['push_token'])) {
+            expo_push([[
+                'to' => $u['push_token'], 'title' => $pushTitle ?? $title, 'body' => $pushBody ?? $body,
+                'sound' => 'default', 'priority' => 'high', 'channelId' => $channelId ?? 'matches',
+                'data' => array_merge(['type' => $type], $data),
+            ]]);
+        }
+        // Ни телеграма, ни приложения — остаётся браузер. До этой правки такой
+        // человек не получал НИ ОДНОГО внешнего сигнала о личных событиях: о
+        // мэтче, о сообщении, об итоге своей смены. Веб-пуш на сервере был и
+        // работал, но звали его из одного места — массовой рассылки о новой
+        // вакансии. То есть о чужой смене человек узнавал, а о своём мэтче нет.
+        //
+        // Запасной путь, а не добавочный: у кого есть телеграм или приложение, тот
+        // уже извещён, и второй звонок о том же — это ровно то «просто так», от
+        // которого выключают уведомления.
+        if (empty($u['telegram_id']) && empty($u['push_token'])) {
+            web_push_to([$userId => true], $pushTitle ?? $title, $pushBody ?? $body, $type);
+        }
+    });
 }
 
 

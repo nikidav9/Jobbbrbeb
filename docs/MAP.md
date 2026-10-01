@@ -1744,6 +1744,14 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   миграция 142; `dbGetMessages` — последние 1000, `dbGetNotifications` — последние 200.
   `limit_req` в nginx намеренно нет: после включения CDN (`infra/timeweb-cdn.md`) все
   пришли бы с адресов CDN, и лимит по адресу душил бы всех разом.
+  Внешние отправки личных уведомлений (Telegram, Expo, web-push в `notify_user`) —
+  после ответа человеку: `jt_defer` в `php-proxy/db.php` (`fastcgi_finish_request`,
+  в CLI — сразу). Сигналы «перечитай»: общий канал `jt` — только общие разделы
+  (вакансии, оценки); личные (`RT_PERSONAL`: чаты, отклики, лайки, избранное,
+  уведомления) — адресно в `jt:u:<id>` из `notify_bell` (`rt_user_signal`), приложение
+  (`AppContext`) слушает свой канал. Проверка — `tests/notify_defer_test.php`.
+  Сбор вакансий остаётся раз в 6 часов (`tests/ingest_host_deactivation_test.php`
+  стережёт расписание): при пуле в 20 процессов он занимает 2–4 из них.
 - `infra/ssh-authorized-keys` — публичные SSH-ключи владельца; `bootstrap.sh` дописывает недостающие в `/root/.ssh/authorized_keys` (вход только по ключу, пароли сервер не принимает). Удаление строки ключ с сервера не убирает.
 - `infra/migrate.sh` накатывает новые SQL до замены PHP и сайта. Ошибка оставляет
   прежний релиз на месте; следующий запуск таймера повторяет попытку.
