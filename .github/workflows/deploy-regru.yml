@@ -134,6 +134,8 @@ jobs:
           BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
           BACKUP_S3_KEY: ${{ secrets.BACKUP_S3_KEY }}
           BACKUP_S3_SECRET: ${{ secrets.BACKUP_S3_SECRET }}
+          YANDEX_GPT_API_KEY: ${{ secrets.YANDEX_GPT_API_KEY }}
+          YANDEX_GPT_FOLDER_ID: ${{ secrets.YANDEX_GPT_FOLDER_ID }}
         run: |
           if [ -z "$JT_DEPLOY_TOKEN" ]; then
             echo "JT_DEPLOY_TOKEN не задан — пропускаю доставку"
@@ -170,6 +172,10 @@ jobs:
                   "bucket": e("BACKUP_S3_BUCKET", ""),
                   "key": e("BACKUP_S3_KEY", ""),
                   "secret": e("BACKUP_S3_SECRET", ""),
+              },
+              "yandex_gpt": {
+                  "api_key": e("YANDEX_GPT_API_KEY", ""),
+                  "folder_id": e("YANDEX_GPT_FOLDER_ID", ""),
               },
           }))
           PY

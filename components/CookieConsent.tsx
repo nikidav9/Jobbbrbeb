@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { router } from 'expo-router';
 
-import { Colors, Radius } from '@/constants/theme';
+import { JT, JT_FONT } from '@/constants/jt';
+import { JTLink } from '@/components/ui/jt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { rs, rf } from '@/constants/scale';
 
 /**
@@ -120,29 +122,32 @@ export default function CookieConsent() {
   const accept = () => { writeChoice('accepted'); loadMetrika(); setVisible(false); };
   const dismiss = () => { writeChoice('dismissed'); setVisible(false); };
 
+  // Стиль JT (30.09.2026): белая карточка-наклейка с контуром и жёсткой
+  // тенью, оранжевая «Принять» с чёрным текстом — как на остальных экранах.
   return (
     <View style={styles.wrap} pointerEvents="box-none">
-      <View style={styles.card}>
-        <Text style={styles.text}>
-          Мы используем файлы cookie и Яндекс.Метрику, чтобы сервис работал лучше.
-          Нажимая «Принять», вы соглашаетесь с{' '}
-          <Text
-            style={styles.link}
-            onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}
-          >
-            политикой конфиденциальности
+      <HardShadowBox offset={4} radius={rs(20)} shadowColor={JT.ink} style={styles.cardBox}>
+        <View style={styles.card}>
+          <Text style={styles.text}>
+            Мы используем файлы cookie и Яндекс.Метрику, чтобы сервис работал лучше.
+            Нажимая «Принять», вы соглашаетесь с{' '}
+            <JTLink onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}>
+              политикой конфиденциальности
+            </JTLink>
+            .
           </Text>
-          .
-        </Text>
-        <View style={styles.btns}>
-          <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={dismiss} activeOpacity={0.8}>
-            <Text style={styles.btnGhostTxt}>Закрыть</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={accept} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryTxt}>Принять</Text>
-          </TouchableOpacity>
+          <View style={styles.btns}>
+            <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={dismiss} activeOpacity={0.8} accessibilityRole="button">
+              <Text style={styles.btnTxt}>Закрыть</Text>
+            </TouchableOpacity>
+            <HardShadowBox offset={3} radius={rs(14)} shadowColor={JT.ink}>
+              <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={accept} activeOpacity={0.85} accessibilityRole="button">
+                <Text style={styles.btnTxt}>Принять</Text>
+              </TouchableOpacity>
+            </HardShadowBox>
+          </View>
         </View>
-      </View>
+      </HardShadowBox>
     </View>
   );
 }
@@ -150,25 +155,23 @@ export default function CookieConsent() {
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
-    alignItems: 'center', padding: rs(12),
+    alignItems: 'center', paddingHorizontal: rs(12), paddingTop: rs(12), paddingBottom: rs(16),
     zIndex: 900,
   },
+  cardBox: { width: '100%', maxWidth: rs(520) },
   card: {
-    width: '100%', maxWidth: rs(520),
-    backgroundColor: Colors.card,
-    borderRadius: rs(Radius.lg ?? 16),
-    borderWidth: 1, borderColor: Colors.divider,
-    padding: rs(16), gap: rs(12),
-    // Тень для веба — приподнять баннер над контентом.
-    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    backgroundColor: JT.surface,
+    borderRadius: rs(20), borderWidth: 2, borderColor: JT.ink,
+    padding: rs(16), gap: rs(14),
   },
-  text: { fontSize: rf(13.5), lineHeight: rf(20), color: Colors.textSecondary },
-  link: { color: Colors.primary, fontWeight: '600' },
-  btns: { flexDirection: 'row', justifyContent: 'flex-end', gap: rs(10) },
-  btn: { paddingHorizontal: rs(18), height: rs(40), borderRadius: rs(10), alignItems: 'center', justifyContent: 'center' },
-  btnGhost: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.inputBorder },
-  btnGhostTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
-  btnPrimary: { backgroundColor: Colors.primary },
-  btnPrimaryTxt: { fontSize: rf(14), fontWeight: '700', color: '#FFFFFF' },
+  text: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), lineHeight: rf(20), color: JT.textBody },
+  btns: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: rs(12) },
+  btn: {
+    paddingHorizontal: rs(20), height: rs(44), borderRadius: rs(14),
+    borderWidth: 2, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center',
+  },
+  btnGhost: { backgroundColor: JT.surface },
+  btnPrimary: { backgroundColor: JT.accent },
+  // Текст на оранжевом — чёрный (README макетов: белый плохо читается).
+  btnTxt: { fontFamily: JT_FONT.heavy, fontSize: rf(14.5), color: JT.ink },
 });

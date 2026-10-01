@@ -7,8 +7,9 @@ import { Alert, Platform } from 'react-native';
  * react-native-web — пустышка: окно не появляется, и кнопки вроде «Удалить
  * резюме» молча не работали. `window.confirm` показывал серое окно браузера с
  * адресом сайта в заголовке, а в части клиентов Телеграма — ничего. Поэтому
- * на вебе вопрос задаёт своё окно (`ConfirmHost` в корневом `_layout`), на
- * телефоне — системный Alert.
+ * вопрос задаёт своё окно (`ConfirmHost` в корневом `_layout`) — с 01.10.2026
+ * и на телефоне, в фирменном стиле. Системный Alert и `window.confirm` —
+ * только пока окно не смонтировано.
  */
 export interface ConfirmOptions {
   title: string;
@@ -31,7 +32,7 @@ export function registerConfirmHost(show: (req: ConfirmRequest) => void): () => 
 
 export function confirmAsync(options: ConfirmOptions): Promise<boolean> {
   const { title, body, confirmLabel = 'Подтвердить', cancelLabel = 'Отмена', danger } = options;
-  if (Platform.OS !== 'web') {
+  if (!host && Platform.OS !== 'web') {
     return new Promise(resolve => Alert.alert(title, body, [
       { text: cancelLabel, style: 'cancel', onPress: () => resolve(false) },
       { text: confirmLabel, style: danger ? 'destructive' : 'default', onPress: () => resolve(true) },

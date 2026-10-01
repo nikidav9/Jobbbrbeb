@@ -8,6 +8,7 @@ const TO_MATCHES = new Set([
   'new_applicant', 'match_employer', 'match_worker',
   'shift_confirmed_by_employer', 'shift_cancelled',
   'new_perm_applicant', 'perm_approved', 'perm_rejected',
+  'jupiter_sent',
 ]);
 
 const TO_FEED = new Set(['nearby_shift', 'nearby_perm']);
@@ -25,6 +26,8 @@ export function routeForNotification(
       ? { pathname: '/jupiter-captcha', params: { id: payload.applicationId } }
       : { pathname: '/(tabs)/matches' };
   }
+  // Работодатели задали вопросы — сразу в очередь вопросов.
+  if (type === 'jupiter_questions') return { pathname: '/jupiter-questions' };
   if (type === 'message') {
     return payload?.chatId
       ? { pathname: '/chat-room', params: { chatId: payload.chatId } }

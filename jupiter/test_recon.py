@@ -195,9 +195,10 @@ class ReconUnitTest(unittest.TestCase):
         self.assertEqual(block_kind("HTTP Error 404: Not Found"), "404")
         self.assertEqual(block_kind("URLError: [Errno 104] Connection reset by peer"), "доступ (reset)")
 
-    def test_catalog_has_488_sections(self):
-        # 26.09.2026: +budu.jobs, Хабр Карьера, arbihunter, 33 сайта за прокси; 29.09 — +8 careerday.
-        self.assertEqual(len(load_sites()), 488)
+    def test_catalog_has_602_sections(self):
+        # 26.09.2026: +budu.jobs, Хабр Карьера, arbihunter, 33 сайта за прокси; 29.09 — +8 careerday;
+        # 30.09 — +114 поиска двадцатью агентами.
+        self.assertEqual(len(load_sites()), 602)
 
 
 if __name__ == "__main__":

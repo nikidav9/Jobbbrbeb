@@ -100,8 +100,14 @@ jobs:
       - name: Капча человеку — права, срок, длина ответа, чужая заявка
         run: php tests/jupiter_captcha_test.php
 
+      - name: Вопросы от работодателей — права, банк ответов, возврат отклика в очередь
+        run: php tests/jupiter_questions_test.php
+
       - name: Юпитер — заявка на браузер только при включённой службе и новой редакции
         run: php tests/jupiter_engine_routing_test.php
+
+      - name: Юпитер — пилот «сервер отправляет сам» только по списку, с автоотправкой и поручением
+        run: php tests/jupiter_server_send_test.php
 
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
@@ -251,6 +257,7 @@ jobs:
           python3 tests/career_full_catalog_test.py
           python3 tests/career_discover_run_test.py
           python3 tests/deploy_webhook_order_test.py
+          python3 tests/yandex_gpt_delivery_test.py
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py
           python3 tests/perm_app_atomicity_test.py
@@ -279,6 +286,7 @@ jobs:
           (cd jupiter && python3 test_ats_hosts.py)
           (cd jupiter && python3 test_browser_limits.py)
           (cd jupiter && python3 test_captcha_loop.py)
+          (cd jupiter && python3 test_questions.py)
           (cd jupiter && python3 test_agent_llm.py)
           (cd jupiter && python3 test_tls_trust.py)
           python3 tests/jupiter_private_lab_infra_test.py

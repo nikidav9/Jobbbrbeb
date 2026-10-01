@@ -126,6 +126,20 @@ SNAPSHOT_JS = r"""
       c.setAttribute('name', el.id || ('jt-' + c.getAttribute('data-jt-ref')));
     if (type === 'checkbox' || type === 'radio') {
       if (el.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
+      // Галочка без своей подписи, текст — в соседнем блоке общей обёртки
+      // (Huntflow: «Я даю согласие на обработку перс. данных…», 01.10.2026).
+      // Берём текст ближайшей обёртки, где нет других полей, — иначе
+      // согласие не узнать и форма не уходит.
+      const own = (el.labels && el.labels[0] && el.labels[0].innerText.trim())
+        || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby');
+      if (!own && type === 'checkbox') {
+        let box = el.parentElement;
+        for (let i = 0; i < 3 && box; i++, box = box.parentElement) {
+          if (box.querySelectorAll('input,select,textarea').length > 1) break;
+          const text = (box.innerText || '').replace(/\s+/g, ' ').trim();
+          if (text) { if (text.length <= 300) c.setAttribute('aria-label', text); break; }
+        }
+      }
     }
     if (tag === 'textarea') c.textContent = el.value || '';
     if (tag === 'select') {
@@ -278,6 +292,26 @@ DIRECT_VALUE_JS = r"""
 # После обычного ввода: change и blur. fill() шлёт только input, а часть
 # форм проверяет поле и снимает ошибку по change/blur.
 AFTER_FILL_JS = "el => { el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); }"
+UNCHECK_JS = "el => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); }"
+
+
+def launch_options(headless: bool, executable_path: str | None) -> dict[str, Any]:
+    """Как запускать Chromium.
+
+    Без явного браузера — полный Chromium (channel="chromium"), а не
+    chrome-headless-shell, который Playwright берёт для headless по умолчанию.
+    Shell не читает политики вовсе, а доверие к УЦ Минцифры приходит именно
+    политикой (infra/jupiter-browser-ca-policy.py). Полный браузер Playwright
+    1.63 — Chrome for Testing, его папка /etc/opt/chrome_for_testing/policies. 30.09 из-за
+    этого браузерная разведка теряла 30 сайтов — банки, Т-Банк, Positive
+    Technologies, Газпром — на ERR_CERT_AUTHORITY_INVALID.
+    """
+    options: dict[str, Any] = {"headless": headless, "args": browser_guard.CHROMIUM_SAFE_ARGS}
+    if executable_path:
+        options["executable_path"] = executable_path
+    else:
+        options["channel"] = "chromium"
+    return options
 
 # Элементы с обработчиками клика (addEventListener) — видны только через
 # DevTools-API getEventListeners (CDP, includeCommandLineAPI). Помечаем их
@@ -349,11 +383,8 @@ class JupiterBrowserEngine:
         self._last_status = 200
         self._pw = sync_playwright().start()
         try:
-            self._browser = self._pw.chromium.launch(
-                headless=headless,
-                executable_path=executable_path or os.environ.get("JUPITER_CHROMIUM") or None,
-                args=browser_guard.CHROMIUM_SAFE_ARGS,
-            )
+            self._browser = self._pw.chromium.launch(**launch_options(
+                headless, executable_path or os.environ.get("JUPITER_CHROMIUM") or None))
             probe = self._browser.new_page()
             ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
             probe.close()
@@ -705,13 +736,27 @@ class JupiterBrowserEngine:
                     paths = control.file_paths or ([control.file_path] if control.file_path else [])
                     if paths:
                         loc.set_input_files(paths)
+                elif control.type == "radio" and not control.checked:
+                    # Playwright не снимает радиокнопку (set_checked(False)
+                    # падает), а выбор сайта агент снимает намеренно.
+                    if loc.is_checked():
+                        loc.evaluate(UNCHECK_JS)
                 elif control.type in {"checkbox", "radio"}:
                     if loc.is_checked() != control.checked:
-                        loc.set_checked(control.checked, force=True)
+                        try:
+                            loc.set_checked(control.checked, force=True)
+                        except PlaywrightError:
+                            # Настоящий флажок спрятан за край экрана, видна
+                            # нарисованная рамка (job.mts.ru, 01.10.2026) —
+                            # Playwright его не кликает. Клик средствами самой
+                            # страницы шлёт те же click/change, что и мышь.
+                            loc.evaluate("el => el.click()")
+                            if loc.is_checked() != control.checked:
+                                raise
                 elif control.tag == "select" and loc.get_attribute("data-jt-cs") is not None:
                     chosen = next((o.label for o in control.options if o.selected and o.value), "")
                     if chosen and not apply_custom_select(self._tab, control.dom_ref, chosen):
-                        raise EngineTransportError(
+                        raise EngineError(
                             f"Не выбран вариант {chosen!r} в списке {control.label or control.name!r}")
                 elif control.tag == "select":
                     values = control.selected_values
@@ -729,7 +774,10 @@ class JupiterBrowserEngine:
                             fill_masked(self._tab, loc, control.value)
                         loc.evaluate(AFTER_FILL_JS)
             except PlaywrightError as exc:
-                raise EngineTransportError(
+                # До клика «Отправить» — отклик точно не ушёл. Обычная ошибка,
+                # а не обрыв после отправки: иначе агент пишет «исход
+                # неизвестен» и больше не пробует (МТС, 01.10.2026).
+                raise EngineError(
                     f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"
                 ) from exc
 

@@ -112,6 +112,7 @@ check('уникальность заявки закреплена индексо
 // Отклик через телефон (решение владельца 28.09.2026): свайп копит заявку в
 // «Нужны вы», серверу на автоотправку она не достаётся.
 $enq = substr($db, strpos($db, "case 'jupiterEnqueue': {"), 5000);
+// Кроме пилота JT_SERVER_SEND_PILOT — см. tests/jupiter_server_send_test.php.
 check('свайп кладёт заявку в «Нужны вы», а не в очередь сервера',
     str_contains($enq, "'state' => 'action_required',")
     && str_contains($enq, "'reason_code' => 'PHONE_FILL',")
@@ -126,7 +127,7 @@ check('старая очередь переведена в «Нужны вы», 
     && str_contains($m133, "reason_code = 'PHONE_FILL'"));
 check('публичные методы Jupiter возвращают data как другие методы db.php',
     str_contains($db, "\$data = \$inserted[0] ?? sb_single('jm_jupiter_applications'")
-    && str_contains($db, "case 'jupiterMyApplications': {\n            \$data = sb_select(")
+    && str_contains($db, "case 'jupiterMyApplications': {\n            jt_jupiter_phone_fill_to_server((string)(\$args[0] ?? ''));\n            \$data = sb_select(")
     && str_contains($db, "jt_respond(['data' => \$data]);"));
 check('гонка двух свайпов не возвращает отправленную заявку в очередь',
     str_contains($db, 'resolution=ignore-duplicates,return=representation')
@@ -190,6 +191,18 @@ check('jupiterMarkManualSubmitted не трогает чужие заявки и
 check('jupiterMarkManualSubmitted помечает заявку MANUAL_WEBVIEW',
     str_contains($markManual, "'reason_code' => 'MANUAL_WEBVIEW'")
     && str_contains($markManual, "'state' => 'submitted'"));
+check('«Я отправил сам» доступно и для «Скорее всего, ушёл»',
+    str_contains($markManual, "'ready_to_submit', 'submission_unknown']"));
+
+$requeue = substr($db, strpos($db, "case 'jupiterRequeueLive':"), 3200);
+check('«Попробовать ещё раз» — только «Не ушёл» (failed), не «Скорее всего, ушёл»',
+    str_contains($requeue, "|| \$existing['state'] === 'failed'")
+    && !str_contains($requeue, "=== 'submission_unknown'"));
+check('повтор «Не ушёл» — только при серверной отправке',
+    str_contains($requeue, "\$existing['state'] === 'failed' && !jt_jupiter_server_sends(\$uidArg)"));
+$liveStatus = substr($db, strpos($db, "case 'jupiterLiveStatus':"), 800);
+check('jupiterLiveStatus сообщает, отправляет ли Юпитер с сервера',
+    str_contains($liveStatus, "'serverSends' => jt_jupiter_server_sends("));
 
 // ── Защита таблицы ──────────────────────────────────────────────────────────
 check('таблица закрыта построчной защитой',

@@ -157,6 +157,7 @@ class TaskQueueProto(Protocol):
         resume_token: str | None = ...,
         receipt_key: str | None = ...,
         summary: dict | None = ...,
+        questions: list | None = ...,
     ) -> None: ...
     def fail(self, task_id: str, error: str, *, retryable: bool = ...) -> str: ...
 
@@ -267,6 +268,7 @@ class TaskQueue:
         resume_token: str | None = None,
         receipt_key: str | None = None,
         summary: dict | None = None,
+        questions: list | None = None,
     ) -> None:
         task = self._items.get(task_id)
         if task is None:

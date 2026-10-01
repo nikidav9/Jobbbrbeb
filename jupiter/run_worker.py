@@ -171,6 +171,10 @@ def main() -> int:
         def field_mapper(fields: list[dict], allowed_keys: list[str]) -> dict[str, str]:
             return browser_planner.suggest_field_keys(llm, fields, allowed_keys)
         agent_extra["field_mapper"] = field_mapper
+    if llm is not None and "question_explainer" in inspect.signature(JupiterAgent).parameters:
+        def question_explainer(questions: list[dict], context: dict) -> dict:
+            return browser_planner.explain_questions(llm, questions, context)
+        agent_extra["question_explainer"] = question_explainer
 
     receipts = ReceiptStore(receipts_path)
     handoffs = HandoffStore(handoffs_path)
@@ -182,7 +186,7 @@ def main() -> int:
     )
 
     def profile_factory(task: ApplicationTask) -> CandidateProfile:
-        profile = queue.fetch_profile(task.candidate_id)
+        profile = queue.fetch_profile(task.candidate_id, task.id)
         # Third-party legal consent is intentionally scoped to one application
         # row. It is never copied from JobToo's own consent or reused globally.
         # Поручение (Соглашение п. 8.3) покрывает только то, без чего отклик

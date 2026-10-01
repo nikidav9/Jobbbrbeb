@@ -487,6 +487,10 @@ fi
 JB_FLAG=/etc/jobtoo/jupiter-browser.enabled
 JB_BASE=/opt/jupiter-browser
 JB_POLICY=/etc/chromium/policies/managed/jobtoo-ru-ca.json
+# Playwright 1.63 ставит под именем chromium Chrome for Testing, а он читает
+# политики из своей папки, не из /etc/chromium (проверено 30.09 на той же
+# сборке 153.0.8010.12: только отсюда УЦ Минцифры и начинает работать).
+JB_POLICY_CFT=/etc/opt/chrome_for_testing/policies/managed/jobtoo-ru-ca.json
 YGPT_ENV=/etc/jobtoo/yandex-gpt.env
 mkdir -p /etc/jobtoo
 # Ключ YandexGPT: только root. Файла нет — воркеры идут без YandexGPT.
@@ -565,13 +569,16 @@ SVCEOF
 
   if [ -f "$JB_FLAG" ]; then
     # Доверие к УЦ Минцифры: политика Chromium, не флаг командной строки.
-    mkdir -p "$(dirname "$JB_POLICY")"
     if python3 "$REPO/infra/jupiter-browser-ca-policy.py" "$REPO/jupiter/ru_trusted_ca.pem" \
-         > /tmp/jt-ru-ca.json 2>/dev/null \
-       && ! cmp -s /tmp/jt-ru-ca.json "$JB_POLICY"; then
-      install -m 644 -o root -g root /tmp/jt-ru-ca.json "$JB_POLICY"
-      JB_CHANGED=1
-      say "jupiter-browser" "политика Chromium с УЦ Минцифры обновлена"
+         > /tmp/jt-ru-ca.json 2>/dev/null; then
+      for jb_pol in "$JB_POLICY" "$JB_POLICY_CFT"; do
+        if ! cmp -s /tmp/jt-ru-ca.json "$jb_pol"; then
+          mkdir -p "$(dirname "$jb_pol")"
+          install -m 644 -o root -g root /tmp/jt-ru-ca.json "$jb_pol"
+          JB_CHANGED=1
+          say "jupiter-browser" "политика с УЦ Минцифры обновлена: $jb_pol"
+        fi
+      done
     fi
     rm -f /tmp/jt-ru-ca.json
     systemctl enable jt-jupiter-browser.service >/dev/null 2>&1 || true
@@ -594,7 +601,9 @@ SVCEOF
       say "jupiter-browser" "служба остановлена"
     fi
     systemctl disable jt-jupiter-browser.service >/dev/null 2>&1 || true
-    [ -f "$JB_POLICY" ] && rm -f "$JB_POLICY" && say "jupiter-browser" "политика Chromium снята"
+    for jb_pol in "$JB_POLICY" "$JB_POLICY_CFT"; do
+      [ -f "$jb_pol" ] && rm -f "$jb_pol" && say "jupiter-browser" "политика снята: $jb_pol"
+    done
   fi
 
   # Браузерная разведка анкет (infra/recon-browser-run.sh) — раз в сутки после
@@ -643,6 +652,32 @@ SVCEOF
     say "recon-browser" "таймер выключен вместе с браузером"
   fi
 
+  # Разведка по запросу, не дожидаясь ночи: новое содержимое infra/recon-now
+  # (любая строка — дата и причина) запускает HTTP-разведку один раз, а
+  # браузерную — следом, когда HTTP закончится. Только чтение, как ночью.
+  RN_FILE="$REPO/infra/recon-now"
+  RN_DIR=/var/lib/jobtoo
+  if [ -f "$RN_FILE" ] && [ -f /etc/systemd/system/jt-recon.service ]; then
+    mkdir -p "$RN_DIR"
+    rn_sha=$(sha256sum "$RN_FILE" | cut -d' ' -f1)
+    if [ "$rn_sha" != "$(cat "$RN_DIR/recon-now.sha" 2>/dev/null || true)" ]; then
+      echo "$rn_sha" > "$RN_DIR/recon-now.sha"
+      touch "$RN_DIR/recon-browser.pending"
+      systemctl start --no-block jt-recon.service >/dev/null 2>&1 || true
+      say "recon" "разведка по запросу запущена: $(head -c 120 "$RN_FILE")"
+    fi
+  fi
+  if [ -f "$RN_DIR/recon-browser.pending" ]; then
+    rn_state=$(systemctl show -p ActiveState --value jt-recon.service 2>/dev/null || true)
+    if [ "$rn_state" != active ] && [ "$rn_state" != activating ]; then
+      rm -f "$RN_DIR/recon-browser.pending"
+      if [ -f /etc/systemd/system/jt-recon-browser.service ]; then
+        systemctl start --no-block jt-recon-browser.service >/dev/null 2>&1 || true
+        say "recon-browser" "браузерная разведка по запросу запущена"
+      fi
+    fi
+  fi
+
   # Серверу PHP: переводить ли заявки на браузер. Доезжает до контейнера
   # через --env-file в общем docker compose up ниже (как JUPITER_MAIL_VERIFIED).
   if [ -f "$JB_FLAG" ] && [ -f "$JB_BASE/.installed" ]; then JB_PHP=1; else JB_PHP=0; fi
@@ -652,14 +687,59 @@ SVCEOF
     say "jupiter-browser" "серверу PHP: JUPITER_BROWSER_ENABLED=$JB_PHP"
   fi
 
+  # YandexGPT работает на деле, а не только «ключ лежит» (владелец, 01.10.2026).
+  # Раз в час — пустяковый запрос к модели с тем же ключом: код ответа и время.
+  # Плюс сколько раз за сутки к ней реально обращались воркеры и сколько с
+  # ошибкой — по их журналу (там только код и время, без текста).
+  YGPT_PING=/var/lib/jobtoo/ygpt-ping.txt
+  # Удачный пинг — раз в час, неудачный — через 10 минут: починку видно быстро.
+  YGPT_AGE=60
+  [ -f "$YGPT_PING" ] && ! grep -q '^200 ' "$YGPT_PING" && YGPT_AGE=10
+  if [ -f "$YGPT_ENV" ] && { [ ! -f "$YGPT_PING" ] || [ -n "$(find "$YGPT_PING" -mmin +$YGPT_AGE 2>/dev/null)" ]; }; then
+    mkdir -p /var/lib/jobtoo
+    ( set +e
+      . "$YGPT_ENV"
+      body=$(mktemp)
+      code=$(printf '{"modelUri":"gpt://%s/yandexgpt-lite/latest","completionOptions":{"temperature":0,"maxTokens":"5"},"messages":[{"role":"user","text":"Ответь одним словом: ok"}]}' "$YANDEX_GPT_FOLDER_ID" \
+        | curl -s -o "$body" -w '%{http_code}' -m 15 \
+            -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" -H "x-folder-id: $YANDEX_GPT_FOLDER_ID" \
+            -H 'Content-Type: application/json' --data-binary @- \
+            https://llm.api.cloud.yandex.net/foundationModels/v1/completion)
+      # Не 200 — рядом причина словами Яндекса (сообщение сервиса, не наш
+      # текст): по одному коду не понять, ключ это, каталог или роль.
+      why=""
+      if [ "${code:-000}" != "200" ]; then
+        why=$(YGPT_K="$YANDEX_GPT_API_KEY" python3 -c '
+import json, os, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    e = d.get("error", d) if isinstance(d, dict) else {}
+    m = str(e.get("message") or e.get("error") or "")
+except Exception:
+    m = open(sys.argv[1], errors="replace").read()
+k = os.environ.get("YGPT_K", "")
+if k:
+    m = m.replace(k, "***")
+print(re.sub(r"[^\w .,:;()/+=-]", " ", m)[:200].strip())
+' "$body" 2>/dev/null || true)
+      fi
+      rm -f "$body"
+      printf '%s в %s%s' "${code:-000}" "$(date +%H:%M)" "${why:+ — $why}" > "$YGPT_PING" )
+  fi
+  YGPT_CALLS=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
+    | grep -c 'YandexGPT: вызов, статус' || true)
+  YGPT_OK=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
+    | grep -c 'YandexGPT: вызов, статус 200' || true)
+
   # Жив ли браузерный воркер — рядом с status.json, без секретов.
   jb_prop() { systemctl show -p "$1" --value jt-jupiter-browser.service 2>/dev/null || true; }
-  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"http_воркер":"%s"}\n' \
+  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"yandex_gpt_проверка":"%s","yandex_gpt_вызовов_за_сутки":%s,"yandex_gpt_ошибок_за_сутки":%s,"http_воркер":"%s"}\n' \
     "$(date -Is)" "$([ -f "$JB_FLAG" ] && echo true || echo false)" \
     "$(jb_prop ActiveState)/$(jb_prop SubState)" "$(jb_prop NRestarts)" \
     "$(jb_prop ActiveEnterTimestamp)" "$(cat "$JB_BASE/.installed" 2>/dev/null || echo нет)" \
-    "$JB_PHP" "$([ -f "$JB_POLICY" ] && echo true || echo false)" \
+    "$JB_PHP" "$([ -f "$JB_POLICY" ] && [ -f "$JB_POLICY_CFT" ] && echo true || echo false)" \
     "$([ -f "$YGPT_ENV" ] && echo true || echo false)" \
+    "$(cat "$YGPT_PING" 2>/dev/null || echo нет)" "${YGPT_CALLS:-0}" "$(( ${YGPT_CALLS:-0} - ${YGPT_OK:-0} ))" \
     "$(systemctl is-active jt-jupiter.service 2>/dev/null || true)" \
     > /var/www/html/jupiter-browser-status.json.tmp 2>/dev/null \
     && mv -f /var/www/html/jupiter-browser-status.json.tmp /var/www/html/jupiter-browser-status.json || true
@@ -849,6 +929,44 @@ mkdir -p /opt/jobtoo-php
 printf '[www]\nlisten = 127.0.0.1:9000\n' > /opt/jobtoo-php/zz-listen.conf
 chmod 644 /opt/jobtoo-php/zz-listen.conf
 
+# Разово (решение владельца 01.10.2026): отклики на job.mts.ru, которые до
+# PR #317 браузерный движок останавливал ДО клика «Отправить» (город из
+# списка Headless UI, спрятанный флажок), были записаны как «исход
+# неизвестен» — и повтор запрещён. До МТС они не дошли. Убираем только эти
+# записи, до 22:45 UTC 30.09. Воркеры держат журнал в памяти и при записи
+# вернули бы старое — поэтому стоп, правка, старт. Выполняется до выкладки
+# PHP: вернуть отклики в очередь сервер сможет только после этого.
+RCPT_FIX=/var/lib/jobtoo/receipts-mts-0930.done
+if [ ! -f "$RCPT_FIX" ]; then
+  mkdir -p /var/lib/jobtoo
+  for pair in jt-jupiter-browser.service:/var/lib/jt-jupiter-browser/receipts.json \
+              jt-jupiter.service:/var/lib/jupiter/receipts.json; do
+    svc=${pair%%:*}; file=${pair#*:}
+    [ -f "$file" ] || continue
+    was_active=0
+    systemctl is-active --quiet "$svc" 2>/dev/null && was_active=1
+    [ "$was_active" = 1 ] && systemctl stop "$svc" >/dev/null 2>&1
+    removed=$(python3 - "$file" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+keep = {k: v for k, v in data.items()
+        if not (v.get("status") == "submission_unknown"
+                and "job.mts.ru" in str(v.get("apply_url", ""))
+                and float(v.get("submitted_at") or 0) < 1790808300)}
+if len(keep) != len(data):
+    tmp = path + ".new"
+    json.dump(keep, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    import os; os.replace(tmp, path)
+print(len(data) - len(keep))
+PY
+) || removed="ошибка"
+    [ "$was_active" = 1 ] && systemctl start "$svc" >/dev/null 2>&1
+    say "jupiter" "$svc: снято записей «исход неизвестен» по МТС: $removed"
+  done
+  touch "$RCPT_FIX"
+fi
+
 PROXY=/opt/jobtoo-proxy
 mkdir -p "$PROXY"
 MIGRATIONS_READY=1
@@ -1018,6 +1136,39 @@ if [ -n "${ADMIN_TOKEN_VAL:-}" ] \
   sed -i '/^ADMIN_API_TOKEN=/d' "$SECRETS"
   echo "ADMIN_API_TOKEN=$ADMIN_TOKEN_VAL" >> "$SECRETS"
 fi
+
+# Ключ YandexGPT — из yandex_gpt.php (доставляет deploy.php из секретов
+# репозитория) в /etc/jobtoo/yandex-gpt.env, который читают оба воркера
+# Юпитера. Меняется файл — перезапускаем их, иначе ключ подхватится только
+# после следующего падения.
+YGPT_CONF=$( (cd "$REPO/infra" && docker compose exec -T php php -r '
+  $s = @include "/var/www/api/yandex_gpt.php";
+  if (!is_array($s)) exit;
+  // Только печатаемый ASCII без пробелов: вставленный в секрет перевод строки
+  // или невидимый символ ломал заголовок Authorization (Яндекс отвечал 500,
+  // 01.10.2026). Кириллицу-двойника латиницы («А» в «AQVN…», набранная в
+  // русской раскладке) сначала меняем на латинскую букву, а не выбрасываем:
+  // без неё Яндекс отвечал 401 «Unknown api key».
+  $lat = ["А"=>"A","В"=>"B","Е"=>"E","К"=>"K","М"=>"M","Н"=>"H","О"=>"O","Р"=>"P","С"=>"C","Т"=>"T","Х"=>"X","У"=>"Y",
+          "а"=>"a","е"=>"e","о"=>"o","р"=>"p","с"=>"c","у"=>"y","х"=>"x"];
+  $c = fn($v) => preg_replace("/[^!-~]/", "", strtr((string)$v, $lat));
+  printf("%s\n%s\n", $c($s["api_key"] ?? ""), $c($s["folder_id"] ?? ""));') 2>/dev/null || true)
+YGPT_KEY=$(printf '%s' "$YGPT_CONF" | sed -n 1p)
+YGPT_FOLDER=$(printf '%s' "$YGPT_CONF" | sed -n 2p)
+if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then
+  YGPT_NEW=$(printf 'YANDEX_GPT_API_KEY=%s\nYANDEX_GPT_FOLDER_ID=%s\n' "$YGPT_KEY" "$YGPT_FOLDER")
+  if [ "$(cat /etc/jobtoo/yandex-gpt.env 2>/dev/null)" != "$(printf '%s' "$YGPT_NEW")" ]; then
+    mkdir -p /etc/jobtoo
+    ( umask 077; printf '%s' "$YGPT_NEW" > /etc/jobtoo/yandex-gpt.env.new )
+    chown root:root /etc/jobtoo/yandex-gpt.env.new
+    mv -f /etc/jobtoo/yandex-gpt.env.new /etc/jobtoo/yandex-gpt.env
+    for svc in jt-jupiter.service jt-jupiter-browser.service; do
+      systemctl is-active --quiet "$svc" 2>/dev/null && systemctl restart "$svc" >/dev/null 2>&1 || true
+    done
+    say "jupiter" "ключ YandexGPT принят из секретов репозитория, воркеры перезапущены"
+  fi
+fi
+unset YGPT_CONF YGPT_KEY YGPT_FOLDER YGPT_NEW
 
 # Ключи к объектному хранилищу — туда же, в файл переменных: скрипт копий
 # читает именно его. Приезжают они тем же каналом, что и остальные секреты

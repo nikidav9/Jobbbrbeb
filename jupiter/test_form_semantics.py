@@ -508,6 +508,47 @@ class ApplicationFormSelection(unittest.TestCase):
         )
         self.assertFalse(is_application_form(page, 0, require_contact=False))
 
+    def test_contact_form_with_starred_company_is_not_an_application(self):
+        # digdes.ru/career (01.10.2026): «Компания *» — звёздочка в подписи,
+        # без атрибута required. Это форма «свяжитесь с нами» для клиентов.
+        page = parse(
+            '<form action="/feedback" method="post">'
+            '<label>Имя * <input name="name"></label>'
+            '<label>Фамилия * <input name="surname"></label>'
+            '<label>Компания * <input name="company"></label>'
+            '<label>Телефон * <input name="phone" type="tel"></label>'
+            '<label>Почта * <input name="mail" type="email"></label>'
+            '<label>Комментарий <textarea name="comment"></textarea></label>'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_company_and_job_title_is_a_client_form(self):
+        # cinimex.ru (01.10.2026): «Компания*» и «Должность*» — должность
+        # клиента, а не желаемая должность кандидата.
+        page = parse(
+            '<form action="/request" method="post">'
+            '<label>ФИО* <input name="fio" required></label>'
+            '<label>Компания* <input name="company" required></label>'
+            '<label>Должность* <input name="position" required></label>'
+            '<label>E-mail* <input name="email" type="email" required></label>'
+            '<label>Номер телефона* <input name="phone" type="tel" required></label>'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_it_application_with_resume_and_current_company_stays(self):
+        page = parse(
+            '<form action="/apply" method="post">'
+            '<label>Имя* <input name="name" required></label>'
+            '<label>Текущая компания* <input name="company" required></label>'
+            '<label>Должность <input name="position"></label>'
+            '<label>Email* <input name="email" type="email" required></label>'
+            '<label>Резюме <input name="cv" type="file"></label>'
+            '<button type="submit">Откликнуться</button></form>'
+        )
+        self.assertTrue(is_application_form(page, 0))
+
     def test_mts_vacancy_subscription_with_selects_is_not_an_application_form(self):
         # job.mts.ru (разведка браузером 29.09.2026): «Укажи свой e-mail» и
         # выбор города с направлением — подписка на вакансии. Select'ы делали
@@ -671,6 +712,73 @@ class UnknownConsentStopsAsConsent(unittest.TestCase):
             '<button>Откликнуться</button></form>'
         )
         self.assertNotEqual(agent._missing_reason_code(page, 0), "CONSENT_REQUIRED")
+
+
+class RecoveredFromRecon30(unittest.TestCase):
+    """Ошибки, найденные разбором разведки 30.09."""
+
+    PROFILE = CandidateProfile(values={
+        "first_name": "Иван", "last_name": "Петров",
+        "email": "i@example.com", "phone": "+79990000000",
+    })
+
+    def key(self, html, name):
+        page = parse(f"<form method=post>{html}<button>Откликнуться</button></form>")
+        return choose_key(control(page, name), self.PROFILE, "https://e.example/job", page)
+
+    def test_last_name_by_parts_keeps_name_as_first_name(self):
+        # IBS: name + last_name — фамилия не должна уйти дважды.
+        self.assertEqual(self.key('<input name="name"><input name="last_name">', "name"), "first_name")
+
+    def test_autocomplete_name_next_to_family_name_is_first_name(self):
+        # Селектел: autocomplete=name рядом с family-name.
+        html = '<input name="a" autocomplete="name"><input name="b" autocomplete="family-name">'
+        self.assertEqual(self.key(html, "a"), "first_name")
+        self.assertEqual(self.key('<input name="a" autocomplete="name">', "a"), "full_name")
+
+    def test_file_field_is_never_a_phone(self):
+        # Globus IT: id=file_input-brief-mobile.
+        self.assertIsNone(self.key('<input type="file" name="f" id="file_input-brief-mobile">', "f"))
+
+    def test_feedback_with_attachment_is_not_an_application(self):
+        # Верный: «Тема сообщения» + вложение — обратная связь покупателей.
+        page = parse(
+            '<form action="/feedback" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Телефон <input type="tel" name="phone" required></label>'
+            '<label>Тема сообщения <select name="topic"><option>Пожелания</option></select></label>'
+            '<input type="file" name="attachment">'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_client_brief_is_not_an_application(self):
+        # Extyl: бриф клиента — тип проекта и бюджет.
+        page = parse(
+            '<form action="/brief" method="post">'
+            '<label>Имя <input name="name" required></label>'
+            '<label>Email <input type="email" name="email" required></label>'
+            '<label>Бюджет <input name="budget"></label>'
+            '<label>Должность <input name="position"></label>'
+            '<input type="file" name="tz">'
+            '<button type="submit">Отправить</button></form>'
+        )
+        self.assertFalse(is_application_form(page, 0))
+
+    def test_honeypot_is_not_filled(self):
+        # Targem: <input name="email" style="display: none;"> — ловушка для ботов.
+        from engine import JupiterWebEngine
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = JupiterWebEngine({"e.example"}).load_html(
+            '<form method=post><label>Почта <input type="email" name="mails" required></label>'
+            '<input type="text" name="email" style="display: none;">'
+            '<button>Откликнуться</button></form>', "https://e.example/job")
+        trap = control(page, "email")
+        self.assertTrue(trap.css_hidden)
+        trajectory = []
+        self.assertFalse(agent.fill_control(page, trap, self.PROFILE, trajectory))
+        self.assertEqual(trajectory[0]["action"], "skip_hidden_field")
+        self.assertTrue(agent.fill_control(page, control(page, "mails"), self.PROFILE, []))
 
 
 class ValueFitsField(unittest.TestCase):
@@ -869,6 +977,95 @@ class BrowserSurveyRegressions(unittest.TestCase):
         )
         self.assertNotEqual(result.status, "ready_to_submit", result.as_dict())
 
+
+
+class PreselectedRadioIsNotTheCandidatesAnswer(unittest.TestCase):
+    """Полюс, 30.09: «Готовность к вахтовому методу» сайт ставит на «Готов»."""
+
+    HTML = (
+        '<form><input name="fio" placeholder="ФИО">'
+        '<p>Готовность к вахтовому методу</p>'
+        '<label><input type="radio" name="shift" value="yes" checked required>Готов</label>'
+        '<label><input type="radio" name="shift" value="no" required>Не готов</label>'
+        '<p>Готовность к переезду</p>'
+        '<label><input type="radio" name="relocation" value="да" checked>Да</label>'
+        '<label><input type="radio" name="relocation" value="нет">Нет</label>'
+        '<input type="radio" name="kind" value="resume" checked>'
+        '<button type="submit">Отправить</button></form>'
+    )
+
+    def setUp(self):
+        self.page = parse(self.HTML)
+        self.agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        self.trajectory: list = []
+        self.agent.drop_preselected_radios(self.page, 0, self.trajectory)
+
+    def test_site_choice_is_cleared_and_required_question_goes_to_the_human(self):
+        self.assertFalse(any(c.checked for c in self.page.controls if c.name == "shift"))
+        missing = self.agent._required_missing(self.page, 0)
+        self.assertEqual(len(missing), 2, missing)  # обе кнопки группы «вахта»
+        self.assertIn(
+            "radio_default_cleared", [t["action"] for t in self.trajectory]
+        )
+
+    def test_single_radio_is_a_fixed_value_and_stays(self):
+        self.assertTrue(control(self.page, "kind").checked)
+
+    def test_profile_answer_is_put_back(self):
+        profile = CandidateProfile(values={"relocation": "нет"})
+        for c in self.page.controls:
+            if c.name == "relocation":
+                self.agent.fill_control(self.page, c, profile, self.trajectory)
+        chosen = [c.value for c in self.page.controls if c.name == "relocation" and c.checked]
+        self.assertEqual(chosen, ["нет"])
+
+
+class FilterLinksAreNotAnEndlessRoad(unittest.TestCase):
+    """Т-Банк IT, 30.09: список вакансий дорисовывает JS, а в HTML остались
+    только ссылки-фильтры ?direction=…; каждый шаг — новая их комбинация, и
+    разведка упиралась в MAX_STEPS вместо «нужен браузер»."""
+
+    BASE = "http://127.0.0.1/career/vacancies/all/moscow/"
+
+    def page(self, url):
+        return parse(
+            f'<a href="{self.BASE}?direction=it">IT</a>'
+            f'<a href="{self.BASE}?direction=it&direction=qa">QA</a>'
+            f'<a href="{self.BASE}?direction=it&direction=qa&direction=data">Данные</a>',
+            url,
+        )
+
+    def setUp(self):
+        self.agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        self.agent._root_url = "http://127.0.0.1/career/vacancies/it"
+
+    def test_same_path_is_visited_at_most_twice(self):
+        visited = {self.agent._root_url, self.BASE, self.BASE + "?direction=it"}
+        self.assertIsNone(self.agent._best_navigation(self.page(self.BASE + "?direction=it"), visited))
+
+    def test_list_root_leads_to_a_real_vacancy_not_a_filter(self):
+        root = self.agent._root_url
+        card = "http://127.0.0.1/career/it/vacancy/moscow/golang-razrabotchik/77db7580/"
+        page = parse(
+            f'<a href="{self.BASE}?direction=it">IT</a>'
+            f'<a href="{card}">Golang-разработчик</a>',
+            root,
+        )
+        nxt = self.agent._best_navigation(page, {root})
+        self.assertEqual(nxt[0], card)
+
+    def test_list_words_are_not_vacancy_ids(self):
+        from agent import _vacancy_slug
+        self.assertEqual(_vacancy_slug("https://www.tbank.ru/career/vacancies/it"), "")
+        self.assertEqual(_vacancy_slug("https://www.tbank.ru/career/vacancies/all/moscow/"), "")
+        self.assertEqual(_vacancy_slug("https://prideinbrains.com/vacancies/java-developer/"), "java-developer")
+
+    def test_second_visit_with_a_query_is_allowed(self):
+        # /vacancies?id=33 у Globus IT — это вакансия, а не фильтр.
+        visited = {self.agent._root_url, self.BASE}
+        nxt = self.agent._best_navigation(self.page(self.BASE), visited)
+        self.assertIsNotNone(nxt)
+        self.assertTrue(nxt[0].startswith(self.BASE + "?"))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

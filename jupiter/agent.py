@@ -20,6 +20,7 @@ from engine import (
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from questions import answer_for, extract_questions, is_special, question_text
 from candidate import (
     FieldClass, classify_key, consent_kinds, decide_consent, looks_like_consent, provenance_for,
 )
@@ -51,6 +52,11 @@ SUCCESS_MARKERS = (
     "резюме отправлено",
     "мы получили ваш отклик",
     "мы получили вашу заявку",
+    # job.2gis.ru (01.10.2026): окно «Отправлено — Твой отклик уже у нас».
+    # Одно «отправлено» — нет: так подписаны и кнопки, и шаги анкет.
+    "отклик уже у нас",
+    # twinby.ru (01.10.2026): «Спасибо! Мы все изучим и ответим тебе по почте».
+    "мы все изучим и ответим",
 )
 
 SUBMIT_MARKERS = (
@@ -112,6 +118,9 @@ _ORDER_FORM_MARKERS = (
 )
 # Вопрос или обращение («задайте вопрос», «тема заявки») — не анкета, если в
 # форме нет ничего от кандидата: ни резюме, ни вакансии.
+# Бриф и заявка клиента (Extyl, Oxygen — разведка 30.09): бюджет, тип
+# проекта, тендер. Анкетой такая форма не бывает, даже с полем для файла.
+_CLIENT_FORM_MARKERS = ("бюджет", "тип проекта", "тендер", "коммерческое предложение")
 _QUESTION_FORM_MARKERS = (
     "задайте вопрос", "ваш вопрос", "какой вопрос", "тема заявки", "тема обращения",
     "тема сообщения",
@@ -249,6 +258,8 @@ class Reason:
     SUBMIT_FAILED = "SUBMIT_FAILED"
     VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
     MAX_STEPS = "MAX_STEPS"
+    # Анкете нужны ответы человека — вопросы ушли в приложение (questions.py).
+    NEEDS_ANSWERS = "NEEDS_ANSWERS"
     MULTI_STEP_DRY_RUN_LIMIT = "MULTI_STEP_DRY_RUN_LIMIT"
     STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
     DUPLICATE_BLOCKED = "DUPLICATE_BLOCKED"
@@ -286,6 +297,8 @@ class AgentResult:
     trajectory: list[dict[str, Any]] = field(default_factory=list)
     reason_code: str | None = None
     human_action: dict[str, Any] | None = None
+    # Вопросы работодателя человеку (NEEDS_ANSWERS): questions.Question.as_dict.
+    questions: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -293,6 +306,7 @@ class AgentResult:
             "reason": self.reason,
             "reason_code": self.reason_code,
             "human_action": self.human_action,
+            "questions": self.questions,
             "trajectory": self.trajectory,
         }
 
@@ -414,6 +428,11 @@ def choose_key(
             return override
         return override if override in profile.values else None
 
+    if control.type == "file":
+        # Файл — это резюме или вложение, а не телефон: id=file_input-brief-mobile
+        # у Globus IT сопоставлялся с номером (разведка 30.09).
+        return None
+
     section = _SECTION_FIELD_RE.fullmatch((control.name or "").strip().lower())
     # Почта и телефон — контакт кандидата, биографией они не бывают.
     if section and control.type not in {"email", "tel"}:
@@ -450,6 +469,14 @@ def choose_key(
     }
     if autocomplete in autocomplete_map:
         key = autocomplete_map[autocomplete]
+        if key == "full_name" and page is not None and any(
+            other is not control and other.form_index == control.form_index
+            and _is_last_name_control(other)
+            for other in page.controls
+        ):
+            # «Имя» с autocomplete=name рядом с отдельной фамилией — только имя,
+            # иначе фамилия уйдёт в анкету дважды (Селектел, 30.09).
+            key = "first_name"
         if key in profile.values:
             return key
 
@@ -527,6 +554,18 @@ _NAME_NEUTRAL_TOKENS = {
 _LAST_NAME_TOKENS = {"surname", "lastname", "lname", "family"}
 
 
+def _is_last_name_control(control: ControlState) -> bool:
+    """Отдельное поле фамилии: surname, last_name (IBS), lname, family-name
+    (Селектел), подпись «Фамилия»."""
+    tokens = set(_name_tokens(control.name) + _name_tokens(control.id))
+    return bool(
+        _LAST_NAME_TOKENS & tokens
+        or {"last", "name"} <= tokens
+        or normalize(control.autocomplete) == "family name"
+        or "фамил" in normalize(" ".join((control.label, control.placeholder)))
+    )
+
+
 def _name_tokens(raw: str) -> list[str]:
     spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", raw or "")
     return [t for t in re.split(r"[^a-z0-9]+", spaced.lower()) if t and not t.isdigit()]
@@ -559,10 +598,7 @@ def _bare_name_key(
         has_last_name = page is not None and any(
             other is not control
             and other.form_index == control.form_index
-            and (
-                _LAST_NAME_TOKENS & set(_name_tokens(other.name) + _name_tokens(other.id))
-                or "фамил" in normalize(" ".join((other.label, other.placeholder)))
-            )
+            and _is_last_name_control(other)
             for other in page.controls
         )
         key = "first_name" if has_last_name else "full_name"
@@ -576,12 +612,24 @@ _VACANCY_PATH_RE = re.compile(r"/(?:vacanc(?:y|ies)|jobs?|career/vacanc\w*)/([^/
 _APPLY_SLUGS = {"apply", "application", "response", "questionary", "form", "otklik", "anketa"}
 
 
+def _path_key(url: str) -> str:
+    """Адрес без параметров и якоря: хост и путь."""
+    parsed = urllib.parse.urlparse(url or "")
+    return f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
+
+
 def _vacancy_slug(url: str) -> str:
     """Идентификатор вакансии в адресе: /vacancies/118-marketing-lead → 118-marketing-lead."""
     match = _VACANCY_PATH_RE.search(urllib.parse.urlparse(url or "").path)
     slug = match.group(1).lower() if match else ""
     # /jobs/apply?id=1 — это отклик, а не другая вакансия.
-    return "" if slug in _APPLY_SLUGS else slug
+    if slug in _APPLY_SLUGS:
+        return ""
+    # Раздел списка — не вакансия: /career/vacancies/it, /vacancies/all/moscow.
+    # У карточки в адресе номер или составное имя (118-marketing-lead,
+    # java-developer). Иначе правило «с карточки — только к своему отклику»
+    # отрезало со страницы списка все настоящие вакансии (Т-Банк, 30.09).
+    return slug if re.search(r"[\d_-]", slug) else ""
 
 
 def is_application_form(
@@ -620,6 +668,12 @@ def is_application_form(
     text_fields = 0  # поля для ввода текста (не select)
     only_text_is_email = False
     is_question = False
+    # Признак кандидата словами (резюме, вакансия, «о себе»), а не просто поле
+    # для файла: вложение бывает и у обратной связи (Верный, 30.09).
+    has_candidate_text = False
+    # Какими словами форма похожа на анкету: «должность» рядом с «компанией» —
+    # должность клиента, а не желаемая (Синимекс, 01.10.2026).
+    candidate_words: set[str] = set()
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -637,6 +691,9 @@ def is_application_form(
         if control.type == "file":
             has_candidate_field = True  # резюме или портфолио файлом
             has_file = True
+            file_text = normalize(" ".join((control.name, control.id, control.label, control.accept)))
+            if any(marker in file_text for marker in ("resume", "резюм", "cv", "портфолио", "portfolio")):
+                has_candidate_text = True
         if control.type == "radio":
             questions += 1  # выбор из вариантов — вопрос анкеты, у подписки его нет
         if control.type in _STRUCTURAL_CONTROL_TYPES:
@@ -655,7 +712,7 @@ def is_application_form(
             ) if value
         ))
 
-        if any(marker in haystack for marker in _ORDER_FORM_MARKERS):
+        if any(marker in haystack for marker in _ORDER_FORM_MARKERS + _CLIENT_FORM_MARKERS):
             return False
         if any(marker in haystack for marker in _QUESTION_FORM_MARKERS):
             is_question = True
@@ -664,15 +721,21 @@ def is_application_form(
         # признак сразу. Обязательная «компания» — только если в форме нет
         # ни одного поля кандидата (резюме, вакансия, «о себе»; проверка после
         # цикла): в IT-анкетах бывает обязательная «текущая компания».
-        if control.required:
+        # Обязательность — атрибутом или звёздочкой в подписи: Digital Design
+        # (01.10.2026) пишет «Компания *», не помечая поле required.
+        starred = (control.label or "").rstrip().endswith("*")
+        if control.required or starred:
             tokens = set(haystack.split())
             if "inn" in tokens or "инн" in tokens:
                 return False
             if any(marker in haystack for marker in _COMPANY_FIELD_MARKERS):
                 requires_company = True
-        if any(marker in haystack.split() or len(marker) > 3 and marker in haystack
-               for marker in _CANDIDATE_FIELD_MARKERS):
+        hits = [marker for marker in _CANDIDATE_FIELD_MARKERS
+                if marker in haystack.split() or len(marker) > 3 and marker in haystack]
+        if hits:
             has_candidate_field = True
+            has_candidate_text = True
+            candidate_words.update(hits)
 
         if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
             has_contact = True
@@ -682,7 +745,13 @@ def is_application_form(
             text_fields += 1
             only_text_is_email = text_fields == 1 and has_email_only
 
-    if (requires_company or is_question) and not has_candidate_field:
+    if requires_company and not has_candidate_field:
+        return False
+    # Компания и только «должность/position» — форма «свяжитесь с нами»:
+    # в анкете кандидата рядом было бы резюме, вакансия или «о себе».
+    if requires_company and not has_file and candidate_words and candidate_words <= {"должност", "position"}:
+        return False
+    if is_question and not has_candidate_text:
         return False
     # Подписка на вакансии: единственное текстовое поле — почта, рядом только
     # select'ы (город, направление), ни имени, ни телефона, ни резюме. Такую
@@ -730,6 +799,7 @@ class JupiterAgent:
         handoffs: HandoffStore | None = None,
         before_submit: Callable[[str, bool], None] | None = None,
         field_mapper: Callable[[list[dict], list[str]], dict[str, str]] | None = None,
+        question_explainer: Callable[[list[dict], dict], dict[str, dict[str, str]]] | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -748,6 +818,10 @@ class JupiterAgent:
         # {имя поля: ключ}. Значения кандидата и полей ей не показываются,
         # согласия и галочки она не трогает. См. _map_unknown_fields.
         self.field_mapper = field_mapper
+        # Нейросеть переписывает вопросы работодателя понятнее (01.10.2026):
+        # видит подписи полей формы и заголовок страницы, не данные кандидата.
+        # Ключ вопроса не меняет. См. _explain_questions.
+        self.question_explainer = question_explainer
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -841,6 +915,92 @@ class JupiterAgent:
             "provenance": {"field_class": FieldClass.CONSENT, "source": "SITE_DEFAULT"},
         })
 
+    def drop_preselected_radios(
+        self,
+        page: PageState,
+        form_index: int,
+        trajectory: list[dict[str, Any]],
+    ) -> None:
+        """Снять выбор, который сайт сделал за человека в группе радиокнопок.
+
+        У Полюса «Готовность к вахтовому методу» заранее стоит на «Готов» — и
+        ушла бы ответом кандидата, которого он не давал. Снятую группу дальше
+        заполняет профиль как обычно; не знает ответа — обязательный вопрос
+        уходит человеку, необязательный не отправляется вовсе. Группу из
+        одной кнопки не трогаем: выбора там нет, это фиксированное значение.
+        """
+        groups: dict[str, list[ControlState]] = {}
+        for control in page.controls:
+            if control.form_index == form_index and control.type == "radio" and control.name:
+                groups.setdefault(control.name, []).append(control)
+        for name, group in groups.items():
+            if len(group) < 2:
+                continue
+            chosen = [c for c in group if c.checked and not c.disabled and not c.readonly]
+            if not chosen:
+                continue
+            for control in chosen:
+                control.checked = False
+            trajectory.append({
+                "action": "radio_default_cleared",
+                "field": name,
+                "value": chosen[0].value,
+                "provenance": {"field_class": FieldClass.FACT, "source": "SITE_DEFAULT"},
+            })
+
+    def _fill_from_answer(
+        self,
+        page: PageState,
+        control: ControlState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+    ) -> bool:
+        """Подставить ответ, который человек дал на этот вопрос в приложении.
+
+        Только его собственный ответ (questions.answer_for); вариант списка —
+        лишь тот, что есть на сайте, иначе поле остаётся вопросом.
+        """
+        answers = profile.values.get("answers")
+        if not isinstance(answers, dict) or not answers:
+            return False
+        text = question_text(control, self.descriptor)
+        value = answer_for(text, answers)
+        if value is None or is_special(text):
+            return False
+        wanted = str(value).strip()
+        if control.tag == "select":
+            match = next((o for o in control.options if not o.disabled and wanted and (
+                wanted == str(o.value) or normalize(wanted) == normalize(o.label))), None)
+            if match is None:
+                return False
+            control.value = match.value
+            for option in control.options:
+                option.selected = option is match
+        elif control.type == "radio":
+            group = [p for p in page.controls
+                     if p.type == "radio" and p.name == control.name and p.form_index == control.form_index]
+            if any(p.checked for p in group):
+                return False
+            match = next((p for p in group if wanted == str(p.value)
+                          or normalize(wanted) == normalize(p.label or p.text)), None)
+            if match is None:
+                return False
+            for peer in group:
+                peer.checked = peer is match
+        elif control.type == "checkbox":
+            if looks_like_consent(text) or not _is_yes(value):
+                return False
+            control.checked = True
+        else:
+            control.value = _date_for_html(wanted) if control.type == "date" else wanted
+        trajectory.append({
+            "action": "check" if control.type in {"checkbox", "radio"} else "fill",
+            "field": text,
+            "key": "answer",
+            "provenance": {"field_class": FieldClass.FACT, "source": "USER_ANSWER"},
+        })
+        return True
+
     def fill_control(
         self,
         page: PageState,
@@ -856,6 +1016,11 @@ class JupiterAgent:
             # Затирать его нельзя: там обычно то, что он сам и подставил.
             return False
         if _looks_like_captcha(control):
+            return False
+        if control.css_hidden and not control.required:
+            # Ловушка для ботов: невидимое человеку поле. Человек бы его не
+            # заполнил — и мы не заполняем.
+            trajectory.append({"action": "skip_hidden_field", "field": control.name or control.id})
             return False
 
         descriptor = self.descriptor(control)
@@ -909,6 +1074,10 @@ class JupiterAgent:
             return False
 
         key = key_override or choose_key(control, profile, page.url, page)
+        if (not key or profile.values.get(key) in (None, "")) and self._fill_from_answer(
+            page, control, profile, trajectory,
+        ):
+            return True
         if not key:
             if control.tag == "select" and control.required:
                 real_options = [
@@ -1281,6 +1450,46 @@ class JupiterAgent:
                     break
         return filled
 
+    def _explain_questions(
+        self, page: PageState, form_index: int | None, questions: list[dict],
+    ) -> list[dict]:
+        """Понятный текст и пояснение к вопросам — если есть нейросеть.
+
+        Добавляет display/hint и уточняет kind; key и text (подпись сайта) не
+        трогает. Любой сбой — вопросы как есть.
+        """
+        if self.question_explainer is None or not questions:
+            return questions
+        fields = []
+        for control in page.controls:
+            if form_index is not None and control.form_index != form_index:
+                continue
+            if control.type in {"hidden", "submit", "image", "button", "reset"}:
+                continue
+            label = str(self.descriptor(control) or "").strip()
+            if label and label not in fields:
+                fields.append(label)
+        context = {
+            "host": urllib.parse.urlparse(page.url).hostname or "",
+            "title": page.title, "fields": fields,
+        }
+        try:
+            answer = self.question_explainer(questions, context)
+        except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+            return questions
+        if not isinstance(answer, dict):
+            return questions
+        for q in questions:
+            extra = answer.get(q.get("key"))
+            if not isinstance(extra, dict) or not extra.get("question"):
+                continue
+            q["display"] = str(extra["question"])[:200]
+            if extra.get("hint"):
+                q["hint"] = str(extra["hint"])[:400]
+            if extra.get("kind") in ("fact", "vacancy"):
+                q["kind"] = extra["kind"]
+        return questions
+
     def _missing_reason_code(
         self,
         page: PageState,
@@ -1595,9 +1804,17 @@ class JupiterAgent:
             (self._spa_links(page), "spa_state", 0),
         ]
         own_vacancy = _vacancy_slug(self._root_url)
+        # Один путь с разными параметрами — не больше двух заходов: второй
+        # бывает вакансией (/vacancies?id=33), дальше это перебор фильтров
+        # (?direction=…), и разведка упиралась в MAX_STEPS вместо «нужен
+        # браузер» (Т-Банк IT, 30.09).
+        path_visits: dict[str, int] = {}
+        for seen in visited:
+            key = _path_key(seen)
+            path_visits[key] = path_visits.get(key, 0) + 1
         for candidates, origin, priority in sources:
             for url, text in candidates:
-                if url in visited:
+                if url in visited or path_visits.get(_path_key(url), 0) >= 2:
                     continue
                 # С карточки вакансии — только к отклику на неё же. Соседняя
                 # вакансия в «похожих» набирает те же очки, и агент заполнял
@@ -2036,6 +2253,7 @@ class JupiterAgent:
                     "step_index": flow.step_index,
                     "score": self._form_score(page, target_form_index, profile),
                 })
+                self.drop_preselected_radios(page, target_form_index, trajectory)
                 for control in page.controls:
                     if control.form_index != target_form_index:
                         continue
@@ -2072,6 +2290,24 @@ class JupiterAgent:
             if has_application_form or filled_any:
                 if missing:
                     code = self._missing_reason_code(page, target_form_index)
+                    if code != Reason.CONSENT_REQUIRED:
+                        questions, special = extract_questions(
+                            page, target_form_index, self.descriptor,
+                        )
+                        # Особые категории — только на сайте, самим человеком.
+                        if questions and not special:
+                            result = self._handoff(
+                                page, trajectory,
+                                action_type=HumanAction.UNKNOWN_FIELD,
+                                prompt="Employer questions need the candidate's answers: "
+                                       + "; ".join(q.text for q in questions),
+                                reason_code=Reason.NEEDS_ANSWERS,
+                                field_name=questions[0].text,
+                            )
+                            result.questions = self._explain_questions(
+                                page, target_form_index, [q.as_dict() for q in questions],
+                            )
+                            return result
                     action_type = {
                         Reason.CONSENT_REQUIRED: HumanAction.CONSENT,
                         Reason.UNKNOWN_REQUIRED_QUESTION:

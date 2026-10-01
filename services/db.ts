@@ -1823,9 +1823,12 @@ export async function jupiterLiveStatus(userId: string): Promise<boolean> {
  * (см. jupiterLiveStatus в php-proxy/db.php), поэтому здесь по умолчанию
  * false, а не неизвестно.
  */
-export async function jupiterLiveState(userId: string): Promise<{ enabled: boolean; revoked: boolean }> {
-  const result = await proxy<{ enabled?: boolean; revoked?: boolean }>('jupiterLiveStatus', [userId]);
-  return { enabled: result?.enabled === true, revoked: result?.revoked === true };
+export async function jupiterLiveState(
+  userId: string,
+): Promise<{ enabled: boolean; revoked: boolean; serverSends: boolean }> {
+  const result = await proxy<{ enabled?: boolean; revoked?: boolean; serverSends?: boolean }>('jupiterLiveStatus', [userId]);
+  // serverSends — Юпитер отправляет с сервера; старый сервер его не отдаёт → false.
+  return { enabled: result?.enabled === true, revoked: result?.revoked === true, serverSends: result?.serverSends === true };
 }
 
 export type JupiterEmail = {
@@ -2491,4 +2494,67 @@ export async function jupiterCaptchaAnswer(
   answer: string,
 ): Promise<void> {
   await proxy('jupiterCaptchaAnswer', [userId, applicationId, answer]);
+}
+
+// ── Вопросы от работодателей (решение владельца 30.09.2026) ────────────────
+// Юпитер собирает вопросы анкет, на которые нет ответа в профиле; человек
+// отвечает здесь, отклик уходит сам. Факты сохраняются в банк ответов.
+
+export type JupiterQuestionType =
+  | 'text' | 'text_long' | 'choice' | 'yesno' | 'date' | 'number' | 'phone' | 'email' | 'url';
+
+export interface JupiterQuestion {
+  id: string;
+  application_id: string;
+  /** Подпись поля на сайте работодателя — как есть. */
+  question: string;
+  /** Понятная формулировка от YandexGPT (миграция 138); null — не было. */
+  display?: string | null;
+  /** Пояснение, что туда обычно пишут; null — не было. */
+  hint?: string | null;
+  type: JupiterQuestionType;
+  /** fact — сохранится и подставится сам; vacancy — только для этого отклика. */
+  kind: 'fact' | 'vacancy';
+  options: { value: string; label: string }[];
+  /** Прежний ответ на этот вопрос — черновик, человек подтверждает или правит. */
+  draft: string | null;
+  company: string | null;
+  vacancy_url: string | null;
+  /** Сколько откликов ждут ответа на этот же вопрос. */
+  applications_waiting: number;
+}
+
+export interface JupiterSavedAnswer {
+  question_key: string;
+  question_text: string;
+  answer: string;
+  updated_at: string;
+}
+
+/** Открытые вопросы работодателей по всем откликам человека. */
+export async function jupiterQuestions(userId: string): Promise<JupiterQuestion[]> {
+  return (await proxy<JupiterQuestion[]>('jupiterQuestions', [userId])) ?? [];
+}
+
+/** Ответ (для choice — подпись варианта). Вернёт, сколько откликов разблокировано. */
+export async function jupiterAnswerQuestion(
+  userId: string,
+  questionId: string,
+  answer: string,
+): Promise<{ ok: boolean; applications: number }> {
+  return proxy('jupiterAnswerQuestion', [userId, questionId, answer]);
+}
+
+/** «Пропустить»: этот вопрос человек заполнит на сайте сам. */
+export async function jupiterSkipQuestion(userId: string, questionId: string): Promise<void> {
+  await proxy('jupiterSkipQuestion', [userId, questionId]);
+}
+
+/** Банк ответов: что Юпитер подставит сам. */
+export async function jupiterAnswers(userId: string): Promise<JupiterSavedAnswer[]> {
+  return (await proxy<JupiterSavedAnswer[]>('jupiterAnswers', [userId])) ?? [];
+}
+
+export async function jupiterAnswerDelete(userId: string, questionKey: string): Promise<void> {
+  await proxy('jupiterAnswerDelete', [userId, questionKey]);
 }

@@ -11,13 +11,14 @@ import {
 } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { JupiterApplication } from '@/constants/types';
 import { useApp } from '@/hooks/useApp';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
   jupiterApplicationEvents, jupiterMyApplications, jupiterGrantThirdPartyConsent,
-  jupiterRequeueLive, dbGetResumeFiles,
+  jupiterRequeueLive, dbGetResumeFiles, jupiterMarkManualSubmitted, jupiterFillProfile, jupiterLiveState,
 } from '@/services/db';
 import { requestJupiterLive } from '@/services/jupiterLive';
 import { confirmAsync } from '@/services/confirm';
@@ -144,16 +145,20 @@ export default function JupiterApplicationScreen() {
   const [steps, setSteps] = useState<TimelineStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [serverSends, setServerSends] = useState(false);
 
   const load = useCallback(async () => {
     if (!currentUser?.id || !id) return;
     try {
-      const [apps, events] = await Promise.all([
+      const [apps, events, live] = await Promise.all([
         jupiterMyApplications(currentUser.id),
         jupiterApplicationEvents(currentUser.id, id),
+        // Не знаем — значит, кнопки «Попробовать ещё раз» нет; карточке это не мешает.
+        jupiterLiveState(currentUser.id).catch(() => null),
       ]);
       const own = apps.find(a => a.id === id) ?? null;
       setApp(own);
+      setServerSends(live?.serverSends === true);
       setSteps(buildTimeline(events));
       setError(own ? '' : 'Отклик не найден');
     } catch (e: any) {
@@ -185,6 +190,13 @@ export default function JupiterApplicationScreen() {
     (app.state === 'ready_to_submit' && !app.submissionAuthorizedAt)
     || (app.state === 'action_required' && app.reasonCode === 'LIVE_AUTHORIZATION_REVOKED')
   );
+  // Честные исходы (решение владельца 01.10.2026). «Скорее всего, ушёл»: заявка
+  // ушла на сайт, но он промолчал — повторять вслепую нельзя, человек может
+  // проверить на сайте и отметить сам. «Не ушёл»: Юпитер споткнулся до
+  // отправки — повтор безопасен, если Юпитер отправляет с сервера.
+  const unknown = !!app && !closed && app.state === 'submission_unknown';
+  const canRetry = !!app && !closed && app.state === 'failed' && serverSends;
+  const canSelfMark = !!app && !closed && (canFill || unknown);
 
   const openSite = () => {
     if (!app) return;
@@ -250,8 +262,55 @@ export default function JupiterApplicationScreen() {
     }
   };
 
+  const markSentMyself = async () => {
+    if (!app || !currentUser?.id) return;
+    const ok = await confirmAsync({
+      title: 'Вы отправили отклик сами?',
+      body: 'Отметим отклик как «Отправлено вами». Юпитер к нему больше не вернётся.',
+      confirmLabel: 'Да, отправил',
+    });
+    if (!ok) return;
+    try {
+      await jupiterMarkManualSubmitted(currentUser.id, app.id);
+      showToast('Отклик отмечен отправленным', 'success');
+      await load();
+    } catch (error: any) {
+      showToast(error?.message || 'Не удалось отметить отклик', 'error');
+    }
+  };
+  const retry = async () => {
+    if (!app || !currentUser?.id) return;
+    try {
+      await jupiterRequeueLive(currentUser.id, app.id);
+      showToast('Юпитер попробует отправить ещё раз', 'success');
+      await load();
+    } catch (error: any) {
+      showToast(error?.message || 'Не удалось повторить отклик', 'error');
+    }
+  };
+  // Сайт открыт без автопилота (веб и PWA): свои данные — одной кнопкой в буфер,
+  // вставить в анкету. Только то, что человек и так вписал бы сам.
+  const copyMyData = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const p = await jupiterFillProfile(currentUser.id);
+      const lines = [
+        p.full_name && `ФИО: ${p.full_name}`,
+        p.phone && `Телефон: ${p.phone}`,
+        p.email && `Почта: ${p.email}`,
+        p.city && `Город: ${p.city}`,
+        p.desired_role && `Должность: ${p.desired_role}`,
+      ].filter(Boolean);
+      if (!lines.length) { showToast('В профиле пока пусто — заполните его', 'error'); return; }
+      await Clipboard.setStringAsync(lines.join('\n'));
+      showToast('Данные скопированы — вставьте в анкету', 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'Не удалось скопировать данные', 'error');
+    }
+  };
+
   const badge = app ? jupiterBadge(app) : null;
-  const needsAction = canFill || needsRequeue || needsSberConsent || needsCaptcha;
+  const needsAction = canFill || needsRequeue || needsSberConsent || needsCaptcha || unknown;
   const summary = app ? jupiterRowSummary(app) : '';
   const manualSent = app?.state === 'submitted' && app.reasonCode === 'MANUAL_WEBVIEW';
 
@@ -272,7 +331,7 @@ export default function JupiterApplicationScreen() {
       case 'closed':
         return { label: 'Вакансия закрыта работодателем', box: s.badgeClosed, color: C.label, icon: <LockIcon color={C.label} /> };
       case 'failed':
-        return { label: 'Не получилось отправить', box: s.badgeFailed, color: C.danger, icon: null };
+        return { label: 'Не ушёл', box: s.badgeFailed, color: C.danger, icon: null };
       default:
         return { label: status?.label || 'Юпитер обрабатывает', box: s.badgeWorking, color: C.ink, icon: <ClockIcon size={15} strokeWidth={2.4} /> };
     }
@@ -333,8 +392,11 @@ export default function JupiterApplicationScreen() {
                 <Text style={[s.vacancyTitle, closed && { color: C.label }]}>{vacancyTitle}</Text>
               ) : null}
               <Text style={vacancyTitle ? s.company : s.vacancyTitle} numberOfLines={2}>{company}</Text>
+              {/* Отклик ждёт человека — сайт открываем во встроенном браузере с
+                  автопилотом: во внешнем браузере анкету никто не заполнит, и
+                  человек видел пустую форму (МТС, 30.09.2026). */}
               <UnderlinedLink
-                onPress={openSite}
+                onPress={canFill && Platform.OS !== 'web' ? openForm : openSite}
                 label="Открыть сайт вакансии"
                 color={closed ? C.label : C.ink}
                 underline={closed ? C.border : C.accent}
@@ -353,7 +415,39 @@ export default function JupiterApplicationScreen() {
               {showSummary ? <Text style={s.summary}>{summary}</Text> : null}
 
               {needsCaptcha ? <PrimaryButton label="Ввести слово с картинки" onPress={openCaptcha} /> : null}
-              {canFill ? <PrimaryButton label="Открыть анкету и отправить" onPress={openForm} arrow /> : null}
+              {canRetry ? <PrimaryButton label="Попробовать ещё раз" onPress={() => void retry()} /> : null}
+              {canFill && !canRetry ? (
+                <PrimaryButton
+                  label={Platform.OS === 'web' ? 'Отправить самому на сайте' : 'Открыть анкету и отправить'}
+                  onPress={openForm}
+                  arrow
+                />
+              ) : null}
+              {/* Рядом с «Попробовать ещё раз» — вторая, белая: одна главная кнопка на экран. */}
+              {canFill && canRetry ? (
+                <TouchableOpacity style={s.secondaryBtn} onPress={openForm} activeOpacity={0.85} accessibilityRole="button">
+                  <Text style={s.secondaryTxt}>{Platform.OS === 'web' ? 'Отправить самому на сайте' : 'Открыть анкету и отправить'}</Text>
+                </TouchableOpacity>
+              ) : null}
+              {unknown ? <PrimaryButton label="Открыть вакансию" onPress={openSite} arrow /> : null}
+              {canSelfMark && Platform.OS === 'web' ? (
+                <TouchableOpacity style={s.secondaryBtn} onPress={() => void copyMyData()} activeOpacity={0.85}
+                  accessibilityRole="button">
+                  <Text style={s.secondaryTxt}>Скопировать мои данные</Text>
+                </TouchableOpacity>
+              ) : null}
+              {canFill && Platform.OS !== 'web' ? (
+                <TouchableOpacity onPress={openSite} hitSlop={8} style={s.browserLink}
+                  accessibilityRole="link" accessibilityLabel="Открыть в браузере телефона, без автозаполнения">
+                  <Text style={s.browserLinkTxt}>Открыть в браузере телефона — без автозаполнения</Text>
+                </TouchableOpacity>
+              ) : null}
+              {canSelfMark ? (
+                <TouchableOpacity style={s.secondaryBtn} onPress={() => void markSentMyself()} activeOpacity={0.85}
+                  accessibilityRole="button" testID="jupiter-mark-sent">
+                  <Text style={s.secondaryTxt}>Я отправил сам</Text>
+                </TouchableOpacity>
+              ) : null}
               {needsRequeue ? <PrimaryButton label="Отправить через Юпитер" onPress={() => void requeueLive()} /> : null}
               {needsSberConsent ? (
                 <>
@@ -424,6 +518,8 @@ export default function JupiterApplicationScreen() {
 }
 
 const s = StyleSheet.create({
+  browserLink: { marginTop: 12, alignSelf: 'center' },
+  browserLinkTxt: { fontFamily: F.text600, fontSize: 13, color: C.label, textDecorationLine: 'underline' },
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     height: 44, marginTop: 12, marginHorizontal: 20, justifyContent: 'center', alignItems: 'flex-start',
@@ -467,9 +563,9 @@ const s = StyleSheet.create({
   primaryWrap: { marginTop: 16, alignSelf: 'stretch' },
   primaryBtn: {
     height: 58, borderRadius: 29, borderWidth: 2, borderColor: C.ink, backgroundColor: C.accent,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20,
   },
-  primaryTxt: { fontFamily: F.text800, fontSize: 17, color: C.ink },
+  primaryTxt: { fontFamily: F.text800, fontSize: 17, color: C.ink, flexShrink: 1, textAlign: 'center' },
   secondaryBtn: {
     marginTop: 18, alignSelf: 'stretch', height: 54, borderRadius: 27, borderWidth: 2, borderColor: C.ink,
     backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center',

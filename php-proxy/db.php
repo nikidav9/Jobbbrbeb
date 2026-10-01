@@ -296,6 +296,9 @@ $selfArgFns = [
     'jupiterApplicationEvents' => 0,
     // Капча человеку: видит и отвечает только владелец заявки.
     'jupiterCaptchaGet' => 0, 'jupiterCaptchaAnswer' => 0,
+    // Вопросы от работодателей и банк ответов: только свои.
+    'jupiterQuestions' => 0, 'jupiterAnswerQuestion' => 0, 'jupiterSkipQuestion' => 0,
+    'jupiterAnswers' => 0, 'jupiterAnswerDelete' => 0,
     // Свайпы по карьерным вакансиям: только свои.
     'dbExtSwipe' => 0, 'dbExtUnswipe' => 0,
     // Свайпы по своим вакансиям JobToo: только свои.
@@ -3080,6 +3083,106 @@ function jt_perm_app_announce(array $app, string $status, bool $writeChat = true
  * PostgREST разрешает брать значение в двойные кавычки; внутри них кавычка
  * экранируется обратной косой.
  */
+// ─── Вопросы от работодателей (миграция 137) ─────────────────────────────
+// Юпитер присылает вопросы, на которые в профиле нет ответа; человек отвечает
+// в приложении; отклик возвращается в очередь, когда отвечено всё.
+const JT_QUESTION_TYPES = ['text', 'text_long', 'choice', 'yesno', 'date', 'number', 'phone', 'email', 'url'];
+
+function jt_questions_store(string $appId, string $uid, array $questions): int {
+    $rows = [];
+    foreach (array_slice($questions, 0, 30) as $q) {
+        if (!is_array($q)) continue;
+        $key = (string)($q['key'] ?? '');
+        $text = trim((string)($q['text'] ?? ''));
+        $type = (string)($q['type'] ?? 'text');
+        $kind = (string)($q['kind'] ?? 'vacancy');
+        if (!preg_match('/^q:[0-9a-f]{16}$/', $key) || $text === '') continue;
+        if (!in_array($type, JT_QUESTION_TYPES, true)) $type = 'text';
+        if (!in_array($kind, ['fact', 'vacancy'], true)) $kind = 'vacancy';
+        $options = [];
+        foreach (array_slice(is_array($q['options'] ?? null) ? $q['options'] : [], 0, 50) as $o) {
+            if (!is_array($o)) continue;
+            $label = mb_substr(trim((string)($o['label'] ?? '')), 0, 200);
+            if ($label === '') continue;
+            $options[] = ['value' => mb_substr((string)($o['value'] ?? ''), 0, 200), 'label' => $label];
+        }
+        $rows[$key] = [
+            'application_id' => $appId, 'user_id' => $uid, 'question_key' => $key,
+            'question_text' => mb_substr($text, 0, 300), 'field_type' => $type,
+            'kind' => $kind, 'options' => $options, 'status' => 'open',
+            // Понятный текст и пояснение от YandexGPT (миграция 138); нет — null.
+            'question_display' => ($d = trim((string)($q['display'] ?? ''))) !== '' ? mb_substr($d, 0, 200) : null,
+            'question_hint' => ($h = trim((string)($q['hint'] ?? ''))) !== '' ? mb_substr($h, 0, 400) : null,
+        ];
+    }
+    // Вопросы, которых в анкете больше нет, не держим открытыми.
+    $filter = ['application_id' => 'eq.' . $appId, 'status' => 'eq.open'];
+    if ($rows) $filter['question_key'] = 'not.' . sb_in_list(array_keys($rows));
+    sb_delete('jm_jupiter_questions', $filter);
+    // Ответ, который не подошёл (варианта нет на сайте), остаётся черновиком.
+    if ($rows) sb_upsert('jm_jupiter_questions', array_values($rows), 'application_id,question_key');
+    return count($rows);
+}
+
+// Все вопросы отклика отвечены — отклик снова в очередь; пропущенный вопрос
+// значит «заполню сам на сайте» — отклик остаётся человеку («Ждут вас»).
+function jt_questions_release(string $uid, string $appId): void {
+    $left = sb_select('jm_jupiter_questions', [
+        'application_id' => 'eq.' . $appId, 'user_id' => 'eq.' . $uid,
+        'status' => 'in.("open","skipped")',
+    ], 'status');
+    if (!$left) {
+        sb_update('jm_jupiter_applications', [
+            'id' => 'eq.' . $appId, 'user_id' => 'eq.' . $uid,
+            'state' => 'eq.action_required', 'reason_code' => 'eq.NEEDS_ANSWERS',
+        ], [
+            'state' => 'queued', 'reason_code' => null, 'not_before' => null,
+            'lease_owner' => null, 'lease_until' => null, 'updated_at' => now_iso(),
+        ]);
+        return;
+    }
+    $open = array_filter($left, fn($r) => ($r['status'] ?? '') === 'open');
+    if (!$open) {
+        sb_update('jm_jupiter_applications', [
+            'id' => 'eq.' . $appId, 'user_id' => 'eq.' . $uid, 'reason_code' => 'eq.NEEDS_ANSWERS',
+        ], ['reason_code' => 'MISSING_PROFILE_FIELD', 'updated_at' => now_iso()]);
+    }
+}
+
+// Пуш о вопросах — не чаще раза в сутки (решение владельца 30.09.2026): вопросы
+// копятся пачками по мере того, как Юпитер обходит сайты, а будить человека
+// каждой анкетой — верный путь к выключенным уведомлениям. Очередь и так видна
+// карточкой на «Откликах».
+function jt_questions_notify(string $uid): void {
+    if ($uid === '') return;
+    $recent = sb_select('jm_notifications', [
+        'user_id' => 'eq.' . $uid, 'type' => 'eq.jupiter_questions',
+        'created_at' => 'gte.' . gmdate('Y-m-d\TH:i:s\Z', time() - 86400),
+    ], 'id');
+    if ($recent) return;
+    $open = sb_select('jm_jupiter_questions', [
+        'user_id' => 'eq.' . $uid, 'status' => 'eq.open',
+    ], 'question_key');
+    $n = count(array_unique(array_column($open, 'question_key')));
+    if ($n === 0) return;
+    notify_user($uid, '❓ Вопросы от работодателей',
+        'Работодатели задали вопросов: ' . $n . '. Ответьте — и отклики уйдут сами',
+        'jupiter_questions');
+}
+
+// Отклик ушёл после ответов человека — замыкаем обещание «ответьте, и уйдёт
+// само». Обычные отклики Юпитера так не объявляются: их десятки.
+function jt_questions_sent_notify(string $uid, string $appId, string $company): void {
+    if ($uid === '') return;
+    $answered = sb_select('jm_jupiter_questions', [
+        'application_id' => 'eq.' . $appId, 'user_id' => 'eq.' . $uid, 'status' => 'eq.answered',
+    ], 'id');
+    if (!$answered) return;
+    $company = trim($company) !== '' ? trim($company) : 'компанию';
+    notify_user($uid, '✅ Отклик в ' . $company . ' ушёл',
+        'Юпитер подставил ваши ответы и отправил отклик', 'jupiter_sent');
+}
+
 function sb_in_list(array $values): string
 {
     $quoted = [];
@@ -3272,6 +3375,76 @@ function jt_jupiter_escalate_to_browser(string $id, array $task, string $state, 
         'updated_at' => now_iso(),
     ]);
     return true;
+}
+
+/**
+ * Пилот «сервер отправляет сам» (решение владельца 01.10.2026): вместо
+ * «Нужны вы» с PHONE_FILL свайп ставит отклик в очередь серверного Юпитера,
+ * SPA вроде МТС уходит на браузерный движок. Сначала — только аккаунты из
+ * этого списка (коды приглашения, их и так раздают ссылкой), чтобы увидеть
+ * настоящие отправки до включения всем. В PWA встроенного браузера нет, и
+ * без сервера такой отклик не уходил никогда.
+ */
+const JT_SERVER_SEND_PILOT = ['SMYFERND']; // владелец (01.10.2026)
+
+function jt_jupiter_server_sends(string $uid): bool
+{
+    if ($uid === '' || !JT_SERVER_SEND_PILOT) return false;
+    $user = sb_single('jm_users', ['id' => 'eq.' . $uid],
+        'jupiter_live_enabled_at,is_blocked,referral_code');
+    return $user && !empty($user['jupiter_live_enabled_at']) && empty($user['is_blocked'])
+        && in_array(strtoupper(trim((string)($user['referral_code'] ?? ''))), JT_SERVER_SEND_PILOT, true)
+        && jt_browser_delegated($uid);
+}
+
+/**
+ * Патч заявки «в очередь сервера на отправку». $delegated — дано ли поручение
+ * на согласия; null — узнать (один запрос). Перевод пачкой узнаёт его один
+ * раз на всех.
+ */
+function jt_jupiter_server_patch(string $uid, string $vacancyUrl, string $now, ?bool $delegated = null): array
+{
+    $patch = ['state' => 'queued', 'reason_code' => null, 'not_before' => null,
+        'submission_authorized_at' => $now, 'updated_at' => $now];
+    if ($delegated ?? jt_employer_delegated($uid)) $patch += jt_employer_consent_fields($vacancyUrl, $now);
+    return $patch;
+}
+
+/**
+ * Отклики пилота, отложенные «на телефон» (PHONE_FILL), — серверу. Зовётся
+ * при открытии «Откликов», поэтому дёшево: пилота нет или переводить нечего
+ * — один запрос или ни одного. Поручение проверяется один раз, заявки
+ * переводятся пачками по адресу условий работодателя, а не по одной: на
+ * первом открытии их бывают десятки, и ответ не укладывался во время
+ * («Не удалось обновить отклики», 01.10.2026).
+ */
+function jt_jupiter_phone_fill_to_server(string $uid): void
+{
+    try {
+        if ($uid === '' || !JT_SERVER_SEND_PILOT) return;
+        $rows = sb_select('jm_jupiter_applications', [
+            'user_id' => 'eq.' . $uid, 'state' => 'eq.action_required',
+            'reason_code' => 'eq.PHONE_FILL', 'lease_owner' => 'is.null', 'limit' => '200',
+        ], 'id,vacancy_url');
+        if (!$rows || !jt_jupiter_server_sends($uid)) return;
+        $now = now_iso();
+        $delegated = jt_employer_delegated($uid);
+        $groups = [];
+        foreach ($rows as $row) {
+            $patch = jt_jupiter_server_patch($uid, (string)$row['vacancy_url'], $now, $delegated);
+            $groups[json_encode($patch)][] = (string)$row['id'];
+        }
+        foreach ($groups as $patchJson => $ids) {
+            sb_update('jm_jupiter_applications', [
+                'id' => sb_in_list($ids), 'user_id' => 'eq.' . $uid,
+                'state' => 'eq.action_required', 'reason_code' => 'eq.PHONE_FILL',
+                'lease_owner' => 'is.null',
+            ], json_decode($patchJson, true));
+        }
+        rt_touch('jm_jupiter_applications');
+    } catch (Throwable $e) {
+        // Список откликов важнее: перевод повторится при следующем открытии.
+    }
 }
 
 /** Поля заявки, которыми фиксируется поручение на согласия работодателю. */
@@ -7043,6 +7216,9 @@ try {
             $data = [
                 'enabled' => !empty($user['jupiter_live_enabled_at']),
                 'revoked' => !empty($user['jupiter_live_revoked_at']),
+                // Отправляет ли Юпитер с сервера: от этого зависит кнопка
+                // «Попробовать ещё раз» у «Не ушёл» (иначе — анкета на телефоне).
+                'serverSends' => jt_jupiter_server_sends((string)$args[0]),
             ];
             break;
         }
@@ -7196,11 +7372,19 @@ try {
             $existing = sb_single('jm_jupiter_applications', [
                 'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
             ], 'id,state,lease_owner,submission_authorized_at,reason_code');
+            // «Попробовать ещё раз» у «Не ушёл» (failed): Юпитер споткнулся до
+            // подтверждённой отправки, второй отклик не родится — повтор POST
+            // вслепую сторожит квитанция воркера. submission_unknown сюда не
+            // входит: там заявка могла уже дойти (решение владельца 01.10.2026).
             $canRequeue = $existing && (
                 ($existing['state'] === 'ready_to_submit' && empty($existing['submission_authorized_at']))
+                || $existing['state'] === 'failed'
                 || ($existing['state'] === 'action_required'
                     && ($existing['reason_code'] ?? '') === 'LIVE_AUTHORIZATION_REVOKED')
             );
+            if ($canRequeue && $existing['state'] === 'failed' && !jt_jupiter_server_sends($uidArg)) {
+                jt_respond(['error' => 'Повторить может только анкета на телефоне — нажмите «Открыть анкету и отправить»'], 409); exit;
+            }
             if (!$canRequeue || !empty($existing['lease_owner'])) {
                 jt_respond(['error' => 'Эту заявку нельзя отправить повторно'], 409); exit;
             }
@@ -7295,7 +7479,9 @@ try {
             $existing = sb_single('jm_jupiter_applications', [
                 'id' => 'eq.' . $id, 'user_id' => 'eq.' . $uidArg,
             ], 'id,state,lease_owner');
-            $allowedStates = ['action_required', 'failed', 'retryable_failed', 'ready_to_submit'];
+            // submission_unknown — «скорее всего, ушёл»: человек увидел письмо
+            // компании или сам отправил с сайта (решение владельца 01.10.2026).
+            $allowedStates = ['action_required', 'failed', 'retryable_failed', 'ready_to_submit', 'submission_unknown'];
             $canMark = $existing && empty($existing['lease_owner'])
                 && in_array((string)($existing['state'] ?? ''), $allowedStates, true);
             if (!$canMark) {
@@ -7351,11 +7537,19 @@ try {
             // jupiterRequeueSiteReady, ни jt_employer_requeue_consent — они
             // смотрят на свои причины. Поэтому без разрешения на автоотправку
             // и без поручения на согласия: их даёт сам человек на сайте.
+            // Исключение — пилот JT_SERVER_SEND_PILOT: там отправляет сервер.
+            $serverSends = jt_jupiter_server_sends($uidArg);
             $existing = sb_single('jm_jupiter_applications', [
                 'user_id' => 'eq.' . $uidArg,
                 'canonical_url' => 'eq.' . $canonical,
             ]);
             if ($existing) {
+                if ($serverSends) {
+                    jt_jupiter_phone_fill_to_server($uidArg);
+                    $existing = sb_single('jm_jupiter_applications', [
+                        'id' => 'eq.' . $existing['id'], 'user_id' => 'eq.' . $uidArg,
+                    ]) ?: $existing;
+                }
                 $data = $existing;
                 break;
             }
@@ -7371,6 +7565,7 @@ try {
                 'created_at' => now_iso(),
                 'updated_at' => now_iso(),
             ];
+            if ($serverSends) $row = jt_jupiter_server_patch($uidArg, $url, now_iso()) + $row;
             // При одновременных нажатиях merge-duplicates перезаписал бы
             // состояние чужого воркера обратно в queued. Вставляем только
             // отсутствующую строку, а при конфликте читаем уже существующую.
@@ -7398,6 +7593,7 @@ try {
         }
 
         case 'jupiterMyApplications': {
+            jt_jupiter_phone_fill_to_server((string)($args[0] ?? ''));
             $data = sb_select(
                 'jm_jupiter_applications',
                 ['user_id' => 'eq.' . (string)($args[0] ?? '')],
@@ -7541,7 +7737,7 @@ try {
                 jt_respond(['error' => 'Unknown state'], 400); exit;
             }
             $task = sb_single('jm_jupiter_applications', ['id' => 'eq.' . $id],
-                'lease_owner,user_id,engine,submission_authorized_at');
+                'lease_owner,user_id,engine,submission_authorized_at,company');
             if (!$task || (string)($task['lease_owner'] ?? '') !== $worker) {
                 jt_respond(['error' => 'Lease is held by another worker'], 409); exit;
             }
@@ -7563,11 +7759,25 @@ try {
             ] as $key) {
                 if (array_key_exists($key, $extra)) $patch[$key] = $extra[$key];
             }
+            if ($state === 'action_required' && is_array($extra['questions'] ?? null)) {
+                $stored = jt_questions_store($id, (string)($task['user_id'] ?? ''), $extra['questions']);
+                // Ни одного годного вопроса — это не очередь вопросов, а обычная
+                // остановка: пусть человек заполнит анкету сам.
+                if ($stored === 0 && ($patch['reason_code'] ?? '') === 'NEEDS_ANSWERS') {
+                    $patch['reason_code'] = 'MISSING_PROFILE_FIELD';
+                }
+            }
             if ($state === 'submitted') $patch['submitted_at'] = now_iso();
             if ($state === 'submitted' && !empty($extra['verified'])) {
                 $patch['verified_at'] = now_iso();
             }
             sb_update('jm_jupiter_applications', ['id' => 'eq.' . $id], $patch);
+            // Пуш не должен ронять итог воркера: заявка уже записана.
+            try {
+                $owner = (string)($task['user_id'] ?? '');
+                if (($patch['reason_code'] ?? '') === 'NEEDS_ANSWERS') jt_questions_notify($owner);
+                if ($state === 'submitted') jt_questions_sent_notify($owner, $id, (string)($task['company'] ?? ''));
+            } catch (Throwable $e) { /* см. выше */ }
             jt_respond(['ok' => true]); exit;
         }
 
@@ -7747,6 +7957,21 @@ try {
             if ($consentRow && !empty($consentRow['stamp'])) {
                 $personalData['consent'] = true;
             }
+            // Ответы человека на вопросы работодателей: банк фактов и ответы
+            // именно для этого отклика (второй поверх первого).
+            $answers = [];
+            foreach (sb_select('jm_jupiter_answers', ['user_id' => 'eq.' . $uid], 'question_key,answer') as $a) {
+                $answers[(string)$a['question_key']] = (string)$a['answer'];
+            }
+            $appArg = (string)($args[1] ?? '');
+            if ($appArg !== '') {
+                foreach (sb_select('jm_jupiter_questions', [
+                    'application_id' => 'eq.' . $appArg, 'user_id' => 'eq.' . $uid,
+                    'status' => 'eq.answered',
+                ], 'question_key,answer') as $a) {
+                    if ((string)($a['answer'] ?? '') !== '') $answers[(string)$a['question_key']] = (string)$a['answer'];
+                }
+            }
             jt_respond([
                 'user_id' => $uid,
                 'first_name' => $user['first_name'] ?? null,
@@ -7757,7 +7982,124 @@ try {
                 'personal_data' => $personalData,
                 'resume_data' => $resumeData,
                 'resume_url' => $resumeUrl,
+                'answers' => (object)$answers,
             ]); exit;
+        }
+
+        // ── Вопросы от работодателей: человеку ─────────────────────────────
+        // Открытые вопросы с компанией и вакансией. Черновик ответа — прежний
+        // ответ на этот же вопрос: из банка или из другого отклика.
+        case 'jupiterQuestions': {
+            $uidArg = (string)($args[0] ?? '');
+            $rows = sb_select('jm_jupiter_questions', [
+                'user_id' => 'eq.' . $uidArg, 'status' => 'eq.open', 'limit' => '200',
+            ], 'id,application_id,question_key,question_text,question_display,question_hint,field_type,kind,options,answer,created_at',
+                'created_at.asc');
+            $bank = [];
+            foreach (sb_select('jm_jupiter_answers', ['user_id' => 'eq.' . $uidArg], 'question_key,answer') as $a) {
+                $bank[(string)$a['question_key']] = (string)$a['answer'];
+            }
+            $apps = [];
+            $appIds = array_values(array_unique(array_map(fn($r) => (string)$r['application_id'], $rows)));
+            if ($appIds) {
+                foreach (sb_select('jm_jupiter_applications', [
+                    'id' => sb_in_list($appIds), 'user_id' => 'eq.' . $uidArg,
+                ], 'id,company,vacancy_url') as $a) {
+                    $apps[(string)$a['id']] = $a;
+                }
+            }
+            $waiting = [];
+            foreach ($rows as $r) $waiting[$r['question_key']] = ($waiting[$r['question_key']] ?? 0) + 1;
+            $data = array_map(function ($r) use ($bank, $apps, $waiting) {
+                $app = $apps[(string)$r['application_id']] ?? [];
+                return [
+                    'id' => $r['id'], 'application_id' => $r['application_id'],
+                    'question' => $r['question_text'], 'type' => $r['field_type'],
+                    'display' => $r['question_display'] ?? null, 'hint' => $r['question_hint'] ?? null,
+                    'kind' => $r['kind'], 'options' => $r['options'] ?? [],
+                    'draft' => $r['answer'] ?? ($bank[$r['question_key']] ?? null),
+                    'company' => $app['company'] ?? null, 'vacancy_url' => $app['vacancy_url'] ?? null,
+                    'applications_waiting' => $waiting[$r['question_key']] ?? 1,
+                ];
+            }, $rows);
+            break;
+        }
+
+        // Ответ. Факт сохраняется в банк и закрывает этот же вопрос во всех
+        // ждущих откликах человека; вопрос «под вакансию» — только этот.
+        case 'jupiterAnswerQuestion': {
+            $uidArg = (string)($args[0] ?? '');
+            $qid = (string)($args[1] ?? '');
+            $answer = trim((string)($args[2] ?? ''));
+            if ($answer === '' || mb_strlen($answer) > 2000) {
+                jt_respond(['error' => 'Ответ: от 1 до 2000 символов'], 400); exit;
+            }
+            $q = sb_single('jm_jupiter_questions', [
+                'id' => 'eq.' . $qid, 'user_id' => 'eq.' . $uidArg,
+            ], 'id,application_id,question_key,question_text,field_type,kind,options');
+            if (!$q) { jt_respond(['error' => 'Вопрос не найден'], 404); exit; }
+            if ($q['field_type'] === 'choice') {
+                $labels = array_map(fn($o) => (string)($o['label'] ?? ''), (array)($q['options'] ?? []));
+                if ($labels && !in_array($answer, $labels, true)) {
+                    jt_respond(['error' => 'Выберите один из вариантов'], 400); exit;
+                }
+            }
+            $targets = [$q];
+            if ($q['kind'] === 'fact') {
+                sb_upsert('jm_jupiter_answers', [
+                    'user_id' => $uidArg, 'question_key' => $q['question_key'],
+                    'question_text' => $q['question_text'], 'answer' => $answer, 'updated_at' => now_iso(),
+                ], 'user_id,question_key');
+                $targets = sb_select('jm_jupiter_questions', [
+                    'user_id' => 'eq.' . $uidArg, 'question_key' => 'eq.' . $q['question_key'],
+                    'status' => 'eq.open',
+                ], 'id,application_id');
+                if (!$targets) $targets = [$q];
+            }
+            $released = [];
+            foreach ($targets as $t) {
+                sb_update('jm_jupiter_questions', [
+                    'id' => 'eq.' . $t['id'], 'user_id' => 'eq.' . $uidArg,
+                ], ['answer' => $answer, 'status' => 'answered', 'answered_at' => now_iso()]);
+                $released[(string)$t['application_id']] = true;
+            }
+            foreach (array_keys($released) as $appId) jt_questions_release($uidArg, $appId);
+            $data = ['ok' => true, 'applications' => count($released)];
+            break;
+        }
+
+        // «Пропустить»: этот вопрос человек заполнит на сайте сам — отклик
+        // уходит в «Ждут вас», когда других открытых вопросов не останется.
+        case 'jupiterSkipQuestion': {
+            $uidArg = (string)($args[0] ?? '');
+            $q = sb_single('jm_jupiter_questions', [
+                'id' => 'eq.' . (string)($args[1] ?? ''), 'user_id' => 'eq.' . $uidArg,
+            ], 'id,application_id');
+            if (!$q) { jt_respond(['error' => 'Вопрос не найден'], 404); exit; }
+            sb_update('jm_jupiter_questions', ['id' => 'eq.' . $q['id'], 'user_id' => 'eq.' . $uidArg],
+                ['status' => 'skipped']);
+            jt_questions_release($uidArg, (string)$q['application_id']);
+            $data = ['ok' => true];
+            break;
+        }
+
+        // Банк ответов: что Юпитер подставит сам. Посмотреть и удалить.
+        case 'jupiterAnswers': {
+            $data = sb_select('jm_jupiter_answers', ['user_id' => 'eq.' . (string)($args[0] ?? '')],
+                'question_key,question_text,answer,updated_at', 'updated_at.desc');
+            break;
+        }
+
+        case 'jupiterAnswerDelete': {
+            $key = (string)($args[1] ?? '');
+            if (!preg_match('/^q:[0-9a-f]{16}$/', $key)) {
+                jt_respond(['error' => 'Неизвестный ответ'], 400); exit;
+            }
+            sb_delete('jm_jupiter_answers', [
+                'user_id' => 'eq.' . (string)($args[0] ?? ''), 'question_key' => 'eq.' . $key,
+            ]);
+            $data = ['ok' => true];
+            break;
         }
 
         case 'dbApplyPermVacancy': {
