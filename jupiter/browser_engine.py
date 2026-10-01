@@ -339,7 +339,7 @@ SUBMIT_FEEDBACK_JS = r"""
     if (!bad) continue;
     let label = el.labels && el.labels.length ? el.labels[0].innerText : '';
     label = label || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || '';
-    invalid.push({ label: cut(label, 80), type: (el.type || el.tagName || '').toLowerCase(), message: cut(el.validationMessage, 120) });
+    invalid.push({ ref, label: cut(label, 80), type: (el.type || el.tagName || '').toLowerCase(), message: cut(el.validationMessage, 120) });
   }
   const errors = [];
   const seen = new Set();

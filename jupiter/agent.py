@@ -240,6 +240,10 @@ class CandidateProfile:
         return cls(values=data, resume_path=resume)
 
 
+# Сколько раз дозаполнить поля, которые сайт подсветил после «Отправить».
+SITE_FIX_ROUNDS = 2
+
+
 class Reason:
     """Коды причин остановки.
 
@@ -2153,7 +2157,8 @@ class JupiterAgent:
         invalid = [f for f in (feedback.get("invalid") or []) if isinstance(f, dict)]
         if invalid:
             labels = [str(f.get("label") or f.get("type") or "поле")[:80] for f in invalid][:10]
-            return {"verdict": "needs_fix", "fields": labels, "quote": "", "source": "site"}
+            return {"verdict": "needs_fix", "fields": labels, "quote": "", "source": "site",
+                    "refs": [str(f["ref"]) for f in invalid if f.get("ref")]}
         if self.outcome_judge is None:
             return None
         secrets = [str(v) for v in profile.values.values()
@@ -2273,6 +2278,12 @@ class JupiterAgent:
         # объявлялся «шаг не сдвинулся» — и статистика совместимости считала
         # бы неподтверждённые отправки проблемой многошаговых анкет.
         last_click_was_submit = False
+        # Сайт подсветил поля после «Отправить» (01.10.2026): на следующем
+        # круге они считаются обязательными — заполняем из профиля или
+        # спрашиваем человека (вопросы работодателей), и отправляем снова.
+        # Не больше SITE_FIX_ROUNDS кругов; POST при этом не уходил.
+        site_fix_rounds = 0
+        retry_after_fix = False
         flow = FormFlow()
         visited = {page.url}
 
@@ -2294,7 +2305,7 @@ class JupiterAgent:
                     "url": page.url,
                     "form_index": target_form_index,
                 })
-                if not advanced and sent_once:
+                if not advanced and sent_once and not retry_after_fix:
                     # Тот же экран с тем же набором полей после запроса.
                     # Значит, сервер нас вернул, а мы этого не поняли.
                     if last_click_was_submit:
@@ -2800,8 +2811,21 @@ class JupiterAgent:
                 })
                 return AgentResult("submitted", trajectory=trajectory)
 
+            retry_after_fix = False
             if not clicked_next:
                 verdict = self._site_verdict(page, profile)
+                if (verdict and verdict.get("verdict") == "needs_fix" and verdict.get("source") == "site"
+                        and site_fix_rounds < SITE_FIX_ROUNDS):
+                    refs = set(verdict.get("refs") or [])
+                    marked = [c for c in page.controls if c.dom_ref and c.dom_ref in refs]
+                    for control in marked:
+                        control.required = True
+                    if marked:
+                        site_fix_rounds += 1
+                        retry_after_fix = True
+                        trajectory.append({"action": "site_fix_retry", "round": site_fix_rounds,
+                                           "fields": verdict.get("fields") or []})
+                        continue
                 judged = self._apply_verdict(verdict, fingerprint, page, evidence, trajectory) if verdict else None
                 if judged is not None:
                     return judged
