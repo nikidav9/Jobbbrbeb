@@ -38,12 +38,15 @@ function cf_unit_from_endpoint(array $e): ?array
     ];
 }
 
+// Срок одной порции на все попытки edge — меньше 60 с ожидания ingest.php.
+const CF_UNIT_BUDGET = 40;
+
 /**
  * Один HTTP-запрос, жёстко закреплённый на уже проверенном публичном DNS-IP.
  * Сеть здесь одна на все режимы (HTML/JSON/embedded), чтобы сторожа SSRF,
  * размера ответа, TLS и таймаутов не расходились между адаптерами.
  */
-function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): array
+function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries, int $timeout = 45): array
 {
     $body = '';
     $tooLarge = false;
@@ -61,7 +64,7 @@ function cf_fetch_pinned(string $pageUrl, array $unit, array $resolveEntries): a
         CURLOPT_ENCODING => '',
         CURLOPT_USERAGENT => 'JobToo/1.0 (+https://jobtoo.ru; support@jobtoo.ru)',
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 45,
+        CURLOPT_TIMEOUT => max(5, min(45, $timeout)),
         // Переход по редиректу увёл бы нас на адрес, который проверку не проходил:
         // так обходят запрет на служебные сети.
         CURLOPT_FOLLOWLOCATION => false,
@@ -155,8 +158,16 @@ function cf_fetch_unit(array $unit, int $sub, string $cursor = ''): array
     // Четырёх достаточно для failover и это не превращает один заход в шторм.
     $fetch = null;
     $unsafeEdge = false;
+    // Общий срок порции — CF_UNIT_BUDGET (01.10.2026): ingest.php ждёт ответ
+    // career.php 60 с, а четыре edge по 45 с давали до трёх минут — один
+    // медленный сайт (всероссийская Пятёрочка) обрывал весь круг сбора на
+    // первой же странице, и не обновлялся ни один источник. Не уложились —
+    // адрес сбойный, круг идёт дальше.
+    $budgetEnd = microtime(true) + CF_UNIT_BUDGET;
     foreach (array_slice($resolveCandidates, 0, 4) as $resolveEntries) {
-        $fetch = cf_fetch_pinned($pageUrl, $unit, $resolveEntries);
+        $left = (int)floor($budgetEnd - microtime(true));
+        if ($left < 5) break;
+        $fetch = cf_fetch_pinned($pageUrl, $unit, $resolveEntries, $left);
         $servedBy = (string)($fetch['served_by'] ?? '');
         if ($servedBy !== '' && !filter_var($servedBy, FILTER_VALIDATE_IP,
                 FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
