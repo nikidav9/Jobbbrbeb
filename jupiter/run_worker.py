@@ -207,6 +207,9 @@ def main() -> int:
                 allowed_hosts=set(),
                 read_only=dry_run,
                 executable_path=chromium_path,
+                # Кнопку «Откликнуться» правила не нашли — её выбирает YandexGPT.
+                apply_advisor=(lambda outline: browser_planner.suggest_apply_click(llm, outline))
+                if llm is not None else None,
             )
             open_engines.append(engine)
         agent = JupiterAgent(

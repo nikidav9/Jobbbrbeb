@@ -352,6 +352,7 @@ class JupiterBrowserEngine:
         settle_ms: int = 800,
         max_apply_clicks: int = 2,
         ignore_https_errors: bool = False,
+        apply_advisor: Any = None,
     ):
         if sync_playwright is None:
             raise EngineError(
@@ -371,6 +372,11 @@ class JupiterBrowserEngine:
         self.timeout_ms = int(timeout * 1000)
         self.settle_ms = settle_ms
         self.max_apply_clicks = max_apply_clicks
+        # Последний шаг поиска анкеты (01.10.2026): правила кнопку не нашли —
+        # YandexGPT выбирает её из видимых кнопок (browser_planner.
+        # suggest_apply_click). Видит только тексты кнопок, без данных
+        # кандидата; вход, регистрацию и оплату отсекает сам планировщик.
+        self.apply_advisor = apply_advisor
         self.page: PageState | None = None
         self.script_history: list[dict[str, str]] = []
         self.last_submit_mode = "none"
@@ -570,7 +576,41 @@ class JupiterBrowserEngine:
         # Лендинги (Tilda и другие конструкторы) догружают блоки, только когда
         # до них докрутили: форма отклика внизу появляется после прокрутки.
         page = self._scroll_through()
-        return self._click_apply(page)
+        page = self._click_apply(page)
+        if self._has_candidate_form(page):
+            return page
+        return self._advised_apply(page)
+
+    def _advised_apply(self, page: PageState) -> PageState:
+        """Кнопку «Откликнуться» правила не нашли — спросить YandexGPT (один раз)."""
+        if self.apply_advisor is None:
+            return page
+        import browser_planner
+        try:
+            outline = browser_planner.page_outline(self._tab)
+        except PlaywrightError:
+            return page
+        mark = self.apply_advisor(outline)
+        if not mark:
+            self.actions.append({"action": "llm_apply_none"})
+            return page
+        label = next((c.get("text", "") for c in outline.get("clickables", []) if c.get("jt") == mark), "")
+        self._dismiss_overlays()
+        target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
+        try:
+            target.click(timeout=5000)
+        except PlaywrightError:
+            try:
+                target.click(timeout=5000, force=True)
+            except PlaywrightError as exc:
+                self.actions.append({"action": "llm_apply_click_failed", "label": label[:60], "error": str(exc)[:200]})
+                return page
+        self.actions.append({"action": "llm_apply_click", "label": label[:60]})
+        self._settle()
+        page = self._snapshot()
+        if self._has_candidate_form(page):
+            return page
+        return self._open_frame_form(page)
 
     def _scroll_through(self) -> PageState:
         try:

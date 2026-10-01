@@ -46,8 +46,14 @@ for forbidden in ("dry_run=False", "read_only=False", "--live", "JUPITER_ENGINE"
     assert forbidden not in run, forbidden
 # Подпись — честная, движка: своей подписи и подмены UA здесь нет.
 assert not re.search(r"user[-_]?agent|--ua\b|BROWSER_UA", run, re.I)
-# Секреты разведке не нужны и не передаются.
-for name in ("TOKEN", "SECRET", "YANDEX_GPT", "EnvironmentFile"):
+# Секреты разведке не передаются — кроме ключа YandexGPT (решение владельца
+# 01.10.2026: ночью Алиса подсказывает разведке, как боевому Юпитеру). Ключ —
+# ровно две переменные из файла ключа, только в окружение обхода, не в журнал.
+for name in ("TOKEN", "SECRET", "EnvironmentFile"):
     assert name not in run, name
+assert "YGPT_ENV=/etc/jobtoo/yandex-gpt.env" in run
+assert 'case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac' in run
+assert '"${YGPT_VARS[@]}"' in run and '--llm-sites "$LLM_SITES"' in run
+assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
 
 print("recon-browser infra: ok")

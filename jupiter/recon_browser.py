@@ -66,13 +66,45 @@ BROWSER_RETRY_BLOCKS = ("доступ (401)", "доступ (403)", "досту�
 class BrowserReconResult(ReconResult):
     engine: str = "browser"
     browser_actions: list[dict[str, Any]] = field(default_factory=list)
+    # Подсказки YandexGPT на этом сайте (01.10.2026): была ли модель и что она
+    # сделала — выбрала кнопку отклика, сопоставила поля, пояснила вопросы.
+    llm_used: bool = False
+    llm_actions: list[dict[str, Any]] = field(default_factory=list)
+
+
+# Ночью YandexGPT подключается не ко всем сайтам: каждый вызов платный.
+# Сначала — работодатели, чьи вакансии есть в ленте (у них есть источник).
+DEFAULT_LLM_SITES = 60
+
+
+def llm_sites(sites: list[tuple[str, str]], endpoints: list[dict], limit: int) -> set[str]:
+    """Адреса разделов, где ночью работает YandexGPT: сперва с источником вакансий."""
+    if limit <= 0:
+        return set()
+    ranked = sorted(sites, key=lambda s: 0 if endpoint_for(s[0], s[1], endpoints) else 1)
+    return {url for _, url in ranked[:limit]}
+
+
+def _llm_trace(engine_actions: list[dict], trajectory: list[dict]) -> list[dict[str, Any]]:
+    """Что сделала модель: из журнала движка и траектории агента, без значений."""
+    out = [a for a in engine_actions if str(a.get("action", "")).startswith("llm_")]
+    for step in trajectory or []:
+        action = str(step.get("action", ""))
+        if action.startswith("llm") or action == "explain_questions":
+            out.append({k: step[k] for k in ("action", "field", "key", "questions") if k in step})
+    return out[:40]
 
 
 def recon_site_browser(
     name: str, url: str, endpoints: list[dict], resume: str,
-    *, timeout: float = 30.0, chromium: str | None = None,
+    *, timeout: float = 30.0, chromium: str | None = None, llm: Any = None,
 ) -> BrowserReconResult:
-    """Один сайт в этом процессе. Вызывать из потока, где живёт Playwright."""
+    """Один сайт в этом процессе. Вызывать из потока, где живёт Playwright.
+
+    llm — клиент YandexGPT: с ним разведка проходит сайт так же, как боевой
+    Юпитер (кнопка отклика, поля, вопросы — browser_planner).
+    """
+    import browser_planner
     from agent import CandidateProfile, JupiterAgent
     from browser_engine import JupiterBrowserEngine
     from engine import EngineError, EngineSecurityError
@@ -95,14 +127,21 @@ def recon_site_browser(
     try:
         engine = JupiterBrowserEngine(
             hosts, read_only=True, timeout=timeout, executable_path=chromium,
+            apply_advisor=(lambda outline: browser_planner.suggest_apply_click(llm, outline))
+            if llm is not None else None,
         )
     except EngineError as exc:
         result.reason = f"browser: {exc}"[:300]
         return result
     try:
+        extra: dict[str, Any] = {}
+        if llm is not None:
+            extra["field_mapper"] = lambda fields, keys: browser_planner.suggest_field_keys(llm, fields, keys)
+            extra["question_explainer"] = lambda qs, ctx: browser_planner.explain_questions(llm, qs, ctx)
+            result.llm_used = True
         agent = JupiterAgent(
             set(hosts), max_steps=10, engine=engine, dry_run=True,
-            receipts=ReceiptStore(None),
+            receipts=ReceiptStore(None), **extra,
         )
         candidate = CandidateProfile(values=dict(TEST_CANDIDATE), resume_path=resume)
         try:
@@ -123,6 +162,7 @@ def recon_site_browser(
         result.aggregator_links = _aggregator_links(page)
         result.form_fields = _form_snapshot(page)
         result.browser_actions = list(engine.actions)[:50]
+        result.llm_actions = _llm_trace(engine.actions, outcome.trajectory)
         result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links)
         if result.klass == "blocked":
             result.block_kind = block_kind(result.reason)
@@ -131,12 +171,15 @@ def recon_site_browser(
         engine.close()
 
 
-def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: str | None) -> BrowserReconResult:
+def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: str | None,
+               use_llm: bool = False) -> BrowserReconResult:
     """Сайт в отдельном процессе с жёстким сроком."""
     cmd = [sys.executable, os.path.abspath(__file__), "--_one", name, url,
            "--timeout", str(timeout)]
     if chromium:
         cmd += ["--chromium", chromium]
+    if use_llm:
+        cmd.append("--_llm")
     result = BrowserReconResult(name=name, url=url, start_url=url, klass="blocked")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=deadline)
@@ -159,7 +202,7 @@ def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: s
 def run_recon(
     sites: list[tuple[str, str]], *, timeout: float = 30.0, site_deadline: float = 120.0,
     workers: int = MAX_BROWSERS, chromium: str | None = None,
-    max_seconds: float | None = None,
+    max_seconds: float | None = None, with_llm: set[str] | None = None,
 ) -> list[BrowserReconResult]:
     """Обход. С max_seconds новые разделы после срока не начинаются (начатый
     доживает до site_deadline) и в итог не попадают."""
@@ -169,7 +212,8 @@ def run_recon(
     def one(site: tuple[str, str]) -> BrowserReconResult | None:
         if stop_at is not None and time.monotonic() >= stop_at:
             return None
-        return _run_child(site[0], site[1], timeout, site_deadline, chromium)
+        return _run_child(site[0], site[1], timeout, site_deadline, chromium,
+                          use_llm=site[1] in (with_llm or set()))
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [r for r in pool.map(one, sites) if r is not None]
@@ -281,7 +325,13 @@ def main(argv: list[str] | None = None) -> int:
         help="итог HTTP-разведки: обойти только его разделы с классами " + ", ".join(BROWSER_RETRY_CLASSES),
     )
     parser.add_argument("--max-minutes", type=float, help="после срока новые разделы не начинаются")
+    parser.add_argument(
+        "--llm-sites", type=int, default=0,
+        help="на скольких разделах подключать YandexGPT (ключ — YANDEX_GPT_* в окружении); "
+             f"на сервере {DEFAULT_LLM_SITES}",
+    )
     parser.add_argument("--_one", nargs=2, metavar=("NAME", "URL"), help=argparse.SUPPRESS)
+    parser.add_argument("--_llm", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args._one:
@@ -289,9 +339,13 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as tmp:
             resume = Path(tmp) / "resume.pdf"
             resume.write_bytes(b"%PDF-1.4\n% JobToo recon: synthetic resume\n%%EOF\n")
+            llm = None
+            if args._llm:
+                import yandex_gpt
+                llm = yandex_gpt.YandexGPT.from_env()
             res = recon_site_browser(
                 args._one[0], args._one[1], endpoints, str(resume),
-                timeout=args.timeout, chromium=args.chromium,
+                timeout=args.timeout, chromium=args.chromium, llm=llm,
             )
         print(RESULT_MARK + json.dumps(asdict(res), ensure_ascii=False))
         return 0
@@ -307,10 +361,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sites = load_sites()
     sites = select_sites(sites, args.only_hosts, args.limit)
+    with_llm: set[str] = set()
+    if args.llm_sites > 0 and os.environ.get("YANDEX_GPT_API_KEY"):
+        endpoints = json.loads(ENDPOINTS_JSON.read_text(encoding="utf-8"))
+        with_llm = llm_sites(sites, endpoints, args.llm_sites)
     results = run_recon(
         sites, timeout=args.timeout, site_deadline=args.site_deadline,
         workers=args.workers, chromium=args.chromium,
         max_seconds=args.max_minutes * 60 if args.max_minutes is not None else None,
+        with_llm=with_llm,
     )
     if len(results) < len(sites):
         print(f"Срок вышел: пройдено {len(results)} из {len(sites)} разделов.", file=sys.stderr)

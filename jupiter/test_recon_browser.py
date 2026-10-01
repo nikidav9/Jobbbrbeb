@@ -17,7 +17,8 @@ from pathlib import Path
 
 import site_compat
 from recon_browser import (
-    compare, order_by_previous, run_recon, select_sites, sites_needing_browser, write_atomic,
+    recon_site_browser,
+    compare, order_by_previous, run_recon, select_sites, sites_needing_browser, write_atomic, _llm_trace, llm_sites,
 )
 
 try:
@@ -58,13 +59,42 @@ document.getElementById('open').addEventListener('click', () => {
 fetch('/api/track', {method: 'POST', body: 'open'}).catch(() => {});
 </script>"""
 
+# Кнопка отклика, которую правила не знают: дойти до анкеты помогает только YandexGPT.
+ODD = """<!doctype html><meta charset="utf-8"><h1>Аналитик</h1>
+<a href="/login">Войти</a>
+<button type="button" id="open">Стать частью команды</button><div id="root"></div>
+<script>
+document.getElementById('open').addEventListener('click', () => {
+  document.getElementById('root').innerHTML = `<form>
+    <label>Имя <input name="fn" required></label>
+    <label>Телефон <input name="ph" type="tel" required></label>
+    <label>Email <input name="em" type="email" required></label>
+    <button type="button">Отправить</button></form>`;
+});
+</script>"""
+
+
+class _FakeLLM:
+    """Вместо YandexGPT: выбирает кнопку «Стать частью команды»."""
+
+    def __init__(self):
+        self.prompts: list[str] = []
+
+    def complete_json(self, system, user, schema=""):
+        self.prompts.append(user)
+        data = json.loads(user)
+        for item in data.get("clickables", []):
+            if "команды" in item.get("text", ""):
+                return {"label": item["jt"]}
+        return {}
+
 
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
     def do_GET(self):
-        page = {"/plain": PLAIN, "/spa": SPA}.get(self.path)
+        page = {"/plain": PLAIN, "/spa": SPA, "/odd": ODD}.get(self.path)
         if page is None:
             self.send_response(404)
             self.end_headers()
@@ -102,6 +132,27 @@ class ReconBrowserTest(unittest.TestCase):
             self.assertEqual(item.engine, "browser")
         spa = next(r for r in results if r.name == "spa")
         self.assertIn("apply_click", [a.get("action") for a in spa.browser_actions], dump)
+        self.assertEqual(server.posts, [])
+
+    def test_yandex_gpt_hint_takes_recon_to_the_form(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        server.posts = []
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_address[1]}/odd"
+        llm = _FakeLLM()
+        with tempfile.TemporaryDirectory() as tmp:
+            resume = Path(tmp) / "r.pdf"
+            resume.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            helped = recon_site_browser("odd", url, [], str(resume), timeout=15, chromium=CHROMIUM, llm=llm)
+            alone = recon_site_browser("odd", url, [], str(resume), timeout=15, chromium=CHROMIUM)
+        self.assertEqual(helped.klass, "dry_run_ok", helped.reason)
+        self.assertTrue(helped.llm_used)
+        self.assertIn({"action": "llm_apply_click", "label": "Стать частью команды"}, helped.llm_actions)
+        self.assertNotEqual(alone.klass, "dry_run_ok")
+        self.assertFalse(alone.llm_used)
+        # Модель видела кнопки страницы, а не синтетического кандидата.
+        self.assertNotIn("@", "".join(llm.prompts))
         self.assertEqual(server.posts, [])
 
     def test_deadline_turns_into_blocked_result(self):
@@ -145,6 +196,24 @@ class PureTest(unittest.TestCase):
         sites = [("a", "https://a.ru"), ("b", "https://b.ru"), ("c", "https://c.ru"), ("d", "https://d.ru")]
         prev = [{"url": "https://a.ru", "klass": "spa"}, {"url": "https://c.ru", "klass": "dry_run_ok"}]
         self.assertEqual([n for n, _ in order_by_previous(sites, prev)], ["c", "b", "d", "a"])
+
+    def test_llm_goes_first_to_employers_with_vacancies_in_feed(self):
+        endpoints = [{"company_hint": "Лента", "url": "https://lenta.example/api", "map": {}}]
+        sites = [("Нет источника", "https://none.example/jobs"), ("Лента", "https://lenta.example/jobs"),
+                 ("Ещё", "https://more.example/jobs")]
+        self.assertEqual(llm_sites(sites, endpoints, 1), {"https://lenta.example/jobs"})
+        self.assertEqual(len(llm_sites(sites, endpoints, 2)), 2)
+        self.assertEqual(llm_sites(sites, endpoints, 0), set())
+
+    def test_llm_trace_keeps_model_steps_without_values(self):
+        engine_actions = [{"action": "apply_click", "label": "Откликнуться"},
+                          {"action": "llm_apply_click", "label": "Стать частью команды"}]
+        trajectory = [{"action": "fill", "field": "fn", "value": "Иван"},
+                      {"action": "llm_map", "field": "q1", "key": "city", "value": "Москва"}]
+        trace = _llm_trace(engine_actions, trajectory)
+        self.assertEqual(trace, [{"action": "llm_apply_click", "label": "Стать частью команды"},
+                                 {"action": "llm_map", "field": "q1", "key": "city"}])
+        self.assertNotIn("Москва", json.dumps(trace, ensure_ascii=False))
 
     def test_time_budget_stops_new_sites(self):
         # Срок уже вышел — ни один процесс не запускается, итог пуст.

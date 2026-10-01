@@ -242,6 +242,28 @@ new IntersectionObserver((entries, obs) => {
 """
 
 
+# Кнопка отклика с текстом, которого правила движка не знают, рядом «Войти»:
+# найти её может только подсказка YandexGPT (apply_advisor, 01.10.2026).
+ODDBTN_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Аналитик — Карьера</title>
+<h1>Аналитик данных</h1>
+<a href="/login">Войти</a>
+<button type="button" id="open">Стать частью команды</button>
+<div id="root"></div>
+<script>
+document.getElementById('open').addEventListener('click', () => {
+  document.getElementById('root').innerHTML = `
+    <form><label>Имя <input name="fn" required></label>
+    <label>Фамилия <input name="ln" required></label>
+    <label>Email <input name="em" type="email" required></label>
+    <label>Телефон <input name="ph" type="tel" required></label>
+    <button type="button">Отправить</button></form>`;
+});
+</script>
+"""
+
+
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -270,7 +292,7 @@ class _Handler(BaseHTTPRequestHandler):
         pages = {"/vacancy": SPA_VACANCY, "/challenge": SPA_VACANCY, "/combo": COMBO_VACANCY,
                  "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
                  "/lazy": LAZY_VACANCY, "/radio": RADIO_VACANCY, "/hiddenbox": HIDDENBOX_VACANCY, "/stuckbox": STUCKBOX_VACANCY, "/policybox": POLICYBOX_VACANCY,
-                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM}
+                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM, "/oddbtn": ODDBTN_VACANCY}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
             body = page.encode("utf-8")
@@ -415,6 +437,35 @@ class BrowserEngineTest(unittest.TestCase):
 
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}/vacancy/42"
+
+    def test_llm_advisor_finds_apply_button_rules_do_not_know(self):
+        seen: list[dict] = []
+
+        def advisor(outline: dict) -> str | None:
+            seen.append(outline)
+            return next((c["jt"] for c in outline["clickables"] if "команды" in c["text"]), None)
+
+        eng = JupiterBrowserEngine({"127.0.0.1"}, read_only=True, executable_path=CHROMIUM,
+                                   settle_ms=200, apply_advisor=advisor)
+        self.addCleanup(eng.close)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=True)
+        result = agent.run(f"http://127.0.0.1:{self.port}/oddbtn/1", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "ready_to_submit", dump)
+        self.assertIn({"action": "llm_apply_click", "label": "Стать частью команды"}, eng.actions)
+        # Модель видит тексты кнопок, а не данные кандидата.
+        self.assertTrue(seen)
+        self.assertNotIn("Никита", json.dumps(seen, ensure_ascii=False))
+
+    def test_llm_advisor_declined_leaves_page_as_is(self):
+        eng = JupiterBrowserEngine({"127.0.0.1"}, read_only=True, executable_path=CHROMIUM,
+                                   settle_ms=200, apply_advisor=lambda outline: None)
+        self.addCleanup(eng.close)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=True)
+        result = agent.run(f"http://127.0.0.1:{self.port}/oddbtn/2", self.profile)
+        self.assertNotEqual(result.status, "ready_to_submit")
+        self.assertIn({"action": "llm_apply_none"}, eng.actions)
+        self.assertFalse(any(a.get("action") == "llm_apply_click" for a in eng.actions))
 
     def test_live_run_opens_spa_form_fills_and_submits(self):
         eng = self.engine(read_only=False)
