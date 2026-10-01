@@ -2296,6 +2296,31 @@ function tg_new_application_card(string $employerId, string $workerId, string $v
  * пределах минуты. notify_user на этом останавливается — раз строки нет, то
  * и слать нечего.
  */
+const JT_KEEP_NOTIFICATIONS_DAYS = 90;
+const JT_KEEP_LEFT_SWIPES_DAYS = 30;
+
+/** Ночная чистка: старые уведомления и свайпы «влево». Отклики не трогает. */
+function jt_cleanup_old(): array {
+    $out = [];
+    $jobs = [
+        'notifications' => ['jm_notifications', JT_KEEP_NOTIFICATIONS_DAYS, []],
+        'ext_left_swipes' => ['jm_ext_swipes', JT_KEEP_LEFT_SWIPES_DAYS, ['dir' => 'eq.-1']],
+        'perm_left_swipes' => ['jm_perm_swipes', JT_KEEP_LEFT_SWIPES_DAYS, ['dir' => 'eq.-1']],
+    ];
+    foreach ($jobs as $name => [$table, $days, $extra]) {
+        try {
+            $cut = gmdate('Y-m-d\TH:i:s\Z', time() - $days * 86400);
+            sb('DELETE', $table, ['created_at' => 'lt.' . $cut] + $extra);
+            $out[$name] = 'ok';
+        } catch (Throwable $e) {
+            // Сбой чистки не ломает напоминания: попробуем завтра.
+            $out[$name] = 'failed';
+            error_log('[cleanup] ' . $table . ': ' . $e->getMessage());
+        }
+    }
+    return $out;
+}
+
 function notify_bell(string $userId, string $title, string $body, string $type = ''): bool {
     if ($userId === '') return false;
     // Событие случилось, даже если колокольчик ниже отсеет повтор за минуту:
@@ -5656,6 +5681,13 @@ try {
             // Выключены 26.09 (решение владельца): смен больше нет, а по
             // документам редакции 2026-09-26 такие касания — реклама, и слать
             // их можно только по отдельному согласию (jt_marketing_status).
+
+            // ── 2. Чистка старого (решение владельца 01.10.2026) ──
+            // Уведомления — 90 дней: колокольчик показывает последние 200, а
+            // остальное только раздувало таблицу. Свайпы «влево» — 30 дней:
+            // пропущенная вакансия может вернуться в ленту, человек мог
+            // передумать. Свайпы «вправо» — это отклики, их не трогаем никогда.
+            $result['cleanup'] = jt_cleanup_old();
 
             $data = $result;
             break;
