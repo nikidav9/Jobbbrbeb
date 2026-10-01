@@ -515,7 +515,7 @@ export default function UserProfileScreen() {
             <View style={styles.emptyReviews}>
               <Text style={{ fontSize: rf(40) }}>📭</Text>
               <Text style={styles.emptyReviewsTitle}>Пока нет отзывов</Text>
-              <Text style={styles.emptyReviewsSub}>Отзывы появятся после завершения смен</Text>
+              <Text style={styles.emptyReviewsSub}>Здесь появятся отзывы работодателей</Text>
             </View>
           ) : (
             <View style={{ gap: 10 }}>

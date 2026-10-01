@@ -80,7 +80,7 @@ export function ScoreCard({ user, own = false }: { user: User; own?: boolean }) 
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.title}>Общий рейтинг</Text>
-              <Text style={s.sub}>На основании {user.ratingCount} оценок после смен</Text>
+              <Text style={s.sub}>На основании {user.ratingCount} оценок</Text>
             </View>
           </View>
         </View>
@@ -96,10 +96,10 @@ export function ScoreCard({ user, own = false }: { user: User; own?: boolean }) 
             <Text style={s.title}>Рейтинг ещё не считается</Text>
             <Text style={s.sub}>
               {работодатель
-                ? `Смен через JobToo: ${смен}. Рейтинг компании появится после трёх.`
+                ? 'Рейтинг компании появится после первых оценок работников.'
                 : own
-                ? `Отработано смен: ${смен}. Рейтинг появится после трёх — так он не будет случайным.`
-                : `Отработано смен через JobToo: ${смен}. Для рейтинга нужно минимум три.`}
+                ? 'Рейтинг появится после первых оценок работодателей.'
+                : 'Оценок от работодателей пока нет.'}
             </Text>
           </View>
         </View>

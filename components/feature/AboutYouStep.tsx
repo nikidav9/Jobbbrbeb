@@ -81,7 +81,7 @@ export function AboutYouStep({ role, age, onAgeChange, bio, onBioChange, photoUr
       <Text style={st.title}>{isWorker ? 'Расскажите о себе' : 'Расскажите о компании'}</Text>
       <Text style={st.subtitle}>
         {isWorker
-          ? 'Директор увидит это, когда вы откликнетесь на смену'
+          ? 'Работодатель увидит это, когда вы откликнетесь на вакансию'
           : 'Это увидят работники в вашей карточке'}
       </Text>
 

@@ -227,7 +227,7 @@ function RatingsModal({ userId, users, onClose }: { userId: string; users: any[]
             <View style={rmS.empty}>
               <Text style={{ fontSize: rf(44) }}>⭐</Text>
               <Text style={rmS.emptyTitle}>Отзывов пока нет</Text>
-              <Text style={rmS.emptySub}>Оценки появятся после завершённых смен</Text>
+              <Text style={rmS.emptySub}>Здесь появятся отзывы работодателей</Text>
             </View>
           ) : (
             <FlatList
@@ -974,7 +974,7 @@ export default function ProfileScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={sS.title}>Пригласить друга</Text>
-                  <Text style={sS.summary} numberOfLines={1}>Вышел на смену — вам вознаграждение</Text>
+                  <Text style={sS.summary} numberOfLines={1}>Друг устроился — это видно в вашей карточке</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
               </TouchableOpacity>

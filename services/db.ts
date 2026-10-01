@@ -181,15 +181,34 @@ async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
       // сообщаем, что нужна регистрация. Фоновые вызовы это молча проглотят.
       throw new Error('Для этого действия нужна регистрация.');
     }
-    if (parsed?.error) throw new Error(parsed.error);
+    if (parsed?.error) throw new Error(humanServerError(fn, parsed.error, status));
     return parsed?.data as T;
   }
 
-  const head = text.trim().replace(/\s+/g, ' ').slice(0, 120);
   console.error(`[db] ${fn}: ответ не JSON (HTTP ${status}):`, text.slice(0, 500));
-  throw new Error(head
-    ? `Сервер ответил не по делу (${status}): ${head}`
-    : `Сервер не ответил (${status}). Попробуйте ещё раз.`);
+  throw new Error(httpStatusMessage(status));
+}
+
+/**
+ * Что показать человеку вместо технического ответа. Раньше в плашку уходили
+ * куски HTML хостинга («Сервер ответил не по делу (502): <!DOCTYPE…»),
+ * английские ошибки базы и `curl: …`. Русские тексты сервера пишутся для
+ * людей и проходят как есть — по ним же, бывает, ветвится экран (/уже есть/,
+ * /почт/), поэтому их не трогаем.
+ */
+function httpStatusMessage(status: number): string {
+  if (status === 429) return 'Слишком много попыток. Подождите минуту и попробуйте снова.';
+  if (status === 502 || status === 503 || status === 504) {
+    return 'Сервер сейчас перегружен. Попробуйте ещё раз через минуту.';
+  }
+  return 'Что-то пошло не так. Попробуйте ещё раз.';
+}
+
+function humanServerError(fn: string, message: string, status: number): string {
+  if (/[а-яё]/i.test(message)) return message;
+  console.warn(`[db] ${fn}: техническая ошибка сервера (HTTP ${status}):`, message);
+  if (status === 403) return 'Это действие вам недоступно.';
+  return httpStatusMessage(status);
 }
 
 function withTimeout<T>(promise: PromiseLike<T>, ms = DB_TIMEOUT): Promise<T> {

@@ -65,9 +65,8 @@ export function ReviewsTabContent({
     return (
       <EmptyState
         illustration={<ReviewsEmptyIllustration />}
-        title={'Рейтинг ещё\nне считается'}
-        subtitle="Он появится после трёх смен — так оценка не будет случайной"
-        progress={{ segments: 3, filled, label: 'Отработано смен', value: `${filled} из 3` }}
+        title={'Отзывов\nпока нет'}
+        subtitle="Здесь появятся отзывы работодателей"
       />
     );
   }
