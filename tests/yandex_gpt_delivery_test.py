@@ -41,6 +41,11 @@ check("раз в час сервер сам проверяет модель", "Y
       and "-mmin +$YGPT_AGE" in boot and "YGPT_AGE=60" in boot
       and "foundationModels/v1/completion" in boot)
 check("неудачная проверка повторяется через 10 минут", "YGPT_AGE=10" in boot)
+check("проверка даёт модели пробную задачу и пишет её ответ", "Сколько будет 2+2?" in boot
+      and '["result"]["alternatives"][0]["message"]["text"]' in boot)
+check("новый ключ проверяется на следующем же проходе",
+      "mv -f /etc/jobtoo/yandex-gpt.env.new /etc/jobtoo/yandex-gpt.env\n    # Новый ключ" in boot
+      and "rm -f /var/lib/jobtoo/ygpt-ping.txt" in boot)
 check("при ошибке — причина словами Яндекса, ключ вырезан, файл ответа удалён",
       'm = m.replace(k, "***")' in boot and 'rm -f "$body"' in boot
       and '[^\\w .,:;()/+=-]' in boot)
