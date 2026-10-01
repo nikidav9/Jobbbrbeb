@@ -76,5 +76,11 @@
     "company": "iSpring",
     "reason": "production 403",
     "observed_at": "2026-09-16"
+  },
+  {
+    "url": "https://evotor.ru/page-data/sq/d/754220884.json",
+    "company": "Эвотор",
+    "reason": "не вакансии: разведка приняла список товаров (терминалы) за вакансии, ссылки /vacancies/{id} отдают 404",
+    "observed_at": "2026-10-01"
   }
 ]

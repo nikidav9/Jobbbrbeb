@@ -533,7 +533,15 @@
       "company_const": "X5 Tech"
     },
     "url": "https://prod-lkk-back.x5.ru/api/v2/x5-tech/vacancies/",
-    "company_hint": "X5 Tech"
+    "company_hint": "X5 Tech",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit_param": "page_size",
+      "limit": 100,
+      "max_pages": 5
+    }
   },
   {
     "map": {
@@ -2376,5 +2384,60 @@
       "company_const": "Tripster"
     },
     "company_hint": "Tripster"
+  },
+  {
+    "url": "https://rabota.x5.ru/public/api/vacancies/vacancies/",
+    "map": {
+      "list": "items",
+      "title": "name",
+      "id": "id",
+      "address": "city",
+      "schedule": "work_format",
+      "url_template": "https://rabota.x5.ru/vacancies/{id}",
+      "company_const": "X5 Group"
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit_param": "page_size",
+      "limit": 100,
+      "max_pages": 5
+    },
+    "company_hint": "X5 Group"
+  },
+  {
+    "url": "https://career.polyus.com/vacancies/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "company_const": "Полюс",
+      "min_title": 8
+    },
+    "paging": {
+      "type": "page",
+      "param": "PAGEN_1",
+      "start": 1,
+      "limit": 10,
+      "max_pages": 30
+    },
+    "company_hint": "Полюс"
+  },
+  {
+    "url": "https://job.level.ru/positions/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/positions/",
+      "company_const": "Level Group",
+      "min_title": 8
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 10,
+      "max_pages": 10
+    },
+    "company_hint": "Level Group"
   }
 ]

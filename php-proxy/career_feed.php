@@ -596,8 +596,15 @@ function cf_dom(string $html): ?DOMDocument
     return $ok ? $doc : null;
 }
 
-function cf_html_links(string $html, string $pageUrl, array $map, int $now): array
+/**
+ * $raw — сколько разных ссылок на вакансии на странице ДО отсева по названию:
+ * по нему листание решает, полная ли страница (см. cf_has_next_sub). У Полюса
+ * 01.10.2026 на 5-й странице из 19 одна из десяти ссылок отсеялась, и сбор
+ * останавливался на 49 вакансиях.
+ */
+function cf_html_links(string $html, string $pageUrl, array $map, int $now, ?int &$raw = null): array
 {
+    $raw = 0;
     $needle = trim((string)($map['link_path'] ?? ''));
     if ($needle === '') return [];
     $minTitle = max(3, (int)($map['min_title'] ?? 8));
@@ -608,6 +615,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
 
     $items = [];
     $seen = [];
+    $rawSeen = [];
     $baseTag = $doc->getElementsByTagName('base')->item(0);
     $baseHref = $baseTag instanceof DOMElement ? trim($baseTag->getAttribute('href')) : '';
     foreach ($doc->getElementsByTagName('a') as $a) {
@@ -633,6 +641,10 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         // /jobs/vacancies?profession=backend: это фильтры каталога, а
         // заголовком шло «Разработка», «Аналитика». Проверено на проде.
         if (in_array(mb_strtolower($tail), CF_SECTION_WORDS, true)) continue;
+        if (!isset($rawSeen[$href])) {
+            $rawSeen[$href] = true;
+            $raw++;
+        }
 
         $title = cf_link_title($a);
         // Карточка-обёртка: название стоит РЯДОМ со ссылкой (в соседнем
