@@ -1163,7 +1163,12 @@ YGPT_CONF=$( (cd "$REPO/infra" && docker compose exec -T php php -r '
   $lat = ["А"=>"A","В"=>"B","Е"=>"E","К"=>"K","М"=>"M","Н"=>"H","О"=>"O","Р"=>"P","С"=>"C","Т"=>"T","Х"=>"X","У"=>"Y",
           "а"=>"a","е"=>"e","о"=>"o","р"=>"p","с"=>"c","у"=>"y","х"=>"x"];
   $c = fn($v) => preg_replace("/[^!-~]/", "", strtr((string)$v, $lat));
-  printf("%s\n%s\n", $c($s["api_key"] ?? ""), $c($s["folder_id"] ?? ""));') 2>/dev/null || true)
+  // Каталог — не секрет. В секрет попал ID сервисного аккаунта (aje…), и
+  // Яндекс отвечал 400 «folder ID does not match» (01.10.2026): ID каталога
+  // всегда b1g…, иначе берём каталог сервисного аккаунта JobToo.
+  $f = $c($s["folder_id"] ?? "");
+  if (!preg_match("/^b1g[a-z0-9]{17}$/", $f)) $f = "b1g1bkcqqko80h5kqen1";
+  printf("%s\n%s\n", $c($s["api_key"] ?? ""), $f);') 2>/dev/null || true)
 YGPT_KEY=$(printf '%s' "$YGPT_CONF" | sed -n 1p)
 YGPT_FOLDER=$(printf '%s' "$YGPT_CONF" | sed -n 2p)
 if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then

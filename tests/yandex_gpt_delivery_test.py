@@ -34,6 +34,8 @@ check("bootstrap перезапускает оба воркера",
 check("из ключа и каталога вычищается всё, кроме печатаемого ASCII",
       'preg_replace("/[^!-~]/", "", strtr((string)$v, $lat))' in boot and '$c($s["api_key"] ?? "")' in boot)
 check("русская «А» в ключе становится латинской, а не пропадает", '"А"=>"A"' in boot)
+check("не-каталог в секрете каталога заменяется каталогом JobToo",
+      'preg_match("/^b1g[a-z0-9]{17}$/", $f)' in boot and '$f = "b1g1bkcqqko80h5kqen1"' in boot)
 check("пустые секреты ничего не стирают", 'if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then' in boot)
 check("воркеры читают тот же файл", "EnvironmentFile=-$YGPT_ENV" in boot)
 
