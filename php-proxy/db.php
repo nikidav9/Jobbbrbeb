@@ -5564,7 +5564,8 @@ try {
                 $body = "У вас {$cnt} " . ($cnt === 1 ? 'необработанная заявка' : 'необработанных заявок')
                     . ' на вакансии. Остался день: через 2 дня после отклика заявка закрывается'
                     . ' автоматически, и кандидат уходит к другим.';
-                sb_insert('jm_notifications', ['user_id' => $eid, 'title' => $title, 'body' => $body]);
+                // type — чтобы нажатие в колокольчике вело в «Отклики» (routeForNotification).
+                sb_insert('jm_notifications', ['user_id' => $eid, 'title' => $title, 'body' => $body, 'type' => 'pending_apps']);
                 if (jt_has_crossborder_consent((string)$eid) && $emp && !empty($emp['telegram_id'])) {
                     tg_send_message((int)$emp['telegram_id'], $title . "\n\n" . $body, true);
                 } elseif ($emp && !empty($emp['push_token'])) {
@@ -5617,9 +5618,9 @@ try {
                 $vac = sb_single('jm_perm_vacancies', ['id' => 'eq.' . $srow['vacancy_id']], 'title');
                 $vt = $vac ? $vac['title'] : 'вакансию';
                 $wTitle = 'Отклик закрыт без ответа';
-                $wBody = "Директор не ответил на ваш отклик на «{$vt}» за 2 дня. "
-                    . 'Не ждите — посмотрите другие вакансии и смены рядом, отклик в два тапа.';
-                sb_insert('jm_notifications', ['user_id' => $srow['worker_id'], 'title' => $wTitle, 'body' => $wBody]);
+                $wBody = "Работодатель не ответил на ваш отклик на «{$vt}» за 2 дня. "
+                    . 'Не ждите — посмотрите другие вакансии, отклик в два тапа.';
+                sb_insert('jm_notifications', ['user_id' => $srow['worker_id'], 'title' => $wTitle, 'body' => $wBody, 'type' => 'app_auto_rejected']);
                 $wu = sb_single('jm_users', ['id' => 'eq.' . $srow['worker_id']], 'telegram_id,push_token');
                 if ($wu && jt_has_crossborder_consent((string)$srow['worker_id']) && !empty($wu['telegram_id'])) {
                     tg_send_message((int)$wu['telegram_id'], $wTitle . "\n\n" . $wBody, true);
@@ -5643,9 +5644,9 @@ try {
                 $svac = sb_single('jm_vacancies', ['id' => 'eq.' . $lrow['vacancy_id']], 'title');
                 $st = $svac ? $svac['title'] : 'смену';
                 $wTitle = 'Отклик закрыт без ответа';
-                $wBody = "Директор не ответил на ваш отклик на смену «{$st}» за 2 дня. "
-                    . 'Посмотрите свежие смены рядом — отклик в два тапа.';
-                sb_insert('jm_notifications', ['user_id' => $lrow['worker_id'], 'title' => $wTitle, 'body' => $wBody]);
+                $wBody = "Работодатель не ответил на ваш отклик на «{$st}» за 2 дня. "
+                    . 'Посмотрите вакансии в ленте — отклик в два тапа.';
+                sb_insert('jm_notifications', ['user_id' => $lrow['worker_id'], 'title' => $wTitle, 'body' => $wBody, 'type' => 'app_auto_rejected']);
                 $result['autoRejectedShifts']++;
             }
 

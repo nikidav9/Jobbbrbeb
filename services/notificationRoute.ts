@@ -9,6 +9,8 @@ const TO_MATCHES = new Set([
   'shift_confirmed_by_employer', 'shift_cancelled',
   'new_perm_applicant', 'perm_approved', 'perm_rejected',
   'jupiter_sent', 'jupiter_failed',
+  // Напоминание работодателю «Кандидаты ждут» и автоотказ работнику.
+  'pending_apps', 'app_auto_rejected',
 ]);
 
 const TO_FEED = new Set(['nearby_shift', 'nearby_perm']);
@@ -28,6 +30,7 @@ export function routeForNotification(
   }
   // Работодатели задали вопросы — сразу в очередь вопросов.
   if (type === 'jupiter_questions') return { pathname: '/jupiter-questions' };
+  if (type === 'support') return { pathname: '/support' };
   if (type === 'message') {
     return payload?.chatId
       ? { pathname: '/chat-room', params: { chatId: payload.chatId } }
@@ -44,6 +47,9 @@ export function routeForNotification(
 export function routeByTitle(title: string): NotifTarget | null {
   const t = title.trim();
   if (t.startsWith('💬')) return { pathname: '/(tabs)/chats' };
+  if (t.startsWith('🆘')) return { pathname: '/support' };
+  // Записаны до того, как у них появился type (01.10.2026).
+  if (t.startsWith('⏳') || t === 'Отклик закрыт без ответа') return { pathname: '/(tabs)/matches' };
   if (t.startsWith('📥') || t.startsWith('🎉') || t.startsWith('✅') || t.startsWith('❌')) {
     return { pathname: '/(tabs)/matches' };
   }
