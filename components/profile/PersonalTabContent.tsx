@@ -8,6 +8,7 @@ import { EditIcon, MailIcon, PhoneIcon, LockIcon, LinkIcon, PinIcon, CarIcon, Sh
 import { ProfileColors, ProfileFonts, HAIRLINE, ProfileRadius } from '@/constants/profileTheme';
 import type { User } from '@/constants/types';
 import { ADDRESS_FORMS, LINK_TYPES } from '@/lib/profileEdit';
+import { applyAnswersFor, applyAnswersFilled } from '@/lib/applyAnswers';
 
 /** Поле «Основного», на котором экран basic откроется с фокусом. */
 type BasicFocus = 'firstName' | 'middleName' | 'lastName' | 'title' | 'age';
@@ -101,6 +102,7 @@ export function PersonalTabContent({
     ? `Категории ${p.drivingCategories.join(', ')}${p.hasOwnCar ? ' · есть автомобиль' : ''}`
     : p.driversLicense;
   const restrictions = p.hasEmploymentRestrictions === false ? 'Нет' : p.employmentRestrictions;
+  const applyFilled = applyAnswersFilled(applyAnswersFor(user));
   const linkLabel = (type: string) => LINK_TYPES.find(t => t.value === type)?.label ?? 'Ссылка';
 
   return (
@@ -209,6 +211,11 @@ export function PersonalTabContent({
             icon={<CarIcon size={18} color={ProfileColors.ink} />}
             title="Водительские права" subtitle="Категории и наличие личного автомобиля"
             value={driving} onEdit={() => go('/profile-edit/driving-license')}
+          />
+          <AboutRow
+            icon={<EditIcon size={18} color={ProfileColors.ink} />}
+            title="Ответы для откликов" subtitle="Зарплата, дата выхода, Telegram — Юпитер подставит в анкеты сам"
+            value={applyFilled ? `Заполнено ${applyFilled} из 6` : undefined} onEdit={() => go('/profile-edit/apply-answers')}
           />
           <AboutRow
             icon={<ShieldIcon size={18} color={ProfileColors.ink} />}

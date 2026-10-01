@@ -14,6 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { ApplyAnswersPrompt } from '@/components/feature/ApplyAnswersPrompt';
+import { applyAnswersFor, applyAnswersFilled } from '@/lib/applyAnswers';
+import { patchPersonal } from '@/lib/profileEdit';
 import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
@@ -804,8 +807,11 @@ const da = StyleSheet.create({
 
 function WorkerPermMode() {
   const router = useRouter();
+  // Шторка «Ответьте один раз» — см. maybeAskAnswers.
+  const [askAnswers, setAskAnswers] = useState(false);
+  const askedAnswers = useRef(false);
   const {
-    currentUser, permVacancies, permApplications,
+    currentUser, permVacancies, permApplications, updateUser,
     refreshPermVacancies, refreshPermApplications,
     refreshChats,
     showToast,
@@ -1111,10 +1117,21 @@ function WorkerPermMode() {
     }
   };
 
+  // «Ответьте один раз» (01.10.2026): после свайпа вправо, пока частые
+  // вопросы работодателей не заполнены, — шторка, не чаще раза за сессию.
+  const maybeAskAnswers = () => {
+    if (!currentUser || askedAnswers.current) return;
+    if (currentUser.personalDetails?.applyAnswersPromptDismissed) return;
+    if (applyAnswersFilled(applyAnswersFor(currentUser)) >= 4) return;
+    askedAnswers.current = true;
+    setAskAnswers(true);
+  };
+
   const sendExtApply = async (ev: ExtVacancy): Promise<boolean> => {
     if (!currentUser) return false;
     try {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
+      maybeAskAnswers();
       showToast(application.reasonCode === 'PHONE_FILL'
         ? 'Сохранено в «Нужны вы» — отправите пачкой в «Откликах».'
         : application.state === 'queued'
@@ -1908,6 +1925,17 @@ function WorkerPermMode() {
         chips={getChatSuggestions('worker', null)}
       />
 
+      <ApplyAnswersPrompt
+        visible={askAnswers}
+        onAnswer={() => { setAskAnswers(false); router.push('/profile-edit/apply-answers' as never); }}
+        onLater={() => setAskAnswers(false)}
+        onNever={() => {
+          setAskAnswers(false);
+          if (currentUser) {
+            updateUser(patchPersonal(currentUser, { applyAnswersPromptDismissed: true })).catch(() => {});
+          }
+        }}
+      />
     </View>
     </JTPullRefresh>
   );

@@ -41,6 +41,8 @@ export const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
   drivingCategories: 'Категории водительских прав',
   hasOwnCar: 'Есть личный автомобиль',
   hasEmploymentRestrictions: 'Есть ограничения по трудоустройству',
+  applyAnswers: 'Ответы для откликов',
+  applyAnswersPromptDismissed: 'Карточка «Ответьте один раз» закрыта',
 };
 
 export const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
