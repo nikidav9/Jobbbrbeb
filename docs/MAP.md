@@ -1331,10 +1331,14 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 - Проверка — `tests/group_post_test.php`.
 
 ### Телеграм
-- `php-proxy/tg.php` — вебхук бота приложения `@JobToo_bot`.
+- `php-proxy/tg.php` — вебхук бота приложения `@JobToo_bot`. Заголовок
+  `X-Telegram-Bot-Api-Secret-Token` сверяется с ключом, выведенным из токена бота
+  (`hash_hmac('sha256','jt-tg-webhook',TG_BOT_TOKEN)`), а не с APP_SECRET из
+  сборки приложения (с 01.10.2026). Тот же вывод — в `tgtool.php` (setWebhook),
+  `infra/webhook-watch.sh` и `infra/switch-webhook.sh`.
 - `php-proxy/bot_brain.php` — ответы бота.
-- `php-proxy/tgtool.php` — служебная отправка в общую группу. Адрес группы зашит
-  числом намеренно: пропуск лежит в открытом коде.
+- `php-proxy/tgtool.php` — служебное: setWebhook/webhookInfo/me для выкладки.
+  Публикации в группы отсюда убраны 01.10.2026: пропуск достаётся из приложения.
 - Мост к Codex (PR #62) и рабочая беседа в телеграме **выведены из контура 13.09**
   решением владельца. Механика описана в истории PR, но не используется: работу
   ведёт Claude один, общение — в терминале сессии. Продуктового бота это не

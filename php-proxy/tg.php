@@ -410,14 +410,13 @@ function notify_worker(string $workerId, string $title, string $body): void {
 // не превращается в молчащего бота в ту минуту, когда что-то пойдёт не так.
 $tgSecret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
 if ($tgSecret !== '' || !file_exists('/var/www/api/tg_relay_mode')) {
-    $sec = @include '/var/www/api/app_secrets.php';
-    $ok = [];
-    if (is_array($sec)) {
-        foreach (['APP_SECRET', 'APP_SECRET_PREV'] as $k) {
-            $v = (string)($sec[$k] ?? '');
-            if ($v !== '') $ok[] = $v;
-        }
-    }
+    // Ключ выводится из токена бота (как в tgtool.php и webhook-watch.sh).
+    // Прежде им был APP_SECRET, а он лежит в каждой сборке приложения: с ним
+    // подделывались обновления — нажатие «Одобрить» под чужим telegram_id.
+    // После выкладки Телеграм ещё минуту шлёт старый ключ и получает 401;
+    // сторож видит 401 и переставляет secret_token, а непринятые обновления
+    // Телеграм досылает сам.
+    $ok = TG_BOT_TOKEN !== '' ? [hash_hmac('sha256', 'jt-tg-webhook', TG_BOT_TOKEN)] : [];
     $pass = false;
     foreach ($ok as $v) { if (hash_equals($v, $tgSecret)) { $pass = true; break; } }
     if (!$pass) { jt_respond(['ok' => false], 401); exit; }
