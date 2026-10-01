@@ -16,7 +16,8 @@ Privacy Policy, Consent, data policy 9.2):
 
 - the only model is YandexGPT (Yandex Cloud, servers in Russia, processing on
   the operator's instruction); every request carries
-  `x-data-logging-enabled: false`, so Yandex neither stores it nor trains on it;
+  `x-data-logging-enabled: false`, so per Yandex's terms its content is not used
+  to improve the service or train models (Yandex does not promise more);
 - our deterministic code fills known forms first; the model is called where
   the code is stuck, and may then see the candidate profile and resume to fill
   fields and answer employer questions;
