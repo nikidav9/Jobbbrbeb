@@ -978,8 +978,23 @@ set -a; . "$SECRETS"; set +a
 # В образе php-fpm слушает 9000 на всех адресах. Пока у контейнера была своя
 # сеть, это никого не касалось; теперь сеть общая с машиной, и без этой
 # настройки обработчик PHP оказался бы открыт наружу.
+#
+# Там же — размер пула. Умолчание образа — 5 процессов на всё: стресс-тест
+# копии (01.10.2026) упёрся в них уже при 50 одновременных, остальные стояли
+# в очереди FPM по 3 с и больше. Сорок процессов на копии с 16 ГБ подняли
+# потолок с 70 до 110 запросов/с; здесь 4 ГБ на базу, Chromium Jupiter и
+# остальное, а PHP-процесс съедает 25–50 МБ — поэтому 20, около 1 ГБ в пике.
+# max_requests — процесс перезапускается после 500 запросов, чтобы утечки
+# памяти не копились. OPcache в образе php:8.3-fpm уже включён.
 mkdir -p /opt/jobtoo-php
-printf '[www]\nlisten = 127.0.0.1:9000\n' > /opt/jobtoo-php/zz-listen.conf
+printf '[www]\nlisten = 127.0.0.1:9000\npm = dynamic\npm.max_children = 20\npm.start_servers = 6\npm.min_spare_servers = 4\npm.max_spare_servers = 10\npm.max_requests = 500\n' \
+  > /opt/jobtoo-php/zz-listen.conf.new
+# Файл смонтирован в живой контейнер, а up -d его не пересоздаёт: новую
+# настройку FPM прочтёт только по сигналу. Скрипт идёт каждую минуту, поэтому
+# сигнал — лишь когда содержимое поменялось (см. блок «Контейнеры»).
+PHP_POOL_CHANGED=0
+cmp -s /opt/jobtoo-php/zz-listen.conf.new /opt/jobtoo-php/zz-listen.conf || PHP_POOL_CHANGED=1
+mv -f /opt/jobtoo-php/zz-listen.conf.new /opt/jobtoo-php/zz-listen.conf
 chmod 644 /opt/jobtoo-php/zz-listen.conf
 
 # Разово (решение владельца 01.10.2026): отклики на job.mts.ru, которые до
@@ -1450,6 +1465,17 @@ timeout 600 docker compose --env-file "$SECRETS" up -d --remove-orphans >/tmp/jt
   || say "контейнеры" "up не уложился в 10 минут"
 grep -qE "Started|Recreated|Created" /tmp/jt-compose.log 2>/dev/null \
   && say "контейнеры" "$(grep -aE "Started|Recreated|Created" /tmp/jt-compose.log | tr -d "\r" | tr "\n" " " | cut -c1-200)"
+# Пул PHP поменялся (см. «Рабочий каталог прокси») — мягкая перезагрузка:
+# USR2 перечитывает настройку, текущие запросы доживают. Сначала проверка
+# настройки: с ошибкой в ней FPM после сигнала не поднялся бы вовсе.
+if [ "$PHP_POOL_CHANGED" = 1 ]; then
+  if docker compose exec -T php php-fpm -t >/dev/null 2>&1; then
+    docker compose exec -T php sh -c 'kill -USR2 1' >/dev/null 2>&1 \
+      && say "php" "пул FPM перечитан: $(grep -c . /opt/jobtoo-php/zz-listen.conf) строк настройки"
+  else
+    say "php" "настройка пула FPM не прошла проверку — оставлен прежний пул"
+  fi
+fi
 
 # Дашборд — отдельным ходом и только когда сборка приехала. Он в профиле,
 # то есть общий up его не касается: это и позволяет держать его готовым, но

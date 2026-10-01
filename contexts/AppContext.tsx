@@ -58,8 +58,12 @@ import { registerForPushNotifications, releasePushTokenIfSignedOut } from '@/ser
 import { registerWebPush } from '@/lib/webPush';
 import { setWebSplashProgress } from '@/lib/webSplash';
 
-// Polling interval for native (Realtime is primary, polling is fallback)
-const NATIVE_POLL_INTERVAL = 8_000;
+// Опрос — запасной путь к живым сигналам. Было 8 с (телефон) и 10 с (веб):
+// при 1,25 запроса/с на человека сервер упирался уже в 50 одновременных
+// (стресс-тест копии 01.10.2026). 30 с с разбросом ±20 %, чтобы тысяча
+// телефонов, открытых в одну минуту, не била в сервер одновременно.
+const POLL_INTERVAL = 30_000;
+const pollDelay = () => POLL_INTERVAL * (0.8 + Math.random() * 0.4);
 // Отметку «был в сети» чаще обновлять незачем: в чате «в сети» держится
 // три минуты, так что двух минут между отметками достаточно.
 const LAST_SEEN_INTERVAL = 120_000;
@@ -67,8 +71,6 @@ const LAST_SEEN_INTERVAL = 120_000;
 // разом, поэтому в общий опрос его класть нельзя. Но и застывать до конца
 // сеанса он не должен — раньше его обновляла подписка, которая замолчала.
 const USERS_REFRESH_INTERVAL = 300_000;
-// Polling interval for web (Supabase realtime may be blocked in Russia)
-const WEB_POLL_INTERVAL = 10_000;
 
 export type ToastType = 'success' | 'error' | 'info' | 'match';
 export interface ToastMessage { message: string; type: ToastType }
@@ -563,11 +565,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentUser) return;
 
     const user = currentUser;
-    const poll = () => {
+    // Новый круг не начинается, пока не закончился прежний: при медленном
+    // сервере круги наслаивались, и один человек держал до 60 запросов разом.
+    let inFlight = false;
+    const poll = (withShifts = false) => {
+      if (inFlight) return;
+      // Скрытая вкладка ничего не показывает — и не опрашивает.
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      inFlight = true;
       Promise.all([
         refreshChats(user),
         refreshLikes(user),
-        refreshVacancies(),
+        // Смены закрыты 17.09.2026: старые нужны только истории откликов,
+        // поэтому один раз при входе, а не на каждом круге.
+        withShifts ? refreshVacancies() : Promise.resolve(),
         refreshPermVacancies(user),
         refreshPermApplications(user),
         refreshNotifications(),
@@ -575,11 +586,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshPermVacancyViews(),
         refreshSaved(user),
         refreshPermSaved(user),
-      ]).catch(() => {});
+      ]).catch(() => {}).finally(() => { inFlight = false; });
     };
     // Immediate poll on mount so new data appears right after login
-    poll();
-    const interval = setInterval(poll, WEB_POLL_INTERVAL);
+    poll(true);
+    let timer: ReturnType<typeof setTimeout>;
+    const loop = () => { timer = setTimeout(() => { poll(); loop(); }, pollDelay()); };
+    loop();
 
     // Отметка «был в сети». Раньше она стояла только в эффекте для нативных,
     // и у тех, кто заходит с сайта, last_seen_at не появлялся вообще никогда:
@@ -602,7 +615,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     return () => {
-      clearInterval(interval);
+      clearTimeout(timer);
       clearInterval(seenInterval);
       clearInterval(usersInterval);
       if (typeof document !== 'undefined') {
@@ -620,10 +633,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const user = currentUser;
 
-    const poll = () => {
+    let inFlight = false;
+    const poll = (withShifts = false) => {
+      if (inFlight) return;
+      // Свёрнутое приложение не опрашивает: раньше опрос шёл и в фоне.
+      if (AppState.currentState === 'background') return;
+      inFlight = true;
       Promise.all([
         refreshChats(user),
-        refreshVacancies(),
+        withShifts ? refreshVacancies() : Promise.resolve(),
         refreshLikes(user),
         // Постоянные вакансии и отклики на них раньше держались на живых
         // подписках. Подписки замолчали, когда мы закрыли базу, а в опрос их
@@ -636,13 +654,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshPermVacancyViews(),
         refreshSaved(user),
         refreshPermSaved(user),
-      ]).catch(() => {});
+      ]).catch(() => {}).finally(() => { inFlight = false; });
     };
 
     // Immediate poll on mount so new data appears right after login
-    poll();
-    // Poll on interval
-    const interval = setInterval(poll, NATIVE_POLL_INTERVAL);
+    poll(true);
+    let timer: ReturnType<typeof setTimeout>;
+    const loop = () => { timer = setTimeout(() => { poll(); loop(); }, pollDelay()); };
+    loop();
 
     // Отметка «был в сети»: при запуске, при возврате из фона и раз в
     // несколько минут, пока приложение открыто. Из неё собирается статус
@@ -659,7 +678,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const sub = AppState.addEventListener('change', handleAppState);
 
     return () => {
-      clearInterval(interval);
+      clearTimeout(timer);
       clearInterval(seenInterval);
       clearInterval(usersInterval);
       sub.remove();

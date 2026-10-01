@@ -163,8 +163,11 @@ async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
     try {
       parsed = JSON.parse(text);
     } catch {
-      // Не JSON — ответила не наша программа. Пробуем ещё раз, один.
-      if (attempt === 0) { await new Promise(r => setTimeout(r, 600)); continue; }
+      // Не JSON — ответила не наша программа. Пробуем ещё раз, один — но не
+      // при 502–504: это перегрузка, и повтор от каждого клиента её удваивает.
+      if (attempt === 0 && ![502, 503, 504].includes(status)) {
+        await new Promise(r => setTimeout(r, 600)); continue;
+      }
       break;
     }
     // Сессия недействительна.
