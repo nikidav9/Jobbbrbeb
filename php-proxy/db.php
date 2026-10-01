@@ -1080,7 +1080,8 @@ function jt_b64url_decode(string $raw): string|false {
 // отдаёт PHP по FastCGI и стоит на краю, без второго прокси перед собой.
 const JT_TRY_WINDOW = 900;          // 15 минут
 // mail — письма с кодами с одного адреса; code — неверные коды с одного адреса.
-const JT_TRY_MAX = ['login' => 10, 'phone' => 30, 'mail' => 20, 'code' => 30];
+// gpt — запросы подсказок YandexGPT телефонному автопилоту с одного адреса.
+const JT_TRY_MAX = ['login' => 10, 'phone' => 30, 'mail' => 20, 'code' => 30, 'gpt' => 30];
 
 function jt_try_file(string $kind): string {
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
@@ -7541,6 +7542,55 @@ try {
         // человека и ссылка на его же выбранное резюме — приложить файл
         // тем же способом, что и остальные поля. Согласия сюда не входят:
         // их даёт сам человек, нажимая «Отправить отклик».
+        // args: [host, fields] → { hints: {sig: ключ|null} }. Телефонный
+        // автопилот не узнал обязательные поля анкеты — сервер смотрит свою
+        // таблицу подсказок по сайту и незнакомое спрашивает у YandexGPT.
+        // В модель уходят только подписи полей (без данных человека), ответ —
+        // только ключ из разрешённого списка. Что не узнали — остаётся в
+        // таблице (key = null): по ней мы и разбираемся. Решение владельца
+        // 01.10.2026; модуль — php-proxy/jupiter_field_hints.php.
+        case 'jupiterFieldHints': {
+            require_once __DIR__ . '/jupiter_field_hints.php';
+            $host = strtolower((string)preg_replace('~[^0-9A-Za-z.\-]~', '', (string)($args[0] ?? '')));
+            if ($host === '' || strlen($host) > 100) { jt_respond(['error' => 'Нет сайта'], 400); exit; }
+            $fields = jt_fh_clean_fields($args[1] ?? []);
+            $hints = [];
+            if (!$fields) { $data = ['hints' => (object)[]]; break; }
+            $known = sb_select('jm_jupiter_field_hints',
+                ['host' => 'eq.' . $host, 'sig' => sb_in_list(array_column($fields, 'sig'))], 'sig,key,source');
+            $knownSig = [];
+            foreach ($known as $r) {
+                // pending — модель в прошлый раз не ответила: спрашиваем снова.
+                if (($r['source'] ?? '') === 'pending') continue;
+                $knownSig[(string)$r['sig']] = true;
+                $hints[(string)$r['sig']] = $r['key'] ?? null;
+            }
+            $unknown = array_values(array_filter($fields, fn($f) => !isset($knownSig[$f['sig']])));
+            if ($unknown) {
+                $ans = null;
+                if (!jt_try_blocked('gpt')) {
+                    jt_try_note('gpt');
+                    $ans = jt_fh_ask_gpt($unknown, $host);
+                }
+                $now = now_iso();
+                $rows = [];
+                foreach ($unknown as $f) {
+                    $key = $ans[$f['sig']] ?? null;
+                    $hints[$f['sig']] = $key;
+                    $rows[] = ['host' => $host, 'sig' => $f['sig'], 'label' => $f['label'],
+                        'field_name' => $f['name'], 'key' => $key,
+                        // pending — модель не ответила (нет ключа, лимит, сбой):
+                        // спросим снова при следующем отклике на этот сайт.
+                        'source' => $ans === null ? 'pending' : 'gpt', 'updated_at' => $now];
+                }
+                // pending пишем, чтобы видеть, что разбирать, но ответом не
+                // считаем (см. выше): сбой модели не оставит поле человеку навсегда.
+                try { sb_upsert('jm_jupiter_field_hints', $rows, 'host,sig'); } catch (Throwable $e) {}
+            }
+            $data = ['hints' => $hints ?: (object)[]];
+            break;
+        }
+
         case 'jupiterFillProfile': {
             $uidArg = (string)($args[0] ?? '');
             $user = sb_single('jm_users', ['id' => 'eq.' . $uidArg],

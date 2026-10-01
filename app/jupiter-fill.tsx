@@ -16,12 +16,12 @@ import { WebView } from 'react-native-webview';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import {
-  jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile,
+  jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile, jupiterFieldHints,
 } from '@/services/db';
 import type { JupiterApplication } from '@/constants/types';
 import { fillHostFor, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
 import {
-  buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult,
+  buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult, type AutopilotUnknownField,
 } from '@/services/jupiterAutopilot';
 
 import { rs, rf } from '@/constants/scale';
@@ -148,14 +148,40 @@ export default function JupiterFillScreen() {
   }, [url, router, showToast]);
 
   const fillHost = url ? fillHostFor(url) : null;
+  // Подсказки сервера (YandexGPT) для полей, которые автопилот не узнал.
+  // Спрашиваем один раз на анкету: второй прогон идёт уже с подсказками.
+  const [hints, setHints] = useState<Record<string, string | null> | null>(null);
   const fillScript = useMemo(() => {
     if (!profile || !fillHost) return null;
     // Ссылка на резюме в страницу работодателя не уходит — только содержимое.
     const { resume_url: _u, resume_name: _n, ...values } = profile;
     return buildAutopilotScript(values as JupiterFillProfile, fillHost, {
       submit: false, delegated, resumeBase64: resume?.b64 ?? null, resumeName: resume?.name ?? null, deadlineMs: 45000,
+      hints: hints ?? {}, askHints: hints === null,
     });
-  }, [profile, fillHost, delegated, resume]);
+  }, [profile, fillHost, delegated, resume, hints]);
+
+  // Сигнал от автопилота: обязательные поля, которые он не узнал. Сервер
+  // смотрит свои подсказки по сайту и спрашивает YandexGPT. Есть что
+  // подставить — автопилот проходит анкету ещё раз; нет — поле остаётся
+  // человеку, а сервер запомнил его, чтобы мы разобрались.
+  const askHints = async (fields: AutopilotUnknownField[]) => {
+    if (!fillHost || hints !== null) return;
+    try {
+      const got = await jupiterFieldHints(fillHost, fields);
+      setHints(got);
+    } catch {
+      setHints({});
+    }
+  };
+  const hintsRerun = useRef(false);
+  useEffect(() => {
+    if (!hints || hintsRerun.current || !fillScript || !webRef.current) return;
+    if (!Object.values(hints).some(Boolean)) return;
+    hintsRerun.current = true;
+    setStatus('filling');
+    webRef.current.injectJavaScript(rerunAutopilotScript(fillScript));
+  }, [hints, fillScript]);
 
   const refill = () => {
     if (!fillScript || !webRef.current) return;
@@ -268,6 +294,7 @@ export default function JupiterFillScreen() {
             try {
               const data = JSON.parse(e.nativeEvent.data);
               if (data?.type === 'jt-autopilot' && typeof data.outcome === 'string') onAutopilot(data as AutopilotResult);
+              if (data?.type === 'jt-autopilot-hints' && Array.isArray(data.fields)) void askHints(data.fields as AutopilotUnknownField[]);
             } catch { /* сообщение не наше — игнорируем */ }
           }}
           javaScriptEnabled
