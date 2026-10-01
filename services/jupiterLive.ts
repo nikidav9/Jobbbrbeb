@@ -34,7 +34,7 @@ async function checkJupiterLive(userId: string): Promise<boolean> {
   if (state.enabled) return true;
 
   if (state.revoked) {
-    const message = 'Автоотклик Юпитера выключен в настройках. Включить снова?';
+    const message = 'Автоотклик Юпитера выключен. Включить снова?';
     const approved = await confirmAsync({ title: 'Автоотклик Юпитера', body: message, confirmLabel: 'Включить' });
     if (!approved) return false;
     await jupiterSetLive(userId, true);
