@@ -402,6 +402,7 @@ export const REASON_LABEL: Record<string, string> = {
   DOMAIN_BLOCKED: 'Переход на чужой домен',
   VALIDATION_FAILED: 'Сайт не принял поля',
   SUBMIT_FAILED: 'Отправка не прошла',
+  FILL_FAILED: 'Поле не заполнилось — отклик не ушёл',
   SUCCESS_NOT_CONFIRMED: 'Успех не подтверждён',
   SITE_NEEDS_FIX: 'Сайт просит исправить поля',
   SITE_REJECTED: 'Сайт ответил ошибкой',

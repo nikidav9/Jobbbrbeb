@@ -382,7 +382,7 @@ that fails validation now returns `action_required` with reason code
 `AgentResult` carries a machine-readable `reason_code` alongside the human
 text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
 `DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
-`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
+`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `FILL_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
 `MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`, `DUPLICATE_BLOCKED`,
 `SUBMISSION_UNKNOWN`, `CONSENT_REQUIRED`, `UNKNOWN_REQUIRED_QUESTION`.
 Compatibility statistics must be built on the code, not on the prose.
