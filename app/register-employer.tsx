@@ -148,7 +148,7 @@ export default function RegisterEmployer() {
         createdAt: nowISO(),
       };
       await registerUser(user, emailTicket || undefined, { marketing: adsAgreed });
-      showToast('Добро пожаловать! 👋', 'success');
+      showToast('Добро пожаловать!', 'success');
       router.replace('/(tabs)');
     } catch (e) {
       console.error('[RegisterEmployer] finish error', e);
@@ -181,7 +181,7 @@ export default function RegisterEmployer() {
         createdAt: nowISO(),
       };
       await registerUser(user, emailTicket, { marketing: adsAgreed });
-      showToast('Добро пожаловать! 👋', 'success');
+      showToast('Добро пожаловать!', 'success');
       router.replace('/(tabs)');
     } catch (e) {
       console.error('[RegisterEmployer] finishByEmail error', e);

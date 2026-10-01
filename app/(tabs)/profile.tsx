@@ -1,4 +1,5 @@
 
+import { DeleteAccountSheet } from '@/components/feature/DeleteAccountSheet';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
@@ -20,7 +21,7 @@ import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString, displayName } from '@/services/storage';
 import {
-  dbGetRatingsForUser, dbChangePassword, dbDeleteAccount,
+  dbGetRatingsForUser, dbChangePassword,
   dbGetConsent,
   dbGetResumeFiles, dbSelectResumeFile, dbDeleteResumeFile,
   dbSignResumeFile, UserRating, type ResumeVaultItem,
@@ -225,7 +226,7 @@ function RatingsModal({ userId, users, onClose }: { userId: string; users: any[]
             </View>
           ) : ratings.length === 0 ? (
             <View style={rmS.empty}>
-              <Text style={{ fontSize: rf(44) }}>⭐</Text>
+              <Ionicons name="star-outline" size={rf(40)} color={Colors.textMuted} />
               <Text style={rmS.emptyTitle}>Отзывов пока нет</Text>
               <Text style={rmS.emptySub}>Здесь появятся отзывы работодателей</Text>
             </View>
@@ -308,9 +309,6 @@ export default function ProfileScreen() {
   const [showRatings, setShowRatings] = useState(false);
   const [showConfirmLogout, setShowConfirmLogout] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [deleteError, setDeleteError] = useState('');
 
   // Что человек принял и когда. Показываем прямо в профиле: запись о
   // согласии нужна не только нам для доказательства — человеку тоже
@@ -628,36 +626,6 @@ export default function ProfileScreen() {
     } catch (error) {
       console.warn('[Profile] logout failed', error);
       showToast('Ошибка при выходе, попробуйте снова', 'error');
-    }
-    // Navigation is handled by <Redirect href="/" /> in (tabs)/_layout.tsx
-  };
-
-  /**
-   * Удалить аккаунт.
-   *
-   * Прежняя версия звала базу напрямую анонимным ключом, а у него с
-   * миграции 013 нет прав на jm_users. Запрос отклонялся, ответ никто не
-   * читал, и человек видел «Аккаунт удалён», когда не удалялось ничего.
-   *
-   * Теперь через прокси, с паролем, и окно закрывается только после
-   * подтверждённого удаления — ошибка остаётся на экране, а не тонет
-   * в исчезнувшем диалоге.
-   */
-  const handleDeleteAccount = async () => {
-    if (!currentUser || deletingAccount) return;
-    if (!deletePassword.trim()) { setDeleteError('Введите пароль'); return; }
-    setDeleteError('');
-    setDeletingAccount(true);
-    try {
-      await dbDeleteAccount(currentUser.id, deletePassword);
-      setShowConfirmDelete(false);
-      setDeletePassword('');
-      await logout();
-      showToast('Аккаунт удалён', 'success');
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Не удалось удалить, попробуйте снова');
-    } finally {
-      setDeletingAccount(false);
     }
     // Navigation is handled by <Redirect href="/" /> in (tabs)/_layout.tsx
   };
@@ -1017,12 +985,11 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={sS.actionRow}
                 onPress={() => setShowConfirmDelete(true)}
-                disabled={deletingAccount}
                 activeOpacity={0.7}
               >
                 <Ionicons name="trash-outline" size={17} color={Colors.red} />
                 <Text style={[sS.actionLabel, { flex: 1, color: Colors.red }]}>
-                  {deletingAccount ? 'Удаление...' : 'Удалить аккаунт'}
+                  Удалить аккаунт
                 </Text>
               </TouchableOpacity>
             </SectionCard>
@@ -1048,7 +1015,7 @@ export default function ProfileScreen() {
               onPress={pickFromCamera}
               activeOpacity={0.8}
             >
-              <Text style={photoSrcS.icon}>📸</Text>
+              <Ionicons name="camera-outline" size={rf(22)} color={Colors.textPrimary} />
               <Text style={photoSrcS.label}>Камера</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1056,7 +1023,7 @@ export default function ProfileScreen() {
               onPress={pickFromGallery}
               activeOpacity={0.8}
             >
-              <Text style={photoSrcS.icon}>🖼</Text>
+              <Ionicons name="image-outline" size={rf(22)} color={Colors.textPrimary} />
               <Text style={photoSrcS.label}>Галерея</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1163,7 +1130,7 @@ export default function ProfileScreen() {
                   </View>
                 ) : (
                   <TouchableOpacity style={styles.metroPickBtn} onPress={() => setMetroPicker(true)}>
-                    <Text style={{ color: Colors.textPrimary }}>🚇 Выбрать станцию</Text>
+                    <Text style={{ color: Colors.textPrimary }}>Выбрать станцию</Text>
                     <Text style={{ color: Colors.textMuted }}>›</Text>
                   </TouchableOpacity>
                 )}
@@ -1205,86 +1172,15 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Confirm delete account */}
-      {showConfirmDelete ? (
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>Удалить аккаунт?</Text>
-            {/* Обещание сузилось до правды. Профиль, телефон, фотография и
-                переписка с ботом исчезают. А сообщения в чатах остаются у
-                собеседника — уже без имени, — иначе удаление одного забирало
-                бы историю у другого. Обещать полное стирание, оставляя
-                следы, было бы тем же враньём, что и раньше. */}
-            <Text style={styles.confirmBody}>
-              Профиль, телефон и фотография будут удалены безвозвратно.
-              В чужих переписках и откликах ваши сообщения останутся, но уже
-              без вашего имени. Восстановить аккаунт будет нельзя.
-            </Text>
-            {currentUser?.hasPassword === false ? (
-              // Аккаунт «почта → код» без пароля: удаление по одной сессии
-              // не делаем (безопасность) — сначала задать пароль, потом удалить.
-              <Text style={styles.confirmBody}>
-                Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
-              </Text>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.deleteInput}
-                  value={deletePassword}
-                  onChangeText={(t: string) => { setDeletePassword(t); setDeleteError(''); }}
-                  placeholder="Пароль — чтобы это были точно вы"
-                  placeholderTextColor={Colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-                {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
-                {/* Регистрация «почта → код» не заводит пароль (решение
-                    владельца 27.09.2026) — удаление всё равно обязательно
-                    (152-ФЗ), поэтому рядом всегда есть путь мимо забытого/
-                    отсутствующего пароля через код на почту. */}
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowConfirmDelete(false); setDeletePassword(''); setDeleteError('');
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            <View style={styles.confirmBtns}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => { setShowConfirmDelete(false); setDeletePassword(''); setDeleteError(''); }}
-              >
-                <Text style={styles.cancelText}>Отмена</Text>
-              </TouchableOpacity>
-              {currentUser?.hasPassword === false ? (
-                <TouchableOpacity
-                  style={styles.setPasswordBtn}
-                  onPress={() => {
-                    setShowConfirmDelete(false);
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
-                  }}
-                >
-                  <Text style={styles.setPasswordText}>Задать пароль</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.logoutConfirmBtn}
-                  onPress={handleDeleteAccount}
-                  disabled={deletingAccount}
-                >
-                  <Text style={styles.logoutConfirmText}>
-                    {deletingAccount ? 'Удаляю…' : 'Удалить'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        </View>
-      ) : null}
+      <DeleteAccountSheet
+        visible={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        onDeleted={async () => {
+          setShowConfirmDelete(false);
+          await logout();
+          showToast('Аккаунт удалён', 'success');
+        }}
+      />
 
       {/* Confirm logout */}
       {showConfirmLogout ? (
@@ -1686,7 +1582,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }} edges={['top', 'left', 'right']}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ fontSize: rf(40), marginBottom: 12 }}>😕</Text>
+        <Ionicons name="alert-circle-outline" size={rf(40)} color={Colors.textMuted} style={{ marginBottom: 12 }} />
         <Text style={{ fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary, textAlign: 'center', marginBottom: 8 }}>
           Не удалось загрузить профиль
         </Text>

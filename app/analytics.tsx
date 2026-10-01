@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Dimensions,
@@ -439,7 +440,7 @@ function KpiCard({
 function SectionTitle({ title, icon }: { title: string; icon: string }) {
   return (
     <View style={s.sectionHeader}>
-      <Text style={s.sectionIcon}>{icon}</Text>
+      {icon ? <Text style={s.sectionIcon}>{icon}</Text> : null}
       <Text style={s.sectionTitle}>{title}</Text>
     </View>
   );
@@ -552,7 +553,7 @@ export default function AnalyticsScreen() {
           <View style={{ width: BACK_BUTTON_SIZE }} />
         </View>
         <View style={s.center}>
-          <Text style={{ fontSize: rf(48) }}>🔒</Text>
+          <Ionicons name="lock-closed-outline" size={rf(44)} color={Colors.textMuted} />
           <Text style={s.accessDenied}>Доступ запрещён</Text>
         </View>
       </SafeAreaView>
@@ -641,7 +642,7 @@ export default function AnalyticsScreen() {
       <View style={s.header}>
         <BackButton />
         <View style={s.headerCenter}>
-          <Text style={s.headerTitle}>📊 Аналитика</Text>
+          <Text style={s.headerTitle}>Аналитика</Text>
           {lastUpdated ? (
             <Text style={s.headerSub}>обновлено в {lastUpdated}</Text>
           ) : null}
@@ -659,7 +660,7 @@ export default function AnalyticsScreen() {
       >
 
         {/* ── KPI: пользователи ── */}
-        <SectionTitle title="Пользователи" icon="👥" />
+        <SectionTitle title="Пользователи" icon="" />
         <View style={s.kpiRow}>
           <KpiCard
             label="Всего пользователей"
@@ -673,7 +674,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── Активация и удержание ── */}
-        <SectionTitle title="Активация и удержание" icon="🔁" />
+        <SectionTitle title="Активация и удержание" icon="" />
         <View style={s.kpiRow}>
           <KpiCard
             label="Вернулись хоть раз"
@@ -751,7 +752,7 @@ export default function AnalyticsScreen() {
         </ChartCard>
 
         {/* ── KPI: вакансии и матчи ── */}
-        <SectionTitle title="Вакансии и подборки" icon="💼" />
+        <SectionTitle title="Вакансии и подборки" icon="" />
         <View style={s.kpiRow}>
           <KpiCard
             label="Врем. вакансий"
@@ -787,7 +788,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── рост пользователей ── */}
-        <SectionTitle title="Рост пользователей (30 дней)" icon="📈" />
+        <SectionTitle title="Рост пользователей (30 дней)" icon="" />
         <View style={s.chartsRow}>
           <ChartCard title="Новые пользователи по дням" half>
             <LineChart
@@ -825,7 +826,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── совпадения ── */}
-        <SectionTitle title="Активность совпадений (30 дней)" icon="🤝" />
+        <SectionTitle title="Активность совпадений (30 дней)" icon="" />
         <View style={s.chartsRow}>
           <ChartCard title="Совпадения по дням" half>
             <LineChart
@@ -866,7 +867,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── топ метро ── */}
-        <SectionTitle title="Топ станций метро" icon="🚇" />
+        <SectionTitle title="Топ станций метро" icon="" />
         <View style={s.fullCard}>
           {data.metroTop.length > 0 ? (
             data.metroTop.map((m, i) => (
@@ -884,7 +885,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── рейтинги + заявки ── */}
-        <SectionTitle title="Оценки и заявки" icon="⭐" />
+        <SectionTitle title="Оценки и заявки" icon="" />
         <View style={s.chartsRow}>
           <ChartCard title="Распределение оценок" half>
             {data.ratingDist.some(d => d.count > 0) ? (
@@ -928,7 +929,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── mini bar: last 30 days matches ── */}
-        <SectionTitle title="Динамика совпадений (бар)" icon="📊" />
+        <SectionTitle title="Динамика совпадений (бар)" icon="" />
         <View style={s.fullCard}>
           <MiniBarChart
             data={data.matchGrowthDays.map(d => d.count)}

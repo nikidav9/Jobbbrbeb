@@ -246,7 +246,7 @@ export default function NotificationPermissionSheet() {
                 <Text style={st.pushApp}>JobToo</Text>
                 <Text style={st.pushNow}>сейчас</Text>
               </View>
-              <Text style={st.pushTitle}>Мэтч! Вас хотят взять 🎉</Text>
+              <Text style={st.pushTitle}>Мэтч! Вас хотят взять </Text>
               <Text style={st.pushBody} numberOfLines={1}>Frontend-разработчик, от 250 000 ₽</Text>
             </View>
           </View>

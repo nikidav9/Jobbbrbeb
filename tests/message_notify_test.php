@@ -67,12 +67,12 @@ check('notify_user умеет отдельный заголовок для пу�
 // Фото и голосовые лежат в той же текстовой колонке, что и обычные сообщения:
 // метка плюс ссылка. Показать её человеку нельзя.
 $p = fn_body($db, 'jt_message_preview');
-check('голосовое подписано', str_contains($p, "'🎤 Голосовое сообщение'"));
-check('фото подписано', str_contains($p, "'📷 Фото'"));
+check('голосовое подписано', str_contains($p, "'Голосовое сообщение'"));
+check('фото подписано', str_contains($p, "'Фото'"));
 check('длинный текст обрезается', str_contains($p, 'mb_substr($text, 0, 100)'));
 // Значки должны совпадать с теми, что приложение рисует в списке чатов.
 check('значки те же, что в списке чатов',
-    str_contains($preview, "'🎤 Голосовое сообщение'") && str_contains($preview, "'📷 Фото'"));
+    str_contains($preview, "'Голосовое сообщение'") && str_contains($preview, "'Фото'"));
 check('метки те же', str_contains($p, "'[voice]'") && str_contains($p, "'[img]'")
     && str_contains($preview, "IMG_PREFIX = '[img]'") && str_contains($preview, "VOICE_PREFIX = '[voice]'"));
 

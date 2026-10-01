@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -117,7 +118,7 @@ export default function CandidatesScreen() {
         const worker = getWorker(workerId);
         // О мэтче извещает СЕРВЕР при его создании (jt_notify_match): текст
         // собирает тот, кто записал событие, и только другой стороне.
-        showToast(`🎉 Мэтч с ${worker?.firstName ?? 'работником'}! Чат открыт`, 'match');
+        showToast(`Мэтч с ${worker?.firstName ?? 'работником'}! Чат открыт`, 'match');
       } else {
         showToast('Отклик одобрен. Ждём подтверждения работника.', 'success');
       }
@@ -141,7 +142,7 @@ export default function CandidatesScreen() {
         <BackButton />
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>{vacancy.title}</Text>
-          <Text style={styles.headerSub}>🚇 {vacancy.metroStation}</Text>
+          <Text style={styles.headerSub}>{vacancy.metroStation}</Text>
         </View>
       </View>
 
@@ -164,7 +165,7 @@ export default function CandidatesScreen() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={{ fontSize: rf(40) }}>{tab === 'want' ? '👀' : '🤝'}</Text>
+            <Ionicons name={tab === 'want' ? 'eye-outline' : 'people-outline'} size={rf(40)} color={Colors.textMuted} />
             <Text style={styles.emptyTitle}>{tab === 'want' ? 'Нет откликов' : 'Нет мэтчей'}</Text>
             <Text style={styles.emptySub}>{tab === 'want' ? 'Работники ещё не откликались' : 'Подтвердите кандидатов во вкладке Хотят'}</Text>
           </View>
@@ -202,11 +203,11 @@ export default function CandidatesScreen() {
                     <Text style={styles.reasons} numberOfLines={1}>{reasons.join(' · ')}</Text>
                   ) : null}
                   <Text style={styles.workerMeta}>
-                    🚇 {worker.metroStation ?? '—'}
+                    {worker.metroStation ?? '—'}
                     {worker.age ? `  ·  ${worker.age} лет` : ''}
                   </Text>
                   {(worker.avgRating ?? 0) > 0 ? (
-                    <Text style={styles.workerRating}>⭐ {(worker.avgRating ?? 0).toFixed(1)} ({worker.ratingCount} отз.)</Text>
+                    <Text style={styles.workerRating}>{(worker.avgRating ?? 0).toFixed(1)} ({worker.ratingCount} отз.)</Text>
                   ) : null}
                   {/* Поручительство. Ровно ради этой строки программа
                       приглашений и существует: денег мы за приглашение не
@@ -215,7 +216,7 @@ export default function CandidatesScreen() {
                       числом, а не «привёл N человек»: склонение при любом N
                       здесь ничего не добавляет, а сломаться может. */}
                   {(worker.referralWorked ?? 0) > 0 ? (
-                    <Text style={styles.workerVouch}>🤝 Привёл, устроились: {worker.referralWorked}</Text>
+                    <Text style={styles.workerVouch}>Привёл, устроились: {worker.referralWorked}</Text>
                   ) : null}
                 </View>
                 <Text style={styles.profileArrow}>Профиль ›</Text>
@@ -229,7 +230,7 @@ export default function CandidatesScreen() {
               <View style={styles.infoGrid}>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Специальность</Text>
-                  <View style={styles.infoChip}><Text style={styles.infoChipText}>📦 Кладовщик</Text></View>
+                  <View style={styles.infoChip}><Text style={styles.infoChipText}>Кладовщик</Text></View>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Телефон</Text>
@@ -245,7 +246,7 @@ export default function CandidatesScreen() {
                   onPress={() => router.push({ pathname: '/(tabs)/chats' })}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.chatBtnText}>💬 Открыть чат</Text>
+                  <Text style={styles.chatBtnText}>Открыть чат</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.actions}>
@@ -255,7 +256,7 @@ export default function CandidatesScreen() {
                     disabled={deciding}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.skipText}>{deciding ? 'Сохраняем…' : '👎 Пропустить'}</Text>
+                    <Text style={styles.skipText}>{deciding ? 'Сохраняем…' : 'Пропустить'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.acceptBtn, deciding && styles.actionDisabled]}
@@ -263,7 +264,7 @@ export default function CandidatesScreen() {
                     disabled={deciding}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.acceptText}>{deciding ? 'Сохраняем…' : '✅ Взять!'}</Text>
+                    <Text style={styles.acceptText}>{deciding ? 'Сохраняем…' : 'Взять!'}</Text>
                   </TouchableOpacity>
                 </View>
               )}

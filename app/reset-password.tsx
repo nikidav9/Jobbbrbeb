@@ -46,7 +46,7 @@ export default function ResetPassword() {
     try {
       const user = await dbAuthResetPassword(ticket, password);
       await signInAs(user);
-      showToast(setting ? 'Пароль задан' : 'Пароль изменён. Добро пожаловать! 👋', 'success');
+      showToast(setting ? 'Пароль задан' : 'Пароль изменён. Добро пожаловать!', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Не удалось сменить пароль';

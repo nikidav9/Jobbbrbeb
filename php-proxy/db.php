@@ -266,7 +266,7 @@ if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $auth
 // сервер не доверяет ID из тела запроса и сверяет его с подписанной сессией.
 $selfArgFns = [
     'tgPrepareLink' => 0, 'dbTouchLastSeen' => 0,
-    'dbChangePassword' => 0, 'dbDeleteAccount' => 0, 'dbSetContactPhone' => 0,
+    'dbChangePassword' => 0, 'dbDeleteAccount' => 0, 'dbDeleteAccountByCode' => 0, 'dbSetContactPhone' => 0,
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
     'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
     'dbRevokeCrossBorderConsent' => 0,
@@ -2756,8 +2756,8 @@ function jt_rows_for_vacancies(string $table, array $vacancyIds, string $cols): 
  */
 function jt_message_preview(string $text): string
 {
-    if (str_starts_with($text, '[voice]')) return '🎤 Голосовое сообщение';
-    if (str_starts_with($text, '[img]')) return '📷 Фото';
+    if (str_starts_with($text, '[voice]')) return 'Голосовое сообщение';
+    if (str_starts_with($text, '[img]')) return 'Фото';
     return mb_substr($text, 0, 100);
 }
 
@@ -4379,6 +4379,35 @@ try {
             break;
         }
 
+        // args: [uid, code] — удаление кодом из письма (цель delete). Код
+        // выпускается только на подтверждённую почту аккаунта из сессии, а
+        // uid сверяется с сессией через $selfArgFns. Пароль не нужен: у
+        // аккаунтов «почта → код» его нет вовсе.
+        case 'dbDeleteAccountByCode': {
+            $uid = (string)($args[0] ?? '');
+            $me = sb_single('jm_users', ['id' => 'eq.' . $uid], 'id,email,email_verified_at');
+            if (!$me || empty($me['email']) || empty($me['email_verified_at'])) {
+                jt_respond(['error' => 'У аккаунта нет подтверждённой почты. Удалите его по паролю'], 409); exit;
+            }
+            if (jt_try_blocked('code')) {
+                jt_respond(['error' => 'Слишком много попыток. Попробуйте через 15 минут.'], 429); exit;
+            }
+            $email = jt_email_norm((string)$me['email']);
+            $res = $email === null ? ['ok' => false, 'reason' => 'wrong_code']
+                : jt_auth_check_code($email, 'delete', (string)($args[1] ?? ''), jt_session_key());
+            if (!$res['ok']) {
+                jt_try_note('code');
+                jt_respond(['error' => jt_auth_reason_text($res['reason']), 'reason' => $res['reason'],
+                    'left' => $res['left'] ?? null], 400); exit;
+            }
+            if ((string)($res['user_id'] ?? '') !== $uid) {
+                jt_respond(['error' => 'Код выпущен для другого аккаунта'], 403); exit;
+            }
+            jt_purge_user_storage($uid);
+            $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
+            break;
+        }
+
         // ── Медиа переписки ─────────────────────────────────────────────
         //
         // Фото и голосовые из чатов уходят в закрытый бакет chat-media
@@ -4752,6 +4781,16 @@ try {
         case 'dbAuthSendCode': {
             $purpose = (string)($args[1] ?? '');
             if (!in_array($purpose, JT_AUTH_PURPOSES, true)) { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
+            // Код на удаление — только на подтверждённую почту самого аккаунта.
+            // Адрес из запроса не слушаем: иначе код ушёл бы на чужой ящик.
+            if ($purpose === 'delete') {
+                if ($authUid === null) { jt_respond(['error' => 'Authentication required'], 401); exit; }
+                $me = sb_single('jm_users', ['id' => 'eq.' . $authUid], 'email,email_verified_at');
+                if (empty($me['email']) || empty($me['email_verified_at'])) {
+                    jt_respond(['error' => 'У аккаунта нет подтверждённой почты. Удалите его по паролю'], 409); exit;
+                }
+                $args[0] = (string)$me['email'];
+            }
             $email = jt_email_norm((string)($args[0] ?? ''));
             if ($email === null) { jt_respond(['error' => 'Проверьте адрес почты'], 400); exit; }
             if (jt_try_blocked('mail')) {
@@ -4787,6 +4826,7 @@ try {
                 if (!$owner || !empty($owner['is_blocked'])) { $data = ['ok' => true]; break; }
                 $userId = (string)$owner['id'];
             }
+            if ($purpose === 'delete') $userId = (string)$authUid;
             $res = jt_auth_issue_code($email, $purpose, $userId, jt_session_key(),
                 function (string $to, string $code, string $p): ?string {
                     $err = jt_mail_code($to, $code, $p);
@@ -4814,6 +4854,9 @@ try {
             $email = jt_email_norm((string)($args[0] ?? ''));
             if ($email === null) { jt_respond(['error' => 'Проверьте адрес почты'], 400); exit; }
             if ($purpose === 'attach' && $authUid === null) { jt_respond(['error' => 'Authentication required'], 401); exit; }
+            // Код удаления предъявляется только в dbDeleteAccountByCode — сразу
+            // с удалением, без квитанции.
+            if ($purpose === 'delete') { jt_respond(['error' => 'Неизвестная цель'], 400); exit; }
             if (jt_try_blocked('code')) {
                 jt_respond(['error' => 'Слишком много попыток. Попробуйте через 15 минут.'], 429); exit;
             }

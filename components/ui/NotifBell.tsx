@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/hooks/useApp';
+import { stripEmoji } from '@/lib/stripEmoji';
 import { routeForNotification, routeByTitle } from '@/services/notificationRoute';
 import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
@@ -254,8 +255,8 @@ export function NotifBell() {
                         {!n.isRead && <View style={s.dot} />}
                       </View>
                       <View style={s.itemBody}>
-                        <Text style={[s.itemTitle, !n.isRead && s.itemTitleBold]}>{n.title}</Text>
-                        <Text style={s.itemText}>{n.body}</Text>
+                        <Text style={[s.itemTitle, !n.isRead && s.itemTitleBold]}>{stripEmoji(n.title)}</Text>
+                        <Text style={s.itemText}>{stripEmoji(n.body)}</Text>
                         <Text style={s.itemTime}>
                           {new Date(n.createdAt).toLocaleString('ru', {
                             day: '2-digit', month: '2-digit',
