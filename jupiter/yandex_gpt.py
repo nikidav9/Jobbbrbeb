@@ -172,6 +172,9 @@ class YandexGPT:
         folder = os.environ.get("YANDEX_GPT_FOLDER_ID", "").strip()
         if not key or not folder:
             return None
+        # YandexGPT Pro (решение владельца 01.10.2026: Алиса — на всех сайтах,
+        # старшая модель); YANDEX_GPT_MODEL=yandexgpt-lite вернёт младшую.
+        kw.setdefault("model", os.environ.get("YANDEX_GPT_MODEL", "").strip() or "yandexgpt")
         return cls(key, folder, **kw)
 
     def _prepare(self, text: str) -> str:
