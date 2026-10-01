@@ -63,6 +63,25 @@ class ApplyClick(unittest.TestCase):
         self.assertEqual(suggest_apply_click(FakeLLM({"label": "p1"}), outline), "p1")
 
 
+class NoClimbingUp(unittest.TestCase):
+    """Со страницы вакансии не уходить в её раздел (29 сайтов, 01.10.2026)."""
+
+    def test_ancestor_section_is_skipped_but_apply_link_kept(self):
+        from engine import ControlState  # noqa: F401 — PageState без полей
+        agent = JupiterAgent({"binom.systems"}, engine=FakeEngine(), receipts=ReceiptStore(None))
+        agent.engine.allowed_hosts = {"binom.systems"}
+        agent._root_url = "https://binom.systems/vakansii/analitik-1s/"
+        html_links = [("https://binom.systems/vakansii/", "Все вакансии"),
+                      ("https://binom.systems/vakansii/?apply=analitik-1s", "Откликнуться")]
+        agent._extract_links = lambda page: html_links
+        agent._spa_links = lambda page: []
+        agent._navigation_score = lambda url, text: 10 if "vakansii" in url else 0
+        best = agent._best_navigation(page("x"), set())
+        self.assertEqual(best[0], "https://binom.systems/vakansii/?apply=analitik-1s")
+        agent._extract_links = lambda page: html_links[:1]
+        self.assertIsNone(agent._best_navigation(page("x"), set()))
+
+
 class AgentVerdict(unittest.TestCase):
     def agent(self, judge=None):
         return JupiterAgent({"career.example.ru"}, engine=FakeEngine(), receipts=ReceiptStore(None),
