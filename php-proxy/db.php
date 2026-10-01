@@ -6483,8 +6483,11 @@ try {
             sb_delete('jm_likes', ['id' => 'eq.' . $args[0]]); break;
 
         // ── Messages ───────────────────────────────────────────────────────────
+        // Последние 1000, по-прежнему по возрастанию. Прежде отдавалась вся
+        // переписка разом — и так каждые 8 секунд, пока чат открыт.
         case 'dbGetMessages':
-            $data = sb_select('jm_messages', ['chat_id' => 'eq.' . $args[0]], '*', 'created_at.asc'); break;
+            $data = array_reverse(sb_select('jm_messages',
+                ['chat_id' => 'eq.' . $args[0], 'limit' => '1000'], '*', 'created_at.desc')); break;
 
         case 'dbInsertMessage': {
             $chatId = (string)($args[0] ?? '');
@@ -6830,9 +6833,16 @@ try {
             $rows = sb_select('jm_chats', [$field => 'eq.' . $args[0]], '*', 'created_at.desc');
             if (empty($rows)) { $data = []; break; }
             $ids = array_map(fn($r) => $r['id'], $rows);
-            $msgs = sb_select('jm_messages', ['chat_id' => 'in.(' . implode(',', $ids) . ')'], '*', 'created_at.desc');
+            // По одному последнему сообщению на чат (миграция 142). Прежде
+            // сюда тянулись все сообщения всех чатов человека. Запасной путь —
+            // на случай, если прокси выложен раньше миграции.
+            try {
+                $msgs = sb_rpc('jm_last_messages', ['p_chat_ids' => array_values($ids)]);
+            } catch (Throwable $e) {
+                $msgs = sb_select('jm_messages', ['chat_id' => 'in.(' . implode(',', $ids) . ')'], '*', 'created_at.desc');
+            }
             $last = [];
-            foreach ($msgs as $m) { if (!isset($last[$m['chat_id']])) $last[$m['chat_id']] = $m; }
+            foreach ((array)$msgs as $m) { if (!isset($last[$m['chat_id']])) $last[$m['chat_id']] = $m; }
             $data = array_map(function($r) use ($last) { $r['_last_msg'] = $last[$r['id']] ?? null; return $r; }, $rows);
             break;
         }
@@ -9022,8 +9032,10 @@ try {
             break;
         }
 
+        // Последние 200: колокольчик показывает свежие, а прежде отдавалась
+        // вся история уведомлений человека на каждом круге опроса.
         case 'dbGetNotifications':
-            $data = sb_select('jm_notifications', ['user_id' => 'eq.' . $args[0]], '*', 'created_at.desc'); break;
+            $data = sb_select('jm_notifications', ['user_id' => 'eq.' . $args[0], 'limit' => '200'], '*', 'created_at.desc'); break;
 
         // Своё и только своё. Прежде обе операции брали id уведомления и не
         // смотрели, чьё оно: чужое можно было пометить прочитанным или стереть.
