@@ -71,7 +71,11 @@ function cf_emit(array $items, ?array $step, string $sourceId, int $page, int $s
     if ($step !== null) {
         $out['next_url'] = 'https://jobtoo.ru/api/career.php?source=' . rawurlencode($sourceId)
             . (CF_ONLY_API ? '&modes=api' : '')
-            . '&page=' . $step['page'] . '&sub=' . $step['sub'];
+            . '&page=' . $step['page'] . '&sub=' . $step['sub']
+            // Внутри одного адреса: курсор сайта и отпечаток первой записи
+            // (см. cf_first_mark) — следующей порции их больше негде взять.
+            . (($step['cursor'] ?? '') !== '' ? '&cursor=' . rawurlencode($step['cursor']) : '')
+            . (($step['first'] ?? '') !== '' ? '&first=' . $step['first'] : '');
     }
     echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
@@ -89,6 +93,12 @@ $page = max(0, (int)($_GET['page'] ?? 0));
 // Порция внутри одного источника. Карьерные API отдают вакансии по частям, и
 // без этого мы брали бы только первую: у Сбера 50 из 1795.
 $sub  = max(0, (int)($_GET['sub'] ?? 0));
+// Курсор следующей порции из ответа сайта (paging cursor_next) и отпечаток
+// первой записи прошлой порции. Оба только из узкого набора символов.
+$cursor = (string)($_GET['cursor'] ?? '');
+if (!preg_match('~^[A-Za-z0-9+/=_-]{1,400}$~', $cursor)) $cursor = '';
+$prevFirst = (string)($_GET['first'] ?? '');
+if (!preg_match('~^[0-9a-f]{16}$~', $prevFirst)) $prevFirst = '';
 
 $source = sb_single('jm_ext_sources', ['id' => 'eq.' . $sourceId], 'id,connector_kind,connector_config,enabled');
 if (!$source || (string)($source['connector_kind'] ?? '') !== 'career') {
@@ -165,8 +175,14 @@ $skipUnit = function (string $reason) use ($sourceId, $page, $sub, $skipped, $to
 
 // Поход за порцией и её разбор — тот же код, которым разведка на сервере
 // заранее проверяет endpoint, прежде чем его включить: см. career_unit.php.
-$fetched = cf_fetch_unit($unit, $sub);
+$fetched = cf_fetch_unit($unit, $sub, $cursor);
 if ($fetched['error'] !== null) $skipUnit($fetched['error']);
+// Порция начинается с той же записи, что и прошлая, — листание сломано (так
+// 01.10.2026 сломался курсор Яндекса). Адрес — как недоступный: обход не
+// гасит вакансии этого работодателя по «не увидели».
+if ($sub > 0 && $prevFirst !== '' && ($fetched['first'] ?? '') === $prevFirst) {
+    $skipUnit('порция повторяет предыдущую — листание сайта сломано');
+}
 $items = $fetched['items'];
 $more = $fetched['more'];
 // Сайт ответил, но настоящих вакансий почти нет, а мусор есть (или нет
@@ -182,5 +198,9 @@ if ($sub === 0 && cf_quality_rejects((int)($fetched['raw'] ?? count($items)), co
 }
 
 // Сначала дочитываем порции текущего источника, потом переходим к следующему.
-cf_emit($items, cf_next_step($page, $sub, $total, $more, false), $sourceId, $page, $sub,
-    $skipped, null, $ownHosts);
+$step = cf_next_step($page, $sub, $total, $more, false);
+if ($step !== null && $step['page'] === $page) {
+    $step['cursor'] = (string)($fetched['cursor'] ?? '');
+    $step['first'] = (string)($fetched['first'] ?? '');
+}
+cf_emit($items, $step, $sourceId, $page, $sub, $skipped, null, $ownHosts);

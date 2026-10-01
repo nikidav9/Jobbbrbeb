@@ -132,13 +132,14 @@ function cf_retryable_edge_fetch(array $fetch): bool
  * error — единственный сигнал "юнит не годен"; причина в нём — ровно то, что
  * career.php раньше отдавал через cf_skipUnit.
  */
-function cf_fetch_unit(array $unit, int $sub): array
+function cf_fetch_unit(array $unit, int $sub, string $cursor = ''): array
 {
     $fail = fn(string $reason) => ['items' => [], 'more' => false, 'error' => $reason];
 
     // Адрес порции строим до похода, но проверяем заново: подставляются только
     // числа в параметры, и всё же идти мы должны ровно по проверенному адресу.
-    $pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub);
+    $pageUrl = $unit['kind'] === 'html' ? $unit['url'] : cf_page_url($unit['url'], $unit['paging'], $sub, $cursor);
+    if ($pageUrl === '') return $fail('нет курсора следующей порции');
     if (!ing_safe_https_url($pageUrl)) return $fail('адрес порции не проходит проверку');
     // Сохраняем общий предварительный guard: он является контрактом с ingest и
     // старым security regression. Ниже для фактического похода адреса разделяются
@@ -199,6 +200,7 @@ function cf_fetch_unit(array $unit, int $sub): array
     } elseif ($unit['kind'] === 'html_links') {
         $items = cf_html_links($body, $pageUrl, $unit['map'], time(), $raw);
         $more = cf_has_next_sub($raw, $unit['paging'], $sub);
+        $first = cf_first_mark(array_column($items, 'url'));
     } elseif ($unit['kind'] === 'json') {
         $data = json_decode($body, true);
         if (!is_array($data)) return $fail('источник ответил не JSON');
@@ -207,6 +209,11 @@ function cf_fetch_unit(array $unit, int $sub): array
         $rawRows = cf_dig($data, (string)($unit['map']['list'] ?? ''));
         $raw = is_array($rawRows) ? count($rawRows) : count($items);
         $more = cf_has_next_sub($raw, $unit['paging'], $sub);
+        $first = cf_first_mark(is_array($rawRows) ? $rawRows : []);
+        if ((string)($unit['paging']['type'] ?? '') === 'cursor_next') {
+            $nextCursor = cf_next_cursor($data, $unit['paging']);
+            $more = $more && $nextCursor !== '' && $nextCursor !== $cursor;
+        }
     } else {
         $items = cf_items($body, $pageUrl, time());
         $more = false;
@@ -218,5 +225,6 @@ function cf_fetch_unit(array $unit, int $sub): array
     // выдаче выше — страницы листаются по тому, что прислал сайт.
     $q = cf_quality_filter($items);
     return ['items' => $q['kept'], 'more' => $more, 'error' => null,
-        'raw' => count($items), 'rejected' => $q['rejected']];
+        'raw' => count($items), 'rejected' => $q['rejected'],
+        'cursor' => $nextCursor ?? '', 'first' => $first ?? ''];
 }
