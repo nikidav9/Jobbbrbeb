@@ -1455,6 +1455,18 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
 `jupiterGetCandidateProfile(uid, applicationId).answers`. Проверка —
 `tests/jupiter_questions_test.php`.
 
+Подсказки телефонному автопилоту (миграция 141, 01.10.2026, решение владельца:
+«непонятно, что заполнять, — сигнал серверу, разбираемся»): автопилот
+(`services/jupiterAutopilot.ts`) не узнал обязательное поле — шлёт
+`jt-autopilot-hints` с подписями полей (без значений); экран `app/jupiter-fill.tsx`
+зовёт `jupiterFieldHints(host, fields)`; сервер (`php-proxy/jupiter_field_hints.php`)
+берёт ответ из `jm_jupiter_field_hints` по сайту, незнакомое спрашивает у YandexGPT
+(те же правила вычёркивания, что `jupiter/yandex_gpt.py`; ответ — только ключ
+`JupiterFillProfile` или null; лимит `gpt` на адрес) и запоминает. Есть ключ —
+автопилот проходит анкету ещё раз, значение подставляет телефон из профиля. `key = null`
+в таблице — список полей «разобраться»; `pending` — модель не ответила, спросим снова.
+Сторож — `tests/jupiter_field_hints_test.php`.
+
 Понятный вопрос (миграция 138, 01.10.2026): воркер отдаёт вопросы YandexGPT
 (`browser_planner.explain_questions`, агент — `question_explainer`) — модель видит
 подпись поля, соседние поля формы и заголовок страницы, не данные кандидата — и

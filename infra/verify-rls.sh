@@ -47,7 +47,9 @@ with required(table_name) as (
     -- Вопросы работодателей и банк ответов человека (миграция 137).
     ('jm_jupiter_questions'), ('jm_jupiter_answers'),
     -- Служебные: учёт миграций, открытия приложения, опросы (миграция 139).
-    ('jm_migrations'), ('jm_app_opens'), ('jm_survey_responses'), ('jm_survey_sends')
+    ('jm_migrations'), ('jm_app_opens'), ('jm_survey_responses'), ('jm_survey_sends'),
+    -- Подсказки полей анкеты для телефонного автопилота (миграция 141).
+    ('jm_jupiter_field_hints')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r

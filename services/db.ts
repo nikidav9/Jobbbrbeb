@@ -1917,6 +1917,18 @@ export type JupiterFillProfile = {
   resume_name?: string | null;
 };
 
+/**
+ * Подсказки полей анкеты от сервера (YandexGPT). Уходят только подписи полей —
+ * без значений и данных человека; приходит ключ профиля или null.
+ */
+export async function jupiterFieldHints(
+  host: string,
+  fields: { sig: string; label: string; name: string; type: string; options: string[] }[],
+): Promise<Record<string, string | null>> {
+  const d = await proxy<{ hints?: Record<string, string | null> }>('jupiterFieldHints', [host, fields]);
+  return d?.hints ?? {};
+}
+
 export async function jupiterFillProfile(userId: string): Promise<JupiterFillProfile> {
   return proxy('jupiterFillProfile', [userId]);
 }

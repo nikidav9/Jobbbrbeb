@@ -63,6 +63,18 @@ export type AutopilotOptions = {
   resumeName?: string | null;
   /** Предел всего прогона, мс. */
   deadlineMs?: number;
+  /**
+   * Подсказки сервера (YandexGPT, jupiterFieldHints): подпись поля → ключ
+   * профиля. Только ключ — значение подставляется из профиля здесь же.
+   */
+  hints?: Record<string, string | null>;
+  /** Спросить сервер о незнакомых обязательных полях (один раз на анкету). */
+  askHints?: boolean;
+};
+
+/** Незнакомое обязательное поле: только подписи, без значений. */
+export type AutopilotUnknownField = {
+  sig: string; label: string; name: string; type: string; options: string[];
 };
 
 /**
@@ -158,6 +170,8 @@ export function buildAutopilotScript(
     delegated: !!options.delegated,
     resume: options.resumeBase64 ? { b64: options.resumeBase64, name: options.resumeName || 'resume.pdf' } : null,
     deadline: options.deadlineMs ?? 60000,
+    hints: options.hints ?? {},
+    askHints: !!options.askHints,
   });
   return `(function() {
   if (window.__jtAutopilot) return true;
@@ -244,9 +258,40 @@ ${AUTOPILOT_CORE}
     if (!v.trim()) return true;
     return v.indexOf('_') !== -1 && v.replace(/^\\s*\\+?7/, '').replace(/\\D/g, '').length === 0;
   }
+  // Подпись поля для сервера: как в jupiterFieldHints — текст подписи и имя
+  // поля, без значения. По ней сервер узнаёт поле этого сайта в следующий раз.
+  function sigOf(el) {
+    var label = jtFlat(textOf(el)).slice(0, 100);
+    var nm = String(el.name || el.id || '').toLowerCase().replace(/[^0-9a-z_]/g, '').slice(0, 38);
+    return label + '|' + nm;
+  }
+
+  // Обязательные пустые поля, которые не узнали ни правила, ни подсказки:
+  // их подписи уходят серверу (без значений и без данных человека).
+  function unknownRequired(form) {
+    var els = controls(form), out = [];
+    for (var i = 0; i < els.length && out.length < 12; i++) {
+      var el = els[i], tag = el.tagName, type = (el.getAttribute('type') || 'text').toLowerCase();
+      if (tag === 'INPUT' && ['hidden', 'password', 'file', 'checkbox', 'radio', 'submit', 'button', 'image', 'reset'].indexOf(type) !== -1) continue;
+      if (!(el.required || el.getAttribute('aria-required') === 'true') || el.disabled || !visible(el) || !isEmpty(el)) continue;
+      if (/captcha|капч/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + textOf(el))) continue;
+      if (keyOf(el)) continue;
+      var sig = sigOf(el);
+      if (sig === '|') continue;
+      var opts = [];
+      if (tag === 'SELECT') for (var o = 0; o < el.options.length && opts.length < 15; o++) opts.push((el.options[o].textContent || '').trim().slice(0, 60));
+      out.push({ sig: sig, label: textOf(el).slice(0, 150), name: String(el.name || el.id || '').slice(0, 40), type: tag === 'SELECT' ? 'select' : tag === 'TEXTAREA' ? 'textarea' : type, options: opts });
+    }
+    return out;
+  }
+
   function keyOf(el) {
     var type = el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : (el.getAttribute('type') || 'text').toLowerCase();
-    return jtKeyForField(textOf(el).toLowerCase(), type, el.name || el.id || '');
+    var k = jtKeyForField(textOf(el).toLowerCase(), type, el.name || el.id || '');
+    if (k) return k;
+    // Подсказка сервера (YandexGPT): только ключ профиля из разрешённых.
+    var h = CFG.hints && CFG.hints[sigOf(el)];
+    return h && Object.prototype.hasOwnProperty.call(CFG.profile, h) ? h : null;
   }
 
   // Анкета — форма (или блок), где не меньше двух полей кандидата.
@@ -500,7 +545,15 @@ ${AUTOPILOT_CORE}
     later(function() {
       result.filled += fill(form);
       var missing = requiredMissing(form);
-      if (missing.length) { result.missing = result.missing.concat(missing); finish('needs_user', 'missing'); return; }
+      if (missing.length) {
+        // Незнакомые поля — сигнал серверу: приложение спросит подсказку и,
+        // если она есть, запустит автопилот ещё раз (уже без вопроса).
+        if (CFG.askHints) {
+          var unknown = unknownRequired(form);
+          if (unknown.length) post({ type: 'jt-autopilot-hints', fields: unknown });
+        }
+        result.missing = result.missing.concat(missing); finish('needs_user', 'missing'); return;
+      }
       result.captcha = captchaState(form);
       if (result.captcha === 'visible') { finish('needs_user', 'captcha'); return; }
       var btn = submitButton(form);
