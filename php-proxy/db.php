@@ -250,7 +250,10 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
-    'dbResponsivenessMap', 'dbGetExtVacancies', 'dbGetExtFeed', 'dbCountExtFeed',
+    // dbResponsivenessMap и dbGetExtVacancies отсюда убраны 01.10.2026: без
+    // входа они отдавали всю переписку (для подсчёта) и весь каталог с полными
+    // описаниями — десятки мегабайт на запрос. Приложение их не зовёт.
+    'dbGetExtFeed', 'dbCountExtFeed',
     // Регистрация и восстановление пароля по коду из письма — до входа.
     // dbAuthSendCode/dbAuthVerifyCode с целью attach сами требуют сессию.
     'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',
@@ -405,17 +408,31 @@ if ($fn === 'dbCreateChat') {
 }
 
 // Создавать и менять объявления может только указанный в них работодатель.
-if (in_array($fn, ['dbUpsertVacancy', 'dbUpsertPermVacancy'], true)) {
-    $owner = (string)(($args[0]['employer_id'] ?? ''));
-    if ($owner === '' || $owner !== $authUid) {
+//
+// Сверять одно присланное employer_id мало: запись идёт upsert'ом по id, и
+// работодатель, подставив чужой id и своё employer_id, перезаписывал чужую
+// вакансию и забирал её себе. Поэтому для существующей строки сверяем ещё и
+// владельца в базе.
+function jt_require_vacancy_row_owner(string $table, array $row, string $authUid): void {
+    if ((string)($row['employer_id'] ?? '') === '' || (string)$row['employer_id'] !== $authUid) {
+        jt_respond(['error' => 'Vacancy owner required'], 403); exit;
+    }
+    $id = (string)($row['id'] ?? '');
+    if ($id === '') return;
+    $cur = sb_single($table, ['id' => 'eq.' . $id], 'employer_id');
+    if ($cur && (string)($cur['employer_id'] ?? '') !== $authUid) {
         jt_respond(['error' => 'Vacancy owner required'], 403); exit;
     }
 }
+if ($fn === 'dbUpsertVacancy') {
+    jt_require_vacancy_row_owner('jm_vacancies', (array)($args[0] ?? []), $authUid);
+}
+if ($fn === 'dbUpsertPermVacancy') {
+    jt_require_vacancy_row_owner('jm_perm_vacancies', (array)($args[0] ?? []), $authUid);
+}
 if ($fn === 'dbUpsertVacancyBatch') {
     foreach ((array)($args[0] ?? []) as $row) {
-        if ((string)($row['employer_id'] ?? '') !== $authUid) {
-            jt_respond(['error' => 'Vacancy owner required'], 403); exit;
-        }
+        jt_require_vacancy_row_owner('jm_vacancies', (array)$row, $authUid);
     }
 }
 $ownedVacancyFns = [

@@ -47,12 +47,25 @@ if ($TOKEN === '') {
     echo json_encode(['error' => 'TG_BOT_TOKEN не задан на сервере'], JSON_UNESCAPED_UNICODE); exit;
 }
 
-// Куда писать и куда слать вебхук — только отсюда, не из запроса. Пропуск к
-// этому файлу тот же, что у db.php, а он лежит в открытом коде: с адресом
-// из параметра ботом можно было бы писать в любой чат и увести вебхук.
-$GROUP = (int)(getenv('TG_GROUP_CHAT_ID') ?: -1001709270025);
-$WORK_GROUP = (int)(getenv('TG_WORK_GROUP_CHAT_ID') ?: -1004358116342);
+// Куда слать вебхук — только отсюда, не из запроса. Пропуск к этому файлу
+// тот же, что у db.php, а он лежит в каждой сборке приложения: с адресом из
+// параметра вебхук можно было бы увести.
+//
+// Публикации в группы (postToGroup, postToWorkGroup, createCompetitorsTopic)
+// отсюда убраны 01.10.2026: пропуск достаётся из приложения кем угодно, и с
+// ним в публичную группу вакансий уходил произвольный HTML. Объявления о
+// вакансиях сервер собирает сам (jt_group_html), панель шлёт своим путём.
 $HOOK  = getenv('TG_HOOK_URL') ?: 'https://tg.jobtoo.ru/api/tg.php';
+
+/**
+ * Ключ вебхука выводится из токена бота, а не берётся APP_SECRET: тот лежит
+ * в сборке приложения, и с ним Телеграм-обновления к tg.php подделывались —
+ * например, нажатие работодателя «Одобрить» под чужим telegram_id. Тот же
+ * вывод — в tg.php и infra/webhook-watch.sh.
+ */
+function jt_tg_webhook_secret(string $token): string {
+    return hash_hmac('sha256', 'jt-tg-webhook', $token);
+}
 
 function tg(string $method, array $payload = [], string $verb = 'POST'): array {
     global $TOKEN;
@@ -104,57 +117,12 @@ $body   = json_decode((string)file_get_contents('php://input'), true);
 $action = is_array($body) ? (string)($body['action'] ?? '') : '';
 
 switch ($action) {
-    // Объявление для всех разом — одним постом в группу, а не письмами каждому.
-    case 'postToGroup': {
-        $text = trim((string)($body['text'] ?? ''));
-        if ($text === '') { echo json_encode(['error' => 'Пустой текст'], JSON_UNESCAPED_UNICODE); exit; }
-        $res = tg('sendMessage', [
-            'chat_id' => $GROUP,
-            'text' => $text,
-            'parse_mode' => 'HTML',
-            'disable_web_page_preview' => true,
-        ]);
-        echo json_encode(['chat' => $GROUP, 'telegram' => $res], JSON_UNESCAPED_UNICODE);
-        break;
-    }
-
-    // Внутренняя рабочая группа отделена от группы вакансий.
-    // Сюда не попадают объявления, дайджесты и сообщения соискателям.
-    case 'postToWorkGroup': {
-        $text = trim((string)($body['text'] ?? ''));
-        if ($text === '') { echo json_encode(['error' => 'Пустой текст'], JSON_UNESCAPED_UNICODE); exit; }
-        $payload = [
-            'chat_id' => $WORK_GROUP,
-            'text' => $text,
-            'parse_mode' => 'HTML',
-            'disable_web_page_preview' => true,
-        ];
-        $threadId = (int)($body['message_thread_id'] ?? 0);
-        if ($threadId > 0) $payload['message_thread_id'] = $threadId;
-        $res = tg('sendMessage', $payload);
-        echo json_encode(['chat' => $WORK_GROUP, 'telegram' => $res], JSON_UNESCAPED_UNICODE);
-        break;
-    }
-
-    // Разовая настройка рабочей форум-группы. Название зафиксировано здесь,
-    // чтобы публичный пропуск приложения нельзя было использовать для
-    // бесконтрольного создания произвольных тем.
-    case 'createCompetitorsTopic': {
-        $res = tg('createForumTopic', [
-            'chat_id' => $WORK_GROUP,
-            'name' => 'Конкуренты',
-            'icon_color' => 7322096,
-        ]);
-        echo json_encode(['chat' => $WORK_GROUP, 'telegram' => $res], JSON_UNESCAPED_UNICODE);
-        break;
-    }
-
     // Нужно после смены токена: вебхук привязан к боту, но переставить его
     // может только тот, у кого есть действующий токен.
     case 'setWebhook': {
         $res = tg('setWebhook', [
             'url' => $HOOK,
-            'secret_token' => jt_secret('APP_SECRET'),
+            'secret_token' => jt_tg_webhook_secret($TOKEN),
             'allowed_updates' => ['message', 'callback_query'],
         ]);
         echo json_encode(['target' => $HOOK, 'telegram' => $res], JSON_UNESCAPED_UNICODE);

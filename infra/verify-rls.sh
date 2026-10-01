@@ -45,7 +45,9 @@ with required(table_name) as (
     -- Капча человеку для Jupiter (миграция 135).
     ('jm_jupiter_captcha'),
     -- Вопросы работодателей и банк ответов человека (миграция 137).
-    ('jm_jupiter_questions'), ('jm_jupiter_answers')
+    ('jm_jupiter_questions'), ('jm_jupiter_answers'),
+    -- Служебные: учёт миграций, открытия приложения, опросы (миграция 139).
+    ('jm_migrations'), ('jm_app_opens'), ('jm_survey_responses'), ('jm_survey_sends')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r
