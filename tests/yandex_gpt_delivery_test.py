@@ -32,7 +32,8 @@ check("bootstrap меняет файл атомарно", "mv -f /etc/jobtoo/yan
 check("bootstrap перезапускает оба воркера",
       "for svc in jt-jupiter.service jt-jupiter-browser.service" in boot)
 check("из ключа и каталога вычищается всё, кроме печатаемого ASCII",
-      'preg_replace("/[^!-~]/", "", (string)$v)' in boot and '$c($s["api_key"] ?? "")' in boot)
+      'preg_replace("/[^!-~]/", "", strtr((string)$v, $lat))' in boot and '$c($s["api_key"] ?? "")' in boot)
+check("русская «А» в ключе становится латинской, а не пропадает", '"А"=>"A"' in boot)
 check("пустые секреты ничего не стирают", 'if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then' in boot)
 check("воркеры читают тот же файл", "EnvironmentFile=-$YGPT_ENV" in boot)
 
