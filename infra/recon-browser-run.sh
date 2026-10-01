@@ -69,13 +69,30 @@ if [ -s "$OUT" ]; then cp -f "$OUT" "$WORK/browser.json"; fi
 rm -f "$WORK"/browser.json.*.tmp
 chown -R nobody:nogroup "$WORK"
 
-say "начинаю: срок $MAX_MINUTES мин"
+# YandexGPT (01.10.2026): ночью разведка проходит сайты с теми же подсказками
+# модели, что и боевой Юпитер, — кнопка отклика, поля, вопросы. Ключ читает
+# root из /etc/jobtoo/yandex-gpt.env и передаёт обходу только переменными:
+# сам файл nobody не откроет. Модель видит подписи страниц, кандидат
+# синтетический. Сайтов с моделью — не больше LLM_SITES (каждый вызов платный).
+LLM_SITES=${LLM_SITES:-60}
+YGPT_ENV=/etc/jobtoo/yandex-gpt.env
+YGPT_VARS=()
+if [ -r "$YGPT_ENV" ]; then
+  while IFS='=' read -r k v; do
+    case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac
+  done < "$YGPT_ENV"
+fi
+[ "${#YGPT_VARS[@]}" -eq 2 ] || LLM_SITES=0
+
+say "начинаю: срок $MAX_MINUTES мин, YandexGPT на $LLM_SITES разделах"
 # Внешний предел — срок обхода плюс запас на начатый сайт.
 if (cd "$REPO/jupiter" && timeout "$((MAX_MINUTES + 15))m" \
       setpriv --reuid=nobody --regid=nogroup --clear-groups \
       env HOME="$WORK" PYTHONDONTWRITEBYTECODE=1 PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+      "${YGPT_VARS[@]}" \
       "$VENV/bin/python" recon_browser.py --from-http "$WORK/http.json" \
-        --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES") >>"$LOG" 2>&1
+        --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES" \
+        --llm-sites "$LLM_SITES") >>"$LOG" 2>&1
 then
   [ -s "$WORK/browser.json" ] || { say "пустой результат"; exit 1; }
   # Атомарно: копия рядом с итогом, затем rename в пределах одного каталога.

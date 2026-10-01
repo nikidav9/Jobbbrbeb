@@ -1393,7 +1393,13 @@ worker, изоляция контекстов; `browser_planner.py` + `yandex_gp
 ATS-платформ, куда вакансия может увести анкету; `browser_limits.py` — пределы ресурсов (сколько браузеров
 по памяти, сторож задачи, добивание своих зависших Chromium; замер —
 `scripts/browser-bench.py`); `recon_browser.py` — разведка
-браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало».
+браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало». С 01.10.2026
+YandexGPT помогает и боевому движку, и разведке: кнопку «Откликнуться», которую
+правила не нашли, выбирает модель (`apply_advisor` → `browser_planner.suggest_apply_click`,
+действие `llm_apply_click`); разведка на `--llm-sites` разделах (сервер — 60,
+сперва работодатели с вакансиями в ленте) идёт с теми же подсказками полей и
+вопросов, что воркер, и пишет `llm_used`/`llm_actions`. Ключ обходу передаёт
+`infra/recon-browser-run.sh` переменными окружения, не в журнал.
 Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
 `run_worker.py`; служба `jt-jupiter-browser` (`infra/jupiter-browser-run.sh`
 setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
