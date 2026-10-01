@@ -66,6 +66,11 @@ fi
 
 mkdir -p "$WORK"
 cp -f "$HTTP_RECON" "$WORK/http.json"
+# Вакансии ленты выгружает HTTP-разведка (infra/recon-run.sh); копия — чтобы
+# обход от nobody её прочитал.
+FEED=/var/lib/jobtoo/feed-vacancies.json
+rm -f "$WORK/feed.json"
+[ -s "$FEED" ] && cp -f "$FEED" "$WORK/feed.json"
 # Вчерашний итог — чтобы сперва подтвердить прежние dry_run_ok.
 if [ -s "$OUT" ]; then cp -f "$OUT" "$WORK/browser.json"; fi
 rm -f "$WORK"/browser.json.*.tmp
@@ -91,7 +96,7 @@ say "начинаю: срок $MAX_MINUTES мин, YandexGPT на $LLM_SITES р�
 if (cd "$REPO/jupiter" && timeout "$((MAX_MINUTES + 15))m" \
       setpriv --reuid=nobody --regid=nogroup --clear-groups \
       env HOME="$WORK" PYTHONDONTWRITEBYTECODE=1 PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
-      "${YGPT_VARS[@]}" \
+      "${YGPT_VARS[@]}" JUPITER_FEED_VACANCIES="$WORK/feed.json" \
       "$VENV/bin/python" recon_browser.py --from-http "$WORK/http.json" \
         --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES" \
         --llm-sites "$LLM_SITES" --rehearse --site-deadline 200) >>"$LOG" 2>&1

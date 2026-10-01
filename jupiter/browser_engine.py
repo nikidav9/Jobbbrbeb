@@ -704,7 +704,12 @@ class JupiterBrowserEngine:
                 return page
             self._dismiss_overlays()  # баннер мог появиться с задержкой и перехватить клик
             target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
-            label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            try:
+                label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            except PlaywrightError:
+                # Подпись — только для журнала; кнопка могла перерисоваться
+                # (Rubius, 01.10.2026: весь обход сайта падал на этом).
+                label = ""
             try:
                 target.click(timeout=5000)
             except PlaywrightError:

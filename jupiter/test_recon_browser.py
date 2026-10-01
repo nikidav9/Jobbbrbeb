@@ -258,6 +258,25 @@ class PureTest(unittest.TestCase):
             item = recon_browser._run_child("x", "u", 5, 10, None)
         self.assertEqual(item.klass, "dry_run_ok")
 
+    def test_recon_starts_from_the_vacancy_people_swipe(self):
+        from recon import feed_vacancy_for, load_feed_vacancies
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "feed.json"
+            path.write_text(json.dumps({"Газпром": ["https://www.gazprom.ru/careers/v/1"],
+                                        "Яндекс": ["https://yandex.ru/jobs/vacancies/42"],
+                                        "Чужая": ["javascript:alert(1)"]}, ensure_ascii=False), encoding="utf-8")
+            feed = load_feed_vacancies(str(path))
+        self.assertEqual(feed_vacancy_for("Газпром", "https://www.gazprom.ru/", feed),
+                         "https://www.gazprom.ru/careers/v/1")
+        # Раздел каталога «Яндекс · /jobs» — та же компания.
+        self.assertEqual(feed_vacancy_for("Яндекс · /jobs", "https://yandex.ru/jobs", feed),
+                         "https://yandex.ru/jobs/vacancies/42")
+        # Имя не совпало — по хосту сайта.
+        self.assertEqual(feed_vacancy_for("Yandex", "https://yandex.ru/jobs", feed),
+                         "https://yandex.ru/jobs/vacancies/42")
+        self.assertIsNone(feed_vacancy_for("Чужая", "https://other.example", feed))
+        self.assertEqual(load_feed_vacancies("/nonexistent.json"), {})
+
     def test_time_budget_stops_new_sites(self):
         # Срок уже вышел — ни один процесс не запускается, итог пуст.
         self.assertEqual(run_recon([("x", "https://x.ru")], max_seconds=0), [])

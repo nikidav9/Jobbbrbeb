@@ -45,7 +45,8 @@ from typing import Any
 
 from recon import (
     CLASSES, ENDPOINTS_JSON, TEST_CANDIDATE, ReconResult, NetOptions,
-    _aggregator_links, _form_snapshot, block_kind, classify, endpoint_for,
+    _aggregator_links, _form_snapshot, block_kind, classify, endpoint_for, feed_vacancy_for,
+    load_feed_vacancies,
     load_sites, make_engine, vacancy_from_endpoint,
 )
 from site_compat import normalize_host, profile_for_url
@@ -87,7 +88,9 @@ def llm_sites(sites: list[tuple[str, str]], endpoints: list[dict], limit: int) -
     """Адреса разделов, где ночью работает YandexGPT: сперва с источником вакансий."""
     if limit <= 0:
         return set()
-    ranked = sorted(sites, key=lambda s: 0 if endpoint_for(s[0], s[1], endpoints) else 1)
+    feed = load_feed_vacancies()
+    ranked = sorted(sites, key=lambda s: 0 if (feed_vacancy_for(s[0], s[1], feed)
+                                               or endpoint_for(s[0], s[1], endpoints)) else 1)
     return {url for _, url in ranked[:limit]}
 
 
@@ -143,7 +146,10 @@ def recon_site_browser(
         has_overrides=bool(profile and profile.field_overrides),
     )
     endpoint = endpoint_for(name, url, endpoints)
-    if endpoint:  # адрес живой вакансии — HTTP-разведкой, это всего лишь GET
+    feed_vacancy = feed_vacancy_for(name, url, load_feed_vacancies())
+    if feed_vacancy:  # та же вакансия, что у людей в ленте
+        result.start_url = feed_vacancy
+    elif endpoint:  # адрес живой вакансии — HTTP-разведкой, это всего лишь GET
         probe = make_engine({normalize_host(url)}, NetOptions(min(timeout, 15.0)))
         try:
             result.start_url = vacancy_from_endpoint(probe, endpoint) or url

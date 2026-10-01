@@ -317,6 +317,8 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("SUNLIGHT", ("job.sunlight.net",), ("rabota.sunlight.net",)),
     SiteProfile("Тануки", ("job.tanuki.ru",), ("tanukifamily.ru", "www.tanukifamily.ru")),
     SiteProfile("Спортс", ("sports.ru", "careers.sports.ru"), ("forms.tildaapi.com",)),
+    # Разведка 01.10: вакансия на c.tutu.ru, анкета — на своём же hr.tutu.ru.
+    SiteProfile("Туту", ("c.tutu.ru",), ("hr.tutu.ru",)),
     # Поле userFull по подписи — «Фамилия», а имя поля обещает ФИО (30.09).
     SiteProfile(
         "Читай-город",

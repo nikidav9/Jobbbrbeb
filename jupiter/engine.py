@@ -920,13 +920,33 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
         )
 
 
+def iri_to_uri(url: str) -> str:
+    """Путь и параметры с кириллицей — в ASCII для urllib.
+
+    ЮMoney, 01.10.2026: перенаправление на путь с русскими буквами роняло
+    запрос UnicodeEncodeError. Уже закодированное (%XX) не трогаем. Домен
+    (.рф) не меняем: его переводит сам urllib, а белый список хостов
+    сверяется с тем же написанием.
+    """
+    if url.isascii():
+        return url
+    parts = urllib.parse.urlsplit(url)
+    keep = "/%:@!$&'()*+,;=-._~"
+    return urllib.parse.urlunsplit((
+        parts.scheme, parts.netloc,
+        urllib.parse.quote(parts.path, safe=keep),
+        urllib.parse.quote(parts.query, safe=keep + "?"),
+        urllib.parse.quote(parts.fragment, safe=keep + "?"),
+    ))
+
+
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, validator: Callable[[str], None]):
         super().__init__()
         self.validator = validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        resolved = urllib.parse.urljoin(req.full_url, newurl)
+        resolved = iri_to_uri(urllib.parse.urljoin(req.full_url, newurl))
         self.validator(resolved)
         return super().redirect_request(req, fp, code, msg, headers, resolved)
 
@@ -1053,7 +1073,7 @@ class JupiterWebEngine:
             raise EngineSecurityError("External scripts must be same-origin")
 
         req = urllib.request.Request(
-            target,
+            iri_to_uri(target),
             method="GET",
             headers={
                 "User-Agent": self.user_agent,
@@ -1187,7 +1207,7 @@ class JupiterWebEngine:
         }
         request_headers.update(headers or {})
         req = urllib.request.Request(
-            url,
+            iri_to_uri(url),
             data=data,
             method=method,
             headers=request_headers,
@@ -1255,7 +1275,7 @@ class JupiterWebEngine:
             request_headers["Content-Type"] = "application/json"
         request_headers.update(headers or {})
         req = urllib.request.Request(
-            url, data=data, method=method, headers=request_headers,
+            iri_to_uri(url), data=data, method=method, headers=request_headers,
         )
         try:
             with self.opener.open(req, timeout=self.timeout) as response:
@@ -1467,7 +1487,7 @@ class JupiterWebEngine:
             )
 
         req = urllib.request.Request(
-            target,
+            iri_to_uri(target),
             data=data,
             method=method,
             headers=headers,
