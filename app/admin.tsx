@@ -14,6 +14,7 @@ import { confirmAsync } from '@/services/confirm';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 const sb = () => getSupabaseClient();
 
 const ADMIN_PHONE = '89933431523';
@@ -117,7 +118,7 @@ export default function AdminScreen() {
         </View>
         <View style={styles.center}>
           <Ionicons name="lock-closed-outline" size={rf(44)} color={Colors.textMuted} />
-          <Text style={[styles.emptyTxt, { marginTop: 12, fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary }]}>
+          <Text style={[styles.emptyTxt, { marginTop: 12, fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary }]}>
             Доступ запрещён
           </Text>
           <Text style={[styles.emptyTxt, { marginTop: 6 }]}>
@@ -249,7 +250,7 @@ export default function AdminScreen() {
     <View style={styles.card}>
       <View style={styles.cardRow}>
         <Ionicons name="flash-outline" size={rf(16)} color={Colors.textSecondary} />
-        <Text style={[styles.cardVal, { flex: 1, fontWeight: '700' }]}>{item.title}</Text>
+        <Text style={[styles.cardVal, { flex: 1, fontFamily: JT_FONT.bold }]}>{item.title}</Text>
         <View style={[styles.statusDot, { backgroundColor: item.status === 'open' ? Colors.green : Colors.textMuted }]} />
         <Text style={[styles.cardVal, { color: item.status === 'open' ? Colors.green : Colors.textMuted, fontSize: rf(12) }]}>
           {item.status === 'open' ? 'Открыта' : 'Закрыта'}
@@ -278,7 +279,7 @@ export default function AdminScreen() {
     <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: '#7C3AED' }]}>
       <View style={styles.cardRow}>
         <Ionicons name="briefcase-outline" size={rf(16)} color={Colors.textSecondary} />
-        <Text style={[styles.cardVal, { flex: 1, fontWeight: '700' }]}>{item.title}</Text>
+        <Text style={[styles.cardVal, { flex: 1, fontFamily: JT_FONT.bold }]}>{item.title}</Text>
         <View style={[styles.statusDot, { backgroundColor: item.status === 'open' ? Colors.green : Colors.textMuted }]} />
         <Text style={[styles.cardVal, { color: item.status === 'open' ? Colors.green : Colors.textMuted, fontSize: rf(12) }]}>
           {item.status === 'open' ? 'Открыта' : 'Закрыта'}
@@ -290,7 +291,7 @@ export default function AdminScreen() {
       </View>
       <View style={styles.cardRow}>
         <Text style={styles.cardLabel}>Зарплата:</Text>
-        <Text style={[styles.cardVal, { color: Colors.green, fontWeight: '700' }]}>
+        <Text style={[styles.cardVal, { color: Colors.green, fontFamily: JT_FONT.bold }]}>
           {item.salary.toLocaleString('ru-RU')} ₽/мес
         </Text>
       </View>
@@ -336,7 +337,7 @@ export default function AdminScreen() {
             onPress={() => router.push('/analytics' as any)}
             style={{ backgroundColor: Colors.primaryLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}
           >
-            <Text style={{ fontSize: rf(13), color: Colors.primary, fontWeight: '600' }}>Аналитика</Text>
+            <Text style={{ fontSize: rf(13), color: Colors.primary, fontFamily: JT_FONT.semi }}>Аналитика</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={loadAll} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={styles.refreshBtn}>↻</Text>
@@ -440,8 +441,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(14),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  headerTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
-  refreshBtn: { fontSize: rf(22), color: Colors.primary, fontWeight: '700', width: rs(40), textAlign: 'right' },
+  headerTitle: { fontSize: rf(16), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  refreshBtn: { fontSize: rf(22), color: Colors.primary, fontFamily: JT_FONT.bold, width: rs(40), textAlign: 'right' },
 
   statsBar: {
     flexDirection: 'row', paddingHorizontal: rs(16), paddingVertical: rs(12),
@@ -449,8 +450,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
   statItem: { flex: 1, alignItems: 'center', gap: rs(2) },
-  statNum: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
-  statLbl: { fontSize: rf(10), color: Colors.textMuted, textTransform: 'uppercase', fontWeight: '600' },
+  statNum: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  statLbl: { fontSize: rf(10), color: Colors.textMuted, textTransform: 'uppercase', fontFamily: JT_FONT.semi },
 
   tabBar: { borderBottomWidth: 1, borderBottomColor: Colors.divider, flexGrow: 0 },
   tabBarContent: { paddingHorizontal: rs(12), paddingVertical: rs(8), gap: rs(8) },
@@ -459,22 +460,22 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   tabBtnActive: { backgroundColor: Colors.primary },
-  tabBtnTxt: { fontSize: rf(13), color: Colors.textMuted, fontWeight: '500' },
-  tabBtnTxtActive: { color: '#fff', fontWeight: '700' },
+  tabBtnTxt: { fontSize: rf(13), color: Colors.textMuted, fontFamily: JT_FONT.medium },
+  tabBtnTxtActive: { color: '#fff', fontFamily: JT_FONT.bold },
 
   list: { padding: rs(16), gap: rs(10), paddingBottom: rs(100) },
   card: { backgroundColor: Colors.bg, borderRadius: Radius.lg, padding: rs(14), ...Shadow.card, gap: rs(8) },
   blockedCard: { borderWidth: 1.5, borderColor: Colors.red, opacity: 0.8 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), flexWrap: 'wrap' },
-  cardLabel: { fontSize: rf(12), color: Colors.textMuted, fontWeight: '500', minWidth: rs(60) },
-  cardVal: { fontSize: rf(13), color: Colors.textPrimary, fontWeight: '500' },
-  cardDate: { fontSize: rf(11), color: Colors.textMuted },
+  cardLabel: { fontSize: rf(12), color: Colors.textMuted, fontFamily: JT_FONT.medium, minWidth: rs(60) },
+  cardVal: { fontSize: rf(13), color: Colors.textPrimary, fontFamily: JT_FONT.medium },
+  cardDate: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted },
   statusDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },
 
   blockedBadge: { backgroundColor: '#FEE2E2', borderRadius: rs(100), paddingHorizontal: rs(8), paddingVertical: rs(2) },
-  blockedBadgeTxt: { fontSize: rf(11), color: Colors.red, fontWeight: '600' },
+  blockedBadgeTxt: { fontSize: rf(11), color: Colors.red, fontFamily: JT_FONT.semi },
   roleBadge: { borderRadius: rs(100), paddingHorizontal: rs(8), paddingVertical: rs(2) },
-  roleBadgeTxt: { fontSize: rf(11), fontWeight: '600' },
+  roleBadgeTxt: { fontSize: rf(11), fontFamily: JT_FONT.semi },
 
   btnRow: { flexDirection: 'row', gap: rs(8), marginTop: rs(4) },
   actionBtn: {
@@ -484,9 +485,9 @@ const styles = StyleSheet.create({
   blockBtn: { borderColor: Colors.red },
   unblockBtn: { borderColor: Colors.green },
   deleteBtn: { borderColor: Colors.red },
-  actionBtnTxt: { fontSize: rf(13), fontWeight: '600' },
+  actionBtnTxt: { fontSize: rf(13), fontFamily: JT_FONT.semi },
 
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: rs(32) },
-  emptyTxt: { fontSize: rf(15), color: Colors.textMuted, textAlign: 'center' },
+  emptyTxt: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textMuted, textAlign: 'center' },
 });

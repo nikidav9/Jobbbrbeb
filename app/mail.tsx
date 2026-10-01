@@ -8,6 +8,7 @@ import { Colors } from '@/constants/theme';
 import { mailDate, mailPreview, senderName, splitMailLinks } from '@/services/mailLinks';
 import { BackButton } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 export default function JupiterMail() {
   const { currentUser, showToast } = useApp();
   const [address, setAddress] = useState<string | null>(null);
@@ -123,12 +124,12 @@ export default function JupiterMail() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#fff' },
   header: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heading: { fontSize: 19, fontWeight: '700', color: Colors.textPrimary },
+  heading: { fontSize: 19, fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   refreshBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   banner: { marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#FFF3EC', borderRadius: 14 },
-  label: { color: '#6B7280', fontSize: 12, marginBottom: 2 },
-  address: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
-  notice: { marginTop: 6, color: '#8B4A2B', fontSize: 13, lineHeight: 18 },
+  label: { color: '#6B7280', fontFamily: JT_FONT.medium, fontSize: 12, marginBottom: 2 },
+  address: { fontSize: 15, fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  notice: { marginTop: 6, color: '#8B4A2B', fontFamily: JT_FONT.medium, fontSize: 13, lineHeight: 18 },
   loading: { marginTop: 40 },
   error: { margin: 16, color: '#B91C1C' },
   empty: { textAlign: 'center', marginTop: 50, color: '#6B7280' },
@@ -138,15 +139,15 @@ const styles = StyleSheet.create({
   dotUnread: { backgroundColor: Colors.primary },
   rowMain: { flex: 1, minWidth: 0 },
   rowHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 },
-  rowSender: { flex: 1, fontSize: 15, color: Colors.textPrimary },
-  unread: { fontWeight: '700' },
-  date: { fontSize: 12, color: '#6B7280' },
-  rowSubject: { fontSize: 14, color: Colors.textPrimary, marginTop: 2 },
-  preview: { fontSize: 13, color: '#6B7280', marginTop: 1 },
+  rowSender: { flex: 1, fontFamily: JT_FONT.medium, fontSize: 15, color: Colors.textPrimary },
+  unread: { fontFamily: JT_FONT.bold },
+  date: { fontFamily: JT_FONT.medium, fontSize: 12, color: '#6B7280' },
+  rowSubject: { fontFamily: JT_FONT.medium, fontSize: 14, color: Colors.textPrimary, marginTop: 2 },
+  preview: { fontFamily: JT_FONT.medium, fontSize: 13, color: '#6B7280', marginTop: 1 },
   content: { padding: 16 },
-  subject: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginBottom: 12 },
-  sender: { fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  meta: { fontSize: 13, color: '#6B7280', marginBottom: 2 },
-  body: { fontSize: 16, lineHeight: 23, color: Colors.textPrimary, marginTop: 16 },
+  subject: { fontSize: 20, fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginBottom: 12 },
+  sender: { fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginBottom: 4 },
+  meta: { fontFamily: JT_FONT.medium, fontSize: 13, color: '#6B7280', marginBottom: 2 },
+  body: { fontFamily: JT_FONT.medium, fontSize: 16, lineHeight: 23, color: Colors.textPrimary, marginTop: 16 },
   link: { color: Colors.primary, textDecorationLine: 'underline' },
 });

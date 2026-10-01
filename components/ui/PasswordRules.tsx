@@ -6,6 +6,7 @@ import { PASSWORD_RULES } from '@/constants/passwordRules';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Список требований к паролю под полем ввода.
  *
@@ -35,6 +36,6 @@ export function PasswordRules({ password }: { password: string }) {
 const s = StyleSheet.create({
   wrap: { gap: rs(6), marginTop: rs(-4) },
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(7) },
-  label: { fontSize: rf(13), color: Colors.textMuted },
-  labelDone: { color: Colors.green, fontWeight: '600' },
+  label: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted },
+  labelDone: { color: Colors.green, fontFamily: JT_FONT.semi },
 });

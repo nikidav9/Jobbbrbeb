@@ -20,6 +20,7 @@ import { EmailCodeStep } from '@/components/feature/EmailCodeStep';
 import { dbAuthAttachEmail } from '@/services/db';
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 const SNOOZE_AFTER_MS = 60_000;
 
 export default function EmailRequiredGate() {
@@ -116,11 +117,11 @@ const styles = StyleSheet.create({
     width: rs(48), height: rs(48), borderRadius: rs(24),
     backgroundColor: '#FFF1E8', alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
-  lead: { fontSize: rf(14), color: Colors.textSecondary, lineHeight: rf(20) },
-  error: { fontSize: rf(13), color: Colors.red },
+  title: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  lead: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textSecondary, lineHeight: rf(20) },
+  error: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.red },
   later: { alignItems: 'center', paddingVertical: rs(6) },
-  laterText: { fontSize: rf(14), color: Colors.primary, fontWeight: '600' },
+  laterText: { fontSize: rf(14), color: Colors.primary, fontFamily: JT_FONT.semi },
   logout: { alignItems: 'center', paddingVertical: rs(4) },
-  logoutText: { fontSize: rf(13), color: Colors.textMuted },
+  logoutText: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted },
 });

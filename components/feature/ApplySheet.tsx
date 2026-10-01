@@ -8,6 +8,7 @@ import { Colors, Shadow } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Окно отклика: человек пишет пару слов о себе, и это уходит первым
  * сообщением от его имени.
@@ -145,20 +146,20 @@ const s = StyleSheet.create({
     borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20),
     paddingHorizontal: rs(20),
   },
-  title: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary, paddingBottom: rs(10) },
+  title: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary, paddingBottom: rs(10) },
 
   info: {
     backgroundColor: Colors.surface, borderRadius: rs(12), padding: rs(12),
     borderWidth: 1, borderColor: Colors.divider, gap: rs(2),
   },
-  infoHead: { fontSize: rf(14), fontWeight: '700', color: Colors.textPrimary },
-  infoLine: { fontSize: rf(13), color: Colors.textSecondary },
+  infoHead: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  infoLine: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary },
 
-  label: { fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(14), marginBottom: rs(6) },
+  label: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(14), marginBottom: rs(6) },
   input: {
     borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: rs(12),
     paddingHorizontal: rs(12), paddingVertical: rs(10),
-    fontSize: rf(15), color: Colors.textPrimary,
+    fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary,
     minHeight: rs(84), textAlignVertical: 'top',
   },
 
@@ -168,7 +169,7 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(12), paddingVertical: rs(7),
     borderWidth: 1, borderColor: Colors.primaryBorder,
   },
-  chipTxt: { fontSize: rf(12), fontWeight: '600', color: Colors.primary },
+  chipTxt: { fontSize: rf(12), fontFamily: JT_FONT.semi, color: Colors.primary },
 
   send: {
     backgroundColor: Colors.primary, borderRadius: rs(14),
@@ -176,10 +177,10 @@ const s = StyleSheet.create({
     height: rs(50), marginTop: rs(4), ...Shadow.card,
   },
   sendOff: { backgroundColor: Colors.textMuted, shadowOpacity: 0 },
-  sendTxt: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
+  sendTxt: { color: '#fff', fontSize: rf(16), fontFamily: JT_FONT.bold },
 
   hint: {
-    fontSize: rf(12), color: Colors.textMuted, textAlign: 'center',
+    fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, textAlign: 'center',
     marginTop: rs(8), lineHeight: rf(16),
   },
 });

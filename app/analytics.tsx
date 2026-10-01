@@ -19,6 +19,7 @@ import { useApp } from '@/hooks/useApp';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 const ADMIN_PHONE = '89933431523';
 const sb = () => getSupabaseClient();
 
@@ -698,7 +699,7 @@ export default function AnalyticsScreen() {
               color={r.role === 'worker' ? Colors.primary : Colors.blue}
             />
           ))}
-          <Text style={{ color: Colors.textSecondary, fontSize: rf(11.5), marginTop: 10, lineHeight: rf(16) }}>
+          <Text style={{ color: Colors.textSecondary, fontFamily: JT_FONT.medium, fontSize: rf(11.5), marginTop: 10, lineHeight: rf(16) }}>
             Приложение — это два разных продукта под одним входом. Если у одной роли «вернулись» заметно ниже — первый экран именно этой роли не удерживает.
           </Text>
         </ChartCard>
@@ -712,7 +713,7 @@ export default function AnalyticsScreen() {
               color={Colors.primary}
             />
           ))}
-          <Text style={{ color: Colors.textSecondary, fontSize: rf(11.5), marginTop: 10, lineHeight: rf(16) }}>
+          <Text style={{ color: Colors.textSecondary, fontFamily: JT_FONT.medium, fontSize: rf(11.5), marginTop: 10, lineHeight: rf(16) }}>
             «Вернулись» = последний визит хотя бы через сутки после регистрации.
           </Text>
         </ChartCard>
@@ -737,7 +738,7 @@ export default function AnalyticsScreen() {
                   color={Colors.red}
                 />
               </View>
-              <Text style={{ color: Colors.textSecondary, fontSize: rf(12), fontWeight: '600', marginTop: 6, marginBottom: 2 }}>
+              <Text style={{ color: Colors.textSecondary, fontSize: rf(12), fontFamily: JT_FONT.semi, marginTop: 6, marginBottom: 2 }}>
                 В какой роли открывали (по устройствам)
               </Text>
               <HorizBarRow label="Соискатель" value={data.openByRole.worker} max={data.openDevices} color={Colors.primary} />
@@ -745,7 +746,7 @@ export default function AnalyticsScreen() {
               <HorizBarRow label="Ещё не выбрал (гость)" value={data.openByRole.guest} max={data.openDevices} color={Colors.textSecondary} />
             </>
           ) : (
-            <Text style={{ color: Colors.textSecondary, fontSize: rf(12.5), lineHeight: rf(18) }}>
+            <Text style={{ color: Colors.textSecondary, fontFamily: JT_FONT.medium, fontSize: rf(12.5), lineHeight: rf(18) }}>
               Событие «открыл приложение» только что включено. Цифры появятся, как только пользователи начнут открывать приложение: тогда станут видны установил → открыл → зарегистрировался и в какой роли люди заходят.
             </Text>
           )}
@@ -964,20 +965,20 @@ const s = StyleSheet.create({
     ...Shadow.card,
   },
   headerCenter: { alignItems: 'center' },
-  headerTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
-  headerSub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
+  headerTitle: { fontSize: rf(17), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  headerSub: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted, marginTop: rs(1) },
   refreshBtn: {
     backgroundColor: Colors.primaryLight,
     paddingHorizontal: rs(12),
     paddingVertical: rs(6),
     borderRadius: Radius.full,
   },
-  refreshTxt: { fontSize: rf(13), color: Colors.primary, fontWeight: '600' },
+  refreshTxt: { fontSize: rf(13), color: Colors.primary, fontFamily: JT_FONT.semi },
 
   // states
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: rs(12) },
-  accessDenied: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary, marginTop: rs(12) },
-  loadingTxt: { fontSize: rf(14), color: Colors.textSecondary, marginTop: rs(8) },
+  accessDenied: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginTop: rs(12) },
+  loadingTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textSecondary, marginTop: rs(8) },
 
   // sections
   sectionHeader: {
@@ -987,8 +988,8 @@ const s = StyleSheet.create({
     marginTop: rs(20),
     marginBottom: rs(10),
   },
-  sectionIcon: { fontSize: rf(16) },
-  sectionTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
+  sectionIcon: { fontFamily: JT_FONT.medium, fontSize: rf(16) },
+  sectionTitle: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
 
   // kpi cards
   kpiRow: {
@@ -1006,9 +1007,9 @@ const s = StyleSheet.create({
     ...Shadow.card,
   },
   kpiWide: { minWidth: rs(200) },
-  kpiValue: { fontSize: rf(28), fontWeight: '800', lineHeight: rf(32) },
-  kpiLabel: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(4), fontWeight: '500' },
-  kpiSub: { fontSize: rf(11), color: Colors.textMuted, marginTop: rs(2) },
+  kpiValue: { fontSize: rf(28), fontFamily: JT_FONT.heavy, lineHeight: rf(32) },
+  kpiLabel: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(4), fontFamily: JT_FONT.medium },
+  kpiSub: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted, marginTop: rs(2) },
 
   // chart cards
   chartsRow: {
@@ -1026,7 +1027,7 @@ const s = StyleSheet.create({
     minWidth: rs(280),
   },
   chartHalf: { flex: 1 },
-  chartTitle: { fontSize: rf(13), fontWeight: '700', color: Colors.textPrimary, marginBottom: rs(12) },
+  chartTitle: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginBottom: rs(12) },
 
   fullCard: {
     backgroundColor: Colors.card,
@@ -1038,11 +1039,11 @@ const s = StyleSheet.create({
 
   // empty
   emptyChart: { height: rs(120), alignItems: 'center', justifyContent: 'center' },
-  emptyChartTxt: { color: Colors.textMuted, fontSize: rf(13) },
+  emptyChartTxt: { color: Colors.textMuted, fontFamily: JT_FONT.medium, fontSize: rf(13) },
 
   // horiz bar
   horizRow: { flexDirection: 'row', alignItems: 'center', marginBottom: rs(10), gap: rs(8) },
-  horizLabel: { width: rs(100), fontSize: rf(12), color: Colors.textSecondary, fontWeight: '500' },
+  horizLabel: { width: rs(100), fontSize: rf(12), color: Colors.textSecondary, fontFamily: JT_FONT.medium },
   horizTrack: {
     flex: 1,
     height: rs(8),
@@ -1051,7 +1052,7 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   horizFill: { height: rs(8), borderRadius: rs(4) },
-  horizCount: { width: rs(32), fontSize: rf(12), color: Colors.textPrimary, fontWeight: '600', textAlign: 'right' },
+  horizCount: { width: rs(32), fontSize: rf(12), color: Colors.textPrimary, fontFamily: JT_FONT.semi, textAlign: 'right' },
 
   // mini bar
   miniBarWrap: {
@@ -1062,5 +1063,5 @@ const s = StyleSheet.create({
   },
   miniBarCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
   miniBarFill: { width: '100%', borderRadius: rs(2), minHeight: rs(4) },
-  miniBarLabel: { fontSize: rf(9), color: Colors.textMuted, marginTop: rs(3) },
+  miniBarLabel: { fontFamily: JT_FONT.medium, fontSize: rf(9), color: Colors.textMuted, marginTop: rs(3) },
 });

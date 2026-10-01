@@ -4,6 +4,7 @@ import { Colors, Radius } from '@/constants/theme';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 interface Props extends TextInputProps {
   label?: string;
   error?: string;
@@ -39,7 +40,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: rf(13),
     color: Colors.textMuted,
-    fontWeight: '500',
+    fontFamily: JT_FONT.medium,
     marginBottom: rs(8),
   },
   input: {
@@ -49,11 +50,11 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     paddingHorizontal: rs(16),
     paddingVertical: rs(14),
-    fontSize: rf(16),
+    fontFamily: JT_FONT.medium, fontSize: rf(16),
     color: Colors.textPrimary,
     width: '100%',
   },
   focused: { borderColor: Colors.primary },
   errBorder: { borderColor: Colors.red },
-  err: { color: Colors.red, fontSize: rf(12), marginTop: rs(4) },
+  err: { color: Colors.red, fontFamily: JT_FONT.medium, fontSize: rf(12), marginTop: rs(4) },
 });

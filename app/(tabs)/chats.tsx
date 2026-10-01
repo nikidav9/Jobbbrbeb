@@ -31,6 +31,7 @@ import { messagePreview } from '@/services/messagePreview';
 import { BackButton } from '@/components/ui/BackButton';
 import { confirmAsync } from '@/services/confirm';
 
+import { JT_FONT } from '@/constants/jt';
 const DELETE_THRESHOLD = -80;
 // Ширина кнопки удаления: на столько строка и отъезжает. Раньше число -120
 // стояло в коде жеста, а ширина — в стилях, и совпадали они на честном слове.
@@ -55,7 +56,7 @@ function UserAvatar({ name, avatarUrl, size = 44 }: { name: string; avatarUrl?: 
   }
   return (
     <View style={[{ width: size, height: size, borderRadius, alignItems: 'center', justifyContent: 'center', backgroundColor: color }]}>
-      <Text style={{ color: '#fff', fontSize: size * 0.36, fontWeight: '700' }}>{initials}</Text>
+      <Text style={{ color: '#fff', fontSize: size * 0.36, fontFamily: JT_FONT.bold }}>{initials}</Text>
     </View>
   );
 }
@@ -423,14 +424,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(12),
   },
   backSpacer: { width: rs(44), height: rs(44) },
-  topTitle: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
+  topTitle: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
   searchWrap: { paddingHorizontal: rs(16), paddingBottom: rs(12) },
   searchInner: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8),
     backgroundColor: '#ECEDEF', borderRadius: rs(100),
     paddingHorizontal: rs(14), height: rs(46),
   },
-  searchInput: { flex: 1, minWidth: 0, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
+  searchInput: { flex: 1, minWidth: 0, fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textPrimary, padding: 0 },
   chipsRow: { flexDirection: 'row', gap: rs(8), paddingHorizontal: rs(16), paddingBottom: rs(12) },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6),
@@ -438,13 +439,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: 'transparent',
   },
   chipOn: { borderColor: Colors.textPrimary },
-  chipTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
-  chipTxtOn: { color: Colors.textPrimary, fontWeight: '700' },
-  chipCount: { fontSize: rf(13), fontWeight: '700', color: Colors.textMuted },
+  chipTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
+  chipTxtOn: { color: Colors.textPrimary, fontFamily: JT_FONT.bold },
+  chipCount: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: Colors.textMuted },
   list: { paddingHorizontal: rs(16) },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: rs(80) },
-  emptyTitle: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary, marginTop: rs(12) },
-  emptySubtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(6) },
+  emptyTitle: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary, marginTop: rs(12) },
+  emptySubtitle: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, marginTop: rs(6) },
 
   swipeRow: { position: 'relative', overflow: 'hidden', backgroundColor: Colors.bg },
   swipeRowFirst: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg },
@@ -455,12 +456,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.red,
   },
   deleteBtn: { alignItems: 'center', gap: rs(4) },
-  deleteBtnLabel: { fontSize: rf(11), color: '#fff', fontWeight: '600' },
+  deleteBtnLabel: { fontSize: rf(11), color: '#fff', fontFamily: JT_FONT.semi },
 
   chatRowAnimated: { backgroundColor: Colors.bg },
   chatRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(12), paddingHorizontal: rs(14), paddingVertical: rs(14), borderBottomWidth: 1, borderBottomColor: Colors.divider },
   avatar: { width: rs(44), height: rs(44), borderRadius: rs(22), alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
+  avatarText: { color: '#fff', fontSize: rf(16), fontFamily: JT_FONT.bold },
   unreadDot: {
     position: 'absolute', bottom: -rs(2), right: -rs(2),
     width: rs(18), height: rs(18), borderRadius: rs(9),
@@ -469,17 +470,17 @@ const styles = StyleSheet.create({
   },
   chatInfo: { flex: 1 },
   chatTop: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
-  chatName: { fontSize: rf(15), fontWeight: '800', color: Colors.textPrimary, flexShrink: 1 },
+  chatName: { fontSize: rf(15), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, flexShrink: 1 },
   newPill: { backgroundColor: Colors.primaryLight, borderRadius: rs(6), paddingHorizontal: rs(6), paddingVertical: rs(2), flexShrink: 0 },
-  newPillTxt: { fontSize: rf(9.5), fontWeight: '800', color: Colors.primary, letterSpacing: 0.3 },
-  chatTime: { fontSize: rf(12), color: Colors.textMuted, marginLeft: 'auto', flexShrink: 0 },
-  chatVac: { fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
-  chatLast: { fontSize: rf(13.5), color: Colors.textSecondary, flexShrink: 1, lineHeight: rf(19) },
-  chatLastUnread: { color: Colors.textPrimary, fontWeight: '600' },
+  newPillTxt: { fontSize: rf(9.5), fontFamily: JT_FONT.heavy, color: Colors.primary, letterSpacing: 0.3 },
+  chatTime: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted, marginLeft: 'auto', flexShrink: 0 },
+  chatVac: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
+  chatLast: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: Colors.textSecondary, flexShrink: 1, lineHeight: rf(19) },
+  chatLastUnread: { color: Colors.textPrimary, fontFamily: JT_FONT.semi },
   chatRowLast: { borderBottomWidth: 0 },
   // flexShrink на тексте, а не на строке: длинное сообщение должно
   // обрезаться само, не выдавливая галочки за край.
   lastRow: { flexDirection: 'row', alignItems: 'center', gap: rs(3), marginTop: rs(2) },
   badge: { backgroundColor: Colors.primary, borderRadius: rs(100), minWidth: rs(20), height: rs(20), alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(4) },
-  badgeText: { color: '#fff', fontSize: rf(10), fontWeight: '700' },
+  badgeText: { color: '#fff', fontSize: rf(10), fontFamily: JT_FONT.bold },
 });

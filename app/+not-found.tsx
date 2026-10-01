@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 export default function NotFoundScreen() {
   return (
     <SafeAreaView style={styles.container}>
@@ -49,13 +50,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: rf(28),
-    fontWeight: 'bold',
+    fontFamily: JT_FONT.bold,
     color: '#FFFFFF',
     marginTop: rs(20),
     marginBottom: rs(10),
   },
   message: {
-    fontSize: rf(16),
+    fontFamily: JT_FONT.medium, fontSize: rf(16),
     color: '#CCCCCC',
     textAlign: 'center',
     marginBottom: rs(40),
@@ -69,7 +70,7 @@ const styles = StyleSheet.create({
   },
   homeButtonText: {
     color: '#0a0a0a',
-    fontWeight: 'bold',
+    fontFamily: JT_FONT.bold,
     fontSize: rf(16),
   },
 });

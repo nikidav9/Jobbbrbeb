@@ -8,6 +8,7 @@ import { useApp } from '@/hooks/useApp';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 // Single confetti dot — hooks called at component level (Rules of Hooks compliant)
 function ConfettiDot({ index, color, offsetX, size }: { index: number; color: string; offsetX: number; size: number }) {
   const anim = useRef(new Animated.Value(0)).current;
@@ -127,25 +128,25 @@ export default function MatchScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   body: { padding: rs(24), alignItems: 'center', gap: rs(16), paddingBottom: rs(40) },
-  emoji: { fontSize: rf(64), marginTop: rs(20) },
-  matchTitle: { fontSize: rf(38), fontWeight: '800', color: Colors.primary, letterSpacing: -1 },
-  matchSubtitle: { fontSize: rf(15), color: '#374151', textAlign: 'center', lineHeight: rf(22) },
+  emoji: { fontFamily: JT_FONT.medium, fontSize: rf(64), marginTop: rs(20) },
+  matchTitle: { fontSize: rf(38), fontFamily: JT_FONT.heavy, color: Colors.primary, letterSpacing: -1 },
+  matchSubtitle: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: '#374151', textAlign: 'center', lineHeight: rf(22) },
   infoCard: { width: '100%', backgroundColor: Colors.bg, borderRadius: Radius.lg, padding: rs(16), ...Shadow.card, gap: rs(8) },
-  cardBadge: { fontSize: rf(10), fontWeight: '700', color: Colors.primary, letterSpacing: 1, textTransform: 'uppercase' },
+  cardBadge: { fontSize: rf(10), fontFamily: JT_FONT.bold, color: Colors.primary, letterSpacing: 1, textTransform: 'uppercase' },
   divider: { height: 1, backgroundColor: Colors.divider },
-  contactName: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
-  contactPhone: { fontSize: rf(15), fontWeight: '600', color: Colors.primary },
-  vacTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
-  vacMeta: { fontSize: rf(13), color: '#374151' },
+  contactName: { fontSize: rf(17), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  contactPhone: { fontSize: rf(15), fontFamily: JT_FONT.semi, color: Colors.primary },
+  vacTitle: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  vacMeta: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: '#374151' },
   primaryBtn: {
     width: '100%', backgroundColor: Colors.primary,
     borderRadius: rs(100), paddingVertical: rs(16), alignItems: 'center', marginTop: rs(8),
   },
-  primaryBtnText: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
+  primaryBtnText: { color: '#fff', fontSize: rf(16), fontFamily: JT_FONT.bold },
   secondaryBtn: {
     width: '100%', backgroundColor: Colors.bg,
     borderRadius: rs(100), borderWidth: 1.5, borderColor: Colors.inputBorder,
     paddingVertical: rs(16), alignItems: 'center',
   },
-  secondaryBtnText: { color: Colors.textPrimary, fontSize: rf(16), fontWeight: '600' },
+  secondaryBtnText: { color: Colors.textPrimary, fontSize: rf(16), fontFamily: JT_FONT.semi },
 });

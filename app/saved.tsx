@@ -18,6 +18,7 @@ import { BackButton } from '@/components/ui/BackButton';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { openExtVacancy } from '@/services/extVacancyHandoff';
 
+import { JT_FONT } from '@/constants/jt';
 // Строка избранного: своя вакансия JobToo или карьерная (закладки миграции 129).
 type SavedRow =
   | { kind: 'perm'; id: string; title: string; company: string; closed: boolean; at: string | null; v: PermVacancy }
@@ -210,11 +211,11 @@ const sv = StyleSheet.create({
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(12),
   },
   backSpacer: { width: rs(44), height: rs(44) },
-  title: { fontSize: rf(20), fontWeight: '800', color: Colors.textPrimary },
+  title: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
 
   list: { paddingHorizontal: rs(16), paddingBottom: rs(32) },
   dayHead: {
-    fontSize: rf(12), fontWeight: '700', color: Colors.textMuted,
+    fontSize: rf(12), fontFamily: JT_FONT.bold, color: Colors.textMuted,
     letterSpacing: 0.4, paddingTop: rs(14), paddingBottom: rs(8),
   },
   group: { backgroundColor: '#FFFFFF', borderRadius: Radius.lg, overflow: 'hidden', ...Shadow.card },
@@ -226,27 +227,27 @@ const sv = StyleSheet.create({
     width: rs(44), height: rs(44), borderRadius: rs(12),
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  logoTxt: { color: '#FFFFFF', fontSize: rf(15), fontWeight: '800' },
+  logoTxt: { color: '#FFFFFF', fontSize: rf(15), fontFamily: JT_FONT.heavy },
   rowBody: { flex: 1 },
-  rowTitle: { fontSize: rf(15.5), fontWeight: '700', color: Colors.textPrimary, lineHeight: rf(20) },
-  rowCompany: { fontSize: rf(13.5), color: Colors.textMuted, marginTop: rs(2) },
+  rowTitle: { fontSize: rf(15.5), fontFamily: JT_FONT.bold, color: Colors.textPrimary, lineHeight: rf(20) },
+  rowCompany: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: Colors.textMuted, marginTop: rs(2) },
   rowRight: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   pill: { borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4) },
   pillSaved: { backgroundColor: '#EEF0F4' },
   pillClosed: { backgroundColor: '#FEE2E2' },
-  pillTxt: { fontSize: rf(10), fontWeight: '800', letterSpacing: 0.3 },
+  pillTxt: { fontSize: rf(10), fontFamily: JT_FONT.heavy, letterSpacing: 0.3 },
   pillTxtSaved: { color: Colors.textSecondary },
   pillTxtClosed: { color: Colors.red },
-  rowDate: { fontSize: rf(12), color: Colors.textMuted },
+  rowDate: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted },
   unsave: { padding: rs(12), flexShrink: 0 },
 
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', gap: rs(6), marginTop: rs(10),
     backgroundColor: '#FEF3C7', borderRadius: rs(12), paddingHorizontal: rs(12), paddingVertical: rs(8),
   },
-  offlineTxt: { flex: 1, fontSize: rf(12), color: '#92400E', lineHeight: rf(16) },
+  offlineTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(12), color: '#92400E', lineHeight: rf(16) },
 
   empty: { alignItems: 'center', paddingTop: rs(80), paddingHorizontal: rs(24), gap: rs(8) },
-  emptyTitle: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary, marginTop: rs(6) },
-  emptySub: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20) },
+  emptyTitle: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, marginTop: rs(6) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20) },
 });

@@ -5,6 +5,7 @@ import { WorkType } from '@/constants/types';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 export const WORK_TYPE_META: Record<WorkType, { label: string; desc: string }> = {
   stocker:          { label: 'Кладовщик',     desc: 'Хранение, приёмка и учёт товаров на складе' },
   cook:             { label: 'Повар',          desc: 'Приготовление блюд на кухне' },
@@ -71,8 +72,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   info: { flex: 1 },
-  title: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
-  desc: { fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
+  title: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  desc: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted, marginTop: rs(2) },
   circle: {
     width: rs(24),
     height: rs(24),
@@ -84,5 +85,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   circleSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  check: { color: '#fff', fontSize: rf(13), fontWeight: '700' },
+  check: { color: '#fff', fontSize: rf(13), fontFamily: JT_FONT.bold },
 });

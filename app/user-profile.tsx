@@ -19,6 +19,7 @@ import { getSupabaseClient } from '@/template';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 function StarRow({ rating, count }: { rating: number; count: number }) {
   return (
     <View style={styles.starRow}>
@@ -36,7 +37,7 @@ function StarsMini({ rating }: { rating: number }) {
   return (
     <View style={{ flexDirection: 'row', gap: 2 }}>
       {[1, 2, 3, 4, 5].map(s => (
-        <Text key={s} style={{ fontSize: rf(13), color: rating >= s ? '#FBBF24' : '#E5E7EB' }}>★</Text>
+        <Text key={s} style={{ fontFamily: JT_FONT.medium, fontSize: rf(13), color: rating >= s ? '#FBBF24' : '#E5E7EB' }}>★</Text>
       ))}
     </View>
   );
@@ -210,7 +211,7 @@ export default function UserProfileScreen() {
                 onPress={() => setUserRetry(x => x + 1)}
                 style={{ marginTop: rs(8), backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) }}
               >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Повторить</Text>
+                <Text style={{ color: '#fff', fontFamily: JT_FONT.bold }}>Повторить</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -472,11 +473,11 @@ export default function UserProfileScreen() {
                   ) : null}
                   {statsLoadFailed ? (
                     <View style={{ marginTop: rs(10), gap: rs(6) }}>
-                      <Text style={{ color: Colors.red, fontSize: rf(13), fontWeight: '600' }}>
+                      <Text style={{ color: Colors.red, fontSize: rf(13), fontFamily: JT_FONT.semi }}>
                         Не удалось загрузить отзывчивость
                       </Text>
                       <TouchableOpacity onPress={() => setStatsRetry(x => x + 1)} activeOpacity={0.8}>
-                        <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: rf(13) }}>Повторить</Text>
+                        <Text style={{ color: Colors.primary, fontFamily: JT_FONT.bold, fontSize: rf(13) }}>Повторить</Text>
                       </TouchableOpacity>
                     </View>
                   ) : null}
@@ -509,7 +510,7 @@ export default function UserProfileScreen() {
               <Text style={styles.emptyReviewsTitle}>Не удалось загрузить отзывы</Text>
               <Text style={styles.emptyReviewsSub}>Проверьте связь — уже загруженные отзывы не удаляются.</Text>
               <TouchableOpacity onPress={() => fetchRatings(userId)} activeOpacity={0.8}>
-                <Text style={{ color: Colors.primary, fontWeight: '700', marginTop: rs(6) }}>Повторить</Text>
+                <Text style={{ color: Colors.primary, fontFamily: JT_FONT.bold, marginTop: rs(6) }}>Повторить</Text>
               </TouchableOpacity>
             </View>
           ) : ratings.length === 0 ? (
@@ -561,86 +562,86 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(12),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  backText: { fontSize: rf(15), color: Colors.textSecondary, fontWeight: '500', width: rs(70) },
-  headerTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
+  backText: { fontSize: rf(15), color: Colors.textSecondary, fontFamily: JT_FONT.medium, width: rs(70) },
+  headerTitle: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   scroll: { padding: rs(16), gap: rs(12) },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: rs(40) },
-  errorText: { fontSize: rf(16), color: Colors.textMuted },
+  errorText: { fontFamily: JT_FONT.medium, fontSize: rf(16), color: Colors.textMuted },
   topCard: {
     backgroundColor: Colors.bg, borderRadius: Radius.xl, padding: rs(24),
     alignItems: 'center', gap: rs(8), ...Shadow.card,
   },
   avatar: { width: rs(96), height: rs(96), borderRadius: rs(48) },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarInitials: { color: '#fff', fontSize: rf(34), fontWeight: '800' },
-  name: { fontSize: rf(22), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center', marginTop: rs(4) },
+  avatarInitials: { color: '#fff', fontSize: rf(34), fontFamily: JT_FONT.heavy },
+  name: { fontSize: rf(22), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center', marginTop: rs(4) },
   roleBadge: { borderRadius: rs(100), paddingHorizontal: rs(16), paddingVertical: rs(5) },
-  roleText: { fontSize: rf(13), fontWeight: '600' },
-  vouchLine: { fontSize: rf(13), color: Colors.green, fontWeight: '600', marginTop: rs(6) },
+  roleText: { fontSize: rf(13), fontFamily: JT_FONT.semi },
+  vouchLine: { fontSize: rf(13), color: Colors.green, fontFamily: JT_FONT.semi, marginTop: rs(6) },
   starRow: { flexDirection: 'row', alignItems: 'center', gap: rs(3), marginTop: rs(4) },
-  star: { fontSize: rf(20) },
+  star: { fontFamily: JT_FONT.medium, fontSize: rf(20) },
   starOn: { color: '#FBBF24' },
   starOff: { color: '#E5E7EB' },
-  ratingText: { fontSize: rf(13), color: Colors.textMuted, marginLeft: rs(6) },
+  ratingText: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted, marginLeft: rs(6) },
   // Tabs
   tabs: {
     flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: Radius.lg,
     ...Shadow.card, overflow: 'hidden',
   },
   tabItem: { flex: 1, alignItems: 'center', paddingVertical: rs(12) },
-  tabLabel: { fontSize: rf(14), fontWeight: '500', color: Colors.textMuted },
-  tabLabelActive: { fontWeight: '700', color: Colors.textPrimary },
+  tabLabel: { fontSize: rf(14), fontFamily: JT_FONT.medium, color: Colors.textMuted },
+  tabLabelActive: { fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   tabLine: { position: 'absolute', bottom: 0, left: '15%', right: '15%', height: 2, backgroundColor: Colors.primary, borderRadius: rs(1) },
   scoreWrap: { marginBottom: rs(12) },
   infoCard: {
     backgroundColor: Colors.bg, borderRadius: Radius.lg, padding: rs(16),
     gap: rs(10), ...Shadow.card,
   },
-  sectionTitle: { fontSize: rf(13), fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: rs(2) },
+  sectionTitle: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: rs(2) },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(12), paddingVertical: rs(8), borderTopWidth: 1, borderTopColor: Colors.divider },
-  infoLabel: { fontSize: rf(14), color: Colors.textMuted, flexShrink: 0 },
+  infoLabel: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, flexShrink: 0 },
   infoValue: { flex: 1, alignItems: 'flex-end' },
   phoneLink: {
-    fontSize: rf(15), fontWeight: '700', color: Colors.primary,
+    fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.primary,
     textDecorationLine: 'underline',
   },
-  valText: { fontSize: rf(14), fontWeight: '600', color: Colors.textPrimary, textAlign: 'right' },
+  valText: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textPrimary, textAlign: 'right' },
   metroVal: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
   lineDot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
-  bioText: { fontSize: rf(15), color: Colors.textPrimary, lineHeight: rf(22) },
-  resumePosition: { fontSize: rf(19), lineHeight: rf(24), fontWeight: '800', color: Colors.textPrimary },
-  resumeSalary: { fontSize: rf(15), fontWeight: '800', color: Colors.primary },
+  bioText: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary, lineHeight: rf(22) },
+  resumePosition: { fontSize: rf(19), lineHeight: rf(24), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  resumeSalary: { fontSize: rf(15), fontFamily: JT_FONT.heavy, color: Colors.primary },
   resumeMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
-  resumeMeta: { fontSize: rf(11.5), color: Colors.textSecondary, backgroundColor: Colors.surface, paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
+  resumeMeta: { fontFamily: JT_FONT.medium, fontSize: rf(11.5), color: Colors.textSecondary, backgroundColor: Colors.surface, paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
   resumeEntry: { paddingTop: rs(2) },
   resumeEntryBorder: { borderTopWidth: 1, borderTopColor: Colors.divider, marginTop: rs(12), paddingTop: rs(12) },
-  resumeEntryTitle: { fontSize: rf(14), fontWeight: '800', color: Colors.textPrimary },
-  resumeEntryCompany: { fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary, marginTop: rs(3) },
-  resumeEntryPeriod: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
-  resumeEntryText: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(7) },
+  resumeEntryTitle: { fontSize: rf(14), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  resumeEntryCompany: { fontSize: rf(13), fontFamily: JT_FONT.semi, color: Colors.textSecondary, marginTop: rs(3) },
+  resumeEntryPeriod: { fontFamily: JT_FONT.medium, fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
+  resumeEntryText: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary, marginTop: rs(7) },
   resumeDescriptionToggle: { flexDirection: 'row', alignItems: 'center', gap: rs(4), alignSelf: 'flex-start', marginTop: rs(7), paddingVertical: rs(3) },
-  resumeDescriptionToggleText: { fontSize: rf(11.5), color: Colors.primary, fontWeight: '700' },
-  resumeDescriptionChevron: { fontSize: rf(14), color: Colors.primary, fontWeight: '800' },
+  resumeDescriptionToggleText: { fontSize: rf(11.5), color: Colors.primary, fontFamily: JT_FONT.bold },
+  resumeDescriptionChevron: { fontSize: rf(14), color: Colors.primary, fontFamily: JT_FONT.heavy },
   resumeMoreButton: { alignItems: 'center', justifyContent: 'center', marginTop: rs(12), paddingVertical: rs(9), borderRadius: rs(11), backgroundColor: Colors.primaryLight },
-  resumeMoreButtonText: { fontSize: rf(12.5), color: Colors.primary, fontWeight: '800' },
+  resumeMoreButtonText: { fontSize: rf(12.5), color: Colors.primary, fontFamily: JT_FONT.heavy },
   resumeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
   resumeChip: { backgroundColor: Colors.surface, paddingHorizontal: rs(10), paddingVertical: rs(6), borderRadius: rs(100) },
-  resumeChipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontWeight: '600' },
+  resumeChipText: { fontSize: rf(11.5), color: Colors.textSecondary, fontFamily: JT_FONT.semi },
   emptyBio: { backgroundColor: Colors.surface },
-  emptyBioText: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20), paddingVertical: rs(8) },
+  emptyBioText: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20), paddingVertical: rs(8) },
   // Reviews
   reviewCard: {
     backgroundColor: Colors.bg, borderRadius: Radius.lg, padding: rs(14),
     gap: rs(8), ...Shadow.card,
   },
   reviewTop: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
-  reviewRole: { fontSize: rf(12), color: Colors.textMuted, fontWeight: '500', flex: 1 },
-  reviewDate: { fontSize: rf(12), color: Colors.textMuted },
-  reviewText: { fontSize: rf(14), color: Colors.textPrimary, lineHeight: rf(20) },
-  reviewEmpty: { fontSize: rf(13), color: Colors.textMuted, fontStyle: 'italic' },
+  reviewRole: { fontSize: rf(12), color: Colors.textMuted, fontFamily: JT_FONT.medium, flex: 1 },
+  reviewDate: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted },
+  reviewText: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textPrimary, lineHeight: rf(20) },
+  reviewEmpty: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted, fontStyle: 'italic' },
   emptyReviews: { alignItems: 'center', paddingVertical: rs(48), gap: rs(8) },
-  emptyReviewsTitle: { fontSize: rf(17), fontWeight: '700', color: Colors.textPrimary },
-  emptyReviewsSub: { fontSize: rf(14), color: Colors.textMuted, textAlign: 'center' },
+  emptyReviewsTitle: { fontSize: rf(17), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  emptyReviewsSub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center' },
 });
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
@@ -651,17 +652,17 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
       </View>
       <View style={[styles.center, { padding: 24 }]}>
         <Ionicons name="alert-circle-outline" size={rf(40)} color={Colors.textMuted} style={{ marginBottom: 12 }} />
-        <Text style={{ fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary, textAlign: 'center', marginBottom: 8 }}>
+        <Text style={{ fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary, textAlign: 'center', marginBottom: 8 }}>
           Не удалось загрузить профиль
         </Text>
-        <Text style={{ fontSize: rf(13), color: Colors.textMuted, textAlign: 'center', marginBottom: 24 }}>
+        <Text style={{ fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted, textAlign: 'center', marginBottom: 24 }}>
           {error.message}
         </Text>
         <TouchableOpacity
           onPress={retry}
           style={{ backgroundColor: Colors.primary, borderRadius: 100, paddingHorizontal: 24, paddingVertical: 12 }}
         >
-          <Text style={{ color: '#fff', fontWeight: '700', fontSize: rf(15) }}>Попробовать снова</Text>
+          <Text style={{ color: '#fff', fontFamily: JT_FONT.bold, fontSize: rf(15) }}>Попробовать снова</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

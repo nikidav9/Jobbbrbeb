@@ -5,6 +5,7 @@ import { Colors } from '@/constants/theme';
 import { Chip } from '@/components/ui/Chip';
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 type ChipVariant = React.ComponentProps<typeof Chip>['variant'];
 
@@ -65,9 +66,9 @@ export function VacancyDetailHead({ logo, company, postedAgo, title, chips, note
 const styles = StyleSheet.create({
   wrap: { gap: rs(10) },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
-  company: { flex: 1, fontSize: rf(14), fontWeight: '700', color: Colors.textSecondary },
-  ago: { fontWeight: '500', color: Colors.textMuted },
-  title: { fontSize: rf(24), lineHeight: rf(30), fontWeight: '800', color: Colors.textPrimary },
+  company: { flex: 1, fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.textSecondary },
+  ago: { fontFamily: JT_FONT.medium, color: Colors.textMuted },
+  title: { fontSize: rf(24), lineHeight: rf(30), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(6) },
-  note: { fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textMuted },
+  note: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textMuted },
 });

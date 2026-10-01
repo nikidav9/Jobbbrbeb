@@ -61,7 +61,10 @@
   на которые человек не откликался и которые не смахнул влево.
 - **Оформление ленты — по макету JT-design** (27.09.2026, `04-vacancy-feed.html`):
   токены и шрифты — `constants/jt.ts` (`JT`, `JT_FONT`: Unbounded для заголовков,
-  Manrope для остального). Фон `JT.background` (`#F5EFE6`), карточка-«стикер»:
+  Manrope для остального). Manrope — единственный текстовый шрифт во всём
+  приложении (решение владельца 01.10.2026): начертание задаёт сам шрифт
+  (`JT_FONT.medium/semi/bold/heavy`), `fontWeight` рядом не ставим — на iOS он
+  у своего шрифта не работает, на Android удваивает жирность. Фон `JT.background` (`#F5EFE6`), карточка-«стикер»:
   белая, рамка 2px `JT.ink`, жёсткая тень — чёрный слой `styles.cardSticker` со
   сдвигом 5 (тени RN так не умеют). Под колодой — `DeckActions`: ↺ возврат
   (`swUndo`, гаснет, когда `swHistory` пуст), ✕, ♥, закладка (у карьерных —
@@ -241,8 +244,9 @@
   (View со сдвигом позади карточки), одинаково на iOS/Android/вебе. Иконки и
   иллюстрации — свои на react-native-svg: `components/profile/icons.tsx`,
   `components/profile/illustrations.tsx` (пути 1:1 из HTML-эталона).
-  Шрифты Unbounded/Onest — `@expo-google-fonts/{unbounded,onest}`,
-  загружаются в `app/_layout.tsx` рядом с Ionicons, без блокировки экрана.
+  Шрифты Unbounded/Manrope — `@expo-google-fonts/{unbounded,manrope}` по одному
+  начертанию (глубокий импорт), грузятся в `app/_layout.tsx` рядом с Ionicons,
+  без блокировки экрана. Onest снят 01.10.2026: `ProfileFonts` — тоже Manrope.
   Справочник вариантов выбора для «Личных» (`workAuthorization`/`relocation`/
   `driversLicense`) переехал в `lib/personalFieldChoices.ts` — общий для
   экрана (модалка редактирования) и `PersonalTabContent`, чтобы не заводить
@@ -266,12 +270,12 @@
   `useUnsavedGuard` (перехват выхода с несохранёнными правками: кнопка
   «назад» в шапке + `beforeRemove` навигации + Android `BackHandler`).
   Токены — `constants/profileEditTheme.ts` (`EditColors`/`EditFonts`,
-  отдельно от `constants/profileTheme.ts` — там Onest и не все те же цвета).
+  отдельно от `constants/profileTheme.ts` — там не все те же цвета).
   Эталон — `docs/design/profile-edit/README.md` и HTML-макеты
   `resume/`, `personal/`. Иконки экранов — `components/profile/edit/icons.tsx`
   (react-native-svg, пути 1:1 из `docs/design/profile-edit/assets/icons/`).
   Шрифт Manrope — `@expo-google-fonts/manrope`, грузится в `app/_layout.tsx`
-  рядом с Unbounded/Onest. Сами 20 экранов (маршруты, сохранение в
+  рядом с Unbounded. Сами 20 экранов (маршруты, сохранение в
   `services/db.ts`) в эту библиотеку не входят — она только UI-каркас.
 - **Данные для тех же 20 экранов** — `lib/profileEdit.ts`: `emptyResume`,
   `patchResume`/`patchPersonal` (создают `resume`/`personalDetails`, если их
@@ -1626,9 +1630,10 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   (`ConsentGate.tsx` → `dbRecordConsent`) — человек тем самым поручает Jupiter
   отправку откликов; `jt_jupiter_auto_enable` в `php-proxy/db.php` включает
   `jupiter_live_enabled_at` сам, без отдельного экрана. Отзыв поручения —
-  настоящий переключатель в «Профиль → Настройки»
-  (`app/profile-settings.tsx`), пишет `jupiter_live_revoked_at` (миграция
-  116): пока она не пуста, повторное согласие автоотклик не включает —
+  письмом на support@jobtoo.ru (Соглашение п. 8.6, редакция 2026-10-01;
+  переключатель из настроек убран 28.09): поддержка ставит
+  `jupiter_live_revoked_at` (миграция 116) — так же, как `jupiterSetLive(uid,
+  false)`. Пока она не пуста, повторное согласие автоотклик не включает —
   `requestJupiterLive` (`services/jupiterLive.ts`) при отзыве переспрашивает
   явно.
 - **Подача сервером и капча (Соглашение, редакция 2026-09-29).** П. 8.2: отклик,
