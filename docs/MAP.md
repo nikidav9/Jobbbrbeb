@@ -1428,7 +1428,7 @@ worker, изоляция контекстов; `browser_planner.py` + `yandex_gp
 ATS-платформ, куда вакансия может увести анкету; `browser_limits.py` — пределы ресурсов (сколько браузеров
 по памяти, сторож задачи, добивание своих зависших Chromium; замер —
 `scripts/browser-bench.py`); `recon_browser.py` — разведка
-браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало». С 01.10.2026
+браузером, итог в `jupiter-recon-browser.json` и отчёт «было/стало»; ход обхода — открытый `/jupiter-recon-browser-progress.json` (`--progress`, класс `Progress`: пройдено, осталось, классы, вердикты репетиции, `llm_used`, `eta_at`; обёртка выкладывает его раз в 30 с, состояния «ждёт HTTP-разведку», «пропущен», «сбой», «готово», «срок вышел»). С 01.10.2026
 YandexGPT помогает и боевому движку, и разведке: кнопку «Откликнуться», которую
 правила не нашли, выбирает модель (`apply_advisor` → `browser_planner.suggest_apply_click`,
 действие `llm_apply_click`); разведка на `--llm-sites` разделах (сервер — 60,
