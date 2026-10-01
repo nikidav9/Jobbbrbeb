@@ -95,6 +95,10 @@ class ControlState:
     # атрибут hidden. Необязательное такое поле — обычно ловушка для ботов
     # (Targem, 30.09): заполнить её — значит назваться ботом.
     css_hidden: bool = False
+    # Круг исправления после «Отправить» и запись, подсказанная для него
+    # (agent._site_fix): на повторе поле пишется иначе, чем отверг сайт.
+    fix_round: int = 0
+    fix_format: str = ""
     options: list[OptionState] = field(default_factory=list)
     # Метка элемента в живой странице браузерного движка (browser_engine.py,
     # атрибут data-jt-ref). HTTP-движку не нужна и остаётся пустой.

@@ -240,8 +240,12 @@ class CandidateProfile:
         return cls(values=data, resume_path=resume)
 
 
-# Сколько раз дозаполнить поля, которые сайт подсветил после «Отправить».
-SITE_FIX_ROUNDS = 2
+# Сколько раз дозаполнить или переписать поля, которые сайт подсветил после
+# «Отправить» (3 — п.1 «довести цикл», 01.10.2026: пустое поле, другая запись,
+# запись по подсказке Алисы).
+SITE_FIX_ROUNDS = 3
+# Записи, которые подсказка Алисы (browser_planner.FIX_FORMATS) выбирает для телефона.
+_PHONE_FORMATS = ("phone_plus7", "phone_7", "phone_8", "phone_10", "phone_mask")
 
 
 class Reason:
@@ -380,8 +384,12 @@ def _phone_for_control(phone: str, control: ControlState) -> str:
         local = digits
     else:
         return phone
-    variants = [phone, "+7" + local, "7" + local, "8" + local, local,
-                f"+7 ({local[:3]}) {local[3:6]}-{local[6:8]}-{local[8:]}"]
+    mask = f"+7 ({local[:3]}) {local[3:6]}-{local[6:8]}-{local[8:]}"
+    named = dict(zip(_PHONE_FORMATS, ("+7" + local, "7" + local, "8" + local, local, mask)))
+    if control.fix_format in named:
+        return named[control.fix_format]
+    variants = [phone, *named.values()]
+    fitting = []
     for variant in variants:
         if control.maxlength is not None and len(variant) > control.maxlength:
             continue
@@ -391,8 +399,26 @@ def _phone_for_control(phone: str, control: ControlState) -> str:
                     continue
             except re.error:
                 return phone
-        return variant
-    return phone
+        if variant not in fitting:
+            fitting.append(variant)
+    if not fitting:
+        return phone
+    # Сайт отверг запись — на каждом круге исправления следующая подходящая.
+    return fitting[control.fix_round % len(fitting)]
+
+
+def _date_for_control(value: Any, control: ControlState) -> str:
+    """Дата для поля: <input type=date> — только ГГГГ-ММ-ДД; текстовое поле на
+    кругах исправления — ДД.ММ.ГГГГ (или как подсказала Алиса)."""
+    iso = _date_for_html(value)
+    if control.type == "date" or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", iso):
+        return iso
+    dmy = f"{iso[8:]}.{iso[5:7]}.{iso[:4]}"
+    if control.fix_format == "date_dmy":
+        return dmy
+    if control.fix_format == "date_iso":
+        return iso
+    return dmy if control.fix_round % 2 else iso
 
 
 def _date_for_html(value: Any) -> str:
@@ -830,6 +856,7 @@ class JupiterAgent:
         field_mapper: Callable[[list[dict], list[str]], dict[str, str]] | None = None,
         question_explainer: Callable[[list[dict], dict], dict[str, dict[str, str]]] | None = None,
         outcome_judge: Callable[[dict, list[str]], dict | None] | None = None,
+        fix_advisor: Callable[[dict, list[str]], str | None] | None = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -857,6 +884,10 @@ class JupiterAgent:
         # кандидата вырезаются (второй довод — что вырезать). Успех — только с
         # дословной цитатой страницы. См. _site_verdict.
         self.outcome_judge = outcome_judge
+        # Как переписать поле, которое сайт отверг (п.1, 01.10.2026): модель
+        # видит подпись, шаблон и сообщение сайта без значений кандидата и
+        # выбирает запись из списка. См. _site_fix.
+        self.fix_advisor = fix_advisor
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -1218,7 +1249,7 @@ class JupiterAgent:
                 return True
             return False
 
-        text = _date_for_html(value) if control.type == "date" or key == "birth_date" else str(value)
+        text = _date_for_control(value, control) if control.type == "date" or key == "birth_date" else str(value)
         if key == "phone":
             text = _phone_for_control(text, control)
         control.value = text
@@ -2184,11 +2215,12 @@ class JupiterAgent:
         if invalid:
             labels = [str(f.get("label") or f.get("type") or "поле")[:80] for f in invalid][:10]
             return {"verdict": "needs_fix", "fields": labels, "quote": "", "source": "site",
-                    "refs": [str(f["ref"]) for f in invalid if f.get("ref")]}
+                    "refs": [str(f["ref"]) for f in invalid if f.get("ref")],
+                    "messages": {str(f["ref"]): str(f.get("message") or "")[:120]
+                                 for f in invalid if f.get("ref")}}
         if self.outcome_judge is None:
             return None
-        secrets = [str(v) for v in profile.values.values()
-                   if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip()]
+        secrets = self._secrets(profile)
         try:
             got = self.outcome_judge({
                 "title": page.title, "text": page.text,
@@ -2197,6 +2229,38 @@ class JupiterAgent:
         except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
             return None
         return dict(got, source="llm") if isinstance(got, dict) else None
+
+    @staticmethod
+    def _secrets(profile: CandidateProfile) -> list[str]:
+        """Значения кандидата — их вырезают из всего, что видит нейросеть."""
+        return [str(v) for v in profile.values.values()
+                if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip()]
+
+    def _site_fix(self, page: PageState, verdict: dict, profile: CandidateProfile,
+                  round_no: int) -> list[ControlState]:
+        """Поля, подсвеченные сайтом, — к следующему кругу: обязательные, а
+        заполненные нами — очищаются и пишутся иначе (_phone_for_control,
+        _date_for_control). Возвращает подсвеченные поля этой формы."""
+        refs = set(verdict.get("refs") or [])
+        messages = verdict.get("messages") or {}
+        marked = [c for c in page.controls if c.dom_ref and c.dom_ref in refs]
+        for control in marked:
+            control.required = True
+            if control.tag == "select" or control.type in {"checkbox", "radio", "file"}:
+                continue
+            control.fix_round = round_no
+            if self.fix_advisor is not None and control.value:
+                try:
+                    hint = self.fix_advisor({
+                        "label": self.descriptor(control), "placeholder": control.placeholder,
+                        "pattern": control.pattern, "type": control.type,
+                        "message": messages.get(control.dom_ref, ""),
+                    }, self._secrets(profile))
+                except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+                    hint = None
+                control.fix_format = hint or ""
+            control.value = ""
+        return marked
 
     def _apply_verdict(
         self,
@@ -2842,15 +2906,13 @@ class JupiterAgent:
                 verdict = self._site_verdict(page, profile)
                 if (verdict and verdict.get("verdict") == "needs_fix" and verdict.get("source") == "site"
                         and site_fix_rounds < SITE_FIX_ROUNDS):
-                    refs = set(verdict.get("refs") or [])
-                    marked = [c for c in page.controls if c.dom_ref and c.dom_ref in refs]
-                    for control in marked:
-                        control.required = True
+                    marked = self._site_fix(page, verdict, profile, site_fix_rounds + 1)
                     if marked:
                         site_fix_rounds += 1
                         retry_after_fix = True
                         trajectory.append({"action": "site_fix_retry", "round": site_fix_rounds,
-                                           "fields": verdict.get("fields") or []})
+                                           "fields": verdict.get("fields") or [],
+                                           "formats": [c.fix_format for c in marked if c.fix_format]})
                         continue
                 judged = self._apply_verdict(verdict, fingerprint, page, evidence, trajectory) if verdict else None
                 if judged is not None:
