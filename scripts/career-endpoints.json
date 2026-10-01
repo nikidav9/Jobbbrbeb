@@ -202,7 +202,7 @@
   },
   {
     "map": {
-      "id": "slug",
+      "id": "id",
       "list": "data",
       "title": "name",
       "address": "location",
@@ -422,7 +422,8 @@
       "company_const": "М.Видео-Эльдорадо"
     },
     "url": "https://career.mvideoeldorado.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "М.Видео-Эльдорадо"
   },
   {
     "map": {
