@@ -46,9 +46,28 @@ check('в ленту по Москве не идут другие города',
 check('Томск — не Москва', !fs_is_moscow(['address' => 'Томск']));
 check('«Москва, Санкт-Петербург» — Москва', fs_is_moscow(['address' => 'Санкт-Петербург, Москва']));
 
+// Офисная работа вне ленты (вопрос владельца 01.10.2026): по Москве, по
+// названию должности, администратор и рабочие профессии не считаются.
+check('дизайнер — дизайн', fs_office_group('Ведущий UX/UI дизайнер') === 'design');
+check('продакт — продукт', fs_office_group('Product manager (B2B)') === 'product');
+check('аналитик — аналитика', fs_office_group('Аналитик данных') === 'analytics');
+check('администратор — не офис в программах', fs_office_group('Администратор магазина') === null);
+check('продавец-консультант — нет', fs_office_group('Продавец-консультант') === null);
+$o = fs_aggregate([
+    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Дизайнер', 'address' => 'Москва'],
+    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Дизайнер', 'address' => 'Москва'],
+    ['company' => 'X5 Group', 'section' => 'marketing', 'title' => 'Дизайнер', 'address' => 'Казань'],
+    ['company' => 'X5 Group', 'section' => 'office', 'title' => 'Администратор', 'address' => 'Москва'],
+    ['company' => 'X5 Group', 'section' => 'it', 'title' => 'Аналитик данных', 'address' => 'Москва'],
+], 'x')['outside_feed_moscow'];
+check('вне ленты — только Москва и не лента', $o['total'] === 3);
+check('офисных — 2, без администратора', $o['office_total'] === 2 && array_keys($o['office']) === ['design']);
+check('пример без повторов', $o['office']['design']['examples'] === ['Дизайнер']
+    && $o['office']['design']['companies'] === ['X5 Group' => 2]);
+
 // Только эти столбцы из базы: ни описаний, ни ссылок, ни чего-либо о людях.
 $src = (string)file_get_contents(__DIR__ . '/../php-proxy/feed_stats.php');
-check('из базы берутся только company, section и место', str_contains($src, "], 'company,section,address,metro_station_norm');")
+check('из базы берутся только company, section, название и место', str_contains($src, "], 'company,section,title,address,metro_station_norm');")
     && substr_count($src, 'sb_select(') === 2 && str_contains($src, "sb_select('jm_it_companies', [], 'company')"));
 
 if ($failures) {
