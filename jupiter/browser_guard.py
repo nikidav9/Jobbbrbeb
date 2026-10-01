@@ -245,9 +245,17 @@ def install_guards(
     def on_navigated(frame) -> None:
         scheme = (urllib.parse.urlparse(frame.url).scheme or "").lower()
         if scheme and scheme not in _ALLOWED_PAGE_SCHEMES:
-            note("guard_blocked", url=frame.url[:200], reason="scheme_after_navigation")
+            main = frame == frame.page.main_frame
+            # Встроенный фрейм не загрузился (реклама, счётчик, reCAPTCHA) —
+            # браузер показывает в нём chrome-error. Это безвредно; раньше из-за
+            # этого вся вкладка уходила на about:blank вместе с анкетой
+            # (Аурига и др., разбор 220 «анкета не найдена», 02.10.2026).
+            if not main and scheme == "chrome-error":
+                return
+            note("guard_blocked", url=frame.url[:200], reason="scheme_after_navigation",
+                 frame="main" if main else "sub")
             try:
-                frame.page.goto("about:blank")
+                (frame.page if main else frame).goto("about:blank")
             except Exception:  # pragma: no cover
                 pass
 

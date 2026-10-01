@@ -27,6 +27,9 @@ CHROMIUM = os.environ.get("JUPITER_CHROMIUM") or (
 )
 
 PAGES = {
+    # Встроенный фрейм с адреса, который не резолвится, — в нём chrome-error.
+    "/broken-frame": "<title>vacancy</title><form><input name='phone'></form>"
+                     "<iframe src='http://other.test:%(port)s/'></iframe>",
     "/": "<title>home</title><p>home</p>",
     "/landing": "<title>landing</title><p>landing</p>",
     "/popup_evil": "<button id=b onclick=\"window.open('http://evil.test:%(port)s/')\">x</button>",
@@ -196,6 +199,15 @@ class BrowserGuardTest(unittest.TestCase):
         self.page.wait_for_timeout(500)
         self.assertNotIn("root:", self.page.content())
         self.assertFalse(self.page.url.startswith("file:"))
+
+    def test_broken_iframe_does_not_wipe_the_page(self):
+        # Раньше chrome-error во встроенном фрейме уводил ВСЮ вкладку на
+        # about:blank вместе с анкетой (Аурига, 02.10.2026).
+        self.page.goto(self.url("/broken-frame"))
+        self.page.wait_for_timeout(1500)
+        self.assertEqual(self.page.title(), "vacancy")
+        self.assertEqual(self.page.locator("input[name=phone]").count(), 1)
+        self.assertFalse(any(e["action"] == "guard_blocked" for e in self.journal), self.journal)
 
     def test_file_chooser_gets_only_resume(self):
         self.page.goto(self.url("/upload"))
