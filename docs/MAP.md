@@ -1429,7 +1429,7 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 (`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл (кириллицу-двойника меняет на латиницу, остальное — только печатаемый ASCII: русская «А» в ключе давала 500, а выброшенная — 401; каталог не вида `b1g…` заменяет каталогом JobToo `b1g1bkcqqko80h5kqen1`) и перезапускает воркеры;
 проверка — `tests/yandex_gpt_delivery_test.py`. Работает ли на деле — в
 `jupiter-browser-status.json`: `yandex_gpt_проверка` (сервер раз в час сам спрашивает
-модель «2+2?», пишет код, время и её ответ; новый ключ — сразу; не 200 — ещё и причину словами Яндекса, повтор через 10 мин) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
+модель «2+2?», пишет код, время и её ответ; рядом `yandex_search_проверка` — пробный запрос в Search API v2 тем же ключом и число ссылок; новый ключ — сразу; не 200 — ещё и причину словами Яндекса, повтор через 10 мин) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.

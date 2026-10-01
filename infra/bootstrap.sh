@@ -737,6 +737,47 @@ print(re.sub(r"[^\w .,:;()/+=-]", " ", m)[:200].strip())
       rm -f "$body"
       printf '%s в %s%s' "${code:-000}" "$(date +%H:%M)" "${why:+ — $why}" > "$YGPT_PING" )
   fi
+  # Поиск Яндекса (Search API) тем же ключом — область yc.search-api.execute
+  # (владелец, 01.10.2026): нужен, чтобы находить страницу конкретной вакансии,
+  # когда ссылка ведёт на общий список. Проверка — запрос «вакансии
+  # Касперский» и сколько ссылок вернулось; не 200 — причина словами Яндекса.
+  YSEARCH_PING=/var/lib/jobtoo/ysearch-ping.txt
+  YSEARCH_AGE=60
+  [ -f "$YSEARCH_PING" ] && ! grep -q '^200 ' "$YSEARCH_PING" && YSEARCH_AGE=10
+  if [ -f "$YGPT_ENV" ] && { [ ! -f "$YSEARCH_PING" ] || [ -n "$(find "$YSEARCH_PING" -mmin +$YSEARCH_AGE 2>/dev/null)" ]; }; then
+    ( set +e
+      . "$YGPT_ENV"
+      body=$(mktemp)
+      code=$(printf '{"query":{"searchType":"SEARCH_TYPE_RU","queryText":"вакансии Лаборатория Касперского"},"folderId":"%s","responseFormat":"FORMAT_XML"}' "$YANDEX_GPT_FOLDER_ID" \
+        | curl -s -o "$body" -w '%{http_code}' -m 20 \
+            -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" \
+            -H 'Content-Type: application/json' --data-binary @- \
+            https://searchapi.api.cloud.yandex.net/v2/web/search)
+      why=$(YGPT_K="$YANDEX_GPT_API_KEY" python3 -c '
+import base64, json, os, re, sys
+ok = sys.argv[2] == "200"
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    d = {"message": open(sys.argv[1], errors="replace").read()}
+if ok:
+    try:
+        xml = base64.b64decode(d.get("rawData", "")).decode("utf-8", "replace")
+        print("ссылок: %d" % xml.count("<url>"))
+    except Exception:
+        print("ответ без rawData")
+    sys.exit()
+e = d.get("error", d) if isinstance(d, dict) else {}
+m = str(e.get("message") or e.get("error") or d)
+k = os.environ.get("YGPT_K", "")
+if k:
+    m = m.replace(k, "***")
+print(re.sub(r"[^\w .,:;()/+=-]", " ", m)[:200].strip())
+' "$body" "${code:-000}" 2>/dev/null || true)
+      rm -f "$body"
+      printf '%s в %s%s' "${code:-000}" "$(date +%H:%M)" "${why:+ — $why}" > "$YSEARCH_PING" )
+  fi
+
   YGPT_CALLS=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
     | grep -c 'YandexGPT: вызов, статус' || true)
   YGPT_OK=$(journalctl -u jt-jupiter.service -u jt-jupiter-browser.service --since "24 hours ago" -o cat 2>/dev/null \
@@ -744,13 +785,14 @@ print(re.sub(r"[^\w .,:;()/+=-]", " ", m)[:200].strip())
 
   # Жив ли браузерный воркер — рядом с status.json, без секретов.
   jb_prop() { systemctl show -p "$1" --value jt-jupiter-browser.service 2>/dev/null || true; }
-  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"yandex_gpt_проверка":"%s","yandex_gpt_вызовов_за_сутки":%s,"yandex_gpt_ошибок_за_сутки":%s,"http_воркер":"%s"}\n' \
+  printf '{"время":"%s","включён":%s,"служба":"%s","перезапуски":"%s","с":"%s","установлено":"%s","php_флаг":%s,"политика_ca":%s,"yandex_gpt":%s,"yandex_gpt_проверка":"%s","yandex_gpt_вызовов_за_сутки":%s,"yandex_gpt_ошибок_за_сутки":%s,"yandex_search_проверка":"%s","http_воркер":"%s"}\n' \
     "$(date -Is)" "$([ -f "$JB_FLAG" ] && echo true || echo false)" \
     "$(jb_prop ActiveState)/$(jb_prop SubState)" "$(jb_prop NRestarts)" \
     "$(jb_prop ActiveEnterTimestamp)" "$(cat "$JB_BASE/.installed" 2>/dev/null || echo нет)" \
     "$JB_PHP" "$([ -f "$JB_POLICY" ] && [ -f "$JB_POLICY_CFT" ] && echo true || echo false)" \
     "$([ -f "$YGPT_ENV" ] && echo true || echo false)" \
     "$(cat "$YGPT_PING" 2>/dev/null || echo нет)" "${YGPT_CALLS:-0}" "$(( ${YGPT_CALLS:-0} - ${YGPT_OK:-0} ))" \
+    "$(cat "$YSEARCH_PING" 2>/dev/null || echo нет)" \
     "$(systemctl is-active jt-jupiter.service 2>/dev/null || true)" \
     > /var/www/html/jupiter-browser-status.json.tmp 2>/dev/null \
     && mv -f /var/www/html/jupiter-browser-status.json.tmp /var/www/html/jupiter-browser-status.json || true
@@ -1179,7 +1221,7 @@ if [ -n "$YGPT_KEY" ] && [ -n "$YGPT_FOLDER" ]; then
     chown root:root /etc/jobtoo/yandex-gpt.env.new
     mv -f /etc/jobtoo/yandex-gpt.env.new /etc/jobtoo/yandex-gpt.env
     # Новый ключ — проверить его на следующем же проходе, не ждать 10–60 минут.
-    rm -f /var/lib/jobtoo/ygpt-ping.txt
+    rm -f /var/lib/jobtoo/ygpt-ping.txt /var/lib/jobtoo/ysearch-ping.txt
     for svc in jt-jupiter.service jt-jupiter-browser.service; do
       systemctl is-active --quiet "$svc" 2>/dev/null && systemctl restart "$svc" >/dev/null 2>&1 || true
     done
