@@ -82,6 +82,42 @@ class NoClimbingUp(unittest.TestCase):
         self.assertIsNone(agent._best_navigation(page("x"), set()))
 
 
+class ListToCard(unittest.TestCase):
+    """Со списка — в карточку, а не по фильтрам; с карточки — никуда в сторону
+    (СИБУР, разбор 220 «анкета не найдена», 02.10.2026)."""
+
+    def agent(self, links):
+        agent = JupiterAgent({"career.sibur.ru"}, engine=FakeEngine(), receipts=ReceiptStore(None))
+        agent.engine.allowed_hosts = {"career.sibur.ru"}
+        agent._root_url = "https://career.sibur.ru/vacancies/"
+        agent._extract_links = lambda page: links
+        agent._spa_links = lambda page: []
+        return agent
+
+    def at(self, url):
+        p = page("x")
+        p.url = url
+        return p
+
+    def test_card_beats_city_filter(self):
+        links = [("https://career.sibur.ru/vacancies/moscow/", "Вакансии в Москве"),
+                 ("https://career.sibur.ru/vacancies/inzhener-po-avtomatizatsii-tp/", "Вакансия: инженер")]
+        best = self.agent(links)._best_navigation(self.at("https://career.sibur.ru/vacancies/moscow/"), set())
+        self.assertEqual(best[0], "https://career.sibur.ru/vacancies/inzhener-po-avtomatizatsii-tp/")
+
+    def test_sibling_filter_loses_to_going_deeper(self):
+        links = [("https://career.sibur.ru/vacancies/kazan/", "Вакансии в Казани"),
+                 ("https://career.sibur.ru/vacancies/moscow/it/", "Вакансии IT")]
+        best = self.agent(links)._best_navigation(self.at("https://career.sibur.ru/vacancies/moscow/"), set())
+        self.assertEqual(best[0], "https://career.sibur.ru/vacancies/moscow/it/")
+
+    def test_from_reached_card_no_other_card_and_no_way_up(self):
+        card = "https://career.sibur.ru/vacancies/ekspert-rzia-1-kategorii/"
+        links = [("https://career.sibur.ru/vacancies/slesar-remontnik-6-razryad/", "Вакансия"),
+                 ("https://career.sibur.ru/vacancies/", "Все вакансии")]
+        self.assertIsNone(self.agent(links)._best_navigation(self.at(card), set()))
+
+
 class AgentVerdict(unittest.TestCase):
     def agent(self, judge=None):
         return JupiterAgent({"career.example.ru"}, engine=FakeEngine(), receipts=ReceiptStore(None),
