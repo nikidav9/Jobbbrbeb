@@ -70,6 +70,12 @@ class BrowserReconResult(ReconResult):
     # сделала — выбрала кнопку отклика, сопоставила поля, пояснила вопросы.
     llm_used: bool = False
     llm_actions: list[dict[str, Any]] = field(default_factory=list)
+    # Репетиция отправки (01.10.2026): анкета, дошедшая до «Отправить»,
+    # проходится ещё раз с нажатием; сеть обрывает запрос. verdict:
+    # would_send — анкета ушла бы (в оборванном запросе данные кандидата);
+    # request_without_candidate — запрос был, но без анкеты; no_request —
+    # нажатие ничего не отправило (поле не принято, не та кнопка).
+    rehearsal: dict[str, Any] = field(default_factory=dict)
 
 
 # Ночью YandexGPT подключается не ко всем сайтам: каждый вызов платный.
@@ -85,6 +91,25 @@ def llm_sites(sites: list[tuple[str, str]], endpoints: list[dict], limit: int) -
     return {url for _, url in ranked[:limit]}
 
 
+def rehearsal_markers(candidate: dict[str, Any]) -> list[str]:
+    """Метки синтетического кандидата в теле или адресе запроса — в разных кодировках."""
+    import urllib.parse
+    out: list[str] = []
+    for value in (candidate.get("email"), candidate.get("last_name")):
+        if not value:
+            continue
+        text = str(value)
+        out += [text, urllib.parse.quote(text), urllib.parse.quote_plus(text),
+                json.dumps(text)[1:-1]]
+    return list(dict.fromkeys(out))
+
+
+def rehearsal_verdict(log: list[dict[str, Any]]) -> str:
+    if any(item.get("carries_candidate") for item in log):
+        return "would_send"
+    return "request_without_candidate" if log else "no_request"
+
+
 def _llm_trace(engine_actions: list[dict], trajectory: list[dict]) -> list[dict[str, Any]]:
     """Что сделала модель: из журнала движка и траектории агента, без значений."""
     out = [a for a in engine_actions if str(a.get("action", "")).startswith("llm_")]
@@ -98,6 +123,7 @@ def _llm_trace(engine_actions: list[dict], trajectory: list[dict]) -> list[dict[
 def recon_site_browser(
     name: str, url: str, endpoints: list[dict], resume: str,
     *, timeout: float = 30.0, chromium: str | None = None, llm: Any = None,
+    rehearse: bool = False,
 ) -> BrowserReconResult:
     """Один сайт в этом процессе. Вызывать из потока, где живёт Playwright.
 
@@ -124,24 +150,25 @@ def recon_site_browser(
         except Exception:
             pass
     hosts = {normalize_host(result.start_url), normalize_host(url)}
+    extra: dict[str, Any] = {}
+    if llm is not None:
+        extra["apply_advisor"] = lambda outline: browser_planner.suggest_apply_click(llm, outline)
     try:
         engine = JupiterBrowserEngine(
             hosts, read_only=True, timeout=timeout, executable_path=chromium,
-            apply_advisor=(lambda outline: browser_planner.suggest_apply_click(llm, outline))
-            if llm is not None else None,
+            apply_advisor=extra.get("apply_advisor"),
         )
     except EngineError as exc:
         result.reason = f"browser: {exc}"[:300]
         return result
     try:
-        extra: dict[str, Any] = {}
         if llm is not None:
             extra["field_mapper"] = lambda fields, keys: browser_planner.suggest_field_keys(llm, fields, keys)
             extra["question_explainer"] = lambda qs, ctx: browser_planner.explain_questions(llm, qs, ctx)
             result.llm_used = True
         agent = JupiterAgent(
             set(hosts), max_steps=10, engine=engine, dry_run=True,
-            receipts=ReceiptStore(None), **extra,
+            receipts=ReceiptStore(None), **{k: v for k, v in extra.items() if k != "apply_advisor"},
         )
         candidate = CandidateProfile(values=dict(TEST_CANDIDATE), resume_path=resume)
         try:
@@ -166,13 +193,56 @@ def recon_site_browser(
         result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links)
         if result.klass == "blocked":
             result.block_kind = block_kind(result.reason)
-        return result
+    finally:
+        engine.close()
+    if rehearse and result.klass == "dry_run_ok":
+        result.rehearsal = _rehearse(result.start_url, hosts, resume, timeout, chromium, extra)
+    return result
+
+
+def _rehearse(url: str, hosts: set[str], resume: str, timeout: float,
+              chromium: str | None, extra: dict[str, Any]) -> dict[str, Any]:
+    """Та же анкета с нажатием «Отправить». read_only: сеть обрывает отправку."""
+    from agent import CandidateProfile, JupiterAgent
+    from browser_engine import JupiterBrowserEngine
+    from engine import EngineError
+    from submission import ReceiptStore
+
+    try:
+        engine = JupiterBrowserEngine(
+            hosts, read_only=True, timeout=timeout, executable_path=chromium,
+            rehearsal_markers=rehearsal_markers(TEST_CANDIDATE),
+            apply_advisor=extra.get("apply_advisor"),
+        )
+    except EngineError as exc:
+        return {"verdict": "error", "reason": f"browser: {exc}"[:200]}
+    try:
+        agent = JupiterAgent(
+            set(hosts), max_steps=12, engine=engine, dry_run=False,
+            receipts=ReceiptStore(None),
+            **{k: v for k, v in extra.items() if k != "apply_advisor"},
+        )
+        candidate = CandidateProfile(values=dict(TEST_CANDIDATE), resume_path=resume)
+        try:
+            outcome = agent.run(url, candidate)
+        except Exception as exc:  # noqa: BLE001 - репетиция не роняет разведку
+            return {"verdict": "error", "reason": f"crash: {type(exc).__name__}: {exc}"[:200]}
+        page = engine.page
+        return {
+            "verdict": rehearsal_verdict(engine.rehearsal_log),
+            "requests": engine.rehearsal_log[:5],
+            "status": outcome.status,
+            "reason_code": outcome.reason_code or "",
+            "reason": (outcome.reason or "")[:200],
+            # Что сайт показал после нажатия: ошибка поля, «спасибо»…
+            "page_text": " ".join(((page.text if page else "") or "").split())[:300],
+        }
     finally:
         engine.close()
 
 
 def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: str | None,
-               use_llm: bool = False) -> BrowserReconResult:
+               use_llm: bool = False, rehearse: bool = False) -> BrowserReconResult:
     """Сайт в отдельном процессе с жёстким сроком."""
     cmd = [sys.executable, os.path.abspath(__file__), "--_one", name, url,
            "--timeout", str(timeout)]
@@ -180,6 +250,8 @@ def _run_child(name: str, url: str, timeout: float, deadline: float, chromium: s
         cmd += ["--chromium", chromium]
     if use_llm:
         cmd.append("--_llm")
+    if rehearse:
+        cmd.append("--_rehearse")
     result = BrowserReconResult(name=name, url=url, start_url=url, klass="blocked")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=deadline)
@@ -203,6 +275,7 @@ def run_recon(
     sites: list[tuple[str, str]], *, timeout: float = 30.0, site_deadline: float = 120.0,
     workers: int = MAX_BROWSERS, chromium: str | None = None,
     max_seconds: float | None = None, with_llm: set[str] | None = None,
+    rehearse: bool = False,
 ) -> list[BrowserReconResult]:
     """Обход. С max_seconds новые разделы после срока не начинаются (начатый
     доживает до site_deadline) и в итог не попадают."""
@@ -213,7 +286,7 @@ def run_recon(
         if stop_at is not None and time.monotonic() >= stop_at:
             return None
         return _run_child(site[0], site[1], timeout, site_deadline, chromium,
-                          use_llm=site[1] in (with_llm or set()))
+                          use_llm=site[1] in (with_llm or set()), rehearse=rehearse)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [r for r in pool.map(one, sites) if r is not None]
@@ -246,6 +319,21 @@ def sites_needing_browser(http_items: list[dict]) -> list[tuple[str, str]]:
         if not retry or not url or url in seen:
             continue
         if normalize_host(url) in ok_hosts:
+            continue
+        seen.add(url)
+        out.append((str(item.get("name") or normalize_host(url) or url), url))
+    return out
+
+
+def sites_to_rehearse(http_items: list[dict]) -> list[tuple[str, str]]:
+    """Разделы, которые HTTP-движок довёл до «Отправить»: их браузер раньше не
+    смотрел, а поломки отправки (поле не принято, не та кнопка) видны только
+    при нажатии."""
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for item in http_items:
+        url = str(item.get("url") or "")
+        if item.get("klass") != "dry_run_ok" or not url or url in seen:
             continue
         seen.add(url)
         out.append((str(item.get("name") or normalize_host(url) or url), url))
@@ -332,6 +420,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--_one", nargs=2, metavar=("NAME", "URL"), help=argparse.SUPPRESS)
     parser.add_argument("--_llm", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--rehearse", action="store_true",
+        help="репетиция отправки: дошедшие до «Отправить» анкеты нажимаются, сеть обрывает отправку; "
+             "с --from-http — и разделы, которые HTTP-движок уже прошёл",
+    )
+    parser.add_argument("--_rehearse", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args._one:
@@ -345,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
                 llm = yandex_gpt.YandexGPT.from_env()
             res = recon_site_browser(
                 args._one[0], args._one[1], endpoints, str(resume),
-                timeout=args.timeout, chromium=args.chromium, llm=llm,
+                timeout=args.timeout, chromium=args.chromium, llm=llm, rehearse=args._rehearse,
             )
         print(RESULT_MARK + json.dumps(asdict(res), ensure_ascii=False))
         return 0
@@ -358,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Итог HTTP-разведки {args.from_http} пуст или не читается — выхожу.", file=sys.stderr)
             return 1
         sites = order_by_previous(sites_needing_browser(http_items), _load_list(args.out))
+        if args.rehearse:
+            sites += [s for s in sites_to_rehearse(http_items) if s not in sites]
     else:
         sites = load_sites()
     sites = select_sites(sites, args.only_hosts, args.limit)
@@ -369,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
         sites, timeout=args.timeout, site_deadline=args.site_deadline,
         workers=args.workers, chromium=args.chromium,
         max_seconds=args.max_minutes * 60 if args.max_minutes is not None else None,
-        with_llm=with_llm,
+        with_llm=with_llm, rehearse=args.rehearse,
     )
     if len(results) < len(sites):
         print(f"Срок вышел: пройдено {len(results)} из {len(sites)} разделов.", file=sys.stderr)

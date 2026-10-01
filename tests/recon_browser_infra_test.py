@@ -54,6 +54,11 @@ for name in ("TOKEN", "SECRET", "EnvironmentFile"):
 assert "YGPT_ENV=/etc/jobtoo/yandex-gpt.env" in run
 assert 'case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac' in run
 assert '"${YGPT_VARS[@]}"' in run and '--llm-sites "$LLM_SITES"' in run
+# Репетиция отправки: нажатие есть, но обход по-прежнему read_only (сеть
+# обрывает не-GET) — боевых переключателей в скрипте нет, см. выше.
+assert "--rehearse" in run
+assert "rehearsal_markers=rehearsal_markers(TEST_CANDIDATE)" in recon_browser
+assert 'if rehearsal_markers and not read_only:' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
 assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
 
 print("recon-browser infra: ok")

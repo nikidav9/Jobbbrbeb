@@ -1399,7 +1399,15 @@ YandexGPT помогает и боевому движку, и разведке: 
 действие `llm_apply_click`); разведка на `--llm-sites` разделах (сервер — 60,
 сперва работодатели с вакансиями в ленте) идёт с теми же подсказками полей и
 вопросов, что воркер, и пишет `llm_used`/`llm_actions`. Ключ обходу передаёт
-`infra/recon-browser-run.sh` переменными окружения, не в журнал.
+`infra/recon-browser-run.sh` переменными окружения, не в журнал. Репетиция отправки
+(`--rehearse`, на сервере каждую ночь, 01.10.2026): анкета, дошедшая до
+«Отправить» (в том числе разделы, которые HTTP-движок уже прошёл, —
+`sites_to_rehearse`), проходится ещё раз с нажатием; движок с
+`rehearsal_markers` (почта и фамилия синтетического кандидата) в read_only
+нажимает кнопку, сеть обрывает любой не-GET и GET с метками. Итог —
+`rehearsal.verdict`: `would_send` (в оборванном запросе анкета),
+`request_without_candidate`, `no_request` (нажатие ничего не отправило), плюс
+текст страницы после нажатия.
 Выбор движка воркера — `JUPITER_ENGINE` (`http` по умолчанию | `browser`) в
 `run_worker.py`; служба `jt-jupiter-browser` (`infra/jupiter-browser-run.sh`
 setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
