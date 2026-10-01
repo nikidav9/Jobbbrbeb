@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
   TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
@@ -33,6 +33,7 @@ import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
 import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
 import { FORMATS, GRADES } from '@/components/filters/kit';
 import { JTBolt } from '@/components/ui/JTBolt';
+import { TabLogo, TAB_TOP } from '@/components/ui/TabLogo';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
@@ -625,14 +626,8 @@ function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
   onQuery: (q: string) => void;
 }) {
   return (
-    <View style={fh.row}>
-      <View style={fh.logoWrap} accessibilityLabel="JobToo">
-        <Image
-          source={require('@/assets/images/jt-logo-wide.png')}
-          style={fh.logoImage}
-          resizeMode="contain"
-        />
-      </View>
+    <View style={[TAB_TOP.row, fh.row]}>
+      <TabLogo />
 
       <View style={fh.search}>
         <Ionicons name="search" size={rs(18)} color={JT.ink} />
@@ -676,14 +671,8 @@ function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
 // Шапка ленты — макет JT-design: логотип JT слева, счётчик ⚡ — белая
 // пилюля высотой 44 с чёрным контуром 2.
 const fh = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(20), paddingTop: rs(10), paddingBottom: 0,
-    backgroundColor: JT.background,
-  },
-  logoWrap: { height: rs(44), justifyContent: 'center', flexShrink: 0 },
-  // assets/images/jt-logo-wide.png — логотип макета, 600×387.
-  logoImage: { width: rs(47), height: rs(30) },
+  // Поля и логотип — общие с «Откликами» и «Профилем» (TAB_TOP).
+  row: { gap: rs(10), backgroundColor: JT.background },
   search: {
     flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: rs(8),
     height: rs(44), paddingHorizontal: rs(12), borderRadius: rs(22),

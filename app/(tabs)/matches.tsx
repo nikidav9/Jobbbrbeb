@@ -29,6 +29,7 @@ import { jupiterBadge, jupiterNeedsCaptcha, jupiterRowSummary } from '@/services
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
+import { TabLogo, TAB_TOP } from '@/components/ui/TabLogo';
 import GuestGate from '@/components/GuestGate';
 import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
@@ -594,13 +595,9 @@ function WorkerMatches() {
     <SafeAreaView style={wm.safe} edges={['top', 'left', 'right']}>
       {/* Шапка макета: логотип, закладка (избранное), конверт (точка — есть
           новые), лупа (поиск по откликам). */}
-      <View style={wm.header}>
-        <Image
-          source={require('@/assets/images/header-jt-logo.png')}
-          style={wm.logo}
-          contentFit="contain"
-          accessibilityLabel="JobToo"
-        />
+      {/* Шапка вне прокрутки: стоит на месте, листается только список. */}
+      <View style={[TAB_TOP.row, wm.header]}>
+        <TabLogo />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
             {headBtn(BookmarkIcon, 'Сохранённые вакансии', () => router.push('/saved'))}
@@ -800,15 +797,11 @@ function WorkerMatches() {
 // логотип 44/12, бейдж 26/13, заголовок дня 12/800 капсом.
 const wm = StyleSheet.create({
   safe: { flex: 1, backgroundColor: JT.background },
-  // Шапка, заголовок и подпись — один в один с «Профилем» (ProfileHeader и
-  // workerS.scroll: поля 16, верх 14, ряд 44, заголовок Unbounded 800 28/32,
-  // подпись Onest 13) — логотип и заголовки на одной линии (просьба владельца
-  // 28.09.2026).
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, marginTop: 14, height: 44,
-  },
-  logo: { width: 40, height: 26 },
+  // Шапка — общая с лентой и «Профилем» (TAB_TOP: логотип, поля, верх), чтобы
+  // при переключении вкладок верх не прыгал (просьба владельца 01.10.2026).
+  // Заголовок и подпись — один в один с «Профилем» (workerS.scroll), а поле
+  // списка равно полю шапки: логотип и заголовок на одной линии (28.09.2026).
+  header: { justifyContent: 'space-between' },
   headerActions: { flexDirection: 'row', gap: 8 },
   headBtn: {
     width: 40, height: 40, borderRadius: 20, borderWidth: HAIRLINE, borderColor: JT.ink,
@@ -819,7 +812,7 @@ const wm = StyleSheet.create({
     position: 'absolute', top: 6, right: 7, width: 9, height: 9, borderRadius: 5,
     backgroundColor: JT.accent, borderWidth: HAIRLINE, borderColor: JT.background,
   },
-  list: { paddingHorizontal: 16 },
+  list: { paddingHorizontal: rs(20) },
   title: {
     fontFamily: ProfileFonts.headingExtra, fontSize: 28, lineHeight: 32, letterSpacing: -0.5,
     color: JT.ink, marginTop: 14,

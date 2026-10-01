@@ -48,7 +48,7 @@ import { rs, rf } from '@/constants/scale';
 import { forgetResumeCheck } from '@/services/resumeGate';
 import { confirmAsync } from '@/services/confirm';
 import { PERSONAL_FIELD_LABELS, PERSONAL_MULTILINE, PERSONAL_FIELD_CHOICES, PERSONAL_FIELD_PLACEHOLDERS, normalizePersonalChoiceValue } from '@/lib/personalFieldChoices';
-import { ProfileHeader } from '@/components/profile/ProfileHeader';
+import { ProfileHeader, ProfileTopBar } from '@/components/profile/ProfileHeader';
 import { ProfileTabs } from '@/components/profile/ProfileTabs';
 import { ResumeTabContent } from '@/components/profile/ResumeTabContent';
 import { EmailSheet } from '@/components/profile/edit/sheets/EmailSheet';
@@ -639,10 +639,18 @@ export default function ProfileScreen() {
     >
       {/* Работодатель — прежняя общая шапка вкладок (не трогаем, решение по
           объёму задачи 27.09: редизайн только профиля соискателя). У
-          соискателя вся верхняя строка — часть ProfileHeader внутри
-          прокрутки, как в эталоне (`docs/design/profile/screens/*.html`,
-          логотип+кнопки там не закреплены отдельным слоем). */}
-      {!isWorker ? (
+          соискателя верхняя строка стоит над прокруткой, как в ленте и
+          «Откликах»: при переключении вкладок верх не прыгает, при прокрутке
+          не уезжает (просьба владельца 01.10.2026; эталон
+          `docs/design/profile` её не закреплял). */}
+      {isWorker ? (
+        <ProfileTopBar
+          onHelp={() => router.push('/support')}
+          onNotifications={() => setShowNotifications(true)}
+          onSettings={() => router.push('/profile-settings')}
+          hasUnread={unreadCount > 0}
+        />
+      ) : (
         <TabHeader
           left={
             <TouchableOpacity
@@ -676,7 +684,7 @@ export default function ProfileScreen() {
           </View>
           }
         />
-      ) : null}
+      )}
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView
@@ -697,10 +705,6 @@ export default function ProfileScreen() {
         {isWorker ? (
           <>
             <ProfileHeader
-              onHelp={() => router.push('/support')}
-              onNotifications={() => setShowNotifications(true)}
-              onSettings={() => router.push('/profile-settings')}
-              hasUnread={unreadCount > 0}
               name={displayName(currentUser)}
               roleLabel="Работник"
               email={currentUser.email || currentUser.phone}
@@ -1463,7 +1467,7 @@ const sS = StyleSheet.create({
 // Отступы страницы у соискателя — из эталона (14 16 0, gap 14 между всеми
 // прямыми блоками столбца), у работодателя вёрстка прежняя (styles.scroll).
 const workerS = StyleSheet.create({
-  scroll: { paddingHorizontal: 16, paddingTop: 14, gap: 14 },
+  scroll: { paddingHorizontal: rs(20), paddingTop: 14, gap: 14 },
 });
 
 const styles = StyleSheet.create({
