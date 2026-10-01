@@ -166,10 +166,18 @@ def run_once(
                 guard = getattr(queue, "authorize_submit", None)
                 if callable(guard):
                     guard(task.id)
-                queue.checkpoint(task.id, TaskState.SUBMITTING, {
+                # «Далее» в многошаговой анкете — ещё не отклик (агент так и
+                # помечает: intermediate). Раньше и она взводила «отправка
+                # началась», и любой сбой на втором шаге (сторож 4 минуты,
+                # вопрос, ошибка) становился «Скорее всего, ушёл» без повтора —
+                # хотя «Отправить» не нажималось (владелец 02.10.2026: «почти
+                # во всех откликах так»). На «Далее» остаёмся в filling: сбой
+                # повторяется, истёкшая аренда — тоже, а не submission_unknown.
+                queue.checkpoint(task.id, TaskState.FILLING if intermediate else TaskState.SUBMITTING, {
                     "url": url, "intermediate": intermediate,
                 })
-                submission_attempted = True
+                if not intermediate:
+                    submission_attempted = True
             agent.before_submit = before_submit
         queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
             "url": task.vacancy_url,

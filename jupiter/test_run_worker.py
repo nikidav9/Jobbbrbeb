@@ -357,6 +357,46 @@ class TestProfileFactory(unittest.TestCase):
         self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
         self.assertEqual(queue.finished, [(task.id, TaskState.SUBMISSION_UNKNOWN)])
 
+    def test_failure_after_next_step_is_retried_not_unknown(self):
+        # «Далее» в многошаговой анкете — ещё не отклик. Сбой на втором шаге
+        # повторяется, а не становится «Скорее всего, ушёл» (02.10.2026).
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="two-step", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedOnSecondStep:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, True)
+                return AgentResult("failed", "browser killed", reason_code=Reason.NAVIGATION_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedOnSecondStep())
+        self.assertEqual(state, TaskState.RETRYABLE_FAILED)
+        self.assertNotIn(TaskState.SUBMITTING, [c[1] for c in queue.checkpoints])
+        self.assertIn((task.id, TaskState.FILLING, {"url": "https://example.com/job", "intermediate": True}),
+                      queue.checkpoints)
+
+    def test_final_submit_after_next_step_still_never_retries(self):
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="two-step-final", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedAfterFinal:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, True)
+                self.before_submit(url, False)
+                return AgentResult("failed", "HTTP failed", reason_code=Reason.SUBMIT_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedAfterFinal())
+        self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
+
     def test_live_task_on_unverified_site_is_parked_without_agent(self):
         import worker as worker_mod
 
