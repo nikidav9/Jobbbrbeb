@@ -64,6 +64,12 @@ if timeout 5h python3 recon.py --workers 4 --out "$tmp" >>"$LOG" 2>&1; then
         --out /var/www/html/career-search-scout.json --limit 40 --feed "$FEED" ) >>"$LOG" 2>&1 \
       || echo "$(date -Is) разведчик источников не прошёл" >>"$LOG"
   fi
+  # Источники в карантине (scripts/career-runtime-quarantine.json): снова
+  # отвечают ли они серверу — тот же первый запрос, что у сбора. Итог —
+  # открытый /career-quarantine-check.json; выпуск из карантина — через PR.
+  timeout 15m python3 "$REPO/scripts/career_quarantine_recheck.py" \
+    --out /var/www/html/career-quarantine-check.json >>"$LOG" 2>&1 \
+    || echo "$(date -Is) проверка карантина не прошла" >>"$LOG"
 else
   rm -f "$tmp"
   echo "$(date -Is) failed" >>"$LOG"
