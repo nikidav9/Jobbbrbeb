@@ -1401,7 +1401,7 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 `/var/www/html/jupiter-browser-status.json` (наружу — `https://147.45.184.99.sslip.io/jupiter-browser-status.json`, location в `infra/nginx-tls.conf`). YandexGPT — файл
 `/etc/jobtoo/yandex-gpt.env` (600, root) подключается обоим воркерам; ключ приезжает сам
 (01.10.2026): секреты `YANDEX_GPT_API_KEY`/`YANDEX_GPT_FOLDER_ID` → `deploy.php`
-(`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл (оставляя в ключе и каталоге только печатаемый ASCII — невидимый символ из секрета давал 500) и перезапускает воркеры;
+(`yandex_gpt.php`) → `infra/bootstrap.sh` пишет файл (кириллицу-двойника меняет на латиницу, остальное — только печатаемый ASCII: русская «А» в ключе давала 500, а выброшенная — 401) и перезапускает воркеры;
 проверка — `tests/yandex_gpt_delivery_test.py`. Работает ли на деле — в
 `jupiter-browser-status.json`: `yandex_gpt_проверка` (сервер раз в час сам спрашивает
 модель, пишет код и время; не 200 — ещё и причину словами Яндекса, повтор через 10 мин) и `yandex_gpt_вызовов_за_сутки`/`ошибок` по журналу воркеров. Капча человеку —
