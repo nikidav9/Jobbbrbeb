@@ -254,6 +254,7 @@ class RemoteTaskQueue:
         receipt_key: str | None = None,
         summary: dict | None = None,
         questions: list | None = None,
+        email_to: str | None = None,
     ) -> None:
         if self._worker is None:
             return
@@ -262,6 +263,9 @@ class RemoteTaskQueue:
         # очередь «Вопросы от работодателей» и вернёт отклик, когда ответят.
         if questions:
             extra["questions"] = questions
+        # Отклик письмом: адрес проверит и письмо отправит сервер.
+        if email_to:
+            extra["email_to"] = email_to
         # Сводка заполнения ложится в checkpoint: триггер базы переносит её в
         # историю отклика (jm_jupiter_events), когда меняется состояние.
         if summary is not None:

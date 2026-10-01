@@ -96,6 +96,7 @@ def apply_result(
         ),
         summary=fill_summary(result.trajectory),
         questions=result.questions or None,
+        email_to=result.email_to,
     )
     return state
 
