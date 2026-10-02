@@ -132,6 +132,48 @@ export function fillHostFor(vacancyUrl: string): string | null {
   return match ? match[1].toLowerCase().replace(/^www\./, '') : null;
 }
 
+// Слова страниц самой анкеты: такой «соседний» адрес — продолжение этой же
+// вакансии, а не другая.
+const APPLY_SEGMENT = /apply|otklik|response|respond|anketa|form|resume|cv|signup|login|auth/i;
+
+/** Похоже на адрес отдельной вакансии: число или длинный слаг через дефис. */
+function looksLikeVacancyId(segment: string): boolean {
+  return /\d/.test(segment) || (segment.includes('-') && segment.length >= 8);
+}
+
+/**
+ * Ведёт ли переход во встроенном браузере на ДРУГУЮ вакансию того же сайта.
+ *
+ * Молния тратится за одну вакансию (решение владельца 02.10.2026), а автопилот
+ * заполняет любую анкету на хосте вакансии. Без этой проверки можно было
+ * уйти с открытой вакансии на соседнюю и получить заполнение бесплатно.
+ * Признак — соседний адрес той же формы (`/vacancies/123` → `/vacancies/456`)
+ * или та же страница с другим номером в параметре (`?id=123` → `?id=456`).
+ * Страницы анкеты (`/vacancies/123/apply`), списки и чужие хосты (там автопилот
+ * и так не работает) не трогаем — иначе сломали бы настоящий отклик.
+ */
+export function isOtherVacancy(vacancyUrl: string, nextUrl: string): boolean {
+  let a: URL;
+  let b: URL;
+  try { a = new URL(vacancyUrl); b = new URL(nextUrl); } catch { return false; }
+  const host = (u: URL) => u.hostname.toLowerCase().replace(/^www\./, '');
+  if (host(a) !== host(b)) return false;
+  const segs = (u: URL) => u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  const pa = segs(a);
+  const pb = segs(b);
+  if (pa.join('/') === pb.join('/')) {
+    for (const [key, value] of a.searchParams) {
+      const other = b.searchParams.get(key);
+      if (other !== null && other !== value && /\d/.test(value) && /\d/.test(other)) return true;
+    }
+    return false;
+  }
+  if (pa.length === 0 || pa.length !== pb.length) return false;
+  if (pa.slice(0, -1).join('/') !== pb.slice(0, -1).join('/')) return false;
+  const last = pb[pb.length - 1];
+  return looksLikeVacancyId(last) && !APPLY_SEGMENT.test(last);
+}
+
 export function buildFillScript(profile: JupiterFillProfile, allowedHost: string): string {
   const profileJson = JSON.stringify(profile ?? {});
   const hostJson = JSON.stringify(allowedHost);

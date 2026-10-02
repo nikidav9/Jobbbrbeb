@@ -2,24 +2,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  DAILY_ENERGY, EnergyState, energyDay, parseEnergy, refund, rollover, spend,
+  DAILY_ENERGY, EnergyState, energyDay, parseEnergy, reconcile, refund, rollover, spend,
 } from '@/services/energy';
+import { dbEnergyLeft } from '@/services/db';
 
 const KEY = 'jt_energy_v1';
 
 /**
  * Дневной запас свайпов: хранение и пересчёт на новый день.
  *
- * Логика — в services/energy.ts, здесь только чтение и запись. Хранится
- * локально: мера временная, до монетизации, и переносить её на сервер сейчас
- * значило бы заводить миграцию ради того, что через месяц переделают. Цена
- * решения известна и принята: переустановка приложения обнуляет счётчик.
+ * Логика — в services/energy.ts, здесь только чтение и запись. Местная
+ * запись нужна, чтобы шапка отвечала сразу, без сети. Но решает сервер
+ * (php-proxy/energy.php, с 02.10.2026): он считает отклики за московские сутки
+ * на всех устройствах и сверх запаса не примет. Поэтому при каждом пересчёте
+ * местный остаток сводится с серверным — переустановка, второй телефон или
+ * сайт больше не дают новых двадцати.
  *
  * Пересчёт на новый день делается не только при запуске. Приложение живёт в
  * фоне сутками — человек, у которого оно провисело с вечера, иначе получил бы
  * вчерашний остаток. Поэтому пересчитываем и при возврате из фона.
  */
-export function useEnergy() {
+export function useEnergy(userId?: string | null) {
   const [state, setState] = useState<EnergyState>(() => ({ day: energyDay(), left: DAILY_ENERGY }));
   // Пока не прочитали хранилище, показывать полный запас нельзя: человек с
   // исчерпанным лимитом на секунду увидел бы полный запас и решил, что свайпы вернулись.
@@ -39,7 +42,12 @@ export function useEnergy() {
   const sync = useCallback(async () => {
     try {
       const stored = parseEnergy(await AsyncStorage.getItem(KEY));
-      const next = rollover(stored, energyDay());
+      let next = rollover(stored, energyDay());
+      if (userId) {
+        // Сеть упала — остаёмся на местном счёте: сервер всё равно не
+        // пропустит лишний отклик, а запирать ленту из-за связи незачем.
+        try { next = reconcile(next, await dbEnergyLeft(userId)); } catch { /* см. выше */ }
+      }
       setState(next);
       ref.current = next;
       // Записываем только если пересчёт что-то изменил: лишняя запись на
@@ -53,7 +61,7 @@ export function useEnergy() {
     } finally {
       setReady(true);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void sync();

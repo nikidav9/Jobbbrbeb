@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FILL_CORE, buildFillScript, fillHostFor, jupiterManualEligible, nextManualApplication,
+  FILL_CORE, buildFillScript, fillHostFor, isOtherVacancy, jupiterManualEligible, nextManualApplication,
 } from '../services/jupiterFill.ts';
 
 // jtKeyForField живёт как текст JS (Hermes не отдаёт исходник функции через
@@ -169,4 +169,24 @@ test('транслит и короткие подписи: otchestvo, «Сооб
   // Автопилот кладёт name в текст подписи (textOf), когда подписи нет.
   assert.equal(jtKeyForField('otchestvo', 'text', 'otchestvo'), 'patronymic');
   assert.equal(jtKeyForField('Сообщение', 'textarea', 'msg'), 'cover_letter');
+});
+
+test('встроенный браузер: на соседнюю вакансию автопилот не пускает', () => {
+  const v = 'https://career.example.ru/vacancies/123';
+  assert.equal(isOtherVacancy(v, 'https://career.example.ru/vacancies/456'), true);
+  assert.equal(isOtherVacancy(v, 'https://www.career.example.ru/vacancies/456?utm=x'), true);
+  assert.equal(isOtherVacancy('https://x.ru/job/analitik-dannykh', 'https://x.ru/job/menedzher-po-prodazham'), true);
+  assert.equal(isOtherVacancy('https://x.ru/vacancy.php?id=10', 'https://x.ru/vacancy.php?id=11'), true);
+});
+
+test('встроенный браузер: анкета, списки и чужие хосты — не другая вакансия', () => {
+  const v = 'https://career.example.ru/vacancies/123';
+  assert.equal(isOtherVacancy(v, v), false);
+  assert.equal(isOtherVacancy(v, `${v}#form`), false);
+  assert.equal(isOtherVacancy(v, `${v}/apply`), false);
+  assert.equal(isOtherVacancy(v, 'https://career.example.ru/vacancies'), false);
+  assert.equal(isOtherVacancy(v, 'https://career.example.ru/vacancies/apply-form-2'), false);
+  assert.equal(isOtherVacancy(v, 'https://ats.example.com/vacancies/456'), false);
+  assert.equal(isOtherVacancy('https://x.ru/vacancy.php?id=10', 'https://x.ru/vacancy.php?id=10&step=2'), false);
+  assert.equal(isOtherVacancy(v, 'не адрес'), false);
 });

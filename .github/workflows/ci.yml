@@ -112,6 +112,9 @@ jobs:
       - name: Логотипы компаний — только PNG 256×256, права, имя файла по содержимому
         run: php tests/company_logos_db_test.php
 
+      - name: Молнии на сервере — 20 откликов за московские сутки на всех устройствах
+        run: php tests/energy_server_test.php
+
       - name: YandexGPT подсказывает автопилоту поля — без данных человека, только ключи из списка
         run: php tests/jupiter_field_hints_test.php
 

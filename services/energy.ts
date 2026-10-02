@@ -51,6 +51,18 @@ export function rollover(stored: EnergyState | null | undefined, day: string): E
   return { day, left: Math.max(0, Math.min(DAILY_ENERGY, left)) };
 }
 
+/**
+ * Свести местный счётчик с серверным. Сервер считает отклики со всех
+ * устройств, телефон — только свои, поэтому верим меньшему: больше, чем
+ * сказал сервер, всё равно не отправить, а меньше бывает, пока свежий
+ * отклик ещё летит на сервер.
+ */
+export function reconcile(s: EnergyState, serverLeft: number): EnergyState {
+  if (!Number.isFinite(serverLeft)) return s;
+  const server = Math.max(0, Math.min(DAILY_ENERGY, Math.floor(serverLeft)));
+  return { day: s.day, left: Math.min(s.left, server) };
+}
+
 /** Списать свайп. Ниже нуля не уходим. */
 export function spend(s: EnergyState, n = 1): EnergyState {
   return { day: s.day, left: Math.max(0, s.left - n) };
