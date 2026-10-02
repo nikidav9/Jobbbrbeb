@@ -15,11 +15,13 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+import array
 import wave
 from pathlib import Path
 
 URL = 'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize'
-RATE = 24000  # голосу хватает; файлы лежат в git — вдвое меньше
+RATE = 48000  # lpcm у SpeechKit — только 8, 16 или 48 кГц
+OUT_RATE = 24000  # голосу хватает; файлы лежат в git — вдвое меньше
 
 
 def synth(text: str, cfg: dict, key: str, folder: str) -> bytes:
@@ -47,14 +49,16 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     durations = {}
     for line in cfg['lines']:
-        pcm = synth(line['text'], cfg, key, folder)
+        src = array.array('h', synth(line['text'], cfg, key, folder))
+        # 48 → 24 кГц: среднее пары отсчётов — простой фильтр от наложения.
+        half = array.array('h', ((src[i] + src[i + 1]) // 2 for i in range(0, len(src) - 1, 2)))
         path = out / f"{line['id']}.wav"
         with wave.open(str(path), 'wb') as w:
             w.setnchannels(1)
             w.setsampwidth(2)
-            w.setframerate(RATE)
-            w.writeframes(pcm)
-        durations[line['id']] = round(len(pcm) / 2 / RATE, 3)
+            w.setframerate(OUT_RATE)
+            w.writeframes(half.tobytes())
+        durations[line['id']] = round(len(half) / OUT_RATE, 3)
         print(line['id'], durations[line['id']], 's')
     (out / 'durations.json').write_text(json.dumps(durations, ensure_ascii=False, indent=1), encoding='utf-8')
 
