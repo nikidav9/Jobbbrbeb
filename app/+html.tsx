@@ -1,11 +1,16 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
 
+import { LANDING_DETECT, LANDING_MARKUP, LANDING_SCRIPT, LANDING_STYLE } from '@/constants/landing';
+
 export default function Root({ children }: PropsWithChildren) {
   return (
     <html lang="ru">
       <head>
         <meta charSet="utf-8" />
+        {/* Сайт компании для компьютера (constants/landing.ts): решаем до
+            отрисовки, чтобы ни приложение, ни загрузочный экран не мелькнули. */}
+        <script dangerouslySetInnerHTML={{ __html: LANDING_DETECT }} />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         {/* Масштаб зафиксирован (решение владельца 25.09): ни сам браузер
             (приближение при фокусе поля на iOS, «ужать под ширину» на Android),
@@ -16,7 +21,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
 
         <title>JobToo</title>
-        <meta name="description" content="Работа в Москве — свайпайте и откликайтесь" />
+        <meta name="description" content="Работа в IT — свайпом. Листайте IT-вакансии, а анкету на сайте работодателя заполнит Юпитер. Ответ — в чате приложения." />
 
         {/* PWA manifest */}
         <link rel="manifest" href="/manifest.json" />
@@ -35,6 +40,7 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 
         <ScrollViewStyleReset />
+        <style dangerouslySetInnerHTML={{ __html: LANDING_STYLE }} />
 
         {/* Веб/Telegram Mini App: браузер рисует свою рамку фокуса вокруг полей
             ввода — в нативном приложении её нет, и выглядит она инородно.
@@ -148,6 +154,7 @@ export default function Root({ children }: PropsWithChildren) {
         `}</style>
       </head>
       <body>
+        <div dangerouslySetInnerHTML={{ __html: LANDING_MARKUP }} />
         <div id="splash">
           <div id="splash-slot">
             <div id="splash-plate"><img id="splash-logo" src="/splash/logo.png" alt="JobToo" /></div>
@@ -293,6 +300,7 @@ export default function Root({ children }: PropsWithChildren) {
             }, 10000);
           })();
         `}</script>
+        <script dangerouslySetInnerHTML={{ __html: LANDING_SCRIPT }} />
       </body>
     </html>
   );
