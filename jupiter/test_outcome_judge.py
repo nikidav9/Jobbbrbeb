@@ -111,6 +111,22 @@ class ListToCard(unittest.TestCase):
         best = self.agent(links)._best_navigation(self.at("https://career.sibur.ru/vacancies/moscow/"), set())
         self.assertEqual(best[0], "https://career.sibur.ru/vacancies/moscow/it/")
 
+    def test_same_page_without_slash_is_not_a_new_place(self):
+        # Хоулмонт: /career/ ↔ /career до MAX_STEPS (02.10.2026).
+        links = [("https://career.sibur.ru/vacancies", "Вакансии")]
+        agent = self.agent(links)
+        self.assertIsNone(agent._best_navigation(self.at("https://career.sibur.ru/vacancies/"), set()))
+        visited = {"https://career.sibur.ru/vacancies/"}
+        self.assertIsNone(agent._best_navigation(self.at("https://career.sibur.ru/other/"), visited))
+
+    def test_redirect_does_not_eat_the_second_visit_with_params(self):
+        # /vacancies и /vacancies/ после редиректа — один заход: карточка
+        # ?id=33 на том же пути остаётся доступной (Т-Банк, 30.09).
+        links = [("https://career.sibur.ru/vacancies?id=33", "Вакансия: аналитик")]
+        visited = {"https://career.sibur.ru/vacancies", "https://career.sibur.ru/vacancies/"}
+        best = self.agent(links)._best_navigation(self.at("https://career.sibur.ru/vacancies/"), visited)
+        self.assertEqual(best[0], "https://career.sibur.ru/vacancies?id=33")
+
     def test_from_reached_card_no_other_card_and_no_way_up(self):
         card = "https://career.sibur.ru/vacancies/ekspert-rzia-1-kategorii/"
         links = [("https://career.sibur.ru/vacancies/slesar-remontnik-6-razryad/", "Вакансия"),

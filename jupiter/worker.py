@@ -22,6 +22,8 @@ from tasks import ApplicationTask, TaskQueueProto, TaskState, SubmissionAuthoriz
 RETRYABLE_CODES = {
     Reason.NAVIGATION_FAILED,
     Reason.SUBMIT_FAILED,
+    # Поле не заполнилось до клика: попытки ограничены очередью.
+    Reason.FILL_FAILED,
 }
 log = logging.getLogger("jupiter")
 # Сайт не отмечен live_ready в site_compat: боевую заявку не исполняем.
@@ -71,7 +73,10 @@ def apply_result(
 ) -> str:
     """Перевести итог прогона в состояние задачи."""
     if result.status == "failed":
-        if submission_attempted:
+        # FILL_FAILED — сбой заполнения до клика: before_submit уже взвёл
+        # submission_attempted, но на сайт ничего не ушло. Это обычный
+        # повтор/провал, а не «Скорее всего, ушёл».
+        if submission_attempted and result.reason_code != Reason.FILL_FAILED:
             queue.finish(task.id, TaskState.SUBMISSION_UNKNOWN,
                          reason_code="POST_OUTCOME_UNCERTAIN")
             return TaskState.SUBMISSION_UNKNOWN

@@ -47,6 +47,7 @@ from browser_captcha import CaptchaInfo
 from engine import (
     ControlState,
     EngineError,
+    EngineFillError,
     EngineSecurityError,
     EngineTransportError,
     FormState,
@@ -886,7 +887,7 @@ class JupiterBrowserEngine:
                 elif control.tag == "select" and loc.get_attribute("data-jt-cs") is not None:
                     chosen = next((o.label for o in control.options if o.selected and o.value), "")
                     if chosen and not apply_custom_select(self._tab, control.dom_ref, chosen):
-                        raise EngineError(
+                        raise EngineFillError(
                             f"Не выбран вариант {chosen!r} в списке {control.label or control.name!r}")
                 elif control.tag == "select":
                     values = control.selected_values
@@ -907,7 +908,7 @@ class JupiterBrowserEngine:
                 # До клика «Отправить» — отклик точно не ушёл. Обычная ошибка,
                 # а не обрыв после отправки: иначе агент пишет «исход
                 # неизвестен» и больше не пробует (МТС, 01.10.2026).
-                raise EngineError(
+                raise EngineFillError(
                     f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"
                 ) from exc
 
@@ -939,7 +940,7 @@ class JupiterBrowserEngine:
                     # Кнопки нет — отправка формы средствами самой страницы.
                     refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
                     if not refs:
-                        raise EngineError("Нечем отправить форму: ни кнопки, ни полей")
+                        raise EngineFillError("Нечем отправить форму: ни кнопки, ни полей")
                     self._tab.locator(f'[data-jt-ref="{refs[-1]}"]').first.press("Enter")
                     self.last_submit_mode = "browser_enter"
             except PlaywrightError as exc:

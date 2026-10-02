@@ -93,7 +93,7 @@ export type SiteStat = {
 
 export type Totals = Record<Bucket, number> & { total: number; verified: number }
 
-export type DayStat = { day: string; auto: number; manual: number; parked: number; human: number; other: number }
+export type DayStat = { day: string; auto: number; manual: number; parked: number; human: number; unknown: number; other: number }
 
 export type JupiterReport = {
   totals: Totals
@@ -128,7 +128,7 @@ export function buildReport(rows: JupiterRow[], days: number, now: Date = new Da
     auto: 0, manual: 0, parked: 0, human: 0, working: 0, failed: 0, duplicate: 0,
   }
   const bySite = new Map<string, SiteStat & { reasons: Map<string, number>; companies: Map<string, number> }>()
-  const byDay = new Map<string, DayStat>(axis.map(d => [d, { day: d, auto: 0, manual: 0, parked: 0, human: 0, other: 0 }]))
+  const byDay = new Map<string, DayStat>(axis.map(d => [d, { day: d, auto: 0, manual: 0, parked: 0, human: 0, unknown: 0, other: 0 }]))
 
   for (const r of picked) {
     const b = bucketOf(r)
@@ -158,6 +158,7 @@ export function buildReport(rows: JupiterRow[], days: number, now: Date = new Da
     const d = byDay.get(moscowDay(r.created_at))
     if (d) {
       if (b === 'auto' || b === 'manual' || b === 'parked' || b === 'human') d[b]++
+      else if (r.state === 'submission_unknown') d.unknown++
       else d.other++
     }
   }
@@ -401,6 +402,7 @@ export const REASON_LABEL: Record<string, string> = {
   DOMAIN_BLOCKED: 'Переход на чужой домен',
   VALIDATION_FAILED: 'Сайт не принял поля',
   SUBMIT_FAILED: 'Отправка не прошла',
+  FILL_FAILED: 'Поле не заполнилось — отклик не ушёл',
   SUCCESS_NOT_CONFIRMED: 'Успех не подтверждён',
   SITE_NEEDS_FIX: 'Сайт просит исправить поля',
   SITE_REJECTED: 'Сайт ответил ошибкой',
