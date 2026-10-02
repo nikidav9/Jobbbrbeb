@@ -614,7 +614,7 @@ function WorkerMatches() {
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }]}
+          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }, shown.length === 0 && { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />
@@ -717,12 +717,12 @@ function WorkerMatches() {
           ) : null}
 
           {shown.length === 0 ? (
-            <View style={s.empty}>
-              <Ionicons name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'} size={56} color={JT.textTertiary} />
-              <Text style={s.emptyTitle}>
+            <View style={wm.empty}>
+              <Ionicons name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'} size={48} color={JT.ink} />
+              <Text style={wm.emptyTitle}>
                 {offlineHere ? 'Нет связи с сервером' : allItems.length > 0 ? 'Здесь пока пусто' : 'Пока нет откликов'}
               </Text>
-              <Text style={s.emptySub}>
+              <Text style={wm.emptySub}>
                 {offlineHere
                   ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
                   : allItems.length > 0 ? 'В этом разделе откликов нет — загляните во «Все»'
@@ -813,6 +813,15 @@ const wm = StyleSheet.create({
     backgroundColor: JT.accent, borderWidth: HAIRLINE, borderColor: JT.background,
   },
   list: { paddingHorizontal: rs(20) },
+  // Пустой список — как пустая лента «Вакансий» (feed.tsx, styles.emptyState):
+  // чёрная тонкая иконка 48, заголовок фирменным шрифтом, текст по центру
+  // свободного места, а не прижатым к чипам (просьба владельца 02.10.2026).
+  empty: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: rs(24), paddingBottom: rs(120), minHeight: rs(260),
+  },
+  emptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), lineHeight: rf(24), color: JT.ink, textAlign: 'center', marginTop: rs(10) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6), textAlign: 'center', lineHeight: rf(20) },
   title: {
     fontFamily: ProfileFonts.headingExtra, fontSize: 28, lineHeight: 32, letterSpacing: -0.5,
     color: JT.ink, marginTop: 14,
