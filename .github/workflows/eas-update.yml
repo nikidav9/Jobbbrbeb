@@ -12,6 +12,8 @@ on:
       - 'infra/recon-now'
       # Логотипы компаний живут в базе, приложению их выкатывать незачем.
       - 'data/company-logos/**'
+      # Ролики сайта (Remotion) в приложение не входят.
+      - 'video/**'
       - 'scripts/upload-company-logos.py'
       - '.github/workflows/company-logos.yml'
   workflow_dispatch:

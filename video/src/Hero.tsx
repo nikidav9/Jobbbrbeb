@@ -25,7 +25,7 @@ export const INTRO = 90;
 export const OUTRO = 105;
 export const PROMO_FRAMES = INTRO + HERO_FRAMES + OUTRO;
 
-const FONTS = `
+export const FONTS = `
 @font-face { font-family: 'U'; font-weight: 700; src: url('${staticFile('unbounded-cyrillic-700-normal.woff2')}') format('woff2'); unicode-range: U+0400-045F; }
 @font-face { font-family: 'U'; font-weight: 700; src: url('${staticFile('unbounded-latin-700-normal.woff2')}') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+20BD; }
 @font-face { font-family: 'M'; font-weight: 700; src: url('${staticFile('manrope-cyrillic-700-normal.woff2')}') format('woff2'); unicode-range: U+0400-045F; }
@@ -204,7 +204,7 @@ const LogoSticker: React.FC<{ f: number; size: number }> = ({ f, size }) => {
 };
 
 /** Сцена 15 с: фон, телефон, анкета, сообщение, логотип. */
-const Scene: React.FC<{ f: number }> = ({ f }) => {
+export const Scene: React.FC<{ f: number }> = ({ f }) => {
   const loop = (f / HERO_FRAMES) * Math.PI * 2;
   const zoom = 1 + 0.03 * (1 - Math.cos(loop)) / 2;
   return (
@@ -231,7 +231,7 @@ export const Hero: React.FC = () => {
 };
 
 // ── Рекламная версия: заставка → сцена → концовка ───────────────────────────
-const Title: React.FC<{ f: number; sub: string; extra?: React.ReactNode }> = ({ f, sub, extra }) => {
+export const Title: React.FC<{ f: number; sub: string; extra?: React.ReactNode }> = ({ f, sub, extra }) => {
   const { fps } = useVideoConfig();
   const pop = spring({ frame: f, fps, config: { damping: 12, mass: 0.9 } });
   const text = spring({ frame: f - 14, fps, config: { damping: 16 } });
