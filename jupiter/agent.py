@@ -1306,11 +1306,25 @@ class JupiterAgent:
         return True
 
     @staticmethod
+    def _has_empty_input_form(page: PageState) -> bool:
+        """Есть ли форма с пустым полем ввода. Шаг «Код из СМС» анкетой по
+        is_application_form не признаётся, но это явное «нужен ещё ввод»."""
+        return any(
+            control.form_index is not None
+            and not control.disabled and not control.readonly and not control.value
+            and (control.tag == "textarea" or (
+                control.tag == "input"
+                and (control.type or "text") in {"text", "tel", "email", "number", "password", "search"}))
+            for control in page.controls
+        )
+
+    @staticmethod
     def _evidence(
         before: PageState,
         after: PageState,
         form_gone: bool,
         api_result: dict | None = None,
+        api_2xx_counts: bool = True,
     ) -> list[SubmissionEvidence]:
         """Доказательства того, что отклик приняли.
 
@@ -1346,7 +1360,7 @@ class JupiterAgent:
                 ))
             elif api_result.get("api_success"):
                 evidence.append(SubmissionEvidence("API_RESPONSE", detail, 0.85, after.url))
-            elif api_result.get("api_2xx"):
+            elif api_result.get("api_2xx") and api_2xx_counts:
                 # Сервер ответил 2xx на адрес отправки, но без флага успеха в
                 # теле. Один он не подтверждает (0.7 < порога), а вместе с
                 # исчезновением формы (0.35) даёт 0.8 — подтверждение.
@@ -3022,7 +3036,15 @@ class JupiterAgent:
             )
             # Ответ API на «Далее» — это сохранение шага, а не отклик.
             api_result = None if clicked_next else getattr(self.engine, "last_api_result", None)
-            evidence = self._evidence(before, page, form_gone, api_result)
+            # 2xx без флага успеха не считается, если на странице уже новая
+            # анкета (шаг «Код из СМС») или капча: форма «исчезла» только
+            # потому, что её сменила следующая.
+            api_2xx_counts = not (
+                self._target_form_index(page, profile, require_contact=False) is not None
+                or self._has_empty_input_form(page)
+                or self.detect_captcha(page)
+            )
+            evidence = self._evidence(before, page, form_gone, api_result, api_2xx_counts)
             trajectory.append({
                 "action": "verify_submission",
                 "url": page.url,

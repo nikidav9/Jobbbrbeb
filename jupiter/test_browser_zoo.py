@@ -544,6 +544,10 @@ if (send) send.onclick = async () => {
   else if (c === 'status204_stays') { await post('/api/apply-204'); }
   else if (c === 'alert') { await wait(300); alert('Спасибо, заявка принята'); }
   else if (c === 'reload') { await post('/api/apply-ok'); await wait(1200); sessionStorage.setItem('sent', '1'); location.reload(); }
+  else if (c === 'sms') { await post('/apply/send');
+    document.getElementById('app').innerHTML = '<form onsubmit="return false"><h2>Подтверждение номера</h2>'
+      + '<label>Код из СМС <input name="sms_code" required></label>'
+      + '<button type="submit">Подтвердить</button></form>'; }
   else if (c === 'redir') { const f = document.createElement('form'); f.method = 'post';
     f.action = '/api/redir?to=' + encodeURIComponent(q.get('to')); document.body.appendChild(f); f.submit(); }
   else if (c === 'goto') { await wait(500); location.href = q.get('to'); }
@@ -594,6 +598,8 @@ class _OutcomeHandler(BaseHTTPRequestHandler):
             self.send_header("Location", to)
             self.send_header("Content-Length", "0")
             self.end_headers()
+        elif self.path == "/apply/send":
+            self._send(200, b'{"need_sms": true}')
         elif self.path == "/api/apply-slow":
             time.sleep(3)
             self._send(200, b'{"success": true}')
@@ -682,6 +688,18 @@ class BrowserSubmitOutcomeTest(unittest.TestCase):
         types = {i.get("type") for item in result.trajectory
                  for i in item.get("evidence", []) if isinstance(i, dict)}
         self.assertIn("API_2XX", types, dump)
+
+    def test_2xx_with_new_sms_form_is_not_confirmation(self):
+        # 200 {"need_sms": true}: прежняя анкета исчезла, но вместо неё — шаг
+        # «Код из СМС». Это не отклик, а просьба ввести код: код агент не
+        # выдумывает, вопрос уходит человеку.
+        eng, result, dump = self.assert_not_submitted("sms")
+        self.assertEqual(self.server.state["posts"], ["/apply/send"], dump)
+        self.assertTrue(any(a.get("action") == "api_result" and a.get("api_2xx") for a in eng.actions), eng.actions)
+        for item in result.trajectory:
+            if item.get("action") == "fill":
+                self.assertNotIn("sms", json.dumps(item, ensure_ascii=False).lower(), dump)
+        self.assertNotIn("success_detected", [t.get("action") for t in result.trajectory], dump)
 
     def test_204_alone_while_form_stays_is_not_confirmation(self):
         self.assert_not_submitted("status204_stays")
