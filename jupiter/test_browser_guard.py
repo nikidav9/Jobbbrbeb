@@ -169,6 +169,18 @@ class BrowserGuardTest(unittest.TestCase):
         self.assertEqual(self.decisions(), ["same_tab"])
         self.assertEqual(len(self.ctx.pages), 1)
 
+    def test_popup_text_is_captured_before_close(self):
+        # «Спасибо» в новом окне: текст снимается до закрытия (02.10.2026).
+        ctx = self.browser.new_context(**bg.CONTEXT_SAFE_OPTIONS)
+        self.addCleanup(ctx.close)
+        page = ctx.new_page()
+        texts: list[str] = []
+        bg.install_guards(ctx, page, self.allowed, [], popup_texts=texts)
+        page.goto(self.url("/popup_good"))
+        page.click("#b")
+        page.wait_for_url("**/landing", timeout=5000)
+        self.assertEqual(texts, ["landing"])
+
     def test_dialogs_do_not_hang(self):
         self.page.goto(self.url("/dialogs"))
         self.assertEqual(self.page.evaluate("[window.r, window.p]"), [False, None])
