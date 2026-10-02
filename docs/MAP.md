@@ -1406,6 +1406,39 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 `jupiter/test_browser_engine.py`, отдельная задача CI `jupiter-browser`
 (Playwright ставится только там).
 
+`jupiter/alice_dom.py` — как Алиса видит страницу (02.10.2026, приёмы browser-use, MIT): `COLLECT_JS`
+(видимость, модалка сужает область, перекрытие `elementFromPoint`, единая проверка «интерактивен ли»,
+открытый shadow DOM, схлопывание вложенных, имя элемента, обяз/варианты/формат/ошибки; значения полей
+не читаются — только «заполнено/пусто»), `collect`/`collect_all` (с iframe, номера `f3-7`), `render_outline`
+(строка на элемент, бюджет 9000 символов, обрезка по строкам, поля и «Отправить» не режутся),
+`locator_for(page, idx)`; стабильные номера — `data-jt-idx`, «новое» — `data-jt-seen`. Старые
+`OUTLINE_JS`/`SNAPSHOT_JS` не заменяет; тест — `test_alice_dom.py` (render без браузера всегда, страницы — в `jupiter-browser`).
+
+`jupiter/alice_agent.py` — Алиса-спасатель (02.10.2026, цикл по образцу browser-use, код свой на stdlib + Playwright):
+`rescue(engine, profile_keys, goal, code, llm, *, read_only, budget, value_for, resume_path, notes)` → `RescueResult`
+(`status` ready/stuck/ask_human/captcha/blocked/limit, `acted`, `steps` для траектории — действие, номер, ключ, без
+значений). Шаг: `alice_dom.collect_all` → `render_outline` → один `llm.complete_json` (ответ JSON `{ok, memory, goal,
+action}`, `parse_answer` — строго, без свободного текста) → `check_action` до касания страницы → `_Actor` через
+`alice_dom.locator_for`. Действия: click, fill{key, format?}, select{key|option}, check{key}, upload, scroll, done.
+**Модель не видит ни значений профиля, ни значений полей** — только устройство страницы и имена ключей;
+значение подставляет `value_for(key, format)` (в агенте — `JupiterAgent._alice_value`), всё сообщение шага
+ещё раз проходит `redact` со значениями профиля. Запрещено (отказ без касания страницы): кнопка отправки и «Далее»
+(их жмёт основной цикл), вход/регистрация/оплата (`browser_planner._FORBIDDEN_RE`), разделы сайта, капча,
+согласия (плюс `_CONSENTISH_RE`: кадровый резерв, правила, оферта, рассылки), `candidate.LEGAL_KEYS` и особые
+категории, чужой ключ, несуществующий номер. **Алиса не меняет сервер ни в каком режиме:** на заход движок
+переводится в `read_only` (любой не-GET обрывается), в боевом режиме оборванный запрос к самому сайту
+(`_sent_to_site`) — стоп со статусом blocked и прежним ответом: отправляет только основной цикл. Лимиты: 6 шагов на заход,
+1 действие за шаг, `TaskQuota` — ≤2 захода и ≤12 вызовов на задачу поверх часового бюджета
+(`yandex_gpt.BUDGET.remaining()`), заход ≤90 с; стоп на 2 ошибочных шага подряд, повторе действия и 2 шагах без
+изменений страницы. В агенте — хук `alice` (llm; `run_worker.py` отдаёт тот же `CountingLLM`) и
+`JupiterAgent._alice_rescue(page, profile, trajectory, code)`: зовётся перед `return` для VACANCY_NOT_FOUND,
+STEP_DID_NOT_ADVANCE (два места), MISSING_PROFILE_FIELD (не согласие/юридическое/особое; поле без подписи `jt-N`
+или «факт»), VALIDATION_FAILED, SITE_NEEDS_FIX (только вердикт сайта); вернула страницу — `continue` основного
+цикла (с `retry_after_fix`), `None` — прежний `return`. Только браузерный движок; до захода значения агента из
+модели переносятся в живой DOM (`_alice_flush`), после — модель берётся заново (`engine.current_page()`), радио-группы
+Алисы не снимает `drop_preselected_radios` (`_alice_radios`). Тест — `test_alice_agent.py` (проверка ответа без
+браузера, страницы — в `jupiter-browser`).
+
 Модули браузерного движка (28.09.2026; в `browser_engine.py` уже подключены
 `browser_guard`, `browser_overlays`, `browser_custom_controls` (списки — в снимке
 `<select data-jt-custom>`) и `browser_frames` (анкету из iframe открывает

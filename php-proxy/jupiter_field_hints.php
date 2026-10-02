@@ -31,10 +31,16 @@ const JT_FH_FORM_WORDS = ['фамилия', 'имя', 'отчество', 'те�
     'электронная', 'контактный', 'мобильный', 'ваш', 'ваше', 'ваша', 'полное', 'желаемая',
     'ожидаемая', 'текущая', 'first', 'last', 'middle', 'full', 'name', 'phone', 'mobile',
     'email', 'mail', 'address', 'city', 'country', 'date', 'birth', 'resume', 'cv', 'cover',
-    'letter', 'salary', 'position', 'company', 'current', 'expected', 'your', 'citizenship'];
+    'letter', 'salary', 'position', 'company', 'current', 'expected', 'your', 'citizenship',
+    'подать', 'заявка', 'отклик', 'откликнуться', 'откликнитесь', 'ваканси', 'отправить',
+    'отправка', 'подтвердить', 'согласие', 'загрузить', 'выбрать', 'apply', 'submit', 'application'];
+// Служебные слова кнопок — только целиком: по началу слова «to» совпало бы с «Tom».
+const JT_FH_GLUE_WORDS = ['на', 'по', 'для', 'эту', 'этот', 'эта', 'наш', 'нашу', 'нашей',
+    'for', 'this', 'the', 'to', 'our', 'us', 'now'];
 
 function jt_fh_is_form_word(string $w): bool {
     $w = mb_strtolower($w);
+    if (in_array($w, JT_FH_GLUE_WORDS, true)) return true;
     foreach (JT_FH_FORM_WORDS as $s) {
         if (str_starts_with($w, $s) && mb_strlen($w) - mb_strlen($s) <= 2) return true;
     }
@@ -48,10 +54,12 @@ function jt_fh_redact(string $t): string {
     $t = (string)preg_replace('~(?<![\w])\+?\d[\d\s().-]{8,}\d(?![\w])~u', '[телефон]', $t);
     $t = (string)preg_replace('~\d{6,}~u', '[число]', $t);
     $t = (string)preg_replace('~\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?(?:[А-ЯЁ]\.?)?|\b[А-ЯЁ]\.\s?(?:[А-ЯЁ]\.\s?)?[А-ЯЁ][а-яё]+\b~u', '[ФИО]', $t);
-    foreach (['~\b[А-ЯЁ][а-яё]+(?:[ \t]+[А-ЯЁ][а-яё]+){1,2}\b~u', '~\b[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,2}\b~u'] as $re) {
+    foreach (['~\b[А-ЯЁ][а-яё]+(?:[ \t]+[А-ЯЁ][а-яё]+){1,5}\b~u', '~\b[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,5}\b~u'] as $re) {
+        // Одно слово анкеты не спасает соседей: «Телефон Иван Петров» — имя.
         $t = (string)preg_replace_callback($re, function ($m) {
-            foreach (preg_split('~\s+~u', $m[0]) as $w) if (jt_fh_is_form_word($w)) return $m[0];
-            return '[ФИО]';
+            $words = preg_split('~\s+~u', $m[0]);
+            $other = count(array_filter($words, fn($w) => !jt_fh_is_form_word($w)));
+            return ($other < 2 && $other < count($words)) ? $m[0] : '[ФИО]';
         }, $t);
     }
     return mb_substr(trim($t), 0, 160);
