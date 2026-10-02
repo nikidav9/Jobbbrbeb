@@ -109,6 +109,9 @@ jobs:
       - name: Отклик письмом — домен вакансии, разрешение, вложение, Reply-To
         run: php tests/jupiter_email_apply_test.php
 
+      - name: Логотипы компаний — только PNG 256×256, права, имя файла по содержимому
+        run: php tests/company_logos_db_test.php
+
       - name: YandexGPT подсказывает автопилоту поля — без данных человека, только ключи из списка
         run: php tests/jupiter_field_hints_test.php
 
