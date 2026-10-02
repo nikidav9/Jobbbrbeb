@@ -15,7 +15,7 @@
  */
 import React from 'react';
 import {
-  AbsoluteFill, Easing, Img, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig,
+  AbsoluteFill, Audio, Easing, Img, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig,
 } from 'remotion';
 import { A, ActionRow, F, FeedCard, FeedHeader, ResponsesScreen, TabBar, VACS } from './AppScreen';
 import { BRANDS, BrandMark } from './Brands';
@@ -52,7 +52,7 @@ const Phone: React.FC<{ f: number }> = ({ f }) => {
   const stamp = interpolate(f, [48, 78], [0, 1], clamp) * (1 - back);
   const promote = out * (1 - back);
   const press = win(f, 84, 88, 92, 100);
-  const bolts = f >= 90 && back < 0.5 ? 14 : 15;
+  const bolts = f >= 90 && back < 0.5 ? 9 : 10; // дневной запас — DAILY_ENERGY в services/energy.ts
   const boltPulse = win(f, 90, 94, 98, 108);
   // Палец: свайп по карточке, потом тап по вкладке «Отклики».
   const fIn = win(f, 28, 40, 86, 98);
@@ -259,6 +259,8 @@ export const Promo: React.FC = () => {
   return (
     <>
       <style>{FONTS}</style>
+      {/* Музыка — своя, синтез в коде (scripts/music.py, решение владельца 02.10.2026). */}
+      <Audio src={staticFile('music.wav')} volume={(k) => interpolate(k, [0, 10, PROMO_FRAMES - 20, PROMO_FRAMES], [0, 0.85, 0.85, 0], clamp)} />
       <Sequence durationInFrames={INTRO}><Title f={f} sub="Листайте IT-вакансии — откликается Юпитер" /></Sequence>
       <Sequence from={INTRO} durationInFrames={HERO_FRAMES}><Scene f={f - INTRO} /></Sequence>
       <Sequence from={INTRO + HERO_FRAMES}>

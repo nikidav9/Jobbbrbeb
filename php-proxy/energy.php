@@ -9,8 +9,8 @@
 // бесплатен: он ничего нового работодателю не отправляет.
 
 /** Сколько откликов в сутки. Совпадает с DAILY_ENERGY в services/energy.ts. */
-const JT_DAILY_APPLIES = 15;
-const JT_ENERGY_EMPTY = 'На сегодня отклики закончились: их 15 в сутки. Новые появятся в полночь по Москве.';
+const JT_DAILY_APPLIES = 10;
+const JT_ENERGY_EMPTY = 'На сегодня отклики закончились: их 10 в сутки. Новые появятся в полночь по Москве.';
 
 /** Начало текущих московских суток — в UTC, как хранит база. */
 function jt_energy_since(?DateTimeImmutable $now = null): string

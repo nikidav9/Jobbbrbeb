@@ -11,8 +11,8 @@ test('новый день даёт полный запас, вчерашний �
   assert.deepEqual(rollover({ day: '2026-09-16', left: 37 }, '2026-09-17'),
     { day: '2026-09-17', left: DAILY_ENERGY });
   // И наоборот: в тот же день остаток сохраняется.
-  assert.deepEqual(rollover({ day: '2026-09-17', left: 12 }, '2026-09-17'),
-    { day: '2026-09-17', left: 12 });
+  assert.deepEqual(rollover({ day: '2026-09-17', left: DAILY_ENERGY - 3 }, '2026-09-17'),
+    { day: '2026-09-17', left: DAILY_ENERGY - 3 });
 });
 
 test('пустое хранилище — полный запас', () => {
@@ -67,9 +67,9 @@ test('полный день: сорок свайпов и стена', () => {
 });
 
 test('сервер сводит счётчик: верим меньшему', () => {
-  const s = { day: '2026-10-02', left: 15 };
+  const s = { day: '2026-10-02', left: DAILY_ENERGY - 1 };
   assert.deepEqual(reconcile(s, 3), { day: '2026-10-02', left: 3 });   // переустановка, второй телефон
-  assert.deepEqual(reconcile(s, 18), { day: '2026-10-02', left: 15 }); // свежий отклик ещё летит
+  assert.deepEqual(reconcile(s, DAILY_ENERGY), s); // свежий отклик ещё летит
   assert.deepEqual(reconcile(s, -4), { day: '2026-10-02', left: 0 });
   assert.deepEqual(reconcile(s, Number.NaN), s);
 });
