@@ -1306,11 +1306,49 @@ class JupiterAgent:
         return True
 
     @staticmethod
+    def _has_empty_input_form(page: PageState, before: PageState | None = None) -> bool:
+        """Есть ли НОВАЯ форма с пустым полем ввода. Шаг «Код из СМС» анкетой
+        по is_application_form не признаётся, но это явное «нужен ещё ввод».
+        Поиск (type=search) и поля, что были на странице и до клика (поиск в
+        шапке, подписка в подвале), не в счёт — иначе голый 2xx не подтверждал
+        бы почти нигде (разбор архитектора 02.10.2026)."""
+        seen = set()
+        if before is not None:
+            seen = {(c.name or c.label or c.placeholder) for c in before.controls if (c.name or c.label or c.placeholder)}
+        return any(
+            control.form_index is not None
+            and not control.disabled and not control.readonly and not control.value
+            and (control.name or control.label or control.placeholder) not in seen
+            and (control.tag == "textarea" or (
+                control.tag == "input"
+                and (control.type or "text") in {"text", "tel", "email", "number", "password"}))
+            for control in page.controls
+        )
+
+    _CODE_FIELD_RE = re.compile(r"(?:\bкод\b|\bcode\b|otp|\bsms\b|\bсмс\b|confirm)", re.I)
+
+    @classmethod
+    def _asks_for_code(cls, page: PageState) -> bool:
+        """После «Отправить» появилось пустое поле кода (СМС, почта, OTP):
+        отклик ещё не принят, что бы ни писала страница («Заявка отправлена.
+        Введите код из СМС»). Разбор архитектора 02.10.2026."""
+        for control in page.controls:
+            if control.disabled or control.readonly or control.value:
+                continue
+            if control.tag != "input" or (control.type or "text") not in {"text", "tel", "number", "password"}:
+                continue
+            words = " ".join(x or "" for x in (control.name, control.label, control.placeholder, control.aria))
+            if cls._CODE_FIELD_RE.search(words):
+                return True
+        return False
+
+    @staticmethod
     def _evidence(
         before: PageState,
         after: PageState,
         form_gone: bool,
         api_result: dict | None = None,
+        api_2xx_counts: bool = True,
     ) -> list[SubmissionEvidence]:
         """Доказательства того, что отклик приняли.
 
@@ -1331,6 +1369,12 @@ class JupiterAgent:
             success_markers=SUCCESS_MARKERS,
             form_gone=form_gone,
             normalize=normalize,
+            # Подстроки SUCCESS_MARKERS + регулярки submission.SUCCESS_PATTERNS
+            # («Заявка успешно отправлена», «Данные успешно отправлены»).
+            # «Вы уже откликнулись» тут — признак того, что отклик есть: мы
+            # его не отправляли до клика (маркера не было в тексте до), а это
+            # не то же самое, что DUPLICATE_BLOCKED по квитанции до отправки.
+            success_patterns=True,
         )
         if api_result:
             detail = "; ".join(api_result.get("evidence") or [])[:300]
@@ -1340,6 +1384,11 @@ class JupiterAgent:
                 ))
             elif api_result.get("api_success"):
                 evidence.append(SubmissionEvidence("API_RESPONSE", detail, 0.85, after.url))
+            elif api_result.get("api_2xx") and api_2xx_counts:
+                # Сервер ответил 2xx на адрес отправки, но без флага успеха в
+                # теле. Один он не подтверждает (0.7 < порога), а вместе с
+                # исчезновением формы (0.35) даёт 0.8 — подтверждение.
+                evidence.append(SubmissionEvidence("API_2XX", detail, 0.7, after.url))
         return evidence
 
     @staticmethod
@@ -2373,7 +2422,30 @@ class JupiterAgent:
             "receipt": receipt.as_dict(),
         })
 
-        # Одна попытка узнать правду безопасным способом. GET ничего не
+        # Сначала текущая вкладка (браузерный движок): «Спасибо» могло уже
+        # показаться, а перезагрузка вакансии его стирает — анкета на SPA
+        # появляется заново, и подтверждения не видно никогда.
+        current = getattr(self.engine, "current_page", None)
+        if callable(current):
+            try:
+                tab = current()
+            except EngineError:
+                tab = None
+            if tab is not None:
+                evidence = self._evidence(before, tab, form_gone=not tab.forms)
+                trajectory.append({
+                    "action": "verify_submission",
+                    "source": "current_tab",
+                    "url": tab.url,
+                    "confirmed": is_confirmed(evidence),
+                    "score": round(score_evidence(evidence), 2),
+                    "evidence": [item.as_dict() for item in evidence],
+                })
+                if is_confirmed(evidence):
+                    self._record_receipt(fingerprint, "submitted", tab.url, evidence)
+                    return AgentResult("submitted", trajectory=trajectory)
+
+        # Потом одна попытка узнать правду безопасным способом. GET ничего не
         # создаёт, поэтому его повторить можно, в отличие от POST.
         try:
             after = self.engine.open(before.url)
@@ -2426,6 +2498,9 @@ class JupiterAgent:
         # объявлялся «шаг не сдвинулся» — и статистика совместимости считала
         # бы неподтверждённые отправки проблемой многошаговых анкет.
         last_click_was_submit = False
+        # Отпечаток и доказательства последней настоящей отправки: если после
+        # неё формы нет, а подтверждения нет, по ним пишется квитанция.
+        last_submit: tuple[ApplicationFingerprint, list[SubmissionEvidence]] | None = None
         # Сайт подсветил поля после «Отправить» (01.10.2026): на следующем
         # круге они считаются обязательными — заполняем из профиля или
         # спрашиваем человека (вопросы работодателей), и отправляем снова.
@@ -2583,6 +2658,30 @@ class JupiterAgent:
                         ),
                         reason_code=Reason.CAPTCHA_REQUIRED,
                     )
+
+            if submit is None and sent_once and last_click_was_submit and last_submit is not None:
+                # Отклик отправлен, формы больше нет, подтверждения нет. Уходить
+                # со страницы нельзя (02.10.2026): другие страницы сайта и
+                # повторное «Откликнуться» не покажут, ушёл ли отклик, зато
+                # риск второй отправки появляется — квитанции ещё нет.
+                fingerprint, sent_evidence = last_submit
+                receipt = self._record_receipt(
+                    fingerprint, "submission_unknown", page.url, sent_evidence)
+                reason = (
+                    "Submit was clicked, the form is gone and the page shows no "
+                    "confirmation: the application most likely went through. "
+                    "Jupiter does not navigate away or click apply again"
+                )
+                trajectory.append({
+                    "action": "submission_unknown",
+                    "url": page.url,
+                    "reason": reason,
+                    "reason_code": Reason.SUBMISSION_UNKNOWN,
+                    "receipt": receipt.as_dict(),
+                })
+                return AgentResult(
+                    "submission_unknown", reason, trajectory, Reason.SUBMISSION_UNKNOWN
+                )
 
             if submit is None:
                 # Страница вакансии Сбера — уже цель: её анкету шлёт адаптер
@@ -2886,7 +2985,10 @@ class JupiterAgent:
             if self.before_submit is not None:
                 self.before_submit(page.url, clicked_next)
             try:
-                page = self.engine.submit(before, form, submit)
+                # Промежуточная «Далее» — короткое окно наблюдения. Параметр
+                # передаём только ей: движки-заглушки его могут не знать.
+                page = (self.engine.submit(before, form, submit, intermediate=True)
+                        if clicked_next else self.engine.submit(before, form, submit))
             except EngineSecurityError as exc:
                 reason = f"Navigation blocked by Jupiter policy: {exc}"
                 trajectory.append({
@@ -2961,7 +3063,21 @@ class JupiterAgent:
             )
             # Ответ API на «Далее» — это сохранение шага, а не отклик.
             api_result = None if clicked_next else getattr(self.engine, "last_api_result", None)
-            evidence = self._evidence(before, page, form_gone, api_result)
+            # 2xx без флага успеха не считается, если на странице уже новая
+            # анкета (шаг «Код из СМС») или капча: форма «исчезла» только
+            # потому, что её сменила следующая.
+            api_2xx_counts = not (
+                self._target_form_index(page, profile, require_contact=False) is not None
+                or self._has_empty_input_form(page, before)
+                or self.detect_captcha(page)
+            )
+            evidence = self._evidence(before, page, form_gone, api_result, api_2xx_counts)
+            if self._asks_for_code(page):
+                # Шаг подтверждения кодом: ни текст «отправлено», ни ответ
+                # сервера отклик не подтверждают — доказательства в журнал,
+                # но с нулевым весом.
+                evidence = [SubmissionEvidence(e.type, e.value, 0.0, e.source_url) for e in evidence]
+                trajectory.append({"action": "code_step_after_submit", "url": page.url})
             trajectory.append({
                 "action": "verify_submission",
                 "url": page.url,
@@ -2981,6 +3097,7 @@ class JupiterAgent:
                 return AgentResult("submitted", trajectory=trajectory)
 
             retry_after_fix = False
+            last_submit = None if clicked_next else (fingerprint, evidence)
             if not clicked_next:
                 verdict = self._site_verdict(page, profile)
                 if (verdict and verdict.get("verdict") == "needs_fix" and verdict.get("source") == "site"

@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Colors, Radius, Shadow } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import { useApp } from '@/hooks/useApp';
 import { PermVacancy, ExtVacancy } from '@/constants/types';
@@ -18,7 +18,7 @@ import { BackButton } from '@/components/ui/BackButton';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { openExtVacancy } from '@/services/extVacancyHandoff';
 
-import { JT_FONT } from '@/constants/jt';
+import { JT, JT_FONT } from '@/constants/jt';
 // Строка избранного: своя вакансия JobToo или карьерная (закладки миграции 129).
 type SavedRow =
   | { kind: 'perm'; id: string; title: string; company: string; closed: boolean; at: string | null; v: PermVacancy }
@@ -167,7 +167,7 @@ export default function SavedScreen() {
 
       <OnboardingTarget targetKey="saved.content" style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={sv.list}
+          contentContainerStyle={[sv.list, !loading && saved.length === 0 && { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
@@ -183,8 +183,8 @@ export default function SavedScreen() {
         {loading && saved.length === 0 ? (
           <View style={sv.empty}><ActivityIndicator color={Colors.primary} /></View>
         ) : saved.length === 0 ? (
-          <View style={sv.empty}>
-            <Ionicons name="bookmark-outline" size={56} color={Colors.textMuted} />
+          <View style={sv.emptyFill}>
+            <Ionicons name="bookmark-outline" size={48} color={JT.ink} />
             <Text style={sv.emptyTitle}>В избранном пусто</Text>
             <Text style={sv.emptySub}>Нажмите закладку на карточке вакансии — она сохранится здесь</Text>
           </View>
@@ -204,24 +204,27 @@ export default function SavedScreen() {
   );
 }
 
+// Стиль JT, как «Отклики» и пустая лента «Вакансий» (просьба владельца
+// 02.10.2026): тёплый фон, заголовок фирменным шрифтом, белая карточка
+// с тонким тёплым контуром, пустое состояние по центру — чёрная иконка 48.
 const sv = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.outerBg },
+  safe: { flex: 1, backgroundColor: JT.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(12),
   },
   backSpacer: { width: rs(44), height: rs(44) },
-  title: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  title: { fontSize: rf(20), fontFamily: JT_FONT.head, color: JT.ink },
 
-  list: { paddingHorizontal: rs(16), paddingBottom: rs(32) },
+  list: { paddingHorizontal: rs(20), paddingBottom: rs(32) },
   dayHead: {
-    fontSize: rf(12), fontFamily: JT_FONT.bold, color: Colors.textMuted,
-    letterSpacing: 0.4, paddingTop: rs(14), paddingBottom: rs(8),
+    marginTop: rs(18), marginBottom: rs(10), fontFamily: JT_FONT.heavy, fontSize: rf(12),
+    letterSpacing: 1, textTransform: 'uppercase', color: JT.textTertiary,
   },
-  group: { backgroundColor: '#FFFFFF', borderRadius: Radius.lg, overflow: 'hidden', ...Shadow.card },
+  group: { borderRadius: rs(22), backgroundColor: JT.surface, borderWidth: 1.5, borderColor: '#E3D9CC', overflow: 'hidden' },
 
   row: { flexDirection: 'row', alignItems: 'center' },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
+  rowDivider: { borderBottomWidth: 1.5, borderBottomColor: '#EFE7DC' },
   rowTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14), paddingRight: rs(4) },
   logo: {
     width: rs(44), height: rs(44), borderRadius: rs(12),
@@ -229,16 +232,16 @@ const sv = StyleSheet.create({
   },
   logoTxt: { color: '#FFFFFF', fontSize: rf(15), fontFamily: JT_FONT.heavy },
   rowBody: { flex: 1 },
-  rowTitle: { fontSize: rf(15.5), fontFamily: JT_FONT.bold, color: Colors.textPrimary, lineHeight: rf(20) },
-  rowCompany: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: Colors.textMuted, marginTop: rs(2) },
+  rowTitle: { fontSize: rf(15.5), fontFamily: JT_FONT.heavy, color: JT.ink, lineHeight: rf(20) },
+  rowCompany: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, marginTop: rs(2) },
   rowRight: { alignItems: 'flex-end', gap: rs(4), flexShrink: 0 },
   pill: { borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4) },
-  pillSaved: { backgroundColor: '#EEF0F4' },
+  pillSaved: { backgroundColor: JT.stack1 },
   pillClosed: { backgroundColor: '#FEE2E2' },
   pillTxt: { fontSize: rf(10), fontFamily: JT_FONT.heavy, letterSpacing: 0.3 },
-  pillTxtSaved: { color: Colors.textSecondary },
+  pillTxtSaved: { color: JT.textSecondary },
   pillTxtClosed: { color: Colors.red },
-  rowDate: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textMuted },
+  rowDate: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: JT.textTertiary },
   unsave: { padding: rs(12), flexShrink: 0 },
 
   offlineBar: {
@@ -248,6 +251,7 @@ const sv = StyleSheet.create({
   offlineTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(12), color: '#92400E', lineHeight: rf(16) },
 
   empty: { alignItems: 'center', paddingTop: rs(80), paddingHorizontal: rs(24), gap: rs(8) },
-  emptyTitle: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, marginTop: rs(6) },
-  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center', lineHeight: rf(20) },
+  emptyFill: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(24), paddingBottom: rs(140), minHeight: rs(260) },
+  emptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), lineHeight: rf(24), color: JT.ink, textAlign: 'center', marginTop: rs(10) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6), textAlign: 'center', lineHeight: rf(20) },
 });

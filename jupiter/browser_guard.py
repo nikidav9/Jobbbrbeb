@@ -171,11 +171,14 @@ def install_guards(
     *,
     journal: list | None = None,
     confirm_accept: bool = False,
+    popup_texts: list | None = None,
 ) -> list:
     """Повесить защиту на контекст и вкладку; вернуть журнал того, что сделано.
 
     allowed_hosts читается живьём (агент дополняет множество по ходу).
     journal можно передать движку: install_guards(..., journal=self.actions).
+    popup_texts — сюда попадает видимый текст нового окна, снятый ДО закрытия:
+    «Спасибо, отклик принят» часто показывают в окне, которое мы закрываем.
     """
     log: list = journal if journal is not None else []
     resumes = [os.path.realpath(p) for p in resume_paths]
@@ -274,6 +277,13 @@ def install_guards(
         except Exception:
             pass
         url = new.url
+        if popup_texts is not None:
+            try:
+                text = (new.evaluate("document.body ? document.body.innerText : ''") or "").strip()
+            except Exception:  # окно успело закрыться или не загрузилось
+                text = ""
+            if text:
+                popup_texts.append(text[:300])
         if host_allowed(url):
             note("guard_popup", url=url[:200], decision="same_tab")
             try:

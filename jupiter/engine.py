@@ -1563,6 +1563,7 @@ class JupiterWebEngine:
         page: PageState,
         form: FormState,
         submit_control: ControlState | None = None,
+        intermediate: bool = False,  # для совместимости с браузерным движком
     ) -> PageState:
         if self.read_only:
             raise EngineSecurityError(

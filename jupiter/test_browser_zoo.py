@@ -16,12 +16,14 @@ import json
 import os
 import tempfile
 import threading
+import time
 import urllib.parse
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
+from engine import EngineTransportError, FormState
 
 try:
     from browser_engine import JupiterBrowserEngine, sync_playwright
@@ -508,6 +510,342 @@ class BrowserZooTest(unittest.TestCase):
     def test_10_hidden_modal_with_file_live(self):
         eng, _ = self.check_live("/hiddenmodal")
         self.assertIn({"action": "apply_click", "label": "Откликнуться"}, eng.actions)
+
+# ── Исход отправки: медленный сервер, «Спасибо» скриптом, соседний хост ─────
+# 02.10.2026: почти все отклики кончались «Скорее всего, ушёл». Одна страница,
+# сценарий — в ?case=: что отвечает сервер и что потом показывает сайт.
+OUTCOME_PAGE = HEAD + TITLE + """
+<style>.hid { display: none; } .toast { position: fixed; top: 10px; right: 10px; background: #fff; }</style>
+<div id="app">
+  <label>Имя <input id="fn"></label>
+  <label>Фамилия <input id="ln"></label>
+  <label>Email <input id="em" type="email"></label>
+  <label>Телефон <input id="ph" type="tel"></label>
+  <button type="button" id="send">Отправить отклик</button>
+</div>
+<div id="thanks" class="hid" role="dialog">Спасибо, ваш отклик отправлен</div>
+<script>
+const q = new URLSearchParams(location.search);
+const c = q.get('case');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const post = path => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ fn: fn.value, ph: ph.value }) });
+const done = text => { document.getElementById('app').innerHTML = '<p>' + text + '</p>'; };
+const toast = (text, ms) => { const t = document.createElement('div'); t.className = 'toast';
+  t.setAttribute('role', 'status'); t.textContent = text; document.body.appendChild(t);
+  setTimeout(() => t.remove(), ms); };
+if (c === 'reload' && sessionStorage.getItem('sent')) done('Спасибо, ваша заявка принята');
+const send = document.getElementById('send');
+if (send) send.onclick = async () => {
+  if (c === 'slow_toast') { await post('/api/apply-slow'); toast('Спасибо, отклик получен', 1500); }
+  else if (c === 'script_thanks') { await post('/api/apply-ok'); await wait(2000); done('Спасибо, ваша заявка принята'); }
+  else if (c === 'hidden_modal') { await post('/api/apply-ok'); await wait(500); document.getElementById('thanks').classList.remove('hid'); }
+  else if (c === 'tilda') { await wait(300); done('Спасибо! Данные успешно отправлены'); }
+  else if (c === 'status204') { await post('/api/apply-204'); done('Мы свяжемся с вами'); }
+  else if (c === 'status204_stays') { await post('/api/apply-204'); }
+  else if (c === 'alert') { await wait(300); alert('Спасибо, заявка принята'); }
+  else if (c === 'reload') { await post('/api/apply-ok'); await wait(1200); sessionStorage.setItem('sent', '1'); location.reload(); }
+  else if (c === 'churn') { const t = document.createElement('p'); document.body.appendChild(t);
+    setInterval(() => { t.textContent = String(Math.random()); }, 100); }
+  else if (c === 'sms') { await post('/apply/send');
+    document.getElementById('app').innerHTML = '<form onsubmit="return false"><h2>Подтверждение номера</h2>'
+      + '<label>Код из СМС <input name="sms_code" required></label>'
+      + '<button type="submit">Подтвердить</button></form>'; }
+  else if (c === 'sms_thanks') { await post('/apply/send');
+    document.getElementById('app').innerHTML = '<p role="alert">Заявка отправлена. Введите код из СМС</p>'
+      + '<form onsubmit="return false"><label>Код <input name="otp" placeholder="Код из СМС"></label>'
+      + '<button type="submit">Подтвердить</button></form>'; }
+  else if (c === 'redir') { const f = document.createElement('form'); f.method = 'post';
+    f.action = '/api/redir?to=' + encodeURIComponent(q.get('to')); document.body.appendChild(f); f.submit(); }
+  else if (c === 'goto') { await wait(500); location.href = q.get('to'); }
+  else if (c === 'err500') { await post('/api/apply-500'); toast('Что-то пошло не так', 1500); }
+  else if (c === 'err500_thanks') { await post('/api/apply-500'); done('Спасибо, заявка принята'); }
+  else if (c === 'validation') { await post('/api/apply-valid'); toast('Заполните телефон', 1500); }
+  else if (c === 'neutral') { await wait(300); done('Мы свяжемся с вами'); }
+};
+</script>"""
+
+OUTCOME_THANKS = HEAD + "<h1>Готово</h1><p>Спасибо, ваша заявка принята</p>"
+# Страница за редиректом: в ней маркер, который не должен попасть ни в снимок,
+# ни в траекторию.
+# role=alert: тост окна наблюдения снимается и на странице за редиректом —
+# без очистки тостов текст этой страницы утёк бы в снимок и подтвердил бы
+# отправку (разбор архитектора 02.10.2026).
+OUTCOME_SECRET = HEAD + "<h1>SECRET</h1><p role='alert'>SECRET внутренняя страница, заявка принята</p>"
+
+
+class _OutcomeHandler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def _send(self, code, body=b"", ctype="application/json"):
+        self.send_response(code)
+        if body:
+            self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        self.server.state["gets"].append(path)
+        if path == "/s":
+            self._send(200, OUTCOME_PAGE.encode(), "text/html; charset=utf-8")
+        elif path == "/thanks":
+            self._send(200, OUTCOME_THANKS.encode(), "text/html; charset=utf-8")
+        elif path == "/secret":
+            self._send(200, OUTCOME_SECRET.encode(), "text/html; charset=utf-8")
+        else:
+            self._send(404)
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.server.state["posts"].append(self.path)
+        if self.path.startswith("/api/redir?"):
+            # POST → 302: Playwright не вызывает route для редиректов.
+            to = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)["to"][0]
+            self.send_response(302)
+            self.send_header("Location", to)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.path == "/apply/send":
+            self._send(200, b'{"need_sms": true}')
+        elif self.path == "/api/apply-slow":
+            time.sleep(3)
+            self._send(200, b'{"success": true}')
+        elif self.path == "/api/apply-ok":
+            self._send(200, b'{"success": true}')
+        elif self.path == "/api/apply-204":
+            self._send(204)
+        elif self.path == "/api/apply-500":
+            self._send(500, b'{"error": "boom"}')
+        elif self.path == "/api/apply-valid":
+            self._send(200, json.dumps({"errors": {"phone": ["неверный"]}}, ensure_ascii=False).encode())
+        else:
+            self._send(404)
+
+
+@unittest.skipIf(not RUN, "нужен Playwright и Chromium")
+class BrowserSubmitOutcomeTest(unittest.TestCase):
+    """Каждый сценарий: подтверждение (submitted), а не «Скорее всего, ушёл»."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), _OutcomeHandler)
+        cls.server.state = {"posts": [], "gets": []}
+        cls.port = cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        self.server.state["posts"].clear()
+        self.server.state["gets"].clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        path = Path(self.tmp.name) / "profile.json"
+        path.write_text(json.dumps(PROFILE, ensure_ascii=False), encoding="utf-8")
+        self.profile = CandidateProfile.load(str(path))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_case(self, case, *, host="127.0.0.1", extra="", hosts=None):
+        """Страница на host (для поддоменов — *.localhost, Chrome сам отдаёт
+        loopback; Python-резолвер подменяем)."""
+        from unittest import mock
+        import policy
+        hosts = hosts or {host}
+        with mock.patch.object(policy.NetworkPolicy, "resolve", staticmethod(lambda h: ["127.0.0.1"])):
+            eng = JupiterBrowserEngine(hosts, executable_path=CHROMIUM, allow_private_addresses=True)
+            self.addCleanup(eng.close)
+            agent = JupiterAgent(hosts, engine=eng, dry_run=False)
+            result = agent.run(f"http://{host}:{self.port}/s?case={case}{extra}", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        return eng, result, dump
+
+    def assert_submitted(self, case, **kw):
+        eng, result, dump = self.run_case(case, **kw)
+        self.assertEqual(result.status, "submitted", dump)
+        return eng, result, dump
+
+    def assert_not_submitted(self, case, **kw):
+        eng, result, dump = self.run_case(case, **kw)
+        self.assertNotEqual(result.status, "submitted", dump)
+        return eng, result, dump
+
+    def test_slow_api_3s_then_toast_after_response(self):
+        eng, _, dump = self.assert_submitted("slow_toast")
+        self.assertEqual(self.server.state["posts"], ["/api/apply-slow"], dump)
+        self.assertTrue(eng.last_api_result and eng.last_api_result["api_success"], eng.actions)
+
+    def test_thanks_by_script_after_2s(self):
+        self.assert_submitted("script_thanks")
+
+    def test_thanks_modal_hidden_in_dom_and_shown_after_response(self):
+        # Окно с «Спасибо» лежало в разметке скрытым классом: в «было до» его
+        # быть не должно, форма при этом остаётся на странице.
+        eng, result, dump = self.assert_submitted("hidden_modal")
+        self.assertTrue(any(i.get("type") == "DOM_TEXT" for item in result.trajectory
+                            for i in item.get("evidence", []) if isinstance(i, dict)), dump)
+
+    def test_tilda_like_text_data_sent_successfully(self):
+        self.assert_submitted("tilda")
+
+    def test_204_on_submit_path_with_form_gone(self):
+        eng, result, dump = self.assert_submitted("status204")
+        types = {i.get("type") for item in result.trajectory
+                 for i in item.get("evidence", []) if isinstance(i, dict)}
+        self.assertIn("API_2XX", types, dump)
+
+    def test_2xx_with_new_sms_form_is_not_confirmation(self):
+        # 200 {"need_sms": true}: прежняя анкета исчезла, но вместо неё — шаг
+        # «Код из СМС». Это не отклик, а просьба ввести код: код агент не
+        # выдумывает, вопрос уходит человеку.
+        eng, result, dump = self.assert_not_submitted("sms")
+        self.assertEqual(self.server.state["posts"], ["/apply/send"], dump)
+        self.assertTrue(any(a.get("action") == "api_result" and a.get("api_2xx") for a in eng.actions), eng.actions)
+        for item in result.trajectory:
+            if item.get("action") == "fill":
+                self.assertNotIn("sms", json.dumps(item, ensure_ascii=False).lower(), dump)
+        self.assertNotIn("success_detected", [t.get("action") for t in result.trajectory], dump)
+
+    def test_thanks_text_with_code_field_is_not_confirmation(self):
+        # «Заявка отправлена. Введите код из СМС»: текст похож на успех, но
+        # сайт ждёт код. Пока поле кода на странице — отклик не подтверждён.
+        eng, result, dump = self.assert_not_submitted("sms_thanks")
+        self.assertEqual(self.server.state["posts"], ["/apply/send"], dump)
+        self.assertIn("code_step_after_submit", [t.get("action") for t in result.trajectory], dump)
+        self.assertNotIn("success_detected", [t.get("action") for t in result.trajectory], dump)
+
+    def test_204_alone_while_form_stays_is_not_confirmation(self):
+        self.assert_not_submitted("status204_stays")
+
+    def test_alert_text_is_evidence(self):
+        eng, _, dump = self.assert_submitted("alert")
+        self.assertTrue(any(a.get("action") == "guard_dialog" for a in eng.actions), dump)
+
+    def test_page_reload_during_snapshot_does_not_lose_outcome(self):
+        # Страница перезагружается через 1,2 с после ответа — снимок и
+        # evaluate попадают в уничтоженный контекст.
+        self.assert_submitted("reload")
+
+    def test_thanks_page_on_sibling_subdomain(self):
+        to = f"http://thanks.test.localhost:{self.port}/thanks"
+        eng, _, dump = self.assert_submitted(
+            "goto", host="app.test.localhost", extra=f"&to={urllib.parse.quote(to, safe='')}")
+        self.assertFalse(any(a.get("reason") == "host_not_allowed" for a in eng.actions
+                             if a.get("action") == "blocked_request"), dump)
+
+    def test_thanks_page_on_foreign_host_is_unknown_not_security_error(self):
+        to = f"http://thanks.other.localhost:{self.port}/thanks"
+        eng, result, dump = self.run_case(
+            "goto", host="app.test.localhost", extra=f"&to={urllib.parse.quote(to, safe='')}")
+        self.assertEqual(result.status, "submission_unknown", dump)
+        self.assertNotEqual(result.reason_code, "DOMAIN_BLOCKED", dump)
+        self.assertTrue(any(a.get("action") == "left_allowed_hosts" for a in eng.actions), eng.actions)
+        # Чужой хост по-прежнему закрыт: страница «Спасибо» не загружалась.
+        self.assertNotIn("/thanks", self.server.state["gets"], dump)
+
+    def _submit_timed(self, intermediate):
+        """Клик по странице, которая без конца меняет DOM: окно наблюдения
+        кончается только по максимуму. Возвращает секунды."""
+        from unittest import mock
+        import browser_engine
+        eng = JupiterBrowserEngine({"127.0.0.1"}, executable_path=CHROMIUM, allow_private_addresses=True)
+        self.addCleanup(eng.close)
+        page = eng.open(f"http://127.0.0.1:{self.port}/s?case=churn")
+        button = next(c for c in page.controls if c.tag == "button")
+        form = FormState(index=0, method="POST", action="", enctype="", control_indices=[])
+        with mock.patch.object(browser_engine, "WATCH_MAX_MS", 4000), \
+                mock.patch.object(browser_engine, "WATCH_NEXT_MAX_MS", 1500):
+            started = time.monotonic()
+            eng.submit(page, form, button, intermediate=intermediate)
+            return time.monotonic() - started
+
+    def test_next_button_has_short_watch_window(self):
+        self.assertLess(self._submit_timed(True), 3.0)
+
+    def test_final_submit_keeps_full_watch_window(self):
+        self.assertGreaterEqual(self._submit_timed(False), 3.5)
+
+    def test_tab_closed_during_watch_is_transport_error(self):
+        # Вкладка закрылась после клика: исход неизвестен (_unknown_outcome),
+        # а не необработанная ошибка Playwright.
+        eng = JupiterBrowserEngine({"127.0.0.1"}, executable_path=CHROMIUM, allow_private_addresses=True)
+        self.addCleanup(eng.close)
+        eng.open(f"http://127.0.0.1:{self.port}/s?case=none")
+        tracker = eng._track_requests()
+        eng._tab.close()
+        with self.assertRaises(EngineTransportError):
+            eng._watch_after_submit(tracker, [], 0, 0)
+
+    def _redirect_case(self, to_host):
+        """POST → 302 на to_host: страница старта на app.test.localhost (публичный
+        по подмене резолвера), intranet.* резолвится во внутренний адрес."""
+        from unittest import mock
+        import policy
+
+        def resolve(host):
+            return ["10.0.0.5"] if host.startswith("intranet.") else ["93.184.216.34"]
+
+        to = f"http://{to_host}:{self.port}/secret"
+        hosts = {"app.test.localhost"}
+        with mock.patch.object(policy.NetworkPolicy, "resolve", staticmethod(resolve)):
+            eng = JupiterBrowserEngine(hosts, executable_path=CHROMIUM, allow_private_addresses=False)
+            self.addCleanup(eng.close)
+            agent = JupiterAgent(hosts, engine=eng, dry_run=False)
+            result = agent.run(
+                f"http://app.test.localhost:{self.port}/s?case=redir&to={urllib.parse.quote(to, safe='')}",
+                self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submission_unknown", dump)
+        self.assertNotIn("SECRET", dump)
+        self.assertNotIn("SECRET", eng.page.text if eng.page else "")
+        self.assertTrue(any(a.get("action") == "left_allowed_hosts" for a in eng.actions), eng.actions)
+        self.assertEqual(eng._tab.url, "about:blank")
+
+    def test_post_302_to_internal_host_of_same_site_is_not_snapshotted(self):
+        # intranet.test.localhost — «тот же сайт», но резолвится в 10.x.
+        self._redirect_case("intranet.test.localhost")
+
+    def test_post_302_to_foreign_host_is_not_snapshotted(self):
+        self._redirect_case("thanks.other.localhost")
+
+    def test_error_500_is_not_confirmation(self):
+        eng, _, _ = self.assert_not_submitted("err500")
+        self.assertTrue(eng.last_api_result and eng.last_api_result["api_error"], eng.actions)
+
+    def test_error_500_beats_thanks_text(self):
+        self.assert_not_submitted("err500_thanks")
+
+    def test_validation_error_in_200_is_not_confirmation(self):
+        eng, _, _ = self.assert_not_submitted("validation")
+        self.assertTrue(eng.last_api_result and eng.last_api_result["api_error"], eng.actions)
+
+    def test_no_form_and_no_confirmation_ends_without_wandering(self):
+        eng, result, dump = self.run_case("neutral")
+        self.assertEqual(result.status, "submission_unknown", dump)
+        # Страницу открыли один раз: ни другой навигации, ни перезагрузки.
+        self.assertEqual(self.server.state["gets"], ["/s"], dump)
+        self.assertEqual(len(self.server.state["posts"]), 0, dump)
+
+    def test_safe_eval_survives_navigation(self):
+        eng = JupiterBrowserEngine({"127.0.0.1"}, executable_path=CHROMIUM, read_only=True)
+        self.addCleanup(eng.close)
+        eng._tab.goto(f"http://127.0.0.1:{self.port}/s?case=none")
+        # Первый вызов попадает на перезагрузку страницы («context was
+        # destroyed»), повтор отрабатывает на новом документе.
+        got = eng._safe_eval(
+            "() => { if (!sessionStorage.getItem('once')) { sessionStorage.setItem('once', '1');"
+            " setTimeout(() => location.reload(), 30);"
+            " return new Promise(() => {}); } return 'second'; }")
+        self.assertEqual(got, "second")
+        # И снимок страницы посреди перезагрузок не падает.
+        eng._tab.evaluate("setTimeout(() => location.reload(), 30)")
+        self.assertIn("Backend", eng._snapshot().text)
+
 
 if __name__ == "__main__":
     unittest.main()

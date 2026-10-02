@@ -58,6 +58,51 @@ _APPLICATION_ID_RE = re.compile(
 
 _JSON_TRUE_KEYS = ("accepted", "success", "ok", "submitted", "created")
 
+# Маркеры успеха регулярками (02.10.2026): подстроки не находили «Заявка
+# успешно отправлена», «Спасибо! Данные успешно отправлены» (Tilda), «Резюме
+# успешно отправлено». Применяются к нормализованному тексту (нижний регистр,
+# без знаков препинания) — см. normalize_text. «Не было до отправки» работает
+# так же, как у подстрок: учитываются только совпадения, которых до клика не
+# было.
+_SUBJECT = r"(?:отклик|заявк|резюме|анкет|данные|обращени)\w*"
+# Слова между подлежащим и глаголом не должны делать фразу условной:
+# «заявка будет отправлена» — обещание, а не подтверждение.
+_FILLER = (r"(?:(?!(?:будет|будут|не|бы|можно|нужно|надо|чтобы|если|после|перед|как|"
+           r"когда|можете|может|должна|должен)\b)\w+\s+)")
+_SENT = r"(?:отправлен|принят|получен|доставлен)\w*"
+# Продолжения, которые обращают фразу в не-подтверждение: «данные отправлены
+# с ошибкой», «отправлено на ваш номер», «отправлено… код». \b нужен, чтобы
+# откат \w* к середине слова не обходил запрет.
+_NOT_AFTER = r"\b(?!\s+(?:с\s+ошибк|на\s+ваш|номер|код))"
+SUCCESS_PATTERNS: tuple[str, ...] = (
+    rf"\b{_SUBJECT}\s+{_FILLER}{{0,2}}(?:успешно\s+)?{_SENT}{_NOT_AFTER}",
+    r"\bспасибо\s+(?:за\s+)?(?:ваш\w*\s+)?(?:отклик|заявк|резюме|анкет|обращени)",
+    r"\bвы\s+уже\s+(?:откликнулись|отправляли|подавали\s+заявку)",
+    r"\b(?:your\s+)?application\s+(?:has\s+been\s+|was\s+)?(?:successfully\s+)?(?:received|submitted|sent)",
+    r"\bthank\s+you\s+for\s+(?:applying|your\s+(?:application|submission))",
+)
+_SUCCESS_RES = tuple(re.compile(p) for p in SUCCESS_PATTERNS)
+
+
+def normalize_text(value: str | None) -> str:
+    """Та же нормализация, что agent.normalize (нижний регистр, без знаков)."""
+    if not value:
+        return ""
+    value = value.lower().replace("_", " ").replace("-", " ")
+    value = re.sub(r"[^0-9a-zа-яё+./\[\] ]+", " ", value, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def find_success_phrase(norm_text: str, norm_before: str = "") -> str:
+    """Первая фраза-подтверждение в нормализованном тексте, которой не было
+    до отправки. Пусто — нет."""
+    for rx in _SUCCESS_RES:
+        for match in rx.finditer(norm_text):
+            phrase = match.group(0)
+            if phrase not in norm_before:
+                return phrase
+    return ""
+
 
 @dataclass
 class SubmissionEvidence:
@@ -239,8 +284,12 @@ def collect_evidence(
     success_markers: tuple[str, ...],
     form_gone: bool,
     normalize,
+    success_patterns: bool = False,
 ) -> list[SubmissionEvidence]:
-    """Собрать доказательства того, что отклик действительно принят."""
+    """Собрать доказательства того, что отклик действительно принят.
+
+    success_patterns=True — дополнительно искать SUCCESS_PATTERNS (регулярки).
+    """
     evidence: list[SubmissionEvidence] = []
     before_norm = normalize(before_text)
     after_norm = normalize(after_text)
@@ -258,6 +307,10 @@ def collect_evidence(
             # подтверждал бы что угодно.
             evidence.append(SubmissionEvidence("DOM_TEXT", marker, 0.8, after_url))
             break
+    else:
+        phrase = find_success_phrase(after_norm, before_norm) if success_patterns else ""
+        if phrase:
+            evidence.append(SubmissionEvidence("DOM_TEXT", phrase[:120], 0.8, after_url))
 
     match = _APPLICATION_ID_RE.search(after_text or "")
     if match:
@@ -303,7 +356,9 @@ def score_evidence(evidence: list[SubmissionEvidence]) -> float:
     positives = [item.confidence for item in evidence if item.confidence > 0]
     if not positives:
         return 0.0
-    return min(1.0, max(positives) + 0.1 * (len(positives) - 1))
+    # round: 0.7 + 0.1 в плавающей точке даёт 0.7999999999999999 и не дотягивает
+    # до порога 0.8.
+    return round(min(1.0, max(positives) + 0.1 * (len(positives) - 1)), 6)
 
 
 def is_confirmed(evidence: list[SubmissionEvidence]) -> bool:

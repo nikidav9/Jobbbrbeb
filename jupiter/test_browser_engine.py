@@ -674,6 +674,20 @@ class BrowserEngineTest(unittest.TestCase):
         with self.assertRaises(EngineSecurityError):
             eng.open("http://example.invalid/vacancy")
 
+    def test_page_text_is_visible_text_only(self):
+        # Скрытое заранее «Спасибо» не должно попасть в текст страницы («было до»).
+        eng = self.engine(read_only=True)
+        page = eng.load_html(
+            "<style>.hid{display:none}</style><p>Анкета</p>"
+            "<div class='hid'>Спасибо, ваш отклик отправлен</div>"
+            "<div style='visibility:hidden'>Заявка принята</div>",
+            "http://127.0.0.1/x")
+        self.assertIn("Анкета", page.text)
+        self.assertNotIn("отклик отправлен", page.text)
+        self.assertNotIn("Заявка принята", page.text)
+        eng._tab.evaluate("document.querySelector('.hid').classList.remove('hid')")
+        self.assertIn("отклик отправлен", eng.current_page().text)
+
 
 if __name__ == "__main__":
     unittest.main()
