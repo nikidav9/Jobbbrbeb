@@ -864,8 +864,8 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
 
         if accepts_mapper:
             class Agent(real):
-                def __init__(self, allowed_hosts, max_steps=30, *, field_mapper=None, **kw):
-                    super().__init__(allowed_hosts, max_steps, **kw)
+                def __init__(self, allowed_hosts, max_steps=30, *, field_mapper=None, alice=None, **kw):
+                    super().__init__(allowed_hosts, max_steps, alice=alice, **kw)
                     self.field_mapper = field_mapper
                     made.append(self)
         else:
