@@ -1406,6 +1406,14 @@ Python-Playwright, тот же интерфейс `open/submit/load_html`): са
 `jupiter/test_browser_engine.py`, отдельная задача CI `jupiter-browser`
 (Playwright ставится только там).
 
+`jupiter/alice_dom.py` — как Алиса видит страницу (02.10.2026, приёмы browser-use, MIT): `COLLECT_JS`
+(видимость, модалка сужает область, перекрытие `elementFromPoint`, единая проверка «интерактивен ли»,
+открытый shadow DOM, схлопывание вложенных, имя элемента, обяз/варианты/формат/ошибки; значения полей
+не читаются — только «заполнено/пусто»), `collect`/`collect_all` (с iframe, номера `f3-7`), `render_outline`
+(строка на элемент, бюджет 9000 символов, обрезка по строкам, поля и «Отправить» не режутся),
+`locator_for(page, idx)`; стабильные номера — `data-jt-idx`, «новое» — `data-jt-seen`. Старые
+`OUTLINE_JS`/`SNAPSHOT_JS` не заменяет; тест — `test_alice_dom.py` (render без браузера всегда, страницы — в `jupiter-browser`).
+
 Модули браузерного движка (28.09.2026; в `browser_engine.py` уже подключены
 `browser_guard`, `browser_overlays`, `browser_custom_controls` (списки — в снимке
 `<select data-jt-custom>`) и `browser_frames` (анкету из iframe открывает
