@@ -544,6 +544,8 @@ if (send) send.onclick = async () => {
   else if (c === 'status204_stays') { await post('/api/apply-204'); }
   else if (c === 'alert') { await wait(300); alert('Спасибо, заявка принята'); }
   else if (c === 'reload') { await post('/api/apply-ok'); await wait(1200); sessionStorage.setItem('sent', '1'); location.reload(); }
+  else if (c === 'redir') { const f = document.createElement('form'); f.method = 'post';
+    f.action = '/api/redir?to=' + encodeURIComponent(q.get('to')); document.body.appendChild(f); f.submit(); }
   else if (c === 'goto') { await wait(500); location.href = q.get('to'); }
   else if (c === 'err500') { await post('/api/apply-500'); toast('Что-то пошло не так', 1500); }
   else if (c === 'err500_thanks') { await post('/api/apply-500'); done('Спасибо, заявка принята'); }
@@ -553,6 +555,9 @@ if (send) send.onclick = async () => {
 </script>"""
 
 OUTCOME_THANKS = HEAD + "<h1>Готово</h1><p>Спасибо, ваша заявка принята</p>"
+# Страница за редиректом: в ней маркер, который не должен попасть ни в снимок,
+# ни в траекторию.
+OUTCOME_SECRET = HEAD + "<h1>SECRET</h1><p>SECRET внутренняя страница, заявка принята</p>"
 
 
 class _OutcomeHandler(BaseHTTPRequestHandler):
@@ -574,13 +579,22 @@ class _OutcomeHandler(BaseHTTPRequestHandler):
             self._send(200, OUTCOME_PAGE.encode(), "text/html; charset=utf-8")
         elif path == "/thanks":
             self._send(200, OUTCOME_THANKS.encode(), "text/html; charset=utf-8")
+        elif path == "/secret":
+            self._send(200, OUTCOME_SECRET.encode(), "text/html; charset=utf-8")
         else:
             self._send(404)
 
     def do_POST(self):
         self.rfile.read(int(self.headers.get("Content-Length") or 0))
         self.server.state["posts"].append(self.path)
-        if self.path == "/api/apply-slow":
+        if self.path.startswith("/api/redir?"):
+            # POST → 302: Playwright не вызывает route для редиректов.
+            to = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)["to"][0]
+            self.send_response(302)
+            self.send_header("Location", to)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.path == "/api/apply-slow":
             time.sleep(3)
             self._send(200, b'{"success": true}')
         elif self.path == "/api/apply-ok":
@@ -697,6 +711,38 @@ class BrowserSubmitOutcomeTest(unittest.TestCase):
         self.assertTrue(any(a.get("action") == "left_allowed_hosts" for a in eng.actions), eng.actions)
         # Чужой хост по-прежнему закрыт: страница «Спасибо» не загружалась.
         self.assertNotIn("/thanks", self.server.state["gets"], dump)
+
+    def _redirect_case(self, to_host):
+        """POST → 302 на to_host: страница старта на app.test.localhost (публичный
+        по подмене резолвера), intranet.* резолвится во внутренний адрес."""
+        from unittest import mock
+        import policy
+
+        def resolve(host):
+            return ["10.0.0.5"] if host.startswith("intranet.") else ["93.184.216.34"]
+
+        to = f"http://{to_host}:{self.port}/secret"
+        hosts = {"app.test.localhost"}
+        with mock.patch.object(policy.NetworkPolicy, "resolve", staticmethod(resolve)):
+            eng = JupiterBrowserEngine(hosts, executable_path=CHROMIUM, allow_private_addresses=False)
+            self.addCleanup(eng.close)
+            agent = JupiterAgent(hosts, engine=eng, dry_run=False)
+            result = agent.run(
+                f"http://app.test.localhost:{self.port}/s?case=redir&to={urllib.parse.quote(to, safe='')}",
+                self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submission_unknown", dump)
+        self.assertNotIn("SECRET", dump)
+        self.assertNotIn("SECRET", eng.page.text if eng.page else "")
+        self.assertTrue(any(a.get("action") == "left_allowed_hosts" for a in eng.actions), eng.actions)
+        self.assertEqual(eng._tab.url, "about:blank")
+
+    def test_post_302_to_internal_host_of_same_site_is_not_snapshotted(self):
+        # intranet.test.localhost — «тот же сайт», но резолвится в 10.x.
+        self._redirect_case("intranet.test.localhost")
+
+    def test_post_302_to_foreign_host_is_not_snapshotted(self):
+        self._redirect_case("thanks.other.localhost")
 
     def test_error_500_is_not_confirmation(self):
         eng, _, _ = self.assert_not_submitted("err500")

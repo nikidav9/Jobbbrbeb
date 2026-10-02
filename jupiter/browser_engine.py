@@ -1149,8 +1149,16 @@ class JupiterBrowserEngine:
 
     def _note_left_allowed_hosts(self, before: str, actions_from: int) -> None:
         """Вкладка ушла за пределы разрешённых хостов (страница «Спасибо» на
-        чужом домене). Это не ошибка безопасности: сеть уже закрыта маршрутом,
-        а отправка состоялась. Фиксируем в журнале «подтверждения нет»."""
+        чужом домене). Это не ошибка безопасности: отправка уже состоялась.
+        Фиксируем в журнале «подтверждения нет».
+
+        Но снимать такую страницу нельзя: Playwright не вызывает _route для
+        редиректов, и POST → 302 на внутренний или чужой хост проходит мимо
+        сетевой политики (раньше его останавливал assert_allowed). Поэтому
+        вкладку уводим на about:blank ДО снимка: итог — пустой снимок и
+        submission_unknown, без содержимого чужой страницы. Хост «того же
+        сайта» тоже проверяем на публичность: intranet.company.ru может
+        указывать на 10.x."""
         url = self._tab.url
         if url == before:
             return
@@ -1158,12 +1166,17 @@ class JupiterBrowserEngine:
         if host and (host in self.allowed_hosts or ats_hosts.is_apply_ats(host) or any(
             ats_hosts.same_site(host, h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
             for h in self.allowed_hosts
-        )):
+        )) and self._public_host(host):
             return
         blocked = [a.get("url", "") for a in self.actions[actions_from:]
                    if a.get("action") == "blocked_request" and a.get("reason") == "host_not_allowed"]
         blocked_host = (urllib.parse.urlparse(blocked[-1]).hostname or "") if blocked else host
         self.actions.append({"action": "left_allowed_hosts", "host": blocked_host[:100]})
+        if url != "about:blank":
+            try:
+                self._tab.goto("about:blank")
+            except PlaywrightError as exc:
+                raise EngineTransportError(f"Не удалось уйти с чужой страницы: {exc}") from exc
 
     def _record_api_result(self, responses: list[dict[str, Any]]) -> None:
         verdict = browser_success.classify(responses)
