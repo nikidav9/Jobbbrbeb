@@ -667,7 +667,8 @@ def _secrets(keys: list[str], value_for: Callable[[str, str | None], str | None]
 
 
 def _fingerprint(url: str, outline: str) -> str:
-    return hashlib.sha1((url.split("#")[0] + "\n" + outline).encode("utf-8")).hexdigest()
+    """Отпечаток страницы: адрес и описание без пометок «новое» (они гаснут на следующем снимке)."""
+    return hashlib.sha1((url.split("#")[0] + "\n" + outline.replace("*[", "[")).encode("utf-8")).hexdigest()
 
 
 def _action_hash(action: dict, data: dict) -> tuple:

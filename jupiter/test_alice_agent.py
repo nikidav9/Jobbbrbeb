@@ -489,6 +489,12 @@ document.getElementById('f').addEventListener('submit', async e => {
 });
 </script>"""
 
+# То же для текстового поля: значение пишет код, а при отправке _apply_values его не затирает.
+UNLABELED_TEXT = UNLABELED_SELECT.replace(
+    """<div class="row"><div class="lbl">Ваш пол</div>
+    <select required><option value="">Выберите</option><option>Женский</option><option>Мужской</option></select></div>""",
+    """<div class="row"><div class="lbl">Ник для связи</div><input required></div>""")
+
 # Радио-группа с вопросом-фактом: «заранее отмеченные» ответы агент снимает, но выбор
 # Алисы по ключу профиля снимать нельзя.
 RADIO_TRIP = HEAD + """<h1>Монтажник</h1>
@@ -541,7 +547,7 @@ CAPTCHA_PAGE = HEAD + """<h1>Курьер</h1><button type="button">Показа
 THANKS = HEAD + "<h2>Спасибо! Ваш отклик получен</h2>"
 
 PAGES = {
-    "/oddcta": ODD_CTA, "/select": UNLABELED_SELECT, "/trip": RADIO_TRIP, "/hostile": HOSTILE,
+    "/oddcta": ODD_CTA, "/select": UNLABELED_SELECT, "/text": UNLABELED_TEXT, "/trip": RADIO_TRIP, "/hostile": HOSTILE,
     "/inert": INERT, "/grow": GROW, "/tracker": TRACKER, "/foreign": FOREIGN, "/captcha": CAPTCHA_PAGE,
 }
 
@@ -694,6 +700,20 @@ class AliceBrowserTest(unittest.TestCase):
         for value in ("Мужской", VALUES["first_name"], VALUES["email"]):
             self.assertIn(value, sent[0], dump)
         no_values(self, llm, dump)
+
+    def test_b_unlabeled_text_field_value_survives_apply_values(self):
+        llm = FakeLLM(lambda u: A(type="fill", idx=idx_of(u, "Ник для связи"), key="telegram"), DONE_READY)
+        _eng, _agent, result, dump = self.run_agent("/text", llm, live=True)
+        self.assertEqual(result.status, "submitted", dump)
+        sent = self.posts("/api/apply")
+        self.assertEqual(len(sent), 1, dump)
+        for value in (VALUES["telegram"], VALUES["first_name"], VALUES["phone"][1:]):   # «+» в теле разобран как пробел
+            self.assertIn(value, sent[0], dump)
+        no_values(self, llm, dump)
+        # в траектории — действие, номер и ключ, без значения
+        fill = next(t for t in result.trajectory if t.get("action") == "alice_fill")
+        self.assertEqual(sorted(fill), ["action", "idx", "key", "ok"])
+        self.assertNotIn(VALUES["telegram"], json.dumps(fill, ensure_ascii=False))
 
     def test_b_known_fields_are_shown_to_alice_as_filled(self):
         llm = self._select_script()
