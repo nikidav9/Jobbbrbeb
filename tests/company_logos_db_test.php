@@ -53,5 +53,20 @@ $py = trim((string)shell_exec('cd ' . escapeshellarg(__DIR__ . '/../scripts') . 
     'import importlib.util as u;s=u.spec_from_file_location("m","upload-company-logos.py");m=u.module_from_spec(s);s.loader.exec_module(m);print(m.path_of(m.key_of(" Сбер "), b"a"))')));
 check('scripts/upload-company-logos.py: то же имя файла, что у сервера', $py === $a);
 
+// Проверенный набор: каждый файл — PNG 256×256 до 300 КБ, источник и ссылка
+// годны, компании не повторяются (иначе загрузчик зальёт не то).
+$dir = __DIR__ . '/../data/company-logos';
+$man = json_decode((string)file_get_contents($dir . '/manifest.json'), true);
+check('manifest.json читается', is_array($man));
+$bad = []; $seen = [];
+foreach ((array)$man as $m) {
+    $b = (string)@file_get_contents($dir . '/' . ($m['file'] ?? '-'));
+    $err = jt_company_logo_check($b) ?? jt_company_logo_validate((string)($m['company'] ?? ''), (string)($m['source'] ?? ''), (string)($m['source_url'] ?? ''));
+    $key = jt_company_logo_key((string)($m['company'] ?? ''));
+    if ($err !== null || isset($seen[$key])) $bad[] = ($m['company'] ?? '?') . ': ' . ($err ?? 'повтор');
+    $seen[$key] = true;
+}
+check('все логотипы набора годны: ' . implode('; ', array_slice($bad, 0, 5)), !$bad && count((array)$man) > 0);
+
 echo $fails ? "\n$fails FAILED\n" : "\nall ok\n";
 exit($fails ? 1 : 0);
