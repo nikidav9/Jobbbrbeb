@@ -1,0 +1,33 @@
+# Озвучка обучающего ролика сайта (video/voice/script.json) — Яндекс SpeechKit.
+# Результат — артефакт tutorial-voice: wav по строкам и durations.json; их
+# кладут в video/public/voice/ и рендерят ролик (cd video && npm run render).
+# Ключ — тот же, что у YandexGPT, из секретов; в лог не печатается.
+name: Озвучка обучающего ролика
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'video/voice/script.json'
+      - 'video/scripts/voice.py'
+      - '.github/workflows/tutorial-voice.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Синтез речи
+        env:
+          YANDEX_GPT_API_KEY: ${{ secrets.YANDEX_GPT_API_KEY }}
+          YANDEX_GPT_FOLDER_ID: ${{ secrets.YANDEX_GPT_FOLDER_ID }}
+        run: cd video && python3 scripts/voice.py voice/script.json out-voice
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tutorial-voice
+          path: video/out-voice/
+          retention-days: 14
