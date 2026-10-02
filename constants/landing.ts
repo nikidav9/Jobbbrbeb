@@ -488,7 +488,7 @@ export const LANDING_MARKUP = `
             <div><b>Без JobToo</b>Зайти на сайт, найти анкету, заполнить десяток полей — и так на каждую вакансию</div>
             <div class="yes"><b>С JobToo</b>Один свайп. Анкету заполнит Юпитер, ответ придёт в чат</div>
           </div>
-          <button class="tut rv" type="button" data-jtl-tutorial><span class="thumb"></span><span>Смотреть, как это работает<small>Ролик с озвучкой · меньше минуты</small></span></button>
+          <button class="tut rv" type="button" data-jtl-tutorial><span class="thumb"></span><span>Смотреть, как это работает<small>Ролик с озвучкой · весь путь за минуту</small></span></button>
         </div>
         <div class="browser rv" aria-hidden="true">
           <div class="bar"><i style="background:#E5484D"></i><i style="background:#F5B700"></i><i style="background:#2BB673"></i><span class="url">Нимбус Пэй · карьера / вакансии / frontend-разработчик</span></div>
