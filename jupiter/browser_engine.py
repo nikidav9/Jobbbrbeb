@@ -110,6 +110,9 @@ TOAST_POLL_MS = 200
 WATCH_MIN_MS = 1500
 WATCH_QUIET_MS = 1000
 WATCH_MAX_MS = 15000
+# Промежуточная «Далее» — не отправка отклика: подтверждения ждать незачем,
+# хватает времени, чтобы сайт показал следующий шаг.
+WATCH_NEXT_MAX_MS = 5000
 WATCH_LONG_REQUEST_MS = 8000
 WATCH_IGNORED_RESOURCES = {"image", "font", "media", "eventsource", "websocket", "ping"}
 # Ошибки evaluate, когда страница ушла на другой адрес или перерисовалась.
@@ -723,17 +726,19 @@ class JupiterBrowserEngine:
         return _RequestTracker(self._tab).start()
 
     def _watch_after_submit(self, tracker: "_RequestTracker", toasts: list[str],
-                            actions_from: int, popups_from: int) -> None:
+                            actions_from: int, popups_from: int,
+                            max_ms: int = WATCH_MAX_MS) -> None:
         """Окно наблюдения после клика «Отправить» вместо фиксированной паузы.
 
         Ждёт, пока сайт ответит и покажет результат: нет незавершённых
         запросов (свой счётчик — networkidle тут не годится), страница не
-        переходила и не менялась. Минимум WATCH_MIN_MS, максимум WATCH_MAX_MS.
+        переходила и не менялась. Минимум WATCH_MIN_MS, максимум max_ms
+        (WATCH_MAX_MS, для промежуточной «Далее» — WATCH_NEXT_MAX_MS).
         По ходу собирает тосты, тексты alert/confirm (browser_guard пишет их в
         actions) и тексты нового окна (popup_texts).
         """
         tab = self._tab
-        min_ms = max(WATCH_MIN_MS, self.settle_ms)
+        min_ms = min(max(WATCH_MIN_MS, self.settle_ms), max_ms)
 
         def grab() -> None:
             text = browser_success.toast_text(tab)
@@ -751,13 +756,17 @@ class JupiterBrowserEngine:
                     tracker.touch()  # страница переходит — тишины ещё нет
                 now = time.monotonic()
                 elapsed_ms = (now - started) * 1000
-                if elapsed_ms >= WATCH_MAX_MS:
+                if elapsed_ms >= max_ms:
                     break
                 if (elapsed_ms >= min_ms and not tracker.busy(now)
                         and (now - tracker.changed) * 1000 >= WATCH_QUIET_MS):
                     break
                 tab.wait_for_timeout(TOAST_POLL_MS)
             grab()
+        except PlaywrightError as exc:
+            # Вкладка закрылась посреди окна: клик уже был, исход неизвестен —
+            # агент записывает submission_unknown (_unknown_outcome), а не падает.
+            raise EngineTransportError(f"Вкладка недоступна после отправки: {exc}") from exc
         finally:
             tracker.stop()
         # Тексты alert/confirm и нового окна — в доказательства.
@@ -1085,7 +1094,9 @@ class JupiterBrowserEngine:
         page: PageState,
         form: FormState,
         submit_control: ControlState | None = None,
+        intermediate: bool = False,
     ) -> PageState:
+        """intermediate=True — промежуточная «Далее»: окно наблюдения короче."""
         if self.read_only and not self.rehearsal_markers:
             raise EngineSecurityError("Read-only Jupiter engine blocked form submission")
         self._apply_values(page, form)
@@ -1122,7 +1133,8 @@ class JupiterBrowserEngine:
                     self.last_submit_mode = "browser_enter"
             except PlaywrightError as exc:
                 raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
-            self._watch_after_submit(tracker, toasts, actions_from, popups_from)
+            self._watch_after_submit(tracker, toasts, actions_from, popups_from,
+                                     WATCH_NEXT_MAX_MS if intermediate else WATCH_MAX_MS)
         finally:
             tracker.stop()
             # Запись ответов — только после окна наблюдения: API отвечает и через 3 с.

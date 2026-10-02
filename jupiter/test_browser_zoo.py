@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agent import CandidateProfile, JupiterAgent
+from engine import EngineTransportError, FormState
 
 try:
     from browser_engine import JupiterBrowserEngine, sync_playwright
@@ -544,6 +545,8 @@ if (send) send.onclick = async () => {
   else if (c === 'status204_stays') { await post('/api/apply-204'); }
   else if (c === 'alert') { await wait(300); alert('Спасибо, заявка принята'); }
   else if (c === 'reload') { await post('/api/apply-ok'); await wait(1200); sessionStorage.setItem('sent', '1'); location.reload(); }
+  else if (c === 'churn') { const t = document.createElement('p'); document.body.appendChild(t);
+    setInterval(() => { t.textContent = String(Math.random()); }, 100); }
   else if (c === 'sms') { await post('/apply/send');
     document.getElementById('app').innerHTML = '<form onsubmit="return false"><h2>Подтверждение номера</h2>'
       + '<label>Код из СМС <input name="sms_code" required></label>'
@@ -729,6 +732,39 @@ class BrowserSubmitOutcomeTest(unittest.TestCase):
         self.assertTrue(any(a.get("action") == "left_allowed_hosts" for a in eng.actions), eng.actions)
         # Чужой хост по-прежнему закрыт: страница «Спасибо» не загружалась.
         self.assertNotIn("/thanks", self.server.state["gets"], dump)
+
+    def _submit_timed(self, intermediate):
+        """Клик по странице, которая без конца меняет DOM: окно наблюдения
+        кончается только по максимуму. Возвращает секунды."""
+        from unittest import mock
+        import browser_engine
+        eng = JupiterBrowserEngine({"127.0.0.1"}, executable_path=CHROMIUM, allow_private_addresses=True)
+        self.addCleanup(eng.close)
+        page = eng.open(f"http://127.0.0.1:{self.port}/s?case=churn")
+        button = next(c for c in page.controls if c.tag == "button")
+        form = FormState(index=0, method="POST", action="", enctype="", control_indices=[])
+        with mock.patch.object(browser_engine, "WATCH_MAX_MS", 4000), \
+                mock.patch.object(browser_engine, "WATCH_NEXT_MAX_MS", 1500):
+            started = time.monotonic()
+            eng.submit(page, form, button, intermediate=intermediate)
+            return time.monotonic() - started
+
+    def test_next_button_has_short_watch_window(self):
+        self.assertLess(self._submit_timed(True), 3.0)
+
+    def test_final_submit_keeps_full_watch_window(self):
+        self.assertGreaterEqual(self._submit_timed(False), 3.5)
+
+    def test_tab_closed_during_watch_is_transport_error(self):
+        # Вкладка закрылась после клика: исход неизвестен (_unknown_outcome),
+        # а не необработанная ошибка Playwright.
+        eng = JupiterBrowserEngine({"127.0.0.1"}, executable_path=CHROMIUM, allow_private_addresses=True)
+        self.addCleanup(eng.close)
+        eng.open(f"http://127.0.0.1:{self.port}/s?case=none")
+        tracker = eng._track_requests()
+        eng._tab.close()
+        with self.assertRaises(EngineTransportError):
+            eng._watch_after_submit(tracker, [], 0, 0)
 
     def _redirect_case(self, to_host):
         """POST → 302 на to_host: страница старта на app.test.localhost (публичный

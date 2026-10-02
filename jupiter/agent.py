@@ -2961,7 +2961,10 @@ class JupiterAgent:
             if self.before_submit is not None:
                 self.before_submit(page.url, clicked_next)
             try:
-                page = self.engine.submit(before, form, submit)
+                # Промежуточная «Далее» — короткое окно наблюдения. Параметр
+                # передаём только ей: движки-заглушки его могут не знать.
+                page = (self.engine.submit(before, form, submit, intermediate=True)
+                        if clicked_next else self.engine.submit(before, form, submit))
             except EngineSecurityError as exc:
                 reason = f"Navigation blocked by Jupiter policy: {exc}"
                 trajectory.append({
