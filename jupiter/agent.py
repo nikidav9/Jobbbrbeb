@@ -660,6 +660,15 @@ def _path_key(url: str) -> str:
     return f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
 
 
+def _url_key(url: str) -> str:
+    """Адрес для «уже были»: без якоря и завершающего слэша, с параметрами.
+    /career и /career/ — одна страница (Хоулмонт ходил между ними до MAX_STEPS,
+    02.10.2026), а /vacancies?id=33 и ?id=34 — разные."""
+    parsed = urllib.parse.urlparse(url or "")
+    key = f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
+    return f"{key}?{parsed.query}" if parsed.query else key
+
+
 def _climbs_up(url: str, root: str) -> bool:
     """Ссылка уводит со страницы вакансии в её раздел: старт глубже одного
     уровня (/vakansii/analitik-1s/), ссылка — его предок (/vakansii/) и не
@@ -1910,12 +1919,14 @@ class JupiterAgent:
         # (?direction=…), и разведка упиралась в MAX_STEPS вместо «нужен
         # браузер» (Т-Банк IT, 30.09).
         path_visits: dict[str, int] = {}
-        for seen in visited:
-            key = _path_key(seen)
+        seen_keys = {_url_key(seen) for seen in visited}
+        for seen in seen_keys:
+            key = _path_key("//" + seen)
             path_visits[key] = path_visits.get(key, 0) + 1
         for candidates, origin, priority in sources:
             for url, text in candidates:
-                if url in visited or path_visits.get(_path_key(url), 0) >= 2:
+                if (url in visited or _url_key(url) in seen_keys or _url_key(url) == _url_key(page.url)
+                        or path_visits.get(_path_key(url), 0) >= 2):
                     continue
                 # С карточки вакансии — только к отклику на неё же. Соседняя
                 # вакансия в «похожих» набирает те же очки, и агент заполнял
@@ -2607,7 +2618,7 @@ class JupiterAgent:
                         return AgentResult(
                             "failed", reason, trajectory, Reason.NAVIGATION_FAILED
                         )
-                    visited.add(page.url)
+                    visited.update({page.url, next_url})
                     continue
 
                 if self.dry_run and (has_application_form or filled_any):
