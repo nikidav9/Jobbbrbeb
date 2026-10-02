@@ -100,6 +100,17 @@ class SuccessPhraseTest(unittest.TestCase):
         ):
             self.assertEqual(self.found(text), "", text)
 
+    def test_interest_sms_and_error_phrases_are_not_confirmation(self):
+        # Ложные «отправлено»: вежливость без отклика, СМС с кодом, ошибка.
+        for text in (
+            "Спасибо за интерес к вакансии! Заполните анкету",
+            "Thank you for your interest",
+            "СМС-сообщение отправлено на ваш номер",
+            "Сообщение с кодом отправлено на +7 900 000-00-00",
+            "Данные отправлены с ошибкой",
+        ):
+            self.assertEqual(self.found(text), "", text)
+
     def test_phrase_present_before_is_not_new(self):
         self.assertEqual(self.found("Заявка успешно отправлена", before="Подвал: Заявка успешно отправлена"), "")
 
