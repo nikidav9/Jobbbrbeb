@@ -559,7 +559,7 @@ class BrowserEngineTest(unittest.TestCase):
         result = agent.run(f"http://127.0.0.1:{self.port}/stuckbox", self.profile)
         dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
         self.assertEqual(result.status, "failed", dump)
-        self.assertEqual(result.reason_code, "SUBMIT_FAILED", dump)
+        self.assertEqual(result.reason_code, "FILL_FAILED", dump)
         self.assertEqual([p for p, _ in self.server.state["posts"] if p == "/api/stuckbox-apply"], [])
 
     def test_consent_text_next_to_an_unlabeled_checkbox_is_used(self):

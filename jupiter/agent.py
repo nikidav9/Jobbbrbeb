@@ -16,6 +16,7 @@ from typing import Any, Callable
 from engine import (
     ControlState,
     EngineError,
+    EngineFillError,
     EngineSecurityError,
     EngineTransportError,
     JupiterWebEngine,
@@ -270,6 +271,10 @@ class Reason:
     SITE_REJECTED = "SITE_REJECTED"
     NAVIGATION_FAILED = "NAVIGATION_FAILED"
     SUBMIT_FAILED = "SUBMIT_FAILED"
+    # Сбой заполнения ДО клика «Отправить» (EngineFillError): поле не
+    # заполнилось, нечем отправить. На сайт ничего не ушло — это не
+    # «исход неизвестен», а обычный сбой, который можно повторить.
+    FILL_FAILED = "FILL_FAILED"
     VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
     MAX_STEPS = "MAX_STEPS"
     # Анкете нужны ответы человека — вопросы ушли в приложение (questions.py).
@@ -2896,6 +2901,19 @@ class JupiterAgent:
                 })
                 return AgentResult(
                     "failed", reason, trajectory, Reason.NAVIGATION_FAILED
+                )
+            except EngineFillError as exc:
+                # Клика и запроса не было: before_submit уже взвёл в воркере
+                # «отправка начата», но отклик точно не ушёл. Отдельный код
+                # не даёт воркеру записать «Скорее всего, ушёл».
+                reason = f"Jupiter Web Engine failed to fill form before submit: {exc}"
+                trajectory.append({
+                    "action": "failed",
+                    "reason": reason,
+                    "reason_code": Reason.FILL_FAILED,
+                })
+                return AgentResult(
+                    "failed", reason, trajectory, Reason.FILL_FAILED
                 )
             except EngineError as exc:
                 reason = f"Jupiter Web Engine failed to submit form: {exc}"

@@ -194,6 +194,7 @@ export default function JupiterPage() {
                 <Bar dataKey="manual" name={BUCKET_LABEL.manual} stackId="a" fill={PALETTE.cyan} />
                 <Bar dataKey="human" name={BUCKET_LABEL.human} stackId="a" fill={PALETTE.orange} />
                 <Bar dataKey="parked" name={BUCKET_LABEL.parked} stackId="a" fill={PALETTE.blue} />
+                <Bar dataKey="unknown" name="Скорее всего, ушёл" stackId="a" fill={PALETTE.red} />
                 <Bar dataKey="other" name="Прочее" stackId="a" fill={PALETTE.gray} />
               </BarChart>
             </ResponsiveContainer>

@@ -397,6 +397,28 @@ class TestProfileFactory(unittest.TestCase):
                                            lambda _: FailedAfterFinal())
         self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
 
+    def test_fill_failure_before_click_is_retried_not_unknown(self):
+        # before_submit взводит «отправка начата» ДО engine.submit, а поле
+        # может не заполниться раньше клика. Отклик точно не ушёл — повтор,
+        # а не «Скорее всего, ушёл» (02.10.2026).
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="fill-failed", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedToFill:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, False)
+                return AgentResult("failed", "Не удалось заполнить поле", reason_code=Reason.FILL_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedToFill())
+        self.assertNotEqual(state, TaskState.SUBMISSION_UNKNOWN)
+        self.assertEqual(state, TaskState.RETRYABLE_FAILED)
+        self.assertIn(Reason.FILL_FAILED, worker_mod.RETRYABLE_CODES)
+
     def test_live_task_on_unverified_site_is_parked_without_agent(self):
         import worker as worker_mod
 

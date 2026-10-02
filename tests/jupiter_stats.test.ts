@@ -93,6 +93,17 @@ test('день считается по Москве: 22:30 UTC — уже сле
   assert.deepEqual(lastDays(3, new Date('2026-09-25T22:30:00Z')), ['2026-09-24', '2026-09-25', '2026-09-26']);
 });
 
+test('«Скорее всего, ушёл» идёт в days[].unknown, а не в other', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+  const r = buildReport([
+    row({ state: 'submission_unknown', reason_code: 'POST_OUTCOME_UNCERTAIN' }),
+    row({ state: 'failed', reason_code: 'SITE_ERROR' }),
+  ], 7, now);
+  const d = r.days.find(x => x.day === '2026-09-25')!;
+  assert.equal(d.unknown, 1);
+  assert.equal(d.other, 1);
+});
+
 test('по движку: колонка engine, «Переведено на браузер» — отдельной строкой', () => {
   const now = new Date('2026-09-26T12:00:00Z');
   assert.equal(engineOf('http'), 'http');

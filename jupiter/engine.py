@@ -32,6 +32,16 @@ class EngineSecurityError(EngineError):
     pass
 
 
+class EngineFillError(EngineError):
+    """Сбой ДО отправки: поле не заполнилось, нечем отправить, файла нет.
+
+    Клика «Отправить» и запроса на сайт не было — отклик точно не ушёл.
+    Отличать это от прочих EngineError обязательно: перед отправкой воркер
+    уже взвёл «отправка начата», и без этого признака любой такой сбой
+    превращался в «Скорее всего, ушёл» без повтора.
+    """
+
+
 class EngineTransportError(EngineError):
     """Ответа не было вовсе: обрыв, таймаут, недоступный хост.
 
@@ -1382,7 +1392,7 @@ class JupiterWebEngine:
 
         for name, path in files:
             if not path.is_file():
-                raise EngineError(f"Upload file does not exist: {path}")
+                raise EngineFillError(f"Upload file does not exist: {path}")
             filename = path.name.replace('"', "")
             ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
             chunks.extend([
@@ -1611,14 +1621,14 @@ class JupiterWebEngine:
 
         if method == "GET":
             if files:
-                raise EngineError("GET form cannot upload files")
+                raise EngineFillError("GET form cannot upload files")
             query = urllib.parse.urlencode(fields, doseq=True)
             parts = list(urllib.parse.urlsplit(target))
             parts[3] = "&".join(filter(None, [parts[3], query]))
             return self.request(urllib.parse.urlunsplit(parts))
 
         if method != "POST":
-            raise EngineError(f"Unsupported form method: {method}")
+            raise EngineFillError(f"Unsupported form method: {method}")
 
         if files or "multipart/form-data" in enctype:
             body, content_type = self._multipart(fields, files)
