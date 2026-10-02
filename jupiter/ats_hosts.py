@@ -94,11 +94,17 @@ def extra_allowed_hosts(vacancy_url: str, observed_hosts) -> set[str]:
 
 # Составные окончания, у которых «домен второго уровня» — это три метки.
 # Полного списка публичных суффиксов в stdlib нет; здесь те, что встречаются
-# у российских работодателей, и несколько общих.
+# у российских работодателей, и несколько общих. Сюда же — мультиарендные
+# площадки (конструкторы сайтов, хостинги): a.tilda.ws и b.tilda.ws — разные
+# компании, а не один сайт, иначе «тот же сайт» пропустил бы чужой поддомен.
+# Окончание может быть и из трёх меток (website.yandexcloud.net).
 _TWO_LEVEL_SUFFIXES = {
     "com.ru", "org.ru", "net.ru", "pp.ru", "msk.ru", "spb.ru", "nov.ru",
     "co.uk", "org.uk", "com.au", "com.br", "co.jp", "com.tr", "com.ua", "com.cn",
     "co.kr", "co.in", "com.kz", "org.kz",
+    "tilda.ws", "github.io", "ucoz.ru", "narod.ru", "wixsite.com", "turbo.site",
+    "nethouse.ru", "taplink.ws", "netlify.app", "vercel.app", "herokuapp.com",
+    "appspot.com", "website.yandexcloud.net", "myjino.ru",
 }
 
 
@@ -112,10 +118,11 @@ def registrable_domain(host: str) -> str:
     labels = host.split(".")
     if len(labels) < 2 or all(part.isdigit() for part in labels) or ":" in host:
         return host
-    tail = ".".join(labels[-2:])
-    if tail in _TWO_LEVEL_SUFFIXES and len(labels) >= 3:
-        return ".".join(labels[-3:])
-    return tail
+    for size in (3, 2):  # окончание из трёх меток проверяем первым
+        suffix = ".".join(labels[-size:])
+        if suffix in _TWO_LEVEL_SUFFIXES and len(labels) > size:
+            return ".".join(labels[-size - 1:])
+    return ".".join(labels[-2:])
 
 
 def same_site(host: str, other: str) -> bool:
