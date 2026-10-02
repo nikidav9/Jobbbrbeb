@@ -34,9 +34,12 @@ check('лента IT: раздел it плюс IT-компания целико�
 check('рабочие вакансии IT-компании в ленту не идут',
     fs_aggregate([['company' => 'Яндекс', 'section' => 'warehouse'], ['company' => 'Яндекс', 'section' => 'office'],
                   ['company' => 'Яндекс', 'section' => 'it']], 'x', ['Яндекс'])['it_feed_total'] === 2);
-check('раздел marketing — в ленте (миграция 143)',
+check('раздел marketing — в ленте (миграция 143), finance/hr/legal — тоже (145), office — нет',
     fs_aggregate([['company' => 'X5 Group', 'section' => 'marketing', 'address' => 'Москва'],
-                  ['company' => 'X5 Group', 'section' => 'finance', 'address' => 'Москва']], 'x')['feed_total'] === 1);
+                  ['company' => 'X5 Group', 'section' => 'finance', 'address' => 'Москва'],
+                  ['company' => 'X5 Group', 'section' => 'hr', 'address' => 'Москва'],
+                  ['company' => 'X5 Group', 'section' => 'legal', 'address' => 'Москва'],
+                  ['company' => 'X5 Group', 'section' => 'office', 'address' => 'Москва']], 'x')['feed_total'] === 4);
 check('пустая таблица', fs_aggregate([], 'x')['total'] === 0 && fs_aggregate([], 'x')['it_total'] === 0);
 
 check('в ленту по Москве не идут другие города',

@@ -51,7 +51,7 @@ $feedSql = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
 sort($feedSql);
 $feedPhp = JOB_SECTIONS_FEED;
 sort($feedPhp);
-check('миграция 143: разделы ленты те же, что JOB_SECTIONS_FEED', $feedSql === $feedPhp && in_array('it', $feedPhp, true));
+check('миграция 143: it и marketing', $feedSql === ['it', 'marketing'] && in_array('it', $feedPhp, true));
 preg_match("~c\.section not in \(([^)]*)\)~", $mig143, $m);
 $blue143 = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
 sort($blue143);
@@ -61,6 +61,25 @@ foreach (['Графический дизайнер', 'Бизнес-маркет�
     check("«{$t}» — в ленте", in_array(job_section($t), JOB_SECTIONS_FEED, true));
 }
 foreach (['Телемаркетолог В2С', 'Администратор магазина', 'Кассир'] as $t) {
+    check("«{$t}» — не в ленте", !in_array(job_section($t), JOB_SECTIONS_FEED, true));
+}
+
+// «Офис рядом с IT» (решение владельца 02.10.2026, миграция 145): финансы,
+// HR и юристы. Список в SQL совпадает с JOB_SECTIONS_FEED; администраторы,
+// проектировщики и операционисты банка в ленту не идут.
+$mig145 = (string)file_get_contents(__DIR__ . '/../supabase/migrations/145_feed_office.sql');
+preg_match("~not p_it_only or c\.section in \(([^)]*)\)~", $mig145, $m);
+$feed145 = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
+sort($feed145);
+check('миграция 145: разделы ленты те же, что JOB_SECTIONS_FEED', $feed145 === $feedPhp);
+preg_match("~c\.section not in \(([^)]*)\)~", $mig145, $m);
+$blue145 = array_map(fn($x) => trim($x, " '\n"), explode(',', $m[1] ?? ''));
+sort($blue145);
+check('миграция 145 не потеряла рабочие разделы IT-компаний', $blue145 === $phpList);
+foreach (['Финансовый бизнес-партнер (b2c)', 'Бухгалтер', 'Старший юрисконсульт', 'HR BP', 'Специалист по кадровому делопроизводству'] as $t) {
+    check("«{$t}» — в ленте", in_array(job_section($t), JOB_SECTIONS_FEED, true));
+}
+foreach (['Ассистент руководителя', 'Специалист по закупкам', 'Инженер-проектировщик отдела водоснабжения', 'Кассир-операционист', 'Кредитный специалист'] as $t) {
     check("«{$t}» — не в ленте", !in_array(job_section($t), JOB_SECTIONS_FEED, true));
 }
 

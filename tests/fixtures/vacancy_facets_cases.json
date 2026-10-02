@@ -829,5 +829,127 @@
     "specs": [
       "management"
     ]
+  },
+  {
+    "title": "Финансовый бизнес-партнер (b2c)",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "finance"
+    ]
+  },
+  {
+    "title": "Главный бухгалтер",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "finance"
+    ]
+  },
+  {
+    "title": "Аналитик по процентному риску банковской книги",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "analytics",
+      "finance"
+    ]
+  },
+  {
+    "title": "Финансовый аналитик",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "analytics",
+      "finance"
+    ]
+  },
+  {
+    "title": "Методолог налогообложения",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "finance"
+    ]
+  },
+  {
+    "title": "Риск-менеджер",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "finance"
+    ]
+  },
+  {
+    "title": "Старший юрисконсульт",
+    "schedule": null,
+    "text": null,
+    "level": "senior",
+    "format": null,
+    "specs": [
+      "legal"
+    ]
+  },
+  {
+    "title": "Юрист по налоговому праву",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "legal"
+    ]
+  },
+  {
+    "title": "Legal Counsel",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "legal"
+    ]
+  },
+  {
+    "title": "Специалист по комплаенсу",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "legal"
+    ]
+  },
+  {
+    "title": "Java-разработчик в команду рисков",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "backend"
+    ]
+  },
+  {
+    "title": "Аналитик аудитории",
+    "schedule": null,
+    "text": null,
+    "level": null,
+    "format": null,
+    "specs": [
+      "analytics"
+    ]
   }
 ]

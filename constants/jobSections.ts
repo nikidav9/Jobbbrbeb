@@ -5,7 +5,7 @@ import type { WorkType } from './types';
 // Идентификаторы обязаны совпадать — это проверяет tests/job_sections_test.php.
 export type JobSection =
   | 'it' | 'warehouse' | 'delivery' | 'transport' | 'retail' | 'food'
-  | 'production' | 'service' | 'sales' | 'finance' | 'office'
+  | 'production' | 'service' | 'sales' | 'finance' | 'hr' | 'legal' | 'office'
   | 'marketing' | 'medical' | 'engineering' | 'other';
 
 export const JOB_SECTIONS: { id: JobSection; label: string }[] = [
@@ -19,7 +19,9 @@ export const JOB_SECTIONS: { id: JobSection; label: string }[] = [
   { id: 'service', label: 'Уборка, охрана, сервис' },
   { id: 'sales', label: 'Продажи и клиенты' },
   { id: 'finance', label: 'Финансы и бухгалтерия' },
-  { id: 'office', label: 'Офис, HR и юристы' },
+  { id: 'hr', label: 'HR и подбор персонала' },
+  { id: 'legal', label: 'Юристы' },
+  { id: 'office', label: 'Офис и администраторы' },
   { id: 'marketing', label: 'Маркетинг и дизайн' },
   { id: 'medical', label: 'Медицина и аптеки' },
   { id: 'engineering', label: 'Инженеры и стройка' },
