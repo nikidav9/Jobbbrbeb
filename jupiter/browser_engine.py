@@ -28,8 +28,10 @@ load_html, allowed_hosts, read_only, куки), поэтому вся логик
 - капчу движок не решает и не отдаёт сервисам распознавания: captcha()
   находит её, captcha_png() снимает только саму картинку (остальная страница
   с ПДн человеку не уходит), enter_captcha() вводит ответ самого кандидата;
-- успех отправки на SPA подтверждает ответ сайта: submit() записывает ответы
-  API (browser_success) и дописывает к тексту страницы исчезающий тост.
+- успех отправки на SPA подтверждает ответ сайта: submit() после клика
+  наблюдает за страницей (_watch_after_submit: сеть, переходы, DOM — до
+  тишины), записывает ответы API (browser_success) и дописывает к тексту
+  страницы исчезающий тост, текст alert/confirm и нового окна.
 
 Playwright — необязательная зависимость: без него модуль импортируется, а
 при создании движка объясняет, чего не хватает. Остальной Юпитер работает на
@@ -38,9 +40,12 @@ stdlib, как и раньше.
 from __future__ import annotations
 
 import os
+import re
+import time
 import urllib.parse
 from typing import Any
 
+import ats_hosts
 import browser_captcha
 import browser_success
 from browser_captcha import CaptchaInfo
@@ -95,8 +100,22 @@ APPLY_TEXT_RE = (
     r"заполнить анкету|анкета соискателя|анкет[ау] кандидата|хочу работать|"
     r"отправить отклик|оставить отклик"
 )
-# Опрос всплывашек после отправки: тост живёт секунду-другую, дольше settle.
+# Опрос всплывашек после отправки: тост живёт секунду-другую.
 TOAST_POLL_MS = 200
+# Окно наблюдения после «Отправить» (02.10.2026): ответ сервера и «Спасибо»
+# приходят через секунды, а networkidle для документа срабатывает один раз и
+# на SPA возвращается сразу. Ждём: не меньше WATCH_MIN_MS, затем до тишины
+# (нет незавершённых запросов и перемен в DOM WATCH_QUIET_MS), не дольше
+# WATCH_MAX_MS. Запрос дольше WATCH_LONG_REQUEST_MS — long-poll, не ждём его.
+WATCH_MIN_MS = 1500
+WATCH_QUIET_MS = 1000
+WATCH_MAX_MS = 15000
+WATCH_LONG_REQUEST_MS = 8000
+WATCH_IGNORED_RESOURCES = {"image", "font", "media", "eventsource", "websocket", "ping"}
+# Ошибки evaluate, когда страница ушла на другой адрес или перерисовалась.
+NAV_ERR = re.compile(
+    r"context was destroyed|frame was detached|navigation|cannot find context", re.I)
+SAFE_EVAL_TRIES = 4
 SUBMIT_TEXT_RE = r"отправ|откликн|подать|далее|продолжить|submit|apply|send|next"
 
 # Снимок отрисованной страницы. Живой DOM не меняем, кроме меток data-jt-ref:
@@ -115,7 +134,10 @@ SNAPSHOT_JS = r"""
   // Файловые поля и галочки сайты прячут и рисуют вместо них свои кнопки —
   // заполнять их всё равно надо. Прочее невидимое агенту не показываем.
   const keepHidden = el => ['file', 'checkbox', 'radio'].includes((el.type || '').toLowerCase());
-  if (!document.documentElement) return { html: '<!doctype html><html></html>', url: location.href, virtualForm: false };
+  // Видимый текст: innerText пропускает display:none и visibility:hidden,
+  // так что заранее спрятанное окно «Спасибо» в «было до» не попадает.
+  const visibleText = (document.body ? (document.body.innerText || '') : '').slice(0, 200000);
+  if (!document.documentElement) return { html: '<!doctype html><html></html>', url: location.href, virtualForm: false, visibleText };
   const clone = document.documentElement.cloneNode(true);
   const byRef = new Map();
   clone.querySelectorAll('[data-jt-ref]').forEach(c => byRef.set(c.getAttribute('data-jt-ref'), c));
@@ -229,7 +251,7 @@ SNAPSHOT_JS = r"""
   // Самописные списки (role=combobox) — в клоне обычный <select> с их
   // вариантами. После виртуальной формы: та опирается на узлы клона.
   (__CUSTOM_HOOK__)(clone, customSpecs);
-  return { html: '<!doctype html>' + clone.outerHTML, url: location.href, virtualForm };
+  return { html: '<!doctype html>' + clone.outerHTML, url: location.href, virtualForm, visibleText };
 }
 """.replace("__CUSTOM_HOOK__", CLONE_HOOK_JS.strip())
 
@@ -359,6 +381,28 @@ SUBMIT_FEEDBACK_JS = r"""
 }
 """
 
+# Слежение за DOM: время последней значимой перемены (стили не в счёт —
+# анимации не дают странице затихнуть). Скрипт ставит наблюдатель один раз на
+# документ и возвращает, сколько миллисекунд страница не менялась. После
+# перехода документ новый — наблюдатель ставится заново, отсчёт с нуля.
+DOM_QUIET_JS = r"""
+() => {
+  if (!window.__jtMut) {
+    window.__jtMut = { last: performance.now() };
+    try {
+      new MutationObserver(recs => {
+        for (const r of recs) {
+          if (r.type === 'attributes' && r.attributeName === 'style') continue;
+          window.__jtMut.last = performance.now();
+          break;
+        }
+      }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    } catch (e) {}
+  }
+  return performance.now() - window.__jtMut.last;
+}
+"""
+
 MARK_CLICK_LISTENERS_JS = r"""
 (() => {
   if (typeof getEventListeners !== 'function') return -1;
@@ -443,6 +487,12 @@ class JupiterBrowserEngine:
         self.actions: list[dict[str, Any]] = []
         # Итог browser_success.classify последней отправки (None — не было).
         self.last_api_result: dict[str, Any] | None = None
+        # Идёт отправка: после «Отправить» разрешено только чтение (GET)
+        # страниц того же сайта и известных ATS — страница «Спасибо» бывает
+        # на поддомене (_allowed_after_submit).
+        self._after_submit = False
+        # Тексты новых окон, снятые browser_guard до закрытия.
+        self._popup_texts: list[str] = []
         self._host_ok: dict[str, bool] = {}
         self._last_status = 200
         self._pw = sync_playwright().start()
@@ -467,7 +517,7 @@ class JupiterBrowserEngine:
             # После маршрута движка — значит срабатывает раньше него: попапы,
             # диалоги, загрузки, схемы вроде file://.
             browser_guard.install_guards(self._context, self._tab, self.allowed_hosts, [],
-                                         journal=self.actions)
+                                         journal=self.actions, popup_texts=self._popup_texts)
         except Exception:
             self.close()
             raise
@@ -524,7 +574,8 @@ class JupiterBrowserEngine:
             reason = "scheme"
         elif not self._public_host(host):
             reason = "internal_address"
-        elif self._main_navigation(request) and host not in self.allowed_hosts:
+        elif (self._main_navigation(request) and host not in self.allowed_hosts
+              and not self._allowed_after_submit(host, request)):
             reason = "host_not_allowed"
         elif self.read_only and request.method.upper() not in SAFE_METHODS:
             reason = "read_only"
@@ -544,6 +595,21 @@ class JupiterBrowserEngine:
             route.abort("blockedbyclient")
             return
         route.continue_()
+
+    def _allowed_after_submit(self, host: str, request) -> bool:  # pragma: no cover - вызывает браузер
+        """После «Отправить»: GET на тот же сайт (поддомены) и известные ATS.
+
+        Остальные хосты по-прежнему закрыты; внутренние адреса закрыты выше
+        (_public_host). Любой не-GET здесь не проходит.
+        """
+        if not self._after_submit or request.method.upper() != "GET":
+            return False
+        if ats_hosts.is_apply_ats(host):
+            return True
+        return any(
+            ats_hosts.same_site(host, h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
+            for h in self.allowed_hosts
+        )
 
     def _carries_candidate(self, request) -> bool:  # pragma: no cover - вызывает браузер
         """Есть ли в адресе или теле запроса метки тестового кандидата."""
@@ -568,55 +634,131 @@ class JupiterBrowserEngine:
         self.actions.extend(dismiss_overlays(self._tab))
 
     # ── Снимок страницы ────────────────────────────────────────────────────
-    def _settle(self, toasts: list[str] | None = None) -> None:
-        """Дождаться тишины в сети. С toasts — заодно собирать всплывашки."""
-        if toasts is None:
+    def _settle(self) -> None:
+        """Дождаться тишины в сети (для загрузки страниц; после «Отправить» —
+        _watch_after_submit)."""
+        try:
+            self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
+        except PlaywrightError:
+            pass  # долгие опросы и счётчики — не повод ждать дальше
+        self._tab.wait_for_timeout(self.settle_ms)
+
+    def _safe_eval(self, js: str, arg: Any = None, tries: int = SAFE_EVAL_TRIES) -> Any:
+        """evaluate, который переживает переход посреди вызова.
+
+        «Execution context was destroyed» и подобное значат, что страница
+        ушла на другой адрес или перерисовалась: ждём загрузки и повторяем.
+        Прочие ошибки — как были (PlaywrightError); если страница так и не
+        устоялась — EngineTransportError.
+        """
+        last: Exception | None = None
+        for i in range(max(1, tries)):
             try:
-                self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
+                return self._tab.evaluate(js, arg)
+            except PlaywrightError as exc:
+                if not NAV_ERR.search(str(exc)):
+                    raise
+                last = exc
+                try:
+                    self._tab.wait_for_load_state("domcontentloaded", timeout=5000)
+                except PlaywrightError:
+                    pass
+                self._tab.wait_for_timeout(300 * (i + 1))
+        raise EngineTransportError(f"Страница не устоялась после перехода: {last}") from last
+
+    def _watch_after_submit(self, toasts: list[str], actions_from: int, popups_from: int) -> None:
+        """Окно наблюдения после клика «Отправить» вместо фиксированной паузы.
+
+        Ждёт, пока сайт ответит и покажет результат: нет незавершённых
+        запросов (свой счётчик — networkidle тут не годится), страница не
+        переходила и не менялась. Минимум WATCH_MIN_MS, максимум WATCH_MAX_MS.
+        По ходу собирает тосты, тексты alert/confirm (browser_guard пишет их в
+        actions) и тексты нового окна (popup_texts).
+        """
+        tab = self._tab
+        min_ms = max(WATCH_MIN_MS, self.settle_ms)
+        inflight: dict[Any, float] = {}
+        changed = [time.monotonic()]
+
+        def touch() -> None:
+            changed[0] = time.monotonic()
+
+        def on_request(request: Any) -> None:
+            try:
+                if request.resource_type in WATCH_IGNORED_RESOURCES:
+                    return
             except PlaywrightError:
-                pass  # долгие опросы и счётчики — не повод ждать дальше
-            self._tab.wait_for_timeout(self.settle_ms)
-            return
+                return
+            inflight[request] = time.monotonic()
+            touch()
+
+        def on_done(request: Any) -> None:
+            inflight.pop(request, None)
+            touch()
+
+        def on_navigated(frame: Any) -> None:
+            if frame == tab.main_frame:
+                touch()
 
         def grab() -> None:
-            text = browser_success.toast_text(self._tab)
+            text = browser_success.toast_text(tab)
             if text and text not in toasts:
                 toasts.append(text)
 
-        # networkidle ждём короткими шагами: тост показывается и гаснет,
-        # пока сеть ещё не затихла.
-        deadline = min(self.timeout_ms, 10000)
-        waited = 0
-        while waited < deadline:
+        tab.on("request", on_request)
+        tab.on("requestfinished", on_done)
+        tab.on("requestfailed", on_done)
+        tab.on("framenavigated", on_navigated)
+        started = time.monotonic()
+        try:
+            while True:
+                grab()
+                try:
+                    age_ms = tab.evaluate(DOM_QUIET_JS)
+                    changed[0] = max(changed[0], time.monotonic() - age_ms / 1000.0)
+                except PlaywrightError:
+                    touch()  # страница переходит — тишины ещё нет
+                now = time.monotonic()
+                elapsed_ms = (now - started) * 1000
+                busy = [r for r, t in inflight.items() if (now - t) * 1000 < WATCH_LONG_REQUEST_MS]
+                if elapsed_ms >= WATCH_MAX_MS:
+                    break
+                if elapsed_ms >= min_ms and not busy and (now - changed[0]) * 1000 >= WATCH_QUIET_MS:
+                    break
+                tab.wait_for_timeout(TOAST_POLL_MS)
             grab()
-            try:
-                self._tab.wait_for_load_state("networkidle", timeout=TOAST_POLL_MS)
-                break
-            except PlaywrightError:
-                waited += TOAST_POLL_MS
-        for _ in range(max(1, self.settle_ms // TOAST_POLL_MS)):
-            grab()
-            self._tab.wait_for_timeout(TOAST_POLL_MS)
-        grab()
+        finally:
+            for event, handler in (("request", on_request), ("requestfinished", on_done),
+                                   ("requestfailed", on_done), ("framenavigated", on_navigated)):
+                try:
+                    tab.remove_listener(event, handler)
+                except Exception:  # noqa: BLE001 - вкладка могла закрыться
+                    pass
+        # Тексты alert/confirm и нового окна — в доказательства.
+        extra = [a.get("message", "") for a in self.actions[actions_from:]
+                 if a.get("action") == "guard_dialog"]
+        extra += self._popup_texts[popups_from:]
+        for text in extra:
+            text = (text or "").strip()
+            if text and text not in toasts:
+                toasts.append(text)
 
     def _snapshot(self) -> PageState:
-        data = None
-        for attempt in range(2):
-            try:
-                data = self._tab.evaluate(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
-                break
-            except PlaywrightError as exc:
-                # Страница перерисовалась или ушла по адресу посреди снимка —
-                # дождаться и снять ещё раз (fsk.ru, 29.09.2026).
-                if attempt or "context was destroyed" not in str(exc).lower():
-                    raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
-                self._settle()
+        try:
+            data = self._safe_eval(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
+        except PlaywrightError as exc:
+            raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
         parser = _SemanticParser(data["url"])
         parser.feed(data["html"])
         parser.close()
         page = parser.finish(
             data["html"], self._last_status, {"content-type": "text/html; charset=utf-8"}
         )
+        # Только видимый текст: скрытое заранее «Спасибо» не должно попасть в
+        # «было до» (submission.collect_evidence сравнивает до и после).
+        visible = data.get("visibleText")
+        if isinstance(visible, str) and visible.strip():
+            page.text = visible
         # Скрипты страницы уже отработали по-настоящему: эвристики HTTP-движка
         # для JS («нужен браузер») здесь не нужны.
         page.has_script = False
@@ -927,7 +1069,15 @@ class JupiterBrowserEngine:
         self.last_submit_feedback = None
         recorder = browser_success.ResponseRecorder(self.allowed_hosts).start(self._tab)
         toasts: list[str] = []
+        actions_from = len(self.actions)
+        popups_from = len(self._popup_texts)
+        self._after_submit = True
         try:
+            try:
+                # Наблюдатель за DOM — до клика, чтобы не пропустить первую перемену.
+                self._tab.evaluate(DOM_QUIET_JS)
+            except PlaywrightError:
+                pass
             try:
                 button = self._locator(submit_control) if submit_control is not None else None
                 if button is not None:
@@ -945,16 +1095,17 @@ class JupiterBrowserEngine:
                     self.last_submit_mode = "browser_enter"
             except PlaywrightError as exc:
                 raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
-            self._settle(toasts)
+            self._watch_after_submit(toasts, actions_from, popups_from)
         finally:
+            # Запись ответов — только после окна наблюдения: API отвечает и через 3 с.
             responses = recorder.stop()
+            self._after_submit = False
         self._record_api_result(responses)
-        if self._tab.url != before:
-            self.assert_allowed(self._tab.url)
+        self._note_left_allowed_hosts(before, actions_from)
         refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
         try:
-            feedback = self._tab.evaluate(SUBMIT_FEEDBACK_JS, refs)
-        except PlaywrightError:
+            feedback = self._safe_eval(SUBMIT_FEEDBACK_JS, refs)
+        except (PlaywrightError, EngineTransportError):
             feedback = None
         if isinstance(feedback, dict) and (feedback.get("invalid") or feedback.get("errors")):
             self.last_submit_feedback = feedback
@@ -967,6 +1118,24 @@ class JupiterBrowserEngine:
             # дописываем к тексту, чтобы агент увидел подтверждение.
             result.text = (result.text + "\n" + "\n".join(toasts)).strip()
         return result
+
+    def _note_left_allowed_hosts(self, before: str, actions_from: int) -> None:
+        """Вкладка ушла за пределы разрешённых хостов (страница «Спасибо» на
+        чужом домене). Это не ошибка безопасности: сеть уже закрыта маршрутом,
+        а отправка состоялась. Фиксируем в журнале «подтверждения нет»."""
+        url = self._tab.url
+        if url == before:
+            return
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        if host and (host in self.allowed_hosts or ats_hosts.is_apply_ats(host) or any(
+            ats_hosts.same_site(host, h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
+            for h in self.allowed_hosts
+        )):
+            return
+        blocked = [a.get("url", "") for a in self.actions[actions_from:]
+                   if a.get("action") == "blocked_request" and a.get("reason") == "host_not_allowed"]
+        blocked_host = (urllib.parse.urlparse(blocked[-1]).hostname or "") if blocked else host
+        self.actions.append({"action": "left_allowed_hosts", "host": blocked_host[:100]})
 
     def _record_api_result(self, responses: list[dict[str, Any]]) -> None:
         verdict = browser_success.classify(responses)
