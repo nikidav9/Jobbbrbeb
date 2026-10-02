@@ -109,6 +109,14 @@ check('плашка объясняет, что запас не копится',
 check('плашка не обещает несуществующую покупку',
     !preg_match('~(Купить|Пополнить|Оформить подписк)~u', $feed));
 
+// Молнии кончились — лента закрыта до полуночи (решение владельца 02.10.2026).
+check('лента закрывается при пустом запасе',
+    (bool)preg_match('~feedLocked = energy\.ready && energy\.left <= 0~', $feed));
+check('закрытая лента рисуется вместо колоды, до пустого состояния',
+    (bool)preg_match('~\{feedLocked \? \([\s\S]{0,1500}\) : !swTop \?~', $feed));
+check('гостей не закрываем', str_contains($feed, '!currentUser.isGuest;'));
+check('плашка не обещает листание без молний', !str_contains($feed, 'Листать и пропускать вакансии можно'));
+
 if ($failures) {
     echo "swipe energy: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
