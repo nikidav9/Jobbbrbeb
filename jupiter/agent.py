@@ -2309,6 +2309,21 @@ class JupiterAgent:
         return [str(v) for v in profile.values.values()
                 if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip()]
 
+    @staticmethod
+    def _alice_can_try(question: Any) -> bool:
+        """Может ли ответ на вопрос лежать в профиле, пусть агент этого и не видит.
+
+        «Факт» (контакт, пол, стаж) — да. Поле без подписи движок зовёт jt-N, а у
+        радио-группы подписью служит первый вариант («Да»): настоящий вопрос
+        (соседний текст, legend) видит только Алиса. Прочие — вопросы под вакансию."""
+        text = str(question.text).strip()
+        if question.kind == "fact" or re.fullmatch(r"jt-\d+", text):
+            return True
+        return any(
+            isinstance(option, dict) and normalize(text) == normalize(str(option.get("label", "")))
+            for option in question.options
+        )
+
     def _alice_value(self, profile: CandidateProfile, key: str, fmt: str | None = None) -> str | None:
         """Значение ключа для Алисы. Единственное место, где оно выходит из профиля
         в страницу: модель называет ключ и запись, значения не видит."""
@@ -2648,14 +2663,12 @@ class JupiterAgent:
                         )
                         # Алиса пробует раньше человека, но только там, где ответ может
                         # лежать в профиле: нет вопросов вовсе, среди них есть «факт»
-                        # (контакт, пол, стаж) или поле без подписи (движок зовёт его
-                        # jt-N — смысл по соседнему тексту видит только Алиса). Вопросы
+                        # (контакт, пол, стаж) или поле без настоящей подписи (_alice_can_try).
+                        # Вопросы
                         # «под вакансию» ключом не закрываются; согласия, юридические
                         # вопросы и особые категории остаются человеку.
                         if (code == Reason.MISSING_PROFILE_FIELD and not special
-                                and (not questions or any(
-                                    q.kind == "fact" or re.fullmatch(r"jt-\d+", q.text.strip())
-                                    for q in questions))):
+                                and (not questions or any(self._alice_can_try(q) for q in questions))):
                             rescued = self._alice_rescue(
                                 page, profile, trajectory, code, form_index=target_form_index,
                                 notes=["Не заполнены обязательные поля: "

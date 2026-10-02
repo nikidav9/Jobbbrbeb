@@ -612,3 +612,29 @@ Invariants: `read_only` blocks `submit()` and aborts every non-GET request in
 the browser; navigations only to allowed hosts; internal addresses blocked;
 CAPTCHA is never bypassed. Playwright is optional: the rest of Jupiter stays
 stdlib-only. Tests: `test_browser_engine.py` (CI job `jupiter-browser`).
+
+## Alice rescue loop (`alice_agent.py`)
+
+When the agent's own parsing is stuck (no form or apply button found, a step
+button returns the same step, a required field has no key, the site highlights
+fields, HTML validation fails), a browser-engine agent may call
+`JupiterAgent._alice_rescue`. YandexGPT then drives the live Chromium tab one
+action per step (click, fill, select, check, upload, scroll, done), the way
+open browser agents such as browser-use do — the code is our own, stdlib plus
+Playwright.
+
+What the model sees: the page structure only (`alice_dom.render_outline`:
+labels, kinds, «обяз», «заполнено/пусто» without values, options, site errors)
+and the **names** of profile keys. It never sees profile values or field
+values; it names a key and our code writes the value (`value_for`). The whole
+step message also goes through `redact()` with the profile values.
+
+What it may not do (rejected before the page is touched): press submit or
+«Далее» (the main loop does), sign in / register / pay, leave for site sections,
+touch CAPTCHA, tick consents, use `candidate.LEGAL_KEYS` or special categories,
+name a key outside the allowed list, use a missing element number, add free text.
+Limits: 6 steps per run, ≤2 runs and ≤12 model calls per task (plus the hourly
+`yandex_gpt.BUDGET`), 90 s per run; it stops after 2 failed steps in a row, a
+repeated action, or 2 steps without any change of the page. Alice never decides
+«done»: on `done: ready` the main loop re-checks fields, CAPTCHA and the
+fingerprint, submits and verifies success itself. Tests: `test_alice_agent.py`.

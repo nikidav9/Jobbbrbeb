@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -128,6 +129,19 @@ class YandexGPTTest(unittest.TestCase):
             self.assertEqual(BUDGET.limit(), 200)
         with mock.patch.dict(os.environ, {"YANDEX_GPT_MAX_CALLS_PER_HOUR": "мусор"}):
             self.assertEqual(BUDGET.limit(), 200)
+
+    def test_budget_remaining_counts_without_spending(self):
+        with mock.patch.dict(os.environ, {"YANDEX_GPT_MAX_CALLS_PER_HOUR": "3"}):
+            self.assertEqual(BUDGET.remaining(), 3)
+            self.assertEqual(BUDGET.remaining(), 3)          # просмотр ничего не списывает
+            self.assertTrue(BUDGET.take())
+            self.assertEqual(BUDGET.remaining(), 2)
+            self.assertTrue(BUDGET.take() and BUDGET.take())
+            self.assertEqual(BUDGET.remaining(), 0)
+            self.assertFalse(BUDGET.take())
+        with mock.patch.dict(os.environ, {"YANDEX_GPT_MAX_CALLS_PER_HOUR": "3"}), \
+                mock.patch("yandex_gpt.time.monotonic", return_value=time.monotonic() + 3600):
+            self.assertEqual(BUDGET.remaining(), 3)          # окно в час скользит
 
     def test_log_has_no_prompt_or_answer(self):
         _H.replies = [(200, '{"answer": "ОТВЕТ-МОДЕЛИ"}')]
