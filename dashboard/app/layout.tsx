@@ -11,8 +11,6 @@ import type { Metadata, Viewport } from 'next'
 //
 // Пакет geist кладёт те же самые шрифты рядом со сборкой, и они
 // отдаются с нашего сервера. Вид не меняется.
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
 import './globals.css'
 import Shell from '@/components/Shell'
 import SwRegister from '@/components/SwRegister'
@@ -39,12 +37,12 @@ export const viewport: Viewport = {
   maximumScale: 5,
   // Тот же серый, что у фона панели (--bg → gray-50 из палитры TailAdmin):
   // этим цветом браузер красит свою полосу вокруг страницы.
-  themeColor: '#f9fafb',
+  themeColor: '#f5efe6',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="ru">
       <body>
         <Shell>{children}</Shell>
         <SwRegister />

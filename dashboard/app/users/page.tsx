@@ -17,11 +17,31 @@ import {
 import { downloadCSV } from '@/lib/csv-export'
 import { getVerifiedUsers, setUserVerified } from '@/lib/verification'
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
-import { AXIS, AXIS_CAT, GRID, LEGEND, TT } from '@/lib/chart'
+import { AXIS, GRID, LEGEND, TT } from '@/lib/chart'
 
+
+/** Текст с копированием по клику: почта и телефон нужны, чтобы вставить их в письмо или поиск. */
+function CopyText({ text, style }: { text: string; style?: React.CSSProperties }) {
+  const [done, setDone] = useState(false)
+  return (
+    <span
+      title="Скопировать"
+      onClick={e => {
+        e.stopPropagation()
+        navigator.clipboard.writeText(text).then(() => {
+          setDone(true)
+          setTimeout(() => setDone(false), 1200)
+        })
+      }}
+      style={{ cursor: 'copy', wordBreak: 'break-all', ...style }}
+    >
+      {done ? 'Скопировано ✓' : text}
+    </span>
+  )
+}
 
 type ActionState = 'idle' | 'loading' | 'ok' | 'err'
 
@@ -77,7 +97,8 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
               )}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: 'Geist Mono, monospace' }}>{user.phone || '—'}</span>
+              <span style={{ fontFamily: 'Manrope, sans-serif' }}>{user.phone || '—'}</span>
+              {user.email && <CopyText text={user.email} style={{ fontFamily: 'Manrope, sans-serif' }} />}
               {user.metro_station && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <IconMetro size={12} />{user.metro_station}
@@ -139,6 +160,7 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
                   ['ID', user.id],
                   ['Роль', isWorker ? 'Работник' : 'Работодатель'],
                   ['Телефон', user.phone || '—'],
+                  ['Почта', user.email ? <CopyText key="em" text={user.email} /> : '—'],
                   ['Метро', user.metro_station || '—'],
                   ['Компания', user.company || '—'],
                   ['Регистрация', user.created_at?.slice(0, 10) || '—'],
@@ -147,7 +169,7 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
                 ].map(([k, v]) => (
                   <div key={k as string} style={{ display: 'flex', gap: 8 }}>
                     <span style={{ color: 'var(--ink-3)', minWidth: 100 }}>{k}</span>
-                    <span style={{ color: 'var(--ink)', fontFamily: (k === 'ID' || k === 'Телефон') ? 'Geist Mono, monospace' : 'inherit', fontSize: k === 'ID' ? 10.5 : 12.5, wordBreak: 'break-all' }}>{v}</span>
+                    <span style={{ color: 'var(--ink)', fontFamily: (k === 'ID' || k === 'Телефон' || k === 'Почта') ? 'Manrope, sans-serif' : 'inherit', fontSize: k === 'ID' ? 10.5 : 12.5, wordBreak: 'break-all' }}>{v}</span>
                   </div>
                 ))}
               </div>
@@ -167,9 +189,9 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
                   <div style={{ fontSize: 11.5, color: 'var(--ink)', fontWeight: 500 }}>
                     {l.is_match ? 'Совпадение' : l.worker_liked ? 'Лайк' : 'Просмотр'}
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>{l.created_at?.slice(0, 10)}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>{l.created_at?.slice(0, 10)}</div>
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {l.vacancy_id?.slice(0, 8)}…
                 </div>
               </div>
@@ -188,7 +210,7 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
                         style={{ color: n <= Number(r.rating) ? 'var(--accent)' : 'var(--line-strong)' }} />
                     ))}
                   </span>
-                  <span style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>{r.created_at?.slice(0, 10)}</span>
+                  <span style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>{r.created_at?.slice(0, 10)}</span>
                 </div>
                 {r.review_text && <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>{r.review_text}</div>}
               </div>
@@ -275,8 +297,10 @@ export default function UsersPage() {
   if (loading || !d) return <PageSkeleton rows={3} />
 
   const workerPct = Math.round(d.kpi.workers / Math.max(d.kpi.total, 1) * 100)
-  const filteredUsers = phoneSearch.trim()
-    ? d.recent.filter((u: any) => (u.phone ?? '').includes(phoneSearch.trim()))
+  const q = phoneSearch.trim().toLowerCase()
+  const filteredUsers = q
+    ? d.recent.filter((u: any) =>
+        [u.phone, u.email, u.name].some(v => (v ?? '').toLowerCase().includes(q)))
     : d.recent
 
   function setA(id: string, s: ActionState, msg?: string) {
@@ -351,6 +375,7 @@ export default function UsersPage() {
     const rows = filteredUsers.map((u: any) => ({
       'Имя': u.name || '',
       'Телефон': u.phone || '',
+      'Почта': u.email || '',
       'Роль': u.role === 'worker' ? 'Работник' : 'Работодатель',
       'Метро': u.metro || '',
       'Компания': u.company || '',
@@ -409,19 +434,6 @@ export default function UsersPage() {
             <DonutRoles workers={d.kpi.workers} employers={d.kpi.employers} />
           </ChartCard>
         </div>
-        <ChartCard title="Топ станций метро" sub="Работники и работодатели">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={d.metroTop.slice(0, 10)} layout="vertical" margin={{ left: 0, right: 24, top: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
-              <XAxis type="number" tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-              <YAxis type="category" dataKey="station" tick={AXIS_CAT} tickLine={false} axisLine={false} width={120} />
-              <Tooltip contentStyle={TT} />
-              <Legend iconType="square" iconSize={8} wrapperStyle={LEGEND} />
-              <Bar dataKey="workers" name="Работники" fill={PALETTE.orange} stackId="a" />
-              <Bar dataKey="employers" name="Работодатели" fill={PALETTE.blue} stackId="a" radius={[0, 3, 3, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
         {d.recent.length > 0 && (
           <ChartCard
             title="Все пользователи"
@@ -430,14 +442,14 @@ export default function UsersPage() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
               <input
                 type="text"
-                placeholder="Поиск по номеру телефона..."
+                placeholder="Поиск по телефону, почте, имени..."
                 value={phoneSearch}
                 onChange={e => setPhoneSearch(e.target.value)}
                 style={{
-                  width: '100%', maxWidth: 300, padding: '7px 12px',
+                  width: '100%', maxWidth: 340, padding: '7px 12px',
                   border: '1px solid var(--line)', borderRadius: 8,
                   background: 'var(--bg-sunken)', color: 'var(--ink)',
-                  fontSize: 13, outline: 'none', fontFamily: 'Geist Mono, monospace',
+                  fontSize: 13, outline: 'none', fontFamily: 'Manrope, sans-serif',
                 }}
                 onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                 onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}
@@ -488,7 +500,8 @@ export default function UsersPage() {
                                     <div style={{ fontWeight: 550, color: u.blocked ? 'var(--negative)' : 'var(--ink)', fontSize: 13, lineHeight: 1.2 }}>
                                       {u.name || <span style={{ color: 'var(--ink-3)' }}>Имя не указано</span>}
                                     </div>
-                                    <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>{u.phone || '—'}</div>
+                                    <div style={{ fontFamily: 'Manrope, sans-serif', fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>{u.phone || '—'}</div>
+                                    {u.email && <div style={{ fontFamily: 'Manrope, sans-serif', fontSize: 11, color: 'var(--ink-3)', marginTop: 1 }}><CopyText text={u.email} /></div>}
                                   </div>
                                 </div>
                               </td>
@@ -532,7 +545,7 @@ export default function UsersPage() {
                                   ? <Chip tone="positive"><IconCheck size={11} />Да</Chip>
                                   : <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>—</span>}
                               </td>
-                              <td style={{ padding: '10px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-3)' }}>{u.date || '—'}</td>
+                              <td style={{ padding: '10px 12px', fontFamily: 'Manrope, sans-serif', fontSize: 11.5, color: 'var(--ink-3)' }}>{u.date || '—'}</td>
                               <td style={{ padding: '10px 12px' }} onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', gap: 5 }}>
                                   <button onClick={() => setProfileId(u.id)} title="Открыть профиль" className="jt-icon-btn">
@@ -597,7 +610,7 @@ export default function UsersPage() {
                                       {aPwd?.s === 'ok'
                                         ? <div style={{ fontSize: 13, color: 'var(--positive)' }}>
                                             <div style={{ fontWeight: 500, marginBottom: 2 }}>Новый пароль:</div>
-                                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 18, fontWeight: 700, letterSpacing: 2, color: 'var(--ink)', background: 'var(--bg-sunken)', padding: '4px 10px', borderRadius: 6 }}>
+                                            <div style={{ fontFamily: 'Manrope, sans-serif', fontSize: 18, fontWeight: 700, letterSpacing: 2, color: 'var(--ink)', background: 'var(--bg-sunken)', padding: '4px 10px', borderRadius: 6 }}>
                                               {aPwd.msg?.replace('Новый пароль: ', '')}
                                             </div>
                                           </div>

@@ -37,8 +37,8 @@ export default function Chip({
   return (
     <span title={title} style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '2px 8px', borderRadius: 'var(--radius-sm)',
-      fontSize: 11.5, fontWeight: 500, whiteSpace: 'nowrap',
+      padding: '2px 8px', borderRadius: 999,
+      fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
       color: t.fg, background: t.bg, border: `1px solid ${t.line}`,
       ...style,
     }}>

@@ -16,26 +16,26 @@
 
 /** Всплывающая подсказка. */
 export const TT = {
-  borderRadius: 8,
-  border: '1px solid var(--line)',
+  borderRadius: 14,
+  border: '2px solid #141414',
   background: 'var(--bg-elev)',
   color: 'var(--ink)',
   fontSize: 12,
-  boxShadow: 'var(--shadow-md)',
+  boxShadow: '3px 3px 0 #141414',
 }
 
 /** Подписи осей: служебные, поэтому `--ink-3`. */
 export const AXIS = {
   fontSize: 10,
-  fill: '#5E6875',
-  fontFamily: 'Geist Mono, monospace',
+  fill: '#6B645C',
+  fontFamily: 'Manrope, sans-serif',
 }
 
 /** Ось категорий читается как текст, а не как разметка — отсюда `--ink-2`. */
-export const AXIS_CAT = { ...AXIS, fill: '#414A57' }
+export const AXIS_CAT = { ...AXIS, fill: '#4A443D' }
 
 /** Сетка. Заметна ровно настолько, чтобы по ней можно было вести взгляд. */
-export const GRID = '#E1E5EB'
+export const GRID = '#E3D9CC'
 
 /** Подписи под графиком. */
-export const LEGEND = { fontSize: 12, color: '#5E6875' }
+export const LEGEND = { fontSize: 12, color: '#6B645C' }

@@ -30,7 +30,7 @@ export default function AppSidebar() {
 
   return (
     <aside
-      className={`fixed top-0 left-0 z-50 flex h-screen flex-col border-r border-gray-200 bg-white px-5 text-gray-900 transition-all duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100
+      className={`fixed top-0 left-0 z-50 flex h-screen flex-col border-r-2 border-gray-900 bg-white px-5 text-gray-900 transition-all duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100
         ${wide ? 'w-[290px]' : 'w-[90px]'}
         ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0`}
@@ -38,7 +38,7 @@ export default function AppSidebar() {
       onMouseLeave={() => setIsHovered(false)}
     >
       <div className={`flex items-center gap-3 py-6 ${wide ? 'justify-start' : 'justify-center'}`}>
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border-2 border-gray-900 bg-[#ff6b1a] font-display text-sm font-bold text-gray-900 shadow-sticker-sm">
           J
         </span>
         {wide ? (

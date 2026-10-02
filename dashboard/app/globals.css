@@ -1,4 +1,9 @@
-/* Оформление панели: база — TailAdmin (MIT), перекрашенная под JobToo.
+/* Оформление панели: база — TailAdmin (MIT), перекрашенная под дизайн-систему JT
+ * (constants/ds.ts приложения: крем #F5EFE6, чернила #141414, оранжевый #FF6B1A,
+ * «наклейка» — контур 2px и жёсткая тень без размытия; шрифты Unbounded и Manrope).
+ * Тёмной темы нет: у приложения её тоже нет.
+ *
+ * Ниже — прежняя пометка про предыдущую перекраску.
  *
  * Что изменено против оригинала:
  *   • палитра brand-* — фирменный оранжевый вместо синего. 500 = #BE4C16:
@@ -12,11 +17,24 @@
 
 @import 'tailwindcss';
 
+/* Шрифты дизайн-системы JT — локальные woff2 (SIL OFL): Google в сборке и у пользователя не нужен. */
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/manrope-cyrillic-500-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/manrope-latin-500-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/manrope-cyrillic-600-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/manrope-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/manrope-cyrillic-700-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/manrope-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 800; font-display: swap; src: url('/fonts/manrope-cyrillic-800-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 800; font-display: swap; src: url('/fonts/manrope-latin-800-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Unbounded'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/unbounded-cyrillic-700-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Unbounded'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/unbounded-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {
   --font-*: initial;
-  --font-outfit: var(--font-geist-sans), system-ui, sans-serif;
+  --font-outfit: 'Manrope', system-ui, -apple-system, sans-serif;
+  --font-display: 'Unbounded', 'Manrope', system-ui, sans-serif;
 
   --breakpoint-*: initial;
   --breakpoint-2xsm: 375px;
@@ -48,20 +66,20 @@
   --color-current: currentColor;
   --color-transparent: transparent;
   --color-white: #ffffff;
-  --color-black: #101828;
+  --color-black: #141414;
 
-  --color-brand-25: #fff7f2;
-  --color-brand-50: #fef0e7;
-  --color-brand-100: #fbdccb;
-  --color-brand-200: #f7bc9c;
-  --color-brand-300: #f2986b;
-  --color-brand-400: #e8753e;
-  --color-brand-500: #be4c16;
-  --color-brand-600: #a34012;
-  --color-brand-700: #85340f;
-  --color-brand-800: #68280c;
-  --color-brand-900: #4e1e09;
-  --color-brand-950: #2e1105;
+  --color-brand-25: #fff8f2;
+  --color-brand-50: #fff0e6;
+  --color-brand-100: #ffe2cc;
+  --color-brand-200: #ffc9a3;
+  --color-brand-300: #ffa56b;
+  --color-brand-400: #ff8540;
+  --color-brand-500: #c24a00;
+  --color-brand-600: #a33d00;
+  --color-brand-700: #823100;
+  --color-brand-800: #642600;
+  --color-brand-900: #4a1c00;
+  --color-brand-950: #2b1000;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -76,19 +94,19 @@
   --color-blue-light-900: #0b4a6f;
   --color-blue-light-950: #062c41;
 
-  --color-gray-25: #fcfcfd;
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f2f4f7;
-  --color-gray-200: #e4e7ec;
-  --color-gray-300: #d0d5dd;
-  --color-gray-400: #98a2b3;
-  --color-gray-500: #667085;
-  --color-gray-600: #475467;
-  --color-gray-700: #344054;
-  --color-gray-800: #1d2939;
-  --color-gray-900: #101828;
-  --color-gray-950: #0c111d;
-  --color-gray-dark: #1a2231;
+  --color-gray-25: #faf6f0;
+  --color-gray-50: #f5efe6;
+  --color-gray-100: #efe7dc;
+  --color-gray-200: #e3d9cc;
+  --color-gray-300: #cfc4b6;
+  --color-gray-400: #9a9086;
+  --color-gray-500: #6b645c;
+  --color-gray-600: #5c554d;
+  --color-gray-700: #4a443d;
+  --color-gray-800: #2b2722;
+  --color-gray-900: #141414;
+  --color-gray-950: #0e0e0d;
+  --color-gray-dark: #141414;
 
   --color-orange-25: #fffaf5;
   --color-orange-50: #fff6ed;
@@ -160,7 +178,9 @@
     0px 20px 24px -4px rgba(16, 24, 40, 0.08),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #262d3c, 5px 0 0 #262d3c;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(70, 95, 255, 0.12);
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(255, 107, 26, 0.25);
+  --shadow-sticker: 4px 4px 0 #141414;
+  --shadow-sticker-sm: 3px 3px 0 #141414;
   --shadow-slider-navigation:
     0px 1px 2px 0px rgba(16, 24, 40, 0.1), 0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip:
@@ -205,11 +225,11 @@
 }
 
 @utility menu-item {
-  @apply relative flex items-center w-full gap-3 px-3 py-2 font-medium rounded-lg text-theme-sm;
+  @apply relative flex items-center w-full gap-3 px-3 py-2 font-bold rounded-2xl border-2 border-transparent text-theme-sm;
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  @apply bg-brand-100 text-gray-900 border-gray-900 shadow-sticker-sm;
 }
 
 @utility menu-item-inactive {
@@ -221,7 +241,7 @@
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-500 dark:text-brand-400;
+  @apply text-gray-900;
 }
 
 @utility menu-item-icon-inactive {
@@ -786,30 +806,30 @@ span.flatpickr-weekday,
    * правило, что было раньше («значения в разметке запрещены»), только теперь
    * единственный источник — палитра TailAdmin.
    */
-  --bg: var(--color-gray-50);
+  --bg: #f5efe6;
   --bg-elev: #ffffff;
-  --bg-sunken: var(--color-gray-100);
-  --line: var(--color-gray-200);
-  --line-strong: var(--color-gray-300);
+  --bg-sunken: #efe7dc;
+  --line: #e3d9cc;
+  --line-strong: #cfc4b6;
 
-  --ink: var(--color-gray-900);
-  --ink-2: var(--color-gray-700);
-  --ink-3: var(--color-gray-500);
-  --ink-4: var(--color-gray-400);
+  --ink: #141414;
+  --ink-2: #4a443d;
+  --ink-3: #6b645c;
+  --ink-4: #9a9086;
   --muted: var(--color-gray-500);
 
   /* Фирменный оранжевый. 500 — читаемый оттенок: им пишут текст. */
-  --accent: var(--color-brand-500);
-  --accent-soft: var(--color-brand-50);
-  --accent-line: var(--color-brand-200);
+  --accent: #ff6b1a;
+  --accent-soft: #ffe2cc;
+  --accent-line: #ffc9a3;
 
   /* Смысловые цвета. Для текста берутся тёмные ступени (700): 500-е на светлой
      подложке порог контраста не проходят. */
-  --positive: var(--color-success-700);
+  --positive: #1e7a4c;
   --positive-soft: var(--color-success-50);
   --positive-line: var(--color-success-200);
-  --negative: var(--color-error-700);
-  --negative-soft: var(--color-error-50);
+  --negative: #c8321b;
+  --negative-soft: #fbe3dd;
   --negative-line: var(--color-error-200);
   --info: var(--color-blue-light-700);
   --info-soft: var(--color-blue-light-50);
@@ -820,12 +840,12 @@ span.flatpickr-weekday,
   --neutral-soft: var(--bg-sunken);
   --neutral-line: var(--line);
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
-  --shadow-md: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -14px rgba(16, 24, 40, .12);
+  --shadow-sm: 4px 4px 0 #141414;
+  --shadow-md: 5px 5px 0 #141414;
 
   /* Скругления — как у TailAdmin: карточки 12, мелкие элементы 8. */
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 22px;
+  --radius-sm: 14px;
   --sidebar-w: 290px;
 
   /* Движение. Одна кривая на всю панель: резкий старт, мягкая остановка,
@@ -891,15 +911,15 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', ui-sans-serif, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   font-size: 15px;
   line-height: 1.55;
-  letter-spacing: -0.005em;
+  font-weight: 500;
 }
 
 .mono, .num {
-  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: 'Manrope', ui-monospace, monospace;
   font-feature-settings: "tnum" 1, "ss01" 1;
   font-variant-numeric: tabular-nums;
 }
@@ -1294,6 +1314,7 @@ html, body {
 .jt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 .jt-table thead th {
+  border-bottom: 2px solid var(--ink);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1301,7 +1322,7 @@ html, body {
   padding: 9px 12px;
   background: var(--bg-sunken);
   color: var(--ink-3);
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-family: 'Manrope', ui-monospace, monospace;
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: .1em;
@@ -1328,7 +1349,7 @@ html, body {
 
 .jt-card {
   background: var(--bg-elev);
-  border: 1px solid var(--line);
+  border: 2px solid var(--ink);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
 }
@@ -1341,16 +1362,17 @@ html, body {
   font-size: 14px;
   color: var(--ink);
   background: var(--bg-elev);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line-strong);
   border-radius: var(--radius-sm);
   transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
 .jt-input::placeholder { color: var(--ink-4); }
-.jt-input:hover:not(:disabled) { border-color: var(--line-strong); }
+.jt-input:hover:not(:disabled) { border-color: var(--ink-3); }
 .jt-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--ink);
+  box-shadow: 3px 3px 0 var(--accent);
 }
 .jt-input:disabled { opacity: .5; cursor: not-allowed; }
 /* Числовое поле: узкое и с табличными цифрами — столбцы чисел читаются сверху вниз. */
@@ -1365,24 +1387,32 @@ select.jt-input { padding-right: 32px; }
   justify-content: center;
   gap: 8px;
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 18px;
   font: inherit;
   font-size: 14px;
-  font-weight: 500;
-  color: #fff;
+  font-weight: 700;
+  color: var(--ink);            /* текст на оранжевом — чёрный, как в приложении */
   background: var(--accent);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sticker-sm);
   cursor: pointer;
-  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
-.jt-btn:hover:not(:disabled) { background: var(--color-brand-600); }
-.jt-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.jt-btn:disabled { opacity: .5; cursor: not-allowed; }
+.jt-btn:hover:not(:disabled) { transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--ink); }
+.jt-btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
+.jt-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.jt-btn:disabled { background: #e8ded1; color: #9a9086; border-color: #cfc4b6; box-shadow: none; cursor: not-allowed; }
 
-.jt-btn-secondary {
-  color: var(--ink-2);
-  background: var(--bg-elev);
-  border-color: var(--line);
-}
-.jt-btn-secondary:hover:not(:disabled) { background: var(--bg-sunken); border-color: var(--line-strong); }
+.jt-btn-secondary { color: var(--ink); background: var(--bg-elev); }
+
+.jt-btn-danger { color: #fff; background: #c8321b; }
+
+/* ── Дизайн-система JT: общие штрихи ───────────────────────────────────── */
+h1, h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.01em; }
+strong, b { font-weight: 700; }
+.jt-btn-secondary:hover:not(:disabled) { background: var(--accent-soft); }
+.jt-table tbody tr:hover { background: var(--accent-soft); }
+.jt-nav.is-active { background: var(--accent-soft); color: var(--ink); font-weight: 700; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+::selection { background: var(--accent-soft); color: var(--ink); }
