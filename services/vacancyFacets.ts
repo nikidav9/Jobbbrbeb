@@ -69,7 +69,7 @@ export function vacancyFormat(schedule: string | null | undefined, text?: string
 export type VacancySpec =
   | 'backend' | 'frontend' | 'mobile' | 'qa' | 'devops' | 'data'
   | 'analytics' | 'design' | 'marketing' | 'management' | 'security' | 'support' | 'onec'
-  | 'hr' | 'top';
+  | 'hr' | 'finance' | 'legal' | 'top';
 
 // Порядок — экран «Специализация» макета «JT-filters» (27.09.2026): 13 пунктов
 // макета и «1С» последним (решение владельца). Названия по-русски (решение
@@ -90,6 +90,9 @@ export const VACANCY_SPECS: { id: VacancySpec; label: string; short?: string; ic
   { id: 'support', label: 'Техподдержка', icon: 'headset-outline' },
   { id: 'data', label: 'Данные и ML', icon: 'hardware-chip-outline' },
   { id: 'hr', label: 'HR и подбор персонала', short: 'HR', icon: 'person-circle-outline' },
+  // Офис рядом с IT в ленте (решение владельца 02.10.2026): финансы и юристы.
+  { id: 'finance', label: 'Финансы и бухгалтерия', short: 'Финансы', icon: 'cash-outline' },
+  { id: 'legal', label: 'Юристы', icon: 'document-text-outline' },
   { id: 'top', label: 'Топ-менеджмент', icon: 'trophy-outline' },
   { id: 'onec', label: '1С', icon: 'calculator-outline' },
 ];
@@ -113,6 +116,8 @@ const SPEC_RULES: [VacancySpec[], RegExp][] = [
   [['qa'], /\bqa\b|\baqa\b|\bsdet\b|тестировщик|тестирован|test\s+engineer/iu],
   [['mobile'], /\bios\b|\bandroid\b|\bmobile\b|мобильн|\bflutter\b|react[\s-]?native/iu],
   [['data'], /data\s*scien|machine\s+learning|\bml\b|машинн|data\s+engineer|инженер данных|\bdwh\b|big\s+data|\bnlp\b|computer\s+vision|\bllm\b/iu],
+  // «Финансовый аналитик», «Аналитик по рискам» — и аналитика, и финансы.
+  [['analytics', 'finance'], /(финанс|риск|инвестиц|кредитн)\S*.*(аналитик|analyst)|(аналитик|analyst).*(финанс|риск|инвестиц|кредит)/iu],
   [['analytics'], /аналитик|analyst|\bbi\b/iu],
   [['design'], /дизайн|designer|\bux\b|ui\/ux/iu],
   // «Телемаркетолог» — колл-центр, не маркетинг: только с начала слова.
@@ -121,6 +126,10 @@ const SPEC_RULES: [VacancySpec[], RegExp][] = [
   [['management'], /product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|менеджер\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор/iu],
   [['support'], /поддержк|\bsupport\b|helpdesk|service\s+desk/iu],
   [['backend'], /backend|back-end|бэкенд|бекенд|\bjava\b|golang|\bgo\b|\bpython\b|\bphp\b|c#|\.net|c\+\+|\bnode\b|\bruby\b|\bscala\b|\brust\b|\bkotlin\b/iu],
+  // Юристы и финансы — последними: «риск» и «правов» встречаются и в IT-вакансиях;
+  // юристы раньше финансов — в «юрисконсульт» сидит «риск».
+  [['legal'], /юрист|юрисконсульт|\blawyer\b|\blegal\b|правов|адвокат|нотариус|комплаенс|compliance/iu],
+  [['finance'], /бухгалтер|экономист|финанс|аудит(?!ори)|казначе|налог|актуари|инвестиц|андеррайт|(^|[^а-яё])риск|\bfinanc|\baccountant\b/iu],
 ];
 
 /** Специализации по названию вакансии; неизвестное название — пустой список. */

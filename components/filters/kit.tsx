@@ -190,6 +190,9 @@ const SPEC_ICON: Record<VacancySpec, React.ReactNode> = {
   support: <><Path d="M4 14v-2a8 8 0 0 1 16 0v2" {...S} /><Rect x={3} y={13} width={4} height={6} rx={1.5} {...S} /><Rect x={17} y={13} width={4} height={6} rx={1.5} {...S} /><Path d="M19 19c0 1.5-1.5 2-4 2h-2" {...S} /></>,
   data: <><Rect x={6} y={6} width={12} height={12} rx={2} {...S} /><Path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" {...S} /></>,
   hr: <><Circle cx={12} cy={12} r={9} {...S} /><Circle cx={12} cy={10} r={3} {...S} /><Path d="M6.5 18.5c1.2-2 3.2-3.2 5.5-3.2s4.3 1.2 5.5 3.2" {...S} /></>,
+  // Финансы и юристы (02.10.2026) — в том же штрихе: монета с ₽ и весы.
+  finance: <><Circle cx={12} cy={12} r={9} {...S} /><Path d="M10 17V7h3a2.5 2.5 0 0 1 0 5h-4.5M8.5 14.5H14" {...S} /></>,
+  legal: <Path d="M12 3v18M8 21h8M5 7h14M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z" {...S} />,
   top: <><Path d="M8 4h8v6a4 4 0 0 1-8 0z" {...S} /><Path d="M8 6H4v1a4 4 0 0 0 4 4M16 6h4v1a4 4 0 0 1-4 4M12 14v4M8 21h8M9 18h6" {...S} /></>,
   // «1С» в макете нет — калькулятор в том же штрихе.
   onec: <><Rect x={5} y={3} width={14} height={18} rx={2.5} {...S} /><Path d="M8 7h8M8 12h2M14 12h2M8 16h2M14 16h2" {...S} /></>,

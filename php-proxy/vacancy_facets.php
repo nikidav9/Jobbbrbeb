@@ -28,7 +28,7 @@ const VF_FORMATS = ['remote', 'hybrid', 'office'];
 const VF_SPECS = [
     'backend', 'frontend', 'mobile', 'qa', 'devops', 'data',
     'analytics', 'design', 'marketing', 'management', 'security', 'support', 'onec',
-    'hr', 'top',
+    'hr', 'finance', 'legal', 'top',
 ];
 
 const VF_LEVEL_RULES = [
@@ -80,6 +80,7 @@ const VF_SPEC_RULES = [
     [['qa'], '~(*UTF)\bqa\b|\baqa\b|\bsdet\b|тестировщик|тестирован|test\s+engineer~i'],
     [['mobile'], '~(*UTF)\bios\b|\bandroid\b|\bmobile\b|мобильн|\bflutter\b|react[\s-]?native~i'],
     [['data'], '~(*UTF)data\s*scien|machine\s+learning|\bml\b|машинн|data\s+engineer|инженер данных|\bdwh\b|big\s+data|\bnlp\b|computer\s+vision|\bllm\b~i'],
+    [['analytics', 'finance'], '~(*UTF)(финанс|риск|инвестиц|кредитн)\S*.*(аналитик|analyst)|(аналитик|analyst).*(финанс|риск|инвестиц|кредит)~i'],
     [['analytics'], '~(*UTF)аналитик|analyst|\bbi\b~i'],
     [['design'], '~(*UTF)дизайн|designer|\bux\b|ui/ux~i'],
     [['marketing'], '~(*UTF)(^|[^а-яё])маркет(олог|инг)|\bmarketing\b|\bsmm\b|\bseo\b|\bpr\b|копирайт|редактор|контент|\bcontent\b|таргетолог|бренд|\bbrand\b~i'],
@@ -87,6 +88,10 @@ const VF_SPEC_RULES = [
     [['management'], '~(*UTF)product\s+manager|продакт|project\s+manager|проджект|руководител\S* проект|менеджер\S* проект|delivery\s+manager|\bscrum\b|architect|архитектор~i'],
     [['support'], '~(*UTF)поддержк|\bsupport\b|helpdesk|service\s+desk~i'],
     [['backend'], '~(*UTF)backend|back-end|бэкенд|бекенд|\bjava\b|golang|\bgo\b|\bpython\b|\bphp\b|c#|\.net|c\+\+|\bnode\b|\bruby\b|\bscala\b|\brust\b|\bkotlin\b~i'],
+    // Юристы и финансы — последними: «риск» и «правов» встречаются и в IT-вакансиях;
+    // юристы раньше финансов — в «юрисконсульт» сидит «риск».
+    [['legal'], '~(*UTF)юрист|юрисконсульт|\blawyer\b|\blegal\b|правов|адвокат|нотариус|комплаенс|compliance~i'],
+    [['finance'], '~(*UTF)бухгалтер|экономист|финанс|аудит(?!ори)|казначе|налог|актуари|инвестиц|андеррайт|(^|[^а-яё])риск|\bfinanc|\baccountant\b~i'],
 ];
 
 /** Специализации по названию вакансии; неизвестное название — пустой список. */
