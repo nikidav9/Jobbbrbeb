@@ -1141,7 +1141,13 @@ class JupiterBrowserEngine:
             responses = recorder.stop()
             self._after_submit = False
         self._record_api_result(responses)
-        self._note_left_allowed_hosts(before, actions_from)
+        if self._note_left_allowed_hosts(before, actions_from):
+            # Тосты окна наблюдения снимались уже на странице за редиректом —
+            # это текст чужой или внутренней страницы. Он не должен ни попасть
+            # в снимок, ни подтвердить отправку (разбор архитектора 02.10.2026).
+            # Потерять подтверждение «тост, потом уход на чужой хост» — ошибка
+            # в безопасную сторону: будет submission_unknown.
+            toasts.clear()
         refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
         try:
             feedback = self._safe_eval(SUBMIT_FEEDBACK_JS, refs)
@@ -1159,10 +1165,10 @@ class JupiterBrowserEngine:
             result.text = (result.text + "\n" + "\n".join(toasts)).strip()
         return result
 
-    def _note_left_allowed_hosts(self, before: str, actions_from: int) -> None:
+    def _note_left_allowed_hosts(self, before: str, actions_from: int) -> bool:
         """Вкладка ушла за пределы разрешённых хостов (страница «Спасибо» на
         чужом домене). Это не ошибка безопасности: отправка уже состоялась.
-        Фиксируем в журнале «подтверждения нет».
+        Фиксируем в журнале «подтверждения нет». True — вкладка ушла.
 
         Но снимать такую страницу нельзя: Playwright не вызывает _route для
         редиректов, и POST → 302 на внутренний или чужой хост проходит мимо
@@ -1173,13 +1179,13 @@ class JupiterBrowserEngine:
         указывать на 10.x."""
         url = self._tab.url
         if url == before:
-            return
+            return False
         host = (urllib.parse.urlparse(url).hostname or "").lower()
         if host and (host in self.allowed_hosts or ats_hosts.is_apply_ats(host) or any(
             ats_hosts.same_site(host, h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
             for h in self.allowed_hosts
         )) and self._public_host(host):
-            return
+            return False
         blocked = [a.get("url", "") for a in self.actions[actions_from:]
                    if a.get("action") == "blocked_request" and a.get("reason") == "host_not_allowed"]
         blocked_host = (urllib.parse.urlparse(blocked[-1]).hostname or "") if blocked else host
@@ -1189,6 +1195,7 @@ class JupiterBrowserEngine:
                 self._tab.goto("about:blank")
             except PlaywrightError as exc:
                 raise EngineTransportError(f"Не удалось уйти с чужой страницы: {exc}") from exc
+        return True
 
     def _record_api_result(self, responses: list[dict[str, Any]]) -> None:
         verdict = browser_success.classify(responses)

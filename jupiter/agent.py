@@ -1306,17 +1306,41 @@ class JupiterAgent:
         return True
 
     @staticmethod
-    def _has_empty_input_form(page: PageState) -> bool:
-        """Есть ли форма с пустым полем ввода. Шаг «Код из СМС» анкетой по
-        is_application_form не признаётся, но это явное «нужен ещё ввод»."""
+    def _has_empty_input_form(page: PageState, before: PageState | None = None) -> bool:
+        """Есть ли НОВАЯ форма с пустым полем ввода. Шаг «Код из СМС» анкетой
+        по is_application_form не признаётся, но это явное «нужен ещё ввод».
+        Поиск (type=search) и поля, что были на странице и до клика (поиск в
+        шапке, подписка в подвале), не в счёт — иначе голый 2xx не подтверждал
+        бы почти нигде (разбор архитектора 02.10.2026)."""
+        seen = set()
+        if before is not None:
+            seen = {(c.name or c.label or c.placeholder) for c in before.controls if (c.name or c.label or c.placeholder)}
         return any(
             control.form_index is not None
             and not control.disabled and not control.readonly and not control.value
+            and (control.name or control.label or control.placeholder) not in seen
             and (control.tag == "textarea" or (
                 control.tag == "input"
-                and (control.type or "text") in {"text", "tel", "email", "number", "password", "search"}))
+                and (control.type or "text") in {"text", "tel", "email", "number", "password"}))
             for control in page.controls
         )
+
+    _CODE_FIELD_RE = re.compile(r"(?:\bкод\b|\bcode\b|otp|\bsms\b|\bсмс\b|confirm)", re.I)
+
+    @classmethod
+    def _asks_for_code(cls, page: PageState) -> bool:
+        """После «Отправить» появилось пустое поле кода (СМС, почта, OTP):
+        отклик ещё не принят, что бы ни писала страница («Заявка отправлена.
+        Введите код из СМС»). Разбор архитектора 02.10.2026."""
+        for control in page.controls:
+            if control.disabled or control.readonly or control.value:
+                continue
+            if control.tag != "input" or (control.type or "text") not in {"text", "tel", "number", "password"}:
+                continue
+            words = " ".join(x or "" for x in (control.name, control.label, control.placeholder, control.aria))
+            if cls._CODE_FIELD_RE.search(words):
+                return True
+        return False
 
     @staticmethod
     def _evidence(
@@ -3044,10 +3068,16 @@ class JupiterAgent:
             # потому, что её сменила следующая.
             api_2xx_counts = not (
                 self._target_form_index(page, profile, require_contact=False) is not None
-                or self._has_empty_input_form(page)
+                or self._has_empty_input_form(page, before)
                 or self.detect_captcha(page)
             )
             evidence = self._evidence(before, page, form_gone, api_result, api_2xx_counts)
+            if self._asks_for_code(page):
+                # Шаг подтверждения кодом: ни текст «отправлено», ни ответ
+                # сервера отклик не подтверждают — доказательства в журнал,
+                # но с нулевым весом.
+                evidence = [SubmissionEvidence(e.type, e.value, 0.0, e.source_url) for e in evidence]
+                trajectory.append({"action": "code_step_after_submit", "url": page.url})
             trajectory.append({
                 "action": "verify_submission",
                 "url": page.url,

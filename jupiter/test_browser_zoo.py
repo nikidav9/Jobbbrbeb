@@ -551,6 +551,10 @@ if (send) send.onclick = async () => {
     document.getElementById('app').innerHTML = '<form onsubmit="return false"><h2>Подтверждение номера</h2>'
       + '<label>Код из СМС <input name="sms_code" required></label>'
       + '<button type="submit">Подтвердить</button></form>'; }
+  else if (c === 'sms_thanks') { await post('/apply/send');
+    document.getElementById('app').innerHTML = '<p role="alert">Заявка отправлена. Введите код из СМС</p>'
+      + '<form onsubmit="return false"><label>Код <input name="otp" placeholder="Код из СМС"></label>'
+      + '<button type="submit">Подтвердить</button></form>'; }
   else if (c === 'redir') { const f = document.createElement('form'); f.method = 'post';
     f.action = '/api/redir?to=' + encodeURIComponent(q.get('to')); document.body.appendChild(f); f.submit(); }
   else if (c === 'goto') { await wait(500); location.href = q.get('to'); }
@@ -564,7 +568,10 @@ if (send) send.onclick = async () => {
 OUTCOME_THANKS = HEAD + "<h1>Готово</h1><p>Спасибо, ваша заявка принята</p>"
 # Страница за редиректом: в ней маркер, который не должен попасть ни в снимок,
 # ни в траекторию.
-OUTCOME_SECRET = HEAD + "<h1>SECRET</h1><p>SECRET внутренняя страница, заявка принята</p>"
+# role=alert: тост окна наблюдения снимается и на странице за редиректом —
+# без очистки тостов текст этой страницы утёк бы в снимок и подтвердил бы
+# отправку (разбор архитектора 02.10.2026).
+OUTCOME_SECRET = HEAD + "<h1>SECRET</h1><p role='alert'>SECRET внутренняя страница, заявка принята</p>"
 
 
 class _OutcomeHandler(BaseHTTPRequestHandler):
@@ -702,6 +709,14 @@ class BrowserSubmitOutcomeTest(unittest.TestCase):
         for item in result.trajectory:
             if item.get("action") == "fill":
                 self.assertNotIn("sms", json.dumps(item, ensure_ascii=False).lower(), dump)
+        self.assertNotIn("success_detected", [t.get("action") for t in result.trajectory], dump)
+
+    def test_thanks_text_with_code_field_is_not_confirmation(self):
+        # «Заявка отправлена. Введите код из СМС»: текст похож на успех, но
+        # сайт ждёт код. Пока поле кода на странице — отклик не подтверждён.
+        eng, result, dump = self.assert_not_submitted("sms_thanks")
+        self.assertEqual(self.server.state["posts"], ["/apply/send"], dump)
+        self.assertIn("code_step_after_submit", [t.get("action") for t in result.trajectory], dump)
         self.assertNotIn("success_detected", [t.get("action") for t in result.trajectory], dump)
 
     def test_204_alone_while_form_stays_is_not_confirmation(self):
