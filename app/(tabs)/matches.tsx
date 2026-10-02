@@ -25,6 +25,7 @@ import {
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
+import { remoteLogoFor, useCompanyLogoMap } from '@/services/companyLogoMap';
 import { jupiterBadge, jupiterNeedsCaptcha, jupiterRowSummary } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
@@ -346,6 +347,8 @@ type RespItem = {
 };
 
 function WorkerMatches() {
+  // Логотипы из базы: знак рисуется в цикле, поэтому карта — здесь, наверху.
+  const logoMap = useCompanyLogoMap();
   useWarmSystemBar();
   const router = useRouter();
   const {
@@ -525,7 +528,7 @@ function WorkerMatches() {
   const offlineHere = offline.permApplications && myApps.length === 0 && jupiterApps.length === 0;
 
   const renderMark = (company: string, size: number, accent?: boolean) => (
-    companyLogo(company) ? (
+    companyLogo(company) || remoteLogoFor(company, logoMap) ? (
       <View style={[wm.markImg, { width: size, height: size, borderRadius: size * 0.27 }]}>
         <CompanyMark company={company} size={size} />
       </View>

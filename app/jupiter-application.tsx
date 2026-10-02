@@ -30,6 +30,7 @@ import {
 import { getInitials, nameColorFromString } from '@/services/storage';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
+import { useRemoteCompanyLogo } from '@/services/companyLogoMap';
 import { EditColors, EditFonts } from '@/constants/profileEditTheme';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { BackIcon, CloseIcon } from '@/components/profile/edit/icons';
@@ -171,6 +172,7 @@ export default function JupiterApplicationScreen() {
   useEffect(() => { load(); }, [load]);
 
   const company = app?.company?.trim() || 'Карьерный сайт';
+  const remoteLogo = useRemoteCompanyLogo(company);
   const vacancyTitle = app?.vacancyTitle?.trim() || '';
   const status = app ? jupiterStatus(app) : null;
   const waiting = app?.state === 'submitted';
@@ -382,7 +384,7 @@ export default function JupiterApplicationScreen() {
           <HardShadowBox offset={closed ? 0 : 5} radius={24} style={s.cardWrap}>
             <View style={[s.hero, closed && { borderColor: C.border }]}>
               <View style={closed ? { opacity: 0.5 } : undefined}>
-                {companyLogo(company) ? <CompanyMark company={company} size={64} /> : (
+                {companyLogo(company) || remoteLogo ? <CompanyMark company={company} size={64} /> : (
                   <View style={[s.logo, { backgroundColor: nameColorFromString(company) }]}>
                     <Text style={s.logoTxt}>{getInitials(company)}</Text>
                   </View>

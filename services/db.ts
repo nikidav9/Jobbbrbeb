@@ -2012,6 +2012,15 @@ export type ExtFeedFilters = {
 };
 
 /**
+ * Логотипы компаний из базы (миграция 144): {компания в нижнем регистре:
+ * ссылка на PNG 256×256}. Открытая функция — ленту видят и гости.
+ */
+export async function dbCompanyLogos(): Promise<Record<string, string>> {
+  const d = await proxy<{ logos?: Record<string, string> }>('dbCompanyLogos', []);
+  return d?.logos && typeof d.logos === 'object' ? d.logos : {};
+}
+
+/**
  * Порция ленты карьерных вакансий под человека: без уже свайпнутых, с
  * чередованием компаний и учётом вкуса (php-proxy/ext_feed.php). Вместо
  * всего каталога — ~60 карточек за раз. `total` и `companies` считаются по

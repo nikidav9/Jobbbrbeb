@@ -27,6 +27,7 @@ require_once __DIR__ . '/job_sections.php';
 require_once __DIR__ . '/auth_email.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/jupiter_email_apply.php';
+require_once __DIR__ . '/company_logos.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -178,6 +179,8 @@ $adminFns = [
     'cronAnnounceMissed', 'adminRetireTelegram',
     // Проверка почты после выкладки (.github/workflows/mail-check.yml).
     'adminMailCheck',
+    // Логотипы компаний из проверенного набора (.github/workflows/company-logos.yml).
+    'adminCompanyLogoPut',
     // Сколько согласилось на рекламную рассылку — только числа.
     'adminMarketingStats',
     'tgBroadcast', 'tgSendToUsers', 'surveyDormantSend', 'surveyResults',
@@ -274,6 +277,8 @@ $publicFns = [
     'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
+    // Карта логотипов компаний: лента открыта и гостям (миграция 144).
+    'dbCompanyLogos',
     // dbResponsivenessMap и dbGetExtVacancies отсюда убраны 01.10.2026: без
     // входа они отдавали всю переписку (для подсчёта) и весь каталог с полными
     // описаниями — десятки мегабайт на запрос. Приложение их не зовёт.
@@ -7219,6 +7224,52 @@ try {
         // тот же пул и тот же фильтр, но только число, без карточек, вкуса
         // и полного описания — её зовут на каждое изменение фильтра.
         case 'dbCountExtFeed':
+        // Карта логотипов: {компания в нижнем регистре: ссылка на PNG 256×256}.
+        // Меняется редко — кэш на 10 минут в файле, как у сводок ленты.
+        case 'dbCompanyLogos': {
+            $cache = sys_get_temp_dir() . '/jt-company-logos.json';
+            $hit = @json_decode((string)@file_get_contents($cache), true);
+            if (is_array($hit) && (int)($hit['at'] ?? 0) > time() - 600 && is_array($hit['map'] ?? null)) {
+                $data = ['logos' => (object)$hit['map']]; break;
+            }
+            $rows = sb('GET', 'jm_company_logos', ['select' => 'company_key,storage_path', 'limit' => 2000]);
+            $map = jt_company_logos_map(is_array($rows) ? $rows : [], SB_URL);
+            @file_put_contents($cache, json_encode(['at' => time(), 'map' => $map], JSON_UNESCAPED_UNICODE), LOCK_EX);
+            $data = ['logos' => (object)$map];
+            break;
+        }
+
+        // Положить логотип: [компания, PNG в base64, источник, ссылка на источник].
+        case 'adminCompanyLogoPut': {
+            $company = trim((string)($args[0] ?? ''));
+            $bytes = base64_decode((string)($args[1] ?? ''), true);
+            $source = (string)($args[2] ?? '');
+            $sourceUrl = (string)($args[3] ?? '');
+            $err = jt_company_logo_validate($company, $source, $sourceUrl)
+                ?? ($bytes === false ? 'нужен base64' : jt_company_logo_check($bytes));
+            if ($err !== null) { jt_respond(['error' => $err], 400); exit; }
+            $key = jt_company_logo_key($company);
+            $path = jt_company_logo_path($key, $bytes);
+            $ch = curl_init(SB_URL . '/storage/v1/object/' . JT_LOGO_BUCKET . '/' . $path);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true, CURLOPT_CUSTOMREQUEST => 'POST', CURLOPT_POSTFIELDS => $bytes,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_HTTPHEADER => ['apikey: ' . SB_KEY, 'Authorization: Bearer ' . SB_KEY,
+                    'Content-Type: image/png', 'Cache-Control: max-age=86400', 'x-upsert: true'],
+            ]);
+            curl_exec($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code < 200 || $code >= 300) { jt_respond(['error' => "хранилище ответило $code"], 502); exit; }
+            sb_upsert('jm_company_logos', [
+                'company_key' => $key, 'company' => $company, 'storage_path' => $path,
+                'source' => $source, 'source_url' => $sourceUrl, 'updated_at' => now_iso(),
+            ], 'company_key');
+            @unlink(sys_get_temp_dir() . '/jt-company-logos.json');
+            $data = ['ok' => true, 'key' => $key];
+            break;
+        }
+
         case 'dbGetExtFeed': {
             $limit = max(10, min(100, (int)($args[0] ?? 60)));
             // Раздел из шторки фильтров: только известные id, без дублей и
