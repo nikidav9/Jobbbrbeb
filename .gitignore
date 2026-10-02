@@ -76,3 +76,4 @@ php-proxy/backup_s3.php
 # секретный и машинный: в репозиторий ему нельзя, а попасть туда он может
 # незаметно, одним `git add -A`.
 php-proxy/push_token_key.php
+video/out/

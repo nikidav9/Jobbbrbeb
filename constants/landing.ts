@@ -4,9 +4,13 @@
  * На jobtoo.ru с компьютера (широкий экран, мышь) главная показывает
  * ознакомительный сайт, а не растянутое приложение. На телефоне, в Telegram
  * и в установленном веб-приложении — всё как раньше. Структура — по образцу
- * sorce.jobs (первый экран на всю высоту, блок «как это работает», цифры,
- * подвал), тексты и оформление свои, стиль JobToo: тёплый фон, чёрная обводка,
- * жёсткая тень, оранжевый акцент, Unbounded в заголовках.
+ * sorce.jobs (первый экран: ролик на всю рамку, затемнение, заголовок по
+ * центру, QR в углу, окошко-превью; «как это работает»; цифры; огромное
+ * «JobToo» в подвале), тексты и оформление свои, стиль JobToo: тёплый фон,
+ * чёрная обводка, жёсткая тень, оранжевый акцент, Unbounded в заголовках.
+ * Ролики — public/landing/hero.{mp4,webm,jpg} (фон) и promo.{mp4,webm} (окно «Смотреть
+ * ролик»), собираются в video/ (Remotion, `npm run render`); поменял сценарий —
+ * перерендери и замени файлы.
  *
  * Всё лежит в той же веб-сборке (app/+html.tsx), без правок nginx:
  *  - LANDING_DETECT стоит первым в <head> и решает до отрисовки, показывать
@@ -93,74 +97,51 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .nav a:hover::after { transform: scaleX(1); }
 #jtl .top .actions { display: flex; gap: 12px; }
 
-/* Первый экран */
-#jtl .hero { padding: 26px 0 40px; }
-#jtl .hero-frame { position: relative; display: grid; grid-template-columns: 1.15fr .85fr; align-items: center; gap: 24px;
-  min-height: calc(100vh - 150px); padding: 56px 64px; border: 2px solid var(--ink); border-radius: 36px;
-  background: var(--soft); box-shadow: 8px 8px 0 var(--ink); overflow: hidden; }
-#jtl .hero-frame::before { content: ''; position: absolute; width: 620px; height: 620px; right: -160px; top: -180px;
-  border-radius: 50%; background: radial-gradient(circle, rgba(255,107,26,.28), rgba(255,107,26,0) 65%);
-  animation: jtl-glow 9s ease-in-out infinite alternate; }
-#jtl .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 2px solid var(--ink);
-  border-radius: 999px; background: var(--surface); font: 700 13px/1 'JTSplashManrope', sans-serif; margin-bottom: 26px; }
+/* Первый экран — как у sorce.jobs: ролик на всю рамку, затемнение, заголовок по центру.
+   Ролик собран в Remotion (video/), подставляется скриптом только на компьютере:
+   на телефоне сайт скрыт, и 1,7 МБ не качаются зря. */
+#jtl .hero { padding: 18px 0 30px; }
+#jtl .hero-frame { position: relative; min-height: calc(100vh - 110px); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 90px 40px; color: #fff;
+  border: 2px solid var(--ink); border-radius: 36px; box-shadow: 8px 8px 0 var(--ink); overflow: hidden;
+  background: var(--ink) url('/landing/hero.jpg') center / cover no-repeat; }
+#jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: jtl-zoom 20s ease-out both; }
+#jtl .hero-shade { position: absolute; inset: 0;
+  background: radial-gradient(ellipse 60% 70% at 50% 50%, rgba(20,20,20,.66), rgba(20,20,20,.34)),
+              linear-gradient(180deg, rgba(20,20,20,.28), rgba(20,20,20,.5)); }
+#jtl .hero-in { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+#jtl .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 8px 15px; border: 2px solid var(--ink);
+  border-radius: 999px; background: var(--surface); color: var(--ink); font: 700 13px/1 'JTSplashManrope', sans-serif;
+  margin-bottom: 28px; animation: jtl-fade .7s ease .1s both; }
 #jtl .eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: jtl-pulse 1.8s ease-in-out infinite; }
-#jtl .hero h1 { font-size: clamp(44px, 5.2vw, 80px); line-height: 1.02; text-transform: uppercase; }
-#jtl .hero h1 .mark { position: relative; display: inline-block; color: var(--accent); text-shadow: 4px 4px 0 var(--ink); }
-#jtl .hero h1 .line { display: block; overflow: hidden; white-space: nowrap; padding: 0 8px 8px 0; }
-#jtl .hero h1 .line > span { display: inline-block; animation: jtl-rise .9s cubic-bezier(.2,.8,.2,1) both; }
-#jtl .hero h1 .line:nth-child(2) > span { animation-delay: .12s; }
-#jtl .hero .lead { max-width: 520px; margin-top: 26px; font-size: 20px; color: var(--muted); animation: jtl-fade .8s ease .35s both; }
-#jtl .hero .cta { display: flex; gap: 16px; margin-top: 34px; animation: jtl-fade .8s ease .5s both; }
-#jtl .hero .note { margin-top: 18px; font-size: 14px; color: var(--muted); animation: jtl-fade .8s ease .6s both; }
-#jtl .qr { display: inline-flex; align-items: center; gap: 12px; margin-top: 28px; padding: 10px 16px 10px 10px;
-  border: 2px solid var(--ink); border-radius: 18px; background: var(--surface); box-shadow: 4px 4px 0 var(--ink);
-  animation: jtl-fade .8s ease .7s both; }
-#jtl .qr svg { width: 76px; height: 76px; display: block; }
-#jtl .qr span { max-width: 170px; font: 700 12px/1.35 'JTSplashManrope', sans-serif; }
-
-/* Телефон с листающимися карточками */
-#jtl .phone-wrap { position: relative; display: flex; justify-content: center; z-index: 1; animation: jtl-float 6s ease-in-out infinite; }
-#jtl .phone { position: relative; width: 300px; height: 610px; padding: 14px; border: 3px solid var(--ink); border-radius: 46px;
-  background: var(--ink); box-shadow: 10px 10px 0 rgba(20,20,20,.18); }
-#jtl .screen { position: relative; height: 100%; border-radius: 34px; background: var(--bg); overflow: hidden; padding: 46px 16px 16px; }
-#jtl .notch { position: absolute; top: 10px; left: 50%; width: 86px; height: 22px; margin-left: -43px; border-radius: 12px; background: var(--ink); }
-#jtl .scr-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-#jtl .scr-top b { font: 700 17px/1 'JTSplashUnbounded', sans-serif; }
-#jtl .bolt { padding: 5px 10px; border: 2px solid var(--ink); border-radius: 999px; background: var(--surface); font: 700 12px/1 'JTSplashManrope', sans-serif; }
-#jtl .deck { position: relative; height: 410px; }
-#jtl .card { position: absolute; inset: 0; padding: 18px; border: 2px solid var(--ink); border-radius: 24px; background: var(--surface);
-  box-shadow: 4px 4px 0 var(--ink); transition: transform .55s cubic-bezier(.3,.7,.3,1), opacity .55s ease; will-change: transform; }
-/* Слои задаём явно: иначе сверху оказывается последняя карточка в разметке, а не первая в стопке */
-#jtl .card[data-pos="0"] { z-index: 4; }
-#jtl .card[data-pos="1"] { z-index: 3; transform: translate(0, 12px) scale(.95); background: #F1E9DE; }
-#jtl .card[data-pos="2"] { z-index: 2; transform: translate(0, 24px) scale(.9); background: #E8DED1; }
-#jtl .card[data-pos="3"] { z-index: 1; transform: translate(0, 24px) scale(.9); opacity: 0; }
-#jtl .card[data-pos="3"] > * { opacity: 0; }
-#jtl .card[data-pos="1"] > *, #jtl .card[data-pos="2"] > * { opacity: 0; }
-#jtl .card.out-right { transform: translate(140%, -20px) rotate(18deg) !important; opacity: 0; }
-#jtl .card.out-left { transform: translate(-140%, -20px) rotate(-18deg) !important; opacity: 0; }
-#jtl .logo-badge { width: 52px; height: 52px; border: 2px solid var(--ink); border-radius: 16px; display: flex; align-items: center;
-  justify-content: center; font: 700 22px/1 'JTSplashUnbounded', sans-serif; }
-#jtl .card .co { margin-top: 14px; font-size: 13px; color: var(--muted); }
-#jtl .card h3 { margin-top: 6px; font-size: 21px; line-height: 1.15; }
-#jtl .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-#jtl .chip { padding: 6px 10px; border-radius: 999px; background: #F1E9DE; font: 700 12px/1 'JTSplashManrope', sans-serif; white-space: nowrap; }
-#jtl .chip.pay { background: var(--soft); border: 1.5px solid var(--accent); }
-#jtl .card .desc { margin-top: 14px; font-size: 13px; line-height: 1.45; color: var(--muted); }
-#jtl .stamp { position: absolute; top: 22px; padding: 6px 12px; border: 3px solid; border-radius: 10px;
-  font: 700 18px/1 'JTSplashUnbounded', sans-serif; opacity: 0; transition: opacity .2s ease; }
-#jtl .stamp.yes { right: 18px; color: var(--ok); transform: rotate(12deg); }
-#jtl .stamp.no { left: 18px; color: #E5484D; transform: rotate(-12deg); }
-#jtl .card.out-right .stamp.yes, #jtl .card.out-left .stamp.no { opacity: 1; }
-#jtl .scr-btns { display: flex; justify-content: center; gap: 22px; margin-top: 22px; }
-#jtl .scr-btns span { width: 54px; height: 54px; border: 2px solid var(--ink); border-radius: 50%; background: var(--surface);
-  box-shadow: 3px 3px 0 var(--ink); display: flex; align-items: center; justify-content: center; font: 700 22px/1 sans-serif;
-  transition: transform .15s ease, background-color .15s ease; }
-#jtl .scr-btns span.hit { transform: scale(.88); background: var(--soft); }
-#jtl .toast { position: absolute; left: 16px; right: 16px; bottom: 92px; padding: 12px 14px; border: 2px solid var(--ink); border-radius: 16px;
-  background: var(--surface); box-shadow: 3px 3px 0 var(--ink); font: 700 13px/1.3 'JTSplashManrope', sans-serif;
-  transform: translateY(16px); opacity: 0; transition: transform .35s ease, opacity .35s ease; z-index: 3; }
-#jtl .toast.on { transform: none; opacity: 1; }
+#jtl .hero h1 { font-size: clamp(56px, 7.2vw, 118px); line-height: .98; text-transform: uppercase; }
+#jtl .hero h1 .mark { color: var(--accent); text-shadow: 5px 5px 0 var(--ink); }
+#jtl .hero h1 .line { display: block; overflow: hidden; white-space: nowrap; padding: 0 10px 10px; }
+#jtl .hero h1 .line > span { display: inline-block; animation: jtl-rise 1s cubic-bezier(.2,.8,.2,1) .15s both; }
+#jtl .hero h1 .line:nth-child(2) > span { animation-delay: .3s; }
+#jtl .hero .lead { max-width: 640px; margin-top: 26px; font-size: 21px; color: rgba(255,255,255,.9); animation: jtl-fade .8s ease .5s both; }
+#jtl .hero .cta { display: flex; gap: 16px; margin-top: 36px; animation: jtl-fade .8s ease .65s both; }
+#jtl .hero .note { margin-top: 18px; font-size: 14px; color: rgba(255,255,255,.72); animation: jtl-fade .8s ease .75s both; }
+#jtl .qr { position: absolute; right: 22px; bottom: 22px; z-index: 2; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px 10px 10px; border: 2px solid var(--ink); border-radius: 18px; background: var(--surface); color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink); text-align: left; animation: jtl-fade .8s ease .9s both; transition: transform .2s ease; }
+#jtl .qr:hover { transform: translate(-2px, -2px) rotate(-1deg); }
+#jtl .qr svg { width: 84px; height: 84px; display: block; }
+#jtl .qr span { max-width: 130px; font: 700 12px/1.35 'JTSplashManrope', sans-serif; }
+/* Окошко-превью слева сверху: открывает ролик целиком */
+#jtl .reel { position: absolute; left: 22px; top: 22px; z-index: 2; width: 168px; height: 100px; padding: 0; cursor: pointer;
+  border: 2px solid #fff; border-radius: 18px; overflow: hidden; background: var(--ink) url('/landing/hero.jpg') 70% 40% / 340% no-repeat;
+  box-shadow: 4px 4px 0 rgba(20,20,20,.6); transition: transform .2s ease; animation: jtl-fade .8s ease .9s both; }
+#jtl .reel:hover { transform: scale(1.05) rotate(-1.5deg); }
+#jtl .reel::before { content: ''; position: absolute; inset: 0; background: rgba(20,20,20,.25); }
+#jtl .reel b { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--ink); display: flex; align-items: center; justify-content: center; }
+#jtl .reel b::after { content: ''; margin-left: 4px; border-left: 14px solid var(--ink); border-top: 9px solid transparent; border-bottom: 9px solid transparent; }
+#jtl .modal { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 48px;
+  background: rgba(20,20,20,.82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+#jtl .modal.on { display: flex; animation: jtl-fade .25s ease both; }
+#jtl .modal video { width: min(1280px, 100%); border: 3px solid #fff; border-radius: 26px; background: var(--ink); }
+#jtl .modal .close { position: absolute; top: 22px; right: 26px; }
 
 /* Секции */
 #jtl section.block { padding: 110px 0 40px; }
@@ -213,14 +194,27 @@ html.jt-landing #root { visibility: hidden; }
 #jtl footer .links a:hover { color: var(--accent); }
 #jtl footer small { font-size: 14px; color: var(--muted); }
 
+/* Заголовки разделов проявляются по словам (как у sorce) */
+#jtl .rv.split { opacity: 1; transform: none; }
+#jtl .split .w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .08em; }
+#jtl .split .w > span { display: inline-block; transform: translateY(110%); transition: transform .8s cubic-bezier(.2,.8,.2,1); }
+#jtl .split.in .w > span { transform: none; }
+
+/* Огромное «JobToo» в подвале, как «Sorce» у образца: переливается и встаёт при прокрутке */
+#jtl .giant { padding: 40px 0 10px; text-align: center; overflow: hidden; }
+#jtl .giant b { display: block; font: 700 clamp(120px, 20vw, 330px)/.92 'JTSplashUnbounded', sans-serif; letter-spacing: -0.055em;
+  background: linear-gradient(100deg, var(--accent) 0%, #FFB37A 35%, var(--accent) 55%, #FF8A3D 100%); background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: jtl-shine 7s linear infinite; }
+#jtl .giant span { display: block; margin-top: 10px; font-size: 20px; color: var(--muted); }
+
 /* Появление при прокрутке */
 #jtl .rv { opacity: 0; transform: translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
 #jtl .rv.in { opacity: 1; transform: none; }
 
 @keyframes jtl-rise { from { transform: translateY(105%); } to { transform: none; } }
 @keyframes jtl-fade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-@keyframes jtl-float { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-14px) rotate(1deg); } }
-@keyframes jtl-glow { from { transform: translate(0, 0) scale(1); } to { transform: translate(-60px, 40px) scale(1.15); } }
+@keyframes jtl-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+@keyframes jtl-shine { from { background-position: 0% 0; } to { background-position: -220% 0; } }
 @keyframes jtl-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(43,182,115,.55); } 50% { box-shadow: 0 0 0 6px rgba(43,182,115,0); } }
 @keyframes jtl-run { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
@@ -276,7 +270,10 @@ export const LANDING_MARKUP = `
     <section class="hero">
       <div class="wrap">
         <div class="hero-frame">
-          <div>
+          <video class="hero-video" id="jtl-video" muted loop playsinline preload="none" aria-hidden="true"></video>
+          <div class="hero-shade"></div>
+          <button class="reel" type="button" data-jtl-reel aria-label="Смотреть ролик о JobToo"><b></b></button>
+          <div class="hero-in">
             <span class="eyebrow"><i></i>Только IT-вакансии</span>
             <h1><span class="line"><span>Работа в IT —</span></span><span class="line"><span class="mark">свайпом</span></span></h1>
             <p class="lead">Листаете вакансии как ленту. Свайп вправо — и Юпитер сам заполняет анкету на сайте работодателя. Ответ приходит в чат приложения.</p>
@@ -285,55 +282,11 @@ export const LANDING_MARKUP = `
               <button class="btn" type="button" data-jtl-open>Открыть в браузере</button>
             </div>
             <p class="note">iPhone — пока через браузер: откройте jobtoo.ru в Safari.</p>
-            <a class="qr" href="/?app=1" title="jobtoo.ru">
+          </div>
+          <a class="qr" href="/?app=1" title="jobtoo.ru">
             <svg viewBox="0 0 25 25" shape-rendering="crispEdges" role="img" aria-label="QR-код jobtoo.ru"><path stroke="#141414" d="${QR_PATH}"/></svg>
             <span>Наведите камеру телефона — JobToo откроется сразу</span>
           </a>
-          </div>
-
-          <div class="phone-wrap" aria-hidden="true">
-            <div class="phone"><div class="screen">
-              <div class="notch"></div>
-              <div class="scr-top"><b>Вакансии</b><span class="bolt"><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-1px"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="#FF6B1A" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg> 15</span></div>
-              <div class="deck" id="jtl-deck">
-                <div class="card" data-pos="0">
-                  <div class="logo-badge" style="background:#FFE2CC">F</div>
-                  <p class="co">Финтех · 40 минут назад</p>
-                  <h3>Frontend-разработчик (React)</h3>
-                  <div class="chips"><span class="chip pay">от 250 000 ₽</span><span class="chip">Удалённо</span><span class="chip">Middle</span></div>
-                  <p class="desc">TypeScript, React, дизайн-система. Команда из 8 человек, релизы каждую неделю.</p>
-                  <span class="stamp yes">ОТКЛИК</span><span class="stamp no">МИМО</span>
-                </div>
-                <div class="card" data-pos="1">
-                  <div class="logo-badge" style="background:#D8F0E2">D</div>
-                  <p class="co">Маркетплейс · 2 часа назад</p>
-                  <h3>Data Scientist</h3>
-                  <div class="chips"><span class="chip pay">от 300 000 ₽</span><span class="chip">Гибрид</span><span class="chip">Senior</span></div>
-                  <p class="desc">Рекомендации и поиск. Python, SQL, A/B-тесты на миллионах пользователей.</p>
-                  <span class="stamp yes">ОТКЛИК</span><span class="stamp no">МИМО</span>
-                </div>
-                <div class="card" data-pos="2">
-                  <div class="logo-badge" style="background:#E1E6FF">Q</div>
-                  <p class="co">EdTech · сегодня</p>
-                  <h3>QA-инженер (автотесты)</h3>
-                  <div class="chips"><span class="chip pay">от 180 000 ₽</span><span class="chip">Москва</span><span class="chip">Junior+</span></div>
-                  <p class="desc">Playwright, CI, тест-дизайн. Наставник на первые три месяца.</p>
-                  <span class="stamp yes">ОТКЛИК</span><span class="stamp no">МИМО</span>
-                </div>
-                <div class="card" data-pos="3">
-                  <div class="logo-badge" style="background:#FFF1B8">G</div>
-                  <p class="co">Логистика · вчера</p>
-                  <h3>Backend-разработчик на Go</h3>
-                  <div class="chips"><span class="chip pay">от 280 000 ₽</span><span class="chip">Удалённо</span><span class="chip">Middle+</span></div>
-                  <p class="desc">Высоконагруженные сервисы, Kafka, PostgreSQL. Без легаси.</p>
-                  <span class="stamp yes">ОТКЛИК</span><span class="stamp no">МИМО</span>
-                </div>
-              </div>
-              <div class="scr-btns"><span id="jtl-no"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6 6 18" stroke="#141414" stroke-width="3" stroke-linecap="round"/></svg></span><span id="jtl-yes"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="#FF6B1A" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg></span></div>
-              <div class="toast" id="jtl-toast">Юпитер заполнил анкету — отклик отправлен</div>
-            </div></div>
-          </div>
-
         </div>
       </div>
     </section>
@@ -341,7 +294,7 @@ export const LANDING_MARKUP = `
     <section class="block" id="how">
       <div class="wrap">
         <p class="kicker rv">Как это работает</p>
-        <h2 class="rv">Три шага от вакансии до ответа</h2>
+        <h2 class="rv split">Три шага от вакансии до ответа</h2>
         <p class="sub rv">Никаких одинаковых анкет на десяти сайтах. Вы выбираете — остальное делает приложение.</p>
         <div class="steps">
           <article class="step rv"><div class="num">1</div><h3>Листаете</h3><p>Карточки IT-вакансий: зарплата, формат, стек. Нравится — свайп вправо, нет — влево.</p></article>
@@ -358,7 +311,7 @@ export const LANDING_MARKUP = `
     <section class="block" id="numbers">
       <div class="wrap">
         <p class="kicker rv">Почему JobToo</p>
-        <h2 class="rv">Честные цифры с первого дня</h2>
+        <h2 class="rv split">Честные цифры с первого дня</h2>
         <div class="stats">
           <div class="stat rv"><b><span data-count-from="990" data-count-to="0">0</span><em> ₽</em></b><span>для соискателя — отклики бесплатны</span></div>
           <div class="stat rv"><b><span data-count-from="0" data-count-to="15">15</span></b><span>откликов в день — осмысленно, а не по шаблону</span></div>
@@ -387,7 +340,7 @@ export const LANDING_MARKUP = `
 
     <section class="final">
       <div class="wrap">
-        <h2 class="rv">Следующая работа —<br />в одном свайпе</h2>
+        <h2 class="rv split">Следующая работа —<br />в одном свайпе</h2>
         <div class="cta rv">
           <a class="btn btn-accent" href="${RUSTORE_URL}" target="_blank" rel="noopener">Скачать в RuStore →</a>
           <button class="btn" type="button" data-jtl-open>Открыть в браузере</button>
@@ -395,6 +348,13 @@ export const LANDING_MARKUP = `
       </div>
     </section>
   </main>
+
+  <section class="giant" aria-hidden="true"><b class="rv">JobToo</b><span class="rv">Работа в IT — свайпом</span></section>
+
+  <div class="modal" id="jtl-modal" role="dialog" aria-modal="true" aria-label="Ролик о JobToo">
+    <button class="btn btn-sm close" type="button" data-jtl-close>Закрыть</button>
+    <video id="jtl-modal-video" controls playsinline loop preload="none"></video>
+  </div>
 
   <footer>
     <div class="wrap">
@@ -423,7 +383,7 @@ root.addEventListener('click',function(e){
   var t=e.target.closest&&e.target.closest('[data-jtl-open]');if(!t)return;
   e.preventDefault();
   try{sessionStorage.setItem('jt_app','1');}catch(_){}
-  window.__JT_LANDING__=false;stop=true;
+  window.__JT_LANDING__=false;if(video)video.pause();
   document.documentElement.className=document.documentElement.className.replace(/\\s*jt-landing/g,'');
 });
 
@@ -445,22 +405,42 @@ var io=new IntersectionObserver(function(es){es.forEach(function(en){
 });},{root:root,threshold:.18});
 root.querySelectorAll('.rv').forEach(function(el){io.observe(el);});
 
-// Колода: верхняя карточка уходит вправо (отклик) или влево (мимо), уходит в конец стопки.
-var deck=document.getElementById('jtl-deck'),yes=document.getElementById('jtl-yes'),no=document.getElementById('jtl-no'),
-    toast=document.getElementById('jtl-toast'),plan=['r','l','r','r'],step=0,stop=false;
-function cards(){return Array.prototype.slice.call(deck.children).sort(function(x,y){return x.dataset.pos-y.dataset.pos;});}
-function swipe(){
-  if(stop||reduce)return;
-  if(!root.offsetParent&&getComputedStyle(root).display==='none')return;
-  var cs=cards(),topc=cs[0],dir=plan[step++%plan.length],btn=dir==='r'?yes:no;
-  btn.classList.add('hit');setTimeout(function(){btn.classList.remove('hit');},180);
-  topc.classList.add(dir==='r'?'out-right':'out-left');
-  if(dir==='r'){toast.classList.add('on');setTimeout(function(){toast.classList.remove('on');},1500);}
-  setTimeout(function(){
-    cs.forEach(function(c,i){c.dataset.pos=i===0?cs.length-1:i-1;});
-    topc.style.transition='none';topc.classList.remove('out-right','out-left');
-    void topc.offsetWidth;topc.style.transition='';
-  },560);
-}
-setInterval(swipe,2600);
+// Заголовки по словам: каждое слово в своей «щели», выезжает снизу с задержкой.
+root.querySelectorAll('.split').forEach(function(h){
+  var i=0;
+  (function walk(node){
+    Array.prototype.slice.call(node.childNodes).forEach(function(n){
+      if(n.nodeType===3){
+        var frag=document.createDocumentFragment();
+        n.textContent.split(/(\s+)/).forEach(function(part){
+          if(!part)return;
+          if(/^\s+$/.test(part)){frag.appendChild(document.createTextNode(part));return;}
+          var w=document.createElement('span');w.className='w';
+          var inner=document.createElement('span');inner.textContent=part;
+          inner.style.transitionDelay=(i++*70)+'ms';w.appendChild(inner);frag.appendChild(w);
+        });
+        n.parentNode.replaceChild(frag,n);
+      }else if(n.nodeType===1&&n.tagName!=='BR'){walk(n);}
+    });
+  })(h);
+});
+
+// Ролик первого экрана: адрес подставляем только здесь — на телефоне файл не качается.
+// H.264 играют Chrome, Яндекс и Safari; открытые сборки Chromium и часть Firefox на Linux — только WebM.
+var video=document.getElementById('jtl-video');
+var MP4=!!video&&!!video.canPlayType('video/mp4; codecs="avc1.42E01E"');
+var SRC=MP4?'/landing/hero.mp4':'/landing/hero.webm';
+// В окне «Смотреть ролик» — рекламная версия: заставка, сюжет, «Скачайте в RuStore».
+var PROMO=MP4?'/landing/promo.mp4':'/landing/promo.webm';
+if(video&&!reduce){video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
+var modal=document.getElementById('jtl-modal'),mv=document.getElementById('jtl-modal-video');
+function closeModal(){modal.classList.remove('on');mv.pause();}
+root.addEventListener('click',function(e){
+  if(e.target.closest('[data-jtl-reel]')){
+    if(!mv.src)mv.src=PROMO;modal.classList.add('on');mv.currentTime=0;
+    var q=mv.play();if(q&&q.catch)q.catch(function(){});return;
+  }
+  if(e.target.closest('[data-jtl-close]')||e.target===modal)closeModal();
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal.classList.contains('on'))closeModal();});
 })();`;

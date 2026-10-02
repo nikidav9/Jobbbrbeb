@@ -20,6 +20,7 @@
     "babel.config.js",
     "metro.config.js",
     "jest.config.js",
-    "dashboard"
+    "dashboard",
+    "video"
   ]
 }
