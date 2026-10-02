@@ -833,6 +833,12 @@ function WorkerPermMode() {
   // Дневной запас свайпов и плашка «на сегодня всё».
   const energy = useEnergy(currentUser && !currentUser.isGuest ? currentUser.id : null);
   const [limitOpen, setLimitOpen] = useState(false);
+  // Молнии кончились — лента закрыта до полуночи, как у Sorce (решение
+  // владельца 02.10.2026). Листать без откликов значило бы пользоваться
+  // лентой как бесплатным каталогом и откликаться по ссылке на сайте
+  // работодателя. «Отклики», «Избранное» и чаты остаются открыты. Гостей не
+  // закрываем: у них нет откликов, их ведёт стена регистрации.
+  const feedLocked = energy.ready && energy.left <= 0 && !!currentUser && !currentUser.isGuest;
   // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
   const [moreBelow, setMoreBelow] = useState(false);
   // Описание на карточке сначала компактное, как в референсе; по нажатию
@@ -1819,8 +1825,8 @@ function WorkerPermMode() {
               <Text style={pS.limitBody}>
                 {energy.left > 0
                   ? 'Каждый отклик тратит одну молнию, а пропуск вакансии — бесплатный. '
-                  : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
-                    + 'сейчас — это молнии не тратит. '}
+                  : 'Отклики на сегодня закончились, и лента закрыта до полуночи — '
+                    + 'откроется вместе с новыми молниями. '}
                 Завтра снова будет {DAILY_ENERGY} — запас не копится.
               </Text>
               <View style={pS.limitStats}>
@@ -1852,7 +1858,25 @@ function WorkerPermMode() {
 
       {/* Лента — всегда колода: вкладок «Отклики»/«Избранное» здесь больше нет,
           они уехали на свой экран, и списочный режим стал недостижим. */}
-      {!swTop ? (
+      {feedLocked ? (
+        // Лента закрыта до полуночи. Прокрутка — ради «потяните вниз»: после
+        // полуночи обновление пересчитает запас и откроет колоду.
+        <ScrollView
+          contentContainerStyle={[styles.emptyState, { flexGrow: 1 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+          testID="feed-locked"
+        >
+          <JTBolt size={rs(48)} fill={JT.muted} />
+          <Text style={styles.emptyTitle}>На сегодня всё</Text>
+          <Text style={styles.emptySubtitle}>
+            {`Все ${DAILY_ENERGY} откликов на сегодня отправлены. Лента откроется в полночь — вместе с новыми молниями.`}
+          </Text>
+          <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={() => router.push('/(tabs)/matches')}>
+            <Text style={pS.retryTxt}>Посмотреть свои отклики</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      ) : !swTop ? (
         // Пустое состояние делаем прокручиваемым, иначе «потяните вниз»
         // некуда тянуть — жест обновления не срабатывал (особенно офлайн).
         <ScrollView
