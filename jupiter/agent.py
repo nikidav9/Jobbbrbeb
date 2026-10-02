@@ -6,6 +6,7 @@ import json
 import re
 import urllib.parse
 
+import alice_agent
 import email_apply
 import huntflow
 import sber
@@ -37,6 +38,7 @@ from submission import (
     collect_evidence, is_confirmed, score_evidence,
 )
 from validation import ValidationIssue, validate_form
+import yandex_gpt
 
 
 SUCCESS_MARKERS = (
@@ -900,6 +902,7 @@ class JupiterAgent:
         question_explainer: Callable[[list[dict], dict], dict[str, dict[str, str]]] | None = None,
         outcome_judge: Callable[[dict, list[str]], dict | None] | None = None,
         fix_advisor: Callable[[dict, list[str]], str | None] | None = None,
+        alice: Any = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -931,6 +934,16 @@ class JupiterAgent:
         # видит подпись, шаблон и сообщение сайта без значений кандидата и
         # выбирает запись из списка. См. _site_fix.
         self.fix_advisor = fix_advisor
+        # Алиса-спасатель (02.10.2026, по образцу browser-use): когда свой разбор
+        # застрял, нейросеть по одному действию доводит живую вкладку до места,
+        # откуда основной цикл идёт сам. Объект с complete_json(system, user,
+        # schema_hint). Видит устройство страницы и имена ключей профиля;
+        # значения в поля подставляет код (_alice_value). Только браузерный
+        # движок. См. alice_agent.py, _alice_rescue.
+        self.alice = alice
+        self._alice_quota: alice_agent.TaskQuota | None = None
+        self._alice_points: set[tuple[str, str]] = set()
+        self._alice_radios: set[str] = set()
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -1045,6 +1058,8 @@ class JupiterAgent:
         for name, group in groups.items():
             if len(group) < 2:
                 continue
+            if name in self._alice_radios:
+                continue  # выбор сделала Алиса по ключу профиля, а не сайт за человека
             chosen = [c for c in group if c.checked and not c.disabled and not c.readonly]
             if not chosen:
                 continue
@@ -2294,6 +2309,107 @@ class JupiterAgent:
         return [str(v) for v in profile.values.values()
                 if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip()]
 
+    def _alice_value(self, profile: CandidateProfile, key: str, fmt: str | None = None) -> str | None:
+        """Значение ключа для Алисы. Единственное место, где оно выходит из профиля
+        в страницу: модель называет ключ и запись, значения не видит."""
+        value = profile.values.get(key)
+        if value is None or value == "" or isinstance(value, (dict, list)) or key in {"resume", "candidate_id"}:
+            return None
+        if isinstance(value, bool):
+            return "Да" if value else "Нет"
+        text = str(value)
+        probe = ControlState(index=0, form_index=None, tag="input", fix_format=fmt or "")
+        if fmt in _PHONE_FORMATS:
+            return _phone_for_control(text, probe)
+        if fmt in ("date_dmy", "date_iso"):
+            return _date_for_control(value, probe)
+        if key == "birth_date":
+            return _date_for_html(value)
+        return text
+
+    def _alice_flush(self, page: PageState, form_index: int | None) -> None:
+        """Перенести значения агента из модели в живую страницу.
+
+        До submit() они лежат только в PageState, а Алиса смотрит на живой DOM:
+        без этого все поля для неё «пусто», и шести шагов не хватит их заново
+        заполнить. Тот же _apply_values, что и перед «Отправить», — без клика."""
+        apply = getattr(self.engine, "_apply_values", None)
+        if apply is None or form_index is None or form_index >= len(page.forms):
+            return
+        try:
+            apply(page, page.forms[form_index])
+        except EngineError:
+            pass  # не перенеслось — Алиса увидит поле пустым и заполнит сама
+
+    def _alice_rescue(
+        self,
+        page: PageState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+        code: str,
+        *,
+        form_index: int | None = None,
+        notes: list[str] | tuple[str, ...] = (),
+    ) -> PageState | None:
+        """Спасательный заход Алисы (alice_agent.rescue). Вернула страницу — основной
+        цикл делает `continue` и заново проверяет поля, капчу, отпечаток, отправляет
+        и проверяет успех сам; None — прежний return с прежним кодом.
+
+        Только браузерный движок (у HTTP-движка нет вкладки). Не больше 2 заходов на
+        задачу и одного — на точку (код + отпечаток шага). В траектории — действие,
+        номер элемента и ключ, значений нет."""
+        tab = getattr(self.engine, "_tab", None)
+        if self.alice is None or tab is None:
+            return None
+        if self._alice_quota is None:
+            self._alice_quota = alice_agent.TaskQuota(yandex_gpt.BUDGET)
+        quota = self._alice_quota
+        point = (code, self._step_signature(page, form_index))
+        why = ""
+        if quota.rescues_left <= 0:
+            why = "заходы на задачу кончились"
+        elif point in self._alice_points:
+            why = "на этой точке Алиса уже была"
+        elif quota.remaining() < alice_agent.MIN_CALLS_TO_START:
+            why = "мало вызовов модели в бюджете"
+        if why:
+            trajectory.append({"action": "alice_gave_up", "reason_code": code, "why": why})
+            return None
+        quota.rescues_left -= 1
+        self._alice_points.add(point)
+        if code in {Reason.MISSING_PROFILE_FIELD, Reason.VALIDATION_FAILED}:
+            self._alice_flush(page, form_index)
+        title = (page.title or "").strip()[:80]
+        result = alice_agent.rescue(
+            self.engine,
+            self._llm_allowed_keys(profile),
+            f"откликнуться на вакансию «{title}»" if title else "откликнуться на вакансию",
+            code,
+            self.alice,
+            read_only=self.dry_run or bool(getattr(self.engine, "read_only", False)),
+            budget=quota,
+            value_for=lambda key, fmt=None: self._alice_value(profile, key, fmt),
+            resume_path=profile.resume_path,
+            notes=notes,
+        )
+        trajectory.extend(result.steps)
+        self._alice_radios |= result.radio_names
+        fresh: PageState | None = None
+        if result.status != alice_agent.BLOCKED and result.acted:
+            try:
+                # Живой DOM изменился: модель страницы берём заново, иначе
+                # _apply_values перед отправкой затёр бы сделанное Алисой.
+                fresh = self.engine.current_page()
+            except EngineError as exc:
+                result.why = f"страницу не снять: {type(exc).__name__}"
+        if fresh is None:
+            trajectory.append({"action": "alice_gave_up", "reason_code": code,
+                               "status": result.status, "why": result.why})
+            return None
+        trajectory.append({"action": "alice_rescued", "reason_code": code, "status": result.status,
+                           "why": result.why, "calls": result.calls})
+        return fresh
+
     def _site_fix(self, page: PageState, verdict: dict, profile: CandidateProfile,
                   round_no: int) -> list[ControlState]:
         """Поля, подсвеченные сайтом, — к следующему кругу: обязательные, а
@@ -2468,6 +2584,14 @@ class JupiterAgent:
                             "Jupiter is not making progress"
                         )
                         code = Reason.STEP_DID_NOT_ADVANCE
+                    if code == Reason.STEP_DID_NOT_ADVANCE:
+                        rescued = self._alice_rescue(
+                            page, profile, trajectory, code, form_index=target_form_index,
+                        )
+                        if rescued is not None:
+                            # Круг идёт заново: «тот же шаг» уже не повод остановиться.
+                            page, retry_after_fix = rescued, True
+                            continue
                     trajectory.append({
                         "action": "action_required",
                         "reason": reason,
@@ -2536,6 +2660,16 @@ class JupiterAgent:
                                 page, target_form_index, [q.as_dict() for q in questions],
                             )
                             return result
+                    # Только «просто нет сопоставления»: согласия, юридические
+                    # вопросы и особые категории остаются человеку.
+                    if code == Reason.MISSING_PROFILE_FIELD and not special:
+                        rescued = self._alice_rescue(
+                            page, profile, trajectory, code, form_index=target_form_index,
+                            notes=["Не заполнены обязательные поля: " + "; ".join(missing[:8])],
+                        )
+                        if rescued is not None:
+                            page, retry_after_fix = rescued, True
+                            continue
                     action_type = {
                         Reason.CONSENT_REQUIRED: HumanAction.CONSENT,
                         Reason.UNKNOWN_REQUIRED_QUESTION:
@@ -2554,6 +2688,15 @@ class JupiterAgent:
 
                 issues = self._validation_issues(page, target_form_index)
                 if issues:
+                    # Формат значения: Алиса называет запись (FIX_FORMATS), значение пишет код.
+                    rescued = self._alice_rescue(
+                        page, profile, trajectory, Reason.VALIDATION_FAILED,
+                        form_index=target_form_index,
+                        notes=[f"{issue.field}: {issue.rule}; {issue.message}" for issue in issues[:5]],
+                    )
+                    if rescued is not None:
+                        page, retry_after_fix = rescued, True
+                        continue
                     reason = "Form fails HTML validation: " + "; ".join(
                         f"{issue.field}: {issue.message}" for issue in issues
                     )
@@ -2820,6 +2963,15 @@ class JupiterAgent:
                     result = AgentResult("action_required", reason, trajectory, Reason.EMAIL_APPLY)
                     result.email_to = hr_email
                     return result
+                # Ни анкеты, ни перехода: кнопку отклика без привычных признаков
+                # может найти Алиса. Вернула страницу — круг идёт заново.
+                rescued = self._alice_rescue(
+                    page, profile, trajectory, Reason.VACANCY_NOT_FOUND,
+                )
+                if rescued is not None:
+                    page, retry_after_fix = rescued, True
+                    visited.add(page.url)
+                    continue
                 reason = "No explicit application form or apply navigation found"
                 trajectory.append({
                     "action": "failed",
@@ -2995,6 +3147,19 @@ class JupiterAgent:
                         continue
                 judged = self._apply_verdict(verdict, fingerprint, page, evidence, trajectory) if verdict else None
                 if judged is not None:
+                    # Сайт сам подсветил поля до отправки (POST не уходил):
+                    # исправить их может Алиса. Вердикт нейросети (не сайта) не
+                    # повод — там отклик мог уйти.
+                    if judged.reason_code == Reason.SITE_NEEDS_FIX and verdict.get("source") == "site":
+                        rescued = self._alice_rescue(
+                            page, profile, trajectory, Reason.SITE_NEEDS_FIX,
+                            form_index=before_form_index,
+                            notes=["Сайт просит исправить: " + "; ".join(
+                                str(f) for f in (verdict.get("fields") or [])[:8])],
+                        )
+                        if rescued is not None:
+                            page, retry_after_fix = rescued, True
+                            continue
                     return judged
 
             if self._same_page(before, page):
@@ -3007,6 +3172,12 @@ class JupiterAgent:
                         "the page came back unchanged"
                     )
                     code = Reason.STEP_DID_NOT_ADVANCE
+                    rescued = self._alice_rescue(
+                        page, profile, trajectory, code, form_index=target_form_index,
+                    )
+                    if rescued is not None:
+                        page, retry_after_fix = rescued, True
+                        continue
                 else:
                     reason = (
                         "Submit returned the same page without explicit success "
@@ -3113,6 +3284,7 @@ class JupiterAgent:
 
     def run(self, url: str, profile: CandidateProfile) -> AgentResult:
         self._root_url = url
+        self._alice_quota, self._alice_points, self._alice_radios = None, set(), set()
         self._expand_policy_for_start(url)
         vacancy = huntflow.parse_url(url)
         if vacancy is not None:

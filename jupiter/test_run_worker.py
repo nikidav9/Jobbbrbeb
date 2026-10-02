@@ -915,6 +915,20 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
         self.assertNotIn(self.SECRET, out)
         self.assertNotIn("b1g-folder-secret", out)
 
+    def test_alice_hook_is_the_same_counting_llm(self):
+        """Алиса получает тот же клиент со счётчиком, что и остальные хуки."""
+        import knowledge
+        os.environ["YANDEX_GPT_API_KEY"] = self.SECRET
+        os.environ["YANDEX_GPT_FOLDER_ID"] = "folder"
+        made = self._recording_agent(accepts_mapper=True)
+        self._one_agent()
+        self.assertIsInstance(made[0].alice, knowledge.CountingLLM)
+
+    def test_alice_hook_absent_without_key(self):
+        made = self._recording_agent(accepts_mapper=True)
+        self._one_agent()
+        self.assertIsNone(made[0].alice)
+
     def test_agent_without_field_mapper_param_does_not_crash(self):
         os.environ["YANDEX_GPT_API_KEY"] = self.SECRET
         os.environ["YANDEX_GPT_FOLDER_ID"] = "folder"
