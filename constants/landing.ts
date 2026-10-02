@@ -208,9 +208,6 @@ html.jt-landing #root { visibility: hidden; }
   opacity: 0; transform: scale(.6) translateX(80px); transform-origin: right bottom; transition: opacity .4s ease .3s, transform .5s cubic-bezier(.3,1.5,.5,1) .3s; }
 #jtl .s-bubble small { display: block; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
 #jtl .stage[data-scene="3"] .s-bubble { opacity: 1; transform: none; }
-#jtl .confetti { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
-#jtl .confetti i { position: absolute; top: -20px; width: 12px; height: 18px; border: 2px solid var(--ink); border-radius: 3px; opacity: 0; }
-#jtl .stage[data-scene="3"] .confetti i { animation: jtl-fall 2.6s cubic-bezier(.3,.6,.5,1) infinite; opacity: 1; }
 #jtl .s-caption { position: absolute; z-index: 5; left: 22px; top: 20px; padding: 8px 14px; border: 2px solid var(--ink); border-radius: 999px;
   background: var(--surface); font: 700 13px/1 'JTSplashManrope', sans-serif; }
 
@@ -272,7 +269,6 @@ html.jt-landing #root { visibility: hidden; }
 @keyframes jtl-fade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes jtl-bob { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-12px) rotate(3deg); } }
 @keyframes jtl-hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-16px); } }
-@keyframes jtl-fall { 0% { transform: translateY(0) rotate(0); } 100% { transform: translateY(700px) rotate(540deg); } }
 @keyframes jtl-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
 @keyframes jtl-shine { from { background-position: 0% 0; } to { background-position: -220% 0; } }
 @keyframes jtl-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(43,182,115,.55); } 50% { box-shadow: 0 0 0 6px rgba(43,182,115,0); } }
@@ -379,7 +375,6 @@ export const LANDING_MARKUP = `
               <div class="actor a-dev"><div class="depth1"><img src="/landing/hero-dev.webp" width="648" height="505" alt="" loading="lazy" decoding="async"></div></div>
               <div class="actor a-hr"><div class="depth2"><img src="/landing/hero-hr.webp" width="598" height="540" alt="" loading="lazy" decoding="async"></div></div>
               <div class="s-bubble"><small>Нимбус Пэй · HR</small>Приглашаем на собеседование в четверг!</div>
-              <div class="confetti"><i style="left:8%;background:#FF6B1A;animation-delay:0s"></i><i style="left:18%;background:#FDE68A;animation-delay:0.4s"></i><i style="left:28%;background:#8B5CF6;animation-delay:0.9s"></i><i style="left:39%;background:#14B8A6;animation-delay:0.2s"></i><i style="left:50%;background:#FF6B1A;animation-delay:1.1s"></i><i style="left:61%;background:#FFE2CC;animation-delay:0.6s"></i><i style="left:72%;background:#E11D48;animation-delay:1.4s"></i><i style="left:83%;background:#FDE68A;animation-delay:0.3s"></i><i style="left:92%;background:#14B8A6;animation-delay:0.8s"></i></div>
             </div>
           </div>
         </div>
