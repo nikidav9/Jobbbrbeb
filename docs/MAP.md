@@ -1426,7 +1426,7 @@ HTTP 401/403/407/417/429/451 и `chrome-error` → `NAVIGATION_FAILED`, но с�
 и поля с маской; флажок за краем экрана отмечается кликом страницы; у
 галочки без подписи подписью считается текст обёртки без других полей (Huntflow); сбой
 заполнения до «Отправить» — `EngineError` (отклик не ушёл, повтор возможен), а
-не «исход неизвестен»; `browser_success.py` — успех по ответу API и тостам;
+не «исход неизвестен»; `browser_success.py` — успех по ответу API и тостам (02.10.2026: ответы POST/PUT на хост вакансии, поддомены сайта и известные ATS — `ResponseRecorder._scope`; только флаги `ok/success/status/id/result/code/errors/data.id`, Tilda `results`, текст `message` не хранится; `classify` → `api_success` / `api_error` / `api_2xx` — 2xx на адрес отправки без флага, агент даёт `API_2XX` 0.7, с `FORM_GONE` это порог 0.8); окно наблюдения после «Отправить» — `browser_engine._watch_after_submit` (свой счётчик запросов `_RequestTracker`, ставится ДО клика, переходы и DOM; мин 1.5 с, тишина 1 с, макс 15 с) вместо `_settle`: тосты, текст alert/confirm и нового окна (`browser_guard` `popup_texts`) идут в `page.text`; `_safe_eval` повторяет evaluate при «context was destroyed»; `page.text` — только видимый (`innerText`); после «Отправить» разрешён GET на тот же сайт (поддомены, `ats_hosts.same_site`) и ATS, «Спасибо» на чужом хосте — `left_allowed_hosts`, а не `DOMAIN_BLOCKED`; маркеры успеха — `submission.SUCCESS_PATTERNS` (регулярки) плюс подстроки `agent.SUCCESS_MARKERS`; `_unknown_outcome` сначала смотрит текущую вкладку; форма исчезла и подтверждения нет → сразу `submission_unknown` с квитанцией, без навигации и повторного «Откликнуться»; сторож — `test_browser_zoo.BrowserSubmitOutcomeTest`, `test_browser_success`);
 `browser_sessions.py` — парковка сессии на время капчи; `browser_captcha.py` —
 найти капчу, вырезать только её картинку, ввести ответ человека (не решает сам);
 `browser_guard.py` — DNS-пиннинг, попапы, загрузки, разрешения, WebRTC, service
@@ -1478,7 +1478,7 @@ setup/run: venv `/opt/jupiter-browser/venv`, Playwright 1.63.0, `DynamicUser`,
 миграция 135 (`jm_jupiter_captcha`), `jupiterCaptchaPost/Poll/Result` (админ),
 `jupiterCaptchaGet/Answer` (свои, `$selfArgFns` 0), экран `app/jupiter-captcha.tsx`
 (`services/jupiterCaptcha.ts`), причина `CAPTCHA_HUMAN`.
-В движке: `captcha()`, `captcha_png()`, `enter_captcha()` (в read_only — запрет), `current_page()`; `submit()` пишет ответ API в `last_api_result` (`browser_success`) и ловит гаснущие тосты «спасибо» в `page.text`.
+В движке: `captcha()`, `captcha_png()`, `enter_captcha()` (в read_only — запрет), `current_page()`; `submit()` пишет ответ API в `last_api_result` (`browser_success`) и ловит гаснущие тосты, alert и текст нового окна в `page.text` (окно наблюдения, см. выше).
 Цикл капчи в воркере — `jupiter/captcha_loop.py`: агент вернул
 `CAPTCHA_REQUIRED` на живой задаче браузерного движка → снимок капчи
 (`engine.captcha_png`) уходит на сервер (`queue.captcha_post`), воркер держит
