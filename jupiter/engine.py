@@ -32,6 +32,16 @@ class EngineSecurityError(EngineError):
     pass
 
 
+class EngineFillError(EngineError):
+    """Сбой ДО отправки: поле не заполнилось, нечем отправить, файла нет.
+
+    Клика «Отправить» и запроса на сайт не было — отклик точно не ушёл.
+    Отличать это от прочих EngineError обязательно: перед отправкой воркер
+    уже взвёл «отправка начата», и без этого признака любой такой сбой
+    превращался в «Скорее всего, ушёл» без повтора.
+    """
+
+
 class EngineTransportError(EngineError):
     """Ответа не было вовсе: обрыв, таймаут, недоступный хост.
 
@@ -91,6 +101,14 @@ class ControlState:
     # Заголовок <legend> раздела: ещё одна подсказка о смысле поля, когда у
     # него нет ни label, ни name.
     section: str = ""
+    # Поле скрыто стилем (своим или обёртки): display:none, visibility:hidden,
+    # атрибут hidden. Необязательное такое поле — обычно ловушка для ботов
+    # (Targem, 30.09): заполнить её — значит назваться ботом.
+    css_hidden: bool = False
+    # Круг исправления после «Отправить» и запись, подсказанная для него
+    # (agent._site_fix): на повторе поле пишется иначе, чем отверг сайт.
+    fix_round: int = 0
+    fix_format: str = ""
     options: list[OptionState] = field(default_factory=list)
     # Метка элемента в живой странице браузерного движка (browser_engine.py,
     # атрибут data-jt-ref). HTTP-движку не нужна и остаётся пустой.
@@ -257,15 +275,17 @@ class _SemanticParser(HTMLParser):
     def hidden(self) -> bool:
         return bool(self.hidden_tags)
 
-    def _push_hidden(self, tag: str, attrs: dict[str, str]) -> None:
+    @staticmethod
+    def _styled_hidden(attrs: dict[str, str]) -> bool:
         style = attrs.get("style", "").replace(" ", "").lower()
-        hidden = (
-            tag in {"script", "style", "template"}
-            or "hidden" in attrs
-            or "display:none" in style
-            or "visibility:hidden" in style
-        )
-        if hidden:
+        return "hidden" in attrs or "display:none" in style or "visibility:hidden" in style
+
+    def _push_hidden(self, tag: str, attrs: dict[str, str]) -> None:
+        # У одиночных тегов нет закрывающего — в стек они не идут, иначе
+        # скрытый <input> «прятал» бы весь текст страницы после себя.
+        if tag in _VOID_TAGS:
+            return
+        if tag in {"script", "style", "template"} or self._styled_hidden(attrs):
             self.hidden_tags.append(tag)
 
     def _new_control(self, tag: str, attrs: dict[str, str]) -> int:
@@ -335,6 +355,7 @@ class _SemanticParser(HTMLParser):
             formnovalidate="formnovalidate" in attrs,
             dom_ref=attrs.get("data-jt-ref", ""),
         )
+        c.css_hidden = self.hidden or self._styled_hidden(attrs)
         self.controls.append(c)
         if self.current_form is not None:
             self.forms[self.current_form].control_indices.append(c.index)
@@ -913,13 +934,33 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
         )
 
 
+def iri_to_uri(url: str) -> str:
+    """Путь и параметры с кириллицей — в ASCII для urllib.
+
+    ЮMoney, 01.10.2026: перенаправление на путь с русскими буквами роняло
+    запрос UnicodeEncodeError. Уже закодированное (%XX) не трогаем. Домен
+    (.рф) не меняем: его переводит сам urllib, а белый список хостов
+    сверяется с тем же написанием.
+    """
+    if url.isascii():
+        return url
+    parts = urllib.parse.urlsplit(url)
+    keep = "/%:@!$&'()*+,;=-._~"
+    return urllib.parse.urlunsplit((
+        parts.scheme, parts.netloc,
+        urllib.parse.quote(parts.path, safe=keep),
+        urllib.parse.quote(parts.query, safe=keep + "?"),
+        urllib.parse.quote(parts.fragment, safe=keep + "?"),
+    ))
+
+
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, validator: Callable[[str], None]):
         super().__init__()
         self.validator = validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        resolved = urllib.parse.urljoin(req.full_url, newurl)
+        resolved = iri_to_uri(urllib.parse.urljoin(req.full_url, newurl))
         self.validator(resolved)
         return super().redirect_request(req, fp, code, msg, headers, resolved)
 
@@ -1046,7 +1087,7 @@ class JupiterWebEngine:
             raise EngineSecurityError("External scripts must be same-origin")
 
         req = urllib.request.Request(
-            target,
+            iri_to_uri(target),
             method="GET",
             headers={
                 "User-Agent": self.user_agent,
@@ -1180,7 +1221,7 @@ class JupiterWebEngine:
         }
         request_headers.update(headers or {})
         req = urllib.request.Request(
-            url,
+            iri_to_uri(url),
             data=data,
             method=method,
             headers=request_headers,
@@ -1226,11 +1267,13 @@ class JupiterWebEngine:
         method: str = "GET",
         payload: dict | list | None = None,
         headers: dict[str, str] | None = None,
+        files: list[tuple[str, Path]] | None = None,
     ) -> tuple[int, object]:
         """JSON request with the same network/read-only policy as HTML navigation.
 
         This exists for employer public APIs used by their own application UI.
         It does not execute page JavaScript and it never weakens read_only.
+        files — multipart upload (the site's own resume upload), answer is JSON.
         """
         self.assert_reachable(url)
         method = method.upper()
@@ -1243,12 +1286,14 @@ class JupiterWebEngine:
             "Accept": "application/json",
         }
         data = None
-        if payload is not None:
+        if files:
+            data, request_headers["Content-Type"] = self._multipart([], files)
+        elif payload is not None:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             request_headers["Content-Type"] = "application/json"
         request_headers.update(headers or {})
         req = urllib.request.Request(
-            url, data=data, method=method, headers=request_headers,
+            iri_to_uri(url), data=data, method=method, headers=request_headers,
         )
         try:
             with self.opener.open(req, timeout=self.timeout) as response:
@@ -1347,7 +1392,7 @@ class JupiterWebEngine:
 
         for name, path in files:
             if not path.is_file():
-                raise EngineError(f"Upload file does not exist: {path}")
+                raise EngineFillError(f"Upload file does not exist: {path}")
             filename = path.name.replace('"', "")
             ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
             chunks.extend([
@@ -1460,7 +1505,7 @@ class JupiterWebEngine:
             )
 
         req = urllib.request.Request(
-            target,
+            iri_to_uri(target),
             data=data,
             method=method,
             headers=headers,
@@ -1518,6 +1563,7 @@ class JupiterWebEngine:
         page: PageState,
         form: FormState,
         submit_control: ControlState | None = None,
+        intermediate: bool = False,  # для совместимости с браузерным движком
     ) -> PageState:
         if self.read_only:
             raise EngineSecurityError(
@@ -1576,14 +1622,14 @@ class JupiterWebEngine:
 
         if method == "GET":
             if files:
-                raise EngineError("GET form cannot upload files")
+                raise EngineFillError("GET form cannot upload files")
             query = urllib.parse.urlencode(fields, doseq=True)
             parts = list(urllib.parse.urlsplit(target))
             parts[3] = "&".join(filter(None, [parts[3], query]))
             return self.request(urllib.parse.urlunsplit(parts))
 
         if method != "POST":
-            raise EngineError(f"Unsupported form method: {method}")
+            raise EngineFillError(f"Unsupported form method: {method}")
 
         if files or "multipart/form-data" in enctype:
             body, content_type = self._multipart(fields, files)

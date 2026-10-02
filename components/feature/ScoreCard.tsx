@@ -6,6 +6,7 @@ import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import { User } from '@/constants/types';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * JobToo Score — то, что в презентации нарисовано кружком с числом.
  *
@@ -80,7 +81,7 @@ export function ScoreCard({ user, own = false }: { user: User; own?: boolean }) 
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.title}>Общий рейтинг</Text>
-              <Text style={s.sub}>На основании {user.ratingCount} оценок после смен</Text>
+              <Text style={s.sub}>На основании {user.ratingCount} оценок</Text>
             </View>
           </View>
         </View>
@@ -96,10 +97,10 @@ export function ScoreCard({ user, own = false }: { user: User; own?: boolean }) 
             <Text style={s.title}>Рейтинг ещё не считается</Text>
             <Text style={s.sub}>
               {работодатель
-                ? `Смен через JobToo: ${смен}. Рейтинг компании появится после трёх.`
+                ? 'Рейтинг компании появится после первых оценок работников.'
                 : own
-                ? `Отработано смен: ${смен}. Рейтинг появится после трёх — так он не будет случайным.`
-                : `Отработано смен через JobToo: ${смен}. Для рейтинга нужно минимум три.`}
+                ? 'Рейтинг появится после первых оценок работодателей.'
+                : 'Оценок от работодателей пока нет.'}
             </Text>
           </View>
         </View>
@@ -179,26 +180,26 @@ const s = StyleSheet.create({
     width: rs(58), height: rs(58), borderRadius: rs(29),
     borderWidth: rs(3), alignItems: 'center', justifyContent: 'center',
   },
-  circleNum: { fontSize: rf(21), fontWeight: '800' },
-  title: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary },
-  sub: { fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(3), lineHeight: rf(17) },
+  circleNum: { fontSize: rf(21), fontFamily: JT_FONT.heavy },
+  title: { fontSize: rf(16), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  sub: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: Colors.textMuted, marginTop: rs(3), lineHeight: rf(17) },
 
   axes: { marginTop: rs(16), gap: rs(12) },
   axis: {},
   axisTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  axisLabel: { fontSize: rf(13), color: Colors.textSecondary, fontWeight: '500' },
-  axisValue: { fontSize: rf(13), color: Colors.textPrimary, fontWeight: '700' },
+  axisLabel: { fontSize: rf(13), color: Colors.textSecondary, fontFamily: JT_FONT.medium },
+  axisValue: { fontSize: rf(13), color: Colors.textPrimary, fontFamily: JT_FONT.bold },
   bar: {
     height: rs(6), borderRadius: rs(3), backgroundColor: Colors.surface,
     marginTop: rs(5), overflow: 'hidden',
   },
   barFill: { height: '100%', borderRadius: rs(3) },
-  axisHint: { fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
+  axisHint: { fontFamily: JT_FONT.medium, fontSize: rf(11.5), color: Colors.textMuted, marginTop: rs(3) },
 
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: rs(3),
     paddingHorizontal: rs(7), paddingVertical: rs(2),
     borderRadius: rs(100), borderWidth: 1.5,
   },
-  badgeTxt: { fontSize: rf(11.5), fontWeight: '800' },
+  badgeTxt: { fontSize: rf(11.5), fontFamily: JT_FONT.heavy },
 });

@@ -54,10 +54,10 @@ function jt_mail_route_file(): string
  *
  * $log — сюда кладётся, что ответил каждый порт (для adminMailCheck).
  */
-function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = null, bool $probeOnly = false, ?array &$log = null): ?string
+function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = null, bool $probeOnly = false, ?array &$log = null, array $opts = []): ?string
 {
     $cfg ??= jt_mail_config();
-    if (!isset($cfg['routes'])) return jt_mail_send_route($to, $subject, $text, $cfg, $probeOnly);
+    if (!isset($cfg['routes'])) return jt_mail_send_route($to, $subject, $text, $cfg, $probeOnly, $opts);
     $routes = $cfg['routes'];
     $known = json_decode((string)@file_get_contents(jt_mail_route_file()), true);
     if (is_array($known) && in_array($known, $routes, true)) {
@@ -66,7 +66,7 @@ function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = n
     $log = [];
     $err = 'нет портов для почты';
     foreach ($routes as [$transport, $port]) {
-        $err = jt_mail_send_route($to, $subject, $text, ['transport' => $transport, 'port' => $port] + $cfg, $probeOnly);
+        $err = jt_mail_send_route($to, $subject, $text, ['transport' => $transport, 'port' => $port] + $cfg, $probeOnly, $opts);
         $log[] = ['transport' => $transport, 'port' => $port, 'error' => $err];
         if ($err === null || !str_starts_with($err, 'нет соединения')) {
             if ($err === null) @file_put_contents(jt_mail_route_file(), json_encode([$transport, $port]));
@@ -76,14 +76,22 @@ function jt_mail_send(string $to, string $subject, string $text, ?array $cfg = n
     return $err;
 }
 
-function jt_mail_send_route(string $to, string $subject, string $text, array $cfg, bool $probeOnly = false): ?string
+/**
+ * $opts (отклик письмом, 01.10.2026): from_name — подпись отправителя (адрес
+ * остаётся ящиком входа: Timeweb иного не пускает), reply_to — куда ответить,
+ * attachments — [[имя файла, MIME, байты], …], deadline — секунд на письмо.
+ */
+function jt_mail_send_route(string $to, string $subject, string $text, array $cfg, bool $probeOnly = false, array $opts = []): ?string
 {
     $user = (string)($cfg['user'] ?? '');
     if ($user === '' || (string)($cfg['pass'] ?? '') === '') return 'почта не настроена';
     // Адресат идёт в команду RCPT TO и в заголовок — никаких переводов строк
     // и угловых скобок, иначе это инъекция команд SMTP.
     if (!$probeOnly && (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n<>]/', $to))) return 'некорректный адрес';
-    $until = microtime(true) + (float)($cfg['deadline'] ?? 10);
+    $replyTo = (string)($opts['reply_to'] ?? '');
+    if ($replyTo !== '' && (!filter_var($replyTo, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n<>]/', $replyTo))) return 'некорректный адрес ответа';
+    // Письмо с резюме идёт дольше кода входа: свой срок в $opts['deadline'].
+    $until = microtime(true) + (float)($opts['deadline'] ?? $cfg['deadline'] ?? 10);
 
     $ctx = stream_context_create(['ssl' => [
         'verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $cfg['host'],
@@ -141,19 +149,39 @@ function jt_mail_send_route(string $to, string $subject, string $text, array $cf
         if ($e = $cmd('RCPT TO:<' . $to . '>', 250)) return $e;
         if ($e = $cmd('DATA', 354)) return $e;
 
+        $fromName = (string)($opts['from_name'] ?? 'JobToo');
         $headers = [
-            'From: =?UTF-8?B?' . base64_encode('JobToo') . '?= <' . $user . '>',
+            'From: =?UTF-8?B?' . base64_encode($fromName) . '?= <' . $user . '>',
             'To: <' . $to . '>',
             'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=',
             'Date: ' . gmdate('D, d M Y H:i:s') . ' +0000',
             'Message-ID: <' . bin2hex(random_bytes(12)) . '@jobtoo.ru>',
             'MIME-Version: 1.0',
-            'Content-Type: text/plain; charset=UTF-8',
-            // base64 — строки короткие, и точка в начале строки (конец письма
-            // в SMTP) в теле появиться не может.
-            'Content-Transfer-Encoding: base64',
         ];
-        $body = rtrim(chunk_split(base64_encode($text), 76, "\r\n"));
+        if ($replyTo !== '') $headers[] = 'Reply-To: <' . $replyTo . '>';
+        // base64 — строки короткие, и точка в начале строки (конец письма
+        // в SMTP) в теле появиться не может.
+        $b64 = fn(string $bytes): string => rtrim(chunk_split(base64_encode($bytes), 76, "\r\n"));
+        $files = array_values(array_filter((array)($opts['attachments'] ?? []), 'is_array'));
+        if (!$files) {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+            $headers[] = 'Content-Transfer-Encoding: base64';
+            $body = $b64($text);
+        } else {
+            $boundary = 'jt' . bin2hex(random_bytes(12));
+            $headers[] = 'Content-Type: multipart/mixed; boundary="' . $boundary . '"';
+            $body = '--' . $boundary . "\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+                . "Content-Transfer-Encoding: base64\r\n\r\n" . $b64($text) . "\r\n";
+            foreach ($files as [$name, $mime, $bytes]) {
+                // Имя и тип — в заголовки: без переводов строк и кавычек.
+                $name = '=?UTF-8?B?' . base64_encode(preg_replace('/[\r\n"]/', '', (string)$name)) . '?=';
+                $mime = preg_match('#^[a-z]+/[a-z0-9.+-]+$#i', (string)$mime) ? $mime : 'application/octet-stream';
+                $body .= '--' . $boundary . "\r\nContent-Type: $mime; name=\"$name\"\r\n"
+                    . "Content-Disposition: attachment; filename=\"$name\"\r\n"
+                    . "Content-Transfer-Encoding: base64\r\n\r\n" . $b64((string)$bytes) . "\r\n";
+            }
+            $body .= '--' . $boundary . '--';
+        }
         fwrite($sock, implode("\r\n", $headers) . "\r\n\r\n" . $body . "\r\n.\r\n");
         [$code, $reply] = $read();
         if ($code !== 250) return "почтовый сервер не принял письмо: $reply";
@@ -212,6 +240,7 @@ function jt_mail_code(string $to, string $code, string $purpose, ?array $cfg = n
         'attach'   => ['Подтверждение почты в JobToo', 'Ваш код для подтверждения почты в JobToo:'],
         'reset'    => ['Восстановление пароля JobToo', 'Ваш код для восстановления пароля в JobToo:'],
         'login'    => ['Код для входа в JobToo', 'Ваш код для входа в JobToo:'],
+        'delete'   => ['Удаление аккаунта JobToo', 'Ваш код для удаления аккаунта JobToo. Если удалять аккаунт вы не собирались — не вводите его нигде:'],
     ][$purpose] ?? ['Код JobToo', 'Ваш код JobToo:'];
     $text = $what[1] . "\n\n    " . $code . "\n\n"
         . "Код действует 10 минут. Никому его не сообщайте — сотрудники JobToo\n"

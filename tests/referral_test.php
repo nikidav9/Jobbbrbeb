@@ -219,11 +219,7 @@ check('счётчик уходит в карточку', str_contains($db, "'ref
 // Проверяем именно ВЫВОД числа, а не упоминание поля: условие «показывать,
 // если больше нуля» содержит то же имя, и проверка на одно имя осталась бы
 // зелёной при пустой карточке. Первая попытка так и прошла мутацию.
-$cand = (string)file_get_contents(__DIR__ . '/../app/candidates.tsx');
-check('карточка кандидата показывает число',
-    str_contains($cand, 'Привёл, устроились: {worker.referralWorked}'));
-check('карточка не показывает ноль',
-    str_contains($cand, '{(worker.referralWorked ?? 0) > 0 ? ('));
+// Карточка кандидата смен удалена 01.10.2026 — число показывает профиль.
 $prof = (string)file_get_contents(__DIR__ . '/../app/user-profile.tsx');
 check('профиль показывает число',
     str_contains($prof, 'Привёл, устроились: {user.referralWorked}'));

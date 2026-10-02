@@ -18,7 +18,6 @@
 $db = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
 $chat = (string)file_get_contents(__DIR__ . '/../app/chat-room.tsx');
 $dbts = (string)file_get_contents(__DIR__ . '/../services/db.ts');
-$candidates = (string)file_get_contents(__DIR__ . '/../app/candidates.tsx');
 $matches = (string)file_get_contents(__DIR__ . '/../app/(tabs)/matches.tsx');
 
 $failures = [];
@@ -165,15 +164,13 @@ check('объявляем только на переходе в отказ',
 check('выключателя не осталось',
     !str_contains($db, 'announceInChat') && !str_contains($dbts, 'announceInChat')
     && !str_contains($chat, 'announceInChat')
-    && !str_contains($candidates, 'announceInChat') && !str_contains($matches, 'announceInChat'));
+    && !str_contains($matches, 'announceInChat'));
 check('название смены доходит до строки',
     str_contains($h, "jt_shift_reject_announce((string)\$wid, \$vacEmployer, (string)(\$vac['title'] ?? ''))"));
-// Все три экрана отказывают одним и тем же вызовом — значит и строка будет
+// Оба экрана отказывают (экран «Кандидаты» смен удалён 01.10.2026) одним и тем же вызовом — значит и строка будет
 // одна и та же, откуда бы ни нажали.
 check('переписка отказывает через общий вызов',
     str_contains($chat, 'employerLiked: false'));
-check('«Кандидаты» отказывают через общий вызов',
-    str_contains($candidates, 'employerLiked: false'));
 check('«Мэтчи» отказывают через общий вызов',
     str_contains($matches, 'employerLiked: false'));
 

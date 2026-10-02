@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Dimensions, RefreshControl, Modal, FlatList,
   TextInput, ActivityIndicator, Share, Platform, Linking,
 } from 'react-native';
@@ -14,6 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { ApplyAnswersPrompt } from '@/components/feature/ApplyAnswersPrompt';
+import { applyAnswersFor, applyAnswersFilled } from '@/lib/applyAnswers';
+import { patchPersonal } from '@/lib/profileEdit';
 import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
@@ -30,6 +33,7 @@ import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
 import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
 import { FORMATS, GRADES } from '@/components/filters/kit';
 import { JTBolt } from '@/components/ui/JTBolt';
+import { TabLogo, TAB_TOP } from '@/components/ui/TabLogo';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { VACANCY_LEVELS, VACANCY_FORMATS, VACANCY_SPECS, vacancyLevel, vacancyFormat } from '@/services/vacancyFacets';
@@ -236,7 +240,8 @@ function filterChipInfo(kind: FilterSheetKind, f: FeedFilters): { label: string;
     case 'spec': {
       const n = f.specs.length;
       if (!n) return { label: 'Специализация', active: false };
-      const one = VACANCY_SPECS.find(s => s.id === f.specs[0])?.label ?? '';
+      const sp = VACANCY_SPECS.find(s => s.id === f.specs[0]);
+      const one = sp?.short ?? sp?.label ?? '';
       return { label: n === 1 ? one : `Специализация · ${n}`, active: true };
     }
     case 'level': {
@@ -621,14 +626,8 @@ function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
   onQuery: (q: string) => void;
 }) {
   return (
-    <View style={fh.row}>
-      <View style={fh.logoWrap} accessibilityLabel="JobToo">
-        <Image
-          source={require('@/assets/images/jt-logo-wide.png')}
-          style={fh.logoImage}
-          resizeMode="contain"
-        />
-      </View>
+    <View style={[TAB_TOP.row, fh.row]}>
+      <TabLogo />
 
       <View style={fh.search}>
         <Ionicons name="search" size={rs(18)} color={JT.ink} />
@@ -672,14 +671,8 @@ function FeedSearchHeader({ energy, onEnergyPress, query, onQuery }: {
 // Шапка ленты — макет JT-design: логотип JT слева, счётчик ⚡ — белая
 // пилюля высотой 44 с чёрным контуром 2.
 const fh = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10),
-    paddingHorizontal: rs(20), paddingTop: rs(10), paddingBottom: 0,
-    backgroundColor: JT.background,
-  },
-  logoWrap: { height: rs(44), justifyContent: 'center', flexShrink: 0 },
-  // assets/images/jt-logo-wide.png — логотип макета, 600×387.
-  logoImage: { width: rs(47), height: rs(30) },
+  // Поля и логотип — общие с «Откликами» и «Профилем» (TAB_TOP).
+  row: { gap: rs(10), backgroundColor: JT.background },
   search: {
     flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: rs(8),
     height: rs(44), paddingHorizontal: rs(12), borderRadius: rs(22),
@@ -803,8 +796,11 @@ const da = StyleSheet.create({
 
 function WorkerPermMode() {
   const router = useRouter();
+  // Шторка «Ответьте один раз» — см. maybeAskAnswers.
+  const [askAnswers, setAskAnswers] = useState(false);
+  const askedAnswers = useRef(false);
   const {
-    currentUser, permVacancies, permApplications,
+    currentUser, permVacancies, permApplications, updateUser,
     refreshPermVacancies, refreshPermApplications,
     refreshChats,
     showToast,
@@ -835,8 +831,14 @@ function WorkerPermMode() {
   const filters = useAppliedFilters();
   const setFilters = setAppliedFilters;
   // Дневной запас свайпов и плашка «на сегодня всё».
-  const energy = useEnergy();
+  const energy = useEnergy(currentUser && !currentUser.isGuest ? currentUser.id : null);
   const [limitOpen, setLimitOpen] = useState(false);
+  // Молнии кончились — лента закрыта до полуночи, как у Sorce (решение
+  // владельца 02.10.2026). Листать без откликов значило бы пользоваться
+  // лентой как бесплатным каталогом и откликаться по ссылке на сайте
+  // работодателя. «Отклики», «Избранное» и чаты остаются открыты. Гостей не
+  // закрываем: у них нет откликов, их ведёт стена регистрации.
+  const feedLocked = energy.ready && energy.left <= 0 && !!currentUser && !currentUser.isGuest;
   // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
   const [moreBelow, setMoreBelow] = useState(false);
   // Описание на карточке сначала компактное, как в референсе; по нажатию
@@ -864,6 +866,10 @@ function WorkerPermMode() {
   // больше не показывает (та же идея, что у extLeftSwipes ниже).
   const [permSwiped, setPermSwiped] = useState<Set<string>>(new Set());
   const swDecisionPending = useRef(false);
+  // Окно отклика открыто свайпом: молния уже списана, карточка ушла из колоды.
+  // Закрыли окно без отправки — молнию возвращаем, карточку можно достать
+  // «Вернуть». Раньше молния сгорала впустую.
+  const permApplyFromSwipe = useRef(false);
   const permSavedMutationIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -1106,13 +1112,26 @@ function WorkerPermMode() {
     }
   };
 
+  // «Ответьте один раз» (01.10.2026): после свайпа вправо, пока частые
+  // вопросы работодателей не заполнены, — шторка, не чаще раза за сессию.
+  const maybeAskAnswers = () => {
+    if (!currentUser || askedAnswers.current) return;
+    if (currentUser.personalDetails?.applyAnswersPromptDismissed) return;
+    if (applyAnswersFilled(applyAnswersFor(currentUser)) >= 4) return;
+    askedAnswers.current = true;
+    setAskAnswers(true);
+  };
+
   const sendExtApply = async (ev: ExtVacancy): Promise<boolean> => {
     if (!currentUser) return false;
     try {
       const application = await jupiterEnqueue(currentUser.id, ev.url, ev.company);
+      maybeAskAnswers();
       showToast(application.reasonCode === 'PHONE_FILL'
         ? 'Сохранено в «Нужны вы» — отправите пачкой в «Откликах».'
-        : 'Заявка уже есть. Статус — в «Откликах».', 'success');
+        : application.state === 'queued'
+          ? 'Юпитер отправит отклик сам. Статус — в «Откликах».'
+          : 'Заявка уже есть. Статус — в «Откликах».', 'success');
       return true;
     } catch (e: any) {
       const msg = e?.message ?? '';
@@ -1129,7 +1148,11 @@ function WorkerPermMode() {
       promptRegister({ vacancyId: v.id, vacancyKind: 'permanent' });
       return;
     }
-    if (myAppVacIds.has(v.id) || applying === v.id) { showToast('Уже откликнулись', 'success'); return; }
+    if (myAppVacIds.has(v.id) || applying === v.id) {
+      if (permApplyFromSwipe.current) { permApplyFromSwipe.current = false; energy.refundOne(); }
+      showToast('Уже откликнулись', 'success');
+      return;
+    }
     setPermApplyFor(v);
   };
 
@@ -1140,6 +1163,7 @@ function WorkerPermMode() {
     try {
       await dbApplyPermVacancy(v.id, currentUser.id, v.employerId, message);
       showToast('Отклик отправлен', 'success');
+      permApplyFromSwipe.current = false;
       setPermApplyFor(null);
       await Promise.all([
         refreshPermApplications().catch(() => {}),
@@ -1152,6 +1176,7 @@ function WorkerPermMode() {
     } catch (e: any) {
       console.warn('[applyTo]', e);
       showToast(e?.message || 'Не удалось отправить отклик', 'error');
+      void energy.sync();
     } finally {
       setApplying(null);
     }
@@ -1209,7 +1234,9 @@ function WorkerPermMode() {
 
   const shareVacancy = async (v: PermVacancy) => {
     const shareCampaignId = Crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-    const url = `https://t.me/JobToo_bot/app?startapp=share_perm_${v.id}_${shareCampaignId}`;
+    // Адрес сайта, а не ссылка мини-приложения: t.me открывается только в
+    // Телеграме, а у многих его нет. Метка c= доезжает до экрана вакансии.
+    const url = `https://jobtoo.ru/v/${encodeURIComponent(v.id)}?c=${shareCampaignId}`;
     const message = [
       `${v.title} — ${v.company}`,
       v.metroStation ? `м. ${v.metroStation}` : '',
@@ -1284,6 +1311,9 @@ function WorkerPermMode() {
             } else {
               energy.refundOne();
               setSwLastSkipped(ev.id);
+              // Отказ мог быть из-за запаса на сервере (отклики с другого
+              // устройства) — сверяемся, чтобы шапка не обещала лишнего.
+              void energy.sync();
             }
           });
         }).finally(() => { swDecisionPending.current = false; });
@@ -1301,6 +1331,7 @@ function WorkerPermMode() {
             resetCardScroll();
             setSwSkipped(s => new Set(s).add(c.v.id));
             setSwLastSkipped(null);
+            permApplyFromSwipe.current = true;
             applyTo(c.v);
           } else {
             energy.refundOne();
@@ -1578,13 +1609,13 @@ function WorkerPermMode() {
             pointerEvents="none"
             style={[styles.wantOverlay, swDeck.wantStyle]}
           >
-            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+            <Text style={styles.wantText}>ОТКЛИК</Text>
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="none"
             style={[styles.skipOverlay, swDeck.skipStyle]}
           >
-            <Text style={styles.skipText}>НЕТ ✕</Text>
+            <Text style={styles.skipText}>НЕТ</Text>
           </Reanimated.View>
           </Reanimated.View>
         </OnboardingTarget>
@@ -1711,10 +1742,10 @@ function WorkerPermMode() {
           </GestureDetector>
 
           <Reanimated.View pointerEvents="none" style={[styles.wantOverlay, swDeck.wantStyle]}>
-            <Text style={styles.wantText}>ОТКЛИК ♥</Text>
+            <Text style={styles.wantText}>ОТКЛИК</Text>
           </Reanimated.View>
           <Reanimated.View pointerEvents="none" style={[styles.skipOverlay, swDeck.skipStyle]}>
-            <Text style={styles.skipText}>НЕТ ✕</Text>
+            <Text style={styles.skipText}>НЕТ</Text>
           </Reanimated.View>
           </Reanimated.View>
         </View>
@@ -1794,8 +1825,8 @@ function WorkerPermMode() {
               <Text style={pS.limitBody}>
                 {energy.left > 0
                   ? 'Каждый отклик тратит одну молнию, а пропуск вакансии — бесплатный. '
-                  : 'Отклики на сегодня закончились. Листать и пропускать вакансии можно и '
-                    + 'сейчас — это молнии не тратит. '}
+                  : 'Отклики на сегодня закончились, и лента закрыта до полуночи — '
+                    + 'откроется вместе с новыми молниями. '}
                 Завтра снова будет {DAILY_ENERGY} — запас не копится.
               </Text>
               <View style={pS.limitStats}>
@@ -1827,7 +1858,25 @@ function WorkerPermMode() {
 
       {/* Лента — всегда колода: вкладок «Отклики»/«Избранное» здесь больше нет,
           они уехали на свой экран, и списочный режим стал недостижим. */}
-      {!swTop ? (
+      {feedLocked ? (
+        // Лента закрыта до полуночи. Прокрутка — ради «потяните вниз»: после
+        // полуночи обновление пересчитает запас и откроет колоду.
+        <ScrollView
+          contentContainerStyle={[styles.emptyState, { flexGrow: 1 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+          testID="feed-locked"
+        >
+          <JTBolt size={rs(48)} fill={JT.muted} />
+          <Text style={styles.emptyTitle}>На сегодня всё</Text>
+          <Text style={styles.emptySubtitle}>
+            {`Все ${DAILY_ENERGY} откликов на сегодня отправлены. Лента откроется в полночь — вместе с новыми молниями.`}
+          </Text>
+          <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={() => router.push('/(tabs)/matches')}>
+            <Text style={pS.retryTxt}>Посмотреть свои отклики</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      ) : !swTop ? (
         // Пустое состояние делаем прокручиваемым, иначе «потяните вниз»
         // некуда тянуть — жест обновления не срабатывал (особенно офлайн).
         <ScrollView
@@ -1879,13 +1928,31 @@ function WorkerPermMode() {
 
       <ApplySheet
         visible={!!permApplyFor}
-        onClose={() => setPermApplyFor(null)}
+        onClose={() => {
+          if (permApplyFromSwipe.current && permApplyFor) {
+            permApplyFromSwipe.current = false;
+            energy.refundOne();
+            setSwLastSkipped(permApplyFor.id);
+          }
+          setPermApplyFor(null);
+        }}
         onSend={sendPermApply}
         title="Отклик на вакансию"
         info={permApplyFor ? permVacancyInfoLines(permApplyFor) : []}
         chips={getChatSuggestions('worker', null)}
       />
 
+      <ApplyAnswersPrompt
+        visible={askAnswers}
+        onAnswer={() => { setAskAnswers(false); router.push('/profile-edit/apply-answers' as never); }}
+        onLater={() => setAskAnswers(false)}
+        onNever={() => {
+          setAskAnswers(false);
+          if (currentUser) {
+            updateUser(patchPersonal(currentUser, { applyAnswersPromptDismissed: true })).catch(() => {});
+          }
+        }}
+      />
     </View>
     </JTPullRefresh>
   );
@@ -1918,8 +1985,13 @@ function EmployerHome() {
   const onRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    await refreshAll();
-    setRefreshing(false);
+    try {
+      await refreshAll();
+    } catch {
+      showToast('Нет связи — показаны последние вакансии', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useFocusEffect(
@@ -2082,7 +2154,10 @@ function EmployerHome() {
                 >
                   <Text style={pS.appStatNum}>{permApplicantCount(v.id)}</Text>
                   <Text style={pS.appStatLabel}>откликов</Text>
-                  <Text style={pS.appStatArrow}>Посмотреть ↗</Text>
+                  <View style={pS.appStatLink}>
+                    <Text style={pS.appStatArrow}>Посмотреть</Text>
+                    <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
+                  </View>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[pS.appStatBtn, { backgroundColor: '#F4F4F5', marginTop: 6 }]}
@@ -2091,7 +2166,10 @@ function EmployerHome() {
                 >
                   <Text style={[pS.appStatNum, { color: Colors.textSecondary }]}>{permVacancyViewsMap[v.id] ?? 0}</Text>
                   <Text style={[pS.appStatLabel, { color: Colors.textSecondary }]}>посмотрели</Text>
-                  <Text style={[pS.appStatArrow, { color: Colors.textSecondary }]}>Посмотреть ↗</Text>
+                  <View style={pS.appStatLink}>
+                    <Text style={[pS.appStatArrow, { color: Colors.textSecondary }]}>Посмотреть</Text>
+                    <Ionicons name="arrow-forward" size={13} color={Colors.textSecondary} />
+                  </View>
                 </TouchableOpacity>
               </View>
             ))
@@ -2344,12 +2422,15 @@ const pS = StyleSheet.create({
     textAlign: 'center', lineHeight: rf(22), marginTop: rs(12),
   },
   limitStats: { flexDirection: 'row', gap: rs(8), alignSelf: 'stretch', marginTop: rs(18) },
+  // Обе плитки по центру и по горизонтали, и по вертикали: подпись в две
+  // строки («осталось / сегодня») без textAlign прижималась влево, а соседняя
+  // плитка с короткой подписью висела выше (снимок владельца 01.10.2026).
   limitStat: {
     flex: 1, paddingVertical: rs(12), paddingHorizontal: rs(12), borderRadius: rs(16),
-    backgroundColor: JT.background, alignItems: 'center', gap: rs(2),
+    backgroundColor: JT.background, alignItems: 'center', justifyContent: 'center', gap: rs(2),
   },
-  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink },
-  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
+  limitStatNum: { fontFamily: JT_FONT.head, fontSize: rf(24), color: JT.ink, textAlign: 'center' },
+  limitStatLbl: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary, textAlign: 'center' },
   limitBtnWrap: { alignSelf: 'stretch', marginTop: rs(20) },
   limitBtn: {
     height: rs(58), borderRadius: rs(29), borderWidth: 2, borderColor: JT.ink,
@@ -2537,6 +2618,7 @@ const pS = StyleSheet.create({
   appStatNum: { fontSize: rf(20), fontWeight: '800', color: Colors.primary },
   appStatLabel: { fontSize: rf(12), color: Colors.primary, flex: 1 },
   appStatArrow: { fontSize: rf(12), color: Colors.primary, fontWeight: '600' },
+  appStatLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
 
   // legacy (used by WorkerFeed M-button)
   filterLineDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -91,6 +92,19 @@ class YandexGPTTest(unittest.TestCase):
                 self.gpt.complete_json("s", "u")
         self.assertEqual(seen["timeout"], 10)
 
+    def test_requests_are_not_logged_by_yandex(self):
+        # Без x-data-logging-enabled: false Яндекс хранит текст запроса и
+        # может учить на нём модели (решение владельца 02.10.2026).
+        seen = {}
+
+        def fake_urlopen(req, timeout):
+            seen["headers"] = {k.lower(): v for k, v in req.header_items()}
+            raise TimeoutError()
+        with mock.patch("yandex_gpt.urllib.request.urlopen", fake_urlopen):
+            with self.assertRaises(YandexGPTTransportError):
+                self.gpt.complete_json("s", "u")
+        self.assertEqual(seen["headers"].get("x-data-logging-enabled"), "false")
+
     def test_budget_per_process(self):
         other = YandexGPT("KEY", "folder1", base_url=self.gpt.base_url, retry_pause=0)
         _H.replies = [(200, "{}"), (200, "{}")]
@@ -115,6 +129,19 @@ class YandexGPTTest(unittest.TestCase):
             self.assertEqual(BUDGET.limit(), 200)
         with mock.patch.dict(os.environ, {"YANDEX_GPT_MAX_CALLS_PER_HOUR": "мусор"}):
             self.assertEqual(BUDGET.limit(), 200)
+
+    def test_budget_remaining_counts_without_spending(self):
+        with mock.patch.dict(os.environ, {"YANDEX_GPT_MAX_CALLS_PER_HOUR": "3"}):
+            self.assertEqual(BUDGET.remaining(), 3)
+            self.assertEqual(BUDGET.remaining(), 3)          # просмотр ничего не списывает
+            self.assertTrue(BUDGET.take())
+            self.assertEqual(BUDGET.remaining(), 2)
+            self.assertTrue(BUDGET.take() and BUDGET.take())
+            self.assertEqual(BUDGET.remaining(), 0)
+            self.assertFalse(BUDGET.take())
+        with mock.patch.dict(os.environ, {"YANDEX_GPT_MAX_CALLS_PER_HOUR": "3"}), \
+                mock.patch("yandex_gpt.time.monotonic", return_value=time.monotonic() + 3600):
+            self.assertEqual(BUDGET.remaining(), 3)          # окно в час скользит
 
     def test_log_has_no_prompt_or_answer(self):
         _H.replies = [(200, '{"answer": "ОТВЕТ-МОДЕЛИ"}')]
@@ -147,8 +174,18 @@ class YandexGPTTest(unittest.TestCase):
 
     def test_redact_keeps_form_labels(self):
         for label in ("Фамилия Имя Отчество", "Номер Телефона", "First Name", "Cover Letter",
-                      "Как вас звать", "Код 12345", "https://hh.ru/vacancy"):
+                      "Как вас звать", "Код 12345", "https://hh.ru/vacancy",
+                      "Подать Заявку", "Откликнуться На Вакансию", "Отправить Отклик", "Apply Now",
+                      "Apply For This Job", "Откликнуться На Эту Вакансию"):
             self.assertEqual(redact(label), label)
+
+    def test_redact_form_word_does_not_shield_a_name(self):
+        # Одно слово кнопки рядом с именем не спасает имя.
+        for text, bad in {"Далее Иван Петров": "Петров", "Телефон Иван Петров": "Петров",
+                          "Apply John Smith": "Smith", "Steve Jobs": "Jobs",
+                          "Иван Далеев": "Далеев", "Tom Smith": "Smith", "Надя Петрова": "Петрова",
+                          "Apply To Tom Smith": "Smith"}.items():
+            self.assertNotIn(bad, redact(text), text)
 
     def test_redact_applied_before_send_and_truncated(self):
         _H.replies = [(200, "{}")]
@@ -164,6 +201,11 @@ class YandexGPTTest(unittest.TestCase):
             self.assertIsNone(YandexGPT.from_env())
         with mock.patch.dict(os.environ, {"YANDEX_GPT_API_KEY": "k", "YANDEX_GPT_FOLDER_ID": "f"}, clear=True):
             self.assertIsNotNone(YandexGPT.from_env())
+            # Решение владельца 01.10.2026: на сервере — YandexGPT Pro.
+            self.assertEqual(YandexGPT.from_env().model, "yandexgpt")
+        with mock.patch.dict(os.environ, {"YANDEX_GPT_API_KEY": "k", "YANDEX_GPT_FOLDER_ID": "f",
+                                          "YANDEX_GPT_MODEL": "yandexgpt-lite"}, clear=True):
+            self.assertEqual(YandexGPT.from_env().model, "yandexgpt-lite")
 
 
 if __name__ == "__main__":

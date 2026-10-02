@@ -16,17 +16,19 @@ import { WebView } from 'react-native-webview';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
 import {
-  jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile,
+  jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile, jupiterFieldHints,
 } from '@/services/db';
 import type { JupiterApplication } from '@/constants/types';
-import { fillHostFor, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
+import { fillHostFor, isOtherVacancy, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
+import { applyAnswersFor } from '@/lib/applyAnswers';
 import {
-  buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult,
+  buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult, type AutopilotUnknownField,
 } from '@/services/jupiterAutopilot';
 
 import { rs, rf } from '@/constants/scale';
 import { BackButton } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 type FillStatus =
   | 'loading' | 'filling' | 'ready' | 'captcha' | 'missing' | 'consent'
   | 'no_form' | 'no_submit' | 'login' | 'submitting' | 'unknown' | 'error';
@@ -148,14 +150,52 @@ export default function JupiterFillScreen() {
   }, [url, router, showToast]);
 
   const fillHost = url ? fillHostFor(url) : null;
+  // Подсказки сервера (YandexGPT) для полей, которые автопилот не узнал.
+  // Спрашиваем один раз на анкету: второй прогон идёт уже с подсказками.
+  const [hints, setHints] = useState<Record<string, string | null> | null>(null);
+  // «Ответьте один раз» — из профиля в приложении. Строкой: смена объекта
+  // пользователя без смены ответов не пересобирает скрипт анкеты.
+  const answersJson = useMemo(() => {
+    const a = applyAnswersFor(currentUser);
+    return JSON.stringify({
+      desired_salary: a.desiredSalary, notice_period: a.noticePeriod, telegram: a.telegram,
+      english_level: a.englishLevel, relocation: a.relocation, work_format: a.workFormat,
+    });
+  }, [currentUser]);
   const fillScript = useMemo(() => {
     if (!profile || !fillHost) return null;
     // Ссылка на резюме в страницу работодателя не уходит — только содержимое.
     const { resume_url: _u, resume_name: _n, ...values } = profile;
-    return buildAutopilotScript(values as JupiterFillProfile, fillHost, {
+    // Пустые ответы не передаём: автозаполнение пропустит поле, впишет человек.
+    const answers = Object.fromEntries(Object.entries(JSON.parse(answersJson) as Record<string, string | undefined>)
+      .filter(([, v]) => (v ?? '').trim() !== ''));
+    return buildAutopilotScript({ ...values, ...answers } as JupiterFillProfile, fillHost, {
       submit: false, delegated, resumeBase64: resume?.b64 ?? null, resumeName: resume?.name ?? null, deadlineMs: 45000,
+      hints: hints ?? {}, askHints: hints === null,
     });
-  }, [profile, fillHost, delegated, resume]);
+  }, [profile, fillHost, delegated, resume, hints, answersJson]);
+
+  // Сигнал от автопилота: обязательные поля, которые он не узнал. Сервер
+  // смотрит свои подсказки по сайту и спрашивает YandexGPT. Есть что
+  // подставить — автопилот проходит анкету ещё раз; нет — поле остаётся
+  // человеку, а сервер запомнил его, чтобы мы разобрались.
+  const askHints = async (fields: AutopilotUnknownField[]) => {
+    if (!fillHost || hints !== null) return;
+    try {
+      const got = await jupiterFieldHints(fillHost, fields);
+      setHints(got);
+    } catch {
+      setHints({});
+    }
+  };
+  const hintsRerun = useRef(false);
+  useEffect(() => {
+    if (!hints || hintsRerun.current || !fillScript || !webRef.current) return;
+    if (!Object.values(hints).some(Boolean)) return;
+    hintsRerun.current = true;
+    setStatus('filling');
+    webRef.current.injectJavaScript(rerunAutopilotScript(fillScript));
+  }, [hints, fillScript]);
 
   const refill = () => {
     if (!fillScript || !webRef.current) return;
@@ -268,7 +308,15 @@ export default function JupiterFillScreen() {
             try {
               const data = JSON.parse(e.nativeEvent.data);
               if (data?.type === 'jt-autopilot' && typeof data.outcome === 'string') onAutopilot(data as AutopilotResult);
+              if (data?.type === 'jt-autopilot-hints' && Array.isArray(data.fields)) void askHints(data.fields as AutopilotUnknownField[]);
             } catch { /* сообщение не наше — игнорируем */ }
+          }}
+          // Одна молния — одна вакансия: на соседнюю вакансию сайта отсюда не
+          // уходим, иначе автопилот заполнял бы её анкету бесплатно.
+          onShouldStartLoadWithRequest={(req) => {
+            if (req.isTopFrame === false || !isOtherVacancy(url, req.url)) return true;
+            showToast('Здесь заполняется только эта вакансия. На другие откликайтесь из ленты.', 'error');
+            return false;
           }}
           javaScriptEnabled
           domStorageEnabled
@@ -310,19 +358,19 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(12), paddingVertical: rs(10),
   },
   headerMid: { flex: 1, alignItems: 'center' },
-  headerTitle: { textAlign: 'center', fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
-  headerSub: { fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2) },
-  skipTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.primary },
+  headerTitle: { textAlign: 'center', fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  headerSub: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: Colors.textSecondary, marginTop: rs(2) },
+  skipTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.primary },
   notice: {
     flexDirection: 'row', gap: rs(8), alignItems: 'flex-start',
     marginHorizontal: rs(16), marginBottom: rs(10),
     backgroundColor: Colors.primaryLight, borderRadius: Radius.md, padding: rs(12),
   },
-  noticeTxt: { flex: 1, fontSize: rf(13), lineHeight: rf(18), color: Colors.textPrimary },
+  noticeTxt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(13), lineHeight: rf(18), color: Colors.textPrimary },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: rs(12), paddingHorizontal: rs(24) },
-  errorTxt: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center' },
+  errorTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center' },
   openBtn: { backgroundColor: Colors.primary, borderRadius: Radius.md, paddingHorizontal: rs(20), paddingVertical: rs(12) },
-  openBtnTxt: { color: '#FFFFFF', fontWeight: '700', fontSize: rf(14) },
+  openBtnTxt: { color: '#FFFFFF', fontFamily: JT_FONT.bold, fontSize: rf(14) },
   footer: {
     flexDirection: 'row', gap: rs(10), padding: rs(16),
     borderTopWidth: 1, borderTopColor: Colors.divider, backgroundColor: Colors.bg,
@@ -331,13 +379,13 @@ const s = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.inputBorder, paddingVertical: rs(13),
   },
-  secondaryBtnTxt: { color: Colors.textPrimary, fontWeight: '700', fontSize: rf(14) },
+  secondaryBtnTxt: { color: Colors.textPrimary, fontFamily: JT_FONT.bold, fontSize: rf(14) },
   primaryBtn: {
     flex: 1.4, alignItems: 'center', justifyContent: 'center',
     borderRadius: Radius.md, backgroundColor: Colors.primary, paddingVertical: rs(13), ...Shadow.card,
   },
-  primaryBtnTxt: { color: '#FFFFFF', fontWeight: '800', fontSize: rf(14) },
+  primaryBtnTxt: { color: '#FFFFFF', fontFamily: JT_FONT.heavy, fontSize: rf(14) },
   manualLink: { alignItems: 'center', paddingBottom: rs(14), backgroundColor: Colors.bg },
-  manualLinkTxt: { fontSize: rf(13), color: Colors.textSecondary, textDecorationLine: 'underline' },
-  webNote: { padding: rs(24), fontSize: rf(15), lineHeight: rf(21), color: Colors.textSecondary, textAlign: 'center' },
+  manualLinkTxt: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary, textDecorationLine: 'underline' },
+  webNote: { padding: rs(24), fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(21), color: Colors.textSecondary, textAlign: 'center' },
 });

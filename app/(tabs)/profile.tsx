@@ -1,4 +1,5 @@
 
+import { DeleteAccountSheet } from '@/components/feature/DeleteAccountSheet';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
@@ -20,7 +21,7 @@ import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString, displayName } from '@/services/storage';
 import {
-  dbGetRatingsForUser, dbChangePassword, dbDeleteAccount,
+  dbGetRatingsForUser, dbChangePassword,
   dbGetConsent,
   dbGetResumeFiles, dbSelectResumeFile, dbDeleteResumeFile,
   dbSignResumeFile, UserRating, type ResumeVaultItem,
@@ -47,7 +48,7 @@ import { rs, rf } from '@/constants/scale';
 import { forgetResumeCheck } from '@/services/resumeGate';
 import { confirmAsync } from '@/services/confirm';
 import { PERSONAL_FIELD_LABELS, PERSONAL_MULTILINE, PERSONAL_FIELD_CHOICES, PERSONAL_FIELD_PLACEHOLDERS, normalizePersonalChoiceValue } from '@/lib/personalFieldChoices';
-import { ProfileHeader } from '@/components/profile/ProfileHeader';
+import { ProfileHeader, ProfileTopBar } from '@/components/profile/ProfileHeader';
 import { ProfileTabs } from '@/components/profile/ProfileTabs';
 import { ResumeTabContent } from '@/components/profile/ResumeTabContent';
 import { EmailSheet } from '@/components/profile/edit/sheets/EmailSheet';
@@ -57,8 +58,6 @@ import { FilesTabContent } from '@/components/profile/FilesTabContent';
 import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
 import { ProfileColors } from '@/constants/profileTheme';
 
-const COMPANY_OPTIONS = ['Лавка'] as const;
-type CompanyOption = typeof COMPANY_OPTIONS[number];
 
 type EditSection = 'personal' | 'metro' | 'company' | 'bio' | null;
 type ProfileTab = 'resume' | 'personal' | 'files' | 'reviews';
@@ -227,9 +226,9 @@ function RatingsModal({ userId, users, onClose }: { userId: string; users: any[]
             </View>
           ) : ratings.length === 0 ? (
             <View style={rmS.empty}>
-              <Text style={{ fontSize: rf(44) }}>⭐</Text>
+              <Ionicons name="star-outline" size={rf(40)} color={Colors.textMuted} />
               <Text style={rmS.emptyTitle}>Отзывов пока нет</Text>
-              <Text style={rmS.emptySub}>Оценки появятся после завершённых смен</Text>
+              <Text style={rmS.emptySub}>Здесь появятся отзывы работодателей</Text>
             </View>
           ) : (
             <FlatList
@@ -310,9 +309,6 @@ export default function ProfileScreen() {
   const [showRatings, setShowRatings] = useState(false);
   const [showConfirmLogout, setShowConfirmLogout] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [deleteError, setDeleteError] = useState('');
 
   // Что человек принял и когда. Показываем прямо в профиле: запись о
   // согласии нужна не только нам для доказательства — человеку тоже
@@ -385,7 +381,7 @@ export default function ProfileScreen() {
   const [editMetroLineId, setEditMetroLineId] = useState('');
   const [editMetroLineName, setEditMetroLineName] = useState('');
   const [editMetroStation, setEditMetroStation] = useState('');
-  const [editCompany, setEditCompany] = useState<CompanyOption | ''>('');
+  const [editCompany, setEditCompany] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editAge, setEditAge] = useState('');
 
@@ -412,8 +408,9 @@ export default function ProfileScreen() {
     setEditMetroLineId(currentUser.metroLineId ?? '');
     setEditMetroStation(currentUser.metroStation ?? '');
     setEditMetroLineName(line?.name ?? '');
-    const savedCompany = currentUser.company ?? '';
-    setEditCompany(COMPANY_OPTIONS.includes(savedCompany as CompanyOption) ? savedCompany as CompanyOption : '');
+    // Раньше поле было переключателем с одним вариантом «Лавка»: любое другое
+    // название открывалось пустым и стиралось при сохранении.
+    setEditCompany(currentUser.company ?? '');
     setEditBio(currentUser.bio ?? '');
     setEditAge(currentUser.age ? String(currentUser.age) : '');
   };
@@ -442,7 +439,7 @@ export default function ProfileScreen() {
         updated.age = editAge.trim() === '' ? undefined : Number(editAge);
       }
       if (editSection === 'metro') { updated.metroLineId = editMetroLineId; updated.metroStation = editMetroStation; }
-      if (editSection === 'company') { updated.company = editCompany; updated.bio = editBio; }
+      if (editSection === 'company') { updated.company = editCompany.trim() || currentUser.company; updated.bio = editBio; }
       if (editSection === 'bio') updated.bio = editBio;
       await updateUser(updated);
       setEditSection(null);
@@ -633,36 +630,6 @@ export default function ProfileScreen() {
     // Navigation is handled by <Redirect href="/" /> in (tabs)/_layout.tsx
   };
 
-  /**
-   * Удалить аккаунт.
-   *
-   * Прежняя версия звала базу напрямую анонимным ключом, а у него с
-   * миграции 013 нет прав на jm_users. Запрос отклонялся, ответ никто не
-   * читал, и человек видел «Аккаунт удалён», когда не удалялось ничего.
-   *
-   * Теперь через прокси, с паролем, и окно закрывается только после
-   * подтверждённого удаления — ошибка остаётся на экране, а не тонет
-   * в исчезнувшем диалоге.
-   */
-  const handleDeleteAccount = async () => {
-    if (!currentUser || deletingAccount) return;
-    if (!deletePassword.trim()) { setDeleteError('Введите пароль'); return; }
-    setDeleteError('');
-    setDeletingAccount(true);
-    try {
-      await dbDeleteAccount(currentUser.id, deletePassword);
-      setShowConfirmDelete(false);
-      setDeletePassword('');
-      await logout();
-      showToast('Аккаунт удалён', 'success');
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Не удалось удалить, попробуйте снова');
-    } finally {
-      setDeletingAccount(false);
-    }
-    // Navigation is handled by <Redirect href="/" /> in (tabs)/_layout.tsx
-  };
-
   const isWorker = currentUser.role === 'worker';
 
   return (
@@ -672,10 +639,18 @@ export default function ProfileScreen() {
     >
       {/* Работодатель — прежняя общая шапка вкладок (не трогаем, решение по
           объёму задачи 27.09: редизайн только профиля соискателя). У
-          соискателя вся верхняя строка — часть ProfileHeader внутри
-          прокрутки, как в эталоне (`docs/design/profile/screens/*.html`,
-          логотип+кнопки там не закреплены отдельным слоем). */}
-      {!isWorker ? (
+          соискателя верхняя строка стоит над прокруткой, как в ленте и
+          «Откликах»: при переключении вкладок верх не прыгает, при прокрутке
+          не уезжает (просьба владельца 01.10.2026; эталон
+          `docs/design/profile` её не закреплял). */}
+      {isWorker ? (
+        <ProfileTopBar
+          onHelp={() => router.push('/support')}
+          onNotifications={() => setShowNotifications(true)}
+          onSettings={() => router.push('/profile-settings')}
+          hasUnread={unreadCount > 0}
+        />
+      ) : (
         <TabHeader
           left={
             <TouchableOpacity
@@ -709,7 +684,7 @@ export default function ProfileScreen() {
           </View>
           }
         />
-      ) : null}
+      )}
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
       <ScrollView
@@ -730,10 +705,6 @@ export default function ProfileScreen() {
         {isWorker ? (
           <>
             <ProfileHeader
-              onHelp={() => router.push('/support')}
-              onNotifications={() => setShowNotifications(true)}
-              onSettings={() => router.push('/profile-settings')}
-              hasUnread={unreadCount > 0}
               name={displayName(currentUser)}
               roleLabel="Работник"
               email={currentUser.email || currentUser.phone}
@@ -975,7 +946,7 @@ export default function ProfileScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={sS.title}>Пригласить друга</Text>
-                  <Text style={sS.summary} numberOfLines={1}>Вышел на смену — вам вознаграждение</Text>
+                  <Text style={sS.summary} numberOfLines={1}>Друг устроился — это видно в вашей карточке</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
               </TouchableOpacity>
@@ -1018,12 +989,11 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={sS.actionRow}
                 onPress={() => setShowConfirmDelete(true)}
-                disabled={deletingAccount}
                 activeOpacity={0.7}
               >
                 <Ionicons name="trash-outline" size={17} color={Colors.red} />
                 <Text style={[sS.actionLabel, { flex: 1, color: Colors.red }]}>
-                  {deletingAccount ? 'Удаление...' : 'Удалить аккаунт'}
+                  Удалить аккаунт
                 </Text>
               </TouchableOpacity>
             </SectionCard>
@@ -1049,7 +1019,7 @@ export default function ProfileScreen() {
               onPress={pickFromCamera}
               activeOpacity={0.8}
             >
-              <Text style={photoSrcS.icon}>📸</Text>
+              <Ionicons name="camera-outline" size={rf(22)} color={Colors.textPrimary} />
               <Text style={photoSrcS.label}>Камера</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1057,7 +1027,7 @@ export default function ProfileScreen() {
               onPress={pickFromGallery}
               activeOpacity={0.8}
             >
-              <Text style={photoSrcS.icon}>🖼</Text>
+              <Ionicons name="image-outline" size={rf(22)} color={Colors.textPrimary} />
               <Text style={photoSrcS.label}>Галерея</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1164,7 +1134,7 @@ export default function ProfileScreen() {
                   </View>
                 ) : (
                   <TouchableOpacity style={styles.metroPickBtn} onPress={() => setMetroPicker(true)}>
-                    <Text style={{ color: Colors.textPrimary }}>🚇 Выбрать станцию</Text>
+                    <Text style={{ color: Colors.textPrimary }}>Выбрать станцию</Text>
                     <Text style={{ color: Colors.textMuted }}>›</Text>
                   </TouchableOpacity>
                 )}
@@ -1179,20 +1149,7 @@ export default function ProfileScreen() {
             )}
             {editSection === 'company' && (
               <View style={{ gap: 12 }}>
-                <Text style={{ fontSize: rf(13), fontWeight: '500', color: Colors.textSecondary }}>Название компании</Text>
-                {COMPANY_OPTIONS.map(opt => (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[pStyles.companyOption, editCompany === opt && pStyles.companyOptionActive]}
-                    onPress={() => setEditCompany(opt)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[pStyles.companyRadio, editCompany === opt && pStyles.companyRadioActive]}>
-                      {editCompany === opt ? <View style={pStyles.companyRadioDot} /> : null}
-                    </View>
-                    <Text style={[pStyles.companyLabel, editCompany === opt && pStyles.companyLabelActive]}>{opt}</Text>
-                  </TouchableOpacity>
-                ))}
+                <AppInput label="Название компании" value={editCompany} onChangeText={setEditCompany} placeholder="Например, Т-Банк" />
                 <AppInput label="О компании" value={editBio} onChangeText={setEditBio} placeholder="Расскажите о компании..." multiline numberOfLines={4} />
               </View>
             )}
@@ -1219,86 +1176,15 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Confirm delete account */}
-      {showConfirmDelete ? (
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>Удалить аккаунт?</Text>
-            {/* Обещание сузилось до правды. Профиль, телефон, фотография и
-                переписка с ботом исчезают. А сообщения в чатах остаются у
-                собеседника — уже без имени, — иначе удаление одного забирало
-                бы историю у другого. Обещать полное стирание, оставляя
-                следы, было бы тем же враньём, что и раньше. */}
-            <Text style={styles.confirmBody}>
-              Профиль, телефон и фотография будут удалены безвозвратно.
-              В чужих переписках и откликах ваши сообщения останутся, но уже
-              без вашего имени. Восстановить аккаунт будет нельзя.
-            </Text>
-            {currentUser?.hasPassword === false ? (
-              // Аккаунт «почта → код» без пароля: удаление по одной сессии
-              // не делаем (безопасность) — сначала задать пароль, потом удалить.
-              <Text style={styles.confirmBody}>
-                Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
-              </Text>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.deleteInput}
-                  value={deletePassword}
-                  onChangeText={(t: string) => { setDeletePassword(t); setDeleteError(''); }}
-                  placeholder="Пароль — чтобы это были точно вы"
-                  placeholderTextColor={Colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-                {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
-                {/* Регистрация «почта → код» не заводит пароль (решение
-                    владельца 27.09.2026) — удаление всё равно обязательно
-                    (152-ФЗ), поэтому рядом всегда есть путь мимо забытого/
-                    отсутствующего пароля через код на почту. */}
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowConfirmDelete(false); setDeletePassword(''); setDeleteError('');
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            <View style={styles.confirmBtns}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => { setShowConfirmDelete(false); setDeletePassword(''); setDeleteError(''); }}
-              >
-                <Text style={styles.cancelText}>Отмена</Text>
-              </TouchableOpacity>
-              {currentUser?.hasPassword === false ? (
-                <TouchableOpacity
-                  style={styles.setPasswordBtn}
-                  onPress={() => {
-                    setShowConfirmDelete(false);
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
-                  }}
-                >
-                  <Text style={styles.setPasswordText}>Задать пароль</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.logoutConfirmBtn}
-                  onPress={handleDeleteAccount}
-                  disabled={deletingAccount}
-                >
-                  <Text style={styles.logoutConfirmText}>
-                    {deletingAccount ? 'Удаляю…' : 'Удалить'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        </View>
-      ) : null}
+      <DeleteAccountSheet
+        visible={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        onDeleted={async () => {
+          setShowConfirmDelete(false);
+          await logout();
+          showToast('Аккаунт удалён', 'success');
+        }}
+      />
 
       {/* Confirm logout */}
       {showConfirmLogout ? (
@@ -1581,7 +1467,7 @@ const sS = StyleSheet.create({
 // Отступы страницы у соискателя — из эталона (14 16 0, gap 14 между всеми
 // прямыми блоками столбца), у работодателя вёрстка прежняя (styles.scroll).
 const workerS = StyleSheet.create({
-  scroll: { paddingHorizontal: 16, paddingTop: 14, gap: 14 },
+  scroll: { paddingHorizontal: rs(20), paddingTop: 14, gap: 14 },
 });
 
 const styles = StyleSheet.create({
@@ -1700,7 +1586,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }} edges={['top', 'left', 'right']}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ fontSize: rf(40), marginBottom: 12 }}>😕</Text>
+        <Ionicons name="alert-circle-outline" size={rf(40)} color={Colors.textMuted} style={{ marginBottom: 12 }} />
         <Text style={{ fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary, textAlign: 'center', marginBottom: 8 }}>
           Не удалось загрузить профиль
         </Text>
@@ -1719,18 +1605,4 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 }
 
 const pStyles = StyleSheet.create({
-  companyOption: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(14),
-    padding: rs(16), borderRadius: rs(12), borderWidth: 1.5, borderColor: Colors.inputBorder,
-    backgroundColor: Colors.surface,
-  },
-  companyOptionActive: { borderColor: Colors.primary, backgroundColor: '#F0EEFF' },
-  companyRadio: {
-    width: rs(22), height: rs(22), borderRadius: rs(11), borderWidth: 2, borderColor: Colors.inputBorder,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  companyRadioActive: { borderColor: Colors.primary },
-  companyRadioDot: { width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: Colors.primary },
-  companyLabel: { fontSize: rf(16), color: Colors.textPrimary, fontWeight: '500' },
-  companyLabelActive: { color: Colors.primary, fontWeight: '700' },
 });

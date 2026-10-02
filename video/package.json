@@ -1,0 +1,19 @@
+{
+  "name": "jobtoo-video",
+  "private": true,
+  "description": "Ролики JobToo на Remotion (решение владельца 02.10.2026). Отдельно от приложения: в бандл не попадает.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "python3 scripts/music.py public/music.wav && remotion render src/index.ts Hero out/hero.mp4 --codec=h264 --crf=28 --scale=0.75 && remotion still src/index.ts Hero out/hero.jpg --frame=0 --scale=0.75 --jpeg-quality=70 && remotion render src/index.ts Hero out/hero.webm --codec=vp9 --crf=40 --scale=0.75 && remotion render src/index.ts Promo out/promo.mp4 --codec=h264 --crf=26 && remotion render src/index.ts Promo out/promo.webm --codec=vp9 --crf=38 --scale=0.75"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.532",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.532"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "@types/react": "19.0.14"
+  }
+}

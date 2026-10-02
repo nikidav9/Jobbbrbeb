@@ -4,6 +4,7 @@ import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 import { parseDescriptionBlocks } from '@/services/descriptionBlocks';
 
+import { JT_FONT } from '@/constants/jt';
 interface DescriptionBlocksProps {
   text?: string | null;
 }
@@ -48,13 +49,13 @@ export function DescriptionBlocks({ text }: DescriptionBlocksProps) {
 const styles = StyleSheet.create({
   heading: {
     fontSize: rf(14.5),
-    fontWeight: '700',
+    fontFamily: JT_FONT.bold,
     color: Colors.textPrimary,
     marginBottom: rs(4),
   },
   headingSpacing: { marginTop: rs(10) },
   para: {
-    fontSize: rf(13.5),
+    fontFamily: JT_FONT.medium, fontSize: rf(13.5),
     color: Colors.textSecondary,
     lineHeight: rf(21),
     marginBottom: rs(4),
@@ -64,14 +65,14 @@ const styles = StyleSheet.create({
     marginBottom: rs(2),
   },
   bulletDot: {
-    fontSize: rf(13.5),
+    fontFamily: JT_FONT.medium, fontSize: rf(13.5),
     color: Colors.textSecondary,
     lineHeight: rf(21),
     marginRight: rs(6),
   },
   bulletText: {
     flex: 1,
-    fontSize: rf(13.5),
+    fontFamily: JT_FONT.medium, fontSize: rf(13.5),
     color: Colors.textSecondary,
     lineHeight: rf(21),
   },

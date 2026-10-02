@@ -1706,12 +1706,26 @@ class JupiterNativeE2E(unittest.TestCase):
             path.write_text(json.dumps([
                 {"name": "A", "url": "https://www.career.a-corp.example/jobs", "start_url": "https://career.a-corp.example/jobs", "klass": "dry_run_ok"},
                 {"name": "B", "url": "https://b-corp.example/jobs", "start_url": "https://b-corp.example/jobs", "klass": "captcha"},
+                # Анкета пройдена до вопросов работодателя — ответит человек.
+                {"name": "C", "url": "https://c-corp.example/jobs", "start_url": "https://c-corp.example/jobs",
+                 "klass": "form_unmapped", "status": "action_required", "reason_code": "NEEDS_ANSWERS"},
+                {"name": "D", "url": "https://d-corp.example/jobs", "start_url": "https://d-corp.example/jobs",
+                 "klass": "form_unmapped", "status": "action_required", "reason_code": "MISSING_PROFILE_FIELD"},
+                # Картинку с текстом вводит человек; галочку — нет.
+                {"name": "E", "url": "https://e-corp.example/jobs", "klass": "captcha",
+                 "captcha": {"vendor": "custom", "kind": "text_image", "transferable": True}},
+                {"name": "F", "url": "https://f-corp.example/jobs", "klass": "captcha",
+                 "captcha": {"vendor": "smartcaptcha", "kind": "checkbox", "transferable": False}},
             ]), encoding="utf-8")
             old = site_compat.RECON_FILE
             site_compat.RECON_FILE = str(path)
             try:
                 self.assertTrue(live_ready("https://career.a-corp.example/vacancy/7"))
                 self.assertFalse(live_ready("https://b-corp.example/vacancy/1"))
+                self.assertTrue(live_ready("https://c-corp.example/vacancy/3"))
+                self.assertFalse(live_ready("https://d-corp.example/vacancy/4"))
+                self.assertTrue(live_ready("https://e-corp.example/vacancy/5"))
+                self.assertFalse(live_ready("https://f-corp.example/vacancy/6"))
                 self.assertFalse(live_ready("https://unknown.example/job"))
                 stale = path.stat().st_mtime - site_compat.RECON_MAX_AGE - 60
                 os.utime(path, (stale, stale))

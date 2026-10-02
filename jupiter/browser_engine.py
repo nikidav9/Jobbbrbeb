@@ -28,8 +28,10 @@ load_html, allowed_hosts, read_only, куки), поэтому вся логик
 - капчу движок не решает и не отдаёт сервисам распознавания: captcha()
   находит её, captcha_png() снимает только саму картинку (остальная страница
   с ПДн человеку не уходит), enter_captcha() вводит ответ самого кандидата;
-- успех отправки на SPA подтверждает ответ сайта: submit() записывает ответы
-  API (browser_success) и дописывает к тексту страницы исчезающий тост.
+- успех отправки на SPA подтверждает ответ сайта: submit() после клика
+  наблюдает за страницей (_watch_after_submit: сеть, переходы, DOM — до
+  тишины), записывает ответы API (browser_success) и дописывает к тексту
+  страницы исчезающий тост, текст alert/confirm и нового окна.
 
 Playwright — необязательная зависимость: без него модуль импортируется, а
 при создании движка объясняет, чего не хватает. Остальной Юпитер работает на
@@ -38,15 +40,19 @@ stdlib, как и раньше.
 from __future__ import annotations
 
 import os
+import re
+import time
 import urllib.parse
 from typing import Any
 
+import ats_hosts
 import browser_captcha
 import browser_success
 from browser_captcha import CaptchaInfo
 from engine import (
     ControlState,
     EngineError,
+    EngineFillError,
     EngineSecurityError,
     EngineTransportError,
     FormState,
@@ -88,14 +94,38 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Кнопки, открывающие анкету. Порядок — от самых точных.
 APPLY_TEXT_RE = (
     r"откликнуться|отправить резюме|подать заявку|отклик на вакансию|"
-    r"хочу у вас работать|хочу в команду|respond|apply( now)?$|^apply"
+    r"хочу у вас работать|хочу в команду|respond|apply( now)?$|^apply|"
+    # Разбор 220 «анкета не найдена» (02.10.2026): Монетка, Винотеки, 585,
+    # Ангара, BINOM, Первый ОФД и др. «Анкет» — только в связке: «Банкеты» не жмём.
+    r"заполнить анкету|анкета соискателя|анкет[ау] кандидата|хочу работать|"
+    r"отправить отклик|оставить отклик"
 )
-# Опрос всплывашек после отправки: тост живёт секунду-другую, дольше settle.
+# Опрос всплывашек после отправки: тост живёт секунду-другую.
 TOAST_POLL_MS = 200
+# Окно наблюдения после «Отправить» (02.10.2026): ответ сервера и «Спасибо»
+# приходят через секунды, а networkidle для документа срабатывает один раз и
+# на SPA возвращается сразу. Ждём: не меньше WATCH_MIN_MS, затем до тишины
+# (нет незавершённых запросов и перемен в DOM WATCH_QUIET_MS), не дольше
+# WATCH_MAX_MS. Запрос дольше WATCH_LONG_REQUEST_MS — long-poll, не ждём его.
+WATCH_MIN_MS = 1500
+WATCH_QUIET_MS = 1000
+WATCH_MAX_MS = 15000
+# Промежуточная «Далее» — не отправка отклика: подтверждения ждать незачем,
+# хватает времени, чтобы сайт показал следующий шаг.
+WATCH_NEXT_MAX_MS = 5000
+WATCH_LONG_REQUEST_MS = 8000
+WATCH_IGNORED_RESOURCES = {"image", "font", "media", "eventsource", "websocket", "ping"}
+# Ошибки evaluate, когда страница ушла на другой адрес или перерисовалась.
+NAV_ERR = re.compile(
+    r"context was destroyed|frame was detached|navigation|cannot find context", re.I)
+SAFE_EVAL_TRIES = 4
 SUBMIT_TEXT_RE = r"отправ|откликн|подать|далее|продолжить|submit|apply|send|next"
 
 # Снимок отрисованной страницы. Живой DOM не меняем, кроме меток data-jt-ref:
 # по ним submit() находит элементы. Всё остальное — в клоне.
+# Значение, которое маска поля может переписать: телефон или дата.
+MASKABLE_VALUE_RE = re.compile(r"\+?[\d\s().-]{6,20}")
+
 SNAPSHOT_JS = r"""
 ([submitReSrc, customSpecs]) => {
   const sel = 'input,select,textarea,button,[data-jt-cs]';
@@ -110,7 +140,10 @@ SNAPSHOT_JS = r"""
   // Файловые поля и галочки сайты прячут и рисуют вместо них свои кнопки —
   // заполнять их всё равно надо. Прочее невидимое агенту не показываем.
   const keepHidden = el => ['file', 'checkbox', 'radio'].includes((el.type || '').toLowerCase());
-  if (!document.documentElement) return { html: '<!doctype html><html></html>', url: location.href, virtualForm: false };
+  // Видимый текст: innerText пропускает display:none и visibility:hidden,
+  // так что заранее спрятанное окно «Спасибо» в «было до» не попадает.
+  const visibleText = (document.body ? (document.body.innerText || '') : '').slice(0, 200000);
+  if (!document.documentElement) return { html: '<!doctype html><html></html>', url: location.href, virtualForm: false, visibleText };
   const clone = document.documentElement.cloneNode(true);
   const byRef = new Map();
   clone.querySelectorAll('[data-jt-ref]').forEach(c => byRef.set(c.getAttribute('data-jt-ref'), c));
@@ -126,6 +159,20 @@ SNAPSHOT_JS = r"""
       c.setAttribute('name', el.id || ('jt-' + c.getAttribute('data-jt-ref')));
     if (type === 'checkbox' || type === 'radio') {
       if (el.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
+      // Галочка без своей подписи, текст — в соседнем блоке общей обёртки
+      // (Huntflow: «Я даю согласие на обработку перс. данных…», 01.10.2026).
+      // Берём текст ближайшей обёртки, где нет других полей, — иначе
+      // согласие не узнать и форма не уходит.
+      const own = (el.labels && el.labels[0] && el.labels[0].innerText.trim())
+        || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby');
+      if (!own && type === 'checkbox') {
+        let box = el.parentElement;
+        for (let i = 0; i < 3 && box; i++, box = box.parentElement) {
+          if (box.querySelectorAll('input,select,textarea').length > 1) break;
+          const text = (box.innerText || '').replace(/\s+/g, ' ').trim();
+          if (text) { if (text.length <= 300) c.setAttribute('aria-label', text); break; }
+        }
+      }
     }
     if (tag === 'textarea') c.textContent = el.value || '';
     if (tag === 'select') {
@@ -210,7 +257,7 @@ SNAPSHOT_JS = r"""
   // Самописные списки (role=combobox) — в клоне обычный <select> с их
   // вариантами. После виртуальной формы: та опирается на узлы клона.
   (__CUSTOM_HOOK__)(clone, customSpecs);
-  return { html: '<!doctype html>' + clone.outerHTML, url: location.href, virtualForm };
+  return { html: '<!doctype html>' + clone.outerHTML, url: location.href, virtualForm, visibleText };
 }
 """.replace("__CUSTOM_HOOK__", CLONE_HOOK_JS.strip())
 
@@ -278,10 +325,90 @@ DIRECT_VALUE_JS = r"""
 # После обычного ввода: change и blur. fill() шлёт только input, а часть
 # форм проверяет поле и снимает ошибку по change/blur.
 AFTER_FILL_JS = "el => { el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); }"
+UNCHECK_JS = "el => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); }"
+
+
+def launch_options(headless: bool, executable_path: str | None) -> dict[str, Any]:
+    """Как запускать Chromium.
+
+    Без явного браузера — полный Chromium (channel="chromium"), а не
+    chrome-headless-shell, который Playwright берёт для headless по умолчанию.
+    Shell не читает политики вовсе, а доверие к УЦ Минцифры приходит именно
+    политикой (infra/jupiter-browser-ca-policy.py). Полный браузер Playwright
+    1.63 — Chrome for Testing, его папка /etc/opt/chrome_for_testing/policies. 30.09 из-за
+    этого браузерная разведка теряла 30 сайтов — банки, Т-Банк, Positive
+    Technologies, Газпром — на ERR_CERT_AUTHORITY_INVALID.
+    """
+    options: dict[str, Any] = {"headless": headless, "args": browser_guard.CHROMIUM_SAFE_ARGS}
+    if executable_path:
+        options["executable_path"] = executable_path
+    else:
+        options["channel"] = "chromium"
+    return options
 
 # Элементы с обработчиками клика (addEventListener) — видны только через
 # DevTools-API getEventListeners (CDP, includeCommandLineAPI). Помечаем их
 # data-jt-click для FIND_APPLY_JS.
+# Что сайт сказал после «Отправить» (01.10.2026): репетиция показала, что
+# у 33 сайтов из 42 нажатие не отправляло анкету вовсе — форма не проходила
+# проверку, а Юпитер писал «скорее всего, ушёл». Поля ЭТОЙ формы (по
+# data-jt-ref), которые браузер или сайт пометили неверными: подпись, тип и
+# стандартный текст ошибки браузера — значения полей не читаются. И видимые
+# тексты ошибок страницы — их видит только YandexGPT, через redact().
+SUBMIT_FEEDBACK_JS = r"""
+(refs) => {
+  const cut = (s, n) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const visible = el => { const st = getComputedStyle(el); return st.display !== 'none' && st.visibility !== 'hidden' && el.getClientRects().length > 0; };
+  const invalid = [];
+  for (const ref of refs) {
+    const el = document.querySelector(`[data-jt-ref="${ref}"]`);
+    if (!el) continue;
+    // :user-invalid — ошибка, которую браузер показал после попытки отправки;
+    // после очистки формы (так сайты отвечают на успех) она снимается, а
+    // голый validity.valid у пустого обязательного поля — нет.
+    let shown = false;
+    try { shown = el.matches(':user-invalid'); } catch (e) { shown = false; }
+    const bad = shown || el.getAttribute('aria-invalid') === 'true';
+    if (!bad) continue;
+    let label = el.labels && el.labels.length ? el.labels[0].innerText : '';
+    label = label || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || '';
+    invalid.push({ ref, label: cut(label, 80), type: (el.type || el.tagName || '').toLowerCase(), message: cut(el.validationMessage, 120) });
+  }
+  const errors = [];
+  const seen = new Set();
+  document.querySelectorAll('[role=alert],[aria-live=assertive],[class*="error" i],[class*="invalid" i]').forEach(el => {
+    if (errors.length >= 10 || !visible(el)) return;
+    const t = cut(el.innerText, 150);
+    if (t.length < 3 || seen.has(t)) return;
+    seen.add(t);
+    errors.push(t);
+  });
+  return { invalid: invalid.slice(0, 20), errors };
+}
+"""
+
+# Слежение за DOM: время последней значимой перемены (стили не в счёт —
+# анимации не дают странице затихнуть). Скрипт ставит наблюдатель один раз на
+# документ и возвращает, сколько миллисекунд страница не менялась. После
+# перехода документ новый — наблюдатель ставится заново, отсчёт с нуля.
+DOM_QUIET_JS = r"""
+() => {
+  if (!window.__jtMut) {
+    window.__jtMut = { last: performance.now() };
+    try {
+      new MutationObserver(recs => {
+        for (const r of recs) {
+          if (r.type === 'attributes' && r.attributeName === 'style') continue;
+          window.__jtMut.last = performance.now();
+          break;
+        }
+      }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    } catch (e) {}
+  }
+  return performance.now() - window.__jtMut.last;
+}
+"""
+
 MARK_CLICK_LISTENERS_JS = r"""
 (() => {
   if (typeof getEventListeners !== 'function') return -1;
@@ -302,6 +429,57 @@ MARK_CLICK_LISTENERS_JS = r"""
 """
 
 
+class _RequestTracker:
+    """Незавершённые запросы вкладки и время последней перемены (сеть, переход)."""
+
+    def __init__(self, tab: Any):
+        self.tab = tab
+        self.inflight: dict[Any, float] = {}
+        self.changed = time.monotonic()
+
+    def touch(self) -> None:
+        self.changed = time.monotonic()
+
+    def _on_request(self, request: Any) -> None:
+        try:
+            if request.resource_type in WATCH_IGNORED_RESOURCES:
+                return
+        except PlaywrightError:
+            return
+        self.inflight[request] = time.monotonic()
+        self.touch()
+
+    def _on_done(self, request: Any) -> None:
+        self.inflight.pop(request, None)
+        self.touch()
+
+    def _on_navigated(self, frame: Any) -> None:
+        try:
+            if frame == self.tab.main_frame:
+                self.touch()
+        except PlaywrightError:
+            pass
+
+    def busy(self, now: float) -> bool:
+        """Есть запрос, который ещё ждёт ответа (long-poll дольше лимита не в счёт)."""
+        return any((now - t) * 1000 < WATCH_LONG_REQUEST_MS for t in self.inflight.values())
+
+    def start(self) -> "_RequestTracker":
+        self.tab.on("request", self._on_request)
+        self.tab.on("requestfinished", self._on_done)
+        self.tab.on("requestfailed", self._on_done)
+        self.tab.on("framenavigated", self._on_navigated)
+        return self
+
+    def stop(self) -> None:
+        for event, handler in (("request", self._on_request), ("requestfinished", self._on_done),
+                               ("requestfailed", self._on_done), ("framenavigated", self._on_navigated)):
+            try:
+                self.tab.remove_listener(event, handler)
+            except Exception:  # noqa: BLE001 - вкладка могла закрыться
+                pass
+
+
 class JupiterBrowserEngine:
     name = "jupiter-browser-engine"
     """Chromium с интерфейсом JupiterWebEngine."""
@@ -318,6 +496,8 @@ class JupiterBrowserEngine:
         settle_ms: int = 800,
         max_apply_clicks: int = 2,
         ignore_https_errors: bool = False,
+        apply_advisor: Any = None,
+        rehearsal_markers: list[str] | None = None,
     ):
         if sync_playwright is None:
             raise EngineError(
@@ -337,23 +517,45 @@ class JupiterBrowserEngine:
         self.timeout_ms = int(timeout * 1000)
         self.settle_ms = settle_ms
         self.max_apply_clicks = max_apply_clicks
+        # Последний шаг поиска анкеты (01.10.2026): правила кнопку не нашли —
+        # YandexGPT выбирает её из видимых кнопок (browser_planner.
+        # suggest_apply_click). Видит только тексты кнопок, без данных
+        # кандидата; вход, регистрацию и оплату отсекает сам планировщик.
+        self.apply_advisor = apply_advisor
+        # Репетиция отправки (ночная проверка, 01.10.2026): с метками движок
+        # нажимает «Отправить» даже в read_only, но сеть по-прежнему режет
+        # любой не-GET, а после нажатия — и GET с данными тестового кандидата
+        # (метки — его почта и фамилия). Что оборвано — в rehearsal_log: по
+        # нему видно, ушла бы анкета или форма даже не отправилась. Метки
+        # бывают только у синтетического кандидата разведки, боевой воркер
+        # их не передаёт.
+        if rehearsal_markers and not read_only:
+            raise ValueError("Репетиция отправки — только с read_only=True")
+        self.rehearsal_markers = [m for m in (rehearsal_markers or []) if m]
+        self.rehearsal_log: list[dict[str, Any]] = []
+        self._rehearsal_armed = False
         self.page: PageState | None = None
         self.script_history: list[dict[str, str]] = []
         self.last_submit_mode = "none"
+        # SUBMIT_FEEDBACK_JS после последнего «Отправить»: {"invalid": [...], "errors": [...]}.
+        self.last_submit_feedback: dict[str, Any] | None = None
         # Что движок сделал сам (нажал «Откликнуться», оборвал запрос) —
         # для журнала и отладки; агент ведёт свою траекторию отдельно.
         self.actions: list[dict[str, Any]] = []
         # Итог browser_success.classify последней отправки (None — не было).
         self.last_api_result: dict[str, Any] | None = None
+        # Идёт отправка: после «Отправить» разрешено только чтение (GET)
+        # страниц того же сайта и известных ATS — страница «Спасибо» бывает
+        # на поддомене (_allowed_after_submit).
+        self._after_submit = False
+        # Тексты новых окон, снятые browser_guard до закрытия.
+        self._popup_texts: list[str] = []
         self._host_ok: dict[str, bool] = {}
         self._last_status = 200
         self._pw = sync_playwright().start()
         try:
-            self._browser = self._pw.chromium.launch(
-                headless=headless,
-                executable_path=executable_path or os.environ.get("JUPITER_CHROMIUM") or None,
-                args=browser_guard.CHROMIUM_SAFE_ARGS,
-            )
+            self._browser = self._pw.chromium.launch(**launch_options(
+                headless, executable_path or os.environ.get("JUPITER_CHROMIUM") or None))
             probe = self._browser.new_page()
             ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
             probe.close()
@@ -372,7 +574,7 @@ class JupiterBrowserEngine:
             # После маршрута движка — значит срабатывает раньше него: попапы,
             # диалоги, загрузки, схемы вроде file://.
             browser_guard.install_guards(self._context, self._tab, self.allowed_hosts, [],
-                                         journal=self.actions)
+                                         journal=self.actions, popup_texts=self._popup_texts)
         except Exception:
             self.close()
             raise
@@ -429,19 +631,55 @@ class JupiterBrowserEngine:
             reason = "scheme"
         elif not self._public_host(host):
             reason = "internal_address"
-        elif self._main_navigation(request) and host not in self.allowed_hosts:
+        elif (self._main_navigation(request) and host not in self.allowed_hosts
+              and not self._allowed_after_submit(host, request)):
             reason = "host_not_allowed"
         elif self.read_only and request.method.upper() not in SAFE_METHODS:
             reason = "read_only"
+        elif self._rehearsal_armed and self._carries_candidate(request):
+            reason = "rehearsal_get_with_candidate"
         elif request.resource_type in {"media", "font"}:
             route.abort()
             return
         if reason:
             self.actions.append({"action": "blocked_request", "url": url[:300], "reason": reason,
                                  "method": request.method})
+            if self._rehearsal_armed and reason in {"read_only", "rehearsal_get_with_candidate"}:
+                self.rehearsal_log.append({
+                    "method": request.method, "host": host, "path": parsed.path[:120],
+                    "carries_candidate": self._carries_candidate(request),
+                })
             route.abort("blockedbyclient")
             return
         route.continue_()
+
+    def _allowed_after_submit(self, host: str, request) -> bool:  # pragma: no cover - вызывает браузер
+        """После «Отправить»: GET на тот же сайт (поддомены) и известные ATS.
+
+        Остальные хосты по-прежнему закрыты; внутренние адреса закрыты выше
+        (_public_host). Любой не-GET здесь не проходит.
+        """
+        if not self._after_submit or request.method.upper() != "GET":
+            return False
+        if ats_hosts.is_apply_ats(host):
+            return True
+        return any(
+            ats_hosts.same_site(host, h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
+            for h in self.allowed_hosts
+        )
+
+    def _carries_candidate(self, request) -> bool:  # pragma: no cover - вызывает браузер
+        """Есть ли в адресе или теле запроса метки тестового кандидата."""
+        if not self.rehearsal_markers:
+            return False
+        blob = request.url
+        try:
+            body = request.post_data_buffer
+        except Exception:  # noqa: BLE001 - тело бывает недоступно (поток, бинарь)
+            body = None
+        if body:
+            blob += body.decode("utf-8", "ignore")
+        return any(m in blob for m in self.rehearsal_markers)
 
     def _main_navigation(self, request) -> bool:  # pragma: no cover - вызывает браузер
         try:
@@ -453,55 +691,112 @@ class JupiterBrowserEngine:
         self.actions.extend(dismiss_overlays(self._tab))
 
     # ── Снимок страницы ────────────────────────────────────────────────────
-    def _settle(self, toasts: list[str] | None = None) -> None:
-        """Дождаться тишины в сети. С toasts — заодно собирать всплывашки."""
-        if toasts is None:
+    def _settle(self) -> None:
+        """Дождаться тишины в сети (для загрузки страниц; после «Отправить» —
+        _watch_after_submit)."""
+        try:
+            self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
+        except PlaywrightError:
+            pass  # долгие опросы и счётчики — не повод ждать дальше
+        self._tab.wait_for_timeout(self.settle_ms)
+
+    def _safe_eval(self, js: str, arg: Any = None, tries: int = SAFE_EVAL_TRIES) -> Any:
+        """evaluate, который переживает переход посреди вызова.
+
+        «Execution context was destroyed» и подобное значат, что страница
+        ушла на другой адрес или перерисовалась: ждём загрузки и повторяем.
+        Прочие ошибки — как были (PlaywrightError); если страница так и не
+        устоялась — EngineTransportError.
+        """
+        last: Exception | None = None
+        for i in range(max(1, tries)):
             try:
-                self._tab.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 10000))
-            except PlaywrightError:
-                pass  # долгие опросы и счётчики — не повод ждать дальше
-            self._tab.wait_for_timeout(self.settle_ms)
-            return
+                return self._tab.evaluate(js, arg)
+            except PlaywrightError as exc:
+                if not NAV_ERR.search(str(exc)):
+                    raise
+                last = exc
+                try:
+                    self._tab.wait_for_load_state("domcontentloaded", timeout=5000)
+                except PlaywrightError:
+                    pass
+                self._tab.wait_for_timeout(300 * (i + 1))
+        raise EngineTransportError(f"Страница не устоялась после перехода: {last}") from last
+
+    def _track_requests(self) -> "_RequestTracker":
+        """Счётчик незавершённых запросов и перемен — ставить ДО клика: fetch
+        уходит во время самого клика, и после него событие request уже прошло."""
+        return _RequestTracker(self._tab).start()
+
+    def _watch_after_submit(self, tracker: "_RequestTracker", toasts: list[str],
+                            actions_from: int, popups_from: int,
+                            max_ms: int = WATCH_MAX_MS) -> None:
+        """Окно наблюдения после клика «Отправить» вместо фиксированной паузы.
+
+        Ждёт, пока сайт ответит и покажет результат: нет незавершённых
+        запросов (свой счётчик — networkidle тут не годится), страница не
+        переходила и не менялась. Минимум WATCH_MIN_MS, максимум max_ms
+        (WATCH_MAX_MS, для промежуточной «Далее» — WATCH_NEXT_MAX_MS).
+        По ходу собирает тосты, тексты alert/confirm (browser_guard пишет их в
+        actions) и тексты нового окна (popup_texts).
+        """
+        tab = self._tab
+        min_ms = min(max(WATCH_MIN_MS, self.settle_ms), max_ms)
 
         def grab() -> None:
-            text = browser_success.toast_text(self._tab)
+            text = browser_success.toast_text(tab)
             if text and text not in toasts:
                 toasts.append(text)
 
-        # networkidle ждём короткими шагами: тост показывается и гаснет,
-        # пока сеть ещё не затихла.
-        deadline = min(self.timeout_ms, 10000)
-        waited = 0
-        while waited < deadline:
+        started = time.monotonic()
+        try:
+            while True:
+                grab()
+                try:
+                    age_ms = tab.evaluate(DOM_QUIET_JS)
+                    tracker.changed = max(tracker.changed, time.monotonic() - age_ms / 1000.0)
+                except PlaywrightError:
+                    tracker.touch()  # страница переходит — тишины ещё нет
+                now = time.monotonic()
+                elapsed_ms = (now - started) * 1000
+                if elapsed_ms >= max_ms:
+                    break
+                if (elapsed_ms >= min_ms and not tracker.busy(now)
+                        and (now - tracker.changed) * 1000 >= WATCH_QUIET_MS):
+                    break
+                tab.wait_for_timeout(TOAST_POLL_MS)
             grab()
-            try:
-                self._tab.wait_for_load_state("networkidle", timeout=TOAST_POLL_MS)
-                break
-            except PlaywrightError:
-                waited += TOAST_POLL_MS
-        for _ in range(max(1, self.settle_ms // TOAST_POLL_MS)):
-            grab()
-            self._tab.wait_for_timeout(TOAST_POLL_MS)
-        grab()
+        except PlaywrightError as exc:
+            # Вкладка закрылась посреди окна: клик уже был, исход неизвестен —
+            # агент записывает submission_unknown (_unknown_outcome), а не падает.
+            raise EngineTransportError(f"Вкладка недоступна после отправки: {exc}") from exc
+        finally:
+            tracker.stop()
+        # Тексты alert/confirm и нового окна — в доказательства.
+        extra = [a.get("message", "") for a in self.actions[actions_from:]
+                 if a.get("action") == "guard_dialog"]
+        extra += self._popup_texts[popups_from:]
+        for text in extra:
+            text = (text or "").strip()
+            if text and text not in toasts:
+                toasts.append(text)
 
     def _snapshot(self) -> PageState:
-        data = None
-        for attempt in range(2):
-            try:
-                data = self._tab.evaluate(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
-                break
-            except PlaywrightError as exc:
-                # Страница перерисовалась или ушла по адресу посреди снимка —
-                # дождаться и снять ещё раз (fsk.ru, 29.09.2026).
-                if attempt or "context was destroyed" not in str(exc).lower():
-                    raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
-                self._settle()
+        try:
+            data = self._safe_eval(SNAPSHOT_JS, [SUBMIT_TEXT_RE, self._custom_specs()])
+        except PlaywrightError as exc:
+            raise EngineTransportError(f"Не удалось снять страницу: {exc}") from exc
         parser = _SemanticParser(data["url"])
         parser.feed(data["html"])
         parser.close()
         page = parser.finish(
             data["html"], self._last_status, {"content-type": "text/html; charset=utf-8"}
         )
+        # Только видимый текст: скрытое заранее «Спасибо» не должно попасть в
+        # «было до» (submission.collect_evidence сравнивает до и после).
+        visible = data.get("visibleText")
+        if isinstance(visible, str) and visible.strip():
+            page.text = visible
         # Скрипты страницы уже отработали по-настоящему: эвристики HTTP-движка
         # для JS («нужен браузер») здесь не нужны.
         page.has_script = False
@@ -523,9 +818,17 @@ class JupiterBrowserEngine:
         # Поиск и фильтры вакансий — тоже формы с текстовыми полями; из-за них
         # «Откликнуться» не нажимался (job.rt.ru, metro, gum.ru; 29.09.2026).
         # Анкета — только то, что агент сам признает анкетой кандидата.
+        # Поле файла — анкета «только резюме», но лишь рядом с полем ввода.
+        # Скрытое окно отклика (Orion soft, ФОРС, 02.10.2026) отдаёт в снимок
+        # только файл и галочки: поля ФИО и почты невидимы, пока окно не
+        # открыто, — и «Откликнуться» не нажималось вовсе.
+        typed = {"text", "email", "tel", "textarea", "select-one", "select-multiple", "number", "url", ""}
         return any(
             is_application_form(page, form.index)
-            or any(page.controls[i].type == "file" for i in form.control_indices)
+            or (any(page.controls[i].type == "file" for i in form.control_indices)
+                and any((page.controls[i].tag in ("textarea", "select")
+                         or page.controls[i].type in typed) and page.controls[i].tag != "button"
+                        for i in form.control_indices))
             for form in page.forms
         )
 
@@ -539,7 +842,41 @@ class JupiterBrowserEngine:
         # Лендинги (Tilda и другие конструкторы) догружают блоки, только когда
         # до них докрутили: форма отклика внизу появляется после прокрутки.
         page = self._scroll_through()
-        return self._click_apply(page)
+        page = self._click_apply(page)
+        if self._has_candidate_form(page):
+            return page
+        return self._advised_apply(page)
+
+    def _advised_apply(self, page: PageState) -> PageState:
+        """Кнопку «Откликнуться» правила не нашли — спросить YandexGPT (один раз)."""
+        if self.apply_advisor is None:
+            return page
+        import browser_planner
+        try:
+            outline = browser_planner.page_outline(self._tab)
+        except PlaywrightError:
+            return page
+        mark = self.apply_advisor(outline)
+        if not mark:
+            self.actions.append({"action": "llm_apply_none"})
+            return page
+        label = next((c.get("text", "") for c in outline.get("clickables", []) if c.get("jt") == mark), "")
+        self._dismiss_overlays()
+        target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
+        try:
+            target.click(timeout=5000)
+        except PlaywrightError:
+            try:
+                target.click(timeout=5000, force=True)
+            except PlaywrightError as exc:
+                self.actions.append({"action": "llm_apply_click_failed", "label": label[:60], "error": str(exc)[:200]})
+                return page
+        self.actions.append({"action": "llm_apply_click", "label": label[:60]})
+        self._settle()
+        page = self._snapshot()
+        if self._has_candidate_form(page):
+            return page
+        return self._open_frame_form(page)
 
     def _scroll_through(self) -> PageState:
         try:
@@ -600,7 +937,12 @@ class JupiterBrowserEngine:
                 return page
             self._dismiss_overlays()  # баннер мог появиться с задержкой и перехватить клик
             target = self._tab.locator(f'[data-jt-apply="{mark}"]').first
-            label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            try:
+                label = (target.inner_text(timeout=2000) or "").strip()[:60]
+            except PlaywrightError:
+                # Подпись — только для журнала; кнопка могла перерисоваться
+                # (Rubius, 01.10.2026: весь обход сайта падал на этом).
+                label = ""
             try:
                 target.click(timeout=5000)
             except PlaywrightError:
@@ -705,13 +1047,27 @@ class JupiterBrowserEngine:
                     paths = control.file_paths or ([control.file_path] if control.file_path else [])
                     if paths:
                         loc.set_input_files(paths)
+                elif control.type == "radio" and not control.checked:
+                    # Playwright не снимает радиокнопку (set_checked(False)
+                    # падает), а выбор сайта агент снимает намеренно.
+                    if loc.is_checked():
+                        loc.evaluate(UNCHECK_JS)
                 elif control.type in {"checkbox", "radio"}:
                     if loc.is_checked() != control.checked:
-                        loc.set_checked(control.checked, force=True)
+                        try:
+                            loc.set_checked(control.checked, force=True)
+                        except PlaywrightError:
+                            # Настоящий флажок спрятан за край экрана, видна
+                            # нарисованная рамка (job.mts.ru, 01.10.2026) —
+                            # Playwright его не кликает. Клик средствами самой
+                            # страницы шлёт те же click/change, что и мышь.
+                            loc.evaluate("el => el.click()")
+                            if loc.is_checked() != control.checked:
+                                raise
                 elif control.tag == "select" and loc.get_attribute("data-jt-cs") is not None:
                     chosen = next((o.label for o in control.options if o.selected and o.value), "")
                     if chosen and not apply_custom_select(self._tab, control.dom_ref, chosen):
-                        raise EngineTransportError(
+                        raise EngineFillError(
                             f"Не выбран вариант {chosen!r} в списке {control.label or control.name!r}")
                 elif control.tag == "select":
                     values = control.selected_values
@@ -724,12 +1080,19 @@ class JupiterBrowserEngine:
                         continue  # календарь: значение записано напрямую
                     if control.value and current != control.value:
                         loc.fill(control.value, force=True)
-                        # Маски телефона переписывают ввод — тогда печатаем по символу.
-                        if loc.input_value() != control.value and control.type == "tel":
+                        # Маски телефона и даты переписывают ввод — тогда печатаем по
+                        # символу. Не только type=tel: РУСАЛ держит телефон в
+                        # type=text, Эталон — в type=phone, дата «__.__.____» —
+                        # всегда text (репетиция 02.10.2026).
+                        if loc.input_value() != control.value and (
+                                control.type == "tel" or MASKABLE_VALUE_RE.fullmatch(control.value)):
                             fill_masked(self._tab, loc, control.value)
                         loc.evaluate(AFTER_FILL_JS)
             except PlaywrightError as exc:
-                raise EngineTransportError(
+                # До клика «Отправить» — отклик точно не ушёл. Обычная ошибка,
+                # а не обрыв после отправки: иначе агент пишет «исход
+                # неизвестен» и больше не пробует (МТС, 01.10.2026).
+                raise EngineFillError(
                     f"Не удалось заполнить поле {control.name or control.id or control.label!r}: {exc}"
                 ) from exc
 
@@ -738,15 +1101,28 @@ class JupiterBrowserEngine:
         page: PageState,
         form: FormState,
         submit_control: ControlState | None = None,
+        intermediate: bool = False,
     ) -> PageState:
-        if self.read_only:
+        """intermediate=True — промежуточная «Далее»: окно наблюдения короче."""
+        if self.read_only and not self.rehearsal_markers:
             raise EngineSecurityError("Read-only Jupiter engine blocked form submission")
         self._apply_values(page, form)
+        self._rehearsal_armed = bool(self.rehearsal_markers)
         before = self._tab.url
         self.last_api_result = None
+        self.last_submit_feedback = None
         recorder = browser_success.ResponseRecorder(self.allowed_hosts).start(self._tab)
         toasts: list[str] = []
+        actions_from = len(self.actions)
+        popups_from = len(self._popup_texts)
+        self._after_submit = True
+        tracker = self._track_requests()
         try:
+            try:
+                # Наблюдатель за DOM — до клика, чтобы не пропустить первую перемену.
+                self._tab.evaluate(DOM_QUIET_JS)
+            except PlaywrightError:
+                pass
             try:
                 button = self._locator(submit_control) if submit_control is not None else None
                 if button is not None:
@@ -759,17 +1135,36 @@ class JupiterBrowserEngine:
                     # Кнопки нет — отправка формы средствами самой страницы.
                     refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
                     if not refs:
-                        raise EngineError("Нечем отправить форму: ни кнопки, ни полей")
+                        raise EngineFillError("Нечем отправить форму: ни кнопки, ни полей")
                     self._tab.locator(f'[data-jt-ref="{refs[-1]}"]').first.press("Enter")
                     self.last_submit_mode = "browser_enter"
             except PlaywrightError as exc:
                 raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
-            self._settle(toasts)
+            self._watch_after_submit(tracker, toasts, actions_from, popups_from,
+                                     WATCH_NEXT_MAX_MS if intermediate else WATCH_MAX_MS)
         finally:
+            tracker.stop()
+            # Запись ответов — только после окна наблюдения: API отвечает и через 3 с.
             responses = recorder.stop()
+            self._after_submit = False
         self._record_api_result(responses)
-        if self._tab.url != before:
-            self.assert_allowed(self._tab.url)
+        if self._note_left_allowed_hosts(before, actions_from):
+            # Тосты окна наблюдения снимались уже на странице за редиректом —
+            # это текст чужой или внутренней страницы. Он не должен ни попасть
+            # в снимок, ни подтвердить отправку (разбор архитектора 02.10.2026).
+            # Потерять подтверждение «тост, потом уход на чужой хост» — ошибка
+            # в безопасную сторону: будет submission_unknown.
+            toasts.clear()
+        refs = [page.controls[i].dom_ref for i in form.control_indices if page.controls[i].dom_ref]
+        try:
+            feedback = self._safe_eval(SUBMIT_FEEDBACK_JS, refs)
+        except (PlaywrightError, EngineTransportError):
+            feedback = None
+        if isinstance(feedback, dict) and (feedback.get("invalid") or feedback.get("errors")):
+            self.last_submit_feedback = feedback
+            self.actions.append({"action": "submit_feedback",
+                                 "invalid": [f.get("label", "") for f in feedback.get("invalid", [])][:10],
+                                 "errors": len(feedback.get("errors", []))})
         result = self._snapshot()
         if toasts:
             # «Спасибо, отклик получен» во всплывашке исчезает раньше снимка —
@@ -777,9 +1172,41 @@ class JupiterBrowserEngine:
             result.text = (result.text + "\n" + "\n".join(toasts)).strip()
         return result
 
+    def _note_left_allowed_hosts(self, before: str, actions_from: int) -> bool:
+        """Вкладка ушла за пределы разрешённых хостов (страница «Спасибо» на
+        чужом домене). Это не ошибка безопасности: отправка уже состоялась.
+        Фиксируем в журнале «подтверждения нет». True — вкладка ушла.
+
+        Но снимать такую страницу нельзя: Playwright не вызывает _route для
+        редиректов, и POST → 302 на внутренний или чужой хост проходит мимо
+        сетевой политики (раньше его останавливал assert_allowed). Поэтому
+        вкладку уводим на about:blank ДО снимка: итог — пустой снимок и
+        submission_unknown, без содержимого чужой страницы. Хост «того же
+        сайта» тоже проверяем на публичность: intranet.company.ru может
+        указывать на 10.x."""
+        url = self._tab.url
+        if url == before:
+            return False
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        if host and (host in self.allowed_hosts or ats_hosts.is_apply_ats(host) or any(
+            ats_hosts.same_site(host, h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
+            for h in self.allowed_hosts
+        )) and self._public_host(host):
+            return False
+        blocked = [a.get("url", "") for a in self.actions[actions_from:]
+                   if a.get("action") == "blocked_request" and a.get("reason") == "host_not_allowed"]
+        blocked_host = (urllib.parse.urlparse(blocked[-1]).hostname or "") if blocked else host
+        self.actions.append({"action": "left_allowed_hosts", "host": blocked_host[:100]})
+        if url != "about:blank":
+            try:
+                self._tab.goto("about:blank")
+            except PlaywrightError as exc:
+                raise EngineTransportError(f"Не удалось уйти с чужой страницы: {exc}") from exc
+        return True
+
     def _record_api_result(self, responses: list[dict[str, Any]]) -> None:
         verdict = browser_success.classify(responses)
-        if verdict["api_success"] or verdict["api_error"]:
+        if verdict["api_success"] or verdict["api_error"] or verdict["api_2xx"]:
             self.last_api_result = verdict
             self.actions.append({"action": "api_result", **verdict})
 

@@ -138,6 +138,20 @@ if (is_array($s3) && !empty($s3['bucket']) && !empty($s3['key'])) {
     }
 }
 
+// Ключ YandexGPT для Юпитера (сопоставление подписей полей анкеты).
+//
+// Воркеры читают его из /etc/jobtoo/yandex-gpt.env; раньше файл клали руками.
+// Отсюда его забирает infra/bootstrap.sh. Данные кандидатов YandexGPT не
+// видит — только подписи полей (jupiter/browser_planner.py).
+$yg = $in['yandex_gpt'] ?? null;
+if (is_array($yg) && !empty($yg['api_key']) && !empty($yg['folder_id'])) {
+    $php = "<?php return ['api_key' => " . literal((string) $yg['api_key'])
+         . ", 'folder_id' => " . literal((string) $yg['folder_id']) . "];\n";
+    if (put(__DIR__ . '/yandex_gpt.php', $php)) {
+        $done[] = 'yandex_gpt.php';
+    }
+}
+
 // Вход в панель базы.
 //
 // Пароль задаёт владелец у себя в настройках репозитория, а не сервер у

@@ -24,14 +24,17 @@ export const ProfileColors = {
   danger: '#C2410C',
 };
 
+// Текст — Manrope, как во всём приложении (решение владельца 01.10.2026:
+// один основной шрифт везде). Был Onest из эталона профиля — единственный
+// экран на нём. Regular у Manrope тонковат на дешёвых экранах и не грузится,
+// поэтому обычный текст — Medium.
 export const ProfileFonts = {
-  headingSemi: 'Unbounded_600SemiBold',
   headingBold: 'Unbounded_700Bold',
   headingExtra: 'Unbounded_800ExtraBold',
-  textRegular: 'Onest_400Regular',
-  textMedium: 'Onest_500Medium',
-  textSemi: 'Onest_600SemiBold',
-  textBold: 'Onest_700Bold',
+  textRegular: 'Manrope_500Medium',
+  textMedium: 'Manrope_500Medium',
+  textSemi: 'Manrope_600SemiBold',
+  textBold: 'Manrope_700Bold',
 };
 
 export const ProfileRadius = {

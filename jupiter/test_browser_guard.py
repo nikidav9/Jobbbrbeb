@@ -27,6 +27,9 @@ CHROMIUM = os.environ.get("JUPITER_CHROMIUM") or (
 )
 
 PAGES = {
+    # Встроенный фрейм с адреса, который не резолвится, — в нём chrome-error.
+    "/broken-frame": "<title>vacancy</title><form><input name='phone'></form>"
+                     "<iframe src='http://other.test:%(port)s/'></iframe>",
     "/": "<title>home</title><p>home</p>",
     "/landing": "<title>landing</title><p>landing</p>",
     "/popup_evil": "<button id=b onclick=\"window.open('http://evil.test:%(port)s/')\">x</button>",
@@ -166,6 +169,18 @@ class BrowserGuardTest(unittest.TestCase):
         self.assertEqual(self.decisions(), ["same_tab"])
         self.assertEqual(len(self.ctx.pages), 1)
 
+    def test_popup_text_is_captured_before_close(self):
+        # «Спасибо» в новом окне: текст снимается до закрытия (02.10.2026).
+        ctx = self.browser.new_context(**bg.CONTEXT_SAFE_OPTIONS)
+        self.addCleanup(ctx.close)
+        page = ctx.new_page()
+        texts: list[str] = []
+        bg.install_guards(ctx, page, self.allowed, [], popup_texts=texts)
+        page.goto(self.url("/popup_good"))
+        page.click("#b")
+        page.wait_for_url("**/landing", timeout=5000)
+        self.assertEqual(texts, ["landing"])
+
     def test_dialogs_do_not_hang(self):
         self.page.goto(self.url("/dialogs"))
         self.assertEqual(self.page.evaluate("[window.r, window.p]"), [False, None])
@@ -196,6 +211,15 @@ class BrowserGuardTest(unittest.TestCase):
         self.page.wait_for_timeout(500)
         self.assertNotIn("root:", self.page.content())
         self.assertFalse(self.page.url.startswith("file:"))
+
+    def test_broken_iframe_does_not_wipe_the_page(self):
+        # Раньше chrome-error во встроенном фрейме уводил ВСЮ вкладку на
+        # about:blank вместе с анкетой (Аурига, 02.10.2026).
+        self.page.goto(self.url("/broken-frame"))
+        self.page.wait_for_timeout(1500)
+        self.assertEqual(self.page.title(), "vacancy")
+        self.assertEqual(self.page.locator("input[name=phone]").count(), 1)
+        self.assertFalse(any(e["action"] == "guard_blocked" for e in self.journal), self.journal)
 
     def test_file_chooser_gets_only_resume(self):
         self.page.goto(self.url("/upload"))

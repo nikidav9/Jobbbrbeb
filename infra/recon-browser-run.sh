@@ -32,11 +32,46 @@ HTTP_RECON=${HTTP_RECON:-/var/www/html/jupiter-recon.json}
 OUT=${OUT:-/var/www/html/jupiter-recon-browser.json}
 LOG=${LOG:-/var/log/jt-recon-browser.log}
 LOCK=${LOCK:-/run/jt-recon-browser.lock}
-MAX_MINUTES=${MAX_MINUTES:-150}
-# Сколько ждать, если HTTP-разведка ещё идёт (её предел — 5 часов).
-WAIT_HTTP_MINUTES=${WAIT_HTTP_MINUTES:-240}
+# 240: с 01.10.2026 ещё и репетиция отправки (анкета нажимается второй раз).
+MAX_MINUTES=${MAX_MINUTES:-240}
+# Сколько ждать, если HTTP-разведка ещё идёт (обычно ~10 мин). 150 + 240 + 15
+# укладываются в TimeoutStartSec=7h юнита.
+WAIT_HTTP_MINUTES=${WAIT_HTTP_MINUTES:-150}
+
+# Ход обхода (01.10.2026): итог выше пишется только в конце, а обход идёт до
+# четырёх часов. Обход (от nobody) пишет $WORK/progress.json после каждого
+# раздела, отсюда (root) он раз в 30 с выкладывается наружу.
+PROGRESS_OUT=${PROGRESS_OUT:-/var/www/html/jupiter-recon-browser-progress.json}
+# База знаний Алисы (jupiter/knowledge.py, 01.10.2026): обход читает и пополняет
+# копию в $WORK, после обхода она публикуется; боевой воркер читает отсюда же
+# только подтверждённое репетицией.
+KNOWLEDGE_OUT=${KNOWLEDGE_OUT:-/var/www/html/jupiter-knowledge.json}
 
 say() { printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG"; }
+
+publish_progress() {
+  [ -s "$WORK/progress.json" ] || return 0
+  local t
+  t=$(mktemp "$PROGRESS_OUT.XXXXXX") || return 0
+  cp -f "$WORK/progress.json" "$t" && chmod 644 "$t" && mv -f "$t" "$PROGRESS_OUT" || rm -f "$t"
+}
+
+# Базу — только целым JSON: обход пишет её атомарно, но проверка дешёвая.
+publish_knowledge() {
+  [ -s "$WORK/knowledge.json" ] || return 0
+  python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$WORK/knowledge.json" 2>/dev/null || return 0
+  local t
+  t=$(mktemp "$KNOWLEDGE_OUT.XXXXXX") || return 0
+  cp -f "$WORK/knowledge.json" "$t" && chmod 644 "$t" && mv -f "$t" "$KNOWLEDGE_OUT" || rm -f "$t"
+}
+
+# Состояние без обхода: ждём HTTP-разведку, сбой. Только слово и время.
+progress_state() {
+  local t
+  t=$(mktemp "$PROGRESS_OUT.XXXXXX") || return 0
+  printf '{"state": "%s", "updated_at": "%s"}\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$t"
+  chmod 644 "$t" && mv -f "$t" "$PROGRESS_OUT" || rm -f "$t"
+}
 
 exec 9>"$LOCK"
 flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
@@ -44,16 +79,20 @@ flock -n 9 || { say "уже идёт, выхожу"; exit 0; }
 [ -r "$REPO/jupiter/recon_browser.py" ] || { say "нет $REPO/jupiter/recon_browser.py"; exit 1; }
 
 # Сначала HTTP: браузер берёт только то, что тот не прошёл.
+progress_state "ждёт HTTP-разведку"
 waited=0
-while systemctl is-active --quiet jt-recon.service 2>/dev/null; do
+# oneshot-служба, пока работает, в состоянии activating, а не active.
+while case "$(systemctl show -p ActiveState --value jt-recon.service 2>/dev/null)" in
+        active|activating) true ;; *) false ;; esac; do
   if [ "$waited" -ge "$WAIT_HTTP_MINUTES" ]; then
     say "HTTP-разведка идёт дольше $WAIT_HTTP_MINUTES мин, пропускаю день"
+    progress_state "пропущен: HTTP-разведка не закончилась за $WAIT_HTTP_MINUTES мин"
     exit 0
   fi
   sleep 300
   waited=$((waited + 5))
 done
-[ -s "$HTTP_RECON" ] || { say "нет итога HTTP-разведки $HTTP_RECON"; exit 0; }
+[ -s "$HTTP_RECON" ] || { say "нет итога HTTP-разведки $HTTP_RECON"; progress_state "пропущен: нет итога HTTP-разведки"; exit 0; }
 
 if [ ! -x "$VENV/bin/python" ]; then
   say "нет $VENV — ставлю окружение браузерного воркера"
@@ -62,19 +101,58 @@ fi
 
 mkdir -p "$WORK"
 cp -f "$HTTP_RECON" "$WORK/http.json"
+# Вакансии ленты выгружает HTTP-разведка (infra/recon-run.sh); копия — чтобы
+# обход от nobody её прочитал.
+FEED=/var/lib/jobtoo/feed-vacancies.json
+rm -f "$WORK/feed.json"
+[ -s "$FEED" ] && cp -f "$FEED" "$WORK/feed.json"
 # Вчерашний итог — чтобы сперва подтвердить прежние dry_run_ok.
 if [ -s "$OUT" ]; then cp -f "$OUT" "$WORK/browser.json"; fi
+rm -f "$WORK/knowledge.json"
+if [ -s "$KNOWLEDGE_OUT" ]; then cp -f "$KNOWLEDGE_OUT" "$WORK/knowledge.json"; fi
 rm -f "$WORK"/browser.json.*.tmp
 chown -R nobody:nogroup "$WORK"
 
-say "начинаю: срок $MAX_MINUTES мин"
+# YandexGPT (01.10.2026): ночью разведка проходит сайты с теми же подсказками
+# модели, что и боевой Юпитер, — кнопка отклика, поля, вопросы. Ключ читает
+# root из /etc/jobtoo/yandex-gpt.env и передаёт обходу только переменными:
+# сам файл nobody не откроет. Модель видит подписи страниц, кандидат
+# синтетический. С 01.10.2026 (решение владельца) — все сайты, YandexGPT Pro,
+# потолок LLM_CALLS вызовов на обход (из 1500 в сутки; 200 — боевому воркеру,
+# YANDEX_GPT_MAX_CALLS_PER_DAY). Известные базе знаний сайты модель не тратят.
+LLM_SITES=${LLM_SITES:-1000}
+LLM_CALLS=${LLM_CALLS:-1300}
+YGPT_ENV=/etc/jobtoo/yandex-gpt.env
+YGPT_VARS=()
+if [ -r "$YGPT_ENV" ]; then
+  # «|| [ -n "$k" ]»: bootstrap пишет файл без перевода строки в конце, и без
+  # этого последняя строка (каталог) терялась — модель ни разу не включилась
+  # (разведка 01.10.2026: llm_used 0 из 435).
+  while IFS='=' read -r k v || [ -n "$k" ]; do
+    case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac
+  done < "$YGPT_ENV"
+fi
+[ "${#YGPT_VARS[@]}" -eq 2 ] || LLM_SITES=0
+
+say "начинаю: срок $MAX_MINUTES мин, YandexGPT на $LLM_SITES разделах"
+rm -f "$WORK/progress.json"
+( while sleep 30; do publish_progress; done ) &
+COPIER=$!
+trap 'kill "$COPIER" 2>/dev/null || true' EXIT
 # Внешний предел — срок обхода плюс запас на начатый сайт.
 if (cd "$REPO/jupiter" && timeout "$((MAX_MINUTES + 15))m" \
       setpriv --reuid=nobody --regid=nogroup --clear-groups \
       env HOME="$WORK" PYTHONDONTWRITEBYTECODE=1 PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+      "${YGPT_VARS[@]}" JUPITER_FEED_VACANCIES="$WORK/feed.json" \
       "$VENV/bin/python" recon_browser.py --from-http "$WORK/http.json" \
-        --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES") >>"$LOG" 2>&1
+        --out "$WORK/browser.json" --workers 1 --max-minutes "$MAX_MINUTES" \
+        --llm-sites "$LLM_SITES" --rehearse --site-deadline 200 \
+        --progress "$WORK/progress.json" \
+        --knowledge "$WORK/knowledge.json" --llm-calls "$LLM_CALLS") >>"$LOG" 2>&1
 then
+  publish_knowledge
+  kill "$COPIER" 2>/dev/null || true
+  publish_progress
   [ -s "$WORK/browser.json" ] || { say "пустой результат"; exit 1; }
   # Атомарно: копия рядом с итогом, затем rename в пределах одного каталога.
   tmp=$(mktemp "$OUT.XXXXXX")
@@ -83,6 +161,9 @@ then
   mv -f "$tmp" "$OUT"
   say "ok"
 else
+  kill "$COPIER" 2>/dev/null || true
+  publish_knowledge  # выученное до сбоя не теряется
+  progress_state "сбой — смотри $LOG"
   say "failed"
   exit 1
 fi

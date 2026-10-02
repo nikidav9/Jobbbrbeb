@@ -181,11 +181,16 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     SiteProfile("РУСАЛ", ("rusal.ru",), ("career.enplusrusal.ru",)),
     SiteProfile(
         "Додо Пицца",
-        ("rabotavdodo.ru",),
+        # 30.09.2026: вакансии переехали на dodoteam.ru, анкета уходит в API
+        # job-site-backend.dodo-ai-platform.io; даты рождения в новой форме нет.
+        ("rabotavdodo.ru", "dodoteam.ru"),
+        ("job-site-backend.dodo-ai-platform.io",),
         field_overrides={
             "name": "first_name",
             "lastname": "last_name",
             "date": "birth_date",
+            "about_yourself": "cover_letter",
+            "resume_link": "resume_url",
         },
     ),
     SiteProfile("Вкусно — и точка", ("rabotaitochka.ru",)),
@@ -216,7 +221,8 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
             "agree": "consent",
         },
     ),
-    SiteProfile("Шоколадница", ("regions.shoko.ru",)),
+    # Поиск Яндекса 01.10.2026: вакансии — на shoko.ru/career/.
+    SiteProfile("Шоколадница", ("shoko.ru", "regions.shoko.ru")),
     SiteProfile("AZIMUT Hotels", ("azimuthotels.com",), ("hh.ru",)),
     SiteProfile("Сбер", ("rabota.sber.ru",), live_ready=True),
     SiteProfile(
@@ -311,7 +317,120 @@ AUDITED_SITES: tuple[SiteProfile, ...] = (
     # Разведка 29.09: раздел вакансий уводит на свой же карьерный домен.
     SiteProfile("SUNLIGHT", ("job.sunlight.net",), ("rabota.sunlight.net",)),
     SiteProfile("Тануки", ("job.tanuki.ru",), ("tanukifamily.ru", "www.tanukifamily.ru")),
-    SiteProfile("Спортс", ("sports.ru",), ("careers.sports.ru",)),
+    SiteProfile("Спортс", ("sports.ru", "careers.sports.ru"), ("forms.tildaapi.com",)),
+    # Разведка 01.10: вакансия на c.tutu.ru, анкета — на своём же hr.tutu.ru.
+    SiteProfile("Туту", ("c.tutu.ru",), ("hr.tutu.ru",)),
+    # Поле userFull по подписи — «Фамилия», а имя поля обещает ФИО (30.09).
+    SiteProfile(
+        "Читай-город",
+        ("rabota.chitai-gorod.ru",),
+        field_overrides={
+            "userfull": "last_name",
+            "username": "first_name",
+            "userjobtitle": "desired_role",
+            "userphone": "phone",
+            "useremail": "email",
+            "userbirthday": "birth_date",
+            "usercountry": "citizenship",
+            "usercity": "city",
+            "userfilelink": "resume_url",
+        },
+    ),
+    # Карты полей по разбору анкет 30.09. Поля, которых нет в профиле
+    # (вопросы работодателя, тип вакансии из списка), не отображаются: их
+    # заполняет человек. Капча, где она есть, — тоже его.
+    SiteProfile(
+        "Инвитро",
+        ("invitro.ru",),
+        field_overrides={
+            "form_text_221": "last_name", "form_text_222": "first_name",
+            "form_text_223": "patronymic", "form_text_224": "desired_role",
+            "form_text_226": "phone", "form_text_227": "email",
+            "form_text_228": "birth_date", "form_text_229": "citizenship",
+            "form_text_230": "city", "form_text_231": "education",
+        },
+    ),
+    # Tilda: имена полей — русские подписи.
+    SiteProfile(
+        "Whoosh",
+        ("whoosh-bike.ru",),
+        ("forms.tildaapi.com",),
+        field_overrides={
+            "фио": "full_name", "телефон": "phone", "email": "email",
+            "город": "city", "вакансия": "desired_role", "о себе": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Герофарм",
+        ("geropharm.ru", "geropharm-career.ru"),
+        ("forms.tildaapi.com",),
+        field_overrides={"link": "resume_url", "vacancy": "desired_role"},
+    ),
+    SiteProfile(
+        "Наумен",
+        ("naumen.ru",),
+        field_overrides={
+            "form_text_2158": "last_name", "form_text_2159": "first_name",
+            "form_text_2160": "patronymic", "form_text_419": "phone",
+            "form_email_2115": "email", "form_textarea_903": "desired_role",
+            "form_textarea_420": "cover_letter",
+        },
+    ),
+    # Анкета в два шага; на втором — вопросы работодателя, они к человеку.
+    SiteProfile(
+        "МойСклад",
+        ("moysklad.ru",),
+        field_overrides={
+            "form_text_6319": "full_name", "form_text_6320": "phone",
+            "form_email_6321": "email", "form_text_6322": "citizenship",
+            "form_text_6323": "city", "form_text_6329": "resume_url",
+        },
+    ),
+    SiteProfile(
+        "ТК КИТ",
+        ("tk-kit.ru",),
+        field_overrides={
+            "vacancycallback[name]": "full_name", "vacancycallback[phone]": "phone",
+            "vacancycallback[city]": "city", "vacancycallback[email]": "email",
+            "vacancycallback[body]": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Карма Групп",
+        ("karma-group.ru",),
+        field_overrides={
+            "fio": "full_name", "phone": "phone", "email": "email", "text": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Rendez-Vous",
+        ("rendez-vous.ru",),
+        field_overrides={
+            "jobresponses[name]": "full_name", "jobresponses[phone]": "phone",
+            "jobresponses[email]": "email", "jobresponses[resume_link]": "resume_url",
+        },
+    ),
+    # Подписи лежат в скрытых полях с тем же именем; wb_input_4 («Как вы нас
+    # нашли?») скрыт и не заполняется.
+    SiteProfile(
+        "PrideInBrains",
+        ("prideinbrains.com",),
+        field_overrides={
+            "wb_input_0": "full_name", "wb_input_1": "email",
+            "wb_input_3": "city", "wb_input_5": "cover_letter",
+        },
+    ),
+    SiteProfile(
+        "Братья Караваевы",
+        ("karavaevi.ru",),
+        field_overrides={
+            "property[name][0]": "full_name", "property[29][0]": "phone",
+            "property[30][0]": "email", "property[31]": "desired_role",
+        },
+    ),
+    SiteProfile("Crosstech", ("crosstech.ru",), field_overrides={"message_link": "resume_url"}),
+    SiteProfile("Globus IT", ("globus-ltd.ru",), field_overrides={"usermessage": "cover_letter"}),
+    SiteProfile("ЭФКО", ("efko.ru",), field_overrides={"message": "cover_letter"}),
 )
 
 
@@ -327,6 +446,20 @@ def profile_for_url(url: str) -> SiteProfile | None:
         if any(host == normalize_host(item) for item in profile.hosts):
             return profile
     return None
+
+
+def _recon_ready(item: dict) -> bool:
+    """Анкета пройдена до конца (dry_run_ok) или до вопросов работодателя,
+    на которые ответит человек (NEEDS_ANSWERS, решение владельца 01.10.2026:
+    «сайт ещё подключаем» стоял у Норникеля, Наумена, Skyeng, МойСклад —
+    анкета заполнена, не хватало только ответов человека)."""
+    captcha = item.get("captcha") if isinstance(item.get("captcha"), dict) else {}
+    return item.get("klass") == "dry_run_ok" or (
+        item.get("reason_code") in ("NEEDS_ANSWERS", "EMAIL_APPLY")
+        and item.get("status") == "action_required") or (
+        # Анкета заполнена, осталась картинка с текстом — её вводит человек в
+        # приложении (captcha_loop). Галочки и reCAPTCHA сюда не относятся.
+        item.get("klass") == "captcha" and captcha.get("transferable") is True)
 
 
 def _file_ok_hosts(path: str, now: float | None = None) -> frozenset[str]:
@@ -348,7 +481,7 @@ def _file_ok_hosts(path: str, now: float | None = None) -> frozenset[str]:
     except (OSError, ValueError):
         items = []
     for item in items if isinstance(items, list) else []:
-        if isinstance(item, dict) and item.get("klass") == "dry_run_ok":
+        if isinstance(item, dict) and _recon_ready(item):
             for key in ("url", "start_url"):
                 host = normalize_host(str(item.get(key) or ""))
                 if host:
@@ -475,13 +608,13 @@ AUDITED_SOURCE_URLS: dict[str, str] = {
     "Норникель": "https://career.nornickel.ru/vacancies/",
     "ФосАгро": "https://www.phosagro.ru/career-education/vacancies/",
     "РУСАЛ": "https://www.rusal.ru/career/vacancies/",
-    "Додо Пицца": "https://rabotavdodo.ru/",
+    "Додо Пицца": "https://dodoteam.ru/vacancy/",
     "Вкусно — и точка": "https://rabotaitochka.ru/",
     "ROSTIC'S": "https://rostics.ru/ru/career",
     "Burger King Россия": "https://burgerkingrus.ru/rabota",
     "Теремок": "https://rabota.teremok.ru/vacancies/",
     "Кофемания": "https://rabota.coffeemania.ru/",
-    "Шоколадница": "https://regions.shoko.ru/career/",
+    "Шоколадница": "https://shoko.ru/career/",
     "AZIMUT Hotels": "https://azimuthotels.com/ru/info/career",
     "Сбер": "https://rabota.sber.ru/",
     "МегаФон": "https://job.megafon.ru/",

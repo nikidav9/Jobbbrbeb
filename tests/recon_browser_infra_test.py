@@ -46,8 +46,46 @@ for forbidden in ("dry_run=False", "read_only=False", "--live", "JUPITER_ENGINE"
     assert forbidden not in run, forbidden
 # Подпись — честная, движка: своей подписи и подмены UA здесь нет.
 assert not re.search(r"user[-_]?agent|--ua\b|BROWSER_UA", run, re.I)
-# Секреты разведке не нужны и не передаются.
-for name in ("TOKEN", "SECRET", "YANDEX_GPT", "EnvironmentFile"):
+# Секреты разведке не передаются — кроме ключа YandexGPT (решение владельца
+# 01.10.2026: ночью Алиса подсказывает разведке, как боевому Юпитеру). Ключ —
+# ровно две переменные из файла ключа, только в окружение обхода, не в журнал.
+for name in ("TOKEN", "SECRET", "EnvironmentFile"):
     assert name not in run, name
+assert "YGPT_ENV=/etc/jobtoo/yandex-gpt.env" in run
+assert 'case "$k" in YANDEX_GPT_API_KEY|YANDEX_GPT_FOLDER_ID) YGPT_VARS+=("$k=$v") ;; esac' in run
+assert "read -r k v || [ -n \"$k\" ]" in run, "последняя строка файла ключа без перевода строки"
+assert '"${YGPT_VARS[@]}"' in run and '--llm-sites "$LLM_SITES"' in run
+# Репетиция отправки: нажатие есть, но обход по-прежнему read_only (сеть
+# обрывает не-GET) — боевых переключателей в скрипте нет, см. выше.
+assert "--rehearse" in run
+# Вакансии ленты: HTTP-разведка выгружает их из базы (только компания и
+# адрес вакансии), браузерная читает копию от nobody.
+recon_run = (ROOT / "infra" / "recon-run.sh").read_text(encoding="utf-8")
+assert "from jm_ext_vacancies where active" in recon_run and 'export JUPITER_FEED_VACANCIES="$FEED"' in recon_run
+assert "select company, url" in recon_run and "email" not in recon_run and "user_id" not in recon_run
+assert 'JUPITER_FEED_VACANCIES="$WORK/feed.json"' in run
+# Разведчик источников: после HTTP-разведки, ключ — из файла, только 40 компаний.
+assert "scripts/career_search_scout.py" in recon_run and "--limit 40" in recon_run
+assert "/career-search-scout.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert "scripts/career_quarantine_recheck.py" in recon_run
+assert "/career-quarantine-check.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert "rehearsal_markers=rehearsal_markers(TEST_CANDIDATE)" in recon_browser
+assert 'if rehearsal_markers and not read_only:' in (ROOT / "jupiter" / "browser_engine.py").read_text(encoding="utf-8")
+assert not re.search(r"(say|echo|printf)[^\n]*(\$v|YGPT_VARS|YANDEX_GPT_API_KEY)", run), "ключ не пишется в журнал"
+
+# Ход обхода: обход пишет файл после каждого раздела, root выкладывает его
+# наружу; ранние выходы и сбой не оставляют вечное «идёт».
+assert '--progress "$WORK/progress.json"' in run and "publish_progress" in run
+assert run.count("progress_state ") >= 4, "ждёт HTTP, два пропуска, сбой"
+assert "/jupiter-recon-browser-progress.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert 'kill "$COPIER"' in run
+
+# База знаний Алисы: обход читает и пополняет копию, после обхода (и после
+# сбоя) она публикуется; все сайты, потолок вызовов, Pro в пинге.
+assert '--knowledge "$WORK/knowledge.json"' in run and '--llm-calls "$LLM_CALLS"' in run
+assert "LLM_SITES=${LLM_SITES:-1000}" in run and "LLM_CALLS=${LLM_CALLS:-1300}" in run
+assert run.count("publish_knowledge") >= 3, "определение, после успеха и после сбоя"
+assert "/jupiter-knowledge.json" in (ROOT / "infra" / "nginx-tls.conf").read_text(encoding="utf-8")
+assert "gpt://%s/yandexgpt/latest" in (ROOT / "infra" / "bootstrap.sh").read_text(encoding="utf-8")
 
 print("recon-browser infra: ok")

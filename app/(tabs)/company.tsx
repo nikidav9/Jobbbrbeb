@@ -21,6 +21,7 @@ import type { PermVacancy, User } from '@/constants/types';
 import { BackButton } from '@/components/ui/BackButton';
 import { useHydrated } from '@/hooks/useHydrated';
 
+import { JT_FONT } from '@/constants/jt';
 type CompanyTab = 'overview' | 'jobs';
 
 function weightedCompanyRating(employers: User[]): { value: number; count: number } | null {
@@ -318,7 +319,7 @@ const s = StyleSheet.create({
     marginTop: rs(16),
     fontSize: rf(26),
     lineHeight: rf(31),
-    fontWeight: '800',
+    fontFamily: JT_FONT.heavy,
     color: Colors.textPrimary,
     textAlign: 'center',
   },
@@ -326,7 +327,7 @@ const s = StyleSheet.create({
     marginTop: rs(5),
     fontSize: rf(13),
     lineHeight: rf(18),
-    fontWeight: '600',
+    fontFamily: JT_FONT.semi,
     color: Colors.textMuted,
     textAlign: 'center',
   },
@@ -352,7 +353,7 @@ const s = StyleSheet.create({
   heroChipText: {
     flexShrink: 1,
     fontSize: rf(11.5),
-    fontWeight: '700',
+    fontFamily: JT_FONT.bold,
     color: Colors.textSecondary,
   },
 
@@ -364,8 +365,8 @@ const s = StyleSheet.create({
     borderBottomColor: '#E7E8EB',
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabText: { fontSize: rf(14), fontWeight: '600', color: Colors.textMuted },
-  tabTextActive: { color: Colors.textPrimary, fontWeight: '800' },
+  tabText: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textMuted },
+  tabTextActive: { color: Colors.textPrimary, fontFamily: JT_FONT.heavy },
   tabLine: {
     position: 'absolute',
     bottom: -1,
@@ -401,8 +402,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: rs(10),
   },
-  statLabel: { fontSize: rf(11.5), color: Colors.textMuted, fontWeight: '600' },
-  statValue: { marginTop: rs(4), fontSize: rf(21), fontWeight: '800', color: Colors.textPrimary },
+  statLabel: { fontSize: rf(11.5), color: Colors.textMuted, fontFamily: JT_FONT.semi },
+  statValue: { marginTop: rs(4), fontSize: rf(21), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
 
   infoCard: {
     borderRadius: rs(20),
@@ -418,7 +419,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: rs(12),
   },
-  sectionTitle: { fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
+  sectionTitle: { fontSize: rf(17), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
   sectionIcon: {
     width: rs(32),
     height: rs(32),
@@ -427,8 +428,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bodyText: { fontSize: rf(13.5), lineHeight: rf(20.5), color: Colors.textSecondary },
-  bodyMuted: { fontSize: rf(13), lineHeight: rf(19), color: Colors.textMuted },
+  bodyText: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), lineHeight: rf(20.5), color: Colors.textSecondary },
+  bodyMuted: { fontFamily: JT_FONT.medium, fontSize: rf(13), lineHeight: rf(19), color: Colors.textMuted },
 
   infoRow: {
     minHeight: rs(44),
@@ -437,7 +438,7 @@ const s = StyleSheet.create({
     gap: rs(10),
   },
   infoRowBorder: { borderTopWidth: 1, borderTopColor: Colors.divider },
-  infoRowText: { flex: 1, fontSize: rf(13), fontWeight: '600', color: Colors.textSecondary },
+  infoRowText: { flex: 1, fontSize: rf(13), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
 
   block: { gap: rs(9) },
   blockHeadingRow: {
@@ -446,8 +447,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  blockTitle: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary },
-  showAll: { fontSize: rf(13), fontWeight: '800', color: Colors.primary },
+  blockTitle: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  showAll: { fontSize: rf(13), fontFamily: JT_FONT.heavy, color: Colors.primary },
 
   jobCard: {
     backgroundColor: Colors.card,
@@ -458,8 +459,8 @@ const s = StyleSheet.create({
     ...Shadow.card,
   },
   jobTop: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
-  jobTitle: { fontSize: rf(15.5), lineHeight: rf(20), fontWeight: '800', color: Colors.textPrimary },
-  jobMeta: { marginTop: rs(5), fontSize: rf(12), color: Colors.textMuted, fontWeight: '500' },
+  jobTitle: { fontSize: rf(15.5), lineHeight: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  jobMeta: { marginTop: rs(5), fontSize: rf(12), color: Colors.textMuted, fontFamily: JT_FONT.medium },
   jobChips: { marginTop: rs(12), flexDirection: 'row', flexWrap: 'wrap', gap: rs(7) },
   salaryChip: {
     borderRadius: rs(100),
@@ -467,14 +468,14 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(11),
     paddingVertical: rs(7),
   },
-  salaryText: { fontSize: rf(11.5), fontWeight: '800', color: Colors.primary },
+  salaryText: { fontSize: rf(11.5), fontFamily: JT_FONT.heavy, color: Colors.primary },
   neutralChip: {
     borderRadius: rs(100),
     backgroundColor: '#F3F4F6',
     paddingHorizontal: rs(11),
     paddingVertical: rs(7),
   },
-  neutralChipText: { fontSize: rf(11.5), fontWeight: '600', color: Colors.textSecondary },
+  neutralChipText: { fontSize: rf(11.5), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
 
   emptyCard: {
     minHeight: rs(190),
@@ -487,5 +488,5 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ECEDEF',
   },
-  emptyTitle: { fontSize: rf(16), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
+  emptyTitle: { fontSize: rf(16), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center' },
 });

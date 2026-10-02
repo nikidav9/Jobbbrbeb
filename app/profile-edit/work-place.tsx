@@ -5,7 +5,7 @@ import { useApp } from '@/hooks/useApp';
 import type { ResumeExperience } from '@/constants/types';
 import { patchResume, upsertAt, removeAt, MONTHS } from '@/lib/profileEdit';
 import {
-  EditScreen, Field, TextArea, OptionSheet, Checkbox, InfoNote, FieldLabel,
+  EditScreen, Field, TextArea, OptionSheet, Checkbox, FieldLabel,
   useUnsavedGuard, ChevronDownIcon,
 } from '@/components/profile/edit';
 import { EditColors, EditFonts, EditRadius } from '@/constants/profileEditTheme';
@@ -261,9 +261,6 @@ export default function WorkPlaceScreen() {
           placeholder="Чем занимались и каких результатов добились. Например: сократил время обработки заказа на 15%"
         />
 
-        <InfoNote>
-          Этот же экран открывается по кнопке «+ Добавить место работы» — тогда поля пустые, а «Удалить» скрыто
-        </InfoNote>
       </EditScreen>
       {dialog}
       <OptionSheet

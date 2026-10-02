@@ -5,6 +5,7 @@ import { Radius } from '@/constants/theme';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Памятка директору в формах создания смены/вакансии:
  * отклики без ответа закрываются автоматически через 2 дня.
@@ -33,6 +34,6 @@ const st = StyleSheet.create({
     backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA',
     borderRadius: Radius.lg, padding: rs(12), marginBottom: rs(14),
   },
-  txt: { flex: 1, fontSize: rf(12), color: '#92400E', lineHeight: rf(17) },
-  bold: { fontWeight: '800' },
+  txt: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(12), color: '#92400E', lineHeight: rf(17) },
+  bold: { fontFamily: JT_FONT.heavy },
 });

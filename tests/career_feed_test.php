@@ -289,6 +289,14 @@ check('ссылка на раздел с хвостовым слэшем тож�
 check('а ссылка с номером принимается',
     count(cf_html_links($linkPage([['/vacancy/77', 'Комплектовщик на склад']]), $base, $lp, $now)) === 1);
 
+// Листание считает ссылки на вакансии до отсева по названию: у Полюса одна
+// ссылка из десяти на странице отсеивалась, и обход вставал на 5-й из 19.
+$kept = cf_html_links($linkPage([
+    ['/vacancy/1', 'Комплектовщик на склад'], ['/vacancy/1', 'Комплектовщик на склад'],
+    ['/vacancy/2', 'Подробнее'], ['/vacancy/', 'Все вакансии'],
+]), $base, $lp, $now, $rawLinks);
+check('для листания — все ссылки на вакансии, без повторов и разделов', count($kept) === 1 && $rawLinks === 2);
+
 // Слова-пустышки: ссылка есть, должности в ней нет. «Подробнее» у Протея,
 // «Показать все (10)» у Иви, «Кандидатам» у Контура.
 foreach (['Подробнее', 'Показать все (10)', 'Кандидатам', 'Наши вакансии',
@@ -582,6 +590,14 @@ check('корневые, абсолютные и mailto не трогаем',
     cf_resolve_relative('/vacancy/1', 'https://x.ru/v/', '') === '/vacancy/1'
     && cf_resolve_relative('https://y.ru/1', 'https://x.ru/v/', '') === 'https://y.ru/1'
     && cf_resolve_relative('mailto:hr@x.ru', 'https://x.ru/v/', '') === 'mailto:hr@x.ru');
+
+// Срок порции сбора меньше ожидания приёмника (01.10.2026): иначе один
+// медленный сайт обрывал весь круг на первой странице.
+$ingestSrc = (string)file_get_contents(__DIR__ . '/../php-proxy/ingest.php');
+preg_match('~function ing_fetch_page.*?CURLOPT_TIMEOUT\s*=>\s*(\d+)~s', $ingestSrc, $m);
+preg_match('~const CF_UNIT_BUDGET = (\d+);~', (string)file_get_contents(__DIR__ . '/../php-proxy/career_unit.php'), $b);
+check('срок порции career.php меньше ожидания ingest.php',
+    isset($m[1], $b[1]) && (int)$b[1] + 10 <= (int)$m[1]);
 
 if ($failures) {
     echo "career feed: ПРОВАЛЫ\n";

@@ -1,3 +1,4 @@
+import { DeleteAccountSheet } from '@/components/feature/DeleteAccountSheet';
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Linking, ActivityIndicator, Switch,
@@ -9,8 +10,8 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useApp } from '@/hooks/useApp';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
-  dbChangePassword, dbDeleteAccount, dbClearPushToken,
-  dbDeleteWebPushSubscription, dbGetCrossBorderConsent,
+  dbChangePassword, dbClearPushToken,
+  dbDeleteWebPushSubscription,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
 import { resetOnboarding } from '@/components/OnboardingOverlay';
@@ -43,6 +44,7 @@ const ABOUT_DOCS: { key: LegalDocKey; icon: IonName }[] = [
   { key: 'dataPolicy', icon: 'lock-closed-outline' },
   { key: 'marketing', icon: 'megaphone-outline' },
   { key: 'employers', icon: 'business-outline' },
+  { key: 'companies', icon: 'briefcase-outline' },
 ];
 
 // Иконки плиток — пути из docs/design/settings-help/03-settings.html.
@@ -261,8 +263,6 @@ export default function ProfileSettingsScreen() {
 
   const [showLogout, setShowLogout] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [deleting, setDeleting] = useState(false);
 
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [notificationState, setNotificationState] = useState<NotificationState>('checking');
@@ -365,13 +365,9 @@ export default function ProfileSettingsScreen() {
     setNotificationBusy(true);
     setNotificationMessage('');
     try {
-      const crossBorder = await dbGetCrossBorderConsent(currentUser.id).catch(() => null);
-      if (crossBorder?.accepted !== true) {
-        setNotificationState('error');
-        setNotificationMessage('Сначала подтвердите отдельное согласие на трансграничную передачу данных для push-уведомлений.');
-        return;
-      }
-
+      // Отдельное согласие на трансграничную передачу для пушей больше не
+      // нужно: пуш обезличен (push_privacy.php, docs/MAP.md). Проверка здесь
+      // оставалась и не давала включить уведомления — дать согласие было негде.
       await AsyncStorage.removeItem(NOTIFICATION_DISABLED_KEY).catch(() => {});
       let ok = false;
 
@@ -558,22 +554,6 @@ export default function ProfileSettingsScreen() {
     router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
   };
 
-  const deleteAccount = async () => {
-    if (!currentUser || deleting || !deletePassword.trim()) return;
-    setDeleting(true);
-    try {
-      await dbDeleteAccount(currentUser.id, deletePassword);
-      setShowDelete(false);
-      setDeletePassword('');
-      await logout();
-      router.replace('/');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Не удалось удалить аккаунт', 'error');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   if (!currentUser) return <View style={s.screen} />;
 
   const isWorker = currentUser.role === 'worker';
@@ -614,6 +594,12 @@ export default function ProfileSettingsScreen() {
             label="Помощь и обратная связь"
             icon={<ChatIcon />}
             onPress={() => router.push('/support')}
+          />
+          {/* Банк ответов на вопросы работодателей: что Юпитер подставит сам. */}
+          <Row
+            label="Мои ответы для работодателей"
+            ionIcon="document-text-outline"
+            onPress={() => router.push('/jupiter-answers')}
           />
           <Row
             label="Уведомления"
@@ -813,66 +799,16 @@ export default function ProfileSettingsScreen() {
         </View>
       </BottomSheet>
 
-      <BottomSheet
+      <DeleteAccountSheet
         visible={showDelete}
-        onClose={() => { setShowDelete(false); setDeletePassword(''); }}
-      >
-        <SheetHeader
-          title="Удалить аккаунт?"
-          tile={<Ionicons name="trash-outline" size={22} color={JT.ink} />}
-          onClose={() => { setShowDelete(false); setDeletePassword(''); }}
-        />
-        <Text style={[s.small, { marginTop: 16 }]}>
-          Профиль и сохранённые резюме будут удалены. Это действие нельзя отменить.
-        </Text>
-        {noPassword ? (
-          // Аккаунт «почта → код» без пароля: удаление по одной сессии
-          // не делаем (безопасность) — сначала задать пароль, потом удалить.
-          <Text style={[s.small, { marginTop: 8 }]}>
-            Чтобы удалить аккаунт, сначала задайте пароль — пришлём код на почту.
-          </Text>
-        ) : (
-          <>
-            <View style={s.form}>
-              <PasswordField
-                label="Пароль"
-                value={deletePassword}
-                onChangeText={setDeletePassword}
-                placeholder="Подтвердите пароль"
-              />
-            </View>
-            {/* Удаление обязательно (152-ФЗ, правила магазинов), а у
-                аккаунта «почта → код» пароля может не быть вовсе. */}
-            <TouchableOpacity
-              onPress={() => { setShowDelete(false); setDeletePassword(''); goSetPasswordByCode(); }}
-              accessibilityRole="button"
-              style={{ alignSelf: 'center', marginTop: 18 }}
-            >
-              <Text style={s.link}>Нет пароля? Задайте его по коду из письма</Text>
-            </TouchableOpacity>
-          </>
-        )}
-        <View style={{ marginTop: 20 }}>
-          {noPassword ? (
-            <Btn
-              kind="primary"
-              label="Задать пароль"
-              onPress={() => { setShowDelete(false); goSetPasswordByCode(); }}
-            />
-          ) : (
-            <Btn
-              kind="outline"
-              danger
-              label={deleting ? 'Удаление…' : 'Удалить аккаунт'}
-              onPress={deleteAccount}
-              disabled={deleting || !deletePassword.trim()}
-            />
-          )}
-        </View>
-        <View style={{ marginTop: 4 }}>
-          <Btn kind="ghost" label="Отмена" onPress={() => { setShowDelete(false); setDeletePassword(''); }} />
-        </View>
-      </BottomSheet>
+        onClose={() => setShowDelete(false)}
+        onDeleted={async () => {
+          setShowDelete(false);
+          await logout();
+          showToast('Аккаунт удалён', 'success');
+          router.replace('/');
+        }}
+      />
     </View>
   );
 }

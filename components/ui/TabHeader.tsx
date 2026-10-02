@@ -5,6 +5,7 @@ import { NotifBell } from '@/components/ui/NotifBell';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 // Единая шапка для всех вкладок: одинаковая высота, шрифт и размеры иконок.
 // title отсутствует → показываем логотип JobToo. badge — доп. плашка слева
 // (например «N ждут»). right — кастомный правый блок (профиль с шестерёнкой).
@@ -52,8 +53,8 @@ const h = StyleSheet.create({
   },
   left: { flexDirection: 'row', alignItems: 'center', gap: rs(8), flexShrink: 1 },
   right: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
-  title: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary },
-  logo: { fontSize: rf(18) },
-  logoB: { fontWeight: '800', color: Colors.textPrimary },
-  logoO: { fontWeight: '800', color: Colors.primary },
+  title: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  logo: { fontFamily: JT_FONT.medium, fontSize: rf(18) },
+  logoB: { fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  logoO: { fontFamily: JT_FONT.heavy, color: Colors.primary },
 });

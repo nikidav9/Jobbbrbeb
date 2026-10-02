@@ -23,10 +23,21 @@ consent = legal[legal.index("  consent: {"):legal.index("  dataPolicy: {")]
 # Редакция 2026-09-26-2 (согласия работодателю по поручению) снова подняла
 # consentVersion — расширение резюме 2026-09-21, Юпитер 2026-09-25 и почта
 # 2026-09-26 покрыты ею же, повторное согласие спросится.
-assert "version: '2026-09-26-2'" in privacy
-assert "consentVersion: '2026-09-26-2'" in privacy
-assert "version: '2026-09-26-2'" in consent
-assert "consentVersion: '2026-09-26-2'" in consent
+# 2026-10-01: в политику добавлено письмо-сводку о непрочитанном (служебное) —
+# поднят только version, повторное согласие не нужно.
+# 2026-10-02: YandexGPT среди обработчиков — новый получатель, согласие заново.
+assert "version: '2026-10-02'" in privacy
+assert "consentVersion: '2026-10-02'" in privacy
+assert "version: '2026-10-02'" in consent
+assert "consentVersion: '2026-10-02'" in consent
+
+# «Ответы для откликов» (applyAnswers): срок выхода и ник в Telegram названы во
+# всех трёх перечнях данных.
+dpolicy = legal[legal.index("  dataPolicy: {"):legal.index("  marketing: {")]
+for doc in (privacy, consent, dpolicy):
+    assert "«Ответы для откликов»" in doc
+    assert "срок выхода на работу" in doc
+    assert "ник в Telegram" in doc
 
 # Приватный PDF/email/личная анкета не должны внезапно стать публичными.
 public_cols = db[db.index("define('USER_PUBLIC_COLS'"):db.index("define('USER_SELF_COLS'")]

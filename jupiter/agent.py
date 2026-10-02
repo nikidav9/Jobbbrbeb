@@ -6,6 +6,9 @@ import json
 import re
 import urllib.parse
 
+import alice_agent
+import email_apply
+import huntflow
 import sber
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -14,12 +17,14 @@ from typing import Any, Callable
 from engine import (
     ControlState,
     EngineError,
+    EngineFillError,
     EngineSecurityError,
     EngineTransportError,
     JupiterWebEngine,
     PageState,
 )
 from site_compat import field_override, trusted_hosts_for
+from questions import answer_for, extract_questions, is_special, question_text
 from candidate import (
     FieldClass, classify_key, consent_kinds, decide_consent, looks_like_consent, provenance_for,
 )
@@ -33,6 +38,7 @@ from submission import (
     collect_evidence, is_confirmed, score_evidence,
 )
 from validation import ValidationIssue, validate_form
+import yandex_gpt
 
 
 SUCCESS_MARKERS = (
@@ -51,6 +57,11 @@ SUCCESS_MARKERS = (
     "резюме отправлено",
     "мы получили ваш отклик",
     "мы получили вашу заявку",
+    # job.2gis.ru (01.10.2026): окно «Отправлено — Твой отклик уже у нас».
+    # Одно «отправлено» — нет: так подписаны и кнопки, и шаги анкет.
+    "отклик уже у нас",
+    # twinby.ru (01.10.2026): «Спасибо! Мы все изучим и ответим тебе по почте».
+    "мы все изучим и ответим",
 )
 
 SUBMIT_MARKERS = (
@@ -112,6 +123,9 @@ _ORDER_FORM_MARKERS = (
 )
 # Вопрос или обращение («задайте вопрос», «тема заявки») — не анкета, если в
 # форме нет ничего от кандидата: ни резюме, ни вакансии.
+# Бриф и заявка клиента (Extyl, Oxygen — разведка 30.09): бюджет, тип
+# проекта, тендер. Анкетой такая форма не бывает, даже с полем для файла.
+_CLIENT_FORM_MARKERS = ("бюджет", "тип проекта", "тендер", "коммерческое предложение")
 _QUESTION_FORM_MARKERS = (
     "задайте вопрос", "ваш вопрос", "какой вопрос", "тема заявки", "тема обращения",
     "тема сообщения",
@@ -231,6 +245,14 @@ class CandidateProfile:
         return cls(values=data, resume_path=resume)
 
 
+# Сколько раз дозаполнить или переписать поля, которые сайт подсветил после
+# «Отправить» (3 — п.1 «довести цикл», 01.10.2026: пустое поле, другая запись,
+# запись по подсказке Алисы).
+SITE_FIX_ROUNDS = 3
+# Записи, которые подсказка Алисы (browser_planner.FIX_FORMATS) выбирает для телефона.
+_PHONE_FORMATS = ("phone_plus7", "phone_7", "phone_8", "phone_10", "phone_mask")
+
+
 class Reason:
     """Коды причин остановки.
 
@@ -245,16 +267,29 @@ class Reason:
     DOMAIN_BLOCKED = "DOMAIN_BLOCKED"
     UNSUPPORTED_SCRIPT = "UNSUPPORTED_SCRIPT"
     SUCCESS_NOT_CONFIRMED = "SUCCESS_NOT_CONFIRMED"
+    # После «Отправить» сайт не принял анкету (01.10.2026): подсветил поля
+    # или сообщил об ошибке — отклик точно не ушёл, это не «скорее всего, ушёл».
+    SITE_NEEDS_FIX = "SITE_NEEDS_FIX"
+    SITE_REJECTED = "SITE_REJECTED"
     NAVIGATION_FAILED = "NAVIGATION_FAILED"
     SUBMIT_FAILED = "SUBMIT_FAILED"
+    # Сбой заполнения ДО клика «Отправить» (EngineFillError): поле не
+    # заполнилось, нечем отправить. На сайт ничего не ушло — это не
+    # «исход неизвестен», а обычный сбой, который можно повторить.
+    FILL_FAILED = "FILL_FAILED"
     VACANCY_NOT_FOUND = "VACANCY_NOT_FOUND"
     MAX_STEPS = "MAX_STEPS"
+    # Анкете нужны ответы человека — вопросы ушли в приложение (questions.py).
+    NEEDS_ANSWERS = "NEEDS_ANSWERS"
     MULTI_STEP_DRY_RUN_LIMIT = "MULTI_STEP_DRY_RUN_LIMIT"
     STEP_DID_NOT_ADVANCE = "STEP_DID_NOT_ADVANCE"
     DUPLICATE_BLOCKED = "DUPLICATE_BLOCKED"
     SUBMISSION_UNKNOWN = "SUBMISSION_UNKNOWN"
     CONSENT_REQUIRED = "CONSENT_REQUIRED"
     UNKNOWN_REQUIRED_QUESTION = "UNKNOWN_REQUIRED_QUESTION"
+    # Анкеты нет, а на странице — HR-почта компании: письмо шлёт сервер
+    # (п.4, решение владельца 01.10.2026; jupiter/email_apply.py).
+    EMAIL_APPLY = "EMAIL_APPLY"
 
 
 @dataclass
@@ -286,6 +321,10 @@ class AgentResult:
     trajectory: list[dict[str, Any]] = field(default_factory=list)
     reason_code: str | None = None
     human_action: dict[str, Any] | None = None
+    # Вопросы работодателя человеку (NEEDS_ANSWERS): questions.Question.as_dict.
+    questions: list[dict[str, Any]] = field(default_factory=list)
+    # Адрес для отклика письмом (EMAIL_APPLY).
+    email_to: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -293,6 +332,8 @@ class AgentResult:
             "reason": self.reason,
             "reason_code": self.reason_code,
             "human_action": self.human_action,
+            "questions": self.questions,
+            "email_to": self.email_to,
             "trajectory": self.trajectory,
         }
 
@@ -358,8 +399,12 @@ def _phone_for_control(phone: str, control: ControlState) -> str:
         local = digits
     else:
         return phone
-    variants = [phone, "+7" + local, "7" + local, "8" + local, local,
-                f"+7 ({local[:3]}) {local[3:6]}-{local[6:8]}-{local[8:]}"]
+    mask = f"+7 ({local[:3]}) {local[3:6]}-{local[6:8]}-{local[8:]}"
+    named = dict(zip(_PHONE_FORMATS, ("+7" + local, "7" + local, "8" + local, local, mask)))
+    if control.fix_format in named:
+        return named[control.fix_format]
+    variants = [phone, *named.values()]
+    fitting = []
     for variant in variants:
         if control.maxlength is not None and len(variant) > control.maxlength:
             continue
@@ -369,8 +414,31 @@ def _phone_for_control(phone: str, control: ControlState) -> str:
                     continue
             except re.error:
                 return phone
-        return variant
-    return phone
+        if variant not in fitting:
+            fitting.append(variant)
+    if not fitting:
+        return phone
+    # Сайт отверг запись — на каждом круге исправления следующая подходящая.
+    return fitting[control.fix_round % len(fitting)]
+
+
+def _date_for_control(value: Any, control: ControlState) -> str:
+    """Дата для поля: <input type=date> — только ГГГГ-ММ-ДД. Текстовое поле —
+    сначала ДД.ММ.ГГГГ: так пишут российские анкеты, и маска «__.__.____»
+    из ГГГГ-ММ-ДД делала «19.95.0515» (Магнит, Детский мир, SUNLIGHT, Prime —
+    репетиция 02.10.2026). ГГГГ-ММ-ДД — если поле само так подписано, и на
+    следующем круге исправления; или как подсказала Алиса."""
+    iso = _date_for_html(value)
+    if control.type == "date" or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", iso):
+        return iso
+    dmy = f"{iso[8:]}.{iso[5:7]}.{iso[:4]}"
+    if control.fix_format == "date_dmy":
+        return dmy
+    if control.fix_format == "date_iso":
+        return iso
+    hint = f"{control.placeholder} {control.label}".lower()
+    first, second = (iso, dmy) if re.search(r"гггг-мм|yyyy-mm", hint) else (dmy, iso)
+    return second if control.fix_round % 2 else first
 
 
 def _date_for_html(value: Any) -> str:
@@ -414,6 +482,11 @@ def choose_key(
             return override
         return override if override in profile.values else None
 
+    if control.type == "file":
+        # Файл — это резюме или вложение, а не телефон: id=file_input-brief-mobile
+        # у Globus IT сопоставлялся с номером (разведка 30.09).
+        return None
+
     section = _SECTION_FIELD_RE.fullmatch((control.name or "").strip().lower())
     # Почта и телефон — контакт кандидата, биографией они не бывают.
     if section and control.type not in {"email", "tel"}:
@@ -450,6 +523,14 @@ def choose_key(
     }
     if autocomplete in autocomplete_map:
         key = autocomplete_map[autocomplete]
+        if key == "full_name" and page is not None and any(
+            other is not control and other.form_index == control.form_index
+            and _is_last_name_control(other)
+            for other in page.controls
+        ):
+            # «Имя» с autocomplete=name рядом с отдельной фамилией — только имя,
+            # иначе фамилия уйдёт в анкету дважды (Селектел, 30.09).
+            key = "first_name"
         if key in profile.values:
             return key
 
@@ -527,6 +608,18 @@ _NAME_NEUTRAL_TOKENS = {
 _LAST_NAME_TOKENS = {"surname", "lastname", "lname", "family"}
 
 
+def _is_last_name_control(control: ControlState) -> bool:
+    """Отдельное поле фамилии: surname, last_name (IBS), lname, family-name
+    (Селектел), подпись «Фамилия»."""
+    tokens = set(_name_tokens(control.name) + _name_tokens(control.id))
+    return bool(
+        _LAST_NAME_TOKENS & tokens
+        or {"last", "name"} <= tokens
+        or normalize(control.autocomplete) == "family name"
+        or "фамил" in normalize(" ".join((control.label, control.placeholder)))
+    )
+
+
 def _name_tokens(raw: str) -> list[str]:
     spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", raw or "")
     return [t for t in re.split(r"[^a-z0-9]+", spaced.lower()) if t and not t.isdigit()]
@@ -559,10 +652,7 @@ def _bare_name_key(
         has_last_name = page is not None and any(
             other is not control
             and other.form_index == control.form_index
-            and (
-                _LAST_NAME_TOKENS & set(_name_tokens(other.name) + _name_tokens(other.id))
-                or "фамил" in normalize(" ".join((other.label, other.placeholder)))
-            )
+            and _is_last_name_control(other)
             for other in page.controls
         )
         key = "first_name" if has_last_name else "full_name"
@@ -576,12 +666,75 @@ _VACANCY_PATH_RE = re.compile(r"/(?:vacanc(?:y|ies)|jobs?|career/vacanc\w*)/([^/
 _APPLY_SLUGS = {"apply", "application", "response", "questionary", "form", "otklik", "anketa"}
 
 
+def _path_key(url: str) -> str:
+    """Адрес без параметров и якоря: хост и путь."""
+    parsed = urllib.parse.urlparse(url or "")
+    return f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
+
+
+def _url_key(url: str) -> str:
+    """Адрес для «уже были»: без якоря и завершающего слэша, с параметрами.
+    /career и /career/ — одна страница (Хоулмонт ходил между ними до MAX_STEPS,
+    02.10.2026), а /vacancies?id=33 и ?id=34 — разные."""
+    parsed = urllib.parse.urlparse(url or "")
+    key = f"{(parsed.hostname or '').lower()}{parsed.path.rstrip('/')}"
+    return f"{key}?{parsed.query}" if parsed.query else key
+
+
+def _climbs_up(url: str, root: str) -> bool:
+    """Ссылка уводит со страницы вакансии в её раздел: старт глубже одного
+    уровня (/vakansii/analitik-1s/), ссылка — его предок (/vakansii/) и не
+    несёт хвост адреса вакансии в параметрах (/vakansii/?apply=analitik-1s —
+    это отклик, его оставляем)."""
+    segments = [p for p in urllib.parse.urlparse(root or "").path.split("/") if p]
+    if len(segments) < 2 or not _is_ancestor_path(url, root):
+        return False
+    return segments[-1].lower() not in urllib.parse.unquote(urllib.parse.urlparse(url).query).lower()
+
+
+def _is_ancestor_path(url: str, root: str) -> bool:
+    """url — раздел, в котором лежит root (тот же хост, путь root глубже)."""
+    a, b = urllib.parse.urlparse(url), urllib.parse.urlparse(root)
+    if (a.hostname or "").lower().removeprefix("www.") != (b.hostname or "").lower().removeprefix("www."):
+        return False
+    parent = (a.path or "/").rstrip("/") + "/"
+    child = (b.path or "/").rstrip("/") + "/"
+    return child != parent and child.startswith(parent)
+
+
+def _card_like(url: str) -> bool:
+    """Последний сегмент пути — карточка вакансии: номер (3+ цифры) или
+    составное имя из трёх и больше слов (sistemnyj-inzhener-nova-core).
+    Город или направление (/moscow/, /saint-petersburg/) — нет."""
+    segments = [p for p in urllib.parse.urlparse(url or "").path.split("/") if p]
+    if not segments:
+        return False
+    last = urllib.parse.unquote(segments[-1]).lower()
+    return bool(re.search(r"\d{3,}", last)) or len(re.findall(r"[-_]", last)) >= 2
+
+
+def _is_sibling(url: str, current: str) -> bool:
+    """Соседний раздел того же уровня: /vacancies/kazan/ рядом с /vacancies/moscow/."""
+    a, b = urllib.parse.urlparse(url), urllib.parse.urlparse(current)
+    if (a.hostname or "").lower() != (b.hostname or "").lower():
+        return False
+    pa = [p for p in a.path.split("/") if p]
+    pb = [p for p in b.path.split("/") if p]
+    return len(pa) == len(pb) >= 2 and pa[:-1] == pb[:-1] and pa[-1] != pb[-1]
+
+
 def _vacancy_slug(url: str) -> str:
     """Идентификатор вакансии в адресе: /vacancies/118-marketing-lead → 118-marketing-lead."""
     match = _VACANCY_PATH_RE.search(urllib.parse.urlparse(url or "").path)
     slug = match.group(1).lower() if match else ""
     # /jobs/apply?id=1 — это отклик, а не другая вакансия.
-    return "" if slug in _APPLY_SLUGS else slug
+    if slug in _APPLY_SLUGS:
+        return ""
+    # Раздел списка — не вакансия: /career/vacancies/it, /vacancies/all/moscow.
+    # У карточки в адресе номер или составное имя (118-marketing-lead,
+    # java-developer). Иначе правило «с карточки — только к своему отклику»
+    # отрезало со страницы списка все настоящие вакансии (Т-Банк, 30.09).
+    return slug if re.search(r"[\d_-]", slug) else ""
 
 
 def is_application_form(
@@ -620,6 +773,12 @@ def is_application_form(
     text_fields = 0  # поля для ввода текста (не select)
     only_text_is_email = False
     is_question = False
+    # Признак кандидата словами (резюме, вакансия, «о себе»), а не просто поле
+    # для файла: вложение бывает и у обратной связи (Верный, 30.09).
+    has_candidate_text = False
+    # Какими словами форма похожа на анкету: «должность» рядом с «компанией» —
+    # должность клиента, а не желаемая (Синимекс, 01.10.2026).
+    candidate_words: set[str] = set()
     for control in page.controls:
         if control.form_index != form_index:
             continue
@@ -637,6 +796,9 @@ def is_application_form(
         if control.type == "file":
             has_candidate_field = True  # резюме или портфолио файлом
             has_file = True
+            file_text = normalize(" ".join((control.name, control.id, control.label, control.accept)))
+            if any(marker in file_text for marker in ("resume", "резюм", "cv", "портфолио", "portfolio")):
+                has_candidate_text = True
         if control.type == "radio":
             questions += 1  # выбор из вариантов — вопрос анкеты, у подписки его нет
         if control.type in _STRUCTURAL_CONTROL_TYPES:
@@ -655,7 +817,7 @@ def is_application_form(
             ) if value
         ))
 
-        if any(marker in haystack for marker in _ORDER_FORM_MARKERS):
+        if any(marker in haystack for marker in _ORDER_FORM_MARKERS + _CLIENT_FORM_MARKERS):
             return False
         if any(marker in haystack for marker in _QUESTION_FORM_MARKERS):
             is_question = True
@@ -664,15 +826,21 @@ def is_application_form(
         # признак сразу. Обязательная «компания» — только если в форме нет
         # ни одного поля кандидата (резюме, вакансия, «о себе»; проверка после
         # цикла): в IT-анкетах бывает обязательная «текущая компания».
-        if control.required:
+        # Обязательность — атрибутом или звёздочкой в подписи: Digital Design
+        # (01.10.2026) пишет «Компания *», не помечая поле required.
+        starred = (control.label or "").rstrip().endswith("*")
+        if control.required or starred:
             tokens = set(haystack.split())
             if "inn" in tokens or "инн" in tokens:
                 return False
             if any(marker in haystack for marker in _COMPANY_FIELD_MARKERS):
                 requires_company = True
-        if any(marker in haystack.split() or len(marker) > 3 and marker in haystack
-               for marker in _CANDIDATE_FIELD_MARKERS):
+        hits = [marker for marker in _CANDIDATE_FIELD_MARKERS
+                if marker in haystack.split() or len(marker) > 3 and marker in haystack]
+        if hits:
             has_candidate_field = True
+            has_candidate_text = True
+            candidate_words.update(hits)
 
         if any(marker in haystack for marker in _CONTACT_FIELD_MARKERS):
             has_contact = True
@@ -682,7 +850,13 @@ def is_application_form(
             text_fields += 1
             only_text_is_email = text_fields == 1 and has_email_only
 
-    if (requires_company or is_question) and not has_candidate_field:
+    if requires_company and not has_candidate_field:
+        return False
+    # Компания и только «должность/position» — форма «свяжитесь с нами»:
+    # в анкете кандидата рядом было бы резюме, вакансия или «о себе».
+    if requires_company and not has_file and candidate_words and candidate_words <= {"должност", "position"}:
+        return False
+    if is_question and not has_candidate_text:
         return False
     # Подписка на вакансии: единственное текстовое поле — почта, рядом только
     # select'ы (город, направление), ни имени, ни телефона, ни резюме. Такую
@@ -730,6 +904,10 @@ class JupiterAgent:
         handoffs: HandoffStore | None = None,
         before_submit: Callable[[str, bool], None] | None = None,
         field_mapper: Callable[[list[dict], list[str]], dict[str, str]] | None = None,
+        question_explainer: Callable[[list[dict], dict], dict[str, dict[str, str]]] | None = None,
+        outcome_judge: Callable[[dict, list[str]], dict | None] | None = None,
+        fix_advisor: Callable[[dict, list[str]], str | None] | None = None,
+        alice: Any = None,
     ):
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
         self.max_steps = max_steps
@@ -748,6 +926,29 @@ class JupiterAgent:
         # {имя поля: ключ}. Значения кандидата и полей ей не показываются,
         # согласия и галочки она не трогает. См. _map_unknown_fields.
         self.field_mapper = field_mapper
+        # Нейросеть переписывает вопросы работодателя понятнее (01.10.2026):
+        # видит подписи полей формы и заголовок страницы, не данные кандидата.
+        # Ключ вопроса не меняет. См. _explain_questions.
+        self.question_explainer = question_explainer
+        # Исход отправки без явного подтверждения (решение владельца
+        # 01.10.2026): нейросеть читает страницу после «Отправить» — значения
+        # кандидата вырезаются (второй довод — что вырезать). Успех — только с
+        # дословной цитатой страницы. См. _site_verdict.
+        self.outcome_judge = outcome_judge
+        # Как переписать поле, которое сайт отверг (п.1, 01.10.2026): модель
+        # видит подпись, шаблон и сообщение сайта без значений кандидата и
+        # выбирает запись из списка. См. _site_fix.
+        self.fix_advisor = fix_advisor
+        # Алиса-спасатель (02.10.2026, по образцу browser-use): когда свой разбор
+        # застрял, нейросеть по одному действию доводит живую вкладку до места,
+        # откуда основной цикл идёт сам. Объект с complete_json(system, user,
+        # schema_hint). Видит устройство страницы и имена ключей профиля;
+        # значения в поля подставляет код (_alice_value). Только браузерный
+        # движок. См. alice_agent.py, _alice_rescue.
+        self.alice = alice
+        self._alice_quota: alice_agent.TaskQuota | None = None
+        self._alice_points: set[tuple[str, str]] = set()
+        self._alice_radios: set[str] = set()
         self.engine = engine or JupiterWebEngine(
             self.allowed_hosts,
             read_only=dry_run,
@@ -841,6 +1042,94 @@ class JupiterAgent:
             "provenance": {"field_class": FieldClass.CONSENT, "source": "SITE_DEFAULT"},
         })
 
+    def drop_preselected_radios(
+        self,
+        page: PageState,
+        form_index: int,
+        trajectory: list[dict[str, Any]],
+    ) -> None:
+        """Снять выбор, который сайт сделал за человека в группе радиокнопок.
+
+        У Полюса «Готовность к вахтовому методу» заранее стоит на «Готов» — и
+        ушла бы ответом кандидата, которого он не давал. Снятую группу дальше
+        заполняет профиль как обычно; не знает ответа — обязательный вопрос
+        уходит человеку, необязательный не отправляется вовсе. Группу из
+        одной кнопки не трогаем: выбора там нет, это фиксированное значение.
+        """
+        groups: dict[str, list[ControlState]] = {}
+        for control in page.controls:
+            if control.form_index == form_index and control.type == "radio" and control.name:
+                groups.setdefault(control.name, []).append(control)
+        for name, group in groups.items():
+            if len(group) < 2:
+                continue
+            if name in self._alice_radios:
+                continue  # выбор сделала Алиса по ключу профиля, а не сайт за человека
+            chosen = [c for c in group if c.checked and not c.disabled and not c.readonly]
+            if not chosen:
+                continue
+            for control in chosen:
+                control.checked = False
+            trajectory.append({
+                "action": "radio_default_cleared",
+                "field": name,
+                "value": chosen[0].value,
+                "provenance": {"field_class": FieldClass.FACT, "source": "SITE_DEFAULT"},
+            })
+
+    def _fill_from_answer(
+        self,
+        page: PageState,
+        control: ControlState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+    ) -> bool:
+        """Подставить ответ, который человек дал на этот вопрос в приложении.
+
+        Только его собственный ответ (questions.answer_for); вариант списка —
+        лишь тот, что есть на сайте, иначе поле остаётся вопросом.
+        """
+        answers = profile.values.get("answers")
+        if not isinstance(answers, dict) or not answers:
+            return False
+        text = question_text(control, self.descriptor)
+        value = answer_for(text, answers)
+        if value is None or is_special(text):
+            return False
+        wanted = str(value).strip()
+        if control.tag == "select":
+            match = next((o for o in control.options if not o.disabled and wanted and (
+                wanted == str(o.value) or normalize(wanted) == normalize(o.label))), None)
+            if match is None:
+                return False
+            control.value = match.value
+            for option in control.options:
+                option.selected = option is match
+        elif control.type == "radio":
+            group = [p for p in page.controls
+                     if p.type == "radio" and p.name == control.name and p.form_index == control.form_index]
+            if any(p.checked for p in group):
+                return False
+            match = next((p for p in group if wanted == str(p.value)
+                          or normalize(wanted) == normalize(p.label or p.text)), None)
+            if match is None:
+                return False
+            for peer in group:
+                peer.checked = peer is match
+        elif control.type == "checkbox":
+            if looks_like_consent(text) or not _is_yes(value):
+                return False
+            control.checked = True
+        else:
+            control.value = _date_for_html(wanted) if control.type == "date" else wanted
+        trajectory.append({
+            "action": "check" if control.type in {"checkbox", "radio"} else "fill",
+            "field": text,
+            "key": "answer",
+            "provenance": {"field_class": FieldClass.FACT, "source": "USER_ANSWER"},
+        })
+        return True
+
     def fill_control(
         self,
         page: PageState,
@@ -856,6 +1145,15 @@ class JupiterAgent:
             # Затирать его нельзя: там обычно то, что он сам и подставил.
             return False
         if _looks_like_captcha(control):
+            return False
+        if control.css_hidden and not control.required and control.type != "file":
+            # Ловушка для ботов: невидимое человеку поле. Человек бы его не
+            # заполнил — и мы не заполняем. Файловое поле — не ловушка: его
+            # прячут почти всегда и рисуют вместо него «Загрузить резюме»
+            # (react-dropzone: style="display: none"). Без этого исключения
+            # резюме не уходило на 8 сайтах репетиции 02.10.2026 — WB, Точка,
+            # TravelLine, Magnit Tech, 1С-Битрикс и др.
+            trajectory.append({"action": "skip_hidden_field", "field": control.name or control.id})
             return False
 
         descriptor = self.descriptor(control)
@@ -909,6 +1207,10 @@ class JupiterAgent:
             return False
 
         key = key_override or choose_key(control, profile, page.url, page)
+        if (not key or profile.values.get(key) in (None, "")) and self._fill_from_answer(
+            page, control, profile, trajectory,
+        ):
+            return True
         if not key:
             if control.tag == "select" and control.required:
                 real_options = [
@@ -1014,7 +1316,7 @@ class JupiterAgent:
                 return True
             return False
 
-        text = _date_for_html(value) if control.type == "date" or key == "birth_date" else str(value)
+        text = _date_for_control(value, control) if control.type == "date" or key == "birth_date" else str(value)
         if key == "phone":
             text = _phone_for_control(text, control)
         control.value = text
@@ -1028,11 +1330,49 @@ class JupiterAgent:
         return True
 
     @staticmethod
+    def _has_empty_input_form(page: PageState, before: PageState | None = None) -> bool:
+        """Есть ли НОВАЯ форма с пустым полем ввода. Шаг «Код из СМС» анкетой
+        по is_application_form не признаётся, но это явное «нужен ещё ввод».
+        Поиск (type=search) и поля, что были на странице и до клика (поиск в
+        шапке, подписка в подвале), не в счёт — иначе голый 2xx не подтверждал
+        бы почти нигде (разбор архитектора 02.10.2026)."""
+        seen = set()
+        if before is not None:
+            seen = {(c.name or c.label or c.placeholder) for c in before.controls if (c.name or c.label or c.placeholder)}
+        return any(
+            control.form_index is not None
+            and not control.disabled and not control.readonly and not control.value
+            and (control.name or control.label or control.placeholder) not in seen
+            and (control.tag == "textarea" or (
+                control.tag == "input"
+                and (control.type or "text") in {"text", "tel", "email", "number", "password"}))
+            for control in page.controls
+        )
+
+    _CODE_FIELD_RE = re.compile(r"(?:\bкод\b|\bcode\b|otp|\bsms\b|\bсмс\b|confirm)", re.I)
+
+    @classmethod
+    def _asks_for_code(cls, page: PageState) -> bool:
+        """После «Отправить» появилось пустое поле кода (СМС, почта, OTP):
+        отклик ещё не принят, что бы ни писала страница («Заявка отправлена.
+        Введите код из СМС»). Разбор архитектора 02.10.2026."""
+        for control in page.controls:
+            if control.disabled or control.readonly or control.value:
+                continue
+            if control.tag != "input" or (control.type or "text") not in {"text", "tel", "number", "password"}:
+                continue
+            words = " ".join(x or "" for x in (control.name, control.label, control.placeholder, control.aria))
+            if cls._CODE_FIELD_RE.search(words):
+                return True
+        return False
+
+    @staticmethod
     def _evidence(
         before: PageState,
         after: PageState,
         form_gone: bool,
         api_result: dict | None = None,
+        api_2xx_counts: bool = True,
     ) -> list[SubmissionEvidence]:
         """Доказательства того, что отклик приняли.
 
@@ -1053,6 +1393,12 @@ class JupiterAgent:
             success_markers=SUCCESS_MARKERS,
             form_gone=form_gone,
             normalize=normalize,
+            # Подстроки SUCCESS_MARKERS + регулярки submission.SUCCESS_PATTERNS
+            # («Заявка успешно отправлена», «Данные успешно отправлены»).
+            # «Вы уже откликнулись» тут — признак того, что отклик есть: мы
+            # его не отправляли до клика (маркера не было в тексте до), а это
+            # не то же самое, что DUPLICATE_BLOCKED по квитанции до отправки.
+            success_patterns=True,
         )
         if api_result:
             detail = "; ".join(api_result.get("evidence") or [])[:300]
@@ -1062,6 +1408,11 @@ class JupiterAgent:
                 ))
             elif api_result.get("api_success"):
                 evidence.append(SubmissionEvidence("API_RESPONSE", detail, 0.85, after.url))
+            elif api_result.get("api_2xx") and api_2xx_counts:
+                # Сервер ответил 2xx на адрес отправки, но без флага успеха в
+                # теле. Один он не подтверждает (0.7 < порога), а вместе с
+                # исчезновением формы (0.35) даёт 0.8 — подтверждение.
+                evidence.append(SubmissionEvidence("API_2XX", detail, 0.7, after.url))
         return evidence
 
     @staticmethod
@@ -1280,6 +1631,46 @@ class JupiterAgent:
                     filled = True
                     break
         return filled
+
+    def _explain_questions(
+        self, page: PageState, form_index: int | None, questions: list[dict],
+    ) -> list[dict]:
+        """Понятный текст и пояснение к вопросам — если есть нейросеть.
+
+        Добавляет display/hint и уточняет kind; key и text (подпись сайта) не
+        трогает. Любой сбой — вопросы как есть.
+        """
+        if self.question_explainer is None or not questions:
+            return questions
+        fields = []
+        for control in page.controls:
+            if form_index is not None and control.form_index != form_index:
+                continue
+            if control.type in {"hidden", "submit", "image", "button", "reset"}:
+                continue
+            label = str(self.descriptor(control) or "").strip()
+            if label and label not in fields:
+                fields.append(label)
+        context = {
+            "host": urllib.parse.urlparse(page.url).hostname or "",
+            "title": page.title, "fields": fields,
+        }
+        try:
+            answer = self.question_explainer(questions, context)
+        except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+            return questions
+        if not isinstance(answer, dict):
+            return questions
+        for q in questions:
+            extra = answer.get(q.get("key"))
+            if not isinstance(extra, dict) or not extra.get("question"):
+                continue
+            q["display"] = str(extra["question"])[:200]
+            if extra.get("hint"):
+                q["hint"] = str(extra["hint"])[:400]
+            if extra.get("kind") in ("fact", "vacancy"):
+                q["kind"] = extra["kind"]
+        return questions
 
     def _missing_reason_code(
         self,
@@ -1595,9 +1986,25 @@ class JupiterAgent:
             (self._spa_links(page), "spa_state", 0),
         ]
         own_vacancy = _vacancy_slug(self._root_url)
+        # Со списка дошли до карточки — дальше она и есть вакансия: соседние
+        # карточки не перебираем (СИБУР ходил по ним до MAX_STEPS, 02.10.2026).
+        card_root = self._root_url
+        if not own_vacancy and _card_like(page.url):
+            own_vacancy = _vacancy_slug(page.url)
+            card_root = page.url
+        # Один путь с разными параметрами — не больше двух заходов: второй
+        # бывает вакансией (/vacancies?id=33), дальше это перебор фильтров
+        # (?direction=…), и разведка упиралась в MAX_STEPS вместо «нужен
+        # браузер» (Т-Банк IT, 30.09).
+        path_visits: dict[str, int] = {}
+        seen_keys = {_url_key(seen) for seen in visited}
+        for seen in seen_keys:
+            key = _path_key("//" + seen)
+            path_visits[key] = path_visits.get(key, 0) + 1
         for candidates, origin, priority in sources:
             for url, text in candidates:
-                if url in visited:
+                if (url in visited or _url_key(url) in seen_keys or _url_key(url) == _url_key(page.url)
+                        or path_visits.get(_path_key(url), 0) >= 2):
                     continue
                 # С карточки вакансии — только к отклику на неё же. Соседняя
                 # вакансия в «похожих» набирает те же очки, и агент заполнял
@@ -1605,11 +2012,23 @@ class JupiterAgent:
                 slug = _vacancy_slug(url)
                 if own_vacancy and slug and slug != own_vacancy:
                     continue
+                # И не «на уровень выше»: со страницы вакансии ссылка на её же
+                # раздел (/vakansii/ с /vakansii/analitik-1s/) уводила в общий
+                # список, где анкеты нет — 29 сайтов «не нашёл анкету» (01.10.2026).
+                if _climbs_up(url, self._root_url) or _climbs_up(url, card_root):
+                    continue
                 parsed = urllib.parse.urlparse(url)
                 if (parsed.hostname or "").lower() not in self.engine.allowed_hosts:
                     continue
                 score = self._navigation_score(url, text)
                 if score > 0:
+                    # Со списка — в карточку, а не по соседним фильтрам: СИБУР
+                    # перебирал города (/vacancies/moscow/ → /kazan/ → …) до
+                    # MAX_STEPS (разбор 220 «анкета не найдена», 02.10.2026).
+                    if _card_like(url):
+                        score += 40
+                    elif _is_sibling(url, page.url):
+                        score -= 40
                     ranked.append((score, priority, url, origin))
         if not ranked:
             return None
@@ -1915,6 +2334,215 @@ class JupiterAgent:
         })
         return AgentResult(status, reason, trajectory, code)
 
+    def _site_verdict(self, page: PageState, profile: CandidateProfile) -> dict | None:
+        """Что сайт сказал после «Отправить», когда явного подтверждения нет.
+
+        Сначала сам сайт: поля этой формы, помеченные неверными (браузерный
+        движок, last_submit_feedback), — отклик точно не ушёл. Иначе — нейросеть
+        по странице, без значений кандидата. None — сказать нечего.
+        """
+        feedback = getattr(self.engine, "last_submit_feedback", None) or {}
+        invalid = [f for f in (feedback.get("invalid") or []) if isinstance(f, dict)]
+        if invalid:
+            labels = [str(f.get("label") or f.get("type") or "поле")[:80] for f in invalid][:10]
+            return {"verdict": "needs_fix", "fields": labels, "quote": "", "source": "site",
+                    "refs": [str(f["ref"]) for f in invalid if f.get("ref")],
+                    "messages": {str(f["ref"]): str(f.get("message") or "")[:120]
+                                 for f in invalid if f.get("ref")}}
+        if self.outcome_judge is None:
+            return None
+        secrets = self._secrets(profile)
+        try:
+            got = self.outcome_judge({
+                "title": page.title, "text": page.text,
+                "errors": feedback.get("errors") or [], "invalid": invalid,
+            }, secrets)
+        except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+            return None
+        return dict(got, source="llm") if isinstance(got, dict) else None
+
+    @staticmethod
+    def _secrets(profile: CandidateProfile) -> list[str]:
+        """Значения кандидата — их вырезают из всего, что видит нейросеть."""
+        return [str(v) for v in profile.values.values()
+                if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip()]
+
+    @staticmethod
+    def _alice_can_try(question: Any) -> bool:
+        """Может ли ответ на вопрос лежать в профиле, пусть агент этого и не видит.
+
+        «Факт» (контакт, пол, стаж) — да. Поле без подписи движок зовёт jt-N, а у
+        радио-группы подписью служит первый вариант («Да»): настоящий вопрос
+        (соседний текст, legend) видит только Алиса. Прочие — вопросы под вакансию."""
+        text = str(question.text).strip()
+        if question.kind == "fact" or re.fullmatch(r"jt-\d+", text):
+            return True
+        return any(
+            isinstance(option, dict) and normalize(text) == normalize(str(option.get("label", "")))
+            for option in question.options
+        )
+
+    def _alice_value(self, profile: CandidateProfile, key: str, fmt: str | None = None) -> str | None:
+        """Значение ключа для Алисы. Единственное место, где оно выходит из профиля
+        в страницу: модель называет ключ и запись, значения не видит."""
+        value = profile.values.get(key)
+        if value is None or value == "" or isinstance(value, (dict, list)) or key in {"resume", "candidate_id"}:
+            return None
+        if isinstance(value, bool):
+            return "Да" if value else "Нет"
+        text = str(value)
+        probe = ControlState(index=0, form_index=None, tag="input", fix_format=fmt or "")
+        if fmt in _PHONE_FORMATS:
+            return _phone_for_control(text, probe)
+        if fmt in ("date_dmy", "date_iso"):
+            return _date_for_control(value, probe)
+        if key == "birth_date":
+            return _date_for_html(value)
+        return text
+
+    def _alice_flush(self, page: PageState, form_index: int | None) -> None:
+        """Перенести значения агента из модели в живую страницу.
+
+        До submit() они лежат только в PageState, а Алиса смотрит на живой DOM:
+        без этого все поля для неё «пусто», и шести шагов не хватит их заново
+        заполнить. Тот же _apply_values, что и перед «Отправить», — без клика."""
+        apply = getattr(self.engine, "_apply_values", None)
+        if apply is None or form_index is None or form_index >= len(page.forms):
+            return
+        try:
+            apply(page, page.forms[form_index])
+        except EngineError:
+            pass  # не перенеслось — Алиса увидит поле пустым и заполнит сама
+
+    def _alice_rescue(
+        self,
+        page: PageState,
+        profile: CandidateProfile,
+        trajectory: list[dict[str, Any]],
+        code: str,
+        *,
+        form_index: int | None = None,
+        notes: list[str] | tuple[str, ...] = (),
+    ) -> PageState | None:
+        """Спасательный заход Алисы (alice_agent.rescue). Вернула страницу — основной
+        цикл делает `continue` и заново проверяет поля, капчу, отпечаток, отправляет
+        и проверяет успех сам; None — прежний return с прежним кодом.
+
+        Только браузерный движок (у HTTP-движка нет вкладки). Не больше 2 заходов на
+        задачу и одного — на точку (код + отпечаток шага). В траектории — действие,
+        номер элемента и ключ, значений нет."""
+        tab = getattr(self.engine, "_tab", None)
+        if self.alice is None or tab is None:
+            return None
+        if self._alice_quota is None:
+            self._alice_quota = alice_agent.TaskQuota(yandex_gpt.BUDGET)
+        quota = self._alice_quota
+        point = (code, self._step_signature(page, form_index))
+        why = ""
+        if quota.rescues_left <= 0:
+            why = "заходы на задачу кончились"
+        elif point in self._alice_points:
+            why = "на этой точке Алиса уже была"
+        elif quota.remaining() < alice_agent.MIN_CALLS_TO_START:
+            why = "мало вызовов модели в бюджете"
+        if why:
+            trajectory.append({"action": "alice_gave_up", "reason_code": code, "why": why})
+            return None
+        quota.rescues_left -= 1
+        self._alice_points.add(point)
+        if code in {Reason.MISSING_PROFILE_FIELD, Reason.VALIDATION_FAILED}:
+            self._alice_flush(page, form_index)
+        title = (page.title or "").strip()[:80]
+        result = alice_agent.rescue(
+            self.engine,
+            self._llm_allowed_keys(profile),
+            f"откликнуться на вакансию «{title}»" if title else "откликнуться на вакансию",
+            code,
+            self.alice,
+            read_only=self.dry_run or bool(getattr(self.engine, "read_only", False)),
+            budget=quota,
+            value_for=lambda key, fmt=None: self._alice_value(profile, key, fmt),
+            resume_path=profile.resume_path,
+            notes=notes,
+        )
+        trajectory.extend(result.steps)
+        self._alice_radios |= result.radio_names
+        fresh: PageState | None = None
+        if result.status != alice_agent.BLOCKED and result.acted:
+            try:
+                # Живой DOM изменился: модель страницы берём заново, иначе
+                # _apply_values перед отправкой затёр бы сделанное Алисой.
+                fresh = self.engine.current_page()
+            except EngineError as exc:
+                result.why = f"страницу не снять: {type(exc).__name__}"
+        if fresh is None:
+            trajectory.append({"action": "alice_gave_up", "reason_code": code,
+                               "status": result.status, "why": result.why})
+            return None
+        trajectory.append({"action": "alice_rescued", "reason_code": code, "status": result.status,
+                           "why": result.why, "calls": result.calls})
+        return fresh
+
+    def _site_fix(self, page: PageState, verdict: dict, profile: CandidateProfile,
+                  round_no: int) -> list[ControlState]:
+        """Поля, подсвеченные сайтом, — к следующему кругу: обязательные, а
+        заполненные нами — очищаются и пишутся иначе (_phone_for_control,
+        _date_for_control). Возвращает подсвеченные поля этой формы."""
+        refs = set(verdict.get("refs") or [])
+        messages = verdict.get("messages") or {}
+        marked = [c for c in page.controls if c.dom_ref and c.dom_ref in refs]
+        for control in marked:
+            control.required = True
+            if control.tag == "select" or control.type in {"checkbox", "radio", "file"}:
+                continue
+            control.fix_round = round_no
+            if self.fix_advisor is not None and control.value:
+                try:
+                    hint = self.fix_advisor({
+                        "label": self.descriptor(control), "placeholder": control.placeholder,
+                        "pattern": control.pattern, "type": control.type,
+                        "message": messages.get(control.dom_ref, ""),
+                    }, self._secrets(profile))
+                except Exception:  # noqa: BLE001 — сбой нейросети не должен ронять отклик
+                    hint = None
+                control.fix_format = hint or ""
+            control.value = ""
+        return marked
+
+    def _apply_verdict(
+        self,
+        verdict: dict,
+        fingerprint: ApplicationFingerprint | None,
+        page: PageState,
+        evidence: list[SubmissionEvidence],
+        trajectory: list[dict[str, Any]],
+    ) -> AgentResult | None:
+        kind = verdict.get("verdict")
+        fields = [str(f) for f in (verdict.get("fields") or [])][:10]
+        quote = str(verdict.get("quote") or "")[:200]
+        trajectory.append({
+            "action": "outcome_judged", "source": verdict.get("source"),
+            "verdict": kind, "fields": fields, "quote": quote,
+        })
+        if kind == "accepted" and quote:
+            evidence = [*evidence, SubmissionEvidence("PAGE_JUDGED", quote, 0.9, page.url)]
+            if fingerprint is not None:
+                self._record_receipt(fingerprint, "submitted", page.url, evidence)
+            trajectory.append({"action": "success_detected", "url": page.url,
+                               "status": page.status, "by": "outcome_judge"})
+            return AgentResult("submitted", trajectory=trajectory)
+        if kind == "needs_fix":
+            reason = ("Site did not accept the form; it asks to fix: "
+                      + (", ".join(f"«{f}»" for f in fields) if fields else "fields of the form"))
+            code = Reason.SITE_NEEDS_FIX
+        elif kind == "error" and quote:
+            reason = f"Site answered with an error: «{quote}»"
+            code = Reason.SITE_REJECTED
+        else:
+            return None
+        trajectory.append({"action": "action_required", "reason": reason, "reason_code": code})
+        return AgentResult("action_required", reason, trajectory, code)
+
     def _unknown_outcome(
         self,
         before: PageState,
@@ -1934,7 +2562,30 @@ class JupiterAgent:
             "receipt": receipt.as_dict(),
         })
 
-        # Одна попытка узнать правду безопасным способом. GET ничего не
+        # Сначала текущая вкладка (браузерный движок): «Спасибо» могло уже
+        # показаться, а перезагрузка вакансии его стирает — анкета на SPA
+        # появляется заново, и подтверждения не видно никогда.
+        current = getattr(self.engine, "current_page", None)
+        if callable(current):
+            try:
+                tab = current()
+            except EngineError:
+                tab = None
+            if tab is not None:
+                evidence = self._evidence(before, tab, form_gone=not tab.forms)
+                trajectory.append({
+                    "action": "verify_submission",
+                    "source": "current_tab",
+                    "url": tab.url,
+                    "confirmed": is_confirmed(evidence),
+                    "score": round(score_evidence(evidence), 2),
+                    "evidence": [item.as_dict() for item in evidence],
+                })
+                if is_confirmed(evidence):
+                    self._record_receipt(fingerprint, "submitted", tab.url, evidence)
+                    return AgentResult("submitted", trajectory=trajectory)
+
+        # Потом одна попытка узнать правду безопасным способом. GET ничего не
         # создаёт, поэтому его повторить можно, в отличие от POST.
         try:
             after = self.engine.open(before.url)
@@ -1987,6 +2638,15 @@ class JupiterAgent:
         # объявлялся «шаг не сдвинулся» — и статистика совместимости считала
         # бы неподтверждённые отправки проблемой многошаговых анкет.
         last_click_was_submit = False
+        # Отпечаток и доказательства последней настоящей отправки: если после
+        # неё формы нет, а подтверждения нет, по ним пишется квитанция.
+        last_submit: tuple[ApplicationFingerprint, list[SubmissionEvidence]] | None = None
+        # Сайт подсветил поля после «Отправить» (01.10.2026): на следующем
+        # круге они считаются обязательными — заполняем из профиля или
+        # спрашиваем человека (вопросы работодателей), и отправляем снова.
+        # Не больше SITE_FIX_ROUNDS кругов; POST при этом не уходил.
+        site_fix_rounds = 0
+        retry_after_fix = False
         flow = FormFlow()
         visited = {page.url}
 
@@ -2008,7 +2668,7 @@ class JupiterAgent:
                     "url": page.url,
                     "form_index": target_form_index,
                 })
-                if not advanced and sent_once:
+                if not advanced and sent_once and not retry_after_fix:
                     # Тот же экран с тем же набором полей после запроса.
                     # Значит, сервер нас вернул, а мы этого не поняли.
                     if last_click_was_submit:
@@ -2023,6 +2683,14 @@ class JupiterAgent:
                             "Jupiter is not making progress"
                         )
                         code = Reason.STEP_DID_NOT_ADVANCE
+                    if code == Reason.STEP_DID_NOT_ADVANCE:
+                        rescued = self._alice_rescue(
+                            page, profile, trajectory, code, form_index=target_form_index,
+                        )
+                        if rescued is not None:
+                            # Круг идёт заново: «тот же шаг» уже не повод остановиться.
+                            page, retry_after_fix = rescued, True
+                            continue
                     trajectory.append({
                         "action": "action_required",
                         "reason": reason,
@@ -2036,6 +2704,7 @@ class JupiterAgent:
                     "step_index": flow.step_index,
                     "score": self._form_score(page, target_form_index, profile),
                 })
+                self.drop_preselected_radios(page, target_form_index, trajectory)
                 for control in page.controls:
                     if control.form_index != target_form_index:
                         continue
@@ -2072,6 +2741,40 @@ class JupiterAgent:
             if has_application_form or filled_any:
                 if missing:
                     code = self._missing_reason_code(page, target_form_index)
+                    if code != Reason.CONSENT_REQUIRED:
+                        questions, special = extract_questions(
+                            page, target_form_index, self.descriptor,
+                        )
+                        # Алиса пробует раньше человека, но только там, где ответ может
+                        # лежать в профиле: нет вопросов вовсе, среди них есть «факт»
+                        # (контакт, пол, стаж) или поле без настоящей подписи (_alice_can_try).
+                        # Вопросы
+                        # «под вакансию» ключом не закрываются; согласия, юридические
+                        # вопросы и особые категории остаются человеку.
+                        if (code == Reason.MISSING_PROFILE_FIELD and not special
+                                and (not questions or any(self._alice_can_try(q) for q in questions))):
+                            rescued = self._alice_rescue(
+                                page, profile, trajectory, code, form_index=target_form_index,
+                                notes=["Не заполнены обязательные поля: "
+                                       + "; ".join((q.text for q in questions) if questions else missing[:8])],
+                            )
+                            if rescued is not None:
+                                page, retry_after_fix = rescued, True
+                                continue
+                        # Особые категории — только на сайте, самим человеком.
+                        if questions and not special:
+                            result = self._handoff(
+                                page, trajectory,
+                                action_type=HumanAction.UNKNOWN_FIELD,
+                                prompt="Employer questions need the candidate's answers: "
+                                       + "; ".join(q.text for q in questions),
+                                reason_code=Reason.NEEDS_ANSWERS,
+                                field_name=questions[0].text,
+                            )
+                            result.questions = self._explain_questions(
+                                page, target_form_index, [q.as_dict() for q in questions],
+                            )
+                            return result
                     action_type = {
                         Reason.CONSENT_REQUIRED: HumanAction.CONSENT,
                         Reason.UNKNOWN_REQUIRED_QUESTION:
@@ -2090,6 +2793,15 @@ class JupiterAgent:
 
                 issues = self._validation_issues(page, target_form_index)
                 if issues:
+                    # Формат значения: Алиса называет запись (FIX_FORMATS), значение пишет код.
+                    rescued = self._alice_rescue(
+                        page, profile, trajectory, Reason.VALIDATION_FAILED,
+                        form_index=target_form_index,
+                        notes=[f"{issue.field}: {issue.rule}; {issue.message}" for issue in issues[:5]],
+                    )
+                    if rescued is not None:
+                        page, retry_after_fix = rescued, True
+                        continue
                     reason = "Form fails HTML validation: " + "; ".join(
                         f"{issue.field}: {issue.message}" for issue in issues
                     )
@@ -2119,6 +2831,30 @@ class JupiterAgent:
                         ),
                         reason_code=Reason.CAPTCHA_REQUIRED,
                     )
+
+            if submit is None and sent_once and last_click_was_submit and last_submit is not None:
+                # Отклик отправлен, формы больше нет, подтверждения нет. Уходить
+                # со страницы нельзя (02.10.2026): другие страницы сайта и
+                # повторное «Откликнуться» не покажут, ушёл ли отклик, зато
+                # риск второй отправки появляется — квитанции ещё нет.
+                fingerprint, sent_evidence = last_submit
+                receipt = self._record_receipt(
+                    fingerprint, "submission_unknown", page.url, sent_evidence)
+                reason = (
+                    "Submit was clicked, the form is gone and the page shows no "
+                    "confirmation: the application most likely went through. "
+                    "Jupiter does not navigate away or click apply again"
+                )
+                trajectory.append({
+                    "action": "submission_unknown",
+                    "url": page.url,
+                    "reason": reason,
+                    "reason_code": Reason.SUBMISSION_UNKNOWN,
+                    "receipt": receipt.as_dict(),
+                })
+                return AgentResult(
+                    "submission_unknown", reason, trajectory, Reason.SUBMISSION_UNKNOWN
+                )
 
             if submit is None:
                 # Страница вакансии Сбера — уже цель: её анкету шлёт адаптер
@@ -2159,7 +2895,7 @@ class JupiterAgent:
                         return AgentResult(
                             "failed", reason, trajectory, Reason.NAVIGATION_FAILED
                         )
-                    visited.add(page.url)
+                    visited.update({page.url, next_url})
                     continue
 
                 if self.dry_run and (has_application_form or filled_any):
@@ -2348,6 +3084,23 @@ class JupiterAgent:
                     return AgentResult(
                         "action_required", reason, trajectory, Reason.UNSUPPORTED_SCRIPT
                     )
+                hr_email = email_apply.find_hr_email(page.html, page.text, self._root_url or page.url)
+                if hr_email:
+                    reason = "Employer takes applications by email"
+                    trajectory.append({"action": "email_apply", "to": hr_email, "url": page.url,
+                                       "reason_code": Reason.EMAIL_APPLY})
+                    result = AgentResult("action_required", reason, trajectory, Reason.EMAIL_APPLY)
+                    result.email_to = hr_email
+                    return result
+                # Ни анкеты, ни перехода: кнопку отклика без привычных признаков
+                # может найти Алиса. Вернула страницу — круг идёт заново.
+                rescued = self._alice_rescue(
+                    page, profile, trajectory, Reason.VACANCY_NOT_FOUND,
+                )
+                if rescued is not None:
+                    page, retry_after_fix = rescued, True
+                    visited.add(page.url)
+                    continue
                 reason = "No explicit application form or apply navigation found"
                 trajectory.append({
                     "action": "failed",
@@ -2414,7 +3167,10 @@ class JupiterAgent:
             if self.before_submit is not None:
                 self.before_submit(page.url, clicked_next)
             try:
-                page = self.engine.submit(before, form, submit)
+                # Промежуточная «Далее» — короткое окно наблюдения. Параметр
+                # передаём только ей: движки-заглушки его могут не знать.
+                page = (self.engine.submit(before, form, submit, intermediate=True)
+                        if clicked_next else self.engine.submit(before, form, submit))
             except EngineSecurityError as exc:
                 reason = f"Navigation blocked by Jupiter policy: {exc}"
                 trajectory.append({
@@ -2440,6 +3196,19 @@ class JupiterAgent:
                 })
                 return AgentResult(
                     "failed", reason, trajectory, Reason.NAVIGATION_FAILED
+                )
+            except EngineFillError as exc:
+                # Клика и запроса не было: before_submit уже взвёл в воркере
+                # «отправка начата», но отклик точно не ушёл. Отдельный код
+                # не даёт воркеру записать «Скорее всего, ушёл».
+                reason = f"Jupiter Web Engine failed to fill form before submit: {exc}"
+                trajectory.append({
+                    "action": "failed",
+                    "reason": reason,
+                    "reason_code": Reason.FILL_FAILED,
+                })
+                return AgentResult(
+                    "failed", reason, trajectory, Reason.FILL_FAILED
                 )
             except EngineError as exc:
                 reason = f"Jupiter Web Engine failed to submit form: {exc}"
@@ -2476,7 +3245,21 @@ class JupiterAgent:
             )
             # Ответ API на «Далее» — это сохранение шага, а не отклик.
             api_result = None if clicked_next else getattr(self.engine, "last_api_result", None)
-            evidence = self._evidence(before, page, form_gone, api_result)
+            # 2xx без флага успеха не считается, если на странице уже новая
+            # анкета (шаг «Код из СМС») или капча: форма «исчезла» только
+            # потому, что её сменила следующая.
+            api_2xx_counts = not (
+                self._target_form_index(page, profile, require_contact=False) is not None
+                or self._has_empty_input_form(page, before)
+                or self.detect_captcha(page)
+            )
+            evidence = self._evidence(before, page, form_gone, api_result, api_2xx_counts)
+            if self._asks_for_code(page):
+                # Шаг подтверждения кодом: ни текст «отправлено», ни ответ
+                # сервера отклик не подтверждают — доказательства в журнал,
+                # но с нулевым весом.
+                evidence = [SubmissionEvidence(e.type, e.value, 0.0, e.source_url) for e in evidence]
+                trajectory.append({"action": "code_step_after_submit", "url": page.url})
             trajectory.append({
                 "action": "verify_submission",
                 "url": page.url,
@@ -2495,6 +3278,37 @@ class JupiterAgent:
                 })
                 return AgentResult("submitted", trajectory=trajectory)
 
+            retry_after_fix = False
+            last_submit = None if clicked_next else (fingerprint, evidence)
+            if not clicked_next:
+                verdict = self._site_verdict(page, profile)
+                if (verdict and verdict.get("verdict") == "needs_fix" and verdict.get("source") == "site"
+                        and site_fix_rounds < SITE_FIX_ROUNDS):
+                    marked = self._site_fix(page, verdict, profile, site_fix_rounds + 1)
+                    if marked:
+                        site_fix_rounds += 1
+                        retry_after_fix = True
+                        trajectory.append({"action": "site_fix_retry", "round": site_fix_rounds,
+                                           "fields": verdict.get("fields") or [],
+                                           "formats": [c.fix_format for c in marked if c.fix_format]})
+                        continue
+                judged = self._apply_verdict(verdict, fingerprint, page, evidence, trajectory) if verdict else None
+                if judged is not None:
+                    # Сайт сам подсветил поля до отправки (POST не уходил):
+                    # исправить их может Алиса. Вердикт нейросети (не сайта) не
+                    # повод — там отклик мог уйти.
+                    if judged.reason_code == Reason.SITE_NEEDS_FIX and verdict.get("source") == "site":
+                        rescued = self._alice_rescue(
+                            page, profile, trajectory, Reason.SITE_NEEDS_FIX,
+                            form_index=before_form_index,
+                            notes=["Сайт просит исправить: " + "; ".join(
+                                str(f) for f in (verdict.get("fields") or [])[:8])],
+                        )
+                        if rescued is not None:
+                            page, retry_after_fix = rescued, True
+                            continue
+                    return judged
+
             if self._same_page(before, page):
                 if clicked_next:
                     # «Далее» не увело дальше — обычно это отказ проверки на
@@ -2505,6 +3319,12 @@ class JupiterAgent:
                         "the page came back unchanged"
                     )
                     code = Reason.STEP_DID_NOT_ADVANCE
+                    rescued = self._alice_rescue(
+                        page, profile, trajectory, code, form_index=target_form_index,
+                    )
+                    if rescued is not None:
+                        page, retry_after_fix = rescued, True
+                        continue
                 else:
                     reason = (
                         "Submit returned the same page without explicit success "
@@ -2527,9 +3347,97 @@ class JupiterAgent:
         })
         return AgentResult("failed", reason, trajectory, Reason.MAX_STEPS)
 
+    def _run_huntflow(
+        self, vacancy: "huntflow.HuntflowVacancy", url: str, profile: CandidateProfile,
+    ) -> AgentResult | None:
+        """Карьерный сайт Huntflow — через его API (huntflow.py). None — API не
+        ответил как ждали: дальше обычный разбор страницы."""
+        api = self.engine if hasattr(self.engine, "request_json") else JupiterWebEngine(
+            set(self.allowed_hosts), read_only=self.dry_run)
+        tag = {"site_adapter": "huntflow_api"}
+        trajectory: list[dict[str, Any]] = [{"action": "open", "url": url, "dry_run": self.dry_run, **tag}]
+
+        def stop(status: str, reason: str, code: str, **extra: Any) -> AgentResult:
+            trajectory.append({"action": status, "reason": reason, "reason_code": code, **tag, **extra})
+            return AgentResult(status, reason, trajectory, code)
+
+        try:
+            status, body = api.request_json(
+                f"{vacancy.origin}/api/vacancy/{urllib.parse.quote(vacancy.slug)}",
+                headers={"Referer": url})
+        except (EngineError, EngineSecurityError):
+            return None
+        vid, archived = huntflow.vacancy_id(status, body)
+        if vid is None:
+            return None
+        if archived:
+            return stop("action_required", "Huntflow: the vacancy is archived", Reason.VACANCY_NOT_FOUND)
+        missing = huntflow.missing_profile_fields(profile)
+        if missing:
+            return stop("action_required", "Huntflow application requires candidate field(s): "
+                        + ", ".join(missing), Reason.MISSING_PROFILE_FIELD)
+        resume = huntflow.resume_file(profile)
+        if self.dry_run:
+            trajectory.append({"action": "ready_to_submit", "vacancy_id": vid,
+                               "fields": sorted(huntflow.build_payload(profile, None)),
+                               "resume": bool(resume), **tag})
+            return AgentResult("ready_to_submit", trajectory=trajectory)
+        # Поручение отправить отклик — ещё не согласие с условиями работодателя.
+        if not huntflow.has_consent(profile):
+            return stop("action_required", "Huntflow requires explicit consent to personal-data "
+                        "processing before the application can be sent", Reason.CONSENT_REQUIRED)
+        endpoint = f"{vacancy.origin}/api/vacancy/{vid}/response"
+        fingerprint = ApplicationFingerprint.build(
+            candidate_id=self._candidate_id(profile), vacancy_url=url, apply_url=url,
+            control_names=["name", "surname", "phone", "email", "agreement"], action=endpoint)
+        known = self.receipts.find(fingerprint.key())
+        if known is not None:
+            return self._already_submitted(known, fingerprint, trajectory)
+        file_id = None
+        if resume is not None:
+            try:
+                file_id = huntflow.uploaded_file_id(*api.request_json(
+                    f"{vacancy.origin}/api/vacancy/{vid}/upload", method="POST",
+                    files=[("file", resume)], headers={"Referer": url}))
+            except (EngineError, EngineSecurityError):
+                file_id = None
+            trajectory.append({"action": "upload", "source": "resume", "ok": file_id is not None,
+                               "filename": resume.name, **tag})
+        if self.before_submit is not None:
+            self.before_submit(url, False)
+        trajectory.append({"action": "click_submit", "endpoint": endpoint, **tag})
+        try:
+            status, body = api.request_json(endpoint, method="POST",
+                                            payload=huntflow.build_payload(profile, file_id),
+                                            headers={"Origin": vacancy.origin, "Referer": url})
+        except (EngineError, EngineSecurityError) as exc:
+            self._record_receipt(fingerprint, "submission_unknown", url, [])
+            return stop("submission_unknown", f"Huntflow application POST outcome is unknown: {exc}",
+                        Reason.SUBMISSION_UNKNOWN)
+        outcome, message, fields = huntflow.interpret_response(status, body)
+        if outcome == "submitted":
+            evidence = [SubmissionEvidence("API_RESPONSE", f"Huntflow HTTP {status}", 0.95, endpoint)]
+            self._record_receipt(fingerprint, "submitted", url, evidence)
+            trajectory.append({"action": "verify_submission", "confirmed": True,
+                               "evidence": [f"api_status={status}"], **tag})
+            return AgentResult("submitted", trajectory=trajectory)
+        if outcome == "duplicate":
+            return stop("duplicate", "Huntflow reports that this vacancy was already applied to",
+                        Reason.DUPLICATE_BLOCKED)
+        if outcome == "needs_fix":
+            return stop("action_required", "Site did not accept the form; it asks to fix: "
+                        + ", ".join(f"«{f}»" for f in fields), Reason.SITE_NEEDS_FIX, message=message)
+        return stop("action_required", message, Reason.SUBMIT_FAILED)
+
     def run(self, url: str, profile: CandidateProfile) -> AgentResult:
         self._root_url = url
+        self._alice_quota, self._alice_points, self._alice_radios = None, set(), set()
         self._expand_policy_for_start(url)
+        vacancy = huntflow.parse_url(url)
+        if vacancy is not None:
+            result = self._run_huntflow(vacancy, url, profile)
+            if result is not None:
+                return result
         try:
             page = self.engine.open(url)
         except EngineSecurityError as exc:

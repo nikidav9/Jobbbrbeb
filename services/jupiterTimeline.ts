@@ -43,8 +43,10 @@ function stateStatus(state: JupiterApplicationState): JupiterStatus {
     case 'ready_to_submit': return { label: 'Анкета заполнена · не отправлена', ...WAIT };
     case 'submitted': return { label: 'Отправлено', ...DONE };
     case 'action_required': return { label: 'Нужно ваше участие', ...WAIT };
-    case 'submission_unknown': return { label: 'Отправка не подтверждена', ...WAIT };
-    case 'failed': return { label: 'Не удалось заполнить', ...FAIL };
+    // Честные исходы (решение владельца 01.10.2026): заявка ушла на сайт, но
+    // он промолчал — «скорее всего, ушёл»; Юпитер споткнулся до отправки — «не ушёл».
+    case 'submission_unknown': return { label: 'Скорее всего, ушёл', ...WAIT };
+    case 'failed': return { label: 'Не ушёл', ...FAIL };
     case 'retryable_failed': return { label: 'Повторит позже', ...WAIT };
     case 'duplicate': return { label: 'Повтор не отправлен', ...DONE };
     default: return { label: 'Юпитер обрабатывает', ...INFO };
@@ -61,16 +63,20 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   if (a.reasonCode === 'PHONE_FILL') return { label: 'Ждёт отправки · анкета заполнится сама', ...WAIT };
   if (a.reasonCode === 'SITE_NOT_VERIFIED') return { label: 'Сайт ещё подключаем · отклик сохранён', ...INFO };
   if (a.state === 'submitted' && a.reasonCode === 'MANUAL_WEBVIEW') return { label: 'Отправлено вами', ...DONE };
+  // Было «Скорее всего, ушёл», а компания написала на адрес JobToo — дошло.
+  if (a.state === 'submitted' && a.reasonCode === 'MAIL_CONFIRMED') return { label: 'Отправлено · компания ответила', ...DONE };
+  if (a.state === 'submitted' && a.reasonCode === 'EMAIL_SENT') return { label: 'Отправлено письмом', ...DONE };
   return stateStatus(a.state);
 }
 
 export type JupiterBadge = { label: string; tone: 'sent' | 'needs_you' | 'failed' | 'working' | 'closed' };
 
-/** Метка строки списка — как у Sorce: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ ПОЛУЧИЛОСЬ / В РАБОТЕ. */
+/** Метка строки списка — как у Sorce: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ УШЁЛ / СКОРЕЕ ВСЕГО УШЁЛ / В РАБОТЕ. */
 export function jupiterBadge(a: JupiterApplication): JupiterBadge {
   if (a.state === 'submitted' || a.state === 'duplicate') return { label: 'ОТПРАВЛЕНО', tone: 'sent' };
   if (jupiterVacancyClosed(a)) return { label: 'ЗАКРЫТА', tone: 'closed' };
-  if (a.state === 'failed') return { label: 'НЕ ПОЛУЧИЛОСЬ', tone: 'failed' };
+  if (a.state === 'failed') return { label: 'НЕ УШЁЛ', tone: 'failed' };
+  if (a.state === 'submission_unknown') return { label: 'СКОРЕЕ ВСЕГО УШЁЛ', tone: 'working' };
   if (a.state === 'action_required') return { label: 'НУЖНЫ ВЫ', tone: 'needs_you' };
   return { label: 'В РАБОТЕ', tone: 'working' };
 }
@@ -82,14 +88,17 @@ export function jupiterRowSummary(a: JupiterApplication): string {
   if (jupiterNeedsSberConsent(a)) return 'Нужно ваше согласие для Сбера';
   switch (a.state) {
     case 'submitted':
-      return a.reasonCode === 'MANUAL_WEBVIEW' ? 'Вы отправили отклик сами' : 'Анкета заполнена и отправлена';
+      if (a.reasonCode === 'MANUAL_WEBVIEW') return 'Вы отправили отклик сами';
+      if (a.reasonCode === 'MAIL_CONFIRMED') return 'Компания ответила письмом — отклик дошёл';
+      if (a.reasonCode === 'EMAIL_SENT') return 'Анкеты нет — резюме ушло письмом на почту компании';
+      return 'Анкета заполнена и отправлена';
     case 'duplicate': return 'Вы уже откликались на эту вакансию';
-    case 'failed': return 'Не получилось заполнить анкету';
+    case 'failed': return 'Юпитер споткнулся до отправки — отправьте сами за минуту';
     case 'retryable_failed': return 'Не получилось — Юпитер попробует ещё раз';
     case 'ready_to_submit': return a.submissionAuthorizedAt
       ? 'Анкета заполнена, ждёт отправки'
       : 'Анкета заполнена — включите автоотклик';
-    case 'submission_unknown': return 'Сайт не подтвердил отправку';
+    case 'submission_unknown': return 'Заявка ушла на сайт, но он не написал «отправлено». Ответ компании придёт в «Почту»';
     case 'action_required': return ACTION_REASONS[a.reasonCode ?? ''] ?? 'Юпитер не смог закончить сам';
     default: return 'Юпитер заполняет анкету';
   }
@@ -143,6 +152,9 @@ export function fillNote(detail: JupiterEvent['detail']): string | undefined {
 }
 
 const ACTION_REASONS: Record<string, string> = {
+  // После «Отправить» сайт не принял анкету (01.10.2026) — отклик точно не ушёл.
+  SITE_NEEDS_FIX: 'Сайт не принял анкету — просит исправить поля. Откройте и отправьте сами',
+  SITE_REJECTED: 'Сайт ответил ошибкой — отклик не ушёл. Откройте и отправьте сами',
   CAPTCHA_REQUIRED: 'Сайт просит проверку «я не робот» — отправьте сами',
   CAPTCHA_HUMAN: 'Введите слово с картинки — отклик уйдёт сразу',
   PHONE_FILL: 'Анкету заполним за вас — останется нажать «Отправить»',
@@ -150,7 +162,10 @@ const ACTION_REASONS: Record<string, string> = {
   CONSENT_REQUIRED: 'Работодатель просит согласие на обработку данных',
   UNSUPPORTED_SCRIPT: 'Сайту нужен браузер — отправьте сами',
   MISSING_PROFILE_FIELD: 'На сайте есть вопрос, ответа на который нет в профиле',
+  NEEDS_ANSWERS: 'Работодатель задал вопросы — ответьте, и отклик уйдёт сам',
   LIVE_AUTHORIZATION_REVOKED: 'Автоотклик выключен — отклик не отправлен',
+  // Анкеты нет, компания принимает резюме на почту (п.4, 01.10.2026).
+  EMAIL_APPLY: 'Компания принимает резюме письмом — Юпитер отправит его при включённом автоотклике',
 };
 
 function stepFor(e: JupiterEvent): TimelineStep | null {
@@ -161,9 +176,14 @@ function stepFor(e: JupiterEvent): TimelineStep | null {
     case 'queued': return { kind: 'queued', title: 'В очереди Юпитера', at, tone: 'info' };
     case 'ready_to_submit': return { kind: 'ready_to_submit', title: 'Анкета заполнена, ждёт отправки', note: fillNote(e.detail), at, tone: 'wait' };
     case 'submitted':
-      return e.reason_code === 'MANUAL_WEBVIEW'
-        ? { kind: 'submitted_manual', title: 'Вы отправили отклик', at, tone: 'done' }
-        : { kind: 'submitted', title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
+      if (e.reason_code === 'MANUAL_WEBVIEW') return { kind: 'submitted_manual', title: 'Вы отправили отклик', at, tone: 'done' };
+      if (e.reason_code === 'MAIL_CONFIRMED') {
+        return { kind: 'submitted', title: 'Компания ответила письмом — отклик дошёл', note: 'Письмо — в разделе «Почта»', at, tone: 'done' };
+      }
+      if (e.reason_code === 'EMAIL_SENT') {
+        return { kind: 'submitted', title: 'Юпитер отправил резюме письмом', note: 'Ответ компании придёт в «Почту»', at, tone: 'done' };
+      }
+      return { kind: 'submitted', title: 'Юпитер отправил отклик', note: fillNote(e.detail), at, tone: 'done' };
     case 'action_required':
       return {
         kind: 'action_required',
@@ -172,9 +192,9 @@ function stepFor(e: JupiterEvent): TimelineStep | null {
         at, tone: 'wait',
       };
     case 'duplicate': return { kind: 'duplicate', title: 'Вы уже откликались на эту вакансию', at, tone: 'info' };
-    case 'submission_unknown': return { kind: 'submission_unknown', title: 'Сайт не подтвердил отправку', at, tone: 'wait' };
+    case 'submission_unknown': return { kind: 'submission_unknown', title: 'Заявка ушла, сайт не написал «отправлено»', at, tone: 'wait' };
     case 'retryable_failed': return { kind: 'retryable_failed', title: 'Не получилось — Юпитер попробует ещё раз', at, tone: 'wait' };
-    case 'failed': return { kind: 'failed', title: 'Не получилось отправить', at, tone: 'fail' };
+    case 'failed': return { kind: 'failed', title: 'Не ушёл — Юпитер споткнулся до отправки', at, tone: 'fail' };
     default: return null;
   }
 }

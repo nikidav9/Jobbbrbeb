@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from ats_hosts import ats_for_url, extra_allowed_hosts
+from ats_hosts import ats_for_url, extra_allowed_hosts, registrable_domain, same_site
 
 
 class AtsHostsTest(unittest.TestCase):
@@ -33,6 +33,20 @@ class AtsHostsTest(unittest.TestCase):
     def test_vacancy_host_itself_is_ats(self):
         self.assertEqual(extra_allowed_hosts("https://x.talantix.ru/v/1", []), {"x.talantix.ru"})
         self.assertEqual(extra_allowed_hosts("https://hh.ru/vacancy/1", None), set())
+
+    def test_multitenant_platforms_are_different_sites(self):
+        # Конструкторы и хостинги: поддомен — отдельная компания.
+        self.assertFalse(same_site("a.tilda.ws", "b.tilda.ws"))
+        self.assertFalse(same_site("a.github.io", "b.github.io"))
+        self.assertFalse(same_site("a.website.yandexcloud.net", "b.website.yandexcloud.net"))
+        self.assertEqual(registrable_domain("www.a.tilda.ws"), "a.tilda.ws")
+        self.assertEqual(registrable_domain("x.a.website.yandexcloud.net"), "a.website.yandexcloud.net")
+        self.assertEqual(registrable_domain("tilda.ws"), "tilda.ws")
+
+    def test_ordinary_subdomains_stay_one_site(self):
+        self.assertTrue(same_site("jobs.acme.ru", "www.acme.ru"))
+        self.assertTrue(same_site("a.tilda.ws", "www.a.tilda.ws"))
+        self.assertEqual(registrable_domain("jobs.acme.com.ru"), "acme.com.ru")
 
 
 if __name__ == "__main__":

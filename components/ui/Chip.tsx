@@ -5,6 +5,7 @@ import { Colors } from '@/constants/theme';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 type ChipVariant = 'work' | 'time' | 'metro' | 'exp' | 'salary' | 'urgent' | 'date' | 'neutral';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -15,12 +16,12 @@ interface ChipProps {
   textSize?: number;
 }
 
-const VARIANT_STYLES: Record<ChipVariant, { bg: string; text: string; fontWeight?: string }> = {
+const VARIANT_STYLES: Record<ChipVariant, { bg: string; text: string; fontFamily?: string }> = {
   work:   { bg: '#FFF3ED', text: '#FF6B1A' },
   time:   { bg: '#EFF6FF', text: '#2563EB' },
   metro:  { bg: '#EFF6FF', text: '#2563EB' },
   exp:    { bg: '#F0FDF4', text: '#16A34A' },
-  salary: { bg: '#FFF3ED', text: '#FF6B1A', fontWeight: '800' },
+  salary: { bg: '#FFF3ED', text: '#FF6B1A', fontFamily: JT_FONT.heavy },
   urgent: { bg: '#FEF2F2', text: '#DC2626' },
   date:   { bg: '#F5F3FF', text: '#7C3AED' },
   // Спокойный чип для карточек колоды: там их пять-шесть подряд, и
@@ -38,7 +39,7 @@ export function Chip({ label, variant = 'work', icon, textSize }: ChipProps) {
       ) : null}
       {/* Чип всегда в одну строку. Длинный адрес иначе переносится внутри
           чипа, и тот превращается в абзац с закруглениями. */}
-      <Text numberOfLines={1} style={[styles.chipText, textSize != null ? { fontSize: rf(textSize) } : null, { color: s.text, fontWeight: (s.fontWeight as any) ?? '600' }]}>
+      <Text numberOfLines={1} style={[styles.chipText, textSize != null ? { fontSize: rf(textSize) } : null, { color: s.text, fontFamily: s.fontFamily ?? JT_FONT.semi }]}>
         {label}
       </Text>
     </View>
@@ -55,6 +56,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chipText: {
-    fontSize: rf(13),
+    fontFamily: JT_FONT.semi, fontSize: rf(13),
   },
 });

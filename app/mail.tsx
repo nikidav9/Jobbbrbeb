@@ -1,13 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '@/hooks/useApp';
-import { JupiterEmail, jupiterMailbox, jupiterMailList, jupiterMailRead } from '@/services/db';
+import { JupiterEmail, jupiterMailbox, jupiterMailHtml, jupiterMailList, jupiterMailRead } from '@/services/db';
+import { MailHtmlView } from '@/components/feature/MailHtmlView';
 import { Colors } from '@/constants/theme';
 import { mailDate, mailPreview, senderName, splitMailLinks } from '@/services/mailLinks';
 import { BackButton } from '@/components/ui/BackButton';
 
+import { JT, JT_FONT } from '@/constants/jt';
+import { rs, rf } from '@/constants/scale';
 export default function JupiterMail() {
   const { currentUser, showToast } = useApp();
   const [address, setAddress] = useState<string | null>(null);
@@ -19,6 +22,9 @@ export default function JupiterMail() {
   // что обновление идёт, а список при этом не исчезает.
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  // Письмо целиком (HTML): null — ещё грузим, '' — у письма только текст.
+  const [html, setHtml] = useState<string | null>(null);
+  const openedId = useRef<string | null>(null);
   const uid = currentUser?.id;
 
   const load = useCallback(async (): Promise<boolean> => {
@@ -48,6 +54,14 @@ export default function JupiterMail() {
 
   const open = async (message: JupiterEmail) => {
     setSelected(message);
+    setHtml(null);
+    if (uid) {
+      // Ответ по прежнему письму не должен лечь в открытое следующим.
+      openedId.current = message.id;
+      jupiterMailHtml(uid, message.id)
+        .then(h => { if (openedId.current === message.id) setHtml(h); })
+        .catch(() => { if (openedId.current === message.id) setHtml(''); });
+    }
     if (!message.read_at && uid) {
       try {
         await jupiterMailRead(uid, message.id);
@@ -65,10 +79,22 @@ export default function JupiterMail() {
         <TouchableOpacity onPress={refresh} disabled={refreshing} style={styles.refreshBtn} accessibilityLabel="Обновить почту">
           {refreshing
             ? <ActivityIndicator size="small" color={Colors.primary} />
-            : <Ionicons name="refresh" size={22} color={Colors.textPrimary} />}
+            : <Ionicons name="refresh" size={18} color={JT.ink} />}
         </TouchableOpacity>
       </View>
-      {selected ? (
+      {selected && html ? (
+        // Письмо целиком, как в почте: шапка сверху, само письмо — ниже.
+        <View style={styles.full}>
+          <View style={styles.fullHead}>
+            <Text style={styles.subject} numberOfLines={3}>{selected.subject || '(Без темы)'}</Text>
+            <Text style={styles.sender} numberOfLines={1}>От: {selected.sender}</Text>
+            <Text style={styles.meta}>{new Date(selected.received_at).toLocaleString('ru-RU')}</Text>
+          </View>
+          <MailHtmlView html={html} />
+        </View>
+      ) : selected && html === null ? (
+        <ActivityIndicator style={styles.loading} color={Colors.primary} />
+      ) : selected ? (
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.subject}>{selected.subject || '(Без темы)'}</Text>
           <Text style={styles.sender}>От: {selected.sender}</Text>
@@ -98,9 +124,18 @@ export default function JupiterMail() {
               refreshing={refreshing}
               onRefresh={refresh}
               ListHeaderComponent={error ? <Text style={styles.error}>{error}</Text> : null}
-              ListEmptyComponent={!error ? <Text style={styles.empty}>Пока нет писем от работодателей.</Text> : null}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.row} onPress={() => open(item)} activeOpacity={0.6}>
+              contentContainerStyle={[styles.list, messages.length === 0 && { flexGrow: 1 }]}
+              ListEmptyComponent={!error ? (
+                <View style={styles.emptyFill}>
+                  <Ionicons name="mail-outline" size={48} color={JT.ink} />
+                  <Text style={styles.emptyTitle}>Писем пока нет</Text>
+                  <Text style={styles.emptySub}>Ответы работодателей на отклики придут сюда</Text>
+                </View>
+              ) : null}
+              renderItem={({ item, index }) => (
+                <TouchableOpacity
+                  style={[styles.row, index === 0 && styles.rowFirst, index === messages.length - 1 && styles.rowLast]}
+                  onPress={() => open(item)} activeOpacity={0.6}>
                   <View style={[styles.dot, !item.read_at && styles.dotUnread]} />
                   <View style={styles.rowMain}>
                     <View style={styles.rowHead}>
@@ -120,33 +155,48 @@ export default function JupiterMail() {
   );
 }
 
+// Стиль JT, как «Отклики» (просьба владельца 02.10.2026): тёплый фон,
+// заголовок фирменным шрифтом, кнопка обновления — круглая с тонким
+// контуром, письма — в белой карточке с тёплым контуром, пустое — по центру.
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#fff' },
-  header: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heading: { fontSize: 19, fontWeight: '700', color: Colors.textPrimary },
-  refreshBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  banner: { marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#FFF3EC', borderRadius: 14 },
-  label: { color: '#6B7280', fontSize: 12, marginBottom: 2 },
-  address: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
-  notice: { marginTop: 6, color: '#8B4A2B', fontSize: 13, lineHeight: 18 },
+  page: { flex: 1, backgroundColor: JT.background },
+  header: { paddingHorizontal: rs(16), paddingTop: rs(6), paddingBottom: rs(12), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heading: { fontSize: rf(20), fontFamily: JT_FONT.head, color: JT.ink },
+  refreshBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center' },
+  banner: { marginHorizontal: rs(20), marginBottom: rs(14), paddingVertical: rs(12), paddingHorizontal: rs(16), backgroundColor: JT.accentSoft, borderRadius: rs(18) },
+  label: { color: JT.textSecondary, fontFamily: JT_FONT.medium, fontSize: rf(12), marginBottom: 2 },
+  address: { fontSize: rf(15), fontFamily: JT_FONT.heavy, color: JT.ink },
+  notice: { marginTop: 6, color: '#8B4A2B', fontFamily: JT_FONT.medium, fontSize: rf(13), lineHeight: rf(18) },
   loading: { marginTop: 40 },
-  error: { margin: 16, color: '#B91C1C' },
-  empty: { textAlign: 'center', marginTop: 50, color: '#6B7280' },
+  error: { marginBottom: rs(12), color: '#B91C1C', fontFamily: JT_FONT.medium },
+  list: { paddingHorizontal: rs(20), paddingBottom: rs(32) },
+  emptyFill: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(24), paddingBottom: rs(120), minHeight: rs(260) },
+  emptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), lineHeight: rf(24), color: JT.ink, textAlign: 'center', marginTop: rs(10) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6), textAlign: 'center', lineHeight: rf(20) },
   // Строка как в почтовых приложениях: отправитель, тема и одна строка текста.
-  row: { flexDirection: 'row', paddingVertical: 10, paddingRight: 16, paddingLeft: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB' },
-  dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6, marginRight: 8, backgroundColor: 'transparent' },
-  dotUnread: { backgroundColor: Colors.primary },
+  // Строки складываются в одну белую карточку: у первой — верх, у последней — низ.
+  row: {
+    flexDirection: 'row', paddingVertical: rs(12), paddingRight: rs(16), paddingLeft: rs(10),
+    backgroundColor: JT.surface, borderColor: '#E3D9CC', borderLeftWidth: 1.5, borderRightWidth: 1.5,
+    borderBottomWidth: 1.5, borderBottomColor: '#EFE7DC',
+  },
+  rowFirst: { borderTopWidth: 1.5, borderTopLeftRadius: rs(22), borderTopRightRadius: rs(22) },
+  rowLast: { borderBottomColor: '#E3D9CC', borderBottomLeftRadius: rs(22), borderBottomRightRadius: rs(22) },
+  dot: { width: 8, height: 8, borderRadius: 4, marginTop: 7, marginRight: 8, backgroundColor: 'transparent' },
+  dotUnread: { backgroundColor: JT.accent },
   rowMain: { flex: 1, minWidth: 0 },
   rowHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 },
-  rowSender: { flex: 1, fontSize: 15, color: Colors.textPrimary },
-  unread: { fontWeight: '700' },
-  date: { fontSize: 12, color: '#6B7280' },
-  rowSubject: { fontSize: 14, color: Colors.textPrimary, marginTop: 2 },
-  preview: { fontSize: 13, color: '#6B7280', marginTop: 1 },
-  content: { padding: 16 },
-  subject: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginBottom: 12 },
-  sender: { fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  meta: { fontSize: 13, color: '#6B7280', marginBottom: 2 },
-  body: { fontSize: 16, lineHeight: 23, color: Colors.textPrimary, marginTop: 16 },
-  link: { color: Colors.primary, textDecorationLine: 'underline' },
+  rowSender: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.ink },
+  unread: { fontFamily: JT_FONT.heavy },
+  date: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: JT.textTertiary },
+  rowSubject: { fontFamily: JT_FONT.semi, fontSize: rf(14), color: JT.ink, marginTop: 2 },
+  preview: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.textTertiary, marginTop: 1 },
+  content: { padding: rs(20) },
+  subject: { fontSize: rf(20), fontFamily: JT_FONT.head, lineHeight: rf(26), color: JT.ink, marginBottom: 12 },
+  sender: { fontFamily: JT_FONT.bold, color: JT.ink, marginBottom: 4 },
+  meta: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: JT.textTertiary, marginBottom: 2 },
+  body: { fontFamily: JT_FONT.medium, fontSize: rf(16), lineHeight: rf(23), color: JT.ink, marginTop: 16 },
+  full: { flex: 1 },
+  fullHead: { paddingHorizontal: rs(20), paddingTop: 8, paddingBottom: 12, borderBottomWidth: 1.5, borderBottomColor: '#E3D9CC' },
+  link: { color: JT.accent, textDecorationLine: 'underline' },
 });

@@ -6,6 +6,7 @@ import { companyInitials, isLavkaCompany, normalizeCompany } from '@/services/co
 import { nameColorFromString } from '@/services/storage';
 import { rf } from '@/constants/scale';
 import { companyLogo } from '@/constants/companyLogos';
+import { useRemoteCompanyLogo } from '@/services/companyLogoMap';
 
 /**
  * Знак компании: логотип, если мы его знаем, иначе кружок с инициалами.
@@ -16,15 +17,17 @@ import { companyLogo } from '@/constants/companyLogos';
  */
 export function CompanyMark({ company, size = 44 }: { company?: string | null; size?: number }) {
   const name = normalizeCompany(company);
+  // Логотип из базы (256×256, свежий) главнее встроенного (128×128).
+  const remote = useRemoteCompanyLogo(name);
   if (isLavkaCompany(name)) return <LavkaLogo size={size} />;
-  const logo = companyLogo(name);
+  const logo = remote ? { uri: remote } : companyLogo(name);
   if (logo) {
     return (
       <View
         accessibilityLabel={`Логотип компании ${name}`}
         style={[styles.logoBox, { width: size, height: size, borderRadius: size * 0.24 }]}
       >
-        <Image source={logo} style={{ width: size, height: size }} contentFit="contain" transition={120} />
+        <Image source={logo} style={{ width: size, height: size }} contentFit="contain" transition={120} cachePolicy="memory-disk" />
       </View>
     );
   }

@@ -2,6 +2,7 @@
 """Import replies for JobToo candidate aliases from a dedicated catch-all IMAP inbox."""
 from __future__ import annotations
 
+import base64
 import email
 from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
@@ -19,7 +20,12 @@ from urllib.request import Request, urlopen
 LOG = logging.getLogger("jupiter.mail")
 DOMAIN = "jobtoo.ru"
 # 2 — письма со ссылками и полной HTML-версией (25.09.2026).
-STATE_VERSION = 2
+# 3 — письмо целиком, с вёрсткой и картинками, для показа как в почте (01.10.2026).
+STATE_VERSION = 3
+# Встроенные картинки (cid:) вкладываются в HTML: по отдельности до 500 КБ,
+# всего до 2 МБ: в UTF-8 это до 4–6 МБ запроса, а post_max_size у PHP — 8 МБ. Больше — картинка не показывается, письмо остаётся.
+INLINE_IMAGE_MAX = 500_000
+HTML_MAX = 2_000_000
 
 # Timeweb prepends a Received header at its public MX before forwarding the
 # message to the catch-all mailbox. Sender-supplied headers appear *below*
@@ -117,7 +123,15 @@ def parse_message(raw: bytes, uid: str, uidvalidity: str) -> tuple[str, dict] | 
     sender = str(make_header(decode_header(message.get("From", ""))))
     bodies: list[str] = []
     html_bodies: list[str] = []
-    parts = message.walk() if message.is_multipart() else [message]
+    raw_html = ""
+    inline: dict[str, str] = {}
+    parts = list(message.walk()) if message.is_multipart() else [message]
+    for part in parts:
+        cid = (part.get("Content-ID") or "").strip().strip("<>")
+        if cid and part.get_content_maintype() == "image":
+            data = part.get_payload(decode=True) or b""
+            if 0 < len(data) <= INLINE_IMAGE_MAX:
+                inline[cid] = f"data:{part.get_content_type()};base64,{base64.b64encode(data).decode()}"
     for part in parts:
         if part.get_content_type() not in ("text/plain", "text/html") or part.get_content_disposition() == "attachment":
             continue
@@ -127,6 +141,8 @@ def parse_message(raw: bytes, uid: str, uidvalidity: str) -> tuple[str, dict] | 
             if part.get_content_type() == "text/plain":
                 bodies.append(content)
             else:
+                if not raw_html:
+                    raw_html = content
                 parser = _PlainHTML()
                 parser.feed(content)
                 text = "".join(parser.text)
@@ -145,13 +161,31 @@ def parse_message(raw: bytes, uid: str, uidvalidity: str) -> tuple[str, dict] | 
         # HTML — полная версия письма со ссылками; текстовая у рассылок бывает
         # огрызком («Анкета финалиста на вакансию» без самой анкеты).
         "body": "\n".join(html_bodies or bodies)[:100000], "received_at": received,
+        # Письмо целиком — приложение показывает его как почта (app/mail.tsx).
+        "html": embed_inline_images(raw_html, inline),
     }
+
+
+def embed_inline_images(html: str, inline: dict[str, str]) -> str:
+    """cid:… → data:…, пока письмо укладывается в HTML_MAX; слишком большое — пусто."""
+    if not html:
+        return ""
+    total = len(html)
+    def swap(match: re.Match) -> str:
+        nonlocal total
+        uri = inline.get(match.group(1))
+        if not uri or total + len(uri) > HTML_MAX:
+            return match.group(0)
+        total += len(uri)
+        return uri
+    out = re.sub(r"cid:([^\s\"'>)]+)", swap, html)
+    return out if len(out) <= HTML_MAX else ""
 
 
 def ingest(address: str, payload: dict) -> None:
     req = Request(
         os.environ["JOBTOO_URL"].rstrip("/") + "/api/db.php",
-        data=json.dumps({"fn": "jupiterMailIngest", "args": [address, payload]}).encode(),
+        data=json.dumps({"fn": "jupiterMailIngest", "args": [address, payload]}, ensure_ascii=False).encode(),
         headers={"Content-Type": "application/json",
                  "X-Admin-Token": os.environ.get("JOBTOO_ADMIN_TOKEN") or os.environ["ADMIN_API_TOKEN"],
                  "X-App-Secret": os.environ["EXPO_PUBLIC_APP_SECRET"]},

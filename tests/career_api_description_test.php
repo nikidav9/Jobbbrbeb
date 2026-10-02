@@ -75,6 +75,31 @@ parse_str((string)parse_url(cf_page_url('https://yandex.ru/jobs/api/publications
 check('третья порция: смещение 40, страница 3', base64_decode((string)($q['cursor'] ?? '')) === 'o=40&p=3');
 check('город в запросе сохраняется', ($q['cities'] ?? '') === 'moscow');
 
+// ── Курсор из ответа (cursor_next, 01.10.2026) ─────────────────────────────
+// Яндекс сменил формат курсора: собранный нами «o=…&p=…» вернул первую
+// страницу, сбор 80 раз видел те же 20 вакансий и погасил ~800.
+$cn = ['type' => 'cursor_next', 'param' => 'cursor', 'next_field' => 'next', 'limit' => 20, 'limit_param' => 'page_size'];
+check('cursor_next: первая порция без курсора',
+    cf_page_url('https://yandex.ru/jobs/api/publications?cities=moscow', $cn, 0)
+    === 'https://yandex.ru/jobs/api/publications?cities=moscow&page_size=20');
+parse_str((string)parse_url(cf_page_url('https://yandex.ru/jobs/api/publications?cities=moscow', $cn, 1, 'cD0wJnQ9MjAy'), PHP_URL_QUERY), $q);
+check('cursor_next: курсор сайта подставлен как есть', ($q['cursor'] ?? '') === 'cD0wJnQ9MjAy' && ($q['cities'] ?? '') === 'moscow');
+check('cursor_next: без курсора дальше нельзя', cf_page_url('https://yandex.ru/jobs/api/publications', $cn, 1, '') === '');
+check('курсор берётся из next с внутренним хостом',
+    cf_next_cursor(['next' => 'http://be.publication-service.yandex-team.ru/_api/jobs/publications/?page_size=3&cursor=cD0wJnQ9MjAy'], $cn) === 'cD0wJnQ9MjAy');
+check('подозрительный курсор отбрасывается', cf_next_cursor(['next' => 'https://x/?cursor=a%22b%3Cscript'], $cn) === '');
+check('нет next — конец', cf_next_cursor(['next' => null], $cn) === '');
+check('отпечаток: та же первая запись — тот же', cf_first_mark([['id' => 1], ['id' => 2]]) === cf_first_mark([['id' => 1], ['id' => 3]]));
+check('отпечаток: другая первая запись — другой', cf_first_mark([['id' => 1]]) !== cf_first_mark([['id' => 2]]));
+check('отпечаток пустой порции пуст', cf_first_mark([]) === '');
+$career = (string)file_get_contents(__DIR__ . '/../php-proxy/career.php');
+check('повтор порции — адрес как сбойный, вакансии не гаснут',
+    str_contains($career, "\$fetched['first'] ?? '') === \$prevFirst")
+    && str_contains($career, "порция повторяет предыдущую"));
+$eps = json_decode((string)file_get_contents(__DIR__ . '/../scripts/career-endpoints.json'), true);
+$ya = array_values(array_filter($eps, fn($e) => str_starts_with($e['url'], 'https://yandex.ru/jobs/api/publications')));
+check('Яндекс листается курсором из ответа', ($ya[0]['paging']['type'] ?? '') === 'cursor_next');
+
 // ── Пачки upsert: у всех строк запроса одни и те же ключи ───────────────────
 
 $chunks = ing_chunks_by_columns([

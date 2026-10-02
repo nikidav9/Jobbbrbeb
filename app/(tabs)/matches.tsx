@@ -20,15 +20,17 @@ import { formatDate, getInitials, nameColorFromString } from '@/services/storage
 import {
   dbUpsertLike, dbCheckAndCreateMatch, dbSetShiftOutcome,
   dbApprovePermApplication, dbSetPermApplicationStatus, jupiterMyApplications,
-  jupiterMailUnread,
+  jupiterMailUnread, jupiterQuestions, type JupiterQuestion,
 } from '@/services/db';
 import { jupiterManualEligible } from '@/services/jupiterFill';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { companyLogo } from '@/constants/companyLogos';
+import { remoteLogoFor, useCompanyLogoMap } from '@/services/companyLogoMap';
 import { jupiterBadge, jupiterNeedsCaptcha, jupiterRowSummary } from '@/services/jupiterTimeline';
 import { plural } from '@/services/time';
 import { dayKey, groupByDay } from '@/services/dayGroups';
 import { TabHeader } from '@/components/ui/TabHeader';
+import { TabLogo, TAB_TOP } from '@/components/ui/TabLogo';
 import GuestGate from '@/components/GuestGate';
 import { ScoreBadge } from '@/components/feature/ScoreCard';
 import { rankCandidate } from '@/services/matching';
@@ -345,6 +347,8 @@ type RespItem = {
 };
 
 function WorkerMatches() {
+  // Логотипы из базы: знак рисуется в цикле, поэтому карта — здесь, наверху.
+  const logoMap = useCompanyLogoMap();
   useWarmSystemBar();
   const router = useRouter();
   const {
@@ -359,6 +363,9 @@ function WorkerMatches() {
   const [search, setSearch] = useState('');
   const [jupiterApps, setJupiterApps] = useState<JupiterApplication[]>([]);
   const [jupiterError, setJupiterError] = useState(false);
+  // Вопросы от работодателей (решение владельца 30.09.2026): ответ — и
+  // отклик уйдёт сам. Сбой или старый сервер — просто без карточки.
+  const [questions, setQuestions] = useState<JupiterQuestion[]>([]);
   // Непрочитанные письма на почте JobToo для откликов — точка на конверте.
   const [unreadMail, setUnreadMail] = useState(0);
   const tabBarHeight = useBottomTabBarHeight();
@@ -369,6 +376,7 @@ function WorkerMatches() {
     try {
       setJupiterApps(await jupiterMyApplications(currentUserId));
       setJupiterError(false);
+      jupiterQuestions(currentUserId).then(setQuestions, () => setQuestions([]));
     } catch (error) {
       console.warn('[jupiterMyApplications]', error);
       setJupiterError(true);
@@ -468,7 +476,7 @@ function WorkerMatches() {
       bucket: unread > 0 ? 'needs' : answered ? 'other' : 'review',
       open: () => (unread > 0 && chat
         ? router.push({ pathname: '/chat-room', params: { chatId: chat.id } })
-        : router.push({ pathname: '/perm-vacancy-detail', params: { id: a.vacancyId } })),
+        : router.push({ pathname: '/perm-vacancy-detail', params: { vacancyId: a.vacancyId } })),
     };
   });
   const allItems = [...jupiterItems, ...permItems]
@@ -497,6 +505,10 @@ function WorkerMatches() {
       router.push({ pathname: '/jupiter-captcha', params: { id: captchaApp.id } });
       return;
     }
+    if (questions.length > 0) {
+      router.push('/jupiter-questions');
+      return;
+    }
     if (Platform.OS !== 'web' && manualJupiterApps.length > 0) {
       router.push({
         pathname: '/jupiter-fill',
@@ -516,7 +528,7 @@ function WorkerMatches() {
   const offlineHere = offline.permApplications && myApps.length === 0 && jupiterApps.length === 0;
 
   const renderMark = (company: string, size: number, accent?: boolean) => (
-    companyLogo(company) ? (
+    companyLogo(company) || remoteLogoFor(company, logoMap) ? (
       <View style={[wm.markImg, { width: size, height: size, borderRadius: size * 0.27 }]}>
         <CompanyMark company={company} size={size} />
       </View>
@@ -586,13 +598,9 @@ function WorkerMatches() {
     <SafeAreaView style={wm.safe} edges={['top', 'left', 'right']}>
       {/* Шапка макета: логотип, закладка (избранное), конверт (точка — есть
           новые), лупа (поиск по откликам). */}
-      <View style={wm.header}>
-        <Image
-          source={require('@/assets/images/header-jt-logo.png')}
-          style={wm.logo}
-          contentFit="contain"
-          accessibilityLabel="JobToo"
-        />
+      {/* Шапка вне прокрутки: стоит на месте, листается только список. */}
+      <View style={[TAB_TOP.row, wm.header]}>
+        <TabLogo />
         <View style={wm.headerActions}>
           <OnboardingTarget targetKey="matches.saved">
             {headBtn(BookmarkIcon, 'Сохранённые вакансии', () => router.push('/saved'))}
@@ -609,7 +617,7 @@ function WorkerMatches() {
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
       <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }]}
+          contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }, shown.length === 0 && { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />
@@ -663,6 +671,29 @@ function WorkerMatches() {
             })}
           </ScrollView>
 
+          {questions.length > 0 && (filter === 'all' || filter === 'needs') ? (
+            <View style={[wm.bannerWrap, { marginBottom: rs(12) }]}>
+              <View style={[wm.bannerShadow, { backgroundColor: JT.ink }]} pointerEvents="none" />
+              <TouchableOpacity style={wm.qCard} activeOpacity={0.85}
+                onPress={() => router.push('/jupiter-questions')} testID="questions-card"
+                accessibilityLabel={`${questions.length} ${plural(questions.length, 'вопрос', 'вопроса', 'вопросов')} от работодателей`}>
+                <View style={wm.qIcon}><Ionicons name="chatbubbles-outline" size={rs(24)} color={JT.ink} /></View>
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                  <Text style={wm.qTitle}>
+                    {questions.length} {plural(questions.length, 'вопрос', 'вопроса', 'вопросов')} от работодателей
+                  </Text>
+                  <Text style={wm.qSub} numberOfLines={2}>
+                    {(() => {
+                      const apps = new Set(questions.map(q => q.application_id)).size;
+                      return `Ответьте — и ${apps} ${plural(apps, 'отклик уйдёт', 'отклика уйдут', 'откликов уйдут')} сами`;
+                    })()}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={rs(20)} color={JT.ink} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {needs.length > 0 && (filter === 'all' || filter === 'needs') ? (
             <View style={wm.bannerWrap}>
               <View style={wm.bannerShadow} pointerEvents="none" />
@@ -689,12 +720,12 @@ function WorkerMatches() {
           ) : null}
 
           {shown.length === 0 ? (
-            <View style={s.empty}>
-              <Ionicons name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'} size={56} color={JT.textTertiary} />
-              <Text style={s.emptyTitle}>
+            <View style={wm.empty}>
+              <Ionicons name={offlineHere ? 'cloud-offline-outline' : 'clipboard-outline'} size={48} color={JT.ink} />
+              <Text style={wm.emptyTitle}>
                 {offlineHere ? 'Нет связи с сервером' : allItems.length > 0 ? 'Здесь пока пусто' : 'Пока нет откликов'}
               </Text>
-              <Text style={s.emptySub}>
+              <Text style={wm.emptySub}>
                 {offlineHere
                   ? 'Список не загрузился — дело в связи. Ваши отклики на месте, потяните вниз, чтобы обновить.'
                   : allItems.length > 0 ? 'В этом разделе откликов нет — загляните во «Все»'
@@ -769,15 +800,11 @@ function WorkerMatches() {
 // логотип 44/12, бейдж 26/13, заголовок дня 12/800 капсом.
 const wm = StyleSheet.create({
   safe: { flex: 1, backgroundColor: JT.background },
-  // Шапка, заголовок и подпись — один в один с «Профилем» (ProfileHeader и
-  // workerS.scroll: поля 16, верх 14, ряд 44, заголовок Unbounded 800 28/32,
-  // подпись Onest 13) — логотип и заголовки на одной линии (просьба владельца
-  // 28.09.2026).
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, marginTop: 14, height: 44,
-  },
-  logo: { width: 40, height: 26 },
+  // Шапка — общая с лентой и «Профилем» (TAB_TOP: логотип, поля, верх), чтобы
+  // при переключении вкладок верх не прыгал (просьба владельца 01.10.2026).
+  // Заголовок и подпись — один в один с «Профилем» (workerS.scroll), а поле
+  // списка равно полю шапки: логотип и заголовок на одной линии (28.09.2026).
+  header: { justifyContent: 'space-between' },
   headerActions: { flexDirection: 'row', gap: 8 },
   headBtn: {
     width: 40, height: 40, borderRadius: 20, borderWidth: HAIRLINE, borderColor: JT.ink,
@@ -788,7 +815,16 @@ const wm = StyleSheet.create({
     position: 'absolute', top: 6, right: 7, width: 9, height: 9, borderRadius: 5,
     backgroundColor: JT.accent, borderWidth: HAIRLINE, borderColor: JT.background,
   },
-  list: { paddingHorizontal: 16 },
+  list: { paddingHorizontal: rs(20) },
+  // Пустой список — как пустая лента «Вакансий» (feed.tsx, styles.emptyState):
+  // чёрная тонкая иконка 48, заголовок фирменным шрифтом, текст по центру
+  // свободного места, а не прижатым к чипам (просьба владельца 02.10.2026).
+  empty: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: rs(24), paddingBottom: rs(120), minHeight: rs(260),
+  },
+  emptyTitle: { fontFamily: JT_FONT.head, fontSize: rf(18), lineHeight: rf(24), color: JT.ink, textAlign: 'center', marginTop: rs(10) },
+  emptySub: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary, marginTop: rs(6), textAlign: 'center', lineHeight: rf(20) },
   title: {
     fontFamily: ProfileFonts.headingExtra, fontSize: 28, lineHeight: 32, letterSpacing: -0.5,
     color: JT.ink, marginTop: 14,
@@ -836,6 +872,16 @@ const wm = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   bannerTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.surface },
+  qCard: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12), padding: rs(14),
+    borderRadius: rs(22), backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+  },
+  qIcon: {
+    width: rs(48), height: rs(48), borderRadius: rs(14), backgroundColor: JT.surface,
+    borderWidth: 2, borderColor: JT.ink, alignItems: 'center', justifyContent: 'center',
+  },
+  qTitle: { fontFamily: JT_FONT.heavy, fontSize: rf(16), color: JT.ink },
+  qSub: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.ink },
   bannerSub: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.borderSoft },
   bannerMarks: { flexDirection: 'row', alignItems: 'center' },
   bannerMark: {
@@ -1128,7 +1174,7 @@ function EmployerMatches() {
         refreshPermApplications().catch(() => {}),
         refreshChats(currentUser).catch(() => {}),
       ]);
-      showToast('Одобрено! Чат открыт 🎉', 'match');
+      showToast('Одобрено! Чат открыт', 'match');
       router.push({ pathname: '/chat-room', params: { chatId } });
     } catch {
       showToast('Не удалось одобрить кандидата. Проверьте связь и попробуйте ещё раз.', 'error');
@@ -1196,7 +1242,7 @@ function EmployerMatches() {
     return [
       w ? `${w.firstName} ${w.lastName}`.trim() || 'Кандидат' : 'Кандидат',
       `Вакансия: ${vac?.title ?? '—'}`,
-      vac?.metroStation ? `Где: 🚇 ${vac.metroStation}` : `Компания: ${vac?.company ?? '—'}`,
+      vac?.metroStation ? `Где: ${vac.metroStation}` : `Компания: ${vac?.company ?? '—'}`,
     ];
   })();
 
@@ -1595,7 +1641,7 @@ function EmployerMatches() {
         <View style={s.empty}>
           <Ionicons name={emptyIcon[tab]} size={56} color={Colors.textMuted} />
           <Text style={s.emptyTitle}>
-            {tab === 'pending' ? 'Нет откликов' : tab === 'matched' ? 'Нет активных мэтчей' : 'Нет завершённых смен'}
+            {tab === 'pending' ? 'Нет откликов' : tab === 'matched' ? 'Нет активных мэтчей' : 'Пока пусто'}
           </Text>
           <Text style={s.emptySub}>
             {tab === 'pending'
@@ -1604,7 +1650,7 @@ function EmployerMatches() {
                   : 'Когда работники откликнутся — они появятся здесь')
               : tab === 'matched'
               ? 'Мэтчи появятся после взаимного подтверждения'
-              : 'Здесь будет история завершённых смен'}
+              : 'Здесь будет история закрытых откликов'}
           </Text>
         </View>
       ) : (

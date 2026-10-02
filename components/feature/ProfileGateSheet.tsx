@@ -4,7 +4,6 @@ import {
   Modal, Animated, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Shadow } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
@@ -14,6 +13,7 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { pickAndImportResume } from '@/services/resumeImport';
 import { User } from '@/constants/types';
 
+import { JT_FONT } from '@/constants/jt';
 type Step = 'choose' | 'names';
 
 type Props = {
@@ -85,11 +85,6 @@ export function ProfileGateSheet({ visible, step, user, onUpdateUser, onResolve 
     }
   };
 
-  const handleManual = () => {
-    onResolve(false);
-    router.push({ pathname: '/(tabs)/profile', params: { tab: 'resume' } });
-  };
-
   const canSubmitNames = firstName.trim().length > 0 && lastName.trim().length > 0;
 
   const handleSubmitNames = async () => {
@@ -151,22 +146,6 @@ export function ProfileGateSheet({ visible, step, user, onUpdateUser, onResolve 
                   <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={s.row}
-                  onPress={handleManual}
-                  disabled={importing}
-                  activeOpacity={0.8}
-                  testID="profile-gate-manual"
-                >
-                  <View style={[s.rowIcon, s.rowIconSecondary]}>
-                    <Ionicons name="create-outline" size={rf(20)} color={Colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.rowTitle}>Заполнить самому</Text>
-                    <Text style={s.rowSub}>Имя, опыт и другие разделы — в профиле</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={rf(18)} color={Colors.textMuted} />
-                </TouchableOpacity>
               </>
             ) : (
               <View style={s.names}>
@@ -214,11 +193,11 @@ const s = StyleSheet.create({
     borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20),
     paddingHorizontal: rs(20),
   },
-  title: { fontSize: rf(18), fontWeight: '700', color: Colors.textPrimary, paddingTop: rs(4) },
-  subtitle: { fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(6), marginBottom: rs(4) },
+  title: { fontSize: rf(18), fontFamily: JT_FONT.bold, color: Colors.textPrimary, paddingTop: rs(4) },
+  subtitle: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary, marginTop: rs(6), marginBottom: rs(4) },
 
   error: {
-    fontSize: rf(12.5), color: Colors.red, marginTop: rs(8),
+    fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: Colors.red, marginTop: rs(8),
     backgroundColor: '#FEF2F2', borderRadius: rs(10), padding: rs(10),
   },
 
@@ -233,15 +212,14 @@ const s = StyleSheet.create({
     width: rs(40), height: rs(40), borderRadius: rs(20),
     backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
   },
-  rowIconSecondary: { backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryBorder },
-  rowTitle: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  rowSub: { fontSize: rf(12.5), color: Colors.textSecondary, marginTop: rs(2) },
+  rowTitle: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  rowSub: { fontFamily: JT_FONT.medium, fontSize: rf(12.5), color: Colors.textSecondary, marginTop: rs(2) },
 
   names: { marginTop: rs(14), gap: rs(12) },
   submitWrap: { marginTop: rs(4), ...Shadow.card },
 
   later: {
-    textAlign: 'center', fontSize: rf(13.5), fontWeight: '600', color: Colors.textMuted,
+    textAlign: 'center', fontSize: rf(13.5), fontFamily: JT_FONT.semi, color: Colors.textMuted,
     marginTop: rs(16), marginBottom: rs(4),
   },
 });

@@ -22,6 +22,7 @@ import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 export default function CreatePermVacancy() {
   const router = useRouter();
   const { editId } = useLocalSearchParams<{ editId?: string }>();
@@ -123,7 +124,7 @@ export default function CreatePermVacancy() {
 
           {/* Badge */}
           <View style={styles.modeBadge}>
-            <Text style={styles.modeBadgeText}>💼 Постоянная работа</Text>
+            <Text style={styles.modeBadgeText}>Постоянная работа</Text>
           </View>
 
           {/* Work type */}
@@ -148,8 +149,8 @@ export default function CreatePermVacancy() {
               </View>
             ) : (
               <TouchableOpacity style={[styles.pickerField, errors.metro ? styles.inputError : null]} onPress={() => setMetroPicker(true)}>
-                <Text style={styles.pickerFieldTxt}>🚇 Выбрать станцию</Text>
-                <Text style={{ color: Colors.textMuted, fontSize: rf(20) }}>›</Text>
+                <Text style={styles.pickerFieldTxt}>Выбрать станцию</Text>
+                <Text style={{ color: Colors.textMuted, fontFamily: JT_FONT.medium, fontSize: rf(20) }}>›</Text>
               </TouchableOpacity>
             )}
             {errors.metro ? <Text style={styles.errMsg}>{errors.metro}</Text> : null}
@@ -246,17 +247,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(16), paddingVertical: rs(14),
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
   },
-  headerTitle: { fontSize: rf(16), fontWeight: '700', color: Colors.textPrimary },
+  headerTitle: { fontSize: rf(16), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   body: { padding: rs(20), gap: rs(18), paddingBottom: rs(20) },
   modeBadge: { backgroundColor: '#EDE9FE', borderRadius: rs(100), paddingHorizontal: rs(14), paddingVertical: rs(7), alignSelf: 'flex-start' },
-  modeBadgeText: { fontSize: rf(13), fontWeight: '700', color: '#7C3AED' },
+  modeBadgeText: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: '#7C3AED' },
   fieldGroup: { gap: rs(8) },
-  sectionLabel: { fontSize: rf(13), color: Colors.textMuted, fontWeight: '600' },
-  errMsg: { color: Colors.red, fontSize: rf(12) },
+  sectionLabel: { fontSize: rf(13), color: Colors.textMuted, fontFamily: JT_FONT.semi },
+  errMsg: { color: Colors.red, fontFamily: JT_FONT.medium, fontSize: rf(12) },
   input: {
     borderWidth: 1.5, borderColor: Colors.inputBorder, borderRadius: rs(12),
     paddingHorizontal: rs(14), paddingVertical: rs(13),
-    fontSize: rf(15), color: Colors.textPrimary, backgroundColor: Colors.bg,
+    fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary, backgroundColor: Colors.bg,
   },
   textarea: { minHeight: rs(100), paddingTop: rs(13) },
   inputError: { borderColor: Colors.red },
@@ -264,19 +265,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 1.5, borderColor: Colors.inputBorder, borderRadius: rs(12), padding: rs(16),
   },
-  pickerFieldTxt: { fontSize: rf(15), color: Colors.textPrimary },
+  pickerFieldTxt: { fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary },
   metroSelected: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10),
     borderWidth: 1.5, borderColor: Colors.primary, borderRadius: rs(12), padding: rs(14),
     backgroundColor: Colors.primaryLight,
   },
   dot: { width: rs(12), height: rs(12), borderRadius: rs(6) },
-  metroLineTxt: { fontSize: rf(11), color: Colors.textMuted },
-  metroStTxt: { fontSize: rf(15), fontWeight: '600', color: Colors.textPrimary, marginTop: rs(2) },
-  changeLink: { color: Colors.primary, fontSize: rf(13), fontWeight: '600' },
+  metroLineTxt: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted },
+  metroStTxt: { fontSize: rf(15), fontFamily: JT_FONT.semi, color: Colors.textPrimary, marginTop: rs(2) },
+  changeLink: { color: Colors.primary, fontSize: rf(13), fontFamily: JT_FONT.semi },
   submitBtn: {
     backgroundColor: '#7C3AED', borderRadius: rs(100),
     paddingVertical: rs(16), alignItems: 'center',
   },
-  submitBtnTxt: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
+  submitBtnTxt: { color: '#fff', fontSize: rf(16), fontFamily: JT_FONT.bold },
 });

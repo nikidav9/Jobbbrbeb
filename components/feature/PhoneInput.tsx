@@ -5,6 +5,7 @@ import { isPhoneComplete } from '@/services/storage';
 
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 interface Props {
   value: string; // formatted string like "+7 (999) 123-45-67"
   onChange: (formatted: string) => void;
@@ -84,7 +85,7 @@ const styles = StyleSheet.create({
     borderRadius: rs(12),
     paddingHorizontal: rs(16),
     paddingVertical: rs(14),
-    fontSize: rf(18),
+    fontFamily: JT_FONT.medium, fontSize: rf(18),
     color: Colors.textPrimary,
     letterSpacing: 1,
   },
@@ -93,7 +94,7 @@ const styles = StyleSheet.create({
   },
   error: {
     color: Colors.red,
-    fontSize: rf(12),
+    fontFamily: JT_FONT.medium, fontSize: rf(12),
     marginTop: rs(4),
   },
 });

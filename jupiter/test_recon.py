@@ -14,8 +14,10 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from agent import Reason
 from recon import (
-    NetOptions, _from_item, block_kind, endpoint_for, load_sites, recon_site,
+    CLASSES, NetOptions, _from_item, block_kind, classify, endpoint_for, load_sites, recon_site,
+    site_adapter,
 )
 
 PAGES = {
@@ -177,6 +179,21 @@ class ReconTest(unittest.TestCase):
 
 
 class ReconUnitTest(unittest.TestCase):
+    def test_api_and_email_are_not_counted_as_missing_form(self):
+        # 02.10.2026: Huntflow через API и отклик письмом попадали в no_vacancy
+        # и завышали «анкета не найдена» (7 + 30 сайтов в прогоне 02.10).
+        trajectory = [{"action": "open", "site_adapter": "huntflow_api"},
+                      {"action": "ready_to_submit", "site_adapter": "huntflow_api"}]
+        self.assertEqual(site_adapter(trajectory), "huntflow_api")
+        self.assertEqual(site_adapter([{"action": "open"}]), "")
+        self.assertEqual(classify("ready_to_submit", None, None, [], "huntflow_api"), "api_ready")
+        self.assertEqual(classify("action_required", Reason.EMAIL_APPLY, None, []), "email_apply")
+        # Адаптер, не дошедший до готовности, и пустой итог — по-прежнему no_vacancy.
+        self.assertEqual(classify("failed", Reason.VACANCY_NOT_FOUND, None, [], "huntflow_api"), "no_vacancy")
+        self.assertEqual(classify("failed", Reason.VACANCY_NOT_FOUND, None, []), "no_vacancy")
+        self.assertIn("api_ready", CLASSES)
+        self.assertIn("email_apply", CLASSES)
+
     def test_template_with_empty_field_gives_no_address(self):
         mapping = {"url_template": "https://x.ru/v/{slug}"}
         self.assertIsNone(_from_item({"slug": ""}, mapping))
@@ -195,9 +212,10 @@ class ReconUnitTest(unittest.TestCase):
         self.assertEqual(block_kind("HTTP Error 404: Not Found"), "404")
         self.assertEqual(block_kind("URLError: [Errno 104] Connection reset by peer"), "доступ (reset)")
 
-    def test_catalog_has_488_sections(self):
-        # 26.09.2026: +budu.jobs, Хабр Карьера, arbihunter, 33 сайта за прокси; 29.09 — +8 careerday.
-        self.assertEqual(len(load_sites()), 488)
+    def test_catalog_has_602_sections(self):
+        # 26.09.2026: +budu.jobs, Хабр Карьера, arbihunter, 33 сайта за прокси; 29.09 — +8 careerday;
+        # 30.09 — +114 поиска двадцатью агентами.
+        self.assertEqual(len(load_sites()), 602)
 
 
 if __name__ == "__main__":

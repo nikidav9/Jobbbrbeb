@@ -47,10 +47,11 @@ test('ручная отправка и причины «нужны вы»', () =
   assert.equal(other.note, 'Юпитер не смог закончить сам');
 });
 
-test('метка строки списка: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ ПОЛУЧИЛОСЬ / В РАБОТЕ', () => {
+test('метка строки списка: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ УШЁЛ / СКОРЕЕ ВСЕГО УШЁЛ / В РАБОТЕ', () => {
   assert.deepEqual(jupiterBadge(app({ state: 'submitted' })), { label: 'ОТПРАВЛЕНО', tone: 'sent' });
   assert.deepEqual(jupiterBadge(app({ state: 'duplicate' })), { label: 'ОТПРАВЛЕНО', tone: 'sent' });
-  assert.deepEqual(jupiterBadge(app({ state: 'failed' })), { label: 'НЕ ПОЛУЧИЛОСЬ', tone: 'failed' });
+  assert.deepEqual(jupiterBadge(app({ state: 'failed' })), { label: 'НЕ УШЁЛ', tone: 'failed' });
+  assert.deepEqual(jupiterBadge(app({ state: 'submission_unknown' })), { label: 'СКОРЕЕ ВСЕГО УШЁЛ', tone: 'working' });
   assert.deepEqual(jupiterBadge(app({ state: 'action_required', reasonCode: 'CAPTCHA_REQUIRED' })),
     { label: 'НУЖНЫ ВЫ', tone: 'needs_you' });
   assert.deepEqual(jupiterBadge(app({ state: 'filling' })), { label: 'В РАБОТЕ', tone: 'working' });
@@ -60,7 +61,8 @@ test('метка строки списка: ОТПРАВЛЕНО / НУЖНЫ В
 test('итог строки — что сделано или чего не хватает', () => {
   assert.equal(jupiterRowSummary(app({ state: 'submitted' })), 'Анкета заполнена и отправлена');
   assert.equal(jupiterRowSummary(app({ state: 'submitted', reasonCode: 'MANUAL_WEBVIEW' })), 'Вы отправили отклик сами');
-  assert.equal(jupiterRowSummary(app({ state: 'failed' })), 'Не получилось заполнить анкету');
+  assert.equal(jupiterRowSummary(app({ state: 'failed' })), 'Юпитер споткнулся до отправки — отправьте сами за минуту');
+  assert.match(jupiterRowSummary(app({ state: 'submission_unknown' })), /Почту/);
   assert.equal(jupiterRowSummary(app({ state: 'filling' })), 'Юпитер заполняет анкету');
   assert.equal(jupiterRowSummary(app({ state: 'action_required', reasonCode: 'CAPTCHA_REQUIRED' })),
     'Сайт просит проверку «я не робот» — отправьте сами');
@@ -69,6 +71,20 @@ test('итог строки — что сделано или чего не хв�
   })), 'Нужно ваше согласие для Сбера');
   assert.equal(jupiterRowSummary(app({ state: 'action_required', reasonCode: 'LIVE_AUTHORIZATION_REVOKED' })),
     'Автоотклик выключен — отправьте сами');
+});
+
+test('письмо компании превращает «скорее всего, ушёл» в «отправлено»', () => {
+  const sent = app({ state: 'submitted', reasonCode: 'MAIL_CONFIRMED' });
+  assert.equal(jupiterStatus(sent).label, 'Отправлено · компания ответила');
+  assert.deepEqual(jupiterBadge(sent), { label: 'ОТПРАВЛЕНО', tone: 'sent' });
+  assert.match(jupiterRowSummary(sent), /письмом/);
+  const [step] = buildTimeline([{ kind: 'submitted', reason_code: 'MAIL_CONFIRMED', detail: null, created_at: '1' }]);
+  assert.match(step.title, /письмом/);
+});
+
+test('честные исходы: «скорее всего, ушёл» и «не ушёл» различаются', () => {
+  assert.equal(jupiterStatus(app({ state: 'submission_unknown' })).label, 'Скорее всего, ушёл');
+  assert.equal(jupiterStatus(app({ state: 'failed' })).label, 'Не ушёл');
 });
 
 test('статус: особые причины важнее состояния', () => {

@@ -171,11 +171,14 @@ def install_guards(
     *,
     journal: list | None = None,
     confirm_accept: bool = False,
+    popup_texts: list | None = None,
 ) -> list:
     """Повесить защиту на контекст и вкладку; вернуть журнал того, что сделано.
 
     allowed_hosts читается живьём (агент дополняет множество по ходу).
     journal можно передать движку: install_guards(..., journal=self.actions).
+    popup_texts — сюда попадает видимый текст нового окна, снятый ДО закрытия:
+    «Спасибо, отклик принят» часто показывают в окне, которое мы закрываем.
     """
     log: list = journal if journal is not None else []
     resumes = [os.path.realpath(p) for p in resume_paths]
@@ -245,9 +248,17 @@ def install_guards(
     def on_navigated(frame) -> None:
         scheme = (urllib.parse.urlparse(frame.url).scheme or "").lower()
         if scheme and scheme not in _ALLOWED_PAGE_SCHEMES:
-            note("guard_blocked", url=frame.url[:200], reason="scheme_after_navigation")
+            main = frame == frame.page.main_frame
+            # Встроенный фрейм не загрузился (реклама, счётчик, reCAPTCHA) —
+            # браузер показывает в нём chrome-error. Это безвредно; раньше из-за
+            # этого вся вкладка уходила на about:blank вместе с анкетой
+            # (Аурига и др., разбор 220 «анкета не найдена», 02.10.2026).
+            if not main and scheme == "chrome-error":
+                return
+            note("guard_blocked", url=frame.url[:200], reason="scheme_after_navigation",
+                 frame="main" if main else "sub")
             try:
-                frame.page.goto("about:blank")
+                (frame.page if main else frame).goto("about:blank")
             except Exception:  # pragma: no cover
                 pass
 
@@ -266,6 +277,13 @@ def install_guards(
         except Exception:
             pass
         url = new.url
+        if popup_texts is not None:
+            try:
+                text = (new.evaluate("document.body ? document.body.innerText : ''") or "").strip()
+            except Exception:  # окно успело закрыться или не загрузилось
+                text = ""
+            if text:
+                popup_texts.append(text[:300])
         if host_allowed(url):
             note("guard_popup", url=url[:200], decision="same_tab")
             try:

@@ -37,10 +37,11 @@ _EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE_RE = re.compile(r"(?<![\w])\+?\d[\d\s().-]{8,}\d(?![\w])")
 # Числа длиннее 5 цифр: ИНН, СНИЛС, паспорт, номера счетов.
 _LONG_NUMBER_RE = re.compile(r"\d{6,}")
-# ФИО: два-три слова с заглавной (Иван Петров, Иванов Иван Иванович, Ivan Petrov)
-# и фамилия с инициалами (Петров И. И., И.И. Петров).
-_FIO_CYR_RE = re.compile(r"\b[А-ЯЁ][а-яё]+(?:[ \t]+[А-ЯЁ][а-яё]+){1,2}\b")
-_FIO_LAT_RE = re.compile(r"\b[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,2}\b")
+# ФИО: два и больше слов с заглавной подряд (Иван Петров, Иванов Иван Иванович,
+# Ivan Petrov) и фамилия с инициалами (Петров И. И., И.И. Петров). Окно до шести
+# слов: иначе «Apply To Tom Smith» резалось бы на «Apply To Tom» и голое «Smith».
+_FIO_CYR_RE = re.compile(r"\b[А-ЯЁ][а-яё]+(?:[ \t]+[А-ЯЁ][а-яё]+){1,5}\b")
+_FIO_LAT_RE = re.compile(r"\b[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,5}\b")
 _INITIALS_RE = re.compile(
     r"\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?(?:[А-ЯЁ]\.?)?|\b[А-ЯЁ]\.\s?(?:[А-ЯЁ]\.\s?)?[А-ЯЁ][а-яё]+\b")
 # Слова анкеты: «Фамилия Имя Отчество», «First Name» — это подписи, а не ФИО.
@@ -51,18 +52,27 @@ _FORM_WORDS = frozenset("""
 first last middle full name phone mobile email mail address city country date birth
 resume cv cover letter salary position company current expected your linkedin github
 portfolio website zip postal code street number upload file citizenship experience
+подать заявка отклик откликнуться откликнитесь ваканси отправить отправка подтвердить
+согласие загрузить выбрать apply submit application
 """.split())
+# Служебные слова кнопок («Откликнуться На Эту Вакансию», «Apply For This Job») —
+# только целиком: по началу слова «to» совпало бы с «Tom», «на» — с «Надя».
+_GLUE_WORDS = frozenset("на по для эту этот эта наш нашу нашей for this the to our us now".split())
 
 
 def _is_form_word(word: str) -> bool:
     # «телефона», «почты» — падежные окончания до двух букв; «Городецкий» не подпись.
-    return any(word.startswith(s) and len(word) - len(s) <= 2 for s in _FORM_WORDS)
+    return word in _GLUE_WORDS or any(word.startswith(s) and len(word) - len(s) <= 2 for s in _FORM_WORDS)
 
 
 def _keep_form_words(regex: re.Pattern, placeholder: str, text: str) -> str:
+    # Подпись или кнопка («Фамилия Имя», «Подать Заявку») остаётся. Но одно слово
+    # анкеты не спасает соседей: в «Далее Иван Петров» два слова не из списка —
+    # это имя, и совпадение скрывается целиком.
     def sub(m: re.Match) -> str:
         words = m.group(0).lower().split()
-        return m.group(0) if any(_is_form_word(w) for w in words) else placeholder
+        other = sum(1 for w in words if not _is_form_word(w))
+        return m.group(0) if other < 2 and other < len(words) else placeholder
     return regex.sub(sub, text)
 
 
@@ -120,6 +130,14 @@ class _Budget:
             self._stamps.append(now)
             return True
 
+    def remaining(self) -> int:
+        """Сколько вызовов ещё влезет в час (ничего не списывает)."""
+        now = time.monotonic()
+        with self._lock:
+            while self._stamps and now - self._stamps[0] >= 3600:
+                self._stamps.popleft()
+            return max(0, self.limit() - len(self._stamps))
+
     def reset(self) -> None:
         with self._lock:
             self._stamps.clear()
@@ -172,6 +190,9 @@ class YandexGPT:
         folder = os.environ.get("YANDEX_GPT_FOLDER_ID", "").strip()
         if not key or not folder:
             return None
+        # YandexGPT Pro (решение владельца 01.10.2026: Алиса — на всех сайтах,
+        # старшая модель); YANDEX_GPT_MODEL=yandexgpt-lite вернёт младшую.
+        kw.setdefault("model", os.environ.get("YANDEX_GPT_MODEL", "").strip() or "yandexgpt")
         return cls(key, folder, **kw)
 
     def _prepare(self, text: str) -> str:
@@ -186,7 +207,12 @@ class YandexGPT:
             self.base_url + COMPLETION_PATH, data=body,
             headers={"Content-Type": "application/json",
                      "Authorization": f"Api-Key {self.api_key}",
-                     "x-folder-id": self.folder_id},
+                     "x-folder-id": self.folder_id,
+                     # Не хранить запрос у Яндекса и не учить на нём модели:
+                     # без этого заголовка YandexGPT сохраняет текст запросов
+                     # (AI Studio, «Отключить логирование»; решение владельца
+                     # 02.10.2026).
+                     "x-data-logging-enabled": "false"},
             method="POST")
         started = time.monotonic()
         status = "сеть"

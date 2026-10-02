@@ -9,6 +9,23 @@ same `open/submit/load_html` interface — see «Browser engine» below. The HTT
 mapping, multipart upload, navigation policy, submit flow and success
 verification live in this repository.
 
+## Neural network (YandexGPT) and candidate data
+
+Owner's decision of 02.10.2026, recorded in the user documents (Terms 8.2,
+Privacy Policy, Consent, data policy 9.2):
+
+- the only model is YandexGPT (Yandex Cloud, servers in Russia, processing on
+  the operator's instruction); every request carries
+  `x-data-logging-enabled: false`, so per Yandex's terms its content is not used
+  to improve the service or train models (Yandex does not promise more);
+- our deterministic code fills known forms first; the model is called where
+  the code is stuck, and may then see the candidate profile and resume to fill
+  fields and answer employer questions;
+- answers come only from the profile and resume; if they do not contain the
+  answer, the question goes to the candidate;
+- special categories (health, criminal record) and passport data are never sent;
+- CAPTCHA, `read_only`, consent limits of Terms 8.3 stay as before.
+
 ## What Jupiter Web Engine v1 does
 
 - opens HTTP/HTTPS pages with a strict host allow-list;
@@ -365,7 +382,7 @@ that fails validation now returns `action_required` with reason code
 `AgentResult` carries a machine-readable `reason_code` alongside the human
 text: `CAPTCHA_REQUIRED`, `MISSING_PROFILE_FIELD`, `VALIDATION_FAILED`,
 `DOMAIN_BLOCKED`, `UNSUPPORTED_SCRIPT`, `SUCCESS_NOT_CONFIRMED`,
-`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
+`NAVIGATION_FAILED`, `SUBMIT_FAILED`, `FILL_FAILED`, `VACANCY_NOT_FOUND`, `MAX_STEPS`,
 `MULTI_STEP_DRY_RUN_LIMIT`, `STEP_DID_NOT_ADVANCE`, `DUPLICATE_BLOCKED`,
 `SUBMISSION_UNKNOWN`, `CONSENT_REQUIRED`, `UNKNOWN_REQUIRED_QUESTION`.
 Compatibility statistics must be built on the code, not on the prose.
@@ -595,3 +612,29 @@ Invariants: `read_only` blocks `submit()` and aborts every non-GET request in
 the browser; navigations only to allowed hosts; internal addresses blocked;
 CAPTCHA is never bypassed. Playwright is optional: the rest of Jupiter stays
 stdlib-only. Tests: `test_browser_engine.py` (CI job `jupiter-browser`).
+
+## Alice rescue loop (`alice_agent.py`)
+
+When the agent's own parsing is stuck (no form or apply button found, a step
+button returns the same step, a required field has no key, the site highlights
+fields, HTML validation fails), a browser-engine agent may call
+`JupiterAgent._alice_rescue`. YandexGPT then drives the live Chromium tab one
+action per step (click, fill, select, check, upload, scroll, done), the way
+open browser agents such as browser-use do — the code is our own, stdlib plus
+Playwright.
+
+What the model sees: the page structure only (`alice_dom.render_outline`:
+labels, kinds, «обяз», «заполнено/пусто» without values, options, site errors)
+and the **names** of profile keys. It never sees profile values or field
+values; it names a key and our code writes the value (`value_for`). The whole
+step message also goes through `redact()` with the profile values.
+
+What it may not do (rejected before the page is touched): press submit or
+«Далее» (the main loop does), sign in / register / pay, leave for site sections,
+touch CAPTCHA, tick consents, use `candidate.LEGAL_KEYS` or special categories,
+name a key outside the allowed list, use a missing element number, add free text.
+Limits: 6 steps per run, ≤2 runs and ≤12 model calls per task (plus the hourly
+`yandex_gpt.BUDGET`), 90 s per run; it stops after 2 failed steps in a row, a
+repeated action, or 2 steps without any change of the page. Alice never decides
+«done»: on `done: ready` the main loop re-checks fields, CAPTCHA and the
+fingerprint, submits and verifies success itself. Tests: `test_alice_agent.py`.

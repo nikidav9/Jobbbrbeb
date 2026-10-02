@@ -6,7 +6,7 @@ import {
 
 // Решения автопилота живут строкой (Hermes не отдаёт исходник функций), поэтому
 // собираем их тем же текстом, что уйдёт в страницу, — как tests/jupiter-fill.test.ts.
-const core = new Function(`${AUTOPILOT_CORE}; return { jtConsentDecision, jtIsApplyButton, jtIsSubmitButton, jtSuccessText };`)();
+const core = new Function(`${AUTOPILOT_CORE}; return { jtConsentDecision, jtIsApplyButton, jtIsSubmitButton, jtSuccessText, jtPickOption };`)();
 
 test('согласие на обработку ПДн ставится только по поручению', () => {
   const text = 'Я даю согласие на обработку персональных данных';
@@ -93,3 +93,13 @@ test('собранный скрипт разбирается целиком (о�
   }
 });
 
+
+test('вариант списка: точный текст, Готов → Да, уровень языка по коду; иначе не выбираем', () => {
+  const opts = (...t: string[]) => t.map(textContent => ({ textContent }));
+  assert.equal(core.jtPickOption(opts('Офис', 'Удаленно'), 'Удалённо'), 1);
+  assert.equal(core.jtPickOption(opts('—', 'Да', 'Нет'), 'Готов'), 1);
+  assert.equal(core.jtPickOption(opts('—', 'Да', 'Нет'), 'Не готов'), 2);
+  assert.equal(core.jtPickOption(opts('A2', 'B2 (Upper-Intermediate)', 'C1'), 'B2 — выше среднего'), 1);
+  assert.equal(core.jtPickOption(opts('Не знаю', 'Начальный'), 'Не готов'), -1);
+  assert.equal(core.jtPickOption(opts('Через 3 месяца'), 'Через месяц'), -1);
+});

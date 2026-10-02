@@ -30,9 +30,12 @@ esac
 TOKEN=$(docker compose exec -T php php -r '
   $s = @include "/var/www/api/app_secrets.php";
   echo is_array($s) ? ($s["TG_BOT_TOKEN"] ?? "") : "";' 2>/dev/null | tr -d '\r\n')
+# Ключ своего вебхука — вывод из токена бота, как в tg.php: APP_SECRET лежит в
+# сборке приложения и подписывать им обновления нельзя.
 SECRET=$(docker compose exec -T php php -r '
   $s = @include "/var/www/api/app_secrets.php";
-  echo is_array($s) ? ($s["APP_SECRET"] ?? "") : "";' 2>/dev/null | tr -d '\r\n')
+  $t = is_array($s) ? ($s["TG_BOT_TOKEN"] ?? "") : "";
+  echo $t !== "" ? hash_hmac("sha256", "jt-tg-webhook", $t) : "";' 2>/dev/null | tr -d '\r\n')
 # Прежний ключ нужен не для истории. Старый внешний relay проверяет заголовок
 # своим значением, а оно там осталось старым: после смены ключа он отвечает
 # Телеграму 401, и бот замолкает именно тогда, когда мы на неё откатились.

@@ -9,15 +9,14 @@ import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
-} from '@expo-google-fonts/unbounded';
-import {
-  Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
-} from '@expo-google-fonts/onest';
-import {
-  Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
-} from '@expo-google-fonts/manrope';
+// По одному начертанию, а не из индекса пакета: индекс тянет все девять
+// файлов в экспорт и в каждое OTA-обновление.
+import { Unbounded_700Bold } from '@expo-google-fonts/unbounded/700Bold';
+import { Unbounded_800ExtraBold } from '@expo-google-fonts/unbounded/800ExtraBold';
+import { Manrope_500Medium } from '@expo-google-fonts/manrope/500Medium';
+import { Manrope_600SemiBold } from '@expo-google-fonts/manrope/600SemiBold';
+import { Manrope_700Bold } from '@expo-google-fonts/manrope/700Bold';
+import { Manrope_800ExtraBold } from '@expo-google-fonts/manrope/800ExtraBold';
 import { AlertProvider } from '@/template';
 import { AppProvider, AppContext } from '@/contexts/AppContext';
 import ConsentGate from '@/components/ConsentGate';
@@ -28,10 +27,10 @@ import { ToastLayer } from '@/components/ui/ToastLayer';
 import { ConfirmHost } from '@/components/ui/ConfirmHost';
 import { OnboardingOverlay } from '@/components/OnboardingOverlay';
 import { setupAndroidChannels } from '@/services/notifications';
-import { routeForNotification } from '@/services/notificationRoute';
+import { routeForNotification, routeForRefreshPush } from '@/services/notificationRoute';
 import { hideWebSplash, markWebBundleMounted } from '@/lib/webSplash';
 import { getSessionUser, savePendingReferral } from '@/services/storage';
-import { dbRecordGuestEvent } from '@/services/db';
+import { dbGetNotifications, dbRecordGuestEvent } from '@/services/db';
 import { waitForTelegramMiniApp, initTelegramMiniApp, getTelegramStartParam } from '@/lib/telegram';
 
 // Keep the web/native splash visible until hideAsync() is called from the tabs layout or index screen.
@@ -165,11 +164,17 @@ function NotificationHandler() {
       const type = data?.type as string | undefined;
       const chatId = data?.chatId as string | undefined;
 
-      const target = routeForNotification(type, { chatId });
-      if (!target) return;
-
       const user = await getSessionUser().catch(() => null);
-      router.push((user ? target : '/') as never);
+      if (!user) { router.push('/' as never); return; }
+
+      // Пуш без подробностей ({type:'refresh'}) — экран выбираем по самому
+      // свежему непрочитанному в колокольчике. Раньше такой пуш просто
+      // открывал приложение, а это почти все пуши.
+      const target = type === 'refresh'
+        ? routeForRefreshPush(await dbGetNotifications(user.id).catch(() => []))
+        : routeForNotification(type, { chatId });
+      if (!target) return;
+      router.push(target as never);
     };
 
     // Background/terminated: user tapped the notification
@@ -220,17 +225,17 @@ export default function RootLayout() {
   // Шрифты макета JT-design (27.09.2026): Unbounded — крупные заголовки,
   // Manrope — остальной текст. Лицензия SIL OFL. TTF собраны из woff2 макета
   // (кириллица + латиница в одном файле): woff2 на телефоне не читается.
-  // Unbounded/Onest из @expo-google-fonts — для профиля соискателя
-  // (constants/profileTheme.ts, эталон docs/design/profile). Загрузка не
-  // блокирует показ экрана: пока шрифт не готов, текст рисуется системным.
+  // Один текстовый шрифт на всё приложение — Manrope (решение владельца
+  // 01.10.2026; Onest профиля снят). Unbounded и Manrope из @expo-google-fonts
+  // — имена ProfileFonts/EditFonts. Загрузка не блокирует показ экрана: пока
+  // шрифт не готов, текст рисуется системным.
   const [fontsLoaded] = useFonts({
     ...Ionicons.font,
     'Unbounded-700': require('../assets/fonts/Unbounded-700.ttf'),
     'Manrope-500': require('../assets/fonts/Manrope-500.ttf'),
     'Manrope-700': require('../assets/fonts/Manrope-700.ttf'),
     'Manrope-800': require('../assets/fonts/Manrope-800.ttf'),
-    Unbounded_600SemiBold, Unbounded_700Bold, Unbounded_800ExtraBold,
-    Onest_400Regular, Onest_500Medium, Onest_600SemiBold, Onest_700Bold,
+    Unbounded_700Bold, Unbounded_800ExtraBold,
     // Manrope — экраны редактирования профиля (constants/profileEditTheme.ts,
     // эталон docs/design/profile-edit). Тот же неблокирующий способ.
     Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
@@ -268,9 +273,7 @@ export default function RootLayout() {
             <Stack.Screen name="login" />
             <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
             <Stack.Screen name="legal" />
-            <Stack.Screen name="candidates" />
             <Stack.Screen name="chat-room" />
-            <Stack.Screen name="match" options={{ presentation: 'modal' }} />
             <Stack.Screen name="rate" options={{ presentation: 'modal' }} />
             <Stack.Screen name="admin" />
             <Stack.Screen name="user-profile" />
@@ -282,7 +285,6 @@ export default function RootLayout() {
             {/* Шторкой: тест — короткий заход из профиля, а не место, куда
                 уходят насовсем. Закрыть крестиком и вернуться на прежний
                 экран должно быть очевидно. */}
-            <Stack.Screen name="skill-test" options={{ presentation: 'modal' }} />
           </Stack>
           <OnboardingOverlay />
           {/* Поверх всего, но под всплывающими сообщениями: окно закрывает
@@ -298,7 +300,8 @@ export default function RootLayout() {
           {/* Баннер cookie/Метрики — только веб; грузит аналитику после согласия. */}
           <CookieConsent />
           <ToastLayer />
-          {Platform.OS === 'web' ? <ConfirmHost /> : null}
+          {/* Окно вопросов confirmAsync — фирменное на всех поверхностях. */}
+          <ConfirmHost />
         </AppProvider>
       </SafeAreaProvider>
     </AlertProvider>

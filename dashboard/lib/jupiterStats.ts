@@ -93,7 +93,7 @@ export type SiteStat = {
 
 export type Totals = Record<Bucket, number> & { total: number; verified: number }
 
-export type DayStat = { day: string; auto: number; manual: number; parked: number; human: number; other: number }
+export type DayStat = { day: string; auto: number; manual: number; parked: number; human: number; unknown: number; other: number }
 
 export type JupiterReport = {
   totals: Totals
@@ -128,7 +128,7 @@ export function buildReport(rows: JupiterRow[], days: number, now: Date = new Da
     auto: 0, manual: 0, parked: 0, human: 0, working: 0, failed: 0, duplicate: 0,
   }
   const bySite = new Map<string, SiteStat & { reasons: Map<string, number>; companies: Map<string, number> }>()
-  const byDay = new Map<string, DayStat>(axis.map(d => [d, { day: d, auto: 0, manual: 0, parked: 0, human: 0, other: 0 }]))
+  const byDay = new Map<string, DayStat>(axis.map(d => [d, { day: d, auto: 0, manual: 0, parked: 0, human: 0, unknown: 0, other: 0 }]))
 
   for (const r of picked) {
     const b = bucketOf(r)
@@ -158,6 +158,7 @@ export function buildReport(rows: JupiterRow[], days: number, now: Date = new Da
     const d = byDay.get(moscowDay(r.created_at))
     if (d) {
       if (b === 'auto' || b === 'manual' || b === 'parked' || b === 'human') d[b]++
+      else if (r.state === 'submission_unknown') d.unknown++
       else d.other++
     }
   }
@@ -320,6 +321,71 @@ export function formatDuration(sec: number | null | undefined): string {
   return s ? `${m} мин ${s} с` : `${m} мин`
 }
 
+/**
+ * «Скорее всего, ушёл» (state submission_unknown): почему исход неизвестен.
+ * Владелец 02.10.2026: «почти во всех откликах так выходит» — раздел нужен,
+ * чтобы чинить по фактам. Берёт те же строки, что и основной замер, новых
+ * колонок у базы не просит.
+ */
+export const UNKNOWN_REASON_LABEL: Record<string, string> = {
+  // worker.apply_result: прогон упал ПОСЛЕ before_submit — а он зовётся и на
+  // промежуточной «Далее», не только на последней «Отправить».
+  POST_OUTCOME_UNCERTAIN: 'Сбой после нажатия «Далее» или «Отправить» (сторож 4 мин, ошибка шага)',
+  // agent._unknown_outcome: связь оборвалась на самой отправке, проверка GET-ом
+  // не нашла подтверждения.
+  SUBMISSION_UNKNOWN: 'Связь оборвалась на отправке, подтверждения нет',
+  // jupiter_lease_task: воркер пропал, пока задача была в submitting.
+  LEASE_EXPIRED_DURING_SUBMISSION: 'Воркер пропал во время отправки',
+}
+
+export type UnknownSite = {
+  site: string
+  company: string
+  total: number
+  reasons: { code: string; count: number }[]
+  browser: number
+}
+
+export type UnknownReport = {
+  total: number
+  /** Доля от всех свайпов по сайтам за период. */
+  ofAll: number
+  reasons: { code: string; count: number }[]
+  sites: UnknownSite[]
+}
+
+export function buildUnknownReport(rows: JupiterRow[], days: number, now: Date = new Date()): UnknownReport {
+  const axis = lastDays(days || 30, now)
+  const from = days ? axis[0] : ''
+  const picked = rows.filter(r => !from || moscowDay(r.created_at) >= from)
+  const unknown = picked.filter(r => r.state === 'submission_unknown')
+  const count = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1)
+  const sorted = (m: Map<string, number>) =>
+    Array.from(m.entries()).map(([code, n]) => ({ code, count: n }))
+      .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
+
+  const all = new Map<string, number>()
+  const bySite = new Map<string, { reasons: Map<string, number>; companies: Map<string, number>; total: number; browser: number }>()
+  for (const r of unknown) {
+    const code = r.reason_code || '—'
+    count(all, code)
+    const site = siteOf(r)
+    let s = bySite.get(site)
+    if (!s) { s = { reasons: new Map(), companies: new Map(), total: 0, browser: 0 }; bySite.set(site, s) }
+    s.total++
+    count(s.reasons, code)
+    if (r.company) count(s.companies, r.company)
+    if (engineOf(r.engine) === 'browser') s.browser++
+  }
+  const sites = Array.from(bySite.entries())
+    .map(([site, s]) => ({
+      site, company: sorted(s.companies)[0]?.code ?? '', total: s.total,
+      reasons: sorted(s.reasons), browser: s.browser,
+    }))
+    .sort((a, b) => b.total - a.total || a.site.localeCompare(b.site))
+  return { total: unknown.length, ofAll: picked.length, reasons: sorted(all), sites }
+}
+
 /** Причины остановки — теми же словами, что видит человек в «Откликах». */
 export const REASON_LABEL: Record<string, string> = {
   SITE_NOT_VERIFIED: 'Сайт ещё подключаем',
@@ -336,7 +402,10 @@ export const REASON_LABEL: Record<string, string> = {
   DOMAIN_BLOCKED: 'Переход на чужой домен',
   VALIDATION_FAILED: 'Сайт не принял поля',
   SUBMIT_FAILED: 'Отправка не прошла',
+  FILL_FAILED: 'Поле не заполнилось — отклик не ушёл',
   SUCCESS_NOT_CONFIRMED: 'Успех не подтверждён',
+  SITE_NEEDS_FIX: 'Сайт просит исправить поля',
+  SITE_REJECTED: 'Сайт ответил ошибкой',
   POST_OUTCOME_UNCERTAIN: 'Исход отправки неизвестен',
   STEP_DID_NOT_ADVANCE: 'Шаг анкеты не сменился',
   FORM_GONE: 'Анкета пропала',

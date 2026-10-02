@@ -5,7 +5,7 @@ import { useRealtime } from '@/lib/useRealtime'
 import { PALETTE } from '@/lib/queries'
 import {
   JUPITER_COLUMNS, CAPTCHA_COLUMNS, BUCKET_LABEL, REASON_LABEL, ENGINE_LABEL, CAPTCHA_REASONS,
-  buildReport, buildEngineReport, buildCaptchaReport, formatDuration,
+  UNKNOWN_REASON_LABEL, buildReport, buildEngineReport, buildCaptchaReport, buildUnknownReport, formatDuration,
   type JupiterRow, type CaptchaEvent, type CaptchaRow,
 } from '@/lib/jupiterStats'
 import PageHeader from '@/components/PageHeader'
@@ -125,6 +125,8 @@ export default function JupiterPage() {
     [rows, data, period],
   )
 
+  const unknown = useMemo(() => buildUnknownReport(rows ?? [], PERIOD_DAYS[period]), [rows, period])
+
   const captcha = useMemo(
     () => (data?.captcha ? buildCaptchaReport(data.captcha, PERIOD_DAYS[period]) : null),
     [data, period],
@@ -192,6 +194,7 @@ export default function JupiterPage() {
                 <Bar dataKey="manual" name={BUCKET_LABEL.manual} stackId="a" fill={PALETTE.cyan} />
                 <Bar dataKey="human" name={BUCKET_LABEL.human} stackId="a" fill={PALETTE.orange} />
                 <Bar dataKey="parked" name={BUCKET_LABEL.parked} stackId="a" fill={PALETTE.blue} />
+                <Bar dataKey="unknown" name="Скорее всего, ушёл" stackId="a" fill={PALETTE.red} />
                 <Bar dataKey="other" name="Прочее" stackId="a" fill={PALETTE.gray} />
               </BarChart>
             </ResponsiveContainer>
@@ -291,6 +294,58 @@ export default function JupiterPage() {
                 </tbody>
               </table>
             </div>
+          )}
+        </ChartCard>
+
+        <ChartCard title="«Скорее всего, ушёл» — почему"
+          sub={`Отклик ушёл на сайт, но подтверждения нет; повторять Юпитер не будет. ${unknown.total} из ${unknown.ofAll} свайпов за период · ${pct(unknown.total, unknown.ofAll)}.`}>
+          {unknown.total === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '4px 0 8px' }}>
+              За этот период таких откликов не было.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', padding: '0 0 10px' }}>
+                {unknown.reasons.map(r => (
+                  <div key={r.code}>
+                    {UNKNOWN_REASON_LABEL[r.code] ?? REASON_LABEL[r.code] ?? r.code}{' '}
+                    <span className="mono" style={{ color: 'var(--ink-3)' }}>×{r.count} · {pct(r.count, unknown.total)}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ overflowX: 'auto', margin: '0 -16px -14px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: 'var(--ink-3)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={th}>Сайт</th>
+                      <th style={{ ...th, textAlign: 'right' }}>«Скорее всего, ушёл»</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Из них в браузере</th>
+                      <th style={{ ...th, whiteSpace: 'normal', minWidth: 220 }}>Причина</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unknown.sites.map(s => (
+                      <tr key={s.site} style={{ borderBottom: '1px solid var(--line)' }}>
+                        <td style={td}>
+                          <div style={{ color: 'var(--ink)' }}>{s.company || s.site}</div>
+                          {s.company ? <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>{s.site}</div> : null}
+                        </td>
+                        <td className="mono" style={{ ...td, textAlign: 'right' }}>{s.total}</td>
+                        <td className="mono" style={{ ...td, textAlign: 'right' }}>{s.browser}</td>
+                        <td style={{ ...td, whiteSpace: 'normal', minWidth: 220, color: 'var(--ink-2)' }}>
+                          {s.reasons.map(r => (
+                            <div key={r.code}>
+                              {UNKNOWN_REASON_LABEL[r.code] ?? REASON_LABEL[r.code] ?? r.code}{' '}
+                              <span className="mono" style={{ color: 'var(--ink-3)' }}>×{r.count}</span>
+                            </div>
+                          ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </ChartCard>
 

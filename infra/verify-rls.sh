@@ -43,7 +43,15 @@ with required(table_name) as (
     -- Закладки карьерных вакансий (миграция 129).
     ('jm_ext_saved'),
     -- Капча человеку для Jupiter (миграция 135).
-    ('jm_jupiter_captcha')
+    ('jm_jupiter_captcha'),
+    -- Вопросы работодателей и банк ответов человека (миграция 137).
+    ('jm_jupiter_questions'), ('jm_jupiter_answers'),
+    -- Служебные: учёт миграций, открытия приложения, опросы (миграция 139).
+    ('jm_migrations'), ('jm_app_opens'), ('jm_survey_responses'), ('jm_survey_sends'),
+    -- Подсказки полей анкеты для телефонного автопилота (миграция 141).
+    ('jm_jupiter_field_hints'),
+    -- Логотипы компаний (миграция 144): пишет только сервер.
+    ('jm_company_logos')
 ), state as (
   select r.table_name, c.oid, c.relrowsecurity
   from required r

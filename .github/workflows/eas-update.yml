@@ -7,6 +7,13 @@ on:
       - 'docs/**'
       - '**/*.md'
       - '.gitignore'
+      # Команды серверу, а не приложению: сбор и разведка по запросу.
+      - 'infra/ingest-now'
+      - 'infra/recon-now'
+      # Логотипы компаний живут в базе, приложению их выкатывать незачем.
+      - 'data/company-logos/**'
+      - 'scripts/upload-company-logos.py'
+      - '.github/workflows/company-logos.yml'
   workflow_dispatch:
 
 # Only the newest production bundle may publish. Without this, several rapid

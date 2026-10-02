@@ -357,6 +357,68 @@ class TestProfileFactory(unittest.TestCase):
         self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
         self.assertEqual(queue.finished, [(task.id, TaskState.SUBMISSION_UNKNOWN)])
 
+    def test_failure_after_next_step_is_retried_not_unknown(self):
+        # «Далее» в многошаговой анкете — ещё не отклик. Сбой на втором шаге
+        # повторяется, а не становится «Скорее всего, ушёл» (02.10.2026).
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="two-step", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedOnSecondStep:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, True)
+                return AgentResult("failed", "browser killed", reason_code=Reason.NAVIGATION_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedOnSecondStep())
+        self.assertEqual(state, TaskState.RETRYABLE_FAILED)
+        self.assertNotIn(TaskState.SUBMITTING, [c[1] for c in queue.checkpoints])
+        self.assertIn((task.id, TaskState.FILLING, {"url": "https://example.com/job", "intermediate": True}),
+                      queue.checkpoints)
+
+    def test_final_submit_after_next_step_still_never_retries(self):
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="two-step-final", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedAfterFinal:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, True)
+                self.before_submit(url, False)
+                return AgentResult("failed", "HTTP failed", reason_code=Reason.SUBMIT_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedAfterFinal())
+        self.assertEqual(state, TaskState.SUBMISSION_UNKNOWN)
+
+    def test_fill_failure_before_click_is_retried_not_unknown(self):
+        # before_submit взводит «отправка начата» ДО engine.submit, а поле
+        # может не заполниться раньше клика. Отклик точно не ушёл — повтор,
+        # а не «Скорее всего, ушёл» (02.10.2026).
+        import worker as worker_mod
+        from agent import AgentResult, Reason
+
+        task = ApplicationTask(id="fill-failed", candidate_id="u1", vacancy_url="https://example.com/job")
+        queue = FakeQueue([task])
+
+        class FailedToFill:
+            dry_run = False
+            def run(self, url, profile):
+                self.before_submit(url, False)
+                return AgentResult("failed", "Не удалось заполнить поле", reason_code=Reason.FILL_FAILED)
+
+        _task, state = worker_mod.run_once(queue, CandidateProfile({"first_name": "Иван"}),
+                                           lambda _: FailedToFill())
+        self.assertNotEqual(state, TaskState.SUBMISSION_UNKNOWN)
+        self.assertEqual(state, TaskState.RETRYABLE_FAILED)
+        self.assertIn(Reason.FILL_FAILED, worker_mod.RETRYABLE_CODES)
+
     def test_live_task_on_unverified_site_is_parked_without_agent(self):
         import worker as worker_mod
 
@@ -802,8 +864,8 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
 
         if accepts_mapper:
             class Agent(real):
-                def __init__(self, allowed_hosts, max_steps=30, *, field_mapper=None, **kw):
-                    super().__init__(allowed_hosts, max_steps, **kw)
+                def __init__(self, allowed_hosts, max_steps=30, *, field_mapper=None, alice=None, **kw):
+                    super().__init__(allowed_hosts, max_steps, alice=alice, **kw)
                     self.field_mapper = field_mapper
                     made.append(self)
         else:
@@ -835,7 +897,7 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
         made = self._recording_agent(accepts_mapper=True)
         calls = []
 
-        def fake_suggest(llm, fields, allowed_keys):
+        def fake_suggest(llm, fields, allowed_keys, host="", examples=None):
             calls.append((llm, fields, allowed_keys))
             return {"plan-f0": "phone"}
         self.bp.suggest_field_keys = fake_suggest
@@ -845,12 +907,27 @@ class TestBrowserLimitsAndFieldMapper(unittest.TestCase):
         fields = [{"jt": "plan-f0", "label": "Мобильный"}]
         self.assertEqual(mapper(fields, ["phone", "email"]), {"plan-f0": "phone"})
         llm, got_fields, got_keys = calls[0]
-        self.assertIsInstance(llm, yandex_gpt.YandexGPT)
+        # Клиент в обёртке со счётчиком дневного потолка (knowledge.CountingLLM).
+        self.assertIsInstance(llm.llm, yandex_gpt.YandexGPT)
         self.assertEqual(got_fields, fields)
         self.assertEqual(got_keys, ["phone", "email"])
         self.assertIn("YandexGPT для незнакомых полей: да", out)
         self.assertNotIn(self.SECRET, out)
         self.assertNotIn("b1g-folder-secret", out)
+
+    def test_alice_hook_is_the_same_counting_llm(self):
+        """Алиса получает тот же клиент со счётчиком, что и остальные хуки."""
+        import knowledge
+        os.environ["YANDEX_GPT_API_KEY"] = self.SECRET
+        os.environ["YANDEX_GPT_FOLDER_ID"] = "folder"
+        made = self._recording_agent(accepts_mapper=True)
+        self._one_agent()
+        self.assertIsInstance(made[0].alice, knowledge.CountingLLM)
+
+    def test_alice_hook_absent_without_key(self):
+        made = self._recording_agent(accepts_mapper=True)
+        self._one_agent()
+        self.assertIsNone(made[0].alice)
 
     def test_agent_without_field_mapper_param_does_not_crash(self):
         os.environ["YANDEX_GPT_API_KEY"] = self.SECRET

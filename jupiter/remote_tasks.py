@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 import urllib.request
@@ -32,6 +33,68 @@ class RemoteError(Exception):
         self.status = status
         self.body = body
         super().__init__(f"HTTP {status}: {body[:200]}")
+
+
+# Ответ заранее (PersonalDetails.applyAnswers) → ключ профиля Юпитера.
+APPLY_ANSWER_KEYS = {
+    "desiredSalary": "desired_salary", "noticePeriod": "notice_period",
+    "telegram": "telegram", "englishLevel": "english_level",
+    "relocation": "relocation", "workFormat": "work_format",
+    "github": "github", "linkedin": "linkedin", "portfolio": "portfolio",
+}
+
+
+def _text(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v).strip() for v in value if str(v).strip())
+    return str(value).strip() if value not in (None, "") else ""
+
+
+def profile_answers(pd: dict, rd: dict) -> dict[str, str]:
+    """Ответы на частые вопросы работодателей из профиля и резюме человека.
+
+    Только то, что человек сам заполнил; ничего не выдумываем. applyAnswers
+    (экран «Ответы для откликов») перекрывает выведенное из профиля.
+    """
+    out: dict[str, str] = {}
+    salary = rd.get("salaryAmount") or rd.get("salary")
+    if _text(salary):
+        out["desired_salary"] = _text(salary)
+    fmt = _text(rd.get("workFormat")) or _text(pd.get("workFormats"))
+    if fmt:
+        out["work_format"] = fmt
+    cities = _text(pd.get("relocationCities"))
+    if cities:
+        out["relocation"] = "Да: " + cities
+    elif _text(pd.get("relocation")):
+        out["relocation"] = _text(pd.get("relocation"))
+    for link in pd.get("linksList") or []:
+        if not isinstance(link, dict) or not _text(link.get("url")):
+            continue
+        kind = {"behance": "portfolio"}.get(str(link.get("type")), str(link.get("type")))
+        if kind in ("telegram", "github", "linkedin", "portfolio") and kind not in out:
+            out[kind] = _text(link["url"])
+    # В анкетах Telegram ждут как @ник, а не ссылку.
+    tg = re.match(r"^(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z0-9_]{4,})/?$", out.get("telegram", ""))
+    if tg:
+        out["telegram"] = "@" + tg.group(1)
+    for lang in rd.get("languages") or []:
+        if isinstance(lang, dict) and any(m in str(lang.get("name", "")).lower() for m in ("англ", "english")):
+            if _text(lang.get("level")):
+                out["english_level"] = _text(lang["level"])
+            break
+    jobs = [j for j in (rd.get("experience") or []) if isinstance(j, dict)]
+    current = next((j for j in jobs if j.get("current")), jobs[0] if jobs else None)
+    if current:
+        if _text(current.get("company")):
+            out["current_company"] = _text(current["company"])
+        if _text(current.get("position")):
+            out["current_title"] = _text(current["position"])
+    answers = pd.get("applyAnswers") if isinstance(pd.get("applyAnswers"), dict) else {}
+    for field_name, key in APPLY_ANSWER_KEYS.items():
+        if _text(answers.get(field_name)):
+            out[key] = _text(answers[field_name])
+    return out
 
 
 class RemoteTaskQueue:
@@ -190,10 +253,19 @@ class RemoteTaskQueue:
         resume_token: str | None = None,
         receipt_key: str | None = None,
         summary: dict | None = None,
+        questions: list | None = None,
+        email_to: str | None = None,
     ) -> None:
         if self._worker is None:
             return
         extra: dict[str, Any] = {}
+        # Вопросы работодателя человеку (NEEDS_ANSWERS) — сервер ставит их в
+        # очередь «Вопросы от работодателей» и вернёт отклик, когда ответят.
+        if questions:
+            extra["questions"] = questions
+        # Отклик письмом: адрес проверит и письмо отправит сервер.
+        if email_to:
+            extra["email_to"] = email_to
         # Сводка заполнения ложится в checkpoint: триггер базы переносит её в
         # историю отклика (jm_jupiter_events), когда меняется состояние.
         if summary is not None:
@@ -234,11 +306,16 @@ class RemoteTaskQueue:
 
     # ── профиль кандидата ──────────────────────────────────────────────────
 
-    def fetch_profile(self, user_id: str) -> CandidateProfile:
-        """Собрать профиль кандидата из данных в базе."""
+    def fetch_profile(self, user_id: str, application_id: str | None = None) -> CandidateProfile:
+        """Собрать профиль кандидата из данных в базе.
+
+        С application_id сервер отдаёт и ответы человека на вопросы
+        работодателя: банк фактов и ответы именно для этого отклика.
+        """
         if not user_id or not user_id.strip():
             raise ValueError("candidate_id пуст — задача без привязки к пользователю")
-        raw = self._call("jupiterGetCandidateProfile", [user_id])
+        args = [user_id, application_id] if application_id else [user_id]
+        raw = self._call("jupiterGetCandidateProfile", args)
         if not isinstance(raw, dict) or raw.get("error"):
             raise RemoteError(0, raw.get("error", "empty profile") if isinstance(raw, dict) else "bad response")
         values: dict[str, Any] = {}
@@ -269,10 +346,22 @@ class RemoteTaskQueue:
             for field, key in mapping.items():
                 if key not in values and source.get(field) not in (None, ""):
                     values[key] = source[field]
+        # Частые вопросы работодателей (01.10.2026, «Ответьте один раз»):
+        # из того, что человек уже заполнил в профиле, и из ответов, данных
+        # заранее (applyAnswers — они главнее).
+        for key, val in profile_answers(pd if isinstance(pd, dict) else {},
+                                        rd if isinstance(rd, dict) else {}).items():
+            values[key] = val
         if isinstance(rd, dict):
             for key, val in rd.items():
                 if key not in values and val not in (None, ""):
                     values[key] = val
+        answers = raw.get("answers")
+        if isinstance(answers, dict) and answers:
+            values["answers"] = {
+                str(k): v for k, v in answers.items()
+                if isinstance(k, str) and k.startswith("q:") and v not in (None, "")
+            }
         # JobToo's own consent does not accept a third party's legal terms.
         for key in ("consent", "personal_data_consent", "privacy_consent", "terms_consent"):
             values.pop(key, None)

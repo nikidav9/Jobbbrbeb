@@ -202,7 +202,7 @@
   },
   {
     "map": {
-      "id": "slug",
+      "id": "id",
       "list": "data",
       "title": "name",
       "address": "location",
@@ -422,7 +422,8 @@
       "company_const": "М.Видео-Эльдорадо"
     },
     "url": "https://career.mvideoeldorado.ru/vacancies",
-    "mode": "html_links"
+    "mode": "html_links",
+    "company_hint": "М.Видео-Эльдорадо"
   },
   {
     "map": {
@@ -532,7 +533,15 @@
       "company_const": "X5 Tech"
     },
     "url": "https://prod-lkk-back.x5.ru/api/v2/x5-tech/vacancies/",
-    "company_hint": "X5 Tech"
+    "company_hint": "X5 Tech",
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit_param": "page_size",
+      "limit": 100,
+      "max_pages": 5
+    }
   },
   {
     "map": {
@@ -915,9 +924,9 @@
     "url": "https://yandex.ru/jobs/api/publications?cities=moscow&page_size=20",
     "mode": "json",
     "paging": {
-      "type": "cursor_b64",
+      "type": "cursor_next",
       "param": "cursor",
-      "template": "o={offset}&p={page}",
+      "next_field": "next",
       "limit": 20,
       "limit_param": "page_size",
       "max_pages": 80
@@ -2375,5 +2384,71 @@
       "company_const": "Tripster"
     },
     "company_hint": "Tripster"
+  },
+  {
+    "url": "https://rabota.x5.ru/public/api/vacancies/vacancies/",
+    "map": {
+      "list": "items",
+      "title": "name",
+      "id": "id",
+      "address": "city",
+      "schedule": "work_format",
+      "url_template": "https://rabota.x5.ru/vacancies/{id}",
+      "company_const": "X5 Group"
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit_param": "page_size",
+      "limit": 100,
+      "max_pages": 5
+    },
+    "company_hint": "X5 Group"
+  },
+  {
+    "url": "https://career.polyus.com/vacancies/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/vacancies/",
+      "company_const": "Полюс",
+      "min_title": 8
+    },
+    "paging": {
+      "type": "page",
+      "param": "PAGEN_1",
+      "start": 1,
+      "limit": 10,
+      "max_pages": 30
+    },
+    "company_hint": "Полюс"
+  },
+  {
+    "url": "https://job.level.ru/positions/",
+    "mode": "html_links",
+    "map": {
+      "link_path": "/positions/",
+      "company_const": "Level Group",
+      "min_title": 8
+    },
+    "paging": {
+      "type": "page",
+      "param": "page",
+      "start": 1,
+      "limit": 10,
+      "max_pages": 10
+    },
+    "company_hint": "Level Group"
+  },
+  {
+    "url": "https://evotor.ru/page-data/sq/d/754220884.json",
+    "map": {
+      "list": "data.strapiHeader.products",
+      "title": "title",
+      "id": "id",
+      "url_template": "https://evotor.ru/vacancies/{id}",
+      "company_const": "Эвотор"
+    },
+    "company_hint": "Эвотор"
   }
 ]

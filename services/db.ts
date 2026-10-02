@@ -163,8 +163,11 @@ async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
     try {
       parsed = JSON.parse(text);
     } catch {
-      // Не JSON — ответила не наша программа. Пробуем ещё раз, один.
-      if (attempt === 0) { await new Promise(r => setTimeout(r, 600)); continue; }
+      // Не JSON — ответила не наша программа. Пробуем ещё раз, один — но не
+      // при 502–504: это перегрузка, и повтор от каждого клиента её удваивает.
+      if (attempt === 0 && ![502, 503, 504].includes(status)) {
+        await new Promise(r => setTimeout(r, 600)); continue;
+      }
       break;
     }
     // Сессия недействительна.
@@ -181,15 +184,34 @@ async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
       // сообщаем, что нужна регистрация. Фоновые вызовы это молча проглотят.
       throw new Error('Для этого действия нужна регистрация.');
     }
-    if (parsed?.error) throw new Error(parsed.error);
+    if (parsed?.error) throw new Error(humanServerError(fn, parsed.error, status));
     return parsed?.data as T;
   }
 
-  const head = text.trim().replace(/\s+/g, ' ').slice(0, 120);
   console.error(`[db] ${fn}: ответ не JSON (HTTP ${status}):`, text.slice(0, 500));
-  throw new Error(head
-    ? `Сервер ответил не по делу (${status}): ${head}`
-    : `Сервер не ответил (${status}). Попробуйте ещё раз.`);
+  throw new Error(httpStatusMessage(status));
+}
+
+/**
+ * Что показать человеку вместо технического ответа. Раньше в плашку уходили
+ * куски HTML хостинга («Сервер ответил не по делу (502): <!DOCTYPE…»),
+ * английские ошибки базы и `curl: …`. Русские тексты сервера пишутся для
+ * людей и проходят как есть — по ним же, бывает, ветвится экран (/уже есть/,
+ * /почт/), поэтому их не трогаем.
+ */
+function httpStatusMessage(status: number): string {
+  if (status === 429) return 'Слишком много попыток. Подождите минуту и попробуйте снова.';
+  if (status === 502 || status === 503 || status === 504) {
+    return 'Сервер сейчас перегружен. Попробуйте ещё раз через минуту.';
+  }
+  return 'Что-то пошло не так. Попробуйте ещё раз.';
+}
+
+function humanServerError(fn: string, message: string, status: number): string {
+  if (/[а-яё]/i.test(message)) return message;
+  console.warn(`[db] ${fn}: техническая ошибка сервера (HTTP ${status}):`, message);
+  if (status === 403) return 'Это действие вам недоступно.';
+  return httpStatusMessage(status);
 }
 
 function withTimeout<T>(promise: PromiseLike<T>, ms = DB_TIMEOUT): Promise<T> {
@@ -446,7 +468,7 @@ export async function dbRestoreSession(): Promise<User | null> {
 // вариантом. Код приходит письмом, сверяет сервер; для register/attach/reset
 // в ответ идёт «квитанция», которую предъявляют на последнем шаге, а для
 // login — сразу сессия (см. dbAuthLoginByCode).
-export type EmailCodePurpose = 'register' | 'attach' | 'reset' | 'login';
+export type EmailCodePurpose = 'register' | 'attach' | 'reset' | 'login' | 'delete';
 
 /**
  * Готова ли почта для кодов. Пока нет (26.09 исходящий SMTP у хостинга
@@ -575,6 +597,22 @@ export async function dbUpsertUser(
 export async function dbDeleteAccount(id: string, password: string): Promise<void> {
   const res = await proxy<{ error?: string; 'удалён'?: boolean }>(
     'dbDeleteAccount', [id, password],
+  );
+  if (res?.error) throw new Error(res.error);
+  if (!res?.['удалён']) throw new Error('Не удалось удалить аккаунт');
+}
+
+/**
+ * Удаление кодом из письма (01.10.2026): код уходит на подтверждённую почту
+ * аккаунта — адрес сервер берёт из сессии сам, поэтому сюда его не передаём.
+ */
+export async function dbSendDeleteAccountCode(): Promise<void> {
+  await proxy<{ ok: boolean }>('dbAuthSendCode', ['', 'delete']);
+}
+
+export async function dbDeleteAccountByCode(id: string, code: string): Promise<void> {
+  const res = await proxy<{ error?: string; 'удалён'?: boolean }>(
+    'dbDeleteAccountByCode', [id, code],
   );
   if (res?.error) throw new Error(res.error);
   if (!res?.['удалён']) throw new Error('Не удалось удалить аккаунт');
@@ -1777,6 +1815,18 @@ function toJupiterApplication(row: any): JupiterApplication {
 }
 
 /**
+ * Остаток дневного запаса откликов по счёту сервера — за московские сутки и
+ * на всех устройствах сразу (php-proxy/energy.php). Сервер и сам не примет
+ * отклик сверх запаса; это число нужно, чтобы шапка ленты не обещала лишнего.
+ */
+export async function dbEnergyLeft(userId: string): Promise<number> {
+  const data = await proxy('dbEnergyLeft', [userId]) as { left?: unknown } | null;
+  const left = Number(data?.left);
+  if (!Number.isFinite(left)) throw new Error('Нет остатка откликов в ответе сервера');
+  return left;
+}
+
+/**
  * Поставить внешнюю вакансию в очередь Jupiter.
  *
  * Повторный вызов по тому же адресу возвращает прежнюю заявку, а не заводит
@@ -1823,9 +1873,12 @@ export async function jupiterLiveStatus(userId: string): Promise<boolean> {
  * (см. jupiterLiveStatus в php-proxy/db.php), поэтому здесь по умолчанию
  * false, а не неизвестно.
  */
-export async function jupiterLiveState(userId: string): Promise<{ enabled: boolean; revoked: boolean }> {
-  const result = await proxy<{ enabled?: boolean; revoked?: boolean }>('jupiterLiveStatus', [userId]);
-  return { enabled: result?.enabled === true, revoked: result?.revoked === true };
+export async function jupiterLiveState(
+  userId: string,
+): Promise<{ enabled: boolean; revoked: boolean; serverSends: boolean }> {
+  const result = await proxy<{ enabled?: boolean; revoked?: boolean; serverSends?: boolean }>('jupiterLiveStatus', [userId]);
+  // serverSends — Юпитер отправляет с сервера; старый сервер его не отдаёт → false.
+  return { enabled: result?.enabled === true, revoked: result?.revoked === true, serverSends: result?.serverSends === true };
 }
 
 export type JupiterEmail = {
@@ -1839,6 +1892,12 @@ export async function jupiterMailbox(userId: string): Promise<{ address: string 
 
 export async function jupiterMailList(userId: string): Promise<JupiterEmail[]> {
   return proxy('jupiterMailList', [userId]);
+}
+
+/** Письмо целиком (HTML) — для показа как в почте. Пусто — у письма нет HTML-версии. */
+export async function jupiterMailHtml(userId: string, id: string): Promise<string> {
+  const r = await proxy<{ html?: string }>('jupiterMailHtml', [userId, id]);
+  return typeof r?.html === 'string' ? r.html : '';
 }
 
 /** Сколько непрочитанных писем на почте JobToo для откликов (для точки на конверте). */
@@ -1877,7 +1936,26 @@ export type JupiterFillProfile = {
    */
   resume_url?: string | null;
   resume_name?: string | null;
+  /** «Ответьте один раз» — подставляет приложение из профиля, не сервер. */
+  desired_salary?: string;
+  notice_period?: string;
+  telegram?: string;
+  english_level?: string;
+  relocation?: string;
+  work_format?: string;
 };
+
+/**
+ * Подсказки полей анкеты от сервера (YandexGPT). Уходят только подписи полей —
+ * без значений и данных человека; приходит ключ профиля или null.
+ */
+export async function jupiterFieldHints(
+  host: string,
+  fields: { sig: string; label: string; name: string; type: string; options: string[] }[],
+): Promise<Record<string, string | null>> {
+  const d = await proxy<{ hints?: Record<string, string | null> }>('jupiterFieldHints', [host, fields]);
+  return d?.hints ?? {};
+}
 
 export async function jupiterFillProfile(userId: string): Promise<JupiterFillProfile> {
   return proxy('jupiterFillProfile', [userId]);
@@ -1944,6 +2022,15 @@ export type ExtFeedFilters = {
   salaryKnown?: boolean;
   hideSeen?: boolean;
 };
+
+/**
+ * Логотипы компаний из базы (миграция 144): {компания в нижнем регистре:
+ * ссылка на PNG 256×256}. Открытая функция — ленту видят и гости.
+ */
+export async function dbCompanyLogos(): Promise<Record<string, string>> {
+  const d = await proxy<{ logos?: Record<string, string> }>('dbCompanyLogos', []);
+  return d?.logos && typeof d.logos === 'object' ? d.logos : {};
+}
 
 /**
  * Порция ленты карьерных вакансий под человека: без уже свайпнутых, с
@@ -2491,4 +2578,67 @@ export async function jupiterCaptchaAnswer(
   answer: string,
 ): Promise<void> {
   await proxy('jupiterCaptchaAnswer', [userId, applicationId, answer]);
+}
+
+// ── Вопросы от работодателей (решение владельца 30.09.2026) ────────────────
+// Юпитер собирает вопросы анкет, на которые нет ответа в профиле; человек
+// отвечает здесь, отклик уходит сам. Факты сохраняются в банк ответов.
+
+export type JupiterQuestionType =
+  | 'text' | 'text_long' | 'choice' | 'yesno' | 'date' | 'number' | 'phone' | 'email' | 'url';
+
+export interface JupiterQuestion {
+  id: string;
+  application_id: string;
+  /** Подпись поля на сайте работодателя — как есть. */
+  question: string;
+  /** Понятная формулировка от YandexGPT (миграция 138); null — не было. */
+  display?: string | null;
+  /** Пояснение, что туда обычно пишут; null — не было. */
+  hint?: string | null;
+  type: JupiterQuestionType;
+  /** fact — сохранится и подставится сам; vacancy — только для этого отклика. */
+  kind: 'fact' | 'vacancy';
+  options: { value: string; label: string }[];
+  /** Прежний ответ на этот вопрос — черновик, человек подтверждает или правит. */
+  draft: string | null;
+  company: string | null;
+  vacancy_url: string | null;
+  /** Сколько откликов ждут ответа на этот же вопрос. */
+  applications_waiting: number;
+}
+
+export interface JupiterSavedAnswer {
+  question_key: string;
+  question_text: string;
+  answer: string;
+  updated_at: string;
+}
+
+/** Открытые вопросы работодателей по всем откликам человека. */
+export async function jupiterQuestions(userId: string): Promise<JupiterQuestion[]> {
+  return (await proxy<JupiterQuestion[]>('jupiterQuestions', [userId])) ?? [];
+}
+
+/** Ответ (для choice — подпись варианта). Вернёт, сколько откликов разблокировано. */
+export async function jupiterAnswerQuestion(
+  userId: string,
+  questionId: string,
+  answer: string,
+): Promise<{ ok: boolean; applications: number }> {
+  return proxy('jupiterAnswerQuestion', [userId, questionId, answer]);
+}
+
+/** «Пропустить»: этот вопрос человек заполнит на сайте сам. */
+export async function jupiterSkipQuestion(userId: string, questionId: string): Promise<void> {
+  await proxy('jupiterSkipQuestion', [userId, questionId]);
+}
+
+/** Банк ответов: что Юпитер подставит сам. */
+export async function jupiterAnswers(userId: string): Promise<JupiterSavedAnswer[]> {
+  return (await proxy<JupiterSavedAnswer[]>('jupiterAnswers', [userId])) ?? [];
+}
+
+export async function jupiterAnswerDelete(userId: string, questionKey: string): Promise<void> {
+  await proxy('jupiterAnswerDelete', [userId, questionKey]);
 }

@@ -195,7 +195,7 @@ export default function RegisterWorker() {
           showToast('Резюме не сохранилось — загрузите его в профиле', 'error');
         }
       }
-      showToast('Добро пожаловать! 👋', 'success');
+      showToast('Добро пожаловать!', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
       console.error('[RegisterWorker] finish error', e);
@@ -227,7 +227,7 @@ export default function RegisterWorker() {
         createdAt: nowISO(),
       };
       await registerUser(user, ticket, { marketing: adsAgreed });
-      showToast('Добро пожаловать! 👋', 'success');
+      showToast('Добро пожаловать!', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
       console.error('[RegisterWorker] finishByEmail error', e);
@@ -374,7 +374,7 @@ export default function RegisterWorker() {
           {/* Step 5: Metro */}
           {step === 5 && (
             <View style={styles.stepContent}>
-              <Text style={styles.title}>📍 Ближайшее метро</Text>
+              <Text style={styles.title}>Ближайшее метро</Text>
               <Text style={styles.subtitle}>Покажем работу рядом с вами</Text>
               {metroStation ? (
                 <View style={styles.metroSelected}>
@@ -389,7 +389,7 @@ export default function RegisterWorker() {
                 </View>
               ) : (
                 <TouchableOpacity style={styles.metroField} onPress={() => setMetroPicker(true)} activeOpacity={0.8}>
-                  <Text style={styles.metroFieldText}>🚇 Выбрать станцию</Text>
+                  <Text style={styles.metroFieldText}>Выбрать станцию</Text>
                   <Text style={styles.arrow}>›</Text>
                 </TouchableOpacity>
               )}
@@ -427,7 +427,7 @@ export default function RegisterWorker() {
                 </View>
               ) : (
                 <TouchableOpacity style={styles.metroField} onPress={pickResume} activeOpacity={0.8}>
-                  <Text style={styles.metroFieldText}>📄 Выбрать PDF</Text>
+                  <Text style={styles.metroFieldText}>Выбрать PDF</Text>
                   <Text style={styles.arrow}>›</Text>
                 </TouchableOpacity>
               )}

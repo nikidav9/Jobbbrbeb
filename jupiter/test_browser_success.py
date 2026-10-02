@@ -9,7 +9,12 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from browser_success import ResponseRecorder, classify, toast_text
+from agent import SUCCESS_MARKERS, normalize
+from browser_success import ResponseRecorder, _safe_json, classify, toast_text
+from submission import (
+    SubmissionEvidence, collect_evidence, find_success_phrase, is_confirmed, normalize_text,
+    score_evidence,
+)
 
 try:
     from playwright.sync_api import sync_playwright
@@ -63,6 +68,125 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+class SuccessPhraseTest(unittest.TestCase):
+    """Маркеры успеха регулярками: без браузера."""
+
+    def found(self, text, before=""):
+        return find_success_phrase(normalize_text(text), normalize_text(before))
+
+    def test_phrases_with_success_in_the_middle(self):
+        for text in (
+            "Заявка успешно отправлена!",
+            "Спасибо! Данные успешно отправлены",  # стандартный текст Tilda
+            "Ваш отклик успешно отправлен",
+            "Резюме успешно отправлено",
+            "Анкета отправлена",
+            "Спасибо за заявку",
+            "Спасибо, ваше резюме получено",
+            "Вы уже откликнулись на эту вакансию",
+            "Your application has been successfully submitted",
+        ):
+            self.assertTrue(self.found(text), text)
+
+    def test_promises_and_negations_are_not_confirmation(self):
+        for text in (
+            "Ваша заявка будет отправлена после проверки",
+            "Заявка не отправлена",
+            "Данные не отправлены: заполните телефон",
+            "Отправьте резюме",
+            "Спасибо за интерес к вакансии",
+        ):
+            self.assertEqual(self.found(text), "", text)
+
+    def test_interest_sms_and_error_phrases_are_not_confirmation(self):
+        # Ложные «отправлено»: вежливость без отклика, СМС с кодом, ошибка.
+        for text in (
+            "Спасибо за интерес к вакансии! Заполните анкету",
+            "Thank you for your interest",
+            "СМС-сообщение отправлено на ваш номер",
+            "Сообщение с кодом отправлено на +7 900 000-00-00",
+            "Данные отправлены с ошибкой",
+        ):
+            self.assertEqual(self.found(text), "", text)
+
+    def test_phrase_present_before_is_not_new(self):
+        self.assertEqual(self.found("Заявка успешно отправлена", before="Подвал: Заявка успешно отправлена"), "")
+
+    def test_regex_phrase_is_dom_text_evidence_that_confirms(self):
+        ev = collect_evidence(
+            before_url="https://a.ru/v", before_text="Анкета", after_url="https://a.ru/v",
+            after_text="Спасибо! Данные успешно отправлены", after_status=200,
+            success_markers=SUCCESS_MARKERS, form_gone=False, normalize=normalize,
+            success_patterns=True)
+        self.assertTrue(is_confirmed(ev), [e.as_dict() for e in ev])
+
+    def test_api_2xx_plus_form_gone_reaches_threshold_exactly(self):
+        # 0.7 + 0.1 в плавающей точке = 0.7999999999999999: порог не брался.
+        ev = [SubmissionEvidence("API_2XX", "", 0.7, "u"), SubmissionEvidence("FORM_GONE", "", 0.35, "u")]
+        self.assertTrue(is_confirmed(ev))
+        self.assertFalse(is_confirmed(ev[:1]))
+
+
+class ApiFlagsTest(unittest.TestCase):
+    """Разбор ответов сервера: только флаги, без текстов и значений."""
+
+    def verdict(self, status, body, path="/api/apply", ctype="application/json", **extra):
+        import json as _json
+        item = {"method": "POST", "path": path, "status": status, "content_type": ctype,
+                "submit_like": True, "body_empty": body is None,
+                "json": _safe_json(_json.dumps(body, ensure_ascii=False)) if body is not None else {}}
+        item.update(extra)
+        return classify([item])
+
+    def test_success_flags(self):
+        for body in (
+            {"result": True}, {"code": 0}, {"code": 200}, {"status": 200}, {"status": "ok"},
+            {"message": "OK", "results": [{"message": "OK", "tilda": "x"}]},  # Tilda
+            {"data": {"id": 5}, "status": "success", "errors": []},  # Bitrix24
+            {"success": True}, {"id": 12},
+            {"message": "Ваша заявка принята"},
+        ):
+            self.assertTrue(self.verdict(200, body)["api_success"], body)
+
+    def test_error_flags(self):
+        for status, body in (
+            (200, {"result": False}), (200, {"code": 422}), (200, {"status": 400}),
+            (200, {"errors": {"phone": ["неверный"]}}), (200, {"message": "Заполните телефон"}),
+            (500, {"error": "boom"}), (422, {}),
+        ):
+            v = self.verdict(status, body)
+            self.assertFalse(v["api_success"], body)
+            self.assertFalse(v["api_2xx"], body)
+            self.assertTrue(v["api_error"], body)
+
+    def test_empty_2xx_on_submit_path_is_weak_evidence_only(self):
+        for status in (201, 204):
+            v = self.verdict(status, None, ctype="")
+            self.assertTrue(v["api_2xx"])
+            self.assertFalse(v["api_success"])
+        # HTML-ответ 200 на POST (страница перерисована) — не доказательство.
+        self.assertFalse(self.verdict(200, None, ctype="text/html", body_empty=False)["api_2xx"])
+        # Путь не похож на отправку — тоже нет.
+        self.assertFalse(self.verdict(204, None, path="/api/ping", ctype="", submit_like=False)["api_2xx"])
+
+    def test_new_flags_ignored_on_non_submit_path(self):
+        self.assertFalse(self.verdict(200, {"result": True}, path="/x", submit_like=False)["api_success"])
+
+    def test_texts_and_foreign_keys_are_not_stored(self):
+        flags = _safe_json('{"message": "Спасибо, Иван Петров!", "detail": "x", "phone": "+7999", "ok": true}')
+        self.assertEqual(flags, {"ok": True})
+        self.assertNotIn("Иван", str(_safe_json('{"message": "Заявка принята, Иван"}')))
+
+    def test_recorder_scope_same_site_and_ats(self):
+        rec = ResponseRecorder({"jobs.acme.ru"})
+        self.assertEqual(rec._scope("https://jobs.acme.ru/a"), "primary")
+        self.assertEqual(rec._scope("https://forms.acme.ru/a"), "related")
+        self.assertEqual(rec._scope("https://forms.tildaapi.com/procces/"), "ats")
+        self.assertEqual(rec._scope("https://b24-x.bitrix24.ru/bitrix/"), "ats")
+        self.assertEqual(rec._scope("https://evil.example/a"), "")
+        self.assertEqual(rec._scope("https://acme.ru.evil.example/a"), "")
 
 
 @unittest.skipIf(sync_playwright is None or CHROMIUM is None, "нужен Playwright и Chromium")

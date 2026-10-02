@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { dbGetCrossBorderConsent, getSessionToken } from '@/services/db';
+import { getSessionToken } from '@/services/db';
 import { NOTIFICATION_DISABLED_KEY } from '@/services/notifications';
 
 // Публичная половина пары, которую сервер создал сам (infra/bootstrap.sh).
@@ -66,11 +66,8 @@ export async function registerWebPush(userId: string): Promise<boolean> {
     return false;
   }
 
-  const consent = await dbGetCrossBorderConsent(userId).catch(() => null);
-  if (consent?.accepted !== true) {
-    wpDebug('Нужно отдельное согласие на трансграничную передачу для web-push');
-    return false;
-  }
+  // Отдельное согласие для web-push больше не нужно: пуш обезличен
+  // (docs/MAP.md). Проверка здесь оставалась и молча не давала подписаться.
 
   if (!('serviceWorker' in navigator)) {
     wpDebug('Ошибка: serviceWorker не поддерживается');

@@ -2,7 +2,9 @@
 """Политика Chromium: доверять УЦ Минцифры для браузерного воркера Jupiter.
 
 Читает PEM (jupiter/ru_trusted_ca.pem) и печатает JSON для
-/etc/chromium/policies/managed/jobtoo-ru-ca.json. Кладёт его infra/bootstrap.sh,
+/etc/chromium/policies/managed/ и /etc/opt/chrome_for_testing/policies/managed/
+(Playwright 1.63 ставит Chrome for Testing — он читает только вторую) под
+именем jobtoo-ru-ca.json. Кладёт его infra/bootstrap.sh,
 когда браузерный воркер включён, и удаляет, когда выключен.
 
 Доверие добавляется как к обычному корню: подпись, имя хоста и срок Chromium

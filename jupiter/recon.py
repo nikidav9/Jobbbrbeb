@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -49,6 +50,10 @@ AGGREGATOR_HOSTS = ("hh.ru", "superjob.ru", "avito.ru", "rabota.ru", "zarplata.r
 # Порядок — порядок сводки: от «работает» к «ничего не знаем».
 CLASSES = {
     "dry_run_ok": "dry-run пройден: форма заполнена целиком, отправка остановлена движком",
+    # Анкеты нет, но отклик уйдёт иначе (02.10.2026): раньше такие сайты
+    # попадали в no_vacancy и завышали «анкета не найдена».
+    "api_ready": "отклик через API системы подбора (Huntflow и т. п.): dry-run готов к отправке",
+    "email_apply": "анкеты нет, отклик уходит письмом на адрес работодателя",
     "form_unmapped": "серверная форма есть, но обязательные поля не заполнились — нужна карта",
     "captcha": "форма за CAPTCHA — только с передачей человеку",
     "aggregator": "отклик уходит на агрегатор (hh.ru, SuperJob и т. п.)",
@@ -62,7 +67,10 @@ TEST_CANDIDATE: dict[str, Any] = {
     "last_name": "Тестов",
     "patronymic": "Тестович",
     "birth_date": "1995-05-15",
-    "phone": "+79000000000",
+    # Сплошные нули часть сайтов отвергает как ненастоящий номер (Альфа-Банк,
+    # Полюс, КРОК — репетиция 02.10.2026). Номер всё равно никуда не уходит:
+    # разведка read_only, браузер обрывает любой не-GET.
+    "phone": "+79161234567",
     "email": "recon@example.com",
     "city": "Москва",
     "location_detail": "Тверская",
@@ -113,6 +121,44 @@ def load_sites(path: Path = SITES_TSV) -> list[tuple[str, str]]:
 
 def _base_name(name: str) -> str:
     return re.sub(r"\s*\(.*\)\s*$", "", name).strip().lower()
+
+
+# Вакансии из ленты (01.10.2026): разведка проверяет ту же вакансию, на которую
+# свайпают люди, а не страницу списка. Файл {компания: [адрес, …]} выгружает
+# infra/recon-run.sh из jm_ext_vacancies перед обходом; без файла — как раньше.
+FEED_VACANCIES_ENV = "JUPITER_FEED_VACANCIES"
+
+
+def load_feed_vacancies(path: str | None = None) -> dict[str, list[str]]:
+    path = path or os.environ.get(FEED_VACANCIES_ENV, "")
+    if not path:
+        return {}
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(k).strip().lower(): [str(u) for u in (v if isinstance(v, list) else [v]) if str(u).startswith("http")]
+        for k, v in data.items() if k
+    }
+
+
+def feed_vacancy_for(name: str, url: str, feed: dict[str, list[str]]) -> str | None:
+    """Живая вакансия этой компании из ленты: по названию, иначе по хосту сайта."""
+    if not feed:
+        return None
+    wanted = _base_name(re.sub(r"\s*·.*$", "", name))
+    for key in (wanted, _base_name(name)):
+        if feed.get(key):
+            return feed[key][0]
+    host = normalize_host(url)
+    for urls in feed.values():
+        for candidate in urls:
+            if normalize_host(candidate) == host:
+                return candidate
+    return None
 
 
 def endpoint_for(name: str, url: str, endpoints: list[dict]) -> dict | None:
@@ -310,7 +356,19 @@ def _starred_empty(page: PageState | None) -> list[str]:
     ]
 
 
-def classify(status: str, code: str | None, page: PageState | None, aggregators: list[str]) -> str:
+def site_adapter(trajectory: list[dict[str, Any]]) -> str:
+    """Адаптер сайта (huntflow_api, sber_public_api…), которым шёл агент, или ''."""
+    for step in reversed(trajectory or []):
+        if step.get("site_adapter"):
+            return str(step["site_adapter"])
+    return ""
+
+
+def classify(status: str, code: str | None, page: PageState | None, aggregators: list[str],
+             adapter: str = "") -> str:
+    # Отклик через API адаптера: формы на странице нет, и это не неудача.
+    if adapter and status == "ready_to_submit":
+        return "api_ready"
     if page is not None and any(
         normalize_host(page.url) == host or normalize_host(page.url).endswith("." + host)
         for host in AGGREGATOR_HOSTS
@@ -326,7 +384,7 @@ def classify(status: str, code: str | None, page: PageState | None, aggregators:
     if application and code in {
         Reason.MISSING_PROFILE_FIELD, Reason.UNKNOWN_REQUIRED_QUESTION,
         Reason.CONSENT_REQUIRED, Reason.VALIDATION_FAILED,
-        Reason.MULTI_STEP_DRY_RUN_LIMIT,
+        Reason.MULTI_STEP_DRY_RUN_LIMIT, Reason.NEEDS_ANSWERS,
     }:
         return "form_unmapped"
     if code == Reason.NAVIGATION_FAILED and page is None:
@@ -337,6 +395,8 @@ def classify(status: str, code: str | None, page: PageState | None, aggregators:
     )
     if aggregators and (code == Reason.DOMAIN_BLOCKED or not has_form):
         return "aggregator"
+    if code == Reason.EMAIL_APPLY:
+        return "email_apply"
     if code == Reason.UNSUPPORTED_SCRIPT or (page is not None and page.has_script and not has_form):
         return "spa"
     return "no_vacancy"
@@ -377,8 +437,11 @@ def recon_site(name: str, url: str, endpoints: list[dict], resume: str, net: Net
         has_overrides=bool(profile and profile.field_overrides),
     )
     probe = make_engine({normalize_host(url)}, net)
+    feed_vacancy = feed_vacancy_for(name, url, load_feed_vacancies())
     endpoint = endpoint_for(name, url, endpoints)
-    if endpoint:
+    if feed_vacancy:
+        result.start_url = feed_vacancy
+    elif endpoint:
         vacancy = vacancy_from_endpoint(probe, endpoint)
         if vacancy:
             result.start_url = vacancy
@@ -407,7 +470,8 @@ def recon_site(name: str, url: str, endpoints: list[dict], resume: str, net: Net
     result.http_status = page.status if page else None
     result.aggregator_links = _aggregator_links(page)
     result.form_fields = _form_snapshot(page)
-    result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links)
+    result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links,
+                            site_adapter(outcome.trajectory))
     if result.klass == "blocked":
         result.block_kind = block_kind(result.reason)
     return result

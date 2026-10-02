@@ -5,7 +5,8 @@
  * решение владельца 26.09: молния — цена отклика, а не просмотра. Запас
  * даётся раз в сутки и НЕ копится: вчерашний остаток сгорает. Это временная
  * мера, пока нет монетизации: она ограничивает не деньгами, а вниманием —
- * сорок откликов в день человек ещё отправляет осмысленно, четыреста уже нет.
+ * десять откликов в день человек отправляет осмысленно, четыреста уже нет.
+ * Было 40, с 01.10.2026 — 20, с 02.10.2026 — 10 (решения владельца).
  *
  * Здесь только чистая логика, без хранилища: хранение в AsyncStorage лежит в
  * hooks/useEnergy.ts. Разделено ради проверки — правило «не копится» ломается
@@ -14,7 +15,7 @@
  */
 
 /** Сколько откликов даётся на сутки. */
-export const DAILY_ENERGY = 40;
+export const DAILY_ENERGY = 10;
 
 export interface EnergyState {
   /** День, за который выдан запас, в местном времени. */
@@ -48,6 +49,18 @@ export function rollover(stored: EnergyState | null | undefined, day: string): E
   // положили, а положить туда могли что угодно — вплоть до правки руками.
   const left = Number.isFinite(stored.left) ? Math.floor(stored.left) : DAILY_ENERGY;
   return { day, left: Math.max(0, Math.min(DAILY_ENERGY, left)) };
+}
+
+/**
+ * Свести местный счётчик с серверным. Сервер считает отклики со всех
+ * устройств, телефон — только свои, поэтому верим меньшему: больше, чем
+ * сказал сервер, всё равно не отправить, а меньше бывает, пока свежий
+ * отклик ещё летит на сервер.
+ */
+export function reconcile(s: EnergyState, serverLeft: number): EnergyState {
+  if (!Number.isFinite(serverLeft)) return s;
+  const server = Math.max(0, Math.min(DAILY_ENERGY, Math.floor(serverLeft)));
+  return { day: s.day, left: Math.min(s.left, server) };
 }
 
 /** Списать свайп. Ниже нуля не уходим. */

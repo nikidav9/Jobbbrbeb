@@ -29,6 +29,7 @@ import {
   onboardingStorageKey,
 } from '@/lib/onboardingFlow';
 
+import { JT_FONT } from '@/constants/jt';
 type Rect = { x: number; y: number; w: number; h: number };
 type StoredProgress = { status: 'active' | 'done'; step: number };
 
@@ -333,19 +334,19 @@ const styles = StyleSheet.create({
     shadowRadius: 28, elevation: 18,
   },
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: rs(8) },
-  chapter: { flex: 1, fontSize: rf(10.5), fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
+  chapter: { flex: 1, fontSize: rf(10.5), fontFamily: JT_FONT.bold, color: Colors.textMuted, textTransform: 'uppercase' },
   progressActions: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
-  counter: { fontSize: rf(11), fontWeight: '800', color: Colors.primary },
+  counter: { fontSize: rf(11), fontFamily: JT_FONT.heavy, color: Colors.primary },
   skipInline: { paddingHorizontal: rs(9), paddingVertical: rs(5), borderRadius: rs(100), backgroundColor: '#F4F4F5' },
-  skipInlineText: { fontSize: rf(10.5), fontWeight: '700', color: Colors.textSecondary },
+  skipInlineText: { fontSize: rf(10.5), fontFamily: JT_FONT.bold, color: Colors.textSecondary },
   progressTrack: { height: rs(4), borderRadius: rs(2), backgroundColor: '#ECEDEF', overflow: 'hidden', marginTop: rs(8), marginBottom: rs(14) },
   progressFill: { height: '100%', borderRadius: rs(2), backgroundColor: Colors.primary },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   icon: { width: rs(38), height: rs(38), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary },
-  title: { flex: 1, fontSize: rf(17), fontWeight: '800', color: Colors.textPrimary },
-  body: { marginTop: rs(10), fontSize: rf(13.5), lineHeight: rf(19), color: Colors.textSecondary },
+  title: { flex: 1, fontSize: rf(17), fontFamily: JT_FONT.heavy, color: Colors.textPrimary },
+  body: { marginTop: rs(10), fontFamily: JT_FONT.medium, fontSize: rf(13.5), lineHeight: rf(19), color: Colors.textSecondary },
   tapHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(7), marginTop: rs(14), paddingVertical: rs(10), borderRadius: rs(100), backgroundColor: Colors.primaryLight },
-  tapHintText: { fontSize: rf(12.5), fontWeight: '700', color: Colors.primary },
+  tapHintText: { fontSize: rf(12.5), fontFamily: JT_FONT.bold, color: Colors.primary },
   button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8), marginTop: rs(16), paddingVertical: rs(13), borderRadius: rs(100), backgroundColor: Colors.primary },
-  buttonText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800' },
+  buttonText: { color: '#FFFFFF', fontSize: rf(14), fontFamily: JT_FONT.heavy },
 });

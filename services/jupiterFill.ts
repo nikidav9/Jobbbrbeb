@@ -59,12 +59,14 @@ function jtKeyForField(text, type, name) {
 
   // Капча — отдельная человеческая проверка, её не заполняем.
   if (/captcha|капч/.test(text) || /captcha|капч/.test(nameLower)) return null;
-  // Чужие для кандидата поля: мессенджер (\"tel\" внутри \"telegram\"
-  // дал бы телефон), компания и ИНН (форма для клиентов), рекомендатель.
+  // Чужие для кандидата поля: компания и ИНН (форма для клиентов),
+  // рекомендатель. Мессенджер — раньше телефона: \"tel\" внутри \"telegram\".
   var all = text + ' ' + nameLower;
   // «Telegram или телефон» — составное поле: номер туда вписать честно.
   if (/telegram|телеграм/.test(all) && /телефон|phone/.test(all)) return 'phone';
-  if (/telegram|телеграм|компани|company|организац|(^|[^а-яё])инн([^а-яё]|$)|\\binn\\b|referr|рекомендат/.test(all)) return null;
+  // Мессенджер — свой ключ из «Ответьте один раз» (01.10.2026), не телефон.
+  if (/telegram|телеграм/.test(all)) return 'telegram';
+  if (/компани|company|организац|(^|[^а-яё])инн([^а-яё]|$)|\\binn\\b|referr|рекомендат/.test(all)) return null;
 
   function classify(t) {
     var hasSurname = /фамил/.test(t);
@@ -73,7 +75,8 @@ function jtKeyForField(text, type, name) {
     var parts = (hasSurname ? 1 : 0) + (hasFirst ? 1 : 0) + (hasPatronymic ? 1 : 0);
     if (parts >= 2 || /фио|fio|full ?name/.test(t)) return 'full_name';
 
-    if (/mail|почт/.test(t)) return 'email';
+    // «почт» — с начала слова: «предпочтительный» — не почта.
+    if (/mail|(^|[^а-яё])почт/.test(t)) return 'email';
     if (/phone|tel|телефон/.test(t)) return 'phone';
     if (/отчеств|otchestvo|middle|patronymic/.test(t)) return 'patronymic';
     if (/фамил|surname|last/.test(t)) return 'last_name';
@@ -83,6 +86,12 @@ function jtKeyForField(text, type, name) {
     if (/гражданств|citizenship/.test(t)) return 'citizenship';
     // «роль» — только словом: иначе «контроль» и «пароль» стали бы должностью.
     if (/должност|position|vacancy|(^|[^а-яё])роль/.test(t)) return 'desired_role';
+    // Частые вопросы работодателей — из «Ответьте один раз».
+    if (/зарплат|оклад|доход|salary|compensation/.test(t)) return 'desired_salary';
+    if (/дата выхода|когда (можете|готов)|приступить|notice|start date/.test(t)) return 'notice_period';
+    if (/английск|english/.test(t)) return 'english_level';
+    if (/переезд|relocat/.test(t)) return 'relocation';
+    if (/формат работы|work format/.test(t)) return 'work_format';
     if (/сопроводит|о себе|комментар|сообщени|comment|message|cover/.test(t)) return 'cover_letter';
     return null;
   }
@@ -121,6 +130,48 @@ function jtKeyForField(text, type, name) {
 export function fillHostFor(vacancyUrl: string): string | null {
   const match = /^https:\/\/([^/:?#]+)/i.exec(vacancyUrl.trim());
   return match ? match[1].toLowerCase().replace(/^www\./, '') : null;
+}
+
+// Слова страниц самой анкеты: такой «соседний» адрес — продолжение этой же
+// вакансии, а не другая.
+const APPLY_SEGMENT = /apply|otklik|response|respond|anketa|form|resume|cv|signup|login|auth/i;
+
+/** Похоже на адрес отдельной вакансии: число или длинный слаг через дефис. */
+function looksLikeVacancyId(segment: string): boolean {
+  return /\d/.test(segment) || (segment.includes('-') && segment.length >= 8);
+}
+
+/**
+ * Ведёт ли переход во встроенном браузере на ДРУГУЮ вакансию того же сайта.
+ *
+ * Молния тратится за одну вакансию (решение владельца 02.10.2026), а автопилот
+ * заполняет любую анкету на хосте вакансии. Без этой проверки можно было
+ * уйти с открытой вакансии на соседнюю и получить заполнение бесплатно.
+ * Признак — соседний адрес той же формы (`/vacancies/123` → `/vacancies/456`)
+ * или та же страница с другим номером в параметре (`?id=123` → `?id=456`).
+ * Страницы анкеты (`/vacancies/123/apply`), списки и чужие хосты (там автопилот
+ * и так не работает) не трогаем — иначе сломали бы настоящий отклик.
+ */
+export function isOtherVacancy(vacancyUrl: string, nextUrl: string): boolean {
+  let a: URL;
+  let b: URL;
+  try { a = new URL(vacancyUrl); b = new URL(nextUrl); } catch { return false; }
+  const host = (u: URL) => u.hostname.toLowerCase().replace(/^www\./, '');
+  if (host(a) !== host(b)) return false;
+  const segs = (u: URL) => u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  const pa = segs(a);
+  const pb = segs(b);
+  if (pa.join('/') === pb.join('/')) {
+    for (const [key, value] of a.searchParams) {
+      const other = b.searchParams.get(key);
+      if (other !== null && other !== value && /\d/.test(value) && /\d/.test(other)) return true;
+    }
+    return false;
+  }
+  if (pa.length === 0 || pa.length !== pb.length) return false;
+  if (pa.slice(0, -1).join('/') !== pb.slice(0, -1).join('/')) return false;
+  const last = pb[pb.length - 1];
+  return looksLikeVacancyId(last) && !APPLY_SEGMENT.test(last);
 }
 
 export function buildFillScript(profile: JupiterFillProfile, allowedHost: string): string {

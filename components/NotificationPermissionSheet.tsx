@@ -9,7 +9,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import { Colors, Radius } from '@/constants/theme';
+import { JT, JT_FONT } from '@/constants/jt';
+import { JTButton, JT_ERROR } from '@/components/ui/jt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { registerForPushNotifications } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
 import { useApp } from '@/hooks/useApp';
@@ -220,48 +222,54 @@ export default function NotificationPermissionSheet() {
         <View style={st.grabber} />
 
         {/* Close */}
-        <TouchableOpacity style={st.closeBtn} onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="close" size={22} color={Colors.textPrimary} />
+        <TouchableOpacity
+          style={st.closeBtn}
+          onPress={handleClose}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Закрыть"
+        >
+          <Ionicons name="close" size={rs(20)} color={JT.ink} />
         </TouchableOpacity>
 
         <Text style={st.title}>Будьте в курсе</Text>
         <Text style={st.subtitle}>
-          Включите уведомления, чтобы не пропустить важное — отклики, мэтчи и новые вакансии
+          Включите уведомления, чтобы не пропустить важное — ответы работодателей, мэтчи и новые вакансии
         </Text>
 
-        {/* Mock push preview */}
-        <View style={st.pushCard}>
-          <Image source={require('@/assets/images/jt-logo.png')} style={st.pushIcon} resizeMode="cover" />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={st.pushTopRow}>
-              <Text style={st.pushApp}>JobToo</Text>
-              <Text style={st.pushNow}>сейчас</Text>
+        {/* Как будет выглядеть уведомление */}
+        <HardShadowBox offset={4} radius={rs(18)} shadowColor={JT.ink} style={st.pushBox}>
+          <View style={st.pushCard}>
+            <Image source={require('@/assets/images/jt-logo.png')} style={st.pushIcon} resizeMode="cover" />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={st.pushTopRow}>
+                <Text style={st.pushApp}>JobToo</Text>
+                <Text style={st.pushNow}>сейчас</Text>
+              </View>
+              <Text style={st.pushTitle}>Мэтч! Вас хотят взять </Text>
+              <Text style={st.pushBody} numberOfLines={1}>Frontend-разработчик, от 250 000 ₽</Text>
             </View>
-            <Text style={st.pushTitle}>Мэтч! Вас хотят взять 🎉</Text>
-            <Text style={st.pushBody} numberOfLines={1}>Кладовщик — м. Хорошёво, 95 000 ₽/мес…</Text>
           </View>
-        </View>
+        </HardShadowBox>
 
         {/* Reasons */}
         <View style={st.reasons}>
-          <Reason icon="notifications-outline" text="Мгновенно узнавайте о сообщениях и мэтчах" />
-          <Reason icon="briefcase-outline" text="Получайте новые вакансии рядом с вами" />
-          <Reason icon="checkmark-circle-outline" text="Не пропустите подтверждение смены" />
+          <Reason icon="chatbubble-ellipses-outline" text="Мгновенно узнавайте о сообщениях и мэтчах" />
+          <Reason icon="briefcase-outline" text="Первыми получайте новые вакансии по вашему стеку" />
+          <Reason icon="mail-unread-outline" text="Не пропустите ответ работодателя на отклик" />
         </View>
 
         {/* Buttons */}
-        <TouchableOpacity style={st.skipBtn} onPress={handleSkip} activeOpacity={0.7}>
+        <JTButton
+          label={errorMsg ? 'Попробовать ещё раз' : 'Включить уведомления'}
+          onPress={handleEnable}
+          busy={busy}
+          arrow={false}
+        />
+        {errorMsg ? <Text style={st.errorText}>{errorMsg}</Text> : null}
+        <TouchableOpacity style={st.skipBtn} onPress={handleSkip} activeOpacity={0.7} accessibilityRole="button">
           <Text style={st.skipText}>Не сейчас</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[st.enableBtn, busy && { opacity: 0.55 }]}
-          onPress={handleEnable}
-          activeOpacity={0.85}
-          disabled={busy}
-        >
-          <Text style={st.enableText}>{busy ? 'Подключаем…' : errorMsg ? 'Попробовать ещё раз' : 'Включить уведомления'}</Text>
-        </TouchableOpacity>
-        {errorMsg ? <Text style={st.errorText}>{errorMsg}</Text> : null}
       </Animated.View>
     </View>
   );
@@ -271,127 +279,110 @@ function Reason({ icon, text }: { icon: React.ComponentProps<typeof Ionicons>['n
   return (
     <View style={st.reasonRow}>
       <View style={st.reasonIcon}>
-        <Ionicons name={icon} size={17} color={Colors.primary} />
+        <Ionicons name={icon} size={rs(17)} color={JT.ink} />
       </View>
       <Text style={st.reasonText}>{text}</Text>
     </View>
   );
 }
 
+// Стиль JT (30.09.2026): кремовый лист с контуром, Unbounded в заголовке,
+// карточка-наклейка с жёсткой тенью и оранжевая кнопка JTButton. На широком
+// экране лист не растягивается во всю ширину окна.
 const st = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(17,17,17,0.45)',
+    backgroundColor: 'rgba(20,20,20,0.5)',
   },
   sheet: {
     position: 'absolute',
     left: 0, right: 0, bottom: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: rs(24),
-    borderTopRightRadius: rs(24),
+    width: '100%', maxWidth: 560, alignSelf: 'center', marginHorizontal: 'auto',
+    backgroundColor: JT.background,
+    borderTopLeftRadius: rs(28),
+    borderTopRightRadius: rs(28),
+    borderWidth: 2, borderBottomWidth: 0, borderColor: JT.ink,
     paddingHorizontal: rs(20),
     paddingTop: rs(10),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 20,
   },
   grabber: {
     alignSelf: 'center',
-    width: rs(40), height: rs(4),
-    borderRadius: rs(2),
-    backgroundColor: '#E5E7EB',
-    marginBottom: rs(14),
+    width: rs(44), height: rs(5),
+    borderRadius: rs(3),
+    backgroundColor: JT.borderSoft,
+    marginBottom: rs(10),
   },
   closeBtn: {
     position: 'absolute',
-    top: rs(18), left: rs(20),
-    width: rs(30), height: rs(30),
-    alignItems: 'flex-start',
+    top: rs(16), right: rs(16),
+    width: rs(38), height: rs(38), borderRadius: rs(19),
+    backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
   },
   title: {
-    fontSize: rf(24),
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginTop: rs(26),
-    letterSpacing: -0.4,
+    fontFamily: JT_FONT.head,
+    fontSize: rf(22),
+    lineHeight: rf(28),
+    color: JT.ink,
+    marginTop: rs(22),
+    marginRight: rs(48),
+    letterSpacing: -0.3,
   },
   subtitle: {
+    fontFamily: JT_FONT.medium,
     fontSize: rf(14.5),
-    lineHeight: rf(20),
-    color: Colors.textSecondary,
-    marginTop: rs(6),
-    marginBottom: rs(16),
+    lineHeight: rf(21),
+    color: JT.textSecondary,
+    marginTop: rs(8),
+    marginBottom: rs(18),
   },
+  pushBox: { marginBottom: rs(22), marginRight: rs(4) },
   pushCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: rs(10),
-    backgroundColor: 'rgba(28,28,30,0.96)',
-    borderRadius: Radius.lg,
+    gap: rs(12),
+    backgroundColor: JT.surface,
+    borderRadius: rs(18), borderWidth: 2, borderColor: JT.ink,
     padding: rs(12),
-    marginBottom: rs(18),
   },
   pushIcon: {
-    width: rs(38), height: rs(38),
-    borderRadius: rs(9),
+    width: rs(40), height: rs(40),
+    borderRadius: rs(10),
   },
   pushTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  pushApp: { color: 'rgba(255,255,255,0.55)', fontSize: rf(11.5), fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
-  pushNow: { color: 'rgba(255,255,255,0.4)', fontSize: rf(11.5) },
-  pushTitle: { color: '#fff', fontSize: rf(13.5), fontWeight: '700', marginTop: rs(1) },
-  pushBody: { color: 'rgba(255,255,255,0.75)', fontSize: rf(12.5), marginTop: rs(1) },
-  reasons: { gap: rs(12), marginBottom: rs(22) },
+  pushApp: { fontFamily: JT_FONT.heavy, color: JT.textTertiary, fontSize: rf(11), textTransform: 'uppercase', letterSpacing: 0.4 },
+  pushNow: { fontFamily: JT_FONT.medium, color: JT.textTertiary, fontSize: rf(11.5) },
+  pushTitle: { fontFamily: JT_FONT.heavy, color: JT.ink, fontSize: rf(14), marginTop: rs(2) },
+  pushBody: { fontFamily: JT_FONT.medium, color: JT.textBody, fontSize: rf(13), marginTop: rs(1) },
+  reasons: { gap: rs(12), marginBottom: rs(24) },
   reasonRow: { flexDirection: 'row', alignItems: 'center', gap: rs(12) },
   reasonIcon: {
-    width: rs(32), height: rs(32),
-    borderRadius: rs(16),
-    backgroundColor: Colors.primaryLight,
+    width: rs(34), height: rs(34),
+    borderRadius: rs(17),
+    backgroundColor: JT.accentSoft, borderWidth: 2, borderColor: JT.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reasonText: { flex: 1, fontSize: rf(14), lineHeight: rf(19), color: Colors.textPrimary, fontWeight: '500' },
-  consentRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: rs(10),
-    padding: rs(12), marginBottom: rs(8), borderRadius: Radius.md,
-    backgroundColor: Colors.surface,
-  },
-  checkbox: {
-    width: rs(22), height: rs(22), borderRadius: rs(6), borderWidth: 1.5,
-    borderColor: Colors.inputBorder, alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
-  },
-  checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  checkmark: { color: '#fff', fontSize: rf(13), fontWeight: '800' },
-  consentText: { flex: 1, fontSize: rf(12.5), lineHeight: rf(18), color: Colors.textSecondary },
-  consentLink: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  reasonText: { flex: 1, fontFamily: JT_FONT.bold, fontSize: rf(14.5), lineHeight: rf(20), color: JT.ink },
   skipBtn: {
     alignSelf: 'center',
-    paddingVertical: rs(10),
+    paddingVertical: rs(12),
     paddingHorizontal: rs(20),
-    marginBottom: rs(2),
+    marginTop: rs(4),
   },
-  skipText: { fontSize: rf(15), fontWeight: '600', color: Colors.textSecondary },
-  enableBtn: {
-    height: rs(52),
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  enableText: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
+  skipText: { fontFamily: JT_FONT.bold, fontSize: rf(15), color: JT.textTertiary },
   errorText: {
-    marginTop: rs(8),
+    marginTop: rs(10),
+    fontFamily: JT_FONT.bold,
     fontSize: rf(12.5),
     lineHeight: rf(17),
-    color: Colors.red,
+    color: JT_ERROR,
     textAlign: 'center',
   },
 });

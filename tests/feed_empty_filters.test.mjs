@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const src = fs.readFileSync(path.resolve(import.meta.dirname, '../app/(tabs)/feed.tsx'), 'utf8');
-const empty = src.slice(src.indexOf('{!swTop ? ('), src.indexOf(') : swTop._ext ? ('));
+// С 02.10.2026 перед пустым состоянием стоит закрытая лента (feedLocked).
+const empty = src.slice(src.indexOf(': !swTop ? ('), src.indexOf(') : swTop._ext ? ('));
 
 test('пустой экран при фильтрах сам сбрасывает их', () => {
   assert.ok(empty.length > 0, 'пустое состояние ленты не найдено');
@@ -24,15 +25,15 @@ test('«изменить фильтры» из пустого экрана уб�
 });
 
 test('полоса чипов рисуется и при пустой, и при загружающейся колоде', () => {
-  // FilterChipsBar стоит раньше ветки {!swTop ? (...)} в разметке — то есть
+  // FilterChipsBar стоит раньше ветки {feedLocked ? (...)} в разметке — то есть
   // до раннего выхода из-под колоды, а не внутри одной из её веток.
-  const beforeEmpty = src.slice(0, src.indexOf('{!swTop ? ('));
+  const beforeEmpty = src.slice(0, src.indexOf('{feedLocked ? ('));
   assert.match(beforeEmpty, /<FilterChipsBar/);
   assert.match(beforeEmpty, /testID="feed-total"/);
 });
 
 test('подпись «Всего N» прячется у пустой недогружающейся колоды — иначе спорит с «ничего не нашлось»', () => {
-  const beforeEmpty = src.slice(0, src.indexOf('{!swTop ? ('));
+  const beforeEmpty = src.slice(0, src.indexOf('{feedLocked ? ('));
   assert.match(beforeEmpty, /\(swTop \|\| careerLoading\) \? \(/);
 });
 

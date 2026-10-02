@@ -1,75 +1,46 @@
-/*
- * @Description: 
- */
+// Неизвестный адрес. Раньше здесь стояла заготовка шаблона — по-английски,
+// с фотоаппаратом и в чужих цветах (аудит 01.10.2026).
 
-import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { JT, JT_FONT } from '@/constants/jt';
+import { JTButton } from '@/components/ui/jt';
 import { rs, rf } from '@/constants/scale';
 
 export default function NotFoundScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#0a0a0a', '#1a1a1a']}
-        style={StyleSheet.absoluteFillObject}
-      />
-      
       <View style={styles.content}>
-        <MaterialIcons name="photo-camera" size={80} color="#FFD700" />
-        <Text style={styles.title}>Page Not Found</Text>
+        <View style={styles.badge}>
+          <Ionicons name="compass-outline" size={36} color={JT.ink} />
+        </View>
+        <Text style={styles.title} accessibilityRole="header">Такой страницы нет</Text>
         <Text style={styles.message}>
-          The moment you are looking for seems to have been lost in the shadows.
+          Возможно, ссылка устарела или вакансию уже закрыли.
         </Text>
-        
-        <TouchableOpacity 
-          style={styles.homeButton}
-          onPress={() => router.push('/')}
-        >
-          <Text style={styles.homeButtonText}>Return Home</Text>
-        </TouchableOpacity>
+        <JTButton label="К вакансиям" onPress={() => router.replace('/')} style={styles.button} />
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0a',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: rs(20),
+  container: { flex: 1, backgroundColor: JT.background },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: rs(24) },
+  badge: {
+    width: rs(72), height: rs(72), borderRadius: rs(36), borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.surface, alignItems: 'center', justifyContent: 'center',
   },
   title: {
-    fontSize: rf(28),
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginTop: rs(20),
-    marginBottom: rs(10),
+    marginTop: rs(20), fontFamily: JT_FONT.head, fontSize: rf(22), lineHeight: rf(28),
+    color: JT.ink, textAlign: 'center',
   },
   message: {
-    fontSize: rf(16),
-    color: '#CCCCCC',
-    textAlign: 'center',
-    marginBottom: rs(40),
-    lineHeight: rf(22),
+    marginTop: rs(10), fontFamily: JT_FONT.medium, fontSize: rf(15), lineHeight: rf(21),
+    color: JT.textSecondary, textAlign: 'center', maxWidth: 320,
   },
-  homeButton: {
-    backgroundColor: '#FFD700',
-    paddingHorizontal: rs(30),
-    paddingVertical: rs(15),
-    borderRadius: rs(25),
-  },
-  homeButtonText: {
-    color: '#0a0a0a',
-    fontWeight: 'bold',
-    fontSize: rf(16),
-  },
+  button: { marginTop: rs(28), alignSelf: 'stretch', maxWidth: 360, width: '100%' },
 });

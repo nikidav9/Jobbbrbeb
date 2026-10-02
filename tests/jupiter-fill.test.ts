@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FILL_CORE, buildFillScript, fillHostFor, jupiterManualEligible, nextManualApplication,
+  FILL_CORE, buildFillScript, fillHostFor, isOtherVacancy, jupiterManualEligible, nextManualApplication,
 } from '../services/jupiterFill.ts';
 
 // jtKeyForField живёт как текст JS (Hermes не отдаёт исходник функции через
@@ -60,15 +60,31 @@ test('buildFillScript не падает на профиле без даты ро
   assert.ok(script.trim().endsWith('true;'));
 });
 
-test('мессенджер, компания, ИНН и рекомендатель не заполняются', () => {
-  assert.equal(jtKeyForField('Telegram', undefined, 'telegram'), null);
+test('мессенджер — свой ключ, компания, ИНН и рекомендатель не заполняются', () => {
+  // Telegram — из «Ответьте один раз», не телефон ("tel" внутри "telegram").
+  assert.equal(jtKeyForField('Telegram', undefined, 'telegram'), 'telegram');
+  assert.equal(jtKeyForField('Ник в Telegram', 'tel', 'tg'), 'telegram');
   // Составное «Telegram или телефон» — номер туда вписать можно.
   assert.equal(jtKeyForField('Telegram или телефон', 'text', 'contact'), 'phone');
-  assert.equal(jtKeyForField('Телеграм, чтобы с вами было проще связаться'), null);
+  assert.equal(jtKeyForField('Телеграм, чтобы с вами было проще связаться'), 'telegram');
   assert.equal(jtKeyForField('Компания'), null);
   assert.equal(jtKeyForField('ИНН*'), null);
   assert.equal(jtKeyForField('Имя рекомендателя', undefined, 'referrer_name'), null);
   assert.equal(jtKeyForField('Контроль качества'), null);
+});
+
+test('частые вопросы работодателей — ключи «Ответьте один раз»', () => {
+  assert.equal(jtKeyForField('Желаемая зарплата'), 'desired_salary');
+  assert.equal(jtKeyForField('Ожидаемый уровень дохода, ₽'), 'desired_salary');
+  assert.equal(jtKeyForField('Когда готовы приступить к работе?'), 'notice_period');
+  assert.equal(jtKeyForField('Уровень английского языка'), 'english_level');
+  assert.equal(jtKeyForField('Готовы к переезду?'), 'relocation');
+  assert.equal(jtKeyForField('Предпочтительный формат работы'), 'work_format');
+  // Свободный вопрос об ожиданиях — не зарплата.
+  assert.equal(jtKeyForField('Ваши ожидания от работы'), null);
+  assert.equal(jtKeyForField('Дата рождения'), 'birth_date');
+  assert.equal(jtKeyForField('Эл.почта'), 'email');
+  assert.equal(jtKeyForField('Предпочтительный город'), 'city');
 });
 
 test('скрипт собирается в валидный JavaScript', () => {
@@ -153,4 +169,24 @@ test('транслит и короткие подписи: otchestvo, «Сооб
   // Автопилот кладёт name в текст подписи (textOf), когда подписи нет.
   assert.equal(jtKeyForField('otchestvo', 'text', 'otchestvo'), 'patronymic');
   assert.equal(jtKeyForField('Сообщение', 'textarea', 'msg'), 'cover_letter');
+});
+
+test('встроенный браузер: на соседнюю вакансию автопилот не пускает', () => {
+  const v = 'https://career.example.ru/vacancies/123';
+  assert.equal(isOtherVacancy(v, 'https://career.example.ru/vacancies/456'), true);
+  assert.equal(isOtherVacancy(v, 'https://www.career.example.ru/vacancies/456?utm=x'), true);
+  assert.equal(isOtherVacancy('https://x.ru/job/analitik-dannykh', 'https://x.ru/job/menedzher-po-prodazham'), true);
+  assert.equal(isOtherVacancy('https://x.ru/vacancy.php?id=10', 'https://x.ru/vacancy.php?id=11'), true);
+});
+
+test('встроенный браузер: анкета, списки и чужие хосты — не другая вакансия', () => {
+  const v = 'https://career.example.ru/vacancies/123';
+  assert.equal(isOtherVacancy(v, v), false);
+  assert.equal(isOtherVacancy(v, `${v}#form`), false);
+  assert.equal(isOtherVacancy(v, `${v}/apply`), false);
+  assert.equal(isOtherVacancy(v, 'https://career.example.ru/vacancies'), false);
+  assert.equal(isOtherVacancy(v, 'https://career.example.ru/vacancies/apply-form-2'), false);
+  assert.equal(isOtherVacancy(v, 'https://ats.example.com/vacancies/456'), false);
+  assert.equal(isOtherVacancy('https://x.ru/vacancy.php?id=10', 'https://x.ru/vacancy.php?id=10&step=2'), false);
+  assert.equal(isOtherVacancy(v, 'не адрес'), false);
 });

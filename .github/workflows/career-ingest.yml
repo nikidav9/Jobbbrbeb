@@ -19,6 +19,12 @@ name: Забрать вакансии с карьерных сайтов
 # partial=true и переходит к следующему, а ingest не гасит его вакансии.
 
 on:
+  # Сбор по команде (01.10.2026): расписание GitHub выполняется с пропусками
+  # (вместо «каждый час» — раз в несколько часов), а ручной запуск доступен не
+  # всем. Новая строка в infra/ingest-now после мержа — полный круг сразу.
+  push:
+    branches: [main]
+    paths: ['infra/ingest-now']
   schedule:
     # 02:30, 08:30, 14:30, 20:30 UTC — каждые 6 часов со сдвигом,
     # чтобы не совпадать с ежечасным announce-missed.
@@ -61,7 +67,7 @@ jobs:
         env:
           ADMIN_TOKEN: ${{ secrets.DASHBOARD_PASSWORD }}
           SOURCE: ${{ github.event.inputs.source || 'career_owner' }}
-          FORCE: ${{ github.event.inputs.force || 'false' }}
+          FORCE: ${{ github.event.inputs.force || (github.event_name == 'push' && 'true') || 'false' }}
           SCOPE: ${{ (github.event.schedule == '45 * * * *' || github.event.inputs.scope == 'api') && 'api' || '' }}
         run: |
           if [ -z "$ADMIN_TOKEN" ]; then

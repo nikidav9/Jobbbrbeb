@@ -1,8 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Text, StyleSheet, View } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ToastType } from '@/contexts/AppContext';
-
+import { JT, JT_FONT } from '@/constants/jt';
+import { JT_ERROR } from './jt';
+import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
+import { stripEmoji } from '@/lib/stripEmoji';
 import { rs, rf } from '@/constants/scale';
 
 interface Props {
@@ -11,53 +15,66 @@ interface Props {
   visible: boolean;
 }
 
-const BAR_COLOR: Record<ToastType, string> = {
-  success: Colors.primary,
-  error: Colors.red,
-  info: Colors.primary,
-  match: Colors.green,
+/**
+ * Плашка о результате действия в стиле JT (01.10.2026): белая карточка с
+ * чёрным контуром и жёсткой тенью, как окно «да/нет». Вид события — иконкой
+ * в кружке, без эмодзи: раньше перед каждым текстом стоял ✅/❌/ℹ️/🎉, а с
+ * эмодзи внутри самих сообщений выходило «🎉 🎉 Мэтч».
+ */
+const ICON: Record<ToastType, { name: React.ComponentProps<typeof Ionicons>['name']; bg: string; fg: string }> = {
+  success: { name: 'checkmark', bg: JT.accent, fg: JT.ink },
+  match: { name: 'checkmark-done', bg: JT.accent, fg: JT.ink },
+  info: { name: 'information', bg: JT.accentSoft, fg: JT.ink },
+  error: { name: 'alert', bg: JT_ERROR, fg: '#FFFFFF' },
 };
-const EMOJI: Record<ToastType, string> = { success: '✅', error: '❌', info: 'ℹ️', match: '🎉' };
 
 export function Toast({ message, type, visible }: Props) {
-  const anim = useRef(new Animated.Value(-80)).current;
+  const insets = useSafeAreaInsets();
+  const anim = useRef(new Animated.Value(-120)).current;
+  const top = insets.top + rs(12);
 
   useEffect(() => {
     if (visible) {
-      Animated.spring(anim, { toValue: 60, useNativeDriver: true }).start();
+      Animated.spring(anim, { toValue: top, useNativeDriver: true }).start();
     } else {
-      Animated.timing(anim, { toValue: -80, duration: 200, useNativeDriver: true }).start();
+      Animated.timing(anim, { toValue: -120, duration: 200, useNativeDriver: true }).start();
     }
-  }, [visible]);
+  }, [visible, top]);
 
+  const icon = ICON[type] ?? ICON.info;
   return (
-    <Animated.View style={[styles.container, { transform: [{ translateY: anim }] }]}>
-      <View style={[styles.bar, { backgroundColor: BAR_COLOR[type] }]} />
-      <Text style={styles.text}>{EMOJI[type]} {message}</Text>
+    <Animated.View
+      pointerEvents="none"
+      style={[s.container, { transform: [{ translateY: anim }] }]}
+      accessibilityLiveRegion="polite"
+      accessibilityRole="alert"
+    >
+      <HardShadowBox offset={3} radius={rs(18)}>
+        <View style={s.card}>
+          <View style={[s.icon, { backgroundColor: icon.bg }]}>
+            <Ionicons name={icon.name} size={rf(16)} color={icon.fg} />
+          </View>
+          <Text style={s.text}>{stripEmoji(message)}</Text>
+        </View>
+      </HardShadowBox>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: {
-    position: 'absolute',
-    top: 0,
-    left: rs(20),
-    right: rs(20),
-    zIndex: 999,
-    backgroundColor: '#fff',
-    borderRadius: rs(12),
-    flexDirection: 'row',
+    position: 'absolute', top: 0, left: rs(16), right: rs(16), zIndex: 999,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 8,
-    paddingVertical: rs(12),
-    paddingHorizontal: rs(16),
-    gap: rs(10),
   },
-  bar: { width: rs(4), height: '100%', borderRadius: rs(2), position: 'absolute', left: 0, top: 0, bottom: 0 },
-  text: { fontSize: rf(14), color: Colors.textPrimary, fontWeight: '500', flex: 1, marginLeft: rs(10) },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(12),
+    maxWidth: 480, backgroundColor: JT.surface,
+    borderRadius: rs(18), borderWidth: 2, borderColor: JT.ink,
+    paddingVertical: rs(12), paddingLeft: rs(12), paddingRight: rs(16),
+  },
+  icon: {
+    width: rs(28), height: rs(28), borderRadius: rs(14), borderWidth: 2, borderColor: JT.ink,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  text: { flexShrink: 1, fontFamily: JT_FONT.bold, fontSize: rf(15), lineHeight: rf(20), color: JT.ink },
 });

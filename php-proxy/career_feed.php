@@ -484,7 +484,7 @@ function cf_json_url(array $row, array $map, string $pageUrl): string
  *   type=page   — `?page=3`, начиная с `start` (у кого-то 0, у кого-то 1).
  * Пустой $paging — источник отдаёт всё разом, порция ровно одна.
  */
-function cf_page_url(string $url, array $paging, int $sub): string
+function cf_page_url(string $url, array $paging, int $sub, string $cursor = ''): string
 {
     $type = (string)($paging['type'] ?? '');
     if ($type === '' || $sub === 0 && $type === 'none') return $url;
@@ -509,6 +509,16 @@ function cf_page_url(string $url, array $paging, int $sub): string
                 ['{offset}' => (string)($sub * $limit), '{page}' => (string)($sub + 1)]);
             $query[(string)($paging['param'] ?? 'cursor')] = base64_encode($cursor);
         }
+    } elseif ($type === 'cursor_next') {
+        // Курсор из ответа самого сайта (поле next, см. cf_next_cursor):
+        // 01.10.2026 Яндекс сменил формат курсора, и собранный нами
+        // «o=…&p=…» стал возвращать первую страницу — сбор 80 раз видел одни и
+        // те же 20 вакансий и погасил остальные ~800. Без курсора — дальше нельзя.
+        if (!empty($paging['limit_param'])) $query[(string)$paging['limit_param']] = $limit;
+        if ($sub > 0) {
+            if ($cursor === '') return '';
+            $query[(string)($paging['param'] ?? 'cursor')] = $cursor;
+        }
     } else {
         return $url;
     }
@@ -518,6 +528,35 @@ function cf_page_url(string $url, array $paging, int $sub): string
         . ($parts['path'] ?? '');
     $q = http_build_query($query);
     return $q === '' ? $rebuilt : $rebuilt . '?' . $q;
+}
+
+/**
+ * Курсор следующей порции из ответа (cursor_next): поле paging.next_field
+ * (по умолчанию next) — адрес или сам курсор; из адреса берём только параметр
+ * paging.param, хост в нём бывает внутренним. Пусто — порций больше нет или
+ * курсор подозрительный (только base64/url-safe символы, до 400).
+ */
+function cf_next_cursor($data, array $paging): string
+{
+    $next = cf_dig($data, (string)($paging['next_field'] ?? 'next'));
+    if (!is_string($next) || $next === '') return '';
+    if (str_contains($next, '?') || str_contains($next, '://')) {
+        parse_str((string)parse_url($next, PHP_URL_QUERY), $q);
+        $next = (string)($q[(string)($paging['param'] ?? 'cursor')] ?? '');
+    }
+    return preg_match('~^[A-Za-z0-9+/=_-]{1,400}$~', $next) ? $next : '';
+}
+
+/**
+ * Отпечаток первой записи порции: если следующая порция начинается с того же,
+ * листание сломано (сайт вернул ту же страницу), и обход не вправе решать, что
+ * остальные вакансии закрылись. Пусто — сравнивать нечего.
+ */
+function cf_first_mark(array $rawRows): string
+{
+    if (!$rawRows) return '';
+    $first = reset($rawRows);
+    return substr(hash('sha256', json_encode($first, JSON_UNESCAPED_UNICODE) ?: ''), 0, 16);
 }
 
 /**
@@ -596,8 +635,15 @@ function cf_dom(string $html): ?DOMDocument
     return $ok ? $doc : null;
 }
 
-function cf_html_links(string $html, string $pageUrl, array $map, int $now): array
+/**
+ * $raw — сколько разных ссылок на вакансии на странице ДО отсева по названию:
+ * по нему листание решает, полная ли страница (см. cf_has_next_sub). У Полюса
+ * 01.10.2026 на 5-й странице из 19 одна из десяти ссылок отсеялась, и сбор
+ * останавливался на 49 вакансиях.
+ */
+function cf_html_links(string $html, string $pageUrl, array $map, int $now, ?int &$raw = null): array
 {
+    $raw = 0;
     $needle = trim((string)($map['link_path'] ?? ''));
     if ($needle === '') return [];
     $minTitle = max(3, (int)($map['min_title'] ?? 8));
@@ -608,6 +654,7 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
 
     $items = [];
     $seen = [];
+    $rawSeen = [];
     $baseTag = $doc->getElementsByTagName('base')->item(0);
     $baseHref = $baseTag instanceof DOMElement ? trim($baseTag->getAttribute('href')) : '';
     foreach ($doc->getElementsByTagName('a') as $a) {
@@ -633,6 +680,10 @@ function cf_html_links(string $html, string $pageUrl, array $map, int $now): arr
         // /jobs/vacancies?profession=backend: это фильтры каталога, а
         // заголовком шло «Разработка», «Аналитика». Проверено на проде.
         if (in_array(mb_strtolower($tail), CF_SECTION_WORDS, true)) continue;
+        if (!isset($rawSeen[$href])) {
+            $rawSeen[$href] = true;
+            $raw++;
+        }
 
         $title = cf_link_title($a);
         // Карточка-обёртка: название стоит РЯДОМ со ссылкой (в соседнем

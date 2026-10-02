@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 /**
  * Единая точка входа во все юридические документы.
  *
@@ -56,7 +57,7 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     fontSize: rf(14),
-    fontWeight: '700',
+    fontFamily: JT_FONT.bold,
     color: Colors.textPrimary,
   },
 });

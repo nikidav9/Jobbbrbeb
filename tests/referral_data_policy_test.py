@@ -8,12 +8,15 @@ migration = (root / "supabase" / "migrations" / "064_referral_programme.sql").re
 start = legal.index("  dataPolicy: {")
 policy = legal[start:legal.index("  marketing: {")]
 
-assert "version: '2026-09-26-2'" in policy
+assert "version: '2026-10-02'" in policy
 assert "consentVersion: '2026-09-21'" in policy
 assert "данные реферальной программы: код приглашения" in policy
 assert "связь между пригласившим и приглашённым" in policy
-assert "результат первой смены приглашённого" in policy
-assert "предоставление поручительства пригласившему" in policy
+assert "факт и результат приглашения: найм приглашённого работодателем" in policy
+assert "предоставление поручительства пригласившему после найма приглашённого" in policy
+# Подработка закрыта 17.09.2026: «первой отработанной смены» в политике быть не должно.
+assert "первой отработанной смены" not in policy
+assert "исполнител" not in policy and "заказчик" not in policy
 assert "не требует платёжных, налоговых данных или ИНН" in policy
 assert "При удалении любого из связанных аккаунтов" in policy
 

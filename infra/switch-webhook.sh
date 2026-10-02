@@ -29,9 +29,12 @@ cd /opt/jobtoo/infra 2>/dev/null || exit 0
 TOKEN=$(docker compose exec -T php php -r '
   $s = @include "/var/www/api/app_secrets.php";
   echo is_array($s) ? ($s["TG_BOT_TOKEN"] ?? "") : "";' 2>/dev/null | tr -d '\r\n')
+# Ключ своего вебхука — вывод из токена бота, как в tg.php: APP_SECRET лежит в
+# сборке приложения и подписывать им обновления нельзя.
 SECRET=$(docker compose exec -T php php -r '
   $s = @include "/var/www/api/app_secrets.php";
-  echo is_array($s) ? ($s["APP_SECRET"] ?? "") : "";' 2>/dev/null | tr -d '\r\n')
+  $t = is_array($s) ? ($s["TG_BOT_TOKEN"] ?? "") : "";
+  echo $t !== "" ? hash_hmac("sha256", "jt-tg-webhook", $t) : "";' 2>/dev/null | tr -d '\r\n')
 
 [ -z "$TOKEN" ] && { echo "нет токена" > /var/lib/jt-webhook-check; exit 0; }
 

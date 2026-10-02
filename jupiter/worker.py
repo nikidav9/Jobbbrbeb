@@ -22,6 +22,8 @@ from tasks import ApplicationTask, TaskQueueProto, TaskState, SubmissionAuthoriz
 RETRYABLE_CODES = {
     Reason.NAVIGATION_FAILED,
     Reason.SUBMIT_FAILED,
+    # Поле не заполнилось до клика: попытки ограничены очередью.
+    Reason.FILL_FAILED,
 }
 log = logging.getLogger("jupiter")
 # Сайт не отмечен live_ready в site_compat: боевую заявку не исполняем.
@@ -71,7 +73,10 @@ def apply_result(
 ) -> str:
     """Перевести итог прогона в состояние задачи."""
     if result.status == "failed":
-        if submission_attempted:
+        # FILL_FAILED — сбой заполнения до клика: before_submit уже взвёл
+        # submission_attempted, но на сайт ничего не ушло. Это обычный
+        # повтор/провал, а не «Скорее всего, ушёл».
+        if submission_attempted and result.reason_code != Reason.FILL_FAILED:
             queue.finish(task.id, TaskState.SUBMISSION_UNKNOWN,
                          reason_code="POST_OUTCOME_UNCERTAIN")
             return TaskState.SUBMISSION_UNKNOWN
@@ -95,6 +100,8 @@ def apply_result(
             None,
         ),
         summary=fill_summary(result.trajectory),
+        questions=result.questions or None,
+        email_to=result.email_to,
     )
     return state
 
@@ -164,10 +171,18 @@ def run_once(
                 guard = getattr(queue, "authorize_submit", None)
                 if callable(guard):
                     guard(task.id)
-                queue.checkpoint(task.id, TaskState.SUBMITTING, {
+                # «Далее» в многошаговой анкете — ещё не отклик (агент так и
+                # помечает: intermediate). Раньше и она взводила «отправка
+                # началась», и любой сбой на втором шаге (сторож 4 минуты,
+                # вопрос, ошибка) становился «Скорее всего, ушёл» без повтора —
+                # хотя «Отправить» не нажималось (владелец 02.10.2026: «почти
+                # во всех откликах так»). На «Далее» остаёмся в filling: сбой
+                # повторяется, истёкшая аренда — тоже, а не submission_unknown.
+                queue.checkpoint(task.id, TaskState.FILLING if intermediate else TaskState.SUBMITTING, {
                     "url": url, "intermediate": intermediate,
                 })
-                submission_attempted = True
+                if not intermediate:
+                    submission_attempted = True
             agent.before_submit = before_submit
         queue.checkpoint(task.id, TaskState.OPENING_APPLICATION, {
             "url": task.vacancy_url,

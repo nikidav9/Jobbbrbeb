@@ -35,6 +35,29 @@ def evidence(**kwargs):
     return collect_evidence(**base)
 
 
+class RealSiteConfirmations(unittest.TestCase):
+    """Тексты подтверждения живых сайтов — из их собственного кода."""
+
+    def test_2gis_modal_confirms_the_application(self):
+        # job.2gis.ru, 01.10.2026: «Отправлено — Твой отклик уже у нас…».
+        from agent import SUCCESS_MARKERS
+        ev = evidence(after_text="Анкета кандидата\nОтправлено\nТвой отклик уже у нас. "
+                                 "Рассмотрим его и напишем тебе в течение недели",
+                      success_markers=SUCCESS_MARKERS)
+        self.assertTrue(is_confirmed(ev), ev)
+
+    def test_twinby_thanks_confirms_the_application(self):
+        from agent import SUCCESS_MARKERS
+        ev = evidence(after_text="Анкета кандидата\nСпасибо!\nМы все изучим и ответим тебе по почте",
+                      success_markers=SUCCESS_MARKERS)
+        self.assertTrue(is_confirmed(ev), ev)
+
+    def test_bare_otpravleno_is_not_a_confirmation(self):
+        from agent import SUCCESS_MARKERS
+        ev = evidence(after_text="Анкета кандидата\nОтправлено", success_markers=SUCCESS_MARKERS)
+        self.assertFalse(is_confirmed(ev), ev)
+
+
 class CanonicalUrl(unittest.TestCase):
     def test_tracking_parameters_do_not_make_a_new_application(self):
         self.assertEqual(

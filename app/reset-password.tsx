@@ -22,6 +22,7 @@ import { dbAuthResetPassword } from '@/services/db';
 import { useApp } from '@/hooks/useApp';
 import { rs, rf } from '@/constants/scale';
 
+import { JT_FONT } from '@/constants/jt';
 const SUPPORT_EMAIL = 'support@jobtoo.ru';
 
 export default function ResetPassword() {
@@ -46,7 +47,7 @@ export default function ResetPassword() {
     try {
       const user = await dbAuthResetPassword(ticket, password);
       await signInAs(user);
-      showToast(setting ? 'Пароль задан' : 'Пароль изменён. Добро пожаловать! 👋', 'success');
+      showToast(setting ? 'Пароль задан' : 'Пароль изменён. Добро пожаловать!', 'success');
       router.replace(returnTo ? `/${returnTo}` : '/(tabs)');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Не удалось сменить пароль';
@@ -131,11 +132,11 @@ const styles = StyleSheet.create({
     padding: rs(24),
     gap: rs(14),
   },
-  title: { fontSize: rf(22), fontWeight: '700', color: Colors.textPrimary },
-  subtitle: { fontSize: rf(14), color: Colors.textMuted, marginTop: rs(-6), lineHeight: rf(20) },
-  hint: { fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18) },
-  hintLink: { color: Colors.primary, fontWeight: '600' },
+  title: { fontSize: rf(22), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  subtitle: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, marginTop: rs(-6), lineHeight: rf(20) },
+  hint: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textSecondary, lineHeight: rf(18) },
+  hintLink: { color: Colors.primary, fontFamily: JT_FONT.semi },
   btn: { minHeight: rs(48), justifyContent: 'center' },
   cancel: { alignItems: 'center', marginTop: rs(4) },
-  cancelText: { fontSize: rf(15), color: Colors.textMuted, fontWeight: '500' },
+  cancelText: { fontSize: rf(15), color: Colors.textMuted, fontFamily: JT_FONT.medium },
 });

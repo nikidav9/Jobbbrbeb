@@ -67,6 +67,9 @@ jobs:
       - name: Аккаунт без пароля видит «Задать пароль», хеш наружу не уходит
         run: php tests/has_password_test.php
 
+      - name: Удаление аккаунта кодом — только своя почта и свой аккаунт
+        run: php tests/delete_by_code_test.php
+
       - name: Объявление в группу доходит, а отказ виден
         run: php tests/group_post_test.php
 
@@ -100,8 +103,29 @@ jobs:
       - name: Капча человеку — права, срок, длина ответа, чужая заявка
         run: php tests/jupiter_captcha_test.php
 
+      - name: Вопросы от работодателей — права, банк ответов, возврат отклика в очередь
+        run: php tests/jupiter_questions_test.php
+
+      - name: Отклик письмом — домен вакансии, разрешение, вложение, Reply-To
+        run: php tests/jupiter_email_apply_test.php
+
+      - name: Логотипы компаний — только PNG 256×256, права, имя файла по содержимому
+        run: php tests/company_logos_db_test.php
+
+      - name: Молнии на сервере — 20 откликов за московские сутки на всех устройствах
+        run: php tests/energy_server_test.php
+
+      - name: YandexGPT подсказывает автопилоту поля — без данных человека, только ключи из списка
+        run: php tests/jupiter_field_hints_test.php
+
       - name: Юпитер — заявка на браузер только при включённой службе и новой редакции
         run: php tests/jupiter_engine_routing_test.php
+
+      - name: Юпитер — пилот «сервер отправляет сам» только по списку, с автоотправкой и поручением
+        run: php tests/jupiter_server_send_test.php
+
+      - name: Письмо компании подтверждает отклик «Скорее всего, ушёл»
+        run: php tests/jupiter_mail_confirm_test.php
 
       - name: Лента карьерных вакансий — компании чередуются, свайпы учитываются
         run: php tests/ext_feed_test.php
@@ -187,11 +211,20 @@ jobs:
       - name: Чужие данные на чтение не отдаются
         run: php tests/read_authz_test.php
 
-      - name: has_password вычисляется, хеш пароля клиенту не уходит
-        run: php tests/has_password_test.php
-
       - name: Уведомление о сообщении собирает сервер, а не телефон
         run: php tests/message_notify_test.php
+
+      - name: Пуш, Telegram и web-push — после ответа человеку; личные сигналы — только ему
+        run: php tests/notify_defer_test.php
+
+      - name: Ночная чистка — уведомления 90 дней, свайпы «влево» 30, отклики никогда
+        run: php tests/cleanup_test.php
+
+      - name: Письмо-сводка о непрочитанном — раз в день, без содержания, только без другого канала
+        run: php tests/unread_digest_test.php
+
+      - name: Письмо целиком — хранится при приёме, отдаётся только владельцу
+        run: php tests/mail_html_test.php
 
       - name: Нативный push не раскрывает данные события
         run: php tests/push_privacy_test.php
@@ -251,6 +284,7 @@ jobs:
           python3 tests/career_full_catalog_test.py
           python3 tests/career_discover_run_test.py
           python3 tests/deploy_webhook_order_test.py
+          python3 tests/yandex_gpt_delivery_test.py
           python3 tests/chat_match_refresh_test.py
           python3 tests/network_action_truth_test.py
           python3 tests/perm_app_atomicity_test.py
@@ -259,7 +293,7 @@ jobs:
           python3 tests/telegram_link_metrics_test.py
           python3 tests/tg_poll_stuck_test.py
           pip install quickjs
-          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py jupiter/yandex_gpt.py jupiter/ats_hosts.py jupiter/browser_frames.py jupiter/browser_planner.py jupiter/browser_success.py jupiter/browser_sessions.py jupiter/browser_overlays.py jupiter/browser_captcha.py jupiter/browser_custom_controls.py jupiter/browser_guard.py jupiter/recon_browser.py jupiter/test_browser_zoo.py jupiter/browser_limits.py jupiter/captcha_loop.py jupiter/test_browser_engine_captcha.py jupiter/test_agent_llm.py jupiter/test_tls_trust.py
+          python3 -m py_compile jupiter/network_runtime.py jupiter/script_runtime.py jupiter/site_compat.py jupiter/validation.py jupiter/spa_payload.py jupiter/submission.py jupiter/sber.py jupiter/huntflow.py jupiter/email_apply.py jupiter/candidate.py jupiter/handoff.py jupiter/tasks.py jupiter/remote_tasks.py jupiter/run_worker.py jupiter/policy.py jupiter/engine.py jupiter/js_engine.py jupiter/agent.py jupiter/worker.py jupiter/test_server.py jupiter/recon.py jupiter/browser_engine.py jupiter/test_browser_engine.py jupiter/yandex_gpt.py jupiter/ats_hosts.py jupiter/browser_frames.py jupiter/browser_planner.py jupiter/browser_success.py jupiter/browser_sessions.py jupiter/browser_overlays.py jupiter/browser_captcha.py jupiter/browser_custom_controls.py jupiter/browser_guard.py jupiter/recon_browser.py jupiter/test_browser_zoo.py jupiter/browser_limits.py jupiter/captcha_loop.py jupiter/test_browser_engine_captcha.py jupiter/test_agent_llm.py jupiter/test_tls_trust.py jupiter/test_engine_iri.py jupiter/alice_dom.py jupiter/test_alice_dom.py jupiter/alice_agent.py jupiter/test_alice_agent.py
           (cd jupiter && python3 test_form_semantics.py)
           (cd jupiter && python3 test_spa_payload.py)
           (cd jupiter && python3 test_submission.py)
@@ -276,14 +310,24 @@ jobs:
           (cd jupiter && python3 test_recon.py)
           (cd jupiter && python3 test_js_engine.py)
           (cd jupiter && python3 test_yandex_gpt.py)
+          (cd jupiter && python3 test_knowledge.py)
+          (cd jupiter && python3 test_outcome_judge.py)
+          (cd jupiter && python3 test_huntflow.py)
+          (cd jupiter && python3 test_email_apply.py)
           (cd jupiter && python3 test_ats_hosts.py)
           (cd jupiter && python3 test_browser_limits.py)
           (cd jupiter && python3 test_captcha_loop.py)
+          (cd jupiter && python3 test_questions.py)
           (cd jupiter && python3 test_agent_llm.py)
           (cd jupiter && python3 test_tls_trust.py)
+          (cd jupiter && python3 test_engine_iri.py)
+          (cd jupiter && python3 test_alice_dom.py)
+          (cd jupiter && python3 test_alice_agent.py)
           python3 tests/jupiter_private_lab_infra_test.py
           python3 tests/jupiter_browser_infra_test.py
           python3 tests/recon_browser_infra_test.py
+          python3 tests/career_search_scout_test.py
+          python3 tests/career_quarantine_recheck_test.py
           bash tests/nginx_config_test.sh
 
       - name: Web build
@@ -350,7 +394,7 @@ jobs:
           for t in test_browser_engine test_browser_frames test_browser_planner test_browser_success \
                    test_browser_sessions test_browser_overlays test_browser_captcha \
                    test_browser_custom_controls test_browser_guard test_recon_browser test_browser_zoo \
-                   test_browser_engine_captcha; do
+                   test_browser_engine_captcha test_alice_dom test_alice_agent; do
             echo "== $t"; python3 $t.py
           done
 

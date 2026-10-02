@@ -35,6 +35,7 @@ import { WebVoiceRecording, webVoiceSupported, type VoiceClip } from '@/services
 import { rs, rf } from '@/constants/scale';
 import { BackButton } from '@/components/ui/BackButton';
 
+import { JT_FONT } from '@/constants/jt';
 const POLL_INTERVAL = 8000;
 
 // Отступ под строкой ввода считаем ОДИН раз при загрузке модуля и больше не
@@ -121,7 +122,7 @@ const vb = StyleSheet.create({
   playBtn: { width: rs(32), height: rs(32), borderRadius: rs(16), alignItems: 'center', justifyContent: 'center' },
   waveWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(3), height: rs(22) },
   bar: { width: rs(2.5), borderRadius: rs(2) },
-  dur: { fontSize: rf(11), fontWeight: '600' },
+  dur: { fontSize: rf(11), fontFamily: JT_FONT.semi },
 });
 
 // Поле ввода растёт вместе с текстом, но не выше этого — дальше текст
@@ -864,7 +865,7 @@ export default function ChatRoom() {
             <ActivityIndicator size="large" color={Colors.primary} />
           ) : dbChatLoadFailed ? (
             <>
-              <Text style={{ color: Colors.textPrimary, fontSize: rf(16), fontWeight: '700', textAlign: 'center' }}>
+              <Text style={{ color: Colors.textPrimary, fontSize: rf(16), fontFamily: JT_FONT.bold, textAlign: 'center' }}>
                 Не удалось загрузить чат
               </Text>
               <Text style={{ color: Colors.textMuted, textAlign: 'center' }}>Проверьте связь и попробуйте ещё раз.</Text>
@@ -872,7 +873,7 @@ export default function ChatRoom() {
                 onPress={() => setDbChatRetry(x => x + 1)}
                 style={{ backgroundColor: Colors.primary, borderRadius: rs(100), paddingHorizontal: rs(22), paddingVertical: rs(11) }}
               >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Повторить</Text>
+                <Text style={{ color: '#fff', fontFamily: JT_FONT.bold }}>Повторить</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -1031,7 +1032,7 @@ export default function ChatRoom() {
             </Text>
           </View>
           <TouchableOpacity onPress={() => setLikeStatusRetry(x => x + 1)} activeOpacity={0.8}>
-            <Text style={{ color: Colors.primary, fontWeight: '700' }}>Повторить</Text>
+            <Text style={{ color: Colors.primary, fontFamily: JT_FONT.bold }}>Повторить</Text>
           </TouchableOpacity>
         </View>
       ) : isEmployer && !isChatWithoutVacancy && likeStatus === 'pending' ? (
@@ -1138,7 +1139,7 @@ export default function ChatRoom() {
               <Text style={styles.headerSub} numberOfLines={1}>{chat.companyName}</Text>
             )}
           </View>
-          <Text style={{ fontSize: rf(16), color: Colors.textMuted, marginLeft: 4 }}>›</Text>
+          <Text style={{ fontFamily: JT_FONT.medium, fontSize: rf(16), color: Colors.textMuted, marginLeft: 4 }}>›</Text>
         </TouchableOpacity>
         <View style={{ width: 70 }} />
       </View>
@@ -1162,14 +1163,14 @@ export default function ChatRoom() {
           <View style={{ flex: 1 }}>
             {messageLoadFailed ? (
               <View style={{ paddingHorizontal: rs(16), paddingVertical: rs(10), backgroundColor: Colors.surface, gap: rs(6) }}>
-                <Text style={{ color: Colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>
+                <Text style={{ color: Colors.textPrimary, fontFamily: JT_FONT.bold, textAlign: 'center' }}>
                   {messages.length > 0 ? 'Не удалось обновить сообщения' : 'Не удалось загрузить сообщения'}
                 </Text>
-                <Text style={{ color: Colors.textMuted, textAlign: 'center', fontSize: rf(12) }}>
+                <Text style={{ color: Colors.textMuted, textAlign: 'center', fontFamily: JT_FONT.medium, fontSize: rf(12) }}>
                   Уже показанные сообщения сохранены. Проверьте связь и повторите.
                 </Text>
                 <TouchableOpacity onPress={() => setMessageRetry(x => x + 1)} activeOpacity={0.8}>
-                  <Text style={{ color: Colors.primary, fontWeight: '700', textAlign: 'center' }}>Повторить</Text>
+                  <Text style={{ color: Colors.primary, fontFamily: JT_FONT.bold, textAlign: 'center' }}>Повторить</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -1309,8 +1310,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.divider,
     gap: rs(10),
   },
-  decisionBarLabel: { fontSize: rf(12.5), fontWeight: '600', color: Colors.textSecondary },
-  decisionMoreTxt: { fontSize: rf(12), fontWeight: '600', color: Colors.primary, marginTop: rs(8) },
+  decisionBarLabel: { fontSize: rf(12.5), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
+  decisionMoreTxt: { fontSize: rf(12), fontFamily: JT_FONT.semi, color: Colors.primary, marginTop: rs(8) },
   decisionStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6) },
   decisionBtnsRow: { flexDirection: 'row', gap: rs(10) },
   decisionBtn: {
@@ -1323,17 +1324,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg,
     borderWidth: 1.5, borderColor: Colors.inputBorder,
   },
-  decisionBtnRejectTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
+  decisionBtnRejectTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
   // «Подходит» — главное действие
   decisionBtnAccept: { backgroundColor: Colors.primary },
-  decisionBtnAcceptTxt: { fontSize: rf(14), fontWeight: '700', color: '#fff' },
+  decisionBtnAcceptTxt: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: '#fff' },
   // Compact back icon button
   // Blocked bar (worker)
   blockedBar: {
     backgroundColor: '#FEE2E2', paddingHorizontal: rs(16), paddingVertical: rs(10),
     borderBottomWidth: 1, borderBottomColor: '#FECACA',
   },
-  blockedBarTxt: { fontSize: rf(13), fontWeight: '600', color: Colors.red, textAlign: 'center' },
+  blockedBarTxt: { fontSize: rf(13), fontFamily: JT_FONT.semi, color: Colors.red, textAlign: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: rs(16), paddingVertical: rs(12),
@@ -1341,10 +1342,10 @@ const styles = StyleSheet.create({
   },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(10), justifyContent: 'center' },
   headerAvatar: { width: rs(34), height: rs(34), borderRadius: rs(17) },
-  headerAvatarText: { color: '#fff', fontSize: rf(13), fontWeight: '700' },
-  headerName: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary },
-  headerSub: { fontSize: rf(11), color: Colors.textMuted, maxWidth: rs(160) },
-  headerSubOnline: { color: Colors.green, fontWeight: '600' },
+  headerAvatarText: { color: '#fff', fontSize: rf(13), fontFamily: JT_FONT.bold },
+  headerName: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
+  headerSub: { fontFamily: JT_FONT.medium, fontSize: rf(11), color: Colors.textMuted, maxWidth: rs(160) },
+  headerSubOnline: { color: Colors.green, fontFamily: JT_FONT.semi },
   presenceRow: { flexDirection: 'row', alignItems: 'center', gap: rs(4) },
   onlineDot: { width: rs(6), height: rs(6), borderRadius: rs(3), backgroundColor: Colors.green },
   msgList: { padding: rs(16), gap: rs(8), paddingBottom: rs(8) },
@@ -1356,30 +1357,30 @@ const styles = StyleSheet.create({
   },
   systemMsgMatch: { backgroundColor: '#D1FAE5', borderRadius: rs(12) },
   systemMsgReject: { backgroundColor: '#FEE2E2', borderRadius: rs(12) },
-  systemText: { flexShrink: 1, fontSize: rf(13), color: Colors.primary, fontWeight: '600' },
+  systemText: { flexShrink: 1, fontSize: rf(13), color: Colors.primary, fontFamily: JT_FONT.semi },
   systemTextMatch: { color: Colors.green },
   systemTextReject: { color: Colors.red },
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: rs(8), marginVertical: rs(2) },
   msgRowMe: { justifyContent: 'flex-end' },
   msgRowThem: { justifyContent: 'flex-start' },
   msgAvatar: { width: rs(28), height: rs(28), borderRadius: rs(14), flexShrink: 0 },
-  msgAvatarText: { color: '#fff', fontSize: rf(10), fontWeight: '700' },
+  msgAvatarText: { color: '#fff', fontSize: rf(10), fontFamily: JT_FONT.bold },
   bubble: { maxWidth: '72%', paddingHorizontal: rs(14), paddingVertical: rs(10), borderRadius: rs(18) },
   bubbleMe: { backgroundColor: Colors.primary, borderBottomRightRadius: rs(4) },
   bubbleThem: { backgroundColor: Colors.surface, borderBottomLeftRadius: rs(4) },
-  bubbleText: { fontSize: rf(14), color: Colors.textPrimary, lineHeight: rf(20) },
+  bubbleText: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textPrimary, lineHeight: rf(20) },
   bubbleImage: { padding: rs(3), overflow: 'hidden' },
   msgImage: { width: rs(208), height: rs(208), borderRadius: rs(15), backgroundColor: Colors.divider },
   bubbleTextMe: { color: '#fff' },
   daySep: { alignSelf: 'center', marginVertical: rs(10) },
   daySepTxt: {
-    fontSize: rf(11.5), fontWeight: '600', color: Colors.textSecondary,
+    fontSize: rf(11.5), fontFamily: JT_FONT.semi, color: Colors.textSecondary,
     backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.divider,
     borderRadius: rs(100), paddingHorizontal: rs(12), paddingVertical: rs(4),
     overflow: 'hidden',
   },
-  timestamp: { fontSize: rf(10), color: Colors.textMuted, marginTop: rs(4) },
+  timestamp: { fontFamily: JT_FONT.medium, fontSize: rf(10), color: Colors.textMuted, marginTop: rs(4) },
   timestampMe: { color: 'rgba(255,255,255,0.7)', textAlign: 'right' },
   // Время и галочки в одну строку, прижатые вправо: так они читаются как
   // одна подпись под сообщением, а не как два отдельных значка.
@@ -1402,7 +1403,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     borderRadius: rs(100), paddingHorizontal: rs(14), paddingVertical: rs(8),
   },
-  suggestChipTxt: { fontSize: rf(13.5), fontWeight: '600', color: Colors.primary },
+  suggestChipTxt: { fontSize: rf(13.5), fontFamily: JT_FONT.semi, color: Colors.primary },
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: rs(8),
     paddingHorizontal: rs(10), paddingVertical: rs(8),
@@ -1435,8 +1436,8 @@ const styles = StyleSheet.create({
     width: rs(22), height: rs(22), borderRadius: rs(11),
     backgroundColor: '#FDE9C8', alignItems: 'center', justifyContent: 'center',
   },
-  safetyTitle: { fontSize: rf(13), fontWeight: '700', color: '#92400E' },
-  safetyText: { fontSize: rf(12), color: '#78350F', lineHeight: rf(17) },
+  safetyTitle: { fontSize: rf(13), fontFamily: JT_FONT.bold, color: '#92400E' },
+  safetyText: { fontFamily: JT_FONT.medium, fontSize: rf(12), color: '#78350F', lineHeight: rf(17) },
   // Rejection confirmation modal
   confirmOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -1446,20 +1447,20 @@ const styles = StyleSheet.create({
   confirmCard: {
     backgroundColor: Colors.bg, borderRadius: rs(20), padding: rs(24), width: '100%', gap: rs(14),
   },
-  confirmTitle: { fontSize: rf(18), fontWeight: '800', color: Colors.textPrimary, textAlign: 'center' },
-  confirmBody: { fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
+  confirmTitle: { fontSize: rf(18), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center' },
+  confirmBody: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textSecondary, textAlign: 'center', lineHeight: rf(20) },
   confirmBtns: { flexDirection: 'row', gap: rs(10), marginTop: rs(4) },
   confirmCancelBtn: {
     flex: 1, borderWidth: 1.5, borderColor: Colors.inputBorder,
     borderRadius: rs(100), paddingVertical: rs(13), alignItems: 'center',
   },
-  confirmCancelTxt: { fontSize: rf(14), fontWeight: '600', color: Colors.textSecondary },
+  confirmCancelTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textSecondary },
   confirmRejectBtn: { flex: 1, backgroundColor: Colors.red, borderRadius: rs(100), paddingVertical: rs(13), alignItems: 'center' },
-  confirmRejectTxt: { fontSize: rf(14), fontWeight: '700', color: '#fff' },
+  confirmRejectTxt: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: '#fff' },
   // Фон и скругление — у обёртки; само поле прозрачное, чтобы высота
   // считалась только по тексту и рост был плавным
   textInput: {
-    fontSize: rf(15), color: Colors.textPrimary,
+    fontFamily: JT_FONT.medium, fontSize: rf(15), color: Colors.textPrimary,
     padding: 0, margin: 0,
     textAlignVertical: 'top',
   },
@@ -1470,6 +1471,6 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { opacity: 0.35 },
   recordWrap: { flexDirection: 'row', alignItems: 'center', gap: rs(8) },
   recDot: { width: rs(9), height: rs(9), borderRadius: rs(5), backgroundColor: Colors.red },
-  recTime: { fontSize: rf(15), fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
-  recHint: { fontSize: rf(13), color: Colors.textMuted },
+  recTime: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  recHint: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted },
 });
