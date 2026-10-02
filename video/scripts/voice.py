@@ -3,7 +3,8 @@
 Текст диктора — voice/script.json. Ключ и каталог — те же, что у YandexGPT
 (YANDEX_GPT_API_KEY, YANDEX_GPT_FOLDER_ID), только в окружении: в репозиторий
 не попадают. Запускается в GitHub (.github/workflows/tutorial-voice.yml),
-результат — артефакт: public/voice/<id>.wav и public/voice/durations.json,
+результат — public/voice/<id>.wav и public/voice/durations.json (робот кладёт
+их коммитом в ту же ветку, кроме main),
 по которому src/Tutorial.tsx раскладывает сцены. В тексте нет данных людей —
 только дикторский текст о продукте.
 
@@ -18,7 +19,7 @@ import wave
 from pathlib import Path
 
 URL = 'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize'
-RATE = 48000
+RATE = 24000  # голосу хватает; файлы лежат в git — вдвое меньше
 
 
 def synth(text: str, cfg: dict, key: str, folder: str) -> bytes:

@@ -1,6 +1,7 @@
 # Озвучка обучающего ролика сайта (video/voice/script.json) — Яндекс SpeechKit.
-# Результат — артефакт tutorial-voice: wav по строкам и durations.json; их
-# кладут в video/public/voice/ и рендерят ролик (cd video && npm run render).
+# Результат — wav по строкам и durations.json в video/public/voice/: робот
+# коммитит их в ту же ветку (кроме main), дальше ролик рендерят как обычно
+# (cd video && npm run render). Из песочницы артефакты не скачать — поэтому коммит.
 # Ключ — тот же, что у YandexGPT, из секретов; в лог не печатается.
 name: Озвучка обучающего ролика
 
@@ -13,7 +14,7 @@ on:
       - '.github/workflows/tutorial-voice.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   voice:
@@ -25,9 +26,13 @@ jobs:
         env:
           YANDEX_GPT_API_KEY: ${{ secrets.YANDEX_GPT_API_KEY }}
           YANDEX_GPT_FOLDER_ID: ${{ secrets.YANDEX_GPT_FOLDER_ID }}
-        run: cd video && python3 scripts/voice.py voice/script.json out-voice
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tutorial-voice
-          path: video/out-voice/
-          retention-days: 14
+        run: cd video && python3 scripts/voice.py voice/script.json public/voice
+      - name: Голос — в ту же ветку
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add video/public/voice
+          git diff --cached --quiet && exit 0
+          git commit -m 'Обучающий ролик: озвучка SpeechKit (робот)'
+          git push origin HEAD:${{ github.ref_name }}
