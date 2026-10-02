@@ -240,6 +240,67 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .s-caption { position: absolute; z-index: 5; left: 22px; top: 20px; padding: 8px 14px; border: 2px solid var(--ink); border-radius: 999px;
   background: var(--surface); font: 700 13px/1 'JTSplashManrope', sans-serif; }
 
+
+/* Юпитер — ИИ-агент (решение владельца 02.10.2026): браузер, в котором он сам
+   заполняет анкету работодателя, что он делает за человека и обучающий ролик. */
+#jtl .agent { display: grid; grid-template-columns: 1fr 1.05fr; gap: 44px; align-items: center; margin-top: 70px; }
+#jtl .agent h3 { margin-top: 10px; font-size: clamp(24px, 2.3vw, 34px); line-height: 1.12; }
+#jtl .agent .sub { max-width: 520px; }
+#jtl .a-steps { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 9px; }
+#jtl .a-steps li { display: flex; align-items: center; gap: 11px; font: 700 15px/1.3 'JTSplashManrope', sans-serif; opacity: .35;
+  transition: opacity .35s ease, transform .35s ease; }
+#jtl .a-steps li i { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--ink); background: var(--surface);
+  display: flex; align-items: center; justify-content: center; font: 700 12px/1 sans-serif; font-style: normal; color: #fff; transition: background-color .3s ease; }
+#jtl .a-steps li.on { opacity: 1; transform: translateX(4px); }
+#jtl .a-steps li.on i { background: var(--ok); }
+#jtl .a-steps li.on i::after { content: '\\2713'; }
+#jtl .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 22px; }
+#jtl .vs div { padding: 14px 16px; border: 2px solid var(--ink); border-radius: 18px; background: var(--surface); font-size: 14px; color: var(--muted); }
+#jtl .vs div.yes { background: var(--soft); }
+#jtl .vs b { display: block; margin-bottom: 4px; font: 700 13px/1 'JTSplashManrope', sans-serif; color: var(--ink); text-transform: uppercase; letter-spacing: .05em; }
+#jtl .tut { display: inline-flex; align-items: center; gap: 14px; margin-top: 22px; padding: 8px 18px 8px 8px; border: 2px solid var(--ink);
+  border-radius: 20px; background: var(--surface); box-shadow: 4px 4px 0 var(--ink); cursor: pointer; font: 700 15px/1.25 'JTSplashManrope', sans-serif;
+  color: var(--ink); text-align: left; transition: transform .18s ease, box-shadow .18s ease; }
+#jtl .tut:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+#jtl .tut .thumb { position: relative; width: 120px; height: 68px; border-radius: 13px; border: 2px solid var(--ink); overflow: hidden;
+  background: var(--bg) url('/landing/tutorial.jpg') center / cover no-repeat; }
+#jtl .tut .thumb::after { content: ''; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%;
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 6l10 6-10 6z' fill='%23141414'/%3E%3C/svg%3E") 60% 50% / 16px no-repeat;
+  border: 2px solid var(--ink); }
+#jtl .tut small { display: block; margin-top: 3px; font: 500 12px/1 'JTLManrope', sans-serif; color: var(--muted); }
+
+#jtl .browser { position: relative; border: 2px solid var(--ink); border-radius: 24px; background: var(--surface); box-shadow: 6px 6px 0 var(--ink); overflow: hidden; }
+#jtl .browser .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 2px solid var(--ink); background: #F1E9DE; }
+#jtl .browser .bar i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--ink); }
+#jtl .browser .url { flex: 1; margin-left: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--line);
+  font: 500 13px/1 'JTLManrope', sans-serif; color: var(--muted); white-space: nowrap; overflow: hidden; }
+#jtl .browser .page { padding: 20px 24px 24px; }
+#jtl .browser .hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#jtl .browser .hd h4 { margin: 0; font: 700 19px/1.2 'JTSplashUnbounded', sans-serif; }
+#jtl .who { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 5px; border: 2px solid var(--ink); border-radius: 999px;
+  background: var(--soft); font: 700 12px/1 'JTSplashManrope', sans-serif; white-space: nowrap; }
+#jtl .who img { width: 26px; height: 22px; object-fit: contain; }
+#jtl .who.busy img { animation: jtl-bob 1.2s ease-in-out infinite; }
+#jtl .fld { margin-top: 12px; }
+#jtl .fld label { display: block; font: 700 12px/1 'JTSplashManrope', sans-serif; color: var(--muted); }
+#jtl .fld div { display: flex; align-items: center; gap: 8px; margin-top: 6px; height: 38px; padding: 0 12px; border: 2px solid var(--ink); border-radius: 12px;
+  font-size: 14px; transition: border-color .2s ease, background-color .2s ease; }
+#jtl .fld div.typing { border-color: var(--accent); }
+#jtl .fld div.done { background: #FAF6F0; }
+#jtl .fld div.done::after { content: '\\2713'; margin-left: auto; font-weight: 700; color: var(--ok); }
+#jtl .fld div.typing span::after { content: ''; display: inline-block; width: 2px; height: 16px; margin-left: 2px; vertical-align: -3px; background: var(--ink);
+  animation: jtl-caret .8s steps(1) infinite; }
+#jtl .send { margin-top: 16px; height: 44px; border: 2px solid var(--ink); border-radius: 999px; background: var(--accent); display: flex; align-items: center;
+  justify-content: center; font: 700 15px/1 'JTSplashManrope', sans-serif; box-shadow: 3px 3px 0 var(--ink); transition: background-color .3s ease, color .3s ease, transform .2s ease; }
+#jtl .send.sent { background: var(--ok); color: #fff; }
+#jtl .send.press { transform: scale(.96); }
+#jtl .ask { position: absolute; right: 18px; bottom: 76px; max-width: 250px; padding: 12px 14px; border: 2px solid var(--ink); border-radius: 18px 18px 4px 18px;
+  background: var(--surface); box-shadow: 4px 4px 0 var(--ink); font: 700 13px/1.35 'JTSplashManrope', sans-serif;
+  opacity: 0; transform: translateY(14px) scale(.9); transition: opacity .35s ease, transform .4s cubic-bezier(.3,1.4,.5,1); }
+#jtl .ask small { display: block; margin-bottom: 4px; font-size: 11px; color: var(--muted); }
+#jtl .ask.on { opacity: 1; transform: none; }
+@keyframes jtl-caret { 50% { opacity: 0; } }
+
 /* Бегущая лента направлений */
 #jtl .marquee { margin-top: 50px; display: grid; gap: 14px; transform: rotate(-1.5deg); }
 #jtl .row { display: flex; width: max-content; gap: 14px; animation: jtl-run 38s linear infinite; }
@@ -411,6 +472,37 @@ export const LANDING_MARKUP = `
           </div>
         </div>
       </div>
+      <div class="wrap agent" id="jtl-agent">
+        <div>
+          <p class="kicker rv">Юпитер — ваш ИИ-агент</p>
+          <h3 class="rv">Анкеты на сайтах работодателей заполняет он, а не вы</h3>
+          <p class="sub rv">Вы свайпаете вправо — Юпитер сам идёт на сайт компании и откликается от вашего имени. Не нужно заходить на десятки сайтов и вбивать одно и то же.</p>
+          <ol class="a-steps rv" id="jtl-asteps">
+            <li><i></i>Открывает сайт работодателя</li>
+            <li><i></i>Находит анкету отклика</li>
+            <li><i></i>Заполняет её из вашего профиля</li>
+            <li><i></i>Прикладывает резюме и отправляет</li>
+            <li><i></i>Чего не знает — спрашивает вас, а не выдумывает</li>
+          </ol>
+          <div class="vs rv">
+            <div><b>Без JobToo</b>Зайти на сайт, найти анкету, заполнить десяток полей — и так на каждую вакансию</div>
+            <div class="yes"><b>С JobToo</b>Один свайп. Анкету заполнит Юпитер, ответ придёт в чат</div>
+          </div>
+          <button class="tut rv" type="button" data-jtl-tutorial><span class="thumb"></span><span>Смотреть, как это работает<small>Ролик с озвучкой · меньше минуты</small></span></button>
+        </div>
+        <div class="browser rv" aria-hidden="true">
+          <div class="bar"><i style="background:#E5484D"></i><i style="background:#F5B700"></i><i style="background:#2BB673"></i><span class="url">Нимбус Пэй · карьера / вакансии / frontend-разработчик</span></div>
+          <div class="page">
+            <div class="hd"><h4>Анкета кандидата</h4><span class="who" id="jtl-who"><img src="/landing/hero-jup.webp" alt="">Заполняет Юпитер</span></div>
+            <div class="fld"><label>Имя и фамилия</label><div><span></span></div></div>
+            <div class="fld"><label>Телефон</label><div><span></span></div></div>
+            <div class="fld"><label>Почта</label><div><span></span></div></div>
+            <div class="fld"><label>Резюме</label><div><span></span></div></div>
+            <div class="send" id="jtl-send">Отправить</div>
+          </div>
+          <div class="ask" id="jtl-ask"><small>Юпитер спрашивает вас</small>С какой даты готовы выйти на работу?</div>
+        </div>
+      </div>
       <div class="marquee" aria-label="Направления">
         <div class="row">${tags(DIRECTIONS, 0)}</div>
         <div class="row rev">${tags(DIRECTIONS_B, 2)}</div>
@@ -556,6 +648,47 @@ if(stage&&!reduce){
   stage.addEventListener('mouseleave',function(){stage.style.setProperty('--mx','0');stage.style.setProperty('--my','0');});
 }
 
+
+// Юпитер заполняет анкету в «браузере» второго блока: по кругу, пока блок на экране.
+(function(){
+  var box=document.getElementById('jtl-agent');if(!box)return;
+  var fields=box.querySelectorAll('.fld div'),steps=box.querySelectorAll('#jtl-asteps li'),
+      send=document.getElementById('jtl-send'),ask=document.getElementById('jtl-ask'),who=document.getElementById('jtl-who');
+  var VALUES=['Алексей Смирнов','+7 916 123-45-67','a.smirnov@example.ru','Резюме.pdf'];
+  var timers=[],running=false;
+  function at(ms,fn){timers.push(setTimeout(fn,ms));}
+  function reset(){
+    timers.forEach(clearTimeout);timers=[];
+    fields.forEach(function(f){f.className='';f.firstChild.textContent='';});
+    steps.forEach(function(li){li.classList.remove('on');});
+    send.className='send';send.textContent='Отправить';ask.classList.remove('on');who.classList.remove('busy');
+  }
+  function run(){
+    reset();
+    if(reduce){fields.forEach(function(f,i){f.firstChild.textContent=VALUES[i];f.className='done';});
+      steps.forEach(function(li){li.classList.add('on');});send.className='send sent';send.textContent='Отклик отправлен';ask.classList.add('on');return;}
+    var t=300;who.classList.add('busy');
+    at(t,function(){steps[0].classList.add('on');});t+=700;
+    at(t,function(){steps[1].classList.add('on');});t+=500;
+    at(t,function(){steps[2].classList.add('on');});
+    VALUES.forEach(function(v,i){
+      var f=fields[i];
+      at(t,function(){f.className='typing';});
+      for(var k=1;k<=v.length;k++)(function(k){at(t+k*45,function(){f.firstChild.textContent=v.slice(0,k);});})(k);
+      t+=v.length*45+220;
+      at(t,function(){f.className='done';});
+    });
+    at(t,function(){steps[3].classList.add('on');send.classList.add('press');});t+=250;
+    at(t,function(){send.className='send sent';send.textContent='Отклик отправлен';who.classList.remove('busy');});t+=900;
+    at(t,function(){steps[4].classList.add('on');ask.classList.add('on');});t+=3200;
+    at(t,function(){if(running)run();});
+  }
+  new IntersectionObserver(function(es){es.forEach(function(en){
+    if(en.isIntersecting&&!running){running=true;run();}
+    else if(!en.isIntersecting&&running){running=false;reset();}
+  });},{root:root,threshold:.35}).observe(box);
+})();
+
 // Заголовки по словам: каждое слово в своей «щели», выезжает снизу с задержкой.
 root.querySelectorAll('.split').forEach(function(h){
   var i=0;
@@ -583,12 +716,17 @@ var MP4=!!video&&!!video.canPlayType('video/mp4; codecs="avc1.42E01E"');
 var SRC=MP4?'/landing/hero.mp4':'/landing/hero.webm';
 // В окне «Смотреть ролик» — рекламная версия: заставка, сюжет, «Скачайте в RuStore».
 var PROMO=MP4?'/landing/promo.mp4':'/landing/promo.webm';
+// Обучающий ролик с озвучкой (второй блок) — в то же окно.
+var TUTORIAL=MP4?'/landing/tutorial.mp4':'/landing/tutorial.webm';
 if(video&&!reduce){video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
 var modal=document.getElementById('jtl-modal'),mv=document.getElementById('jtl-modal-video');
 function closeModal(){modal.classList.remove('on');mv.pause();}
 root.addEventListener('click',function(e){
-  if(e.target.closest('[data-jtl-reel]')){
-    if(!mv.src)mv.src=PROMO;modal.classList.add('on');mv.currentTime=0;
+  var reel=e.target.closest('[data-jtl-reel]'),tut=e.target.closest('[data-jtl-tutorial]');
+  if(reel||tut){
+    var want=tut?TUTORIAL:PROMO;
+    if(mv.getAttribute('src')!==want)mv.setAttribute('src',want);
+    modal.classList.add('on');mv.currentTime=0;
     var q=mv.play();if(q&&q.catch)q.catch(function(){});return;
   }
   if(e.target.closest('[data-jtl-close]')||e.target===modal)closeModal();
