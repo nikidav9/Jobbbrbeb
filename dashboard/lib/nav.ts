@@ -28,24 +28,16 @@ export const GROUPS: Group[] = ['Обзор', 'Люди', 'Работа', 'Об�
 
 export const NAV: NavItem[] = [
   { href: '/',            label: 'Обзор',                short: 'Обзор',    icon: 'grid',    group: 'Обзор' },
-  { href: '/summary',     label: 'Сводка',                                  icon: 'summary', group: 'Обзор' },
   { href: '/users',       label: 'Пользователи',         short: 'Люди',     icon: 'users',   group: 'Люди' },
-  { href: '/last-seen',   label: 'Последний вход',       short: 'Входы',    icon: 'clock',   group: 'Люди' },
   { href: '/dormant',     label: 'Ни разу не заходили',  short: 'Спящие',   icon: 'clock',   group: 'Люди' },
   { href: '/vacancies',   label: 'Вакансии',                                icon: 'jobs',    group: 'Работа' },
   { href: '/external',    label: 'Внешние вакансии',     short: 'Внешние',  icon: 'jobs',    group: 'Работа' },
   { href: '/jupiter',     label: 'Юпитер',                                  icon: 'funnel',  group: 'Работа' },
   { href: '/support',     label: 'Поддержка',                               icon: 'ticket',  group: 'Общение' },
-  { href: '/engagement',  label: 'Активность',                              icon: 'pulse',   group: 'Аналитика' },
-  { href: '/chats',       label: 'Переписки',            short: 'Чаты',     icon: 'chat',    group: 'Общение' },
-  { href: '/moderation',  label: 'Модерация',                               icon: 'shield',  group: 'Работа' },
-  { href: '/tickets',     label: 'Тикеты',                                  icon: 'ticket',  group: 'Общение' },
   { href: '/broadcast',   label: 'Рассылка',                                icon: 'bell',    group: 'Общение' },
   { href: '/health',      label: 'Доступность',          short: 'Аптайм',   icon: 'pulse',   group: 'Система' },
   { href: '/api-keys',    label: 'Ключи API',            short: 'API',      icon: 'shield',  group: 'Система' },
   { href: '/funnel',      label: 'Воронка',                                 icon: 'funnel',  group: 'Аналитика' },
-  { href: '/cohorts',     label: 'Когорты',                                 icon: 'cohort',  group: 'Аналитика' },
-  { href: '/activity',    label: 'Лог действий',         short: 'Лог',      icon: 'pulse',   group: 'Аналитика' },
 ]
 
 /** Название раздела по адресу — для заголовка страницы. */
