@@ -423,6 +423,57 @@ MARK_CLICK_LISTENERS_JS = r"""
 """
 
 
+class _RequestTracker:
+    """Незавершённые запросы вкладки и время последней перемены (сеть, переход)."""
+
+    def __init__(self, tab: Any):
+        self.tab = tab
+        self.inflight: dict[Any, float] = {}
+        self.changed = time.monotonic()
+
+    def touch(self) -> None:
+        self.changed = time.monotonic()
+
+    def _on_request(self, request: Any) -> None:
+        try:
+            if request.resource_type in WATCH_IGNORED_RESOURCES:
+                return
+        except PlaywrightError:
+            return
+        self.inflight[request] = time.monotonic()
+        self.touch()
+
+    def _on_done(self, request: Any) -> None:
+        self.inflight.pop(request, None)
+        self.touch()
+
+    def _on_navigated(self, frame: Any) -> None:
+        try:
+            if frame == self.tab.main_frame:
+                self.touch()
+        except PlaywrightError:
+            pass
+
+    def busy(self, now: float) -> bool:
+        """Есть запрос, который ещё ждёт ответа (long-poll дольше лимита не в счёт)."""
+        return any((now - t) * 1000 < WATCH_LONG_REQUEST_MS for t in self.inflight.values())
+
+    def start(self) -> "_RequestTracker":
+        self.tab.on("request", self._on_request)
+        self.tab.on("requestfinished", self._on_done)
+        self.tab.on("requestfailed", self._on_done)
+        self.tab.on("framenavigated", self._on_navigated)
+        return self
+
+    def stop(self) -> None:
+        for event, handler in (("request", self._on_request), ("requestfinished", self._on_done),
+                               ("requestfailed", self._on_done), ("framenavigated", self._on_navigated)):
+            try:
+                self.tab.remove_listener(event, handler)
+            except Exception:  # noqa: BLE001 - вкладка могла закрыться
+                pass
+
+
 class JupiterBrowserEngine:
     name = "jupiter-browser-engine"
     """Chromium с интерфейсом JupiterWebEngine."""
@@ -666,7 +717,13 @@ class JupiterBrowserEngine:
                 self._tab.wait_for_timeout(300 * (i + 1))
         raise EngineTransportError(f"Страница не устоялась после перехода: {last}") from last
 
-    def _watch_after_submit(self, toasts: list[str], actions_from: int, popups_from: int) -> None:
+    def _track_requests(self) -> "_RequestTracker":
+        """Счётчик незавершённых запросов и перемен — ставить ДО клика: fetch
+        уходит во время самого клика, и после него событие request уже прошло."""
+        return _RequestTracker(self._tab).start()
+
+    def _watch_after_submit(self, tracker: "_RequestTracker", toasts: list[str],
+                            actions_from: int, popups_from: int) -> None:
         """Окно наблюдения после клика «Отправить» вместо фиксированной паузы.
 
         Ждёт, пока сайт ответит и покажет результат: нет незавершённых
@@ -677,63 +734,32 @@ class JupiterBrowserEngine:
         """
         tab = self._tab
         min_ms = max(WATCH_MIN_MS, self.settle_ms)
-        inflight: dict[Any, float] = {}
-        changed = [time.monotonic()]
-
-        def touch() -> None:
-            changed[0] = time.monotonic()
-
-        def on_request(request: Any) -> None:
-            try:
-                if request.resource_type in WATCH_IGNORED_RESOURCES:
-                    return
-            except PlaywrightError:
-                return
-            inflight[request] = time.monotonic()
-            touch()
-
-        def on_done(request: Any) -> None:
-            inflight.pop(request, None)
-            touch()
-
-        def on_navigated(frame: Any) -> None:
-            if frame == tab.main_frame:
-                touch()
 
         def grab() -> None:
             text = browser_success.toast_text(tab)
             if text and text not in toasts:
                 toasts.append(text)
 
-        tab.on("request", on_request)
-        tab.on("requestfinished", on_done)
-        tab.on("requestfailed", on_done)
-        tab.on("framenavigated", on_navigated)
         started = time.monotonic()
         try:
             while True:
                 grab()
                 try:
                     age_ms = tab.evaluate(DOM_QUIET_JS)
-                    changed[0] = max(changed[0], time.monotonic() - age_ms / 1000.0)
+                    tracker.changed = max(tracker.changed, time.monotonic() - age_ms / 1000.0)
                 except PlaywrightError:
-                    touch()  # страница переходит — тишины ещё нет
+                    tracker.touch()  # страница переходит — тишины ещё нет
                 now = time.monotonic()
                 elapsed_ms = (now - started) * 1000
-                busy = [r for r, t in inflight.items() if (now - t) * 1000 < WATCH_LONG_REQUEST_MS]
                 if elapsed_ms >= WATCH_MAX_MS:
                     break
-                if elapsed_ms >= min_ms and not busy and (now - changed[0]) * 1000 >= WATCH_QUIET_MS:
+                if (elapsed_ms >= min_ms and not tracker.busy(now)
+                        and (now - tracker.changed) * 1000 >= WATCH_QUIET_MS):
                     break
                 tab.wait_for_timeout(TOAST_POLL_MS)
             grab()
         finally:
-            for event, handler in (("request", on_request), ("requestfinished", on_done),
-                                   ("requestfailed", on_done), ("framenavigated", on_navigated)):
-                try:
-                    tab.remove_listener(event, handler)
-                except Exception:  # noqa: BLE001 - вкладка могла закрыться
-                    pass
+            tracker.stop()
         # Тексты alert/confirm и нового окна — в доказательства.
         extra = [a.get("message", "") for a in self.actions[actions_from:]
                  if a.get("action") == "guard_dialog"]
@@ -1072,6 +1098,7 @@ class JupiterBrowserEngine:
         actions_from = len(self.actions)
         popups_from = len(self._popup_texts)
         self._after_submit = True
+        tracker = self._track_requests()
         try:
             try:
                 # Наблюдатель за DOM — до клика, чтобы не пропустить первую перемену.
@@ -1095,8 +1122,9 @@ class JupiterBrowserEngine:
                     self.last_submit_mode = "browser_enter"
             except PlaywrightError as exc:
                 raise EngineTransportError(f"Отправка не удалась: {exc}") from exc
-            self._watch_after_submit(toasts, actions_from, popups_from)
+            self._watch_after_submit(tracker, toasts, actions_from, popups_from)
         finally:
+            tracker.stop()
             # Запись ответов — только после окна наблюдения: API отвечает и через 3 с.
             responses = recorder.stop()
             self._after_submit = False
@@ -1139,7 +1167,7 @@ class JupiterBrowserEngine:
 
     def _record_api_result(self, responses: list[dict[str, Any]]) -> None:
         verdict = browser_success.classify(responses)
-        if verdict["api_success"] or verdict["api_error"]:
+        if verdict["api_success"] or verdict["api_error"] or verdict["api_2xx"]:
             self.last_api_result = verdict
             self.actions.append({"action": "api_result", **verdict})
 
