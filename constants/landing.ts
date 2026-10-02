@@ -21,9 +21,16 @@
  *    документы, приглашения открывают приложение как раньше.
  *
  * Цифры на сайте — факты о продукте, а не статистика (её у IT-приложения ещё
- * нет): отклик бесплатен, 15 откликов в день (services/energy.ts), анкету на
- * сайте работодателя заполняет Юпитер. Изменились правила — поправь и здесь.
+ * нет): отклик бесплатен, DAILY_ENERGY откликов в день (services/energy.ts),
+ * число компаний — из перечня Юпитера (constants/jupiterEmployers.ts), округлено
+ * вниз до сотен. Числа подставляются из кода — правилам и сайту не разойтись.
  */
+
+import { DAILY_ENERGY } from '../services/energy.ts';
+import { JUPITER_EMPLOYERS } from './jupiterEmployers.ts';
+
+/** Компаний в перечне Юпитера — вниз до сотен: «500+» правда, пока их не меньше 500. */
+const EMPLOYERS_FLOOR = Math.floor(JUPITER_EMPLOYERS.length / 100) * 100;
 
 /** RuStore — нынешний пакет. Выйдет ru.jobtoo — заменить ссылку. */
 const RUSTORE_URL = 'https://www.rustore.ru/catalog/app/com.nikidav23.onspaceapp';
@@ -62,71 +69,75 @@ html.jt-landing #root { visibility: hidden; }
   --muted: #5C554D; --line: #E3D9CC; --ok: #2BB673;
   position: fixed; inset: 0; z-index: 10000; overflow-y: auto; overflow-x: hidden;
   background: var(--bg); color: var(--ink); scroll-behavior: smooth;
-  font: 500 17px/1.55 'JTLManrope', 'JTSplashManrope', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font: 500 15px/1.55 'JTLManrope', 'JTSplashManrope', -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 #jtl *, #jtl *::before, #jtl *::after { box-sizing: border-box; }
+#jtl [hidden] { display: none !important; }
 #jtl a { color: inherit; text-decoration: none; }
 #jtl h1, #jtl h2, #jtl h3 { margin: 0; font-family: 'JTSplashUnbounded', -apple-system, 'Segoe UI', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
 #jtl p { margin: 0; }
-#jtl .wrap { width: min(1200px, calc(100% - 64px)); margin: 0 auto; }
+#jtl .wrap { width: min(1120px, calc(100% - 64px)); margin: 0 auto; }
 
 /* Кнопки — «наклейки» JobToo: обводка 2px и жёсткая тень, при наведении поднимаются */
-#jtl .btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 26px; border: 2px solid var(--ink);
+#jtl .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border: 2px solid var(--ink);
   border-radius: 999px; background: var(--surface); color: var(--ink); cursor: pointer;
-  font: 700 16px/1 'JTSplashManrope', -apple-system, sans-serif; box-shadow: 4px 4px 0 var(--ink);
+  font: 700 15px/1 'JTSplashManrope', -apple-system, sans-serif; box-shadow: 3px 3px 0 var(--ink);
   transition: transform .18s ease, box-shadow .18s ease; }
-#jtl .btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+#jtl .btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
 #jtl .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
 #jtl .btn-accent { background: var(--accent); }
-#jtl .btn-sm { padding: 10px 18px; font-size: 14px; box-shadow: 3px 3px 0 var(--ink); }
+#jtl .btn-sm { padding: 9px 16px; font-size: 13px; box-shadow: 3px 3px 0 var(--ink); }
 #jtl .btn:focus-visible, #jtl a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 
 /* Шапка */
-#jtl .top { position: sticky; top: 0; z-index: 5; padding: 14px 0; background: rgba(245,239,230,.86);
+#jtl .top { position: sticky; top: 0; z-index: 5; padding: 12px 0; background: rgba(245,239,230,.86);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid transparent;
   transition: border-color .2s ease; }
 #jtl .top.scrolled { border-bottom-color: var(--line); }
 #jtl .top .wrap { display: flex; align-items: center; gap: 28px; }
-#jtl .brand { display: flex; align-items: center; gap: 10px; font: 700 20px/1 'JTSplashUnbounded', sans-serif; }
-#jtl .brand img { width: 40px; height: 40px; border: 2px solid var(--ink); border-radius: 12px; background: var(--surface); padding: 4px; }
-#jtl .nav { display: flex; gap: 26px; margin-left: auto; }
-#jtl .nav a { font-weight: 700; font-family: 'JTSplashManrope', sans-serif; font-size: 15px; position: relative; }
+#jtl .brand { display: flex; align-items: center; gap: 9px; font: 700 17px/1 'JTSplashUnbounded', sans-serif; letter-spacing: -0.02em; }
+/* Знак 288×186 — вписываем, а не растягиваем: в квадрате без object-fit его сплющивало */
+#jtl .brand img { width: 34px; height: 34px; object-fit: contain; border: 2px solid var(--ink); border-radius: 10px; background: var(--surface); padding: 5px 4px; }
+#jtl .nav { display: flex; gap: 24px; margin-left: auto; }
+#jtl .nav a { font-weight: 700; font-family: 'JTSplashManrope', sans-serif; font-size: 14px; position: relative; }
 #jtl .nav a::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 2px; background: var(--accent);
   transform: scaleX(0); transform-origin: left; transition: transform .2s ease; }
 #jtl .nav a:hover::after { transform: scaleX(1); }
-#jtl .top .actions { display: flex; gap: 12px; }
+#jtl .top .actions { display: flex; gap: 10px; }
 
 /* Первый экран — как у sorce.jobs: ролик на всю рамку, затемнение, заголовок по центру.
    Ролик собран в Remotion (video/), подставляется скриптом только на компьютере:
    на телефоне сайт скрыт, и 1,7 МБ не качаются зря. */
 #jtl .hero { padding: 18px 0 30px; }
-#jtl .hero-frame { position: relative; min-height: calc(100vh - 110px); display: flex; flex-direction: column;
-  align-items: center; justify-content: center; text-align: center; padding: 90px 40px; color: #fff;
-  border: 2px solid var(--ink); border-radius: 36px; box-shadow: 8px 8px 0 var(--ink); overflow: hidden;
+#jtl .hero-frame { position: relative; min-height: min(760px, calc(100vh - 100px)); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 70px 40px; color: var(--ink);
+  border: 2px solid var(--ink); border-radius: 30px; box-shadow: 6px 6px 0 var(--ink); overflow: hidden;
   background: var(--ink) url('/landing/hero.jpg') center / cover no-repeat; }
 #jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: jtl-zoom 20s ease-out both; }
-#jtl .hero-shade { position: absolute; inset: 0;
-  background: radial-gradient(ellipse 60% 70% at 50% 50%, rgba(20,20,20,.66), rgba(20,20,20,.34)),
-              linear-gradient(180deg, rgba(20,20,20,.28), rgba(20,20,20,.5)); }
-#jtl .hero-in { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+/* Ролик виден почти без вуали; читаемость даёт светлая плашка под текстом, а не затемнение */
+#jtl .hero-shade { position: absolute; inset: 0; background: rgba(20,20,20,.08); }
+#jtl .hero-in { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center;
+  max-width: 720px; padding: 34px 44px 30px; border: 2px solid var(--ink); border-radius: 28px;
+  background: rgba(245,239,230,.94); box-shadow: 6px 6px 0 var(--ink);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 #jtl .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 8px 15px; border: 2px solid var(--ink);
   border-radius: 999px; background: var(--surface); color: var(--ink); font: 700 13px/1 'JTSplashManrope', sans-serif;
-  margin-bottom: 28px; animation: jtl-fade .7s ease .1s both; }
+  margin-bottom: 20px; animation: jtl-fade .7s ease .1s both; }
 #jtl .eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: jtl-pulse 1.8s ease-in-out infinite; }
-#jtl .hero h1 { font-size: clamp(56px, 7.2vw, 118px); line-height: .98; text-transform: uppercase; }
-#jtl .hero h1 .mark { color: var(--accent); text-shadow: 5px 5px 0 var(--ink); }
-#jtl .hero h1 .line { display: block; overflow: hidden; white-space: nowrap; padding: 0 10px 10px; }
+#jtl .hero h1 { font-size: clamp(38px, 4.4vw, 64px); line-height: 1; text-transform: uppercase; }
+#jtl .hero h1 .mark { color: var(--accent); text-shadow: 3px 3px 0 var(--ink); }
+#jtl .hero h1 .line { display: block; overflow: hidden; white-space: nowrap; padding: 0 6px 6px; }
 #jtl .hero h1 .line > span { display: inline-block; animation: jtl-rise 1s cubic-bezier(.2,.8,.2,1) .15s both; }
 #jtl .hero h1 .line:nth-child(2) > span { animation-delay: .3s; }
-#jtl .hero .lead { max-width: 640px; margin-top: 26px; font-size: 21px; color: rgba(255,255,255,.9); animation: jtl-fade .8s ease .5s both; }
-#jtl .hero .cta { display: flex; gap: 16px; margin-top: 36px; animation: jtl-fade .8s ease .65s both; }
-#jtl .hero .note { margin-top: 18px; font-size: 14px; color: rgba(255,255,255,.72); animation: jtl-fade .8s ease .75s both; }
+#jtl .hero .lead { max-width: 560px; margin-top: 16px; font-size: 17px; color: var(--muted); animation: jtl-fade .8s ease .5s both; }
+#jtl .hero .cta { display: flex; gap: 14px; margin-top: 24px; animation: jtl-fade .8s ease .65s both; }
+#jtl .hero .note { margin-top: 14px; font-size: 13px; color: var(--muted); animation: jtl-fade .8s ease .75s both; }
 #jtl .qr { position: absolute; right: 22px; bottom: 22px; z-index: 2; display: flex; align-items: center; gap: 12px;
   padding: 10px 16px 10px 10px; border: 2px solid var(--ink); border-radius: 18px; background: var(--surface); color: var(--ink);
   box-shadow: 4px 4px 0 var(--ink); text-align: left; animation: jtl-fade .8s ease .9s both; transition: transform .2s ease; }
 #jtl .qr:hover { transform: translate(-2px, -2px) rotate(-1deg); }
-#jtl .qr svg { width: 84px; height: 84px; display: block; }
+#jtl .qr svg { width: 72px; height: 72px; display: block; }
 #jtl .qr span { max-width: 130px; font: 700 12px/1.35 'JTSplashManrope', sans-serif; }
 /* Окошко-превью слева сверху: открывает ролик целиком */
 #jtl .reel { position: absolute; left: 22px; top: 22px; z-index: 2; width: 168px; height: 100px; padding: 0; cursor: pointer;
@@ -142,29 +153,47 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .modal.on { display: flex; animation: jtl-fade .25s ease both; }
 #jtl .modal video { width: min(1280px, 100%); border: 3px solid #fff; border-radius: 26px; background: var(--ink); }
 #jtl .modal .close { position: absolute; top: 22px; right: 26px; }
+/* Документы — на самом сайте, без загрузки приложения (public/landing/docs.json) */
+#jtl .modal.doc { align-items: stretch; padding: 40px; }
+#jtl .doc-card { position: relative; width: min(820px, 100%); margin: 0 auto; display: flex; flex-direction: column;
+  border: 2px solid var(--ink); border-radius: 26px; background: var(--bg); box-shadow: 6px 6px 0 var(--accent); overflow: hidden; }
+#jtl .doc-head { display: flex; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+#jtl .doc-head .close-doc { margin-left: auto; }
+#jtl .doc-body { flex: 1; overflow-y: auto; padding: 26px 34px 34px; outline: none; }
+#jtl .doc-body h3 { font-size: 22px; line-height: 1.2; }
+#jtl .doc-body h4 { margin: 22px 0 6px; font: 700 15px/1.3 'JTSplashManrope', sans-serif; }
+#jtl .doc-body .date { margin-top: 6px; font-size: 13px; color: var(--muted); }
+#jtl .doc-body p { white-space: pre-line; font-size: 14px; color: #2E2A26; }
+#jtl .doc-body p + p { margin-top: 10px; }
+#jtl .doc-list { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 10px; }
+#jtl .doc-list button { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px;
+  border: 2px solid var(--ink); border-radius: 16px; background: var(--surface); cursor: pointer; text-align: left;
+  font: 700 15px/1.3 'JTSplashManrope', sans-serif; color: var(--ink); }
+#jtl .doc-list button:hover { background: var(--soft); }
+#jtl .doc-list small { font: 500 12px/1 'JTLManrope', sans-serif; color: var(--muted); white-space: nowrap; }
 
 /* Секции */
-#jtl section.block { padding: 110px 0 40px; }
-#jtl .kicker { font: 700 14px/1 'JTSplashManrope', sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
-#jtl h2 { margin-top: 14px; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.05; }
-#jtl .sub { margin-top: 16px; max-width: 640px; font-size: 19px; color: var(--muted); }
+#jtl section.block { padding: 84px 0 30px; }
+#jtl .kicker { font: 700 13px/1 'JTSplashManrope', sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+#jtl h2 { margin-top: 12px; font-size: clamp(28px, 2.7vw, 40px); line-height: 1.08; }
+#jtl .sub { margin-top: 12px; max-width: 600px; font-size: 16px; color: var(--muted); }
 /* История на прокрутке: сцена прилипает, герои разыгрывают сюжет по мере прокрутки.
    Сцена задаётся data-scene (1–3) у #jtl-stage, внутри сцены ход — переменная --lp. */
-#jtl .story { position: relative; height: 330vh; margin-top: 40px; }
+#jtl .story { position: relative; height: 190vh; margin-top: 24px; }
 #jtl .story-pin { position: sticky; top: 72px; height: calc(100vh - 72px); display: flex; align-items: center; }
 #jtl .story-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; align-items: center; }
 #jtl .story-steps { list-style: none; margin: 34px 0 0; padding: 0; display: grid; gap: 14px; }
-#jtl .story-steps li { padding: 20px 24px; border: 2px solid transparent; border-radius: 24px; opacity: .38;
+#jtl .story-steps li { padding: 16px 20px; border: 2px solid transparent; border-radius: 24px; opacity: .38;
   transition: opacity .35s ease, background-color .35s ease, border-color .35s ease, transform .35s ease, box-shadow .35s ease; }
 #jtl .story-steps li.on { opacity: 1; background: var(--surface); border-color: var(--ink); box-shadow: 6px 6px 0 var(--ink); transform: translateX(8px); }
 #jtl .story-steps b { font: 700 14px/1 'JTSplashUnbounded', sans-serif; color: var(--accent); }
-#jtl .story-steps h3 { margin-top: 8px; font-size: 26px; }
+#jtl .story-steps h3 { margin-top: 6px; font-size: 20px; }
 #jtl .story-steps p { margin-top: 8px; color: var(--muted); }
 #jtl .story-bar { margin-top: 26px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
 #jtl .story-bar i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: var(--accent); border-radius: 4px; }
 
-#jtl .stage { position: relative; height: min(640px, calc(100vh - 140px)); border: 2px solid var(--ink); border-radius: 36px;
-  background: #F7ECE0; box-shadow: 8px 8px 0 var(--ink); overflow: hidden; --mx: 0; --my: 0; }
+#jtl .stage { position: relative; height: min(560px, calc(100vh - 140px)); border: 2px solid var(--ink); border-radius: 30px;
+  background: #F7ECE0; box-shadow: 6px 6px 0 var(--ink); overflow: hidden; --mx: 0; --my: 0; }
 #jtl .stage::before { content: ''; position: absolute; inset: 0; pointer-events: none;
   background-image: radial-gradient(rgba(150,105,70,.16) 2px, transparent 2.5px); background-size: 34px 34px; }
 /* Герои — 3D-картинки владельца (public/landing/hero-*.webp, фон картинки = фон
@@ -212,25 +241,26 @@ html.jt-landing #root { visibility: hidden; }
   background: var(--surface); font: 700 13px/1 'JTSplashManrope', sans-serif; }
 
 /* Бегущая лента направлений */
-#jtl .marquee { margin-top: 70px; display: grid; gap: 14px; transform: rotate(-1.5deg); }
+#jtl .marquee { margin-top: 50px; display: grid; gap: 14px; transform: rotate(-1.5deg); }
 #jtl .row { display: flex; width: max-content; gap: 14px; animation: jtl-run 38s linear infinite; }
 #jtl .row.rev { animation-direction: reverse; animation-duration: 44s; }
 #jtl .marquee:hover .row { animation-play-state: paused; }
-#jtl .tag { padding: 14px 24px; border: 2px solid var(--ink); border-radius: 999px; background: var(--surface);
-  font: 700 18px/1 'JTSplashUnbounded', sans-serif; white-space: nowrap; }
+#jtl .tag { padding: 11px 20px; border: 2px solid var(--ink); border-radius: 999px; background: var(--surface);
+  font: 700 15px/1 'JTSplashUnbounded', sans-serif; white-space: nowrap; }
 #jtl .tag.hot { background: var(--accent); }
 #jtl .tag.soft { background: var(--soft); }
 
 /* Цифры */
-#jtl .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; margin-top: 54px; }
-#jtl .stat { padding: 34px 28px; border: 2px solid var(--ink); border-radius: 28px; background: var(--surface); box-shadow: 6px 6px 0 var(--ink); }
-#jtl .stat b { display: block; font: 700 clamp(46px, 4.6vw, 68px)/1 'JTSplashUnbounded', sans-serif; letter-spacing: -0.03em; }
+#jtl .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 40px; }
+#jtl .stat { padding: 28px 26px; border: 2px solid var(--ink); border-radius: 24px; background: var(--surface); box-shadow: 5px 5px 0 var(--ink); }
+#jtl .stat b { display: block; min-height: 1em; font: 700 clamp(36px, 3.4vw, 50px)/1 'JTSplashUnbounded', sans-serif; letter-spacing: -0.03em; }
+#jtl .stat b.word { font-size: clamp(28px, 2.6vw, 38px); line-height: 1.32; }
 #jtl .stat b em { font-style: normal; color: var(--accent); }
-#jtl .stat > span { display: block; margin-top: 14px; font-size: 17px; color: var(--muted); }
+#jtl .stat > span { display: block; margin-top: 12px; font-size: 15px; color: var(--muted); }
 
 /* Работодателям */
-#jtl .emp { display: grid; grid-template-columns: 1.2fr .8fr; gap: 40px; align-items: center; padding: 56px 64px;
-  border: 2px solid var(--ink); border-radius: 36px; background: var(--ink); color: var(--bg); box-shadow: 8px 8px 0 var(--accent); }
+#jtl .emp { display: grid; grid-template-columns: 1.2fr .8fr; gap: 36px; align-items: center; padding: 44px 52px;
+  border: 2px solid var(--ink); border-radius: 30px; background: var(--ink); color: var(--bg); box-shadow: 6px 6px 0 var(--accent); }
 #jtl .emp .kicker { color: var(--accent); }
 #jtl .emp .sub { color: #CFC4B6; }
 #jtl .emp ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
@@ -239,14 +269,16 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .emp .btn { margin-top: 28px; }
 
 /* Финальный призыв и подвал */
-#jtl .final { padding: 120px 0 70px; text-align: center; }
-#jtl .final h2 { font-size: clamp(40px, 5vw, 76px); text-transform: uppercase; }
+#jtl .final { padding: 90px 0 50px; text-align: center; }
+#jtl .final h2 { font-size: clamp(30px, 3.4vw, 50px); text-transform: uppercase; }
 #jtl .final .cta { display: flex; justify-content: center; gap: 16px; margin-top: 34px; }
 #jtl footer { border-top: 1px solid var(--line); padding: 34px 0 44px; }
 #jtl footer .wrap { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
-#jtl footer .links { display: flex; gap: 22px; margin-left: auto; flex-wrap: wrap; font-size: 15px; }
+#jtl footer .links { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; font-size: 14px; }
+#jtl footer .links button { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+#jtl footer .links button:hover { color: var(--accent); }
 #jtl footer .links a:hover { color: var(--accent); }
-#jtl footer small { font-size: 14px; color: var(--muted); }
+#jtl footer small { font-size: 13px; color: var(--muted); }
 
 /* Заголовки разделов проявляются по словам (как у sorce) */
 #jtl .rv.split { opacity: 1; transform: none; }
@@ -255,11 +287,11 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .split.in .w > span { transform: none; }
 
 /* Огромное «JobToo» в подвале, как «Sorce» у образца: переливается и встаёт при прокрутке */
-#jtl .giant { padding: 40px 0 10px; text-align: center; overflow: hidden; }
-#jtl .giant b { display: block; font: 700 clamp(120px, 20vw, 330px)/.92 'JTSplashUnbounded', sans-serif; letter-spacing: -0.055em;
+#jtl .giant { padding: 30px 0 10px; text-align: center; overflow: hidden; }
+#jtl .giant b { display: block; font: 700 clamp(84px, 12vw, 190px)/.95 'JTSplashUnbounded', sans-serif; letter-spacing: -0.04em;
   background: linear-gradient(100deg, var(--accent) 0%, #FFB37A 35%, var(--accent) 55%, #FF8A3D 100%); background-size: 220% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent; animation: jtl-shine 7s linear infinite; }
-#jtl .giant span { display: block; margin-top: 10px; font-size: 20px; color: var(--muted); }
+#jtl .giant span { display: block; margin-top: 8px; font-size: 16px; color: var(--muted); }
 
 /* Появление при прокрутке */
 #jtl .rv { opacity: 0; transform: translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
@@ -390,9 +422,9 @@ export const LANDING_MARKUP = `
         <p class="kicker rv">Почему JobToo</p>
         <h2 class="rv split">Честные цифры с первого дня</h2>
         <div class="stats">
-          <div class="stat rv"><b><span data-count-from="990" data-count-to="0">0</span><em> ₽</em></b><span>для соискателя — отклики бесплатны</span></div>
-          <div class="stat rv"><b><span data-count-from="0" data-count-to="15">15</span></b><span>откликов в день — осмысленно, а не по шаблону</span></div>
-          <div class="stat rv"><b>1<em>&nbsp;=&nbsp;</em>1</b><span>один свайп — один отклик на сайте работодателя</span></div>
+          <div class="stat rv"><b class="word">Бесплатно</b><span>для соискателя — все отклики и чат с работодателем</span></div>
+          <div class="stat rv"><b><span data-count-from="0" data-count-to="${DAILY_ENERGY}">${DAILY_ENERGY}</span></b><span>откликов в день — осмысленно, а не по шаблону</span></div>
+          <div class="stat rv"><b><span data-count-from="0" data-count-to="${EMPLOYERS_FLOOR}">${EMPLOYERS_FLOOR}</span><em>+</em></b><span>компаний, на сайтах которых Юпитер откликается за вас</span></div>
         </div>
       </div>
     </section>
@@ -408,7 +440,7 @@ export const LANDING_MARKUP = `
           </div>
           <ul>
             <li>Вакансия в общей ленте IT-вакансий</li>
-            <li>Отклик — осознанный выбор: у кандидата 15 откликов в день</li>
+            <li>Отклик — осознанный выбор: у кандидата ${DAILY_ENERGY} откликов в день</li>
             <li>Переписка с кандидатом в чате, без лишних писем</li>
           </ul>
         </div>
@@ -433,14 +465,24 @@ export const LANDING_MARKUP = `
     <video id="jtl-modal-video" controls playsinline loop preload="none"></video>
   </div>
 
+  <div class="modal doc" id="jtl-doc" role="dialog" aria-modal="true" aria-label="Документы JobToo">
+    <article class="doc-card">
+      <div class="doc-head">
+        <button class="btn btn-sm" type="button" data-jtl-doc-back hidden>← Все документы</button>
+        <button class="btn btn-sm close-doc" type="button" data-jtl-close>Закрыть</button>
+      </div>
+      <div class="doc-body" id="jtl-doc-body" tabindex="-1"></div>
+    </article>
+  </div>
+
   <footer>
     <div class="wrap">
       <a class="brand" href="/"><img src="/splash/logo.png" alt="" />JobToo</a>
       <small>Работа в IT — свайпом</small>
       <nav class="links" aria-label="Документы и контакты">
-        <a href="/legal?doc=terms">Соглашение</a>
-        <a href="/legal?doc=privacy">Политика конфиденциальности</a>
-        <a href="/legal">Документы</a>
+        <button type="button" data-jtl-doc="terms">Соглашение</button>
+        <button type="button" data-jtl-doc="privacy">Политика конфиденциальности</button>
+        <button type="button" data-jtl-doc="">Документы</button>
         <a href="https://t.me/JobToo_bot" target="_blank" rel="noopener">Telegram</a>
         <a href="mailto:support@jobtoo.ru">support@jobtoo.ru</a>
       </nav>
@@ -551,5 +593,49 @@ root.addEventListener('click',function(e){
   }
   if(e.target.closest('[data-jtl-close]')||e.target===modal)closeModal();
 });
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal.classList.contains('on'))closeModal();});
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape')return;
+  if(modal.classList.contains('on'))closeModal();
+  if(docModal.classList.contains('on'))docModal.classList.remove('on');
+});
+
+// Документы: открываются здесь же, в окне, тексты — /landing/docs.json (из constants/legal.ts).
+var docModal=document.getElementById('jtl-doc'),docBody=document.getElementById('jtl-doc-body'),
+    docBack=docModal.querySelector('[data-jtl-doc-back]'),docsP=null;
+function el(tag,text,cls){var n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;}
+function loadDocs(){
+  if(!docsP)docsP=fetch('/landing/docs.json').then(function(r){if(!r.ok)throw new Error(r.status);return r.json();})
+    .catch(function(e){docsP=null;throw e;});
+  return docsP;
+}
+function showDoc(key){
+  docModal.classList.add('on');docBody.textContent='Загружаем…';
+  loadDocs().then(function(data){
+    docBody.textContent='';docBody.scrollTop=0;
+    var doc=null;data.docs.forEach(function(d){if(d.key===key)doc=d;});
+    docBack.hidden=!doc;
+    if(!doc){
+      docBody.appendChild(el('h3','Документы'));
+      var ul=el('ul','', 'doc-list');
+      data.docs.forEach(function(d){
+        var li=el('li'),b=el('button',d.title);b.type='button';b.setAttribute('data-jtl-doc',d.key);
+        b.appendChild(el('small','от '+d.date));li.appendChild(b);ul.appendChild(li);
+      });
+      docBody.appendChild(ul);
+    }else{
+      docBody.appendChild(el('h3',doc.title));docBody.appendChild(el('p','Редакция от '+doc.date,'date'));
+      doc.sections.forEach(function(sec){
+        if(sec.heading)docBody.appendChild(el('h4',sec.heading));
+        docBody.appendChild(el('p',sec.body));
+      });
+    }
+    docBody.focus();
+  }).catch(function(){docBody.textContent='Не удалось загрузить документы. Проверьте связь и попробуйте ещё раз.';});
+}
+root.addEventListener('click',function(e){
+  var t=e.target.closest&&e.target.closest('[data-jtl-doc]');
+  if(t){e.preventDefault();showDoc(t.getAttribute('data-jtl-doc'));return;}
+  if(e.target.closest&&e.target.closest('[data-jtl-doc-back]')){showDoc('');return;}
+  if(e.target===docModal||(e.target.closest&&e.target.closest('#jtl-doc [data-jtl-close]')))docModal.classList.remove('on');
+});
 })();`;
