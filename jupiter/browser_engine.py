@@ -123,6 +123,9 @@ SUBMIT_TEXT_RE = r"отправ|откликн|подать|далее|прод�
 
 # Снимок отрисованной страницы. Живой DOM не меняем, кроме меток data-jt-ref:
 # по ним submit() находит элементы. Всё остальное — в клоне.
+# Значение, которое маска поля может переписать: телефон или дата.
+MASKABLE_VALUE_RE = re.compile(r"\+?[\d\s().-]{6,20}")
+
 SNAPSHOT_JS = r"""
 ([submitReSrc, customSpecs]) => {
   const sel = 'input,select,textarea,button,[data-jt-cs]';
@@ -1077,8 +1080,12 @@ class JupiterBrowserEngine:
                         continue  # календарь: значение записано напрямую
                     if control.value and current != control.value:
                         loc.fill(control.value, force=True)
-                        # Маски телефона переписывают ввод — тогда печатаем по символу.
-                        if loc.input_value() != control.value and control.type == "tel":
+                        # Маски телефона и даты переписывают ввод — тогда печатаем по
+                        # символу. Не только type=tel: РУСАЛ держит телефон в
+                        # type=text, Эталон — в type=phone, дата «__.__.____» —
+                        # всегда text (репетиция 02.10.2026).
+                        if loc.input_value() != control.value and (
+                                control.type == "tel" or MASKABLE_VALUE_RE.fullmatch(control.value)):
                             fill_masked(self._tab, loc, control.value)
                         loc.evaluate(AFTER_FILL_JS)
             except PlaywrightError as exc:

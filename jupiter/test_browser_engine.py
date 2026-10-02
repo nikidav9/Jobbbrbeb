@@ -218,6 +218,43 @@ document.querySelector('.cta__text').addEventListener('click', () => {
 </script>
 """
 
+# Маски в текстовых полях (РУСАЛ — телефон в type=text, даты «__.__.____»,
+# репетиция 02.10.2026): маска собирает цифры заново, и «+7…», вписанный
+# целиком, превращается в «+7 (791) …» с лишней семёркой.
+MASKED_TEXT_VACANCY = """<!doctype html>
+<meta charset="utf-8">
+<title>Аппаратчик — Карьера</title>
+<h1>Аппаратчик</h1>
+<form id="f">
+  <label>Имя <input name="fn"></label>
+  <label>Email <input name="em" type="email"></label>
+  <label>Телефон <input name="ph" type="text" placeholder="+7 (___) ___-__-__"></label>
+  <label>Дата рождения <input name="bd" type="text" placeholder="__.__.____"></label>
+  <button type="submit">Отправить отклик</button>
+</form>
+<script>
+const ph = document.querySelector('[name=ph]'), bd = document.querySelector('[name=bd]');
+// Как IMask: цифры принимаются только с клавиатуры, всё вставленное целиком
+// маска стирает обратно к своему состоянию.
+function masked(el, render, max) {
+  let d = '';
+  el.addEventListener('keydown', e => {
+    if (/^\\d$/.test(e.key)) { e.preventDefault(); if (d.length < max) d += e.key; el.value = render(d); }
+    else if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); d = d.slice(0, -1); el.value = render(d); }
+  });
+  el.addEventListener('input', () => { el.value = render(d); });
+}
+masked(ph, d => d ? '+7 (' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6, 8) + '-' + d.slice(8, 10) : '', 10);
+masked(bd, d => [d.slice(0, 2), d.slice(2, 4), d.slice(4, 8)].filter(Boolean).join('.'), 8);
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = JSON.stringify({ph: ph.value, bd: bd.value});
+  const r = await fetch('/api/apply', { method: 'POST', body });
+  document.body.innerHTML = (await r.json()).ok ? '<h2>Спасибо! Ваш отклик получен</h2>' : 'Ошибка';
+});
+</script>
+"""
+
 # Лендинг на конструкторе: форма отклика внизу появляется, только когда до
 # неё докрутили (IntersectionObserver).
 LAZY_VACANCY = """<!doctype html>
@@ -307,7 +344,8 @@ class _Handler(BaseHTTPRequestHandler):
         pages = {"/vacancy": SPA_VACANCY, "/challenge": SPA_VACANCY, "/combo": COMBO_VACANCY,
                  "/searchy": SEARCH_VACANCY, "/calc": CALC_VACANCY, "/divbtn": DIVBTN_VACANCY,
                  "/lazy": LAZY_VACANCY, "/radio": RADIO_VACANCY, "/hiddenbox": HIDDENBOX_VACANCY, "/stuckbox": STUCKBOX_VACANCY, "/policybox": POLICYBOX_VACANCY,
-                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM, "/oddbtn": ODDBTN_VACANCY, "/deadbtn": DEADBTN_VACANCY}
+                 "/framed": FRAMED_VACANCY, "/frame-form": FRAME_FORM, "/oddbtn": ODDBTN_VACANCY, "/deadbtn": DEADBTN_VACANCY,
+                 "/maskedtext": MASKED_TEXT_VACANCY}
         page = next((html for prefix, html in pages.items() if self.path.startswith(prefix)), None)
         if page is not None:
             body = page.encode("utf-8")
@@ -645,6 +683,17 @@ class BrowserEngineTest(unittest.TestCase):
         sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
         self.assertEqual(sent["fn"], "Никита")
         self.assertIn("1995", sent["bd"], sent)
+
+    def test_masked_phone_and_date_in_text_fields(self):
+        eng = self.engine(read_only=False)
+        agent = JupiterAgent({"127.0.0.1"}, engine=eng, dry_run=False)
+        result = agent.run(f"http://127.0.0.1:{self.port}/maskedtext/1", self.profile)
+        dump = json.dumps(result.as_dict(), ensure_ascii=False, indent=1)
+        self.assertEqual(result.status, "submitted", dump)
+        sent = json.loads(next(raw for path, raw in self.server.state["posts"] if path == "/api/apply"))
+        digits = "".join(ch for ch in sent["ph"] if ch.isdigit())
+        self.assertEqual(digits[-10:], "".join(ch for ch in PROFILE["phone"] if ch.isdigit())[-10:], sent)
+        self.assertEqual(sent["bd"], "01.02.1995", sent)
 
     def test_lazy_form_at_the_bottom_appears_after_scrolling(self):
         eng = self.engine(read_only=False)
