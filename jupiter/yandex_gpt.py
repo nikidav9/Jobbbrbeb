@@ -120,6 +120,14 @@ class _Budget:
             self._stamps.append(now)
             return True
 
+    def remaining(self) -> int:
+        """Сколько вызовов ещё влезет в час (ничего не списывает)."""
+        now = time.monotonic()
+        with self._lock:
+            while self._stamps and now - self._stamps[0] >= 3600:
+                self._stamps.popleft()
+            return max(0, self.limit() - len(self._stamps))
+
     def reset(self) -> None:
         with self._lock:
             self._stamps.clear()

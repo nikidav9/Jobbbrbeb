@@ -212,6 +212,11 @@ def main() -> int:
         dry_run = not bool(task.submission_authorized_at)
         agent_extra = advisor_hooks(task)
         apply_advisor = agent_extra.pop("apply_advisor", None)
+        if llm is not None and "alice" in agent_params:
+            # Алиса-спасатель (alice_agent.py): тот же клиент со счётчиком дневного
+            # потолка; видит устройство страницы и имена ключей, но не значения.
+            # Работает только на браузерном движке — агент сам это проверяет.
+            agent_extra["alice"] = llm
         engine = None
         if engine_kind == "browser":
             engine = browser_engine.JupiterBrowserEngine(
