@@ -50,6 +50,10 @@ AGGREGATOR_HOSTS = ("hh.ru", "superjob.ru", "avito.ru", "rabota.ru", "zarplata.r
 # Порядок — порядок сводки: от «работает» к «ничего не знаем».
 CLASSES = {
     "dry_run_ok": "dry-run пройден: форма заполнена целиком, отправка остановлена движком",
+    # Анкеты нет, но отклик уйдёт иначе (02.10.2026): раньше такие сайты
+    # попадали в no_vacancy и завышали «анкета не найдена».
+    "api_ready": "отклик через API системы подбора (Huntflow и т. п.): dry-run готов к отправке",
+    "email_apply": "анкеты нет, отклик уходит письмом на адрес работодателя",
     "form_unmapped": "серверная форма есть, но обязательные поля не заполнились — нужна карта",
     "captcha": "форма за CAPTCHA — только с передачей человеку",
     "aggregator": "отклик уходит на агрегатор (hh.ru, SuperJob и т. п.)",
@@ -349,7 +353,19 @@ def _starred_empty(page: PageState | None) -> list[str]:
     ]
 
 
-def classify(status: str, code: str | None, page: PageState | None, aggregators: list[str]) -> str:
+def site_adapter(trajectory: list[dict[str, Any]]) -> str:
+    """Адаптер сайта (huntflow_api, sber_public_api…), которым шёл агент, или ''."""
+    for step in reversed(trajectory or []):
+        if step.get("site_adapter"):
+            return str(step["site_adapter"])
+    return ""
+
+
+def classify(status: str, code: str | None, page: PageState | None, aggregators: list[str],
+             adapter: str = "") -> str:
+    # Отклик через API адаптера: формы на странице нет, и это не неудача.
+    if adapter and status == "ready_to_submit":
+        return "api_ready"
     if page is not None and any(
         normalize_host(page.url) == host or normalize_host(page.url).endswith("." + host)
         for host in AGGREGATOR_HOSTS
@@ -376,6 +392,8 @@ def classify(status: str, code: str | None, page: PageState | None, aggregators:
     )
     if aggregators and (code == Reason.DOMAIN_BLOCKED or not has_form):
         return "aggregator"
+    if code == Reason.EMAIL_APPLY:
+        return "email_apply"
     if code == Reason.UNSUPPORTED_SCRIPT or (page is not None and page.has_script and not has_form):
         return "spa"
     return "no_vacancy"
@@ -449,7 +467,8 @@ def recon_site(name: str, url: str, endpoints: list[dict], resume: str, net: Net
     result.http_status = page.status if page else None
     result.aggregator_links = _aggregator_links(page)
     result.form_fields = _form_snapshot(page)
-    result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links)
+    result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links,
+                            site_adapter(outcome.trajectory))
     if result.klass == "blocked":
         result.block_kind = block_kind(result.reason)
     return result
