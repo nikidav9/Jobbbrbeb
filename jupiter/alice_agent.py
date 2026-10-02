@@ -20,8 +20,11 @@ Playwright: ни Selenium, ни чужих агентных фреймворко
   * согласия и юридические ключи (candidate.LEGAL_KEYS, CONSENT), особые категории
     (здоровье, судимость, паспорт); чужой ключ, несуществующий номер элемента;
   * переход на чужие хосты (движок режет его сам, плюс проверка адреса после каждого шага);
-  * read_only: ничего, что меняет сервер. Обычные клики разрешены — браузерный движок
-    обрывает любой не-GET запрос; кнопку отправки Алиса не нажимает ни в каком режиме.
+  * Алиса не меняет сервер ни в каком режиме: на время захода движок переводится в
+    read_only и обрывает любой не-GET запрос (кнопку без <form> по подписи не отличить
+    от «открыть анкету», а по сети — можно). В боевом режиме оборванный запрос к самому
+    сайту останавливает заход: отправляет только основной цикл (отпечаток, квитанция,
+    капча, подтверждение успеха). Кнопку отправки Алиса не нажимает ни в каком режиме.
 
 Лимиты: 6 шагов на заход, 1 действие за шаг, ≤2 захода и ≤12 вызовов модели на задачу
 (TaskQuota), заход ≤90 с; стоп на 2 ошибочных шагах подряд, на повторе действия и на
@@ -42,6 +45,7 @@ from typing import Any, Callable
 import alice_dom
 from browser_planner import FIX_FORMATS, _FORBIDDEN_RE, _SECTION_LABELS
 from candidate import FieldClass, LEGAL_KEYS, classify_key, consent_kinds, looks_like_consent
+from ats_hosts import same_site
 from engine import EngineSecurityError
 from questions import is_special
 from yandex_gpt import redact
@@ -305,13 +309,20 @@ def _key_error(key: str, ctx: Context) -> str | None:
     return None
 
 
+# Похоже на согласие, хотя общий распознаватель согласий его не узнал: кадровый
+# резерв, правила сайта, оферта, рассылки. Такие флажки ставит только кандидат.
+_CONSENTISH_RE = re.compile(
+    r"соглаш|согласен|согласна|резерв|правил|оферт|не против|рассыл|подписк|"
+    r"newsletter|terms|privacy|talent pool", re.IGNORECASE)
+
+
 def _label_error(label: str, *, consent: bool) -> str | None:
     """Подпись элемента, который трогать нельзя: капча, особые категории, юридическое, согласие."""
     if _CAPTCHA_LABEL_RE.search(label):
         return "капчу решает только кандидат"
     if is_special(label) or _LEGAL_LABEL_RE.search(label):
         return "юридический вопрос или особая категория данных: решает только человек"
-    if consent and (looks_like_consent(label) or consent_kinds(label)):
+    if consent and (looks_like_consent(label) or consent_kinds(label) or _CONSENTISH_RE.search(label)):
         return "согласие даёт только кандидат"
     return None
 
@@ -653,16 +664,19 @@ class _Actor:
 
 def _secrets(keys: list[str], value_for: Callable[[str, str | None], str | None] | None) -> list[str]:
     """Значения профиля — только чтобы вырезать их из всего, что уходит модели."""
+    # Вместе с исходной записью — те, в которых значение может повторить сайт
+    # (31.12.1990, 8 999 …): общие правила redact их не узнают.
     out: list[str] = []
     for key in keys:
         if value_for is None:
             break
-        try:
-            value = value_for(key, None)
-        except Exception:  # noqa: BLE001
-            continue
-        if isinstance(value, str) and len(value.strip()) >= 3:
-            out.append(value.strip())
+        for fmt in (None, *FIX_FORMATS):
+            try:
+                value = value_for(key, fmt)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(value, str) and len(value.strip()) >= 3 and value.strip() not in out:
+                out.append(value.strip())
     return out
 
 
@@ -712,6 +726,35 @@ def rescue(engine: Any, profile_keys: list[str] | set[str], goal: str, code: str
         res.status = LIMIT
         return res
 
+    # Сеть — последний рубеж: пока идёт заход, ни один не-GET не уходит, что бы
+    # ни нажала Алиса. Прежний режим движка возвращается в любом исходе.
+    prev_read_only = getattr(engine, "read_only", False)
+    engine.read_only = True
+    try:
+        return _rescue_loop(engine, tab, res, profile_keys, goal, code, llm, read_only=read_only,
+                            budget=budget, value_for=value_for, resume_path=resume_path,
+                            notes=notes, clock=clock)
+    finally:
+        engine.read_only = prev_read_only
+
+
+def _sent_to_site(engine: Any, seen: int) -> bool:
+    """Оборвал ли движок после отметки seen не-GET к самому сайту (не к счётчикам
+    посещаемости на чужих доменах): значит, Алиса нажала то, что отправляет данные."""
+    hosts = {str(h).lower() for h in getattr(engine, "allowed_hosts", ())}
+    for item in list(getattr(engine, "actions", []))[seen:]:
+        if item.get("action") != "blocked_request" or item.get("reason") != "read_only":
+            continue
+        host = (urllib.parse.urlparse(str(item.get("url") or "")).hostname or "").lower()
+        if host in hosts or any(same_site(host, h) for h in hosts):
+            return True
+    return False
+
+
+def _rescue_loop(engine: Any, tab: Any, res: RescueResult, profile_keys: list[str] | set[str], goal: str,
+                 code: str, llm: Any, *, read_only: bool, budget: Any,
+                 value_for: Callable[[str, str | None], str | None] | None, resume_path: str | None,
+                 notes: list[str] | tuple[str, ...], clock: Callable[[], float]) -> RescueResult:
     keys = sorted(str(k) for k in profile_keys)
     secrets = _secrets(keys, value_for)
     ctx = Context(frozenset(keys), value_for, resume_path, read_only)
@@ -781,7 +824,14 @@ def rescue(engine: Any, profile_keys: list[str] | set[str], goal: str, code: str
             return finish(action["result"], action["why"])
 
         if err is None:
+            mark = len(getattr(engine, "actions", []))
             err = actor.run(action, snap)
+            if not read_only and _sent_to_site(engine, mark):
+                # BLOCKED: страницу основному циклу не возвращаем — её состояние
+                # после оборванного запроса непредсказуемо; остаётся прежний ответ.
+                res.steps.append({"action": "alice_stopped", "type": action["type"], "idx": action.get("idx"),
+                                  "why": "кнопка шлёт данные на сервер"})
+                return finish(BLOCKED, "кнопка шлёт данные на сервер: отправляет только основной цикл")
             if err is None:
                 res.acted = True
                 entry = {"action": "alice_" + action["type"], "ok": True}

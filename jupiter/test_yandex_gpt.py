@@ -174,8 +174,18 @@ class YandexGPTTest(unittest.TestCase):
 
     def test_redact_keeps_form_labels(self):
         for label in ("Фамилия Имя Отчество", "Номер Телефона", "First Name", "Cover Letter",
-                      "Как вас звать", "Код 12345", "https://hh.ru/vacancy"):
+                      "Как вас звать", "Код 12345", "https://hh.ru/vacancy",
+                      "Подать Заявку", "Откликнуться На Вакансию", "Отправить Отклик", "Apply Now",
+                      "Apply For This Job", "Откликнуться На Эту Вакансию"):
             self.assertEqual(redact(label), label)
+
+    def test_redact_form_word_does_not_shield_a_name(self):
+        # Одно слово кнопки рядом с именем не спасает имя.
+        for text, bad in {"Далее Иван Петров": "Петров", "Телефон Иван Петров": "Петров",
+                          "Apply John Smith": "Smith", "Steve Jobs": "Jobs",
+                          "Иван Далеев": "Далеев", "Tom Smith": "Smith", "Надя Петрова": "Петрова",
+                          "Apply To Tom Smith": "Smith"}.items():
+            self.assertNotIn(bad, redact(text), text)
 
     def test_redact_applied_before_send_and_truncated(self):
         _H.replies = [(200, "{}")]

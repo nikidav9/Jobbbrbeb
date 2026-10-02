@@ -125,6 +125,8 @@ DATA = {
         el("20", "поле-пароль", "Пароль"),
         el("21", "флажок", "Готов к переезду", state="отмечено"),
         el("22", "поле", "Телефон"),
+        el("23", "флажок", "Я не против хранения данных в кадровом резерве"),
+        el("24", "флажок", "Соглашаюсь с правилами сайта"),
     ],
 }
 
@@ -238,6 +240,9 @@ class CheckActionTest(unittest.TestCase):
         self.assertTrue(self.check(type="check", idx="4", key="relocation"))
         self.assertTrue(self.check(type="check", idx="16", key="relocation"))      # флажок без подписи
         self.assertTrue(self.check(type="click", idx="4"))                          # флажок — не кнопка
+        # Распознаватель согласий их не узнаёт, но это согласия: ставит только кандидат.
+        self.assertIn("согласи", self.check(type="check", idx="23", key="relocation"))
+        self.assertIn("согласи", self.check(type="check", idx="24", key="relocation"))
 
     def test_unknown_or_foreign_elements(self):
         self.assertIn("нет элемента", self.check(type="click", idx="9999"))
@@ -539,6 +544,17 @@ document.getElementById('t').onclick = async () => {
 };
 </script>"""
 
+# SPA-анкета без <form>: кнопка «Готово» сама шлёт POST. Для Алисы это не кнопка
+# отправки по признакам (подпись не отличить от «открыть анкету») — запрет держит сеть.
+DIV_FORM = HEAD + """<h1>Курьер</h1><div id="f"><label>Имя <input id="n" required></label>
+<div role="button" id="go">Готово</div></div><p id="out"></p>
+<script>
+document.getElementById('go').onclick = async () => {
+  try { await fetch('/api/apply', { method: 'POST', body: 'n=' + document.getElementById('n').value });
+        document.getElementById('f').innerHTML = '<p>Спасибо, отклик отправлен</p>'; } catch (e) {}
+};
+</script>"""
+
 FOREIGN = HEAD + """<h1>Курьер</h1><a href="http://elsewhere.invalid:9/page" id="x">Подробнее на другом сайте</a>"""
 
 CAPTCHA_PAGE = HEAD + """<h1>Курьер</h1><button type="button">Показать подробности</button>
@@ -548,7 +564,7 @@ THANKS = HEAD + "<h2>Спасибо! Ваш отклик получен</h2>"
 
 PAGES = {
     "/oddcta": ODD_CTA, "/select": UNLABELED_SELECT, "/text": UNLABELED_TEXT, "/trip": RADIO_TRIP, "/hostile": HOSTILE,
-    "/inert": INERT, "/grow": GROW, "/tracker": TRACKER, "/foreign": FOREIGN, "/captcha": CAPTCHA_PAGE,
+    "/inert": INERT, "/grow": GROW, "/tracker": TRACKER, "/divform": DIV_FORM, "/foreign": FOREIGN, "/captcha": CAPTCHA_PAGE,
 }
 
 
@@ -881,6 +897,24 @@ class AliceBrowserTest(unittest.TestCase):
         self.assertEqual(self.server.state["posts"], [])
         self.assertTrue(any(a.get("reason") == "read_only" for a in eng.actions if a.get("action") == "blocked_request"))
         self.assertEqual(eng._tab.evaluate("document.getElementById('out').textContent"), "Контакты отдела кадров")
+
+    def test_live_click_that_posts_is_cut_and_stops_the_rescue(self):
+        llm = FakeLLM(lambda u: A(type="fill", idx=idx_of(u, "Имя"), key="first_name"),
+                      click("Готово"), DONE_READY)
+        eng, res = self.resc("/divform", llm, read_only=False)
+        self.assertEqual(self.server.state["posts"], [])
+        self.assertEqual(res.status, BLOCKED, res)
+        self.assertEqual(res.steps[-1]["action"], "alice_stopped", res)
+        self.assertEqual(len(llm.calls), 2)
+        self.assertFalse(eng.read_only)          # боевой режим движка вернулся
+
+    def test_live_agent_does_not_send_through_alice(self):
+        llm = FakeLLM(lambda u: A(type="fill", idx=idx_of(u, "Имя"), key="first_name"),
+                      click("Готово"), DONE_READY)
+        _eng, _agent, result, dump = self.run_agent("/divform", llm, live=True)
+        self.assertEqual(self.server.state["posts"], [], dump)
+        self.assertNotEqual(result.status, "submitted", dump)
+        self.assertIn("alice_stopped", [t.get("action") for t in result.trajectory], dump)
 
     def test_read_only_submit_button_is_still_forbidden(self):
         llm = FakeLLM(click("Отправить отклик"), DONE_STUCK)
