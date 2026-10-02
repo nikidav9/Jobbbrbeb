@@ -780,6 +780,25 @@ class RecoveredFromRecon30(unittest.TestCase):
         self.assertEqual(trajectory[0]["action"], "skip_hidden_field")
         self.assertTrue(agent.fill_control(page, control(page, "mails"), self.PROFILE, []))
 
+    def test_hidden_optional_file_input_still_gets_resume(self):
+        # react-dropzone (WB, Точка): <input type=file style="display: none">
+        # под кнопкой «Загрузить» — не ловушка, резюме туда идёт (02.10.2026).
+        import tempfile
+        from engine import JupiterWebEngine
+        agent = JupiterAgent({"127.0.0.1"}, dry_run=True)
+        page = JupiterWebEngine({"e.example"}).load_html(
+            '<form method=post><label>Почта <input type="email" name="mail" required></label>'
+            '<label>Загрузить резюме <input type="file" name="cv" style="display: none;"></label>'
+            '<button>Откликнуться</button></form>', "https://e.example/job")
+        cv = control(page, "cv")
+        self.assertTrue(cv.css_hidden)
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as resume:
+            profile = CandidateProfile(values=dict(self.PROFILE.values), resume_path=resume.name)
+            trajectory = []
+            self.assertTrue(agent.fill_control(page, cv, profile, trajectory))
+            self.assertEqual(cv.file_path, resume.name)
+            self.assertEqual(trajectory[-1]["action"], "upload")
+
 
 class ValueFitsField(unittest.TestCase):
     """Значение профиля в записи, которую поле примет."""

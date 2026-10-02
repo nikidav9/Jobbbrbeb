@@ -200,8 +200,11 @@ class SiteFix(unittest.TestCase):
 
     def test_text_date_switches_to_dmy_but_date_input_stays_iso(self):
         from agent import _date_for_control
-        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text")), "1990-12-31")
-        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text", fix_round=1)), "31.12.1990")
+        # Текстовое поле — сначала ДД.ММ.ГГГГ (маски «__.__.____»), потом ГГГГ-ММ-ДД.
+        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text")), "31.12.1990")
+        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text", fix_round=1)), "1990-12-31")
+        self.assertEqual(_date_for_control("1990-12-31", self.control(type="text", placeholder="ГГГГ-ММ-ДД")),
+                         "1990-12-31")
         self.assertEqual(_date_for_control("31.12.1990", self.control(type="date", fix_round=1)), "1990-12-31")
 
     def test_site_fix_clears_marked_field_and_hint_sees_no_candidate_data(self):

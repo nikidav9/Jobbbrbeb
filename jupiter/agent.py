@@ -423,8 +423,11 @@ def _phone_for_control(phone: str, control: ControlState) -> str:
 
 
 def _date_for_control(value: Any, control: ControlState) -> str:
-    """Дата для поля: <input type=date> — только ГГГГ-ММ-ДД; текстовое поле на
-    кругах исправления — ДД.ММ.ГГГГ (или как подсказала Алиса)."""
+    """Дата для поля: <input type=date> — только ГГГГ-ММ-ДД. Текстовое поле —
+    сначала ДД.ММ.ГГГГ: так пишут российские анкеты, и маска «__.__.____»
+    из ГГГГ-ММ-ДД делала «19.95.0515» (Магнит, Детский мир, SUNLIGHT, Prime —
+    репетиция 02.10.2026). ГГГГ-ММ-ДД — если поле само так подписано, и на
+    следующем круге исправления; или как подсказала Алиса."""
     iso = _date_for_html(value)
     if control.type == "date" or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", iso):
         return iso
@@ -433,7 +436,9 @@ def _date_for_control(value: Any, control: ControlState) -> str:
         return dmy
     if control.fix_format == "date_iso":
         return iso
-    return dmy if control.fix_round % 2 else iso
+    hint = f"{control.placeholder} {control.label}".lower()
+    first, second = (iso, dmy) if re.search(r"гггг-мм|yyyy-mm", hint) else (dmy, iso)
+    return second if control.fix_round % 2 else first
 
 
 def _date_for_html(value: Any) -> str:
@@ -1141,9 +1146,13 @@ class JupiterAgent:
             return False
         if _looks_like_captcha(control):
             return False
-        if control.css_hidden and not control.required:
+        if control.css_hidden and not control.required and control.type != "file":
             # Ловушка для ботов: невидимое человеку поле. Человек бы его не
-            # заполнил — и мы не заполняем.
+            # заполнил — и мы не заполняем. Файловое поле — не ловушка: его
+            # прячут почти всегда и рисуют вместо него «Загрузить резюме»
+            # (react-dropzone: style="display: none"). Без этого исключения
+            # резюме не уходило на 8 сайтах репетиции 02.10.2026 — WB, Точка,
+            # TravelLine, Magnit Tech, 1С-Битрикс и др.
             trajectory.append({"action": "skip_hidden_field", "field": control.name or control.id})
             return False
 
