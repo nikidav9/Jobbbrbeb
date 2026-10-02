@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from recon import (
-    CLASSES, ENDPOINTS_JSON, TEST_CANDIDATE, ReconResult, NetOptions,
+    CLASSES, ENDPOINTS_JSON, TEST_CANDIDATE, ReconResult, NetOptions, site_adapter,
     _aggregator_links, _form_snapshot, block_kind, classify, endpoint_for, feed_vacancy_for,
     load_feed_vacancies,
     load_sites, make_engine, vacancy_from_endpoint,
@@ -209,7 +209,8 @@ def recon_site_browser(
         result.form_fields = _form_snapshot(page)
         result.browser_actions = list(engine.actions)[:50]
         result.llm_actions = _llm_trace(engine.actions, outcome.trajectory)
-        result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links)
+        result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links,
+                                site_adapter(outcome.trajectory))
         if result.klass == "blocked":
             result.block_kind = block_kind(result.reason)
         if result.klass == "captcha":
