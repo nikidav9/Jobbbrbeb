@@ -19,7 +19,7 @@ import {
   jupiterFillProfile, jupiterMarkManualSubmitted, jupiterMyApplications, JupiterFillProfile, jupiterFieldHints,
 } from '@/services/db';
 import type { JupiterApplication } from '@/constants/types';
-import { fillHostFor, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
+import { fillHostFor, isOtherVacancy, jupiterManualEligible, nextManualApplication } from '@/services/jupiterFill';
 import { applyAnswersFor } from '@/lib/applyAnswers';
 import {
   buildAutopilotScript, rerunAutopilotScript, SUBMIT_BY_USER_SCRIPT, type AutopilotResult, type AutopilotUnknownField,
@@ -310,6 +310,13 @@ export default function JupiterFillScreen() {
               if (data?.type === 'jt-autopilot' && typeof data.outcome === 'string') onAutopilot(data as AutopilotResult);
               if (data?.type === 'jt-autopilot-hints' && Array.isArray(data.fields)) void askHints(data.fields as AutopilotUnknownField[]);
             } catch { /* сообщение не наше — игнорируем */ }
+          }}
+          // Одна молния — одна вакансия: на соседнюю вакансию сайта отсюда не
+          // уходим, иначе автопилот заполнял бы её анкету бесплатно.
+          onShouldStartLoadWithRequest={(req) => {
+            if (req.isTopFrame === false || !isOtherVacancy(url, req.url)) return true;
+            showToast('Здесь заполняется только эта вакансия. На другие откликайтесь из ленты.', 'error');
+            return false;
           }}
           javaScriptEnabled
           domStorageEnabled

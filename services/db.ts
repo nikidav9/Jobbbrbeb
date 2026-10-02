@@ -1815,6 +1815,18 @@ function toJupiterApplication(row: any): JupiterApplication {
 }
 
 /**
+ * Остаток дневного запаса откликов по счёту сервера — за московские сутки и
+ * на всех устройствах сразу (php-proxy/energy.php). Сервер и сам не примет
+ * отклик сверх запаса; это число нужно, чтобы шапка ленты не обещала лишнего.
+ */
+export async function dbEnergyLeft(userId: string): Promise<number> {
+  const data = await proxy('dbEnergyLeft', [userId]) as { left?: unknown } | null;
+  const left = Number(data?.left);
+  if (!Number.isFinite(left)) throw new Error('Нет остатка откликов в ответе сервера');
+  return left;
+}
+
+/**
  * Поставить внешнюю вакансию в очередь Jupiter.
  *
  * Повторный вызов по тому же адресу возвращает прежнюю заявку, а не заводит

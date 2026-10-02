@@ -28,6 +28,7 @@ require_once __DIR__ . '/auth_email.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/jupiter_email_apply.php';
 require_once __DIR__ . '/company_logos.php';
+require_once __DIR__ . '/energy.php';
 
 /** Отдать ответ, отбросив всё, что случайно напечаталось до него. */
 function jt_respond(mixed $payload, int $code = 200): void {
@@ -321,6 +322,8 @@ $selfArgFns = [
     'dbApplyPermVacancy' => 1,
     // Заявки Jupiter: человек видит и ставит в очередь только свои.
     'jupiterEnqueue' => 0, 'jupiterMyApplications' => 0,
+    // Остаток дневного запаса откликов — только свой.
+    'dbEnergyLeft' => 0,
     'jupiterLiveStatus' => 0, 'jupiterSetLive' => 0,
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0, 'jupiterMailHtml' => 0,
@@ -7907,6 +7910,13 @@ try {
             break;
         }
 
+        // Остаток молний за московские сутки — общий для всех устройств.
+        case 'dbEnergyLeft': {
+            $used = jt_energy_used((string)($args[0] ?? ''));
+            $data = ['left' => jt_energy_left($used), 'limit' => JT_DAILY_APPLIES, 'since' => jt_energy_since()];
+            break;
+        }
+
         // Поставить вакансию в очередь. Повтор не ошибка: человек мог нажать
         // дважды, и правильный ответ — отдать ту же заявку, а не завести
         // вторую. От гонки двух запросов защищает уникальный индекс в базе,
@@ -7953,6 +7963,8 @@ try {
                 $data = $existing;
                 break;
             }
+            // Новый отклик тратит молнию; повтор существующего (выше) — нет.
+            jt_energy_require($uidArg);
             $row = [
                 'id' => uid(),
                 'user_id' => $uidArg,
@@ -8539,6 +8551,10 @@ try {
             // Ни запись, ни чат, ни уведомление ниже больше не используют
             // клиентский employerId как источник истины.
             $eid = $vacEmployer;
+            // Новый отклик тратит молнию; повторный на ту же вакансию — нет.
+            if (!sb_single('jm_perm_applications', ['vacancy_id' => 'eq.' . $vid, 'worker_id' => 'eq.' . $wid], 'id')) {
+                jt_energy_require((string)$wid);
+            }
             sb_upsert('jm_perm_applications', [
                 'id' => uid(), 'vacancy_id' => $vid, 'worker_id' => $wid,
                 'employer_id' => $eid, 'status' => 'pending', 'created_at' => now_iso(),

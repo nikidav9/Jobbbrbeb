@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DAILY_ENERGY, energyDay, rollover, spend, refund, parseEnergy,
+  DAILY_ENERGY, energyDay, rollover, spend, refund, parseEnergy, reconcile,
 } from '../services/energy.ts';
 
 // Правило «запас не копится» ломается молча: экран покажет число, и никто не
@@ -64,4 +64,12 @@ test('полный день: сорок свайпов и стена', () => {
   assert.equal(rollover(s, '2026-09-17').left, 0);
   // А назавтра снова полный запас.
   assert.equal(rollover(s, '2026-09-18').left, DAILY_ENERGY);
+});
+
+test('сервер сводит счётчик: верим меньшему', () => {
+  const s = { day: '2026-10-02', left: 15 };
+  assert.deepEqual(reconcile(s, 3), { day: '2026-10-02', left: 3 });   // переустановка, второй телефон
+  assert.deepEqual(reconcile(s, 18), { day: '2026-10-02', left: 15 }); // свежий отклик ещё летит
+  assert.deepEqual(reconcile(s, -4), { day: '2026-10-02', left: 0 });
+  assert.deepEqual(reconcile(s, Number.NaN), s);
 });

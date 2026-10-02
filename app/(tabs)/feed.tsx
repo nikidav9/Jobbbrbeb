@@ -831,7 +831,7 @@ function WorkerPermMode() {
   const filters = useAppliedFilters();
   const setFilters = setAppliedFilters;
   // Дневной запас свайпов и плашка «на сегодня всё».
-  const energy = useEnergy();
+  const energy = useEnergy(currentUser && !currentUser.isGuest ? currentUser.id : null);
   const [limitOpen, setLimitOpen] = useState(false);
   // Есть ли что листать ниже в карточке: по этому рисуется подсказка.
   const [moreBelow, setMoreBelow] = useState(false);
@@ -1170,6 +1170,7 @@ function WorkerPermMode() {
     } catch (e: any) {
       console.warn('[applyTo]', e);
       showToast(e?.message || 'Не удалось отправить отклик', 'error');
+      void energy.sync();
     } finally {
       setApplying(null);
     }
@@ -1304,6 +1305,9 @@ function WorkerPermMode() {
             } else {
               energy.refundOne();
               setSwLastSkipped(ev.id);
+              // Отказ мог быть из-за запаса на сервере (отклики с другого
+              // устройства) — сверяемся, чтобы шапка не обещала лишнего.
+              void energy.sync();
             }
           });
         }).finally(() => { swDecisionPending.current = false; });
