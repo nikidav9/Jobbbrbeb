@@ -52,6 +52,11 @@ check('сторож RLS знает таблицу', str_contains((string)file_ge
 $py = trim((string)shell_exec('cd ' . escapeshellarg(__DIR__ . '/../scripts') . ' && python3 -c ' . escapeshellarg(
     'import importlib.util as u;s=u.spec_from_file_location("m","upload-company-logos.py");m=u.module_from_spec(s);s.loader.exec_module(m);print(m.path_of(m.key_of(" Сбер "), b"a"))')));
 check('scripts/upload-company-logos.py: то же имя файла, что у сервера', $py === $a);
+$unwrap = trim((string)shell_exec('cd ' . escapeshellarg(__DIR__ . '/../scripts') . ' && python3 -c ' . escapeshellarg(
+    'import importlib.util as u,json;s=u.spec_from_file_location("m","upload-company-logos.py");m=u.module_from_spec(s);s.loader.exec_module(m);'
+    . 'print(json.dumps([m.unwrap({"data":{"logos":{}}}), m.unwrap({"data":{"ok":True}}), m.unwrap({"error":"x"})]))')));
+// 02.10.2026 первый запуск ждал «выкладку» вечно: ответ db.php обёрнут в data.
+check('загрузчик разворачивает ответ db.php из data', $unwrap === '[{"logos": {}}, {"ok": true}, {"error": "x"}]');
 
 // Проверенный набор: каждый файл — PNG 256×256 до 300 КБ, источник и ссылка
 // годны, компании не повторяются (иначе загрузчик зальёт не то).

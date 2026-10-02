@@ -43,12 +43,20 @@ def call(fn: str, args: list, admin: bool = False) -> tuple[int, dict]:
     req = urllib.request.Request(API, json.dumps({"fn": fn, "args": args}).encode(), headers)
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            return r.status, json.loads(r.read() or b"{}")
+            return r.status, unwrap(json.loads(r.read() or b"{}"))
     except urllib.error.HTTPError as e:
         try:
-            return e.code, json.loads(e.read() or b"{}")
+            return e.code, unwrap(json.loads(e.read() or b"{}"))
         except ValueError:
             return e.code, {}
+
+
+def unwrap(body: object) -> dict:
+    """Успешный ответ db.php — {"data": …} (так его разворачивает и
+    services/db.ts); ошибка — {"error": …} без обёртки."""
+    if isinstance(body, dict) and isinstance(body.get("data"), dict):
+        return body["data"]
+    return body if isinstance(body, dict) else {}
 
 
 def todo(manifest: list[dict], served: dict[str, str]) -> list[dict]:
