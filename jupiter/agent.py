@@ -2646,6 +2646,24 @@ class JupiterAgent:
                         questions, special = extract_questions(
                             page, target_form_index, self.descriptor,
                         )
+                        # Алиса пробует раньше человека, но только там, где ответ может
+                        # лежать в профиле: нет вопросов вовсе, среди них есть «факт»
+                        # (контакт, пол, стаж) или поле без подписи (движок зовёт его
+                        # jt-N — смысл по соседнему тексту видит только Алиса). Вопросы
+                        # «под вакансию» ключом не закрываются; согласия, юридические
+                        # вопросы и особые категории остаются человеку.
+                        if (code == Reason.MISSING_PROFILE_FIELD and not special
+                                and (not questions or any(
+                                    q.kind == "fact" or re.fullmatch(r"jt-\d+", q.text.strip())
+                                    for q in questions))):
+                            rescued = self._alice_rescue(
+                                page, profile, trajectory, code, form_index=target_form_index,
+                                notes=["Не заполнены обязательные поля: "
+                                       + "; ".join((q.text for q in questions) if questions else missing[:8])],
+                            )
+                            if rescued is not None:
+                                page, retry_after_fix = rescued, True
+                                continue
                         # Особые категории — только на сайте, самим человеком.
                         if questions and not special:
                             result = self._handoff(
@@ -2660,16 +2678,6 @@ class JupiterAgent:
                                 page, target_form_index, [q.as_dict() for q in questions],
                             )
                             return result
-                    # Только «просто нет сопоставления»: согласия, юридические
-                    # вопросы и особые категории остаются человеку.
-                    if code == Reason.MISSING_PROFILE_FIELD and not special:
-                        rescued = self._alice_rescue(
-                            page, profile, trajectory, code, form_index=target_form_index,
-                            notes=["Не заполнены обязательные поля: " + "; ".join(missing[:8])],
-                        )
-                        if rescued is not None:
-                            page, retry_after_fix = rescued, True
-                            continue
                     action_type = {
                         Reason.CONSENT_REQUIRED: HumanAction.CONSENT,
                         Reason.UNKNOWN_REQUIRED_QUESTION:
