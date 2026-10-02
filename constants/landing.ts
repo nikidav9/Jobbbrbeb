@@ -242,7 +242,7 @@ html.jt-landing #root { visibility: hidden; }
 
 
 /* Юпитер — ИИ-агент (решение владельца 02.10.2026): браузер, в котором он сам
-   заполняет анкету работодателя, что он делает за человека и обучающий ролик. */
+   заполняет анкету работодателя, и что он делает за человека. */
 #jtl .agent { display: grid; grid-template-columns: 1fr 1.05fr; gap: 44px; align-items: center; margin-top: 70px; }
 #jtl .agent h3 { margin-top: 10px; font-size: clamp(24px, 2.3vw, 34px); line-height: 1.12; }
 #jtl .agent .sub { max-width: 520px; }
@@ -258,17 +258,6 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .vs div { padding: 14px 16px; border: 2px solid var(--ink); border-radius: 18px; background: var(--surface); font-size: 14px; color: var(--muted); }
 #jtl .vs div.yes { background: var(--soft); }
 #jtl .vs b { display: block; margin-bottom: 4px; font: 700 13px/1 'JTSplashManrope', sans-serif; color: var(--ink); text-transform: uppercase; letter-spacing: .05em; }
-#jtl .tut { display: inline-flex; align-items: center; gap: 14px; margin-top: 22px; padding: 8px 18px 8px 8px; border: 2px solid var(--ink);
-  border-radius: 20px; background: var(--surface); box-shadow: 4px 4px 0 var(--ink); cursor: pointer; font: 700 15px/1.25 'JTSplashManrope', sans-serif;
-  color: var(--ink); text-align: left; transition: transform .18s ease, box-shadow .18s ease; }
-#jtl .tut:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
-#jtl .tut .thumb { position: relative; width: 120px; height: 68px; border-radius: 13px; border: 2px solid var(--ink); overflow: hidden;
-  background: var(--bg) url('/landing/tutorial.jpg') center / cover no-repeat; }
-#jtl .tut .thumb::after { content: ''; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%;
-  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 6l10 6-10 6z' fill='%23141414'/%3E%3C/svg%3E") 60% 50% / 16px no-repeat;
-  border: 2px solid var(--ink); }
-#jtl .tut small { display: block; margin-top: 3px; font: 500 12px/1 'JTLManrope', sans-serif; color: var(--muted); }
-
 #jtl .browser { position: relative; border: 2px solid var(--ink); border-radius: 24px; background: var(--surface); box-shadow: 6px 6px 0 var(--ink); overflow: hidden; }
 #jtl .browser .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 2px solid var(--ink); background: #F1E9DE; }
 #jtl .browser .bar i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--ink); }
@@ -488,7 +477,6 @@ export const LANDING_MARKUP = `
             <div><b>Без JobToo</b>Зайти на сайт, найти анкету, заполнить десяток полей — и так на каждую вакансию</div>
             <div class="yes"><b>С JobToo</b>Один свайп. Анкету заполнит Юпитер, ответ придёт в чат</div>
           </div>
-          <button class="tut rv" type="button" data-jtl-tutorial><span class="thumb"></span><span>Смотреть, как это работает<small>Ролик с озвучкой · весь путь за минуту</small></span></button>
         </div>
         <div class="browser rv" aria-hidden="true">
           <div class="bar"><i style="background:#E5484D"></i><i style="background:#F5B700"></i><i style="background:#2BB673"></i><span class="url">Нимбус Пэй · карьера / вакансии / frontend-разработчик</span></div>
@@ -716,16 +704,12 @@ var MP4=!!video&&!!video.canPlayType('video/mp4; codecs="avc1.42E01E"');
 var SRC=MP4?'/landing/hero.mp4':'/landing/hero.webm';
 // В окне «Смотреть ролик» — рекламная версия: заставка, сюжет, «Скачайте в RuStore».
 var PROMO=MP4?'/landing/promo.mp4':'/landing/promo.webm';
-// Обучающий ролик с озвучкой (второй блок) — в то же окно.
-var TUTORIAL=MP4?'/landing/tutorial.mp4':'/landing/tutorial.webm';
 if(video&&!reduce){video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
 var modal=document.getElementById('jtl-modal'),mv=document.getElementById('jtl-modal-video');
 function closeModal(){modal.classList.remove('on');mv.pause();}
 root.addEventListener('click',function(e){
-  var reel=e.target.closest('[data-jtl-reel]'),tut=e.target.closest('[data-jtl-tutorial]');
-  if(reel||tut){
-    var want=tut?TUTORIAL:PROMO;
-    if(mv.getAttribute('src')!==want)mv.setAttribute('src',want);
+  if(e.target.closest('[data-jtl-reel]')){
+    if(mv.getAttribute('src')!==PROMO)mv.setAttribute('src',PROMO);
     modal.classList.add('on');mv.currentTime=0;
     var q=mv.play();if(q&&q.catch)q.catch(function(){});return;
   }
