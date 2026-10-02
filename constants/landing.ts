@@ -148,14 +148,71 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .kicker { font: 700 14px/1 'JTSplashManrope', sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
 #jtl h2 { margin-top: 14px; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.05; }
 #jtl .sub { margin-top: 16px; max-width: 640px; font-size: 19px; color: var(--muted); }
-#jtl .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; margin-top: 54px; }
-#jtl .step { position: relative; padding: 32px 28px 34px; border: 2px solid var(--ink); border-radius: 28px; background: var(--surface);
-  box-shadow: 6px 6px 0 var(--ink); transition: transform .2s ease, box-shadow .2s ease; }
-#jtl .step:hover { transform: translate(-3px, -3px) rotate(-.6deg); box-shadow: 9px 9px 0 var(--ink); }
-#jtl .step .num { width: 56px; height: 56px; border: 2px solid var(--ink); border-radius: 18px; background: var(--accent);
-  display: flex; align-items: center; justify-content: center; font: 700 24px/1 'JTSplashUnbounded', sans-serif; }
-#jtl .step h3 { margin-top: 24px; font-size: 24px; }
-#jtl .step p { margin-top: 12px; color: var(--muted); }
+/* История на прокрутке: сцена прилипает, герои разыгрывают сюжет по мере прокрутки.
+   Сцена задаётся data-scene (1–3) у #jtl-stage, внутри сцены ход — переменная --lp. */
+#jtl .story { position: relative; height: 330vh; margin-top: 40px; }
+#jtl .story-pin { position: sticky; top: 72px; height: calc(100vh - 72px); display: flex; align-items: center; }
+#jtl .story-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; align-items: center; }
+#jtl .story-steps { list-style: none; margin: 34px 0 0; padding: 0; display: grid; gap: 14px; }
+#jtl .story-steps li { padding: 20px 24px; border: 2px solid transparent; border-radius: 24px; opacity: .38;
+  transition: opacity .35s ease, background-color .35s ease, border-color .35s ease, transform .35s ease, box-shadow .35s ease; }
+#jtl .story-steps li.on { opacity: 1; background: var(--surface); border-color: var(--ink); box-shadow: 6px 6px 0 var(--ink); transform: translateX(8px); }
+#jtl .story-steps b { font: 700 14px/1 'JTSplashUnbounded', sans-serif; color: var(--accent); }
+#jtl .story-steps h3 { margin-top: 8px; font-size: 26px; }
+#jtl .story-steps p { margin-top: 8px; color: var(--muted); }
+#jtl .story-bar { margin-top: 26px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+#jtl .story-bar i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: var(--accent); border-radius: 4px; }
+
+#jtl .stage { position: relative; height: min(640px, calc(100vh - 140px)); border: 2px solid var(--ink); border-radius: 36px;
+  background: #F7ECE0; box-shadow: 8px 8px 0 var(--ink); overflow: hidden; --mx: 0; --my: 0; }
+#jtl .stage::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(150,105,70,.16) 2px, transparent 2.5px); background-size: 34px 34px; }
+/* Герои — 3D-картинки владельца (public/landing/hero-*.webp, фон картинки = фон
+   сцены #F7ECE0, края мягкие). Размер меняем transform, чтобы ход был плавным. */
+#jtl .actor { position: absolute; z-index: 1; transition: left .8s cubic-bezier(.3,.7,.2,1), top .8s cubic-bezier(.3,.7,.2,1),
+  transform .8s cubic-bezier(.3,.7,.2,1), opacity .5s ease; }
+#jtl .actor img { display: block; width: 100%; height: auto; }
+#jtl .depth1 { translate: calc(var(--mx) * 14px) calc(var(--my) * 10px); }
+#jtl .depth2 { translate: calc(var(--mx) * -22px) calc(var(--my) * -14px); }
+#jtl .depth3 { translate: calc(var(--mx) * 30px) calc(var(--my) * 18px); }
+
+/* Соискательница */
+#jtl .a-dev { width: 100%; left: 0; bottom: -2px; transform-origin: bottom left; }
+#jtl .stage[data-scene="2"] .a-dev { left: 0; transform: scale(.56); }
+#jtl .stage[data-scene="3"] .a-dev { left: 0; transform: scale(.48); }
+#jtl .stage[data-scene="3"] .a-dev img { animation: jtl-hop .9s ease-in-out infinite; }
+
+/* Юпитер */
+#jtl .a-jup { width: 50%; left: 60%; top: -60%; opacity: 0; transform: rotate(-30deg); transform-origin: top left; }
+#jtl .a-jup img { animation: jtl-bob 3s ease-in-out infinite; }
+#jtl .stage[data-scene="2"] .a-jup { left: 46%; top: 4%; opacity: 1; transform: none; }
+#jtl .stage[data-scene="3"] .a-jup { left: 5%; top: 14%; opacity: 1; transform: scale(.5) rotate(-8deg); }
+
+/* Анкета, которую пишет Юпитер */
+#jtl .s-form { position: absolute; z-index: 2; width: 260px; left: 52%; top: 52%; padding: 18px 20px 20px; border: 2px solid var(--ink); border-radius: 22px;
+  background: var(--surface); box-shadow: 6px 6px 0 var(--ink); opacity: 0; transform: translateY(40px) rotate(3deg); transition: opacity .5s ease, transform .6s cubic-bezier(.3,.7,.2,1); }
+#jtl .stage[data-scene="2"] .s-form { opacity: 1; transform: rotate(-2deg); }
+#jtl .s-form .hd { display: flex; align-items: center; gap: 10px; font: 700 14px/1 'JTSplashManrope', sans-serif; color: var(--muted); }
+#jtl .s-form .hd i { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #8B5CF6, #4F46E5); }
+#jtl .s-form .f { margin-top: 12px; height: 34px; border: 2px solid var(--ink); border-radius: 12px; padding: 0 10px; display: flex; align-items: center; }
+#jtl .s-form .f span { display: block; height: 9px; border-radius: 5px; background: var(--ink); width: 0; transition: width .2s linear; }
+#jtl .s-form .go { margin-top: 14px; height: 40px; border: 2px solid var(--ink); border-radius: 999px; background: var(--accent);
+  display: flex; align-items: center; justify-content: center; font: 700 14px/1 'JTSplashManrope', sans-serif; transition: background-color .3s ease, color .3s ease; }
+#jtl .s-form.sent .go { background: var(--ok); color: #fff; }
+
+/* HR и приглашение */
+#jtl .a-hr { width: 58%; left: 110%; bottom: -2px; opacity: 0; }
+#jtl .stage[data-scene="3"] .a-hr { left: 43%; opacity: 1; }
+#jtl .s-bubble { position: absolute; z-index: 3; left: 38%; top: 19%; max-width: 250px; padding: 16px 18px; border: 2px solid var(--ink);
+  border-radius: 22px 22px 6px 22px; background: var(--surface); box-shadow: 5px 5px 0 var(--ink); font: 700 16px/1.35 'JTSplashManrope', sans-serif;
+  opacity: 0; transform: scale(.6) translateX(80px); transform-origin: right bottom; transition: opacity .4s ease .3s, transform .5s cubic-bezier(.3,1.5,.5,1) .3s; }
+#jtl .s-bubble small { display: block; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+#jtl .stage[data-scene="3"] .s-bubble { opacity: 1; transform: none; }
+#jtl .confetti { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+#jtl .confetti i { position: absolute; top: -20px; width: 12px; height: 18px; border: 2px solid var(--ink); border-radius: 3px; opacity: 0; }
+#jtl .stage[data-scene="3"] .confetti i { animation: jtl-fall 2.6s cubic-bezier(.3,.6,.5,1) infinite; opacity: 1; }
+#jtl .s-caption { position: absolute; z-index: 5; left: 22px; top: 20px; padding: 8px 14px; border: 2px solid var(--ink); border-radius: 999px;
+  background: var(--surface); font: 700 13px/1 'JTSplashManrope', sans-serif; }
 
 /* Бегущая лента направлений */
 #jtl .marquee { margin-top: 70px; display: grid; gap: 14px; transform: rotate(-1.5deg); }
@@ -213,6 +270,9 @@ html.jt-landing #root { visibility: hidden; }
 
 @keyframes jtl-rise { from { transform: translateY(105%); } to { transform: none; } }
 @keyframes jtl-fade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes jtl-bob { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-12px) rotate(3deg); } }
+@keyframes jtl-hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-16px); } }
+@keyframes jtl-fall { 0% { transform: translateY(0) rotate(0); } 100% { transform: translateY(700px) rotate(540deg); } }
 @keyframes jtl-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
 @keyframes jtl-shine { from { background-position: 0% 0; } to { background-position: -220% 0; } }
 @keyframes jtl-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(43,182,115,.55); } 50% { box-shadow: 0 0 0 6px rgba(43,182,115,0); } }
@@ -296,10 +356,32 @@ export const LANDING_MARKUP = `
         <p class="kicker rv">Как это работает</p>
         <h2 class="rv split">Три шага от вакансии до ответа</h2>
         <p class="sub rv">Никаких одинаковых анкет на десяти сайтах. Вы выбираете — остальное делает приложение.</p>
-        <div class="steps">
-          <article class="step rv"><div class="num">1</div><h3>Листаете</h3><p>Карточки IT-вакансий: зарплата, формат, стек. Нравится — свайп вправо, нет — влево.</p></article>
-          <article class="step rv"><div class="num">2</div><h3>Откликаемся за вас</h3><p>Юпитер заполняет анкету на сайте работодателя из вашего профиля. Чего нет в профиле — спросит у вас, а не придумает.</p></article>
-          <article class="step rv"><div class="num">3</div><h3>Общаетесь</h3><p>Ответ работодателя приходит в чат приложения. Все отклики и их статусы — в одном разделе.</p></article>
+      </div>
+      <div class="story" id="jtl-story">
+        <div class="story-pin">
+          <div class="wrap story-grid">
+            <div>
+              <ol class="story-steps">
+                <li data-s="1" class="on"><b>01</b><h3>Листаете</h3><p>Карточки IT-вакансий: зарплата, формат, стек. Нравится — свайп вправо, нет — влево.</p></li>
+                <li data-s="2"><b>02</b><h3>Юпитер откликается</h3><p>Наш помощник заполняет анкету на сайте работодателя из вашего профиля. Чего нет в профиле — спросит у вас, а не придумает.</p></li>
+                <li data-s="3"><b>03</b><h3>Вас приглашают</h3><p>Ответ работодателя приходит в чат приложения. Все отклики и их статусы — в одном разделе.</p></li>
+              </ol>
+              <div class="story-bar"><i></i></div>
+            </div>
+            <div class="stage" id="jtl-stage" data-scene="1" aria-hidden="true">
+              <span class="s-caption" id="jtl-caption">Листайте вниз</span>
+              <div class="actor a-jup"><div class="depth3"><img src="/landing/hero-jup.webp" width="444" height="376" alt="" loading="lazy" decoding="async"></div></div>
+              <div class="s-form depth2" id="jtl-sform">
+                <div class="hd"><i></i>Нимбус Пэй · анкета</div>
+                <div class="f"><span></span></div><div class="f"><span></span></div><div class="f"><span></span></div>
+                <div class="go" id="jtl-sgo">Отправить</div>
+              </div>
+              <div class="actor a-dev"><div class="depth1"><img src="/landing/hero-dev.webp" width="648" height="505" alt="" loading="lazy" decoding="async"></div></div>
+              <div class="actor a-hr"><div class="depth2"><img src="/landing/hero-hr.webp" width="598" height="540" alt="" loading="lazy" decoding="async"></div></div>
+              <div class="s-bubble"><small>Нимбус Пэй · HR</small>Приглашаем на собеседование в четверг!</div>
+              <div class="confetti"><i style="left:8%;background:#FF6B1A;animation-delay:0s"></i><i style="left:18%;background:#FDE68A;animation-delay:0.4s"></i><i style="left:28%;background:#8B5CF6;animation-delay:0.9s"></i><i style="left:39%;background:#14B8A6;animation-delay:0.2s"></i><i style="left:50%;background:#FF6B1A;animation-delay:1.1s"></i><i style="left:61%;background:#FFE2CC;animation-delay:0.6s"></i><i style="left:72%;background:#E11D48;animation-delay:1.4s"></i><i style="left:83%;background:#FDE68A;animation-delay:0.3s"></i><i style="left:92%;background:#14B8A6;animation-delay:0.8s"></i></div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="marquee" aria-label="Направления">
@@ -404,6 +486,38 @@ var io=new IntersectionObserver(function(es){es.forEach(function(en){
     el.querySelectorAll('[data-count-to]').forEach(count);},Math.max(0,sibs)*110);
 });},{root:root,threshold:.18});
 root.querySelectorAll('.rv').forEach(function(el){io.observe(el);});
+
+// История на прокрутке: сцена 1–3 по доле прокрутки раздела, внутри сцены — ход 0..1.
+var story=document.getElementById('jtl-story'),stage=document.getElementById('jtl-stage'),
+    sform=document.getElementById('jtl-sform'),sgo=document.getElementById('jtl-sgo'),cap=document.getElementById('jtl-caption'),
+    steps=story?story.querySelectorAll('.story-steps li'):[],fields=sform?sform.querySelectorAll('.f span'):[],
+    CAPS=['','Листает вакансии','Юпитер заполняет анкету','Пришло приглашение!'];
+function storyTick(){
+  if(!story)return;
+  var pin=story.firstElementChild,run=story.offsetHeight-pin.offsetHeight,
+      p=Math.max(0,Math.min(1,(root.scrollTop-story.offsetTop+80)/Math.max(1,run))),
+      scene=p<.34?1:p<.67?2:3,lp=Math.max(0,Math.min(1,(p-(scene-1)/3)*3));
+  story.style.setProperty('--p',p.toFixed(3));
+  if(stage.dataset.scene!==String(scene)){
+    stage.dataset.scene=String(scene);cap.textContent=CAPS[scene];
+    steps.forEach(function(li){li.classList.toggle('on',li.getAttribute('data-s')===String(scene));});
+  }
+  // анкета пишется по мере прокрутки: поле за полем, потом «Отклик отправлен»
+  var w=[100,72,86];
+  fields.forEach(function(f,i){var k=Math.max(0,Math.min(1,lp*4-i));f.style.width=(scene>2?w[i]:scene<2?0:k*w[i])+'%';});
+  var sent=scene>2||(scene===2&&lp>.78);
+  sform.classList.toggle('sent',sent);sgo.textContent=sent?'Отклик отправлен':'Отправить';
+}
+root.addEventListener('scroll',storyTick,{passive:true});storyTick();
+// Объём: герои чуть следуют за курсором, каждый на своей глубине.
+if(stage&&!reduce){
+  stage.addEventListener('mousemove',function(e){
+    var r=stage.getBoundingClientRect();
+    stage.style.setProperty('--mx',((e.clientX-r.left)/r.width*2-1).toFixed(3));
+    stage.style.setProperty('--my',((e.clientY-r.top)/r.height*2-1).toFixed(3));
+  });
+  stage.addEventListener('mouseleave',function(){stage.style.setProperty('--mx','0');stage.style.setProperty('--my','0');});
+}
 
 // Заголовки по словам: каждое слово в своей «щели», выезжает снизу с задержкой.
 root.querySelectorAll('.split').forEach(function(h){
