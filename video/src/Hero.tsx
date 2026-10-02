@@ -18,6 +18,7 @@ import {
   AbsoluteFill, Easing, Img, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig,
 } from 'remotion';
 import { A, ActionRow, F, FeedCard, FeedHeader, ResponsesScreen, TabBar, VACS } from './AppScreen';
+import { BRANDS, BrandMark } from './Brands';
 
 export const HERO_FRAMES = 450;
 export const INTRO = 90;
@@ -103,7 +104,7 @@ const Phone: React.FC<{ f: number }> = ({ f }) => {
             </div>
             <div>
               <div style={{ ...F.bold, fontSize: 13, color: A.muted }}>JobToo · сейчас</div>
-              <div style={{ ...F.bold, fontSize: 14.5, lineHeight: 1.3 }}>Финтех приглашает вас на собеседование</div>
+              <div style={{ ...F.bold, fontSize: 14.5, lineHeight: 1.3 }}>Нимбус Пэй приглашает вас на собеседование</div>
             </div>
           </div>
         </div>
@@ -136,7 +137,8 @@ const Form: React.FC<{ f: number }> = ({ f }) => {
       overflow: 'hidden', opacity: shown, transform: `translateY(${(1 - shown) * 60}px) rotate(${-3 + shown}deg)` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderBottom: `3px solid ${A.ink}`, background: A.chip }}>
         {['#E5484D', '#F5B700', A.ok].map(c => <span key={c} style={{ width: 15, height: 15, borderRadius: '50%', background: c, border: `2px solid ${A.ink}` }} />)}
-        <span style={{ ...F.bold, marginLeft: 12, fontSize: 19, color: A.muted }}>careers.fintech.ru / отклик</span>
+        <span style={{ marginLeft: 14 }}><BrandMark b="nimbus" size={30} /></span>
+        <span style={{ ...F.bold, marginLeft: 4, fontSize: 19, color: A.muted }}>{BRANDS.nimbus.site} / отклик</span>
       </div>
       <div style={{ padding: '24px 30px 30px', position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -181,10 +183,9 @@ const Chat: React.FC<{ f: number }> = ({ f }) => {
   return (
     <div style={{ width: 640, display: 'flex', gap: 18, alignItems: 'flex-end', opacity: Math.min(1, pop) * fade,
       transform: `translateY(${(1 - pop) * 80}px) scale(${0.85 + 0.15 * pop})`, transformOrigin: 'bottom left' }}>
-      <div style={{ ...F.bold, flex: 'none', width: 76, height: 76, borderRadius: 38, background: A.purple, color: '#fff', fontSize: 30,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', border: `3px solid ${A.ink}` }}>Ф</div>
+      <BrandMark b="nimbus" size={76} round ring />
       <div style={{ padding: '22px 28px', borderRadius: '30px 30px 30px 8px', border: `3px solid ${A.ink}`, background: A.surface, boxShadow: `6px 6px 0 ${A.ink}` }}>
-        <div style={{ ...F.bold, fontSize: 18, color: A.muted }}>Финтех · HR</div>
+        <div style={{ ...F.bold, fontSize: 18, color: A.muted }}>{BRANDS.nimbus.name} · HR</div>
         <div style={{ ...F.bold, marginTop: 8, fontSize: 28, lineHeight: 1.3 }}>Здравствуйте! Приглашаем на собеседование в четверг в 15:00</div>
       </div>
     </div>
