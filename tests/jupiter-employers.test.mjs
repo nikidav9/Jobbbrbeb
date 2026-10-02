@@ -21,3 +21,13 @@ test('документ о работодателях есть в наборе и
   assert.match(legal, /JUPITER_EMPLOYERS/);
   assert.match(legal, /Работодатели Юпитера/);
 });
+
+test('компании знают, как попросить их не показывать', () => {
+  const legal = readFileSync('constants/legal.ts', 'utf8');
+  assert.match(legal, /companies: \{/);
+  assert.match(legal, /5 рабочих дней/);
+  assert.match(legal, /на домене компании/);
+  for (const screen of ['app/legal.tsx', 'app/profile-settings.tsx']) {
+    assert.match(readFileSync(screen, 'utf8'), /'companies'/, screen);
+  }
+});

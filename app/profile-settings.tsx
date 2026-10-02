@@ -44,6 +44,7 @@ const ABOUT_DOCS: { key: LegalDocKey; icon: IonName }[] = [
   { key: 'dataPolicy', icon: 'lock-closed-outline' },
   { key: 'marketing', icon: 'megaphone-outline' },
   { key: 'employers', icon: 'business-outline' },
+  { key: 'companies', icon: 'briefcase-outline' },
 ];
 
 // Иконки плиток — пути из docs/design/settings-help/03-settings.html.
