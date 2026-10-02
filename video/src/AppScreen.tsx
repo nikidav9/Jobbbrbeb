@@ -8,6 +8,7 @@
  */
 import React from 'react';
 import { Img, staticFile } from 'remotion';
+import { BRANDS, BrandKey, BrandMark } from './Brands';
 
 export const A = {
   bg: '#F5EFE6', ink: '#141414', accent: '#FF6B1A', soft: '#FFE2CC', surface: '#FFFFFF',
@@ -39,13 +40,13 @@ export const Icon = {
 };
 
 // ── Карточка вакансии ленты ─────────────────────────────────────────────────
-export type Vac = { letter: string; color: string; company: string; ago: string; title: string; place: string; format: string; pay: string; desc: string };
+export type Vac = { brand: BrandKey; ago: string; title: string; place: string; format: string; pay: string; desc: string };
 export const VACS: Vac[] = [
-  { letter: 'Ф', color: A.purple, company: 'Финтех', ago: '40 минут назад', title: 'Frontend-разработчик (React)', place: 'Москва', format: 'Удалённо',
+  { brand: 'nimbus', ago: '40 минут назад', title: 'Frontend-разработчик (React)', place: 'Москва', format: 'Удалённо',
     pay: '250 000 ₽/мес', desc: 'Ищем frontend-разработчика в команду платёжного продукта. TypeScript, React, дизайн-система, релизы каждую неделю.' },
-  { letter: 'М', color: '#0EA5E9', company: 'Маркетплейс', ago: '2 часа назад', title: 'Data Scientist', place: 'Москва', format: 'Гибрид',
+  { brand: 'hexa', ago: '2 часа назад', title: 'Data Scientist', place: 'Москва', format: 'Гибрид',
     pay: '300 000 ₽/мес', desc: 'Рекомендации и поиск. Python, SQL, A/B-тесты на миллионах пользователей. Senior.' },
-  { letter: 'Е', color: '#16A34A', company: 'EdTech', ago: 'сегодня', title: 'QA-инженер (автотесты)', place: 'Москва', format: 'Офис',
+  { brand: 'lampa', ago: 'сегодня', title: 'QA-инженер (автотесты)', place: 'Москва', format: 'Офис',
     pay: '180 000 ₽/мес', desc: 'Playwright, CI, тест-дизайн. Наставник на первые три месяца.' },
 ];
 
@@ -57,10 +58,9 @@ export const FeedCard: React.FC<{ v: Vac; stampYes?: number; stampNo?: number }>
   <div style={{ position: 'absolute', inset: 0, padding: '22px 22px 0', borderRadius: 30, border: `2px solid ${A.ink}`, background: A.surface,
     boxShadow: `6px 6px 0 ${A.ink}`, overflow: 'hidden' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-      <div style={{ ...F.bold, width: 46, height: 46, borderRadius: 23, background: v.color, color: '#fff', fontSize: 17,
-        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{v.letter}</div>
+      <BrandMark b={v.brand} size={46} round />
       <div>
-        <div style={{ ...F.bold, fontSize: 16 }}>{v.company}</div>
+        <div style={{ ...F.bold, fontSize: 16 }}>{BRANDS[v.brand].name}</div>
         <div style={{ ...F.bold, fontSize: 13, color: A.muted, marginTop: 2 }}>Карьерный сайт · {v.ago}</div>
       </div>
     </div>
@@ -157,16 +157,15 @@ export const ResponsesScreen: React.FC<{ invited: number }> = ({ invited }) => (
     </div>
     <div style={{ ...F.bold, fontSize: 13, color: A.muted, marginTop: 18 }}>Сегодня</div>
     {[
-      { c: 'Финтех', l: 'Ф', col: A.purple, t: 'Frontend-разработчик (React)', s: invited > 0.5 ? 'Ответ работодателя: приглашение на собеседование' : 'Юпитер заполнил анкету на сайте компании', fresh: true },
-      { c: 'Логистика', l: 'Л', col: '#F59E0B', t: 'Backend-разработчик на Go', s: 'Юпитер заполнил анкету на сайте компании', fresh: false },
+      { b: 'nimbus' as BrandKey, t: 'Frontend-разработчик (React)', s: invited > 0.5 ? 'Ответ работодателя: приглашение на собеседование' : 'Юпитер заполнил анкету на сайте компании', fresh: true },
+      { b: 'veter' as BrandKey, t: 'Backend-разработчик на Go', s: 'Юпитер заполнил анкету на сайте компании', fresh: false },
     ].map((r, i) => (
-      <div key={r.c} style={{ display: 'flex', gap: 12, padding: 16, marginTop: 10, borderRadius: 22, background: A.surface,
+      <div key={r.b} style={{ display: 'flex', gap: 12, padding: 16, marginTop: 10, borderRadius: 22, background: A.surface,
         border: `2px solid ${r.fresh ? A.ink : 'transparent'}`, boxShadow: r.fresh ? `5px 5px 0 ${A.ink}` : 'none' }}>
-        <div style={{ ...F.bold, flex: 'none', width: 44, height: 44, borderRadius: 12, background: r.col, color: '#fff', fontSize: 17,
-          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{r.l}</div>
+        <BrandMark b={r.b} size={44} />
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ ...F.bold, fontSize: 14, color: A.muted }}>{r.c}</span>
+            <span style={{ ...F.bold, fontSize: 14, color: A.muted }}>{BRANDS[r.b].name}</span>
             {i === 0 && invited > 0.5
               ? <span style={{ ...F.bold, fontSize: 12, padding: '5px 9px', borderRadius: 999, background: A.accent, border: `1.5px solid ${A.ink}` }}>Приглашение</span>
               : <span style={{ ...F.bold, fontSize: 12, padding: '5px 9px', borderRadius: 999, background: A.chip, color: A.body, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{Icon.check()}Отправлено</span>}
