@@ -302,20 +302,6 @@ export async function fetchUsers() {
   const w30 = subDays(new Date(), 30).toISOString()
   const w7 = subDays(new Date(), 7).toISOString()
 
-  // metro top
-  const metroMap: Record<string, { workers: number; employers: number }> = {}
-  for (const user of u) {
-    const s = (user as any).metro_station
-    if (!s) continue
-    if (!metroMap[s]) metroMap[s] = { workers: 0, employers: 0 }
-    if ((user as any).role === 'worker') metroMap[s].workers++
-    else metroMap[s].employers++
-  }
-  const metroTop = Object.entries(metroMap)
-    .map(([station, counts]) => ({ station, ...counts, total: counts.workers + counts.employers }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 10)
-
   // 90-day growth
   const wByDay = groupByDate(workers, 'created_at')
   const eByDay = groupByDate(employers, 'created_at')
@@ -381,7 +367,6 @@ export async function fetchUsers() {
     },
     growth90,
     cumulative,
-    metroTop,
     recent,
     roleSplit: [
       { name: 'Работники', value: workers.length, fill: PALETTE.orange },

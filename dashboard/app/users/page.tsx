@@ -17,10 +17,10 @@ import {
 import { downloadCSV } from '@/lib/csv-export'
 import { getVerifiedUsers, setUserVerified } from '@/lib/verification'
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
-import { AXIS, AXIS_CAT, GRID, LEGEND, TT } from '@/lib/chart'
+import { AXIS, GRID, LEGEND, TT } from '@/lib/chart'
 
 
 /** Текст с копированием по клику: почта и телефон нужны, чтобы вставить их в письмо или поиск. */
@@ -434,19 +434,6 @@ export default function UsersPage() {
             <DonutRoles workers={d.kpi.workers} employers={d.kpi.employers} />
           </ChartCard>
         </div>
-        <ChartCard title="Топ станций метро" sub="Работники и работодатели">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={d.metroTop.slice(0, 10)} layout="vertical" margin={{ left: 0, right: 24, top: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
-              <XAxis type="number" tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-              <YAxis type="category" dataKey="station" tick={AXIS_CAT} tickLine={false} axisLine={false} width={120} />
-              <Tooltip contentStyle={TT} />
-              <Legend iconType="square" iconSize={8} wrapperStyle={LEGEND} />
-              <Bar dataKey="workers" name="Работники" fill={PALETTE.orange} stackId="a" />
-              <Bar dataKey="employers" name="Работодатели" fill={PALETTE.blue} stackId="a" radius={[0, 3, 3, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
         {d.recent.length > 0 && (
           <ChartCard
             title="Все пользователи"
