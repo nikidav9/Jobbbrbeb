@@ -36,7 +36,9 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
         {/* Favicon */}
-        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+        <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+        {/* 120×120 — размер, который берёт Яндекс в выдачу (02.10.2026: там висел старый значок с полями). */}
+        <link rel="icon" type="image/png" sizes="120x120" href="/favicon-120.png?v=3" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 
         <ScrollViewStyleReset />
