@@ -126,7 +126,7 @@ const FIELDS: [string, string][] = [
   ['Резюме', 'Резюме.pdf'],
 ];
 
-const Form: React.FC<{ f: number }> = ({ f }) => {
+export const Form: React.FC<{ f: number }> = ({ f }) => {
   const shown = win(f, 104, 128, 322, 338);
   const start = 132;
   const per = 36;
@@ -176,7 +176,7 @@ const Form: React.FC<{ f: number }> = ({ f }) => {
 };
 
 // ── Сообщение работодателя ──────────────────────────────────────────────────
-const Chat: React.FC<{ f: number }> = ({ f }) => {
+export const Chat: React.FC<{ f: number }> = ({ f }) => {
   const { fps } = useVideoConfig();
   const pop = spring({ frame: f - 334, fps, config: { damping: 13, mass: 0.8 } });
   const fade = interpolate(f, [392, 410], [1, 0], clamp);
