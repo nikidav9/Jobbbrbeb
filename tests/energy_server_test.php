@@ -18,9 +18,9 @@ check('сутки — по Москве: 22:30 UTC уже следующий д�
     jt_energy_since(new DateTimeImmutable('2026-10-02 22:30', $utc)) === '2026-10-02T21:00:00Z');
 check('сутки — по Москве: 20:30 UTC ещё сегодня',
     jt_energy_since(new DateTimeImmutable('2026-10-02 20:30', $utc)) === '2026-10-01T21:00:00Z');
-check('запас 20 в сутки, как в приложении', JT_DAILY_APPLIES === 20
-    && str_contains((string)file_get_contents(__DIR__ . '/../services/energy.ts'), 'DAILY_ENERGY = 20'));
-check('остаток не уходит ниже нуля', jt_energy_left(0) === 20 && jt_energy_left(19) === 1 && jt_energy_left(25) === 0);
+check('запас 15 в сутки, как в приложении', JT_DAILY_APPLIES === 15
+    && str_contains((string)file_get_contents(__DIR__ . '/../services/energy.ts'), 'DAILY_ENERGY = 15'));
+check('остаток не уходит ниже нуля', jt_energy_left(0) === 15 && jt_energy_left(14) === 1 && jt_energy_left(25) === 0);
 
 $db = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
 $case = function (string $fn) use ($db): string {

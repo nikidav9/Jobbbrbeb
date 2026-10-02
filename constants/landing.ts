@@ -17,7 +17,7 @@
  *    документы, приглашения открывают приложение как раньше.
  *
  * Цифры на сайте — факты о продукте, а не статистика (её у IT-приложения ещё
- * нет): отклик бесплатен, 20 откликов в день (services/energy.ts), анкету на
+ * нет): отклик бесплатен, 15 откликов в день (services/energy.ts), анкету на
  * сайте работодателя заполняет Юпитер. Изменились правила — поправь и здесь.
  */
 
@@ -294,7 +294,7 @@ export const LANDING_MARKUP = `
           <div class="phone-wrap" aria-hidden="true">
             <div class="phone"><div class="screen">
               <div class="notch"></div>
-              <div class="scr-top"><b>Вакансии</b><span class="bolt"><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-1px"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="#FF6B1A" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg> 20</span></div>
+              <div class="scr-top"><b>Вакансии</b><span class="bolt"><svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-1px"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="#FF6B1A" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg> 15</span></div>
               <div class="deck" id="jtl-deck">
                 <div class="card" data-pos="0">
                   <div class="logo-badge" style="background:#FFE2CC">F</div>
@@ -361,7 +361,7 @@ export const LANDING_MARKUP = `
         <h2 class="rv">Честные цифры с первого дня</h2>
         <div class="stats">
           <div class="stat rv"><b><span data-count-from="990" data-count-to="0">0</span><em> ₽</em></b><span>для соискателя — отклики бесплатны</span></div>
-          <div class="stat rv"><b><span data-count-from="0" data-count-to="20">20</span></b><span>откликов в день — осмысленно, а не по шаблону</span></div>
+          <div class="stat rv"><b><span data-count-from="0" data-count-to="15">15</span></b><span>откликов в день — осмысленно, а не по шаблону</span></div>
           <div class="stat rv"><b>1<em>&nbsp;=&nbsp;</em>1</b><span>один свайп — один отклик на сайте работодателя</span></div>
         </div>
       </div>
@@ -378,7 +378,7 @@ export const LANDING_MARKUP = `
           </div>
           <ul>
             <li>Вакансия в общей ленте IT-вакансий</li>
-            <li>Отклик — осознанный выбор: у кандидата 20 откликов в день</li>
+            <li>Отклик — осознанный выбор: у кандидата 15 откликов в день</li>
             <li>Переписка с кандидатом в чате, без лишних писем</li>
           </ul>
         </div>
