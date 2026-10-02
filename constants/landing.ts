@@ -8,8 +8,9 @@
  * центру, QR в углу, окошко-превью; «как это работает»; цифры; огромное
  * «JobToo» в подвале), тексты и оформление свои, стиль JobToo: тёплый фон,
  * чёрная обводка, жёсткая тень, оранжевый акцент, Unbounded в заголовках.
- * Ролик — public/landing/hero.{mp4,webm,jpg}, собирается в video/ (Remotion,
- * `npm run render`); поменял сценарий — перерендери и замени три файла.
+ * Ролики — public/landing/hero.{mp4,webm,jpg} (фон) и promo.{mp4,webm} (окно «Смотреть
+ * ролик»), собираются в video/ (Remotion, `npm run render`); поменял сценарий —
+ * перерендери и замени файлы.
  *
  * Всё лежит в той же веб-сборке (app/+html.tsx), без правок nginx:
  *  - LANDING_DETECT стоит первым в <head> и решает до отрисовки, показывать
@@ -427,13 +428,16 @@ root.querySelectorAll('.split').forEach(function(h){
 // Ролик первого экрана: адрес подставляем только здесь — на телефоне файл не качается.
 // H.264 играют Chrome, Яндекс и Safari; открытые сборки Chromium и часть Firefox на Linux — только WebM.
 var video=document.getElementById('jtl-video');
-var SRC=video&&video.canPlayType('video/mp4; codecs="avc1.42E01E"')?'/landing/hero.mp4':'/landing/hero.webm';
+var MP4=!!video&&!!video.canPlayType('video/mp4; codecs="avc1.42E01E"');
+var SRC=MP4?'/landing/hero.mp4':'/landing/hero.webm';
+// В окне «Смотреть ролик» — рекламная версия: заставка, сюжет, «Скачайте в RuStore».
+var PROMO=MP4?'/landing/promo.mp4':'/landing/promo.webm';
 if(video&&!reduce){video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
 var modal=document.getElementById('jtl-modal'),mv=document.getElementById('jtl-modal-video');
 function closeModal(){modal.classList.remove('on');mv.pause();}
 root.addEventListener('click',function(e){
   if(e.target.closest('[data-jtl-reel]')){
-    if(!mv.src)mv.src=SRC;modal.classList.add('on');mv.currentTime=0;
+    if(!mv.src)mv.src=PROMO;modal.classList.add('on');mv.currentTime=0;
     var q=mv.play();if(q&&q.catch)q.catch(function(){});return;
   }
   if(e.target.closest('[data-jtl-close]')||e.target===modal)closeModal();
