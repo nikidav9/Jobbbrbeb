@@ -90,3 +90,41 @@ def extra_allowed_hosts(vacancy_url: str, observed_hosts) -> set[str]:
         if info is not None and info.can_apply:
             result.add(host)
     return result
+
+
+# Составные окончания, у которых «домен второго уровня» — это три метки.
+# Полного списка публичных суффиксов в stdlib нет; здесь те, что встречаются
+# у российских работодателей, и несколько общих.
+_TWO_LEVEL_SUFFIXES = {
+    "com.ru", "org.ru", "net.ru", "pp.ru", "msk.ru", "spb.ru", "nov.ru",
+    "co.uk", "org.uk", "com.au", "com.br", "co.jp", "com.tr", "com.ua", "com.cn",
+    "co.kr", "co.in", "com.kz", "org.kz",
+}
+
+
+def registrable_domain(host: str) -> str:
+    """Домен «сайта» для хоста: jobs.acme.ru и www.acme.ru -> acme.ru.
+
+    IP-адреса и одиночные имена (localhost) возвращаются как есть: поддоменов
+    у них для нашей проверки нет.
+    """
+    host = _host(host)
+    labels = host.split(".")
+    if len(labels) < 2 or all(part.isdigit() for part in labels) or ":" in host:
+        return host
+    tail = ".".join(labels[-2:])
+    if tail in _TWO_LEVEL_SUFFIXES and len(labels) >= 3:
+        return ".".join(labels[-3:])
+    return tail
+
+
+def same_site(host: str, other: str) -> bool:
+    """Тот же регистрируемый домен (поддомены считаются одним сайтом)."""
+    a, b = registrable_domain(host), registrable_domain(other)
+    return bool(a) and a == b
+
+
+def is_apply_ats(host: str) -> bool:
+    """Известный ATS, куда можно подавать без входа кандидата."""
+    info = _match(_host(host))
+    return info is not None and info.can_apply
