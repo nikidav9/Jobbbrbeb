@@ -51,6 +51,15 @@ class DeferLandingBundle(unittest.TestCase):
         self.assertIn("||", call)  # не нашёл тег — выкладка идёт дальше
         self.assertLess(start, deploy.index('RELEASE="$WEB_RELEASES/local-$HEAD"'))
 
+    def test_github_actions_deploy_runs_it_too(self):
+        # Сайт выкладывает и deploy-regru.yml (builder "github-actions"): шаг должен
+        # стоять после сборки Expo и до упаковки, и не валить выкладку.
+        wf = (ROOT / ".github/workflows/deploy-regru.yml").read_text(encoding="utf-8")
+        call = wf.index("python3 scripts/defer-landing-bundle.py dist/index.html")
+        self.assertGreater(call, wf.index("npx expo export --platform web"))
+        self.assertLess(call, wf.index("tar -czf dist.tar.gz"))
+        self.assertIn("||", wf[call:wf.index("\n", call)])
+
     def test_real_expo_page_matches_the_pattern(self):
         # Тот же вид, что собирает Expo: проверено на сборке 03.10.2026.
         self.assertEqual(len(defer.TAG.findall(PAGE)), 1)
