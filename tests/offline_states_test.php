@@ -108,7 +108,8 @@ check('отклики: обрыв меряется по всему списку,
     str_contains($m, 'offline.permApplications && myApps.length === 0'));
 
 // ── Регистрация и поддержка: сетевой сбой не выдаётся за успех/пустоту ───────
-foreach (['app/register-worker.tsx' => 'работник', 'app/register-employer.tsx' => 'работодатель'] as $file => $role) {
+// Регистрации работодателя нет с 03.10.2026 — проверяем только работника.
+foreach (['app/register-worker.tsx' => 'работник'] as $file => $role) {
     $src = (string)file_get_contents(__DIR__ . '/../' . $file);
     check("регистрация {$role}: сбой сети не пропускает дальше",
         !preg_match('~catch\s*(\(\w+\))?\s*\{[\s\S]{0,180}setStep\(2\)~', $src));

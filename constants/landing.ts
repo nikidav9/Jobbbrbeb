@@ -27,10 +27,15 @@
  */
 
 import { DAILY_ENERGY } from '../services/energy.ts';
-import { JUPITER_EMPLOYERS } from './jupiterEmployers.ts';
 
 /** Компаний в перечне Юпитера — вниз до сотен: «500+» правда, пока их не меньше 500. */
-const EMPLOYERS_FLOOR = Math.floor(JUPITER_EMPLOYERS.length / 100) * 100;
+// Компаниям — письмо в поддержку вместо регистрации работодателя
+// (решение владельца 03.10.2026; то же — экран app/register-employer.tsx).
+const BUSINESS_MAILTO = 'mailto:support@jobtoo.ru?subject='
+  + encodeURIComponent('Бизнес: добавление вакансий в ленту');
+// Число компаний — живое: страница берёт его из /api/feed_stats.php
+// (feed_companies — компании с вакансиями в ленте), а не из списка в коде
+// (решение владельца 03.10.2026). До ответа сервера — «…».
 
 /** RuStore — нынешний пакет. Выйдет ru.jobtoo — заменить ссылку. */
 const RUSTORE_URL = 'https://www.rustore.ru/catalog/app/com.nikidav23.onspaceapp';
@@ -504,7 +509,7 @@ export const LANDING_MARKUP = `
         <div class="stats">
           <div class="stat rv"><b class="word">Бесплатно</b><span>для соискателя — все отклики и чат с работодателем</span></div>
           <div class="stat rv"><b><span data-count-from="0" data-count-to="${DAILY_ENERGY}">${DAILY_ENERGY}</span></b><span>откликов в день — осмысленно, а не по шаблону</span></div>
-          <div class="stat rv"><b><span data-count-from="0" data-count-to="${EMPLOYERS_FLOOR}">${EMPLOYERS_FLOOR}</span><em>+</em></b><span>компаний, на сайтах которых Юпитер откликается за вас</span></div>
+          <div class="stat rv"><b><span id="jtl-companies" data-count-from="0">…</span></b><span>компаний, на вакансии которых Юпитер откликается за вас</span></div>
         </div>
       </div>
     </section>
@@ -515,13 +520,13 @@ export const LANDING_MARKUP = `
           <div>
             <p class="kicker">Работодателям</p>
             <h2>Кандидаты, которые сами выбрали вашу вакансию</h2>
-            <p class="sub">Опубликуйте IT-вакансию в JobToo: её увидят в ленте те, кому она подходит, а отвечать им можно прямо в чате.</p>
-            <a class="btn btn-accent" href="/register-employer">Разместить вакансию →</a>
+            <p class="sub">Напишите нам — подключим ваш карьерный сайт к ленте JobToo. Регистрироваться не нужно.</p>
+            <a class="btn btn-accent" href="${BUSINESS_MAILTO}">Написать нам →</a>
           </div>
           <ul>
-            <li>Вакансия в общей ленте IT-вакансий</li>
+            <li>Вакансии в общей ленте — IT и офис</li>
             <li>Отклик — осознанный выбор: у кандидата ${DAILY_ENERGY} откликов в день</li>
-            <li>Переписка с кандидатом в чате, без лишних писем</li>
+            <li>Отклик приходит к вам на сайт, как от обычного кандидата</li>
           </ul>
         </div>
       </div>
@@ -603,6 +608,15 @@ var io=new IntersectionObserver(function(es){es.forEach(function(en){
     el.querySelectorAll('[data-count-to]').forEach(count);},Math.max(0,sibs)*110);
 });},{root:root,threshold:.18});
 root.querySelectorAll('.rv').forEach(function(el){io.observe(el);});
+
+// Живое число компаний в ленте: тот же счётчик, что у дашборда (кеш 10 минут).
+var comp=document.getElementById('jtl-companies');
+if(comp&&window.fetch)fetch('/api/feed_stats.php').then(function(r){return r.json();}).then(function(d){
+  var n=+d.feed_companies;if(!(n>0))return;
+  comp.setAttribute('data-count-to',n);
+  var card=comp.closest('.rv');
+  if(card&&card.classList.contains('in'))count(comp);else comp.textContent=n.toLocaleString('ru-RU');
+}).catch(function(){});
 
 // История на прокрутке: сцена 1–3 по доле прокрутки раздела, внутри сцены — ход 0..1.
 var story=document.getElementById('jtl-story'),stage=document.getElementById('jtl-stage'),

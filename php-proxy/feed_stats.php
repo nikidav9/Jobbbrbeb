@@ -70,6 +70,9 @@ function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [])
     $itSet = array_flip($itCompanies);
     $feed = 0;
     $feedMoscow = 0;
+    // Компании, на чьи вакансии в ленте можно откликнуться, — число на сайте
+    // (решение владельца 03.10.2026: реальное и живое, а не «500+»).
+    $feedCompanies = [];
     $bySection = [];
     $byCompany = [];
     // Москва вне ленты: по разделам и офисные группы по названию.
@@ -85,7 +88,10 @@ function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [])
         // миграция 143) или IT-компания без «рабочих» разделов (миграция 132).
         if (in_array($section, JOB_SECTIONS_FEED, true) || (isset($itSet[$company]) && !in_array($section, JOB_SECTIONS_BLUE_COLLAR, true))) {
             $feed++;
-            if (fs_is_moscow($r)) $feedMoscow++;
+            if (fs_is_moscow($r)) {
+                $feedMoscow++;
+                if ($company !== '—') $feedCompanies[$company] = true;
+            }
         } elseif (fs_is_moscow($r)) {
             $outside['total']++;
             $outside['by_section'][$section] = ($outside['by_section'][$section] ?? 0) + 1;
@@ -120,6 +126,7 @@ function fs_aggregate(array $rows, string $generatedAt, array $itCompanies = [])
         'it_total' => $bySection['it'] ?? 0,
         'it_feed_total' => $feed,
         'feed_total' => $feedMoscow,
+        'feed_companies' => count($feedCompanies),
         'companies' => count($companies),
         'it_companies' => count(array_filter($companies, fn($c) => $c['it'] > 0)),
         'by_section' => $bySection,

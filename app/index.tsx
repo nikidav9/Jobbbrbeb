@@ -351,14 +351,14 @@ export default function RootScreen() {
         </View>
 
         <Text style={styles.employer}>
-          IT-компания?{' '}
+          Компания?{' '}
           <Text
             style={styles.employerLink}
             onPress={() => router.push('/register-employer')}
             testID="entry-employer"
             accessibilityRole="link"
           >
-            Найти разработчиков
+            Разместить вакансии
           </Text>
         </Text>
 

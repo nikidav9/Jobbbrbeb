@@ -40,6 +40,12 @@ check('раздел marketing — в ленте (миграция 143), finance/
                   ['company' => 'X5 Group', 'section' => 'hr', 'address' => 'Москва'],
                   ['company' => 'X5 Group', 'section' => 'legal', 'address' => 'Москва'],
                   ['company' => 'X5 Group', 'section' => 'office', 'address' => 'Москва']], 'x')['feed_total'] === 4);
+check('компании ленты: только с вакансией в ленте по Москве, без повторов',
+    fs_aggregate([['company' => 'VK', 'section' => 'it', 'address' => 'Москва'],
+                  ['company' => 'VK', 'section' => 'it', 'address' => 'Москва'],
+                  ['company' => 'Пятёрочка', 'section' => 'retail', 'address' => 'Москва'],
+                  ['company' => 'Тинькофф', 'section' => 'it', 'address' => 'Казань'],
+                  ['company' => 'Сбер', 'section' => 'finance', 'address' => null]], 'x')['feed_companies'] === 2);
 check('пустая таблица', fs_aggregate([], 'x')['total'] === 0 && fs_aggregate([], 'x')['it_total'] === 0);
 
 check('в ленту по Москве не идут другие города',

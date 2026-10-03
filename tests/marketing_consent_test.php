@@ -165,7 +165,7 @@ check('документ называет закон о рекламе', str_cont
 check('документ: только о самом JobToo',
     str_contains($legal, 'Реклама товаров и услуг третьих лиц в рамках настоящего согласия не направляется'));
 
-foreach (['register-worker', 'register-employer'] as $screen) {
+foreach (['register-worker'] as $screen) { // работодателя регистрировать нельзя с 03.10.2026
     $src = (string)file_get_contents("$root/app/$screen.tsx");
     check("$screen: галочка по умолчанию снята", str_contains($src, 'const [adsAgreed, setAdsAgreed] = useState(false);'));
     check("$screen: реклама не блокирует «Продолжить»",
