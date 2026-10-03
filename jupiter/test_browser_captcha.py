@@ -178,6 +178,26 @@ class CaptchaTest(unittest.TestCase):
         with self.assertRaises(bc.CaptchaError):
             bc.enter_answer(self.page, info, "abc")
 
+    def test_refresh_clicks_reload_control_inside_captcha_only(self):
+        box = CAPTCHA_BOX.replace(
+            '<button type="button" id="ok">',
+            '<button type="button" id="rl" class="captcha-refresh" title="Обновить картинку" '
+            'onclick="window.reloaded=(window.reloaded||0)+1">&#8635;</button>'
+            '<button type="button" id="ok">')
+        self.show(PERSONAL_FORM + box + '<button id="outside" class="refresh" '
+                  'onclick="window.outside=true">Обновить страницу</button>')
+        info = bc.detect(self.page)
+        self.assertIsNotNone(info.reload_selector)
+        self.assertTrue(bc.refresh(self.page, info, wait_ms=100))
+        self.assertEqual(self.page.evaluate("() => window.reloaded"), 1)
+        self.assertFalse(self.page.evaluate("() => !!window.outside"))
+
+    def test_refresh_without_reload_control_does_nothing(self):
+        self.show(PERSONAL_FORM + CAPTCHA_BOX)
+        info = bc.detect(self.page)
+        self.assertIsNone(info.reload_selector)
+        self.assertFalse(bc.refresh(self.page, info))
+
     # ── Нажатия на снимок: галочка и сетка картинок ──────────────────────────
 
     ANCHOR = (

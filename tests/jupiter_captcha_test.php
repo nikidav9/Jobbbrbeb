@@ -24,7 +24,7 @@ foreach (['jupiterCaptchaPost', 'jupiterCaptchaPoll', 'jupiterCaptchaResult'] as
     check("$fn только для воркера",
         str_contains($adminBlock, "'$fn'") && !str_contains($selfBlock, "'$fn'"));
 }
-foreach (['jupiterCaptchaGet', 'jupiterCaptchaAnswer'] as $fn) {
+foreach (['jupiterCaptchaGet', 'jupiterCaptchaAnswer', 'jupiterCaptchaRefresh'] as $fn) {
     check("$fn привязан к владельцу",
         str_contains($selfBlock, "'$fn' => 0") && !str_contains($adminBlock, "'$fn'"));
 }
@@ -37,8 +37,9 @@ $body = function (string $case, string $next) use ($db): string {
 };
 $post = $body('jupiterCaptchaPost', 'jupiterCaptchaGet');
 $get = $body('jupiterCaptchaGet', 'jupiterCaptchaAnswer');
-$ans = $body('jupiterCaptchaAnswer', 'jupiterCaptchaPoll');
+$ans = $body('jupiterCaptchaAnswer', 'jupiterCaptchaRefresh');
 $poll = $body('jupiterCaptchaPoll', 'jupiterCaptchaResult');
+$refresh = $body('jupiterCaptchaRefresh', 'jupiterCaptchaPoll');
 
 check('картинка ограничена 200 КБ', str_contains($post, '200000'));
 check('капча ставит CAPTCHA_HUMAN и action_required',
@@ -88,6 +89,17 @@ foreach (['', 'слово', '0.5', '1.2,0.1', '-0.1,0.1', '1.5,0.1', '1.0001,0.1
           implode(';', array_fill(0, 13, '0.5,0.5'))] as $bad) {
     check("нажатия отклоняются: $bad", preg_match($re, $bad) === 0);
 }
+
+// ── «Повторить капчу» ───────────────────────────────────────────────────────
+check('refresh: только своя ждущая не просроченная',
+    str_contains($refresh, "'user_id' => 'eq.' . \$uidArg") && str_contains($refresh, "'status' => 'eq.pending'")
+    && str_contains($refresh, '<= time()') && str_contains($refresh, '409'));
+check('refresh ставит статус refresh', str_contains($refresh, "['status' => 'refresh']"));
+check('новая капча закрывает и refresh-строки', str_contains($post, "'in.(pending,answered,refresh)'"));
+check('миграция 146 разрешает статус refresh',
+    str_contains($sqlTap, "'pending', 'answered', 'expired', 'solved', 'failed', 'refresh'")
+    && str_contains($sqlTap, 'drop constraint if exists jm_jupiter_captcha_status_check'));
+check('клиент: jupiterCaptchaRefresh', str_contains($ts, 'export async function jupiterCaptchaRefresh'));
 
 // ── База ────────────────────────────────────────────────────────────────────
 check('RLS включён', str_contains($sql, 'enable row level security'));

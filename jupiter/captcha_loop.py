@@ -29,6 +29,11 @@ MAX_CAPTCHAS_PER_TASK = 2
 # Нажатия: галочка нередко открывает окно с заданием, а неверный выбор в сетке
 # приносит новую сетку — столько снимков подряд показываем за один заход.
 MAX_TAP_ROUNDS = 3
+# Картинка на сайте меняется, ответ может не подойти. Человек жмёт «Повторить
+# капчу» или вводит ответ заново: столько снимков за один заход и столько
+# неверных ответов подряд — больше сайт, скорее всего, гоняет по кругу.
+MAX_TEXT_ROUNDS = 6
+MAX_WRONG_ANSWERS = 2
 
 
 def solve_with_human(
@@ -53,7 +58,10 @@ def solve_with_human(
 
 
 def _wait_answer(queue: Any, task_id: str, wait_s, poll_s, sleep, clock) -> tuple[str, str | None]:
-    """Ждать ответа человека, держа аренду. ('answered', текст) | ('expired', None)."""
+    """Ждать ответа человека, держа аренду.
+
+    ('answered', текст) | ('refresh', None) — человек просит новую капчу |
+    ('expired', None)."""
     deadline = clock() + wait_s
     while clock() < deadline:
         # Потеряли аренду — задача уже не наша, вводить ответ нельзя.
@@ -62,31 +70,68 @@ def _wait_answer(queue: Any, task_id: str, wait_s, poll_s, sleep, clock) -> tupl
         status, answer = queue.captcha_poll(task_id)
         if status == "answered":
             return "answered", answer
+        if status == "refresh":
+            return "refresh", None
         if status == "expired":
             return "expired", None
         sleep(poll_s)
     return "expired", None
 
 
+def _renew(engine: Any, info: Any) -> Any:
+    """Новая капча по просьбе человека: «обновить картинку» на сайте, если она
+    есть, и свежий поиск капчи на странице (None — капчи уже нет)."""
+    refresh = getattr(engine, "refresh_captcha", None)
+    if callable(refresh):
+        refresh(info)
+    return engine.captcha()
+
+
 def _solve_text(engine, queue, task_id, info, wait_s, poll_s, sleep, clock) -> str:
-    queue.captcha_post(task_id, engine.captcha_png(info))
-    status, answer = _wait_answer(queue, task_id, wait_s, poll_s, sleep, clock)
-    if status != "answered":
-        return EXPIRED
-    ok = bool(engine.enter_captcha(info, answer))
-    answer = None
-    outcome = SOLVED if ok else FAILED
-    queue.captcha_result(task_id, outcome)
-    return outcome
+    wrong = 0
+    for _ in range(MAX_TEXT_ROUNDS):
+        queue.captcha_post(task_id, engine.captcha_png(info))
+        status, answer = _wait_answer(queue, task_id, wait_s, poll_s, sleep, clock)
+        if status == "refresh":
+            info = _renew(engine, info)
+            if info is None:
+                return SOLVED  # капчи уже нет: сайт пропустил сам
+            if not getattr(info, "transferable", False):
+                return UNSUPPORTED
+            continue
+        if status != "answered":
+            return EXPIRED
+        ok = bool(engine.enter_captcha(info, answer))
+        answer = None
+        if ok:
+            queue.captcha_result(task_id, SOLVED)
+            return SOLVED
+        queue.captcha_result(task_id, FAILED)
+        # Не подошло: сайт, как правило, показал новую картинку — человек
+        # вводит заново, а не теряет отклик.
+        wrong += 1
+        info = engine.captcha()
+        if wrong >= MAX_WRONG_ANSWERS or info is None or not getattr(info, "transferable", False):
+            return FAILED
+    return FAILED
 
 
 def _solve_taps(engine, queue, task_id, info, wait_s, poll_s, sleep, clock) -> str:
     """Снимок рамки → нажатия человека → те же нажатия в браузере воркера."""
     from browser_captcha import CaptchaError, parse_taps
 
-    for _ in range(MAX_TAP_ROUNDS):
+    taps_done = 0
+    for _ in range(MAX_TAP_ROUNDS + 2):
         queue.captcha_post(task_id, engine.captcha_tap_png(info), "tap")
         status, answer = _wait_answer(queue, task_id, wait_s, poll_s, sleep, clock)
+        if status == "refresh":
+            # Свежий снимок рамки (значок обновления человек жмёт на снимке сам).
+            info = engine.captcha()
+            if info is None:
+                return SOLVED
+            if not getattr(info, "tappable", False):
+                return UNSUPPORTED
+            continue
         if status != "answered":
             return EXPIRED
         try:
@@ -100,7 +145,8 @@ def _solve_taps(engine, queue, task_id, info, wait_s, poll_s, sleep, clock) -> s
             queue.captcha_result(task_id, SOLVED)
             return SOLVED
         queue.captcha_result(task_id, FAILED)
-        if state != "again":
+        taps_done += 1
+        if state != "again" or taps_done >= MAX_TAP_ROUNDS:
             return FAILED
         # Открылось (или обновилось) задание: новый снимок и новый круг.
         info = engine.captcha()

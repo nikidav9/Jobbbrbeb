@@ -1231,6 +1231,12 @@ class JupiterBrowserEngine:
         self._settle()
         return solved
 
+    def refresh_captcha(self, info: CaptchaInfo) -> bool:
+        """Попросить у сайта новую капчу («обновить картинку»). True — нажато."""
+        if self.read_only:
+            raise EngineSecurityError("Read-only Jupiter engine blocked captcha refresh")
+        return browser_captcha.refresh(self._tab, info)
+
     def captcha_tap_png(self, info: CaptchaInfo) -> bytes:
         """PNG рамки капчи (галочка, сетка картинок) — человеку для нажатий."""
         return browser_captcha.capture_tap(self._tab, info)

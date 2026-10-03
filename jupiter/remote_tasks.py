@@ -225,7 +225,7 @@ class RemoteTaskQueue:
         return str(result["id"])
 
     def captcha_poll(self, task_id: str) -> tuple[str, str | None]:
-        """(status, answer): none|pending|answered|expired|solved|failed."""
+        """(status, answer): none|pending|answered|refresh|expired|solved|failed."""
         result = self._call("jupiterCaptchaPoll", [task_id])
         if not isinstance(result, dict) or not isinstance(result.get("status"), str):
             raise RemoteError(0, "jupiterCaptchaPoll: bad response")

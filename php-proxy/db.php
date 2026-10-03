@@ -333,7 +333,7 @@ $selfArgFns = [
     'jupiterRequeueLive' => 0, 'jupiterGrantThirdPartyConsent' => 0,
     'jupiterMailbox' => 0, 'jupiterMailList' => 0, 'jupiterMailRead' => 0, 'jupiterMailUnread' => 0, 'jupiterMailHtml' => 0,
     'jupiterFillProfile' => 0, 'jupiterMarkManualSubmitted' => 0,
-    'jupiterApplicationEvents' => 0,
+    'jupiterApplicationEvents' => 0, 'jupiterCaptchaRefresh' => 0,
     // Капча человеку: видит и отвечает только владелец заявки.
     'jupiterCaptchaGet' => 0, 'jupiterCaptchaAnswer' => 0,
     // Вопросы от работодателей и банк ответов: только свои.
@@ -8244,7 +8244,7 @@ try {
             if (!$app) { jt_respond(['error' => 'Заявка не найдена'], 404); exit; }
             $now = now_iso();
             sb_update('jm_jupiter_captcha', [
-                'application_id' => 'eq.' . $appId, 'status' => 'in.(pending,answered)',
+                'application_id' => 'eq.' . $appId, 'status' => 'in.(pending,answered,refresh)',
             ], ['status' => 'expired']);
             $rows = sb_insert('jm_jupiter_captcha', [
                 'application_id' => $appId,
@@ -8326,6 +8326,28 @@ try {
             sb_update('jm_jupiter_captcha', [
                 'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uidArg, 'status' => 'eq.pending',
             ], ['status' => 'answered', 'answer' => $answer, 'answered_at' => now_iso()]);
+            $data = ['ok' => true];
+            break;
+        }
+
+        // «Повторить капчу»: картинка на сайте сменилась или ответ не подошёл.
+        // Человек просит свежую — своя, ждущая, не просроченная; воркер увидит
+        // статус refresh в poll, снимет капчу заново и положит новую строку.
+        case 'jupiterCaptchaRefresh': {
+            $uidArg = (string)($args[0] ?? '');
+            $appId = (string)($args[1] ?? '');
+            $row = sb_single('jm_jupiter_captcha', [
+                'user_id' => 'eq.' . $uidArg,
+                'application_id' => 'eq.' . $appId,
+                'status' => 'eq.pending',
+                'order' => 'created_at.desc',
+            ], 'id,expires_at');
+            if (!$row || strtotime((string)$row['expires_at']) <= time()) {
+                jt_respond(['error' => 'Капча устарела'], 409); exit;
+            }
+            sb_update('jm_jupiter_captcha', [
+                'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uidArg, 'status' => 'eq.pending',
+            ], ['status' => 'refresh']);
             $data = ['ok' => true];
             break;
         }

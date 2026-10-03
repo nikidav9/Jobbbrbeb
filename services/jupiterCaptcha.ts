@@ -5,6 +5,7 @@
 import {
   jupiterCaptchaAnswer as dbJupiterCaptchaAnswer,
   jupiterCaptchaGet as dbJupiterCaptchaGet,
+  jupiterCaptchaRefresh as dbJupiterCaptchaRefresh,
 } from '@/services/db';
 
 export type JupiterCaptcha = {
@@ -30,4 +31,9 @@ export async function jupiterCaptchaGet(userId: string, applicationId: string): 
 /** Ответ человека на капчу заявки. Сервер ищет ждущую капчу по заявке сам. */
 export async function jupiterCaptchaAnswer(userId: string, applicationId: string, answer: string): Promise<void> {
   await dbJupiterCaptchaAnswer(userId, applicationId, answer);
+}
+
+/** Попросить новую капчу: картинка на сайте сменилась или ответ не подошёл. */
+export async function jupiterCaptchaRefresh(userId: string, applicationId: string): Promise<void> {
+  await dbJupiterCaptchaRefresh(userId, applicationId);
 }

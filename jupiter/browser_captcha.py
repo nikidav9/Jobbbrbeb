@@ -103,10 +103,23 @@ _SCAN_JS = """(_root, trusted) => {
       const pref = /отправ|провер|подтверд|готов|продолж|submit|verify|check|ok/i;
       btn = good.find(b => pref.test((b.innerText || b.value || '') + ' ' + attrs(b))) || good[0] || null;
     }
+    // «Обновить картинку»: кнопка или значок рядом, только внутри самой капчи.
+    let reload = null;
+    if (best.isBox) {
+      const RELOAD = /refresh|reload|обнов|другую|сменить|заново/i;
+      reload = [...best.el.querySelectorAll("button, a, [role=button], span, i, svg, div")]
+        .filter(e => vis(e) && e !== btn && !e.contains(inp) && !e.contains(img) && !inp.contains(e)
+          && (!btn || !btn.contains(e)) && e.querySelectorAll('input').length === 0
+          && RELOAD.test(attrs(e) + ' ' + (e.getAttribute('title') || '') + ' ' +
+                         (e.getAttribute('aria-label') || '') +
+                         ((e.innerText || '').length < 30 ? ' ' + e.innerText : '')))
+        .sort((a, b) => a.querySelectorAll('*').length - b.querySelectorAll('*').length)[0] || null;
+    }
     img.setAttribute(MARK, 'img');
     inp.setAttribute(MARK, 'input');
     if (btn) btn.setAttribute(MARK, 'submit');
-    return {kind: 'text_image', boxed: best.isBox, submit: !!btn};
+    if (reload) reload.setAttribute(MARK, 'reload');
+    return {kind: 'text_image', boxed: best.isBox, submit: !!btn, reload: !!reload};
   }
   // Сетка картинок: контейнер капчи, плиток много, поля ввода нет.
   for (const el of boxed) {
@@ -129,6 +142,7 @@ class CaptchaInfo:
     image_selector: str | None = None
     input_selector: str | None = None
     submit_selector: str | None = None
+    reload_selector: str | None = None  # «обновить картинку» внутри капчи, если есть
 
     @property
     def transferable(self) -> bool:
@@ -164,6 +178,7 @@ def _text_image_info(vendor: str, frame_selector: str | None, found: dict) -> Ca
         input_selector=sel("input"),
         # Кнопка только внутри контейнера капчи: иначе это кнопка самой анкеты.
         submit_selector=sel("submit") if found.get("submit") else None,
+        reload_selector=sel("reload") if found.get("reload") else None,
     )
 
 
@@ -395,3 +410,20 @@ def tap(page, info: CaptchaInfo, points: list[tuple[float, float]], *, wait_ms: 
         if now[1]:
             return "again"   # открыто окно с заданием
     return "failed"
+
+
+def refresh(page, info: CaptchaInfo, *, wait_ms: int = 1500) -> bool:
+    """Попросить у сайта новую капчу: нажать «обновить картинку» внутри капчи.
+
+    True — кнопка нажата; False — её нет (картинка могла смениться сама, а для
+    нажатий человек сам жмёт значок обновления на снимке). Ничего за пределами
+    капчи не нажимается и ответ не вводится.
+    """
+    if not info.reload_selector:
+        return False
+    try:
+        _scope(page, info).locator(info.reload_selector).first.click(timeout=3000)
+    except Exception:
+        return False
+    page.wait_for_timeout(wait_ms)
+    return True

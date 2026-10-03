@@ -2585,6 +2585,11 @@ export async function jupiterCaptchaAnswer(
   await proxy('jupiterCaptchaAnswer', [userId, applicationId, answer]);
 }
 
+/** «Повторить капчу»: попросить Юпитера снять свежую капчу с сайта (картинка сменилась или ответ не подошёл). */
+export async function jupiterCaptchaRefresh(userId: string, applicationId: string): Promise<void> {
+  await proxy('jupiterCaptchaRefresh', [userId, applicationId]);
+}
+
 // ── Вопросы от работодателей (решение владельца 30.09.2026) ────────────────
 // Юпитер собирает вопросы анкет, на которые нет ответа в профиле; человек
 // отвечает здесь, отклик уходит сам. Факты сохраняются в банк ответов.

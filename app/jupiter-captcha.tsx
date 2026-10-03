@@ -15,10 +15,16 @@ import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import { JT, JT_FONT } from '@/constants/jt';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { BackIcon } from '@/components/profile/edit/icons';
-import { jupiterCaptchaAnswer, jupiterCaptchaGet, type JupiterCaptcha } from '@/services/jupiterCaptcha';
+import {
+  jupiterCaptchaAnswer, jupiterCaptchaGet, jupiterCaptchaRefresh, type JupiterCaptcha,
+} from '@/services/jupiterCaptcha';
 import { addTap, fitImage, pngSize, tapFromPress, tapsToAnswer, type Tap } from '@/services/captchaTaps';
 
-type Phase = 'loading' | 'ready' | 'sending' | 'sent' | 'expired';
+// renewing — просили новую капчу, ждём её; sent — ответ ушёл, ждём итог (не подошёл — придёт новая).
+type Phase = 'loading' | 'ready' | 'sending' | 'sent' | 'renewing' | 'expired';
+
+const WAIT_NEW_AFTER_REPEAT_MS = 45000;
+const WAIT_NEW_AFTER_ANSWER_MS = 25000;
 
 function minutesLeft(expiresAt: string, now: number): number {
   const t = new Date(expiresAt).getTime();
@@ -36,6 +42,7 @@ export default function JupiterCaptchaScreen() {
   const [answer, setAnswer] = useState('');
   const [taps, setTaps] = useState<Tap[]>([]);
   const [boxW, setBoxW] = useState(0);
+  const [note, setNote] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
@@ -46,6 +53,7 @@ export default function JupiterCaptchaScreen() {
       setCaptcha(c);
       setAnswer('');
       setTaps([]);
+      setNote(null);
       setNow(Date.now());
       setPhase(c && new Date(c.expiresAt).getTime() > Date.now() ? 'ready' : 'expired');
     } catch (e: any) {
@@ -83,6 +91,18 @@ export default function JupiterCaptchaScreen() {
     }
   };
 
+  const repeat = async () => {
+    if (!currentUser?.id || !id || phase !== 'ready') return;
+    setPhase('renewing');
+    setNote(null);
+    try {
+      await jupiterCaptchaRefresh(currentUser.id, id);
+    } catch (e: any) {
+      showToast(e?.message || 'Не удалось запросить новую капчу', 'error');
+      setPhase('ready');
+    }
+  };
+
   // Снимок показываем в своих пропорциях: нажатие считается в долях картинки.
   const shot = captcha && isTap
     ? fitImage(pngSize(captcha.imagePng), boxW, 420)
@@ -101,11 +121,43 @@ export default function JupiterCaptchaScreen() {
     router.replace({ pathname: '/jupiter-application', params: { id } });
   }, [id, router]);
 
+  // После ответа и после «Повторить капчу» ждём новую капчу: сайт её меняет, а
+  // неверный ответ обычно приносит следующую. Не пришла — после ответа идём к
+  // отклику, после «Повторить» говорим, что не вышло.
+  const currentId = captcha?.id;
   useEffect(() => {
-    if (phase !== 'sent') return;
-    const t = setTimeout(toApplication, 2000);
-    return () => clearTimeout(t);
-  }, [phase, toApplication]);
+    if (phase !== 'sent' && phase !== 'renewing') return;
+    if (!currentUser?.id || !id) return;
+    const uid = currentUser.id;
+    const after = phase === 'sent';
+    const limit = after ? WAIT_NEW_AFTER_ANSWER_MS : WAIT_NEW_AFTER_REPEAT_MS;
+    const startedAt = Date.now();
+    let busyPoll = false;
+    const t = setInterval(async () => {
+      if (busyPoll) return;
+      busyPoll = true;
+      try {
+        const c = await jupiterCaptchaGet(uid, id);
+        if (c && c.id !== currentId) {
+          setCaptcha(c);
+          setAnswer('');
+          setTaps([]);
+          setNow(Date.now());
+          setNote(after ? 'Не подошло — сайт показал новую капчу. Попробуйте ещё раз.' : 'Сайт показал новую капчу.');
+          setPhase('ready');
+          return;
+        }
+      } catch {
+        // сеть мигнула — спросим ещё раз
+      } finally {
+        busyPoll = false;
+      }
+      if (Date.now() - startedAt > limit) {
+        if (after) toApplication(); else setPhase('expired');
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [phase, currentId, currentUser?.id, id, toApplication]);
   const company = captcha?.company?.trim() || 'Карьерный сайт';
   const left = captcha ? minutesLeft(captcha.expiresAt, now) : 0;
   const busy = phase === 'loading' || phase === 'sending';
@@ -136,9 +188,15 @@ export default function JupiterCaptchaScreen() {
                 <View style={s.stateBox}>
                   <ActivityIndicator color={JT.accent} />
                   <Text style={s.stateTxt}>{isTap ? 'Юпитер нажимает на сайте…' : 'Юпитер вводит слово на сайте…'}</Text>
+                  <Text style={s.hint}>Если сайт не примет ответ, здесь появится новая капча.</Text>
                   <TouchableOpacity style={s.secondaryBtn} onPress={toApplication} activeOpacity={0.85} accessibilityRole="button">
                     <Text style={s.secondaryTxt}>К отклику</Text>
                   </TouchableOpacity>
+                </View>
+              ) : phase === 'renewing' ? (
+                <View style={s.stateBox}>
+                  <ActivityIndicator color={JT.accent} />
+                  <Text style={s.stateTxt}>Просим сайт показать новую капчу…</Text>
                 </View>
               ) : phase === 'expired' ? (
                 <View style={s.stateBox}>
@@ -149,6 +207,7 @@ export default function JupiterCaptchaScreen() {
                 </View>
               ) : (
                 <>
+                  {note ? <Text style={s.note}>{note}</Text> : null}
                   <Text style={s.hint}>
                     {isTap
                       ? 'Сайт просит подтвердить, что вы человек. Нажмите на картинке так же, как на сайте: поставьте галочку или отметьте нужные картинки, потом нажмите кнопку подтверждения на самой картинке.'
@@ -237,12 +296,12 @@ export default function JupiterCaptchaScreen() {
                   ) : null}
                   <TouchableOpacity
                     style={s.secondaryBtn}
-                    onPress={() => void load()}
+                    onPress={() => void repeat()}
                     disabled={busy}
                     activeOpacity={0.85}
                     accessibilityRole="button"
                   >
-                    <Text style={s.secondaryTxt}>Обновить картинку</Text>
+                    <Text style={s.secondaryTxt}>Повторить капчу</Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -287,6 +346,11 @@ const s = StyleSheet.create({
   dot: {
     position: 'absolute', width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: JT.ink,
     backgroundColor: JT.accent, alignItems: 'center', justifyContent: 'center',
+  },
+  note: {
+    marginTop: 12, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, overflow: 'hidden',
+    backgroundColor: JT.accentSoft, fontFamily: JT_FONT.bold, fontSize: 13, lineHeight: 18, color: JT.ink,
+    textAlign: 'center',
   },
   dotTxt: { fontFamily: JT_FONT.heavy, fontSize: 12, color: JT.ink },
   input: {

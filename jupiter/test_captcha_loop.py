@@ -140,11 +140,54 @@ class TestSolveWithHuman(unittest.TestCase):
         self.assertEqual(queue.posted, [("t1", b"\x89PNG-fake")])
         self.assertEqual(queue.results, [("t1", "solved")])
 
-    def test_answer_rejected_is_failed(self):
-        engine, queue = FakeEngine(accept=False), CaptchaQueue([("answered", "wrong")])
+    def test_answer_rejected_twice_is_failed(self):
+        # Первый неверный ответ не обрывает отклик: сайт показал новую
+        # картинку, человек вводит заново. Второй неверный подряд — стоп.
+        engine = FakeEngine(accept=False)
+        queue = CaptchaQueue([("answered", "wrong"), ("answered", "wrong2")])
         outcome, _ = self.run_solve(engine, queue)
         self.assertEqual(outcome, "failed")
-        self.assertEqual(queue.results, [("t1", "failed")])
+        self.assertEqual(queue.results, [("t1", "failed"), ("t1", "failed")])
+        self.assertEqual(len(queue.posted), 2)
+
+    def test_wrong_then_right_answer_is_solved_on_a_fresh_picture(self):
+        engine = FakeEngine()
+        verdicts = iter([False, True])
+        engine.enter_captcha = lambda info, answer: next(verdicts)
+        queue = CaptchaQueue([("answered", "wrong"), ("answered", "right")])
+        outcome, _ = self.run_solve(engine, queue)
+        self.assertEqual(outcome, "solved")
+        self.assertEqual(len(queue.posted), 2)  # вторая картинка — новая
+        self.assertEqual(queue.results, [("t1", "failed"), ("t1", "solved")])
+
+    def test_repeat_captcha_asks_site_for_a_new_picture(self):
+        engine = FakeEngine()
+        engine.refreshed = []
+        engine.refresh_captcha = lambda info: engine.refreshed.append(info) or True
+        queue = CaptchaQueue([("refresh", None), ("answered", SECRET)])
+        outcome, _ = self.run_solve(engine, queue)
+        self.assertEqual(outcome, "solved")
+        self.assertEqual(len(engine.refreshed), 1)
+        self.assertEqual(len(queue.posted), 2)
+        self.assertEqual(engine.entered, [SECRET])
+
+    def test_repeat_captcha_when_site_dropped_it_is_solved(self):
+        engine = FakeEngine()
+        engine.captcha = lambda: None
+        engine.captcha_png = lambda info: b"\x89PNG-fake"
+        # первый раз капча есть, после обновления её на странице уже нет
+        calls = iter([Info()])
+        engine.captcha = lambda: next(calls, None)
+        queue = CaptchaQueue([("refresh", None)])
+        outcome, _ = self.run_solve(engine, queue)
+        self.assertEqual(outcome, "solved")
+
+    def test_repeat_captcha_is_limited(self):
+        engine = FakeEngine()
+        queue = CaptchaQueue([("refresh", None)] * 20)
+        outcome, _ = self.run_solve(engine, queue)
+        self.assertEqual(outcome, "failed")
+        self.assertEqual(len(queue.posted), 6)
 
     def test_no_answer_in_time_is_expired(self):
         engine, queue = FakeEngine(), CaptchaQueue()
@@ -211,7 +254,7 @@ class TestContinueThroughCaptcha(unittest.TestCase):
         first = captcha_result()
         agent = FakeAgent(engine, first, [submitted()])
         result = continue_through_captcha(
-            agent, CaptchaQueue([("answered", "wrong")]), "t1", None, first,
+            agent, CaptchaQueue([("answered", "wrong"), ("answered", "wrong2")]), "t1", None, first,
             solve=lambda e, q, t: solve_with_human(e, q, t, sleep=lambda s: None))
         self.assertIs(result, first)
         self.assertEqual(agent.continued, [])
@@ -340,6 +383,13 @@ class TapCaptchaTest(unittest.TestCase):
         queue = TapQueue([("answered", "0.5,0.5")] * 3)
         self.assertEqual(self.solve(engine, queue), "failed")
         self.assertEqual(len(queue.posted), 3)
+
+    def test_repeat_captcha_gives_a_fresh_snapshot(self):
+        engine = TapEngine(["solved"])
+        queue = TapQueue([("refresh", None), ("answered", "0.5,0.5")])
+        self.assertEqual(self.solve(engine, queue), "solved")
+        self.assertEqual(queue.kinds, ["tap", "tap"])
+        self.assertEqual(len(engine.taps), 1)
 
     def test_nothing_changed_is_failed(self):
         engine = TapEngine(["failed"])
