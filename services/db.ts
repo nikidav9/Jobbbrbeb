@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
-import { supabase } from '@/lib/supabase';
 import type { JupiterEvent } from '@/services/jupiterTimeline';
 import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
 import type { VacancySpec, VacancyLevel, VacancyFormat } from '@/services/vacancyFacets';
@@ -11,11 +10,9 @@ import { normalizeCompany } from '@/services/company';
 
 const DB_TIMEOUT = 12_000;
 
-// ─── Native API proxy ────────────────────────────────────────────────────────
-// On Android/iOS the supabase-js client has connectivity issues.
-// All DB calls go through the web API endpoint instead.
+// ─── API proxy ───────────────────────────────────────────────────────────────
+// Все вызовы идут через proxy() на jobtoo.ru: Supabase из браузеров в России заблокирован.
 
-const IS_NATIVE = true; // always proxy through jobtoo.ru — Supabase is blocked in Russia from browsers
 // trim и снятие косой черты на конце — по той же причине, что в
 // lib/supabase.ts: значения вставляют руками, и в один из адресов уже
 // попадал перевод строки. Пропуск тоже подрезаем: лишний пробел в нём
@@ -228,20 +225,7 @@ function withTimeout<T>(promise: PromiseLike<T>, ms = DB_TIMEOUT): Promise<T> {
   ]);
 }
 
-function throwOnError(label: string, error: any): never {
-  const msg = error?.message ?? String(error);
-  console.error(`[db] ${label}:`, msg);
-  throw new Error(msg);
-}
-
 // ─── Users ────────────────────────────────────────────────────────────────────
-
-const PUBLIC_USER_COLUMNS = [
-  'id', 'role', 'first_name', 'last_name', 'age', 'metro_line_id',
-  'metro_station', 'work_types', 'company', 'bio', 'resume_data',
-  'avatar_url', 'avg_rating', 'rating_count', 'is_blocked', 'created_at',
-  'last_seen_at', 'referral_worked',
-].join(',');
 
 function rowToUser(r: any): User {
   return {
@@ -370,16 +354,12 @@ export type MyReferral = {
 };
 
 export async function dbGetMyReferral(userId: string): Promise<MyReferral | null> {
-  if (!IS_NATIVE) return null;
   return await proxy<MyReferral>('dbGetMyReferral', [userId]);
 }
 
 export async function dbGetUserById(id: string): Promise<User | null> {
-  if (IS_NATIVE) { const d = await proxy<any>('dbGetUserById', [id]); return d ? rowToUser(d) : null; }
-  const { data } = await withTimeout(
-    supabase.from('jm_users').select(PUBLIC_USER_COLUMNS).eq('id', id).maybeSingle()
-  );
-  return data ? rowToUser(data) : null;
+  const d = await proxy<any>('dbGetUserById', [id]);
+  return d ? rowToUser(d) : null;
 }
 
 /**
@@ -422,20 +402,12 @@ export async function dbUserStats(userId: string): Promise<UserStats> {
 
 /** Только число пользователей — для приветственного экрана. */
 export async function dbCountUsers(): Promise<number> {
-  if (IS_NATIVE) { return proxy<number>('dbCountUsers'); }
-  const { count } = await withTimeout(
-    supabase.from('jm_users').select('id', { count: 'exact', head: true })
-  );
-  return count ?? 0;
+  return proxy<number>('dbCountUsers');
 }
 
 export async function dbGetUsers(): Promise<User[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetUsers'); return d.map(rowToUser); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_users').select(PUBLIC_USER_COLUMNS).order('created_at', { ascending: true })
-  );
-  if (error) throwOnError('dbGetUsers', error);
-  return (data ?? []).map(rowToUser);
+  const d = await proxy<any[]>('dbGetUsers');
+  return d.map(rowToUser);
 }
 
 export async function dbRestoreSession(): Promise<User | null> {
@@ -529,23 +501,16 @@ export async function dbUpsertUser(
   // Пустой пароль не отправляем: он означает «профиль пришёл без пароля»
   // (вход его больше не отдаёт), а не «стереть пароль».
   if (!row.password) delete (row as Partial<typeof row>).password;
-  if (IS_NATIVE) {
-    // Согласие идёт ТЕМ ЖЕ запросом, что создаёт человека. Отдельным вызовом
-    // оно терялось при любом обрыве связи, а запись согласия — доказательство,
-    // а не аналитика.
-    const args: unknown[] = emailTicket
-      ? [row, referralCode ?? '', consent ?? null, emailTicket]
-      : consent
-        ? [row, referralCode ?? '', consent]
-        : (referralCode ? [row, referralCode] : [row]);
-    const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', args);
-    if (d?.session_token) await saveSessionToken(d.session_token);
-    return;
-  }
-  const { error } = await withTimeout(
-    supabase.from('jm_users').upsert(row, { onConflict: 'id' })
-  );
-  if (error) throwOnError('dbUpsertUser', error);
+  // Согласие идёт ТЕМ ЖЕ запросом, что создаёт человека. Отдельным вызовом
+  // оно терялось при любом обрыве связи, а запись согласия — доказательство,
+  // а не аналитика.
+  const args: unknown[] = emailTicket
+    ? [row, referralCode ?? '', consent ?? null, emailTicket]
+    : consent
+      ? [row, referralCode ?? '', consent]
+      : (referralCode ? [row, referralCode] : [row]);
+  const d = await proxy<{ session_token?: string | null }>('dbUpsertUser', args);
+  if (d?.session_token) await saveSessionToken(d.session_token);
 }
 
 /**
@@ -701,27 +666,16 @@ export async function dbDeleteUser(id: string): Promise<void> {
 }
 
 export function dbWarmup(): void {
-  if (IS_NATIVE) {
-    fetch(`${API_BASE}/api/db.php`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET, 'X-App-Version': APP_VERSION },
-      body: JSON.stringify({ fn: 'dbWarmup', args: [] }),
-    }).catch(() => {});
-    return;
-  }
-  withTimeout(
-    supabase.from('jm_users').select('id').limit(1),
-    20_000
-  ).catch(() => {});
+  fetch(`${API_BASE}/api/db.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET, 'X-App-Version': APP_VERSION },
+    body: JSON.stringify({ fn: 'dbWarmup', args: [] }),
+  }).catch(() => {});
 }
 
 export async function dbGetUserByPhone(phone: string): Promise<User | null> {
-  if (IS_NATIVE) { const d = await proxy<any>('dbGetUserByPhone', [phone]); return d ? rowToUser(d) : null; }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_users').select('*').eq('phone', phone).maybeSingle()
-  );
-  if (error) throwOnError('dbGetUserByPhone', error);
-  return data ? rowToUser(data) : null;
+  const d = await proxy<any>('dbGetUserByPhone', [phone]);
+  return d ? rowToUser(d) : null;
 }
 
 // ─── Vacancies ────────────────────────────────────────────────────────────────
@@ -783,38 +737,22 @@ function vacancyToRow(v: Vacancy) {
 }
 
 export async function dbGetVacancies(): Promise<Vacancy[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetVacancies'); return d.map(rowToVacancy); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_vacancies').select('*').order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetVacancies', error);
-  return (data ?? []).map(rowToVacancy);
+  const d = await proxy<any[]>('dbGetVacancies');
+  return d.map(rowToVacancy);
 }
 
 export async function dbUpsertVacancy(v: Vacancy): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbUpsertVacancy', [vacancyToRow(v)]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_vacancies').upsert(vacancyToRow(v), { onConflict: 'id' })
-  );
-  if (error) throwOnError('dbUpsertVacancy', error);
+  await proxy('dbUpsertVacancy', [vacancyToRow(v)]);
 }
 
 export async function dbUpsertVacancyBatch(vacs: Vacancy[]): Promise<void> {
   if (vacs.length === 0) return;
   const rows = vacs.map(vacancyToRow);
-  if (IS_NATIVE) { await proxy('dbUpsertVacancyBatch', [rows]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_vacancies').upsert(rows, { onConflict: 'id' })
-  );
-  if (error) throwOnError('dbUpsertVacancyBatch', error);
+  await proxy('dbUpsertVacancyBatch', [rows]);
 }
 
 export async function dbUpdateVacancy(id: string, patch: Partial<{ status: string; workers_found: number }>): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbUpdateVacancy', [id, patch]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_vacancies').update(patch).eq('id', id)
-  );
-  if (error) throwOnError('dbUpdateVacancy', error);
+  await proxy('dbUpdateVacancy', [id, patch]);
 }
 
 // ─── Likes ────────────────────────────────────────────────────────────────────
@@ -843,50 +781,21 @@ function rowToLike(r: any): Like {
 }
 
 export async function dbGetLikes(): Promise<Like[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetLikes'); return d.map(rowToLike); }
-  const { data, error } = await withTimeout(supabase.from('jm_likes').select('*'));
-  if (error) throwOnError('dbGetLikes', error);
-  return (data ?? []).map(rowToLike);
+  const d = await proxy<any[]>('dbGetLikes');
+  return d.map(rowToLike);
 }
 
 export async function dbGetLikesForUser(userId: string, role: 'worker' | 'employer'): Promise<Like[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetLikesForUser', [userId, role]); return d.map(rowToLike); }
-  const field = role === 'worker' ? 'worker_id' : 'employer_id';
-  const { data, error } = await withTimeout(
-    supabase.from('jm_likes').select('*').eq(field, userId)
-  );
-  if (error) throwOnError('dbGetLikesForUser', error);
-  return (data ?? []).map(rowToLike);
+  const d = await proxy<any[]>('dbGetLikesForUser', [userId, role]);
+  return d.map(rowToLike);
 }
 
 export async function dbGetVacancyStatsMap(): Promise<Record<string, { applicants: number; rejected: number; views: number }>> {
-  if (IS_NATIVE) return proxy<Record<string, { applicants: number; rejected: number; views: number }>>('dbGetVacancyStatsMap');
-  const [{ data, error }, { data: viewData }] = await Promise.all([
-    withTimeout(supabase.from('jm_likes').select('vacancy_id,worker_liked,employer_liked,worker_skipped,is_match')),
-    withTimeout(supabase.from('jm_vacancy_views').select('vacancy_id')),
-  ]);
-  if (error) throwOnError('dbGetVacancyStatsMap', error);
-  const map: Record<string, { applicants: number; rejected: number; views: number }> = {};
-  for (const r of data ?? []) {
-    if (!r.vacancy_id) continue;
-    if (!map[r.vacancy_id]) map[r.vacancy_id] = { applicants: 0, rejected: 0, views: 0 };
-    if (r.worker_liked && !r.is_match && r.employer_liked !== false) map[r.vacancy_id].applicants++;
-    if (r.employer_liked === false || (r.worker_liked === false && r.worker_skipped === true)) map[r.vacancy_id].rejected++;
-  }
-  for (const v of viewData ?? []) {
-    if (!v.vacancy_id) continue;
-    if (!map[v.vacancy_id]) map[v.vacancy_id] = { applicants: 0, rejected: 0, views: 0 };
-    map[v.vacancy_id].views++;
-  }
-  return map;
+  return proxy<Record<string, { applicants: number; rejected: number; views: number }>>('dbGetVacancyStatsMap');
 }
 
 export async function dbGetVacancyViewers(vacancyId: string): Promise<string[]> {
-  if (IS_NATIVE) return proxy<string[]>('dbGetVacancyViewers', [vacancyId]);
-  const { data } = await withTimeout(
-    supabase.from('jm_vacancy_views').select('worker_id').eq('vacancy_id', vacancyId).order('viewed_at', { ascending: false })
-  );
-  return [...new Set((data ?? []).map((r: any) => r.worker_id))];
+  return proxy<string[]>('dbGetVacancyViewers', [vacancyId]);
 }
 
 export async function dbGetPermVacancyViewers(vacancyId: string): Promise<string[]> {
@@ -894,13 +803,7 @@ export async function dbGetPermVacancyViewers(vacancyId: string): Promise<string
 }
 
 export async function dbRecordVacancyView(vacancyId: string, workerId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbRecordVacancyView', [vacancyId, workerId]); return; }
-  await withTimeout(
-    supabase.from('jm_vacancy_views').upsert(
-      { vacancy_id: vacancyId, worker_id: workerId },
-      { onConflict: 'vacancy_id,worker_id', ignoreDuplicates: true }
-    )
-  );
+  await proxy('dbRecordVacancyView', [vacancyId, workerId]);
 }
 
 // ─── Событие «открыл приложение» (Фаза 1b) ───────────────────────────────────
@@ -1021,41 +924,21 @@ export async function dbCompleteGuestRegistration(): Promise<void> {
 }
 
 export async function dbGetPermVacancyViewsMap(): Promise<Record<string, number>> {
-  if (IS_NATIVE) return proxy<Record<string, number>>('dbGetPermVacancyViewsMap');
-  const { data } = await withTimeout(supabase.from('jm_perm_vacancy_views').select('vacancy_id'));
-  const map: Record<string, number> = {};
-  for (const r of data ?? []) {
-    if (!r.vacancy_id) continue;
-    map[r.vacancy_id] = (map[r.vacancy_id] ?? 0) + 1;
-  }
-  return map;
+  return proxy<Record<string, number>>('dbGetPermVacancyViewsMap');
 }
 
 export async function dbRecordPermVacancyView(vacancyId: string, workerId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbRecordPermVacancyView', [vacancyId, workerId]); return; }
-  await withTimeout(
-    supabase.from('jm_perm_vacancy_views').upsert(
-      { vacancy_id: vacancyId, worker_id: workerId },
-      { onConflict: 'vacancy_id,worker_id', ignoreDuplicates: true }
-    )
-  );
+  await proxy('dbRecordPermVacancyView', [vacancyId, workerId]);
 }
 
 export async function dbGetLikesByVacancy(vacancyId: string): Promise<Like[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetLikesByVacancy', [vacancyId]); return d.map(rowToLike); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_likes').select('*').eq('vacancy_id', vacancyId)
-  );
-  if (error) throwOnError('dbGetLikesByVacancy', error);
-  return (data ?? []).map(rowToLike);
+  const d = await proxy<any[]>('dbGetLikesByVacancy', [vacancyId]);
+  return d.map(rowToLike);
 }
 
 export async function dbGetLikeByVacancyWorker(vacancyId: string, workerId: string): Promise<Like | null> {
-  if (IS_NATIVE) { const d = await proxy<any>('dbGetLikeByVacancyWorker', [vacancyId, workerId]); return d ? rowToLike(d) : null; }
-  const { data } = await withTimeout(
-    supabase.from('jm_likes').select('*').eq('vacancy_id', vacancyId).eq('worker_id', workerId).maybeSingle()
-  );
-  return data ? rowToLike(data) : null;
+  const d = await proxy<any>('dbGetLikeByVacancyWorker', [vacancyId, workerId]);
+  return d ? rowToLike(d) : null;
 }
 
 export async function dbUpsertLike(
@@ -1071,64 +954,16 @@ export async function dbUpsertLike(
    */
   updates: Partial<Like>
 ): Promise<Like> {
-  if (IS_NATIVE) { const d = await proxy<any>('dbUpsertLike', [vacancyId, workerId, employerId, updates]); return rowToLike(d); }
-  const { data: existing } = await withTimeout(
-    supabase.from('jm_likes').select('*').eq('vacancy_id', vacancyId).eq('worker_id', workerId).maybeSingle()
-  );
-
-  const base: any = existing ?? {
-    id: uid(),
-    vacancy_id: vacancyId,
-    worker_id: workerId,
-    employer_id: employerId,
-    worker_liked: false,
-    employer_liked: null,
-    worker_skipped: false,
-    is_match: false,
-    matched_at: null,
-    worker_confirmed: false,
-    employer_confirmed: false,
-    worker_rated: false,
-    employer_rated: false,
-    shift_completed: false,
-  };
-
-  const row = {
-    ...base,
-    worker_liked: updates.workerLiked ?? base.worker_liked,
-    employer_liked: updates.employerLiked ?? base.employer_liked,
-    worker_skipped: updates.workerSkipped ?? base.worker_skipped,
-    is_match: updates.isMatch ?? base.is_match,
-    matched_at: updates.matchedAt ?? base.matched_at,
-    worker_confirmed: updates.workerConfirmed ?? base.worker_confirmed,
-    employer_confirmed: updates.employerConfirmed ?? base.employer_confirmed,
-    worker_rated: updates.workerRated ?? base.worker_rated,
-    employer_rated: updates.employerRated ?? base.employer_rated,
-    shift_completed: updates.shiftCompleted ?? base.shift_completed,
-  };
-
-  const { data: written, error } = await withTimeout(
-    supabase.from('jm_likes').upsert(row, { onConflict: 'vacancy_id,worker_id' }).select()
-  );
-  if (error) throwOnError('dbUpsertLike', error);
-  if (!written || written.length === 0) {
-    throw new Error('Like not saved: permission denied');
-  }
-  return rowToLike(row);
+  const d = await proxy<any>('dbUpsertLike', [vacancyId, workerId, employerId, updates]);
+  return rowToLike(d);
 }
 
 export async function dbRemoveLike(vacancyId: string, workerId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbRemoveLike', [vacancyId, workerId]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_likes').delete().eq('vacancy_id', vacancyId).eq('worker_id', workerId)
-  );
-  if (error) throwOnError('dbRemoveLike', error);
+  await proxy('dbRemoveLike', [vacancyId, workerId]);
 }
 
 export async function dbDeleteMatch(likeId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeleteMatch', [likeId]); return; }
-  const { error } = await withTimeout(supabase.from('jm_likes').delete().eq('id', likeId));
-  if (error) throwOnError('dbDeleteMatch', error);
+  await proxy('dbDeleteMatch', [likeId]);
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -1143,12 +978,8 @@ function rowToMessage(r: any): Message {
 }
 
 export async function dbGetMessages(chatId: string): Promise<Message[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetMessages', [chatId]); return d.map(rowToMessage); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true })
-  );
-  if (error) throwOnError('dbGetMessages', error);
-  return (data ?? []).map(rowToMessage);
+  const d = await proxy<any[]>('dbGetMessages', [chatId]);
+  return d.map(rowToMessage);
 }
 
 export async function dbInsertMessage(chatId: string, senderId: string, text: string): Promise<Message> {
@@ -1347,51 +1178,18 @@ function rowToChat(r: any, messages: Message[] = []): Chat {
 }
 
 export async function dbGetChats(userId: string, role: 'worker' | 'employer'): Promise<Chat[]> {
-  if (IS_NATIVE) {
-    const rows = await proxy<any[]>('dbGetChats', [userId, role]);
-    return rows.map(row => {
-      const last = row._last_msg;
-      return rowToChat(row, last ? [rowToMessage(last)] : []);
-    });
-  }
-  const field = role === 'worker' ? 'worker_id' : 'employer_id';
-  const { data, error } = await withTimeout(
-    supabase.from('jm_chats').select('*').eq(field, userId).order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetChats', error);
-
-  const chatRows = data ?? [];
-  if (chatRows.length === 0) return [];
-
-  const chatIds = chatRows.map((r: any) => r.id);
-  const { data: allMsgs } = await withTimeout(
-    supabase.from('jm_messages').select('*').in('chat_id', chatIds).order('created_at', { ascending: false })
-  );
-
-  const lastMsgByChat = new Map<string, any>();
-  for (const msg of (allMsgs ?? [])) {
-    if (!lastMsgByChat.has(msg.chat_id)) lastMsgByChat.set(msg.chat_id, msg);
-  }
-
-  return chatRows.map((row: any) => {
-    const lastMsg = lastMsgByChat.get(row.id);
-    return rowToChat(row, lastMsg ? [rowToMessage(lastMsg)] : []);
+  const rows = await proxy<any[]>('dbGetChats', [userId, role]);
+  return rows.map(row => {
+    const last = row._last_msg;
+    return rowToChat(row, last ? [rowToMessage(last)] : []);
   });
 }
 
 export async function dbGetChatById(chatId: string): Promise<Chat | null> {
-  if (IS_NATIVE) {
-    const result = await proxy<any>('dbGetChatById', [chatId]);
-    if (!result) return null;
-    const { _messages, ...row } = result;
-    return rowToChat(row, (_messages ?? []).map(rowToMessage));
-  }
-  const { data } = await withTimeout(
-    supabase.from('jm_chats').select('*').eq('id', chatId).maybeSingle()
-  );
-  if (!data) return null;
-  const msgs = await dbGetMessages(chatId);
-  return rowToChat(data, msgs);
+  const result = await proxy<any>('dbGetChatById', [chatId]);
+  if (!result) return null;
+  const { _messages, ...row } = result;
+  return rowToChat(row, (_messages ?? []).map(rowToMessage));
 }
 
 export async function dbCreateChat(
@@ -1413,93 +1211,36 @@ export async function dbCreateChat(
   author: boolean | 'worker' | 'employer' = false,
 ): Promise<string> {
   const canonicalCompanyName = companyName ? normalizeCompany(companyName) : companyName;
-  if (IS_NATIVE) {
-    return proxy<string>('dbCreateChat', [
-      workerId, employerId, vacancyId, vacTitle, canonicalCompanyName,
-      systemMessage, initialUnreadWorker, initialUnreadEmployer, author,
-    ]);
-  }
-  const { data: existing } = await withTimeout(
-    supabase.from('jm_chats').select('id').eq('vacancy_id', vacancyId).eq('worker_id', workerId).maybeSingle()
-  );
-  if (existing) return existing.id;
-
-  const chatId = uid();
-  const row = {
-    id: chatId,
-    vacancy_id: vacancyId,
-    worker_id: workerId,
-    employer_id: employerId,
-    vac_title: vacTitle,
-    company_name: canonicalCompanyName,
-    unread_worker: initialUnreadWorker,
-    unread_employer: initialUnreadEmployer,
-    created_at: nowISO(),
-  };
-  const { error } = await withTimeout(supabase.from('jm_chats').insert(row));
-  if (error) throwOnError('dbCreateChat', error);
-
-  if (systemMessage) {
-    await dbInsertMessage(chatId, 'system', systemMessage);
-  }
-
-  return chatId;
+  return proxy<string>('dbCreateChat', [
+    workerId, employerId, vacancyId, vacTitle, canonicalCompanyName,
+    systemMessage, initialUnreadWorker, initialUnreadEmployer, author,
+  ]);
 }
 
 export async function dbMarkRead(chatId: string, role: 'worker' | 'employer'): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbMarkRead', [chatId, role]); return; }
-  // Время прочтения рядом со счётчиком: по нему собеседник видит вторую
-  // галочку. Счётчик отвечает «сколько», отметка — «с какого момента».
-  const field = role === 'worker' ? 'unread_worker' : 'unread_employer';
-  const stamp = role === 'worker' ? 'worker_read_at' : 'employer_read_at';
-  const { error } = await withTimeout(
-    supabase.from('jm_chats').update({ [field]: 0, [stamp]: new Date().toISOString() }).eq('id', chatId)
-  );
-  if (error) throwOnError('dbMarkRead', error);
+  await proxy('dbMarkRead', [chatId, role]);
 }
 
 export async function dbIncrementUnread(chatId: string, forRole: 'worker' | 'employer'): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbIncrementUnread', [chatId, forRole]); return; }
-  const { data } = await withTimeout(
-    supabase.from('jm_chats').select('unread_worker,unread_employer').eq('id', chatId).maybeSingle()
-  );
-  if (!data) return;
-  const field = forRole === 'worker' ? 'unread_worker' : 'unread_employer';
-  const cur = forRole === 'worker' ? data.unread_worker : data.unread_employer;
-  await withTimeout(supabase.from('jm_chats').update({ [field]: (cur ?? 0) + 1 }).eq('id', chatId));
+  await proxy('dbIncrementUnread', [chatId, forRole]);
 }
 
 export async function dbDeleteChat(chatId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeleteChat', [chatId]); return; }
-  await withTimeout(supabase.from('jm_messages').delete().eq('chat_id', chatId));
-  await withTimeout(supabase.from('jm_chats').delete().eq('id', chatId));
+  await proxy('dbDeleteChat', [chatId]);
 }
 
 // ─── Saved ────────────────────────────────────────────────────────────────────
 
 export async function dbGetSaved(userId: string): Promise<string[]> {
-  if (IS_NATIVE) { return proxy<string[]>('dbGetSaved', [userId]); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_saved').select('vacancy_id').eq('user_id', userId)
-  );
-  if (error) throwOnError('dbGetSaved', error);
-  return (data ?? []).map((r: any) => r.vacancy_id);
+  return proxy<string[]>('dbGetSaved', [userId]);
 }
 
 export async function dbAddSaved(userId: string, vacancyId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbAddSaved', [userId, vacancyId]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_saved').upsert({ user_id: userId, vacancy_id: vacancyId })
-  );
-  if (error) throwOnError('dbAddSaved', error);
+  await proxy('dbAddSaved', [userId, vacancyId]);
 }
 
 export async function dbRemoveSaved(userId: string, vacancyId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbRemoveSaved', [userId, vacancyId]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_saved').delete().eq('user_id', userId).eq('vacancy_id', vacancyId)
-  );
-  if (error) throwOnError('dbRemoveSaved', error);
+  await proxy('dbRemoveSaved', [userId, vacancyId]);
 }
 
 // ─── Complaints ───────────────────────────────────────────────────────────────
@@ -1514,22 +1255,7 @@ export async function dbFileComplaint(params: {
   complaintType: 'worker' | 'employer';
   description?: string;
 }): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbFileComplaint', [params]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_complaints').insert({
-      id: uid(),
-      reporter_id: params.reporterId,
-      reporter_phone: params.reporterPhone,
-      reporter_company: params.reporterCompany ?? null,
-      target_id: params.targetId,
-      target_phone: params.targetPhone,
-      target_company: params.targetCompany ?? null,
-      complaint_type: params.complaintType,
-      description: params.description ?? null,
-      created_at: nowISO(),
-    })
-  );
-  if (error) throwOnError('dbFileComplaint', error);
+  await proxy('dbFileComplaint', [params]);
 }
 
 // ─── Match logic ──────────────────────────────────────────────────────────────
@@ -1570,21 +1296,13 @@ function rowToPermVacancy(r: any): PermVacancy {
 }
 
 export async function dbGetPermVacancies(): Promise<PermVacancy[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetPermVacancies'); return d.map(rowToPermVacancy); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_perm_vacancies').select('*').eq('status', 'open').order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetPermVacancies', error);
-  return (data ?? []).map(rowToPermVacancy);
+  const d = await proxy<any[]>('dbGetPermVacancies');
+  return d.map(rowToPermVacancy);
 }
 
 export async function dbGetPermVacanciesByEmployer(employerId: string): Promise<PermVacancy[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetPermVacanciesByEmployer', [employerId]); return d.map(rowToPermVacancy); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_perm_vacancies').select('*').eq('employer_id', employerId).order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetPermVacanciesByEmployer', error);
-  return (data ?? []).map(rowToPermVacancy);
+  const d = await proxy<any[]>('dbGetPermVacanciesByEmployer', [employerId]);
+  return d.map(rowToPermVacancy);
 }
 
 export async function dbUpsertPermVacancy(v: PermVacancy): Promise<void> {
@@ -1596,29 +1314,19 @@ export async function dbUpsertPermVacancy(v: PermVacancy): Promise<void> {
     salary: v.salary, schedule: v.schedule, description: v.description ?? null,
     status: v.status, created_at: v.createdAt,
   };
-  if (IS_NATIVE) { await proxy('dbUpsertPermVacancy', [permRow]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_perm_vacancies').upsert(permRow, { onConflict: 'id' })
-  );
-  if (error) throwOnError('dbUpsertPermVacancy', error);
+  await proxy('dbUpsertPermVacancy', [permRow]);
 }
 
 export async function dbClosePermVacancy(id: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbClosePermVacancy', [id]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_perm_vacancies').update({ status: 'closed' }).eq('id', id)
-  );
-  if (error) throwOnError('dbClosePermVacancy', error);
+  await proxy('dbClosePermVacancy', [id]);
 }
 
 export async function dbDeleteVacancy(id: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeleteVacancy', [id]); return; }
-  await withTimeout(supabase.from('jm_vacancies').delete().eq('id', id));
+  await proxy('dbDeleteVacancy', [id]);
 }
 
 export async function dbDeletePermVacancy(id: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeletePermVacancy', [id]); return; }
-  await withTimeout(supabase.from('jm_perm_vacancies').delete().eq('id', id));
+  await proxy('dbDeletePermVacancy', [id]);
 }
 
 // ─── Permanent applications ───────────────────────────────────────────────────
@@ -1635,22 +1343,13 @@ function rowToPermApp(r: any): PermApplication {
 }
 
 export async function dbGetPermApplications(userId: string, role: 'worker' | 'employer'): Promise<PermApplication[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetPermApplications', [userId, role]); return d.map(rowToPermApp); }
-  const field = role === 'worker' ? 'worker_id' : 'employer_id';
-  const { data, error } = await withTimeout(
-    supabase.from('jm_perm_applications').select('*').eq(field, userId).order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetPermApplications', error);
-  return (data ?? []).map(rowToPermApp);
+  const d = await proxy<any[]>('dbGetPermApplications', [userId, role]);
+  return d.map(rowToPermApp);
 }
 
 export async function dbGetPermApplicationsForVacancy(vacancyId: string): Promise<PermApplication[]> {
-  if (IS_NATIVE) { const d = await proxy<any[]>('dbGetPermApplicationsForVacancy', [vacancyId]); return d.map(rowToPermApp); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_perm_applications').select('*').eq('vacancy_id', vacancyId).order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetPermApplicationsForVacancy', error);
-  return (data ?? []).map(rowToPermApp);
+  const d = await proxy<any[]>('dbGetPermApplicationsForVacancy', [vacancyId]);
+  return d.map(rowToPermApp);
 }
 
 export async function dbApplyPermVacancy(
@@ -1658,18 +1357,7 @@ export async function dbApplyPermVacancy(
   /** Живая строка от работника — с ней отклик открывает переписку. */
   message?: string,
 ): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbApplyPermVacancy', [vacancyId, workerId, employerId, message]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_perm_applications').upsert({
-      id: uid(),
-      vacancy_id: vacancyId,
-      worker_id: workerId,
-      employer_id: employerId,
-      status: 'pending',
-      created_at: nowISO(),
-    }, { onConflict: 'vacancy_id,worker_id' })
-  );
-  if (error) throwOnError('dbApplyPermVacancy', error);
+  await proxy('dbApplyPermVacancy', [vacancyId, workerId, employerId, message]);
 }
 
 /**
@@ -1685,22 +1373,13 @@ export async function dbApprovePermApplication(appId: string, message: string): 
 }
 
 export async function dbSetPermApplicationStatus(appId: string, status: PermApplicationStatus): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbSetPermApplicationStatus', [appId, status]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_perm_applications').update({ status }).eq('id', appId)
-  );
-  if (error) throwOnError('dbSetPermApplicationStatus', error);
+  await proxy('dbSetPermApplicationStatus', [appId, status]);
 }
 
 // ─── Permanent saved ──────────────────────────────────────────────────────────
 
 export async function dbGetPermSaved(userId: string): Promise<string[]> {
-  if (IS_NATIVE) { return proxy<string[]>('dbGetPermSaved', [userId]); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_perm_saved').select('vacancy_id').eq('user_id', userId)
-  );
-  if (error) throwOnError('dbGetPermSaved', error);
-  return (data ?? []).map((r: any) => r.vacancy_id);
+  return proxy<string[]>('dbGetPermSaved', [userId]);
 }
 
 /**
@@ -1714,19 +1393,13 @@ export async function dbGetPermSaved(userId: string): Promise<string[]> {
 export async function dbGetPermSavedDetailed(
   userId: string,
 ): Promise<{ vacancyId: string; savedAt: string | null }[]> {
-  if (IS_NATIVE) { return proxy('dbGetPermSavedDetailed', [userId]); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_perm_saved').select('vacancy_id,created_at').eq('user_id', userId)
-  );
-  if (error) throwOnError('dbGetPermSavedDetailed', error);
-  return (data ?? []).map((r: any) => ({ vacancyId: r.vacancy_id, savedAt: r.created_at ?? null }));
+  return proxy('dbGetPermSavedDetailed', [userId]);
 }
 
 // ── Заявки Jupiter на внешних сайтах ────────────────────────────────────────
 //
 // Только через прокси: таблица закрыта построчной защитой, и ходить в неё
-// публичным ключом нечем. Прямой ветки supabase здесь намеренно нет — она
-// была бы мёртвой, как и остальные (IS_NATIVE всегда true).
+// публичным ключом нечем. Прямого обращения к supabase здесь нет.
 
 function toJupiterApplication(row: any): JupiterApplication {
   if (!row || typeof row.id !== 'string' || !row.id || typeof row.state !== 'string') {
@@ -2070,19 +1743,11 @@ export async function dbGetExtVacancies(company?: string): Promise<ExtVacancy[]>
 }
 
 export async function dbAddPermSaved(userId: string, vacancyId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbAddPermSaved', [userId, vacancyId]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_perm_saved').upsert({ user_id: userId, vacancy_id: vacancyId })
-  );
-  if (error) throwOnError('dbAddPermSaved', error);
+  await proxy('dbAddPermSaved', [userId, vacancyId]);
 }
 
 export async function dbRemovePermSaved(userId: string, vacancyId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbRemovePermSaved', [userId, vacancyId]); return; }
-  const { error } = await withTimeout(
-    supabase.from('jm_perm_saved').delete().eq('user_id', userId).eq('vacancy_id', vacancyId)
-  );
-  if (error) throwOnError('dbRemovePermSaved', error);
+  await proxy('dbRemovePermSaved', [userId, vacancyId]);
 }
 
 // ─── Ratings ──────────────────────────────────────────────────────────────────
@@ -2105,23 +1770,8 @@ export interface UserRating {
 }
 
 export async function dbGetRatingsForUser(toUserId: string): Promise<UserRating[]> {
-  if (IS_NATIVE) {
-    const d = await proxy<any[]>('dbGetRatingsForUser', [toUserId]);
-    return d.map((r: any) => ({ id: r.id, fromUserId: r.from_user_id, rating: r.rating, reviewText: r.review_text ?? undefined, role: r.role, createdAt: r.created_at, vacancyId: r.vacancy_id }));
-  }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_ratings').select('*').eq('to_user_id', toUserId).order('created_at', { ascending: false })
-  );
-  if (error) throwOnError('dbGetRatingsForUser', error);
-  return (data ?? []).map((r: any) => ({
-    id: r.id,
-    fromUserId: r.from_user_id,
-    rating: r.rating,
-    reviewText: r.review_text ?? undefined,
-    role: r.role,
-    createdAt: r.created_at,
-    vacancyId: r.vacancy_id,
-  }));
+  const d = await proxy<any[]>('dbGetRatingsForUser', [toUserId]);
+  return d.map((r: any) => ({ id: r.id, fromUserId: r.from_user_id, rating: r.rating, reviewText: r.review_text ?? undefined, role: r.role, createdAt: r.created_at, vacancyId: r.vacancy_id }));
 }
 
 // ─── Итог смены ───────────────────────────────────────────────────────────────
@@ -2139,21 +1789,7 @@ export async function dbSetShiftOutcome(
   outcome: ReportableOutcome,
   opts: { lateMinutes?: number; by?: string } = {}
 ): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbSetShiftOutcome', [likeId, outcome, opts]); return; }
-  const worked = outcome === 'worked';
-  await withTimeout(
-    supabase.from('jm_likes').update({
-      outcome,
-      late_minutes: worked ? (opts.lateMinutes ?? 0) : null,
-      outcome_at: nowISO(),
-      outcome_by: opts.by ?? null,
-      // проекция для существующих экранов
-      employer_confirmed: worked,
-      worker_confirmed: worked,
-      shift_completed: worked,
-      cancelled: !worked,
-    }).eq('id', likeId)
-  );
+  await proxy('dbSetShiftOutcome', [likeId, outcome, opts]);
 }
 
 // ─── Rating & match deletion ──────────────────────────────────────────────────
@@ -2174,44 +1810,7 @@ export async function dbSubmitRatingAndMaybeDelete(params: {
   attitude?: number;
   paidOnTime?: number;
 }): Promise<{ bothRated: boolean }> {
-  if (IS_NATIVE) { return proxy<{ bothRated: boolean }>('dbSubmitRatingAndMaybeDelete', [params]); }
-  const { likeId, fromUserId, toUserId, vacancyId, rating, role, reviewText } = params;
-
-  await withTimeout(
-    supabase.from('jm_ratings').insert({
-      id: uid(),
-      from_user_id: fromUserId,
-      to_user_id: toUserId,
-      vacancy_id: vacancyId,
-      like_id: likeId,
-      rating,
-      role,
-      review_text: reviewText ?? null,
-      created_at: nowISO(),
-    })
-  );
-
-  const ratedField = role === 'worker' ? 'worker_rated' : 'employer_rated';
-  await withTimeout(supabase.from('jm_likes').update({ [ratedField]: true }).eq('id', likeId));
-
-  const { data: allRatings } = await withTimeout(
-    supabase.from('jm_ratings').select('rating').eq('to_user_id', toUserId)
-  );
-  if (allRatings && allRatings.length > 0) {
-    const avg = allRatings.reduce((s: number, r: any) => s + r.rating, 0) / allRatings.length;
-    await withTimeout(
-      supabase.from('jm_users').update({
-        avg_rating: Math.round(avg * 100) / 100,
-        rating_count: allRatings.length,
-      }).eq('id', toUserId)
-    );
-  }
-
-  const { data: likeRow } = await withTimeout(
-    supabase.from('jm_likes').select('worker_rated,employer_rated').eq('id', likeId).maybeSingle()
-  );
-
-  return { bothRated: !!(likeRow?.worker_rated && likeRow?.employer_rated) };
+  return proxy<{ bothRated: boolean }>('dbSubmitRatingAndMaybeDelete', [params]);
 }
 
 // ─── Микро-тесты по профессиям ────────────────────────────────────────────────
@@ -2253,8 +1852,7 @@ export async function dbSubmitSkillTest(
 // ─── Push tokens ──────────────────────────────────────────────────────────────
 
 export async function dbSavePushToken(userId: string, token: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbSavePushToken', [userId, token]); return; }
-  await withTimeout(supabase.from('jm_users').update({ push_token: token }).eq('id', userId));
+  await proxy('dbSavePushToken', [userId, token]);
 }
 
 /**
@@ -2265,49 +1863,30 @@ export async function dbSavePushToken(userId: string, token: string): Promise<vo
  * оставил. Именно так уведомления и приходили «в никуда».
  */
 export async function dbClearPushToken(userId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbClearPushToken', [userId]); return; }
-  await withTimeout(supabase.from('jm_users').update({ push_token: null }).eq('id', userId));
+  await proxy('dbClearPushToken', [userId]);
 }
 
 /** Снять токен с любого аккаунта, за которым он записан. Аккаунт знать не нужно. */
 export async function dbReleasePushToken(token: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbReleasePushToken', [token]); return; }
-  await withTimeout(supabase.from('jm_users').update({ push_token: null }).eq('push_token', token));
+  await proxy('dbReleasePushToken', [token]);
 }
 
 /** То же для браузера: снимаем подписку на веб-пуши. */
 export async function dbDeleteWebPushSubscription(userId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeleteWebPushSubscription', [userId]); return; }
-  await withTimeout(supabase.from('jm_web_push_subscriptions').delete().eq('user_id', userId));
+  await proxy('dbDeleteWebPushSubscription', [userId]);
 }
 
 
 export async function dbSetEmployerCompany(userId: string, company: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbSetEmployerCompany', [userId, company]); return; }
-  await withTimeout(supabase.from('jm_users').update({ company }).eq('id', userId).eq('role', 'employer'));
+  await proxy('dbSetEmployerCompany', [userId, company]);
 }
 
 export async function dbGetWebPushSubscription(userId: string): Promise<{ endpoint: string; p256dh: string; auth: string } | null> {
-  if (IS_NATIVE) {
-    return proxy<{ endpoint: string; p256dh: string; auth: string } | null>('dbGetWebPushSubscription', [userId]);
-  }
-  const { data } = await withTimeout(
-    supabase.from('jm_web_push_subscriptions').select('endpoint, p256dh, auth').eq('user_id', userId).maybeSingle()
-  );
-  return data ?? null;
+  return proxy<{ endpoint: string; p256dh: string; auth: string } | null>('dbGetWebPushSubscription', [userId]);
 }
 
 export async function dbGetWorkerTokensByMetro(metroStation: string): Promise<{ id: string; push_token: string }[]> {
-  if (IS_NATIVE) { return proxy<{ id: string; push_token: string }[]>('dbGetWorkerTokensByMetro', [metroStation]); }
-  const { data } = await withTimeout(
-    supabase
-      .from('jm_users')
-      .select('id, push_token')
-      .eq('role', 'worker')
-      .eq('metro_station', metroStation)
-      .not('push_token', 'is', null)
-  );
-  return (data ?? []) as { id: string; push_token: string }[];
+  return proxy<{ id: string; push_token: string }[]>('dbGetWorkerTokensByMetro', [metroStation]);
 }
 
 // ─── In-app notifications ──────────────────────────────────────────────────────
@@ -2317,8 +1896,7 @@ export async function dbGetWorkerTokensByMetro(metroStation: string): Promise<{ 
  *  фоновая отметка, ради неё нельзя ломать экран. */
 export async function dbTouchLastSeen(userId: string): Promise<void> {
   try {
-    if (IS_NATIVE) { await proxy('dbTouchLastSeen', [userId]); return; }
-    await withTimeout(supabase.from('jm_users').update({ last_seen_at: new Date().toISOString() }).eq('id', userId));
+    await proxy('dbTouchLastSeen', [userId]);
   } catch {
     // колонки может ещё не быть — молчим
   }
@@ -2337,36 +1915,23 @@ export async function dbTgPrepareLink(userId: string): Promise<void> {
 }
 
 export async function dbGetNotifications(userId: string): Promise<{ id: string; title: string; body: string; is_read: boolean; created_at: string; type?: string | null; payload?: any }[]> {
-  if (IS_NATIVE) { return proxy('dbGetNotifications', [userId]); }
-  const { data, error } = await withTimeout(
-    supabase.from('jm_notifications')
-      .select('id, title, body, is_read, created_at, type, payload')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(50)
-  );
-  if (error) throwOnError('dbGetNotifications', error);
-  return data ?? [];
+  return proxy('dbGetNotifications', [userId]);
 }
 
 export async function dbMarkNotifRead(id: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbMarkNotifRead', [id]); return; }
-  await withTimeout(supabase.from('jm_notifications').update({ is_read: true }).eq('id', id));
+  await proxy('dbMarkNotifRead', [id]);
 }
 
 export async function dbMarkAllNotifsRead(userId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbMarkAllNotifsRead', [userId]); return; }
-  await withTimeout(supabase.from('jm_notifications').update({ is_read: true }).eq('user_id', userId));
+  await proxy('dbMarkAllNotifsRead', [userId]);
 }
 
 export async function dbDeleteNotif(id: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeleteNotif', [id]); return; }
-  await withTimeout(supabase.from('jm_notifications').delete().eq('id', id));
+  await proxy('dbDeleteNotif', [id]);
 }
 
 export async function dbDeleteAllNotifs(userId: string): Promise<void> {
-  if (IS_NATIVE) { await proxy('dbDeleteAllNotifs', [userId]); return; }
-  await withTimeout(supabase.from('jm_notifications').delete().eq('user_id', userId));
+  await proxy('dbDeleteAllNotifs', [userId]);
 }
 
 // ─── Подсказки адресов ───────────────────────────────────────────────────────
