@@ -35,7 +35,7 @@ PAGES = {
       <form method="post" action="/send">
         <label>ФИО <input name="fio" required></label>
         <label>Телефон <input type="tel" name="phone" required></label>
-        <input name="tg" placeholder="Telegram*">
+        <input name="src" placeholder="Откуда вы узнали о нас*">
         <button type="submit">Откликнуться</button>
       </form></body></html>""",
     "/prefilled-neighbour": """<html><body>
@@ -212,10 +212,30 @@ class ReconUnitTest(unittest.TestCase):
         self.assertEqual(block_kind("HTTP Error 404: Not Found"), "404")
         self.assertEqual(block_kind("URLError: [Errno 104] Connection reset by peer"), "доступ (reset)")
 
-    def test_catalog_has_602_sections(self):
+    def test_synthetic_candidate_has_age_and_telegram(self):
+        # Без них разведка браковала анкеты, которые боевой отклик проходит
+        # («Полных лет *» у РИВ ГОШ и «Твоё», телеграм у Селектел — 03.10.2026).
+        from recon import TEST_CANDIDATE
+        self.assertIn("age", TEST_CANDIDATE)
+        self.assertIn("telegram", TEST_CANDIDATE)
+
+    def test_age_field_is_filled_from_profile(self):
+        from agent import CandidateProfile, JupiterAgent
+        from submission import ReceiptStore
+        html = ('<form action="/apply" method="post"><label>Имя * <input name="n" required></label>'
+                '<label>Email * <input name="e" type="email" required></label>'
+                '<label>Полных лет * <input name="years"></label>'
+                '<button type="submit">Откликнуться</button></form>')
+        agent = JupiterAgent({"rivegauche.ru"}, dry_run=True, receipts=ReceiptStore(None))
+        result = agent.run_loaded_html(html, "https://rivegauche.ru/vacancy/1",
+                                       CandidateProfile(values={"first_name": "Анна", "email": "a@b.ru", "age": 31}))
+        filled = {step.get("key"): step.get("value") for step in result.trajectory if step.get("action") == "fill"}
+        self.assertEqual(filled.get("age"), "31")
+
+    def test_catalog_has_588_sections(self):
         # 26.09.2026: +budu.jobs, Хабр Карьера, arbihunter, 33 сайта за прокси; 29.09 — +8 careerday;
-        # 30.09 — +114 поиска двадцатью агентами.
-        self.assertEqual(len(load_sites()), 602)
+        # 30.09 — +114 поиска двадцатью агентами; 03.10 — −14 мёртвых доменов.
+        self.assertEqual(len(load_sites()), 588)
 
 
 if __name__ == "__main__":

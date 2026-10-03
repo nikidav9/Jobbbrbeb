@@ -678,7 +678,7 @@ export const LEGAL_DOCS: Record<LegalDocKey, LegalDoc> = {
   },
   employers: {
     title: 'Работодатели Юпитера',
-    version: '2026-10-02',
+    version: '2026-10-03-3',
     consentVersion: '2026-10-02',
     sections: [
       {

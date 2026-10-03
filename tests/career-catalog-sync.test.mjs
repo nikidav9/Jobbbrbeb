@@ -25,10 +25,11 @@ const rows = sites
   });
 const baseName = (name) => name.split(/\s+·\s+/)[0];
 
-test('master-list содержит весь текущий каталог: 595 компаний / 602 раздела', () => {
-  assert.equal(rows.length, 602);
-  assert.equal(new Set(rows.map(({ name }) => baseName(name))).size, 595);
-  assert.equal(new Set(rows.map(({ url }) => url)).size, 602);
+// 03.10.2026 убраны 14 компаний с мёртвыми доменами (NXDOMAIN по разведке).
+test('master-list содержит весь текущий каталог: 581 компания / 588 разделов', () => {
+  assert.equal(rows.length, 588);
+  assert.equal(new Set(rows.map(({ name }) => baseName(name))).size, 581);
+  assert.equal(new Set(rows.map(({ url }) => url)).size, 588);
 });
 
 test('production синхронизируется именно из master-list', () => {

@@ -36,6 +36,12 @@ class BlockedRanges(unittest.TestCase):
         for address in ("93.184.216.34", "8.8.8.8", "2606:2800:220:1::1"):
             self.assertFalse(is_blocked_address(address), address)
 
+    def test_nat64_is_judged_by_the_embedded_ipv4(self):
+        # DNS64 сервера отдаёт IPv4-сайт как 64:ff9b::/96 (Zotman Pizza, 03.10.2026).
+        self.assertFalse(is_blocked_address("64:ff9b::5fd5:f25c"))  # 95.213.242.92
+        for inner in ("64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe", "64:ff9b::a00:5", "64:ff9b::c0a8:101"):
+            self.assertTrue(is_blocked_address(inner), inner)
+
     def test_a_name_is_not_an_address(self):
         self.assertFalse(is_blocked_address("example.com"))
 
