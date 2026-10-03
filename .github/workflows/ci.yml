@@ -82,6 +82,9 @@ jobs:
       - name: Согласие на рекламную рассылку — отдельное, отзываемое, только о себе
         run: php tests/marketing_consent_test.php
 
+      - name: Версия приложения в запросе — устаревшей сборке отказ, остальным нет
+        run: php tests/app_version_test.php
+
       - name: Работодателей не регистрируем — письмо в поддержку, живое число компаний на сайте
         run: php tests/employer_closed_test.php
 

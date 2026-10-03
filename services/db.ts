@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
 import type { JupiterEvent } from '@/services/jupiterTimeline';
@@ -31,6 +32,9 @@ const API_BASE =
     : (process.env.EXPO_PUBLIC_API_URL || 'https://jobtoo.ru').trim().replace(/\/+$/, '');
 
 const APP_SECRET = (process.env.EXPO_PUBLIC_APP_SECRET ?? '').trim();
+// Версия приложения уходит в каждом запросе: так сервер может отказать слишком
+// старой сборке понятным текстом (php-proxy/app_version.php, с 1.0.0).
+const APP_VERSION = Constants.expoConfig?.version ?? '';
 const SESSION_TOKEN_KEY = 'jm_session_token';
 let sessionTokenCache: string | null | undefined;
 
@@ -140,6 +144,7 @@ async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
         headers: {
           'Content-Type': 'application/json',
           'X-App-Secret': APP_SECRET,
+          'X-App-Version': APP_VERSION,
           ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         },
         body: JSON.stringify({ fn, args }),
@@ -758,7 +763,7 @@ export function dbWarmup(): void {
   if (IS_NATIVE) {
     fetch(`${API_BASE}/api/db.php`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET },
+      headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET, 'X-App-Version': APP_VERSION },
       body: JSON.stringify({ fn: 'dbWarmup', args: [] }),
     }).catch(() => {});
     return;
