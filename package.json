@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@apollo/client": "^3.4.10",
+    "@appmetrica/react-native-analytics": "4.2.0",
     "@expo-google-fonts/inter": "^0.4.1",
     "@expo-google-fonts/manrope": "^0.4.1",
     "@expo-google-fonts/onest": "0.4.1",

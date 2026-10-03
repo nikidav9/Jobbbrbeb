@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { reportCaughtError } from '@/services/crashReporting';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -645,6 +646,7 @@ const styles = StyleSheet.create({
 });
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  useEffect(() => { reportCaughtError('user-profile', error); }, [error]);
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
