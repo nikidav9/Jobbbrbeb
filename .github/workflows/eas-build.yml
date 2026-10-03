@@ -49,7 +49,35 @@ jobs:
         env:
           ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           YMAPS_KEY: ${{ secrets.EXPO_PUBLIC_YANDEX_MAPS_KEY }}
+          APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+          APPMETRICA_KEY: ${{ secrets.EXPO_PUBLIC_APPMETRICA_API_KEY }}
         run: |
+          # Ключ приложения для сервера (X-App-Secret). Раньше его подставлял
+          # только конвейер обновлений по воздуху (eas-update.yml), а в бинарнике
+          # его не было: первый запуск ходил на сервер без ключа, получал
+          # «Forbidden» и жил так до первого обновления. Без ключа сборку не
+          # запускаем — такое приложение бесполезно.
+          if [ -z "$APP_SECRET" ]; then
+            echo "::error::Секрет EXPO_PUBLIC_APP_SECRET пуст. Добавьте его в Settings → Secrets → Actions."
+            exit 1
+          fi
+          tmp=$(mktemp)
+          jq --arg k "$APP_SECRET" \
+            '.build.production.env.EXPO_PUBLIC_APP_SECRET = $k' eas.json > "$tmp"
+          mv "$tmp" eas.json
+          echo "Ключ приложения подставлен в eas.json на время сборки."
+          # Ключ AppMetrica (отчёты о падениях). Пусто — сбор выключен, сборку
+          # не валим: включать его можно только после записи в Политику (сделана
+          # 03.10.2026), а сам ключ владелец заводит позже.
+          if [ -n "$APPMETRICA_KEY" ]; then
+            tmp=$(mktemp)
+            jq --arg k "$APPMETRICA_KEY" \
+              '.build.production.env.EXPO_PUBLIC_APPMETRICA_API_KEY = $k' eas.json > "$tmp"
+            mv "$tmp" eas.json
+            echo "Ключ AppMetrica подставлен в eas.json."
+          else
+            echo "::warning::Секрет EXPO_PUBLIC_APPMETRICA_API_KEY пуст — отчёты о падениях не включены."
+          fi
           if [ -z "$ANON_KEY" ]; then
             echo "::error::Секрет EXPO_PUBLIC_SUPABASE_ANON_KEY пуст. Добавьте его в Settings → Secrets → Actions."
             exit 1

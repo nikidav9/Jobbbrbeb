@@ -66,3 +66,19 @@ test('отчёты о сбоях записаны в документы: пер�
   // Открытые документы на сайте пересобраны из тех же текстов.
   assert.ok(read('public/landing/docs.json').includes('AppMetrica'));
 });
+
+test('нативная сборка и обновление по воздуху получают одни и те же ключи', () => {
+  const build = read('.github/workflows/eas-build.yml');
+  const update = read('.github/workflows/eas-update.yml');
+  // Ключ приложения в бинарнике: без него первый запуск получает «Forbidden».
+  assert.match(build, /EXPO_PUBLIC_APP_SECRET = \$k/);
+  assert.match(build, /Секрет EXPO_PUBLIC_APP_SECRET пуст/);
+  assert.match(build, /\.build\.production\.env\.EXPO_PUBLIC_APPMETRICA_API_KEY = \$k/);
+  // Обновление по воздуху заменяет встроенный бандл — ключ AppMetrica нужен и там.
+  assert.match(update, /EXPO_PUBLIC_APPMETRICA_API_KEY: \$\{\{ secrets\.EXPO_PUBLIC_APPMETRICA_API_KEY \}\}/);
+  assert.match(update, /EXPO_PUBLIC_APP_SECRET: \$\{\{ secrets\.EXPO_PUBLIC_APP_SECRET \}\}/);
+});
+
+test('резервная копия данных Android выключена (токен сессии не уезжает в облако)', () => {
+  assert.equal(JSON.parse(read('app.json')).expo.android.allowBackup, false);
+});

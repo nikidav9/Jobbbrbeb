@@ -53,6 +53,10 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_APP_SECRET: ${{ secrets.EXPO_PUBLIC_APP_SECRET }}
+          # Ключ AppMetrica вшивается в сборку при упаковке JS: обновление по воздуху
+          # заменяет встроенный бандл, и без ключа здесь отчёты о падениях
+          # выключились бы после первого же обновления.
+          EXPO_PUBLIC_APPMETRICA_API_KEY: ${{ secrets.EXPO_PUBLIC_APPMETRICA_API_KEY }}
           # Не секрет и никогда им не был — обычный публичный адрес.
           # Фиксируем российский production-хост явно, чтобы случайная
           # переменная окружения не увела приложение на внешний адрес.
