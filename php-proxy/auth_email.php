@@ -51,6 +51,33 @@ function jt_auth_code_hash(string $email, string $purpose, string $code, string 
 }
 
 /**
+ * Тестовый вход для проверяющего магазина приложений (Apple App Review,
+ * решение владельца 03.10.2026). Проверяющий не может получить письмо с кодом,
+ * поэтому для ОДНОГО адреса из секретов (REVIEW_LOGIN_EMAIL) код входа заранее
+ * известен (REVIEW_LOGIN_CODE, шесть цифр) и письмо не отправляется.
+ *
+ * Только для входа и первой регистрации этого адреса: восстановление пароля,
+ * привязка почты и удаление аккаунта идут обычным путём. Всё остальное — срок
+ * кода, пять попыток, пауза и лимит в час на адрес — работает как у всех, так
+ * что подбор кода не дешевле обычного. Секреты не заданы, код слабый (одна цифра
+ * шесть раз, 123456) или адрес другой — null, поведение прежнее.
+ */
+function jt_review_fixed_code(string $email, string $purpose): ?string
+{
+    if ($purpose !== 'login' && $purpose !== 'register') return null;
+    $get = function (string $name): string {
+        if (function_exists('jt_secret')) return trim((string)jt_secret($name));
+        $v = getenv($name);
+        return is_string($v) ? trim($v) : '';
+    };
+    $mailbox = strtolower($get('REVIEW_LOGIN_EMAIL'));
+    $code = preg_replace('/\D+/', '', $get('REVIEW_LOGIN_CODE'));
+    if ($mailbox === '' || strtolower($email) !== $mailbox) return null;
+    if (strlen($code) !== 6 || preg_match('/^(\d)\1{5}$/', $code) || in_array($code, ['123456', '654321', '012345'], true)) return null;
+    return $code;
+}
+
+/**
  * Выпустить код и отправить письмо.
  *
  * Возвращает ['ok' => true] или ['ok' => false, 'reason' => 'wait'|'too_many'|
@@ -83,7 +110,8 @@ function jt_auth_issue_code(string $email, string $purpose, ?string $userId, str
     if (random_int(1, 50) === 1) {
         sb('DELETE', 'jm_auth_codes', ['created_at' => 'lt.' . gmdate('Y-m-d\TH:i:s\Z', $now - 86400)]);
     }
-    $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    $fixed = jt_review_fixed_code($email, $purpose);
+    $code = $fixed ?? str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $id = bin2hex(random_bytes(12));
     sb_insert('jm_auth_codes', [
         'id' => $id, 'email' => $email, 'purpose' => $purpose, 'user_id' => $userId,
@@ -91,7 +119,8 @@ function jt_auth_issue_code(string $email, string $purpose, ?string $userId, str
         'created_at' => gmdate('Y-m-d\TH:i:s\Z', $now),
         'expires_at' => gmdate('Y-m-d\TH:i:s\Z', $now + JT_CODE_TTL),
     ]);
-    $err = $send($email, $code, $purpose);
+    // Тестовый адрес проверяющего: письма нет, код известен заранее.
+    $err = $fixed !== null ? null : $send($email, $code, $purpose);
     if ($err !== null) {
         // Письмо не ушло — код никто не получит. Строку гасим, чтобы она не
         // держала минутную паузу: человек должен мочь сразу попробовать снова.

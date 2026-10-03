@@ -471,6 +471,63 @@ $cpAt = strpos($dbSrcCp, "case 'dbChangePassword'");
 $cpBody = $cpAt === false ? '' : substr($dbSrcCp, $cpAt, 1500);
 check('смена пароля отказывает аккаунту без пароля', str_contains($cpBody, "\$ok = \$stored !== '' && ("));
 
+// ── Тестовый вход для проверяющего магазина (03.10.2026) ─────────────────────
+// Один адрес из секретов получает заранее известный код без письма; всё
+// остальное — как у всех.
+$resetReview = function (): void { putenv('REVIEW_LOGIN_EMAIL'); putenv('REVIEW_LOGIN_CODE'); };
+$resetReview();
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+check('секреты не заданы — фиксированного кода нет', jt_review_fixed_code('review@jobtoo.ru', 'login') === null);
+
+putenv('REVIEW_LOGIN_EMAIL=Review@JobToo.ru'); putenv('REVIEW_LOGIN_CODE=482915');
+check('адрес из секретов, вход — код известен (регистр адреса не важен)', jt_review_fixed_code('review@jobtoo.ru', 'login') === '482915');
+check('первая регистрация тестового адреса — тоже', jt_review_fixed_code('review@jobtoo.ru', 'register') === '482915');
+foreach (['reset', 'attach', 'delete'] as $p) {
+    check("цель $p идёт обычным путём", jt_review_fixed_code('review@jobtoo.ru', $p) === null);
+}
+check('чужой адрес — обычный код', jt_review_fixed_code('ivan@mail.ru', 'login') === null);
+
+$r = jt_auth_issue_code('review@jobtoo.ru', 'login', 'u-review', $key, $mail);
+check('для тестового адреса письмо не уходит', $r['ok'] === true && $sent === []);
+$row = end($GLOBALS['T']['jm_auth_codes']);
+check('в базе подпись, а не сам код', !str_contains(json_encode($row), '482915') && strlen($row['code_hash']) === 64);
+check('известный код принимается и знает аккаунт',
+    ($ok = jt_auth_check_code('review@jobtoo.ru', 'login', '482 915', $key))['ok'] === true && $ok['user_id'] === 'u-review');
+check('одноразовый: второй раз тот же код не проходит',
+    jt_auth_check_code('review@jobtoo.ru', 'login', '482915', $key)['ok'] === false);
+
+// Лимиты у тестового адреса те же: подбор не дешевле обычного.
+$GLOBALS['T']['jm_auth_codes'] = [];
+jt_auth_issue_code('review@jobtoo.ru', 'login', 'u-review', $key, $mail);
+$r2 = jt_auth_issue_code('review@jobtoo.ru', 'login', 'u-review', $key, $mail);
+check('пауза между кодами у тестового адреса есть', $r2['ok'] === false && $r2['reason'] === 'wait');
+$last = null;
+for ($i = 0; $i < 5; $i++) $last = jt_auth_check_code('review@jobtoo.ru', 'login', '000001', $key);
+check('пять неверных — код сгорел и у тестового адреса', $last['reason'] === 'too_many_attempts');
+check('после пяти неверных и верный не проходит', jt_auth_check_code('review@jobtoo.ru', 'login', '482915', $key)['ok'] === false);
+
+// Другой адрес с тем же кодом не входит.
+$GLOBALS['T']['jm_auth_codes'] = []; $sent = [];
+jt_auth_issue_code('ivan@mail.ru', 'login', 'u1', $key, $mail);
+check('у обычного адреса письмо ушло', count($sent) === 1);
+check('известный код тестового адреса чужому не подходит',
+    $sent[0][1] === '482915' || jt_auth_check_code('ivan@mail.ru', 'login', '482915', $key)['ok'] === false);
+
+// Слабые коды отвергаются: тогда поведение прежнее.
+foreach (['000000', '111111', '123456', '654321', '12345', '1234567', 'abcdef', ''] as $weak) {
+    putenv('REVIEW_LOGIN_CODE=' . $weak);
+    check('слабый или неверной длины код не принимается: ' . json_encode($weak), jt_review_fixed_code('review@jobtoo.ru', 'login') === null);
+}
+$resetReview();
+
+// Секреты доезжают до сервера: выкладка и deploy.php знают оба имени.
+$deployYml = (string)file_get_contents(__DIR__ . '/../.github/workflows/deploy-regru.yml');
+$deployPhp = (string)file_get_contents(__DIR__ . '/../php-proxy/deploy.php');
+foreach (['REVIEW_LOGIN_EMAIL', 'REVIEW_LOGIN_CODE'] as $name) {
+    check("$name передаётся выкладкой", str_contains($deployYml, "secrets.$name") && str_contains($deployYml, "e(\"$name\""));
+    check("$name принимает deploy.php", str_contains($deployPhp, "'$name'"));
+}
+
 if ($failures) {
     echo "auth email: ПРОВАЛЫ\n";
     foreach ($failures as $f) echo "  - $f\n";
