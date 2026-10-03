@@ -13,7 +13,6 @@ import { Colors } from '@/constants/theme';
 import { JT, JT_FONT } from '@/constants/jt';
 import { useApp } from '@/hooks/useApp';
 import NotificationPermissionSheet from '@/components/NotificationPermissionSheet';
-import CompleteProfileSheet from '@/components/CompleteProfileSheet';
 import EntryTransition from '@/components/EntryTransition';
 import { matchBadgeCount } from '@/services/matchCounts';
 
@@ -256,7 +255,6 @@ export default function TabLayout() {
       </Tabs>
       <FloatingTabBar activeRoute={activeRoute} surfaceRoute={surfaceRoute} onTabPress={onTabPress} tabs={tabs} />
       <NotificationPermissionSheet />
-      <CompleteProfileSheet />
       <EntryTransition />
     </View>
   );
