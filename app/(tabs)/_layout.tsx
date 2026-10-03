@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
@@ -29,6 +29,10 @@ const FLOATING_TAB_SAFE_OVERLAP = rs(13);
 const FLOATING_TAB_MIN_BOTTOM = rs(8);
 
 function floatingTabBottom(safeBottom: number): number {
+  // Android: плашка стоит строго над системной панелью («назад/домой/меню»),
+  // а не заезжает в неё. Нахлёст — приём макета для полоски iOS; панель
+  // кнопок Android он перекрывал, и человек попадал мимо.
+  if (Platform.OS === 'android') return Math.max(FLOATING_TAB_MIN_BOTTOM, safeBottom + FLOATING_TAB_MIN_BOTTOM);
   // The reference bar sits partly inside the iOS home-indicator safe area.
   // We keep an 8pt floor for gesture-only / web layouts and move the pill
   // down by ~13pt relative to the safe-area boundary.
