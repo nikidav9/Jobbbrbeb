@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "JobToo",
-    "slug": "onspace-app",
+    "slug": "jobtoo",
     "owner": "nikidav23",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -168,14 +168,14 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "5b26bb1e-9e73-4d94-8907-b27e3f66096f"
+        "projectId": "09b20cae-1be8-4f96-ae8a-b7675976c166"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/5b26bb1e-9e73-4d94-8907-b27e3f66096f",
+      "url": "https://u.expo.dev/09b20cae-1be8-4f96-ae8a-b7675976c166",
       "requestHeaders": {
         "expo-channel-name": "production"
       }
