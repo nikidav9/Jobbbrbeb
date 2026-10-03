@@ -454,7 +454,9 @@ def _recon_ready(item: dict) -> bool:
     «сайт ещё подключаем» стоял у Норникеля, Наумена, Skyeng, МойСклад —
     анкета заполнена, не хватало только ответов человека)."""
     captcha = item.get("captcha") if isinstance(item.get("captcha"), dict) else {}
-    return item.get("klass") == "dry_run_ok" or (
+    # api_ready — то же, что dry_run_ok, только через API системы подбора
+    # (Huntflow, Сбер): адаптер дошёл до ready_to_submit (03.10.2026).
+    return item.get("klass") in ("dry_run_ok", "api_ready") or (
         item.get("reason_code") in ("NEEDS_ANSWERS", "EMAIL_APPLY")
         and item.get("status") == "action_required") or (
         # Анкета заполнена, осталась капча, которую решает человек в приложении

@@ -56,6 +56,9 @@ class AgentResultTest(unittest.TestCase):
         self.assertTrue(_recon_ready({"klass": "no_vacancy", "status": "action_required",
                                       "reason_code": "EMAIL_APPLY"}))
 
+    def test_recon_counts_api_adapter_as_connected(self):
+        self.assertTrue(_recon_ready({"klass": "api_ready", "status": "ready_to_submit"}))
+
     def test_recon_counts_human_captcha_as_connected(self):
         def item(**captcha):
             return {"klass": "captcha", "status": "action_required", "captcha": captcha}

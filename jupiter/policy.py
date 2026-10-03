@@ -31,6 +31,9 @@ ALLOWED_SCHEMES = {"http", "https"}
 _LOOPBACK_NAMES = {"localhost", "127.0.0.1", "::1", "[::1]"}
 
 
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
 def is_blocked_address(raw: str) -> bool:
     """Адрес, на который агент не должен ходить никогда."""
     try:
@@ -38,6 +41,12 @@ def is_blocked_address(raw: str) -> bool:
     except ValueError:
         # Не адрес — решать не здесь.
         return False
+    # NAT64 (64:ff9b::/96): так DNS64 сервера записывает сайт, у которого
+    # есть только IPv4. Судим по вложенному IPv4, иначе обычный публичный
+    # сайт выглядел «внутренним» (Zotman Pizza, разведка 03.10.2026), а
+    # внутренний IPv4 под этой обёрткой — наоборот, пропускать нельзя.
+    if isinstance(address, ipaddress.IPv6Address) and address in _NAT64:
+        address = ipaddress.IPv4Address(int(address) & 0xFFFFFFFF)
     return (
         address.is_private          # 10/8, 172.16/12, 192.168/16, fc00::/7
         or address.is_loopback      # 127/8, ::1
