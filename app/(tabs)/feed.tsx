@@ -2403,7 +2403,9 @@ const pS = StyleSheet.create({
   scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
   limitOverlay: {
     ...StyleSheet.absoluteFill, backgroundColor: 'rgba(20,20,20,0.5)',
-    justifyContent: 'center', paddingHorizontal: rs(20), zIndex: 50,
+    // elevation: на Android он важнее zIndex, и без него кнопки колоды (elevation 20)
+    // рисовались поверх плашки.
+    justifyContent: 'center', paddingHorizontal: rs(20), zIndex: 50, elevation: 50,
   },
   limitWrap: { alignSelf: 'stretch' },
   limitCard: {
