@@ -256,8 +256,8 @@ export default function ExtVacancyScreen() {
             style={s.want} onPress={() => act('want')} activeOpacity={0.85}
             accessibilityRole="button" testID="detail-want"
           >
-            <Ionicons name="heart" size={rs(22)} color={JT.ink} />
-            <Text style={s.wantTxt}>Откликнуться</Text>
+            <Ionicons name={ev.autoApply === false ? 'open-outline' : 'heart'} size={rs(22)} color={JT.ink} />
+            <Text style={s.wantTxt}>{ev.autoApply === false ? 'Откликнуться на сайте' : 'Откликнуться'}</Text>
           </TouchableOpacity>
         </View>
       </View>

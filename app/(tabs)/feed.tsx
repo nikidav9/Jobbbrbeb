@@ -1281,6 +1281,14 @@ function WorkerPermMode() {
   const swWant = (vx = 0.5) => {
     const c = swTop;
     if (!c || swDecisionPending.current) return;
+    // Юпитер не нашёл у компании анкету ни на одном адресе (разведка 03.10.2026):
+    // молнию не тратим и отклик «через приложение» не обещаем — открываем сайт.
+    if (c._ext && c.v.autoApply === false) {
+      showToast('Отклик у этого работодателя — на его сайте. Открываем.', 'success');
+      void Linking.openURL(c.v.url).catch(() => showToast('Не удалось открыть сайт работодателя.', 'error'));
+      swDeck.snapBack();
+      return;
+    }
     if (c._ext && isGuest) {
       promptRegister({ vacancyKind: 'permanent' });
       swDeck.snapBack();
@@ -1704,6 +1712,7 @@ function WorkerPermMode() {
                 </View>
                 {format ? <View style={jt.tag}><Text style={jt.tagTxt}>{format}</Text></View> : null}
                 {level ? <View style={jt.tag}><Text style={jt.tagTxt}>{level}</Text></View> : null}
+                {ev.autoApply === false ? <View style={jt.tag}><Text style={jt.tagTxt}>Отклик на сайте</Text></View> : null}
                 <View style={[jt.tag, jt.tagSalary]}>
                   <Text style={jt.tagTxt} numberOfLines={1}>
                     {salary > 0

@@ -411,6 +411,62 @@ class _Clickables(HTMLParser):
             self._cur["text"] = (self._cur["text"] + " " + data).strip()
 
 
+class _Dialogs(HTMLParser):
+    """Окна поверх страницы: что показал сайт после нажатия «Откликнуться».
+
+    Разведка 03.10.2026: на 21 сайте кнопку нажали, а анкеты не вышло, и по
+    ``text_head`` (начало страницы) не видно, что открылось. Берём тексты и
+    поля окон: role=dialog, aria-modal и классы modal/popup/dialog/drawer.
+    """
+
+    _VOID = {"input", "br", "img", "hr", "meta", "link", "source", "area", "col", "embed", "wbr", "param", "track"}
+    _CLASS = re.compile(r"(^|[\s_-])(modal|popup|dialog|drawer|overlay|lightbox)([\s_-]|$)", re.I)
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.dialogs: list[dict[str, Any]] = []
+        self._stack: list[dict[str, Any]] = []
+        self._depth = 0
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: (v or "") for k, v in attrs}
+        if tag in ("script", "style", "noscript"):
+            self._skip += 1
+            return
+        if tag in self._VOID:
+            if tag == "input" and self._stack and a.get("type", "text").lower() != "hidden":
+                self._stack[-1]["inputs"].append(
+                    (a.get("type") or "text")[:12] + ":" + (a.get("placeholder") or a.get("name") or a.get("aria-label") or "")[:40]
+                )
+            return
+        self._depth += 1
+        is_dialog = (a.get("role", "").lower() in ("dialog", "alertdialog") or a.get("aria-modal", "").lower() == "true"
+                     or bool(self._CLASS.search(a.get("class", ""))))
+        if is_dialog and len(self.dialogs) + len(self._stack) < 4:
+            self._stack.append({"depth": self._depth, "text": "", "inputs": []})
+        if tag in ("textarea", "select") and self._stack:
+            self._stack[-1]["inputs"].append(tag + ":" + (a.get("placeholder") or a.get("name") or "")[:40])
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "noscript"):
+            self._skip = max(0, self._skip - 1)
+            return
+        if tag in self._VOID:
+            return
+        if self._stack and self._stack[-1]["depth"] == self._depth:
+            d = self._stack.pop()
+            text = " ".join(d["text"].split())
+            if text or d["inputs"]:
+                self.dialogs.append({"text": text[:240], "inputs": d["inputs"][:8]})
+        self._depth = max(0, self._depth - 1)
+
+    def handle_data(self, data):
+        if self._skip or not self._stack:
+            return
+        self._stack[-1]["text"] += " " + data
+
+
 def page_diagnostic(page) -> dict[str, Any]:
     """Сжатая картина страницы, где Юпитер не нашёл форму отклика.
 
@@ -446,6 +502,11 @@ def page_diagnostic(page) -> dict[str, Any]:
             buttons.append(text)
         if len(buttons) >= 12:
             break
+    dialogs_parser = _Dialogs()
+    try:
+        dialogs_parser.feed(page.html or "")
+    except Exception:
+        pass
     ats = sorted({info.name for host in parser.hosts for info in [ats_for_url("https://" + host + "/")] if info})
     text = page.text or ""
     parsed_url = urlparse(page.url or "")
@@ -458,6 +519,7 @@ def page_diagnostic(page) -> dict[str, Any]:
         "buttons": buttons,
         "iframes": parser.iframes[:6],
         "ats": ats,
+        "dialogs": dialogs_parser.dialogs[:3],
         "login_hint": bool(_LOGIN_WORDS.search(text[:4000])),
         "text_head": " ".join(text.split())[:300],
     }

@@ -140,10 +140,29 @@ const EXT_FEED_POOL_SELECT = 'id,source_id,external_id,title,company,metro_stati
  * что нужно карточке. Старые сборки приложения так сразу получают полный
  * текст, ничего не зная про новую колонку.
  */
+/**
+ * Умеет ли Юпитер откликаться у этой компании. Список — итог браузерной
+ * разведки (apply_unsupported.php): на каждом адресе компании нет анкеты и
+ * кнопки отклика. Карточки таких компаний в приложении открывают сайт
+ * работодателя, а не обещают «отклик через приложение».
+ */
+function ext_feed_auto_apply(string $company): bool
+{
+    static $unsupported = null;
+    if ($unsupported === null) {
+        $file = __DIR__ . '/apply_unsupported.php';
+        $list = is_file($file) ? require $file : [];
+        $unsupported = is_array($list) ? array_flip($list) : [];
+    }
+    $key = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $company)), 'UTF-8');
+    return $key === '' || !isset($unsupported[$key]);
+}
+
 function ext_feed_public_row(array $row): array
 {
     $full = trim((string)($row['description_full'] ?? ''));
     if ($full !== '') $row['description'] = $full;
+    $row['auto_apply'] = ext_feed_auto_apply((string)($row['company'] ?? ''));
     // detail_spec — служебный адрес для describe.php, клиенту он не нужен.
     unset($row['description_full'], $row['described_at'], $row['detail_spec']);
     return $row;

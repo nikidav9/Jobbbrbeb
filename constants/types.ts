@@ -460,6 +460,8 @@ export interface ExtVacancy {
   schedule?: string | null;
   description?: string | null;
   url: string;
+  /** false — у компании Юпитер не нашёл анкету ни на одном адресе: карточка открывает сайт. */
+  autoApply?: boolean;
   active: boolean;
   firstSeenAt: string;
   lastSeenAt: string;
