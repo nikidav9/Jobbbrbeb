@@ -1492,6 +1492,18 @@ timeout 600 docker compose --env-file "$SECRETS" up -d --remove-orphans >/tmp/jt
   || say "контейнеры" "up не уложился в 10 минут"
 grep -qE "Started|Recreated|Created" /tmp/jt-compose.log 2>/dev/null \
   && say "контейнеры" "$(grep -aE "Started|Recreated|Created" /tmp/jt-compose.log | tr -d "\r" | tr "\n" " " | cut -c1-200)"
+# Лаборатория Юпитера читает код из смонтированного каталога jupiter/, а
+# python держит его в памяти: up -d контейнер не трогает, и новая версия не
+# подхватывалась (03.10.2026 так застрял старый вход по паролю). Перезапуск —
+# по отпечатку кода, а не на каждом заходе.
+LAB_SHA=$(cat "$REPO"/jupiter/*.py 2>/dev/null | sha256sum | cut -d' ' -f1)
+if [ "$LAB_SHA" != "$(cat /var/lib/jobtoo/jupiter-lab.sha 2>/dev/null || true)" ]; then
+  mkdir -p /var/lib/jobtoo
+  if docker compose --env-file "$SECRETS" restart jupiter-lab >/dev/null 2>&1; then
+    echo "$LAB_SHA" > /var/lib/jobtoo/jupiter-lab.sha
+    say "лаборатория" "перезапущена с новым кодом"
+  fi
+fi
 # Пул PHP поменялся (см. «Рабочий каталог прокси») — мягкая перезагрузка:
 # USR2 перечитывает настройку, текущие запросы доживают. Сначала проверка
 # настройки: с ошибкой в ней FPM после сигнала не поднялся бы вовсе.

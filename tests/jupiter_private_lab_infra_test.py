@@ -94,6 +94,8 @@ assert '_jobtoo_call("dbAuthSendCode", [email.strip().lower(), "login"])' in ser
 assert '_jobtoo_call("dbAuthVerifyCode", [email, "login", code.strip()])' in server
 assert 'str(user.get("email", "")).strip().lower() != email' in server
 assert "dbLogin" not in server and "nikidav" not in server
+# Новый код лаборатории подхватывается: перезапуск по отпечатку jupiter/*.py.
+assert 'restart jupiter-lab' in bootstrap and "jupiter-lab.sha" in bootstrap
 assert "if not self._session()" in server
 assert '"/api/live-dry-run"' in server
 assert "profile_for_url" in server
