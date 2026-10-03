@@ -27,9 +27,9 @@ consent = legal[legal.index("  consent: {"):legal.index("  dataPolicy: {")]
 # поднят только version, повторное согласие не нужно.
 # 2026-10-02: YandexGPT среди обработчиков — новый получатель, согласие заново.
 # 2026-10-03: AppMetrica (отчёты о сбоях приложения) — ещё один получатель.
-assert "version: '2026-10-03'" in privacy
+assert "version: '2026-10-03-3'" in privacy
 assert "consentVersion: '2026-10-03'" in privacy
-assert "version: '2026-10-03'" in consent
+assert "version: '2026-10-03-3'" in consent
 assert "consentVersion: '2026-10-03'" in consent
 
 # «Ответы для откликов» (applyAnswers): срок выхода и ник в Telegram названы во
