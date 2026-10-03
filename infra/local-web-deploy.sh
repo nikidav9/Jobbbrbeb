@@ -180,6 +180,11 @@ fi
   exit 1
 }
 
+# Сайт для компьютера не грузит приложение под собой: тег приложения становится
+# условным (scripts/defer-landing-bundle.py). Не нашёл тег — страница как есть.
+python3 "$SRC/scripts/defer-landing-bundle.py" "$SRC/dist/index.html" >>"$LOG" 2>&1 \
+  || log "WARN $HEAD: defer-landing-bundle skipped; app bundle loads under the site as before"
+
 # Значок в Actions менялся после Expo export — сохраняем то же поведение.
 if [ -s "$SRC/assets/images/favicon.ico" ]; then
   cp "$SRC/assets/images/favicon.ico" "$SRC/dist/favicon.ico"
