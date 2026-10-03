@@ -11,6 +11,38 @@ const JT_PUSH_AAD = 'jobtoo:push-token:v1';
 const JT_PUSH_PUBLIC_TITLE = 'JobToo';
 const JT_PUSH_PUBLIC_BODY = 'У вас новое уведомление';
 
+// Тексты пушей по видам событий (03.10.2026, решение владельца: «пуши должны
+// объяснять, зачем открывать приложение»). Только вид события — без имён,
+// компаний, окладов и текста сообщений: это уходит через Expo и Google.
+// Не из таблицы — единый «У вас новое уведомление». Маршрут по нажатию —
+// services/notificationRoute.ts (ключи те же, что и там).
+const JT_PUSH_EVENTS = [
+    // Соискатель
+    'message'                     => ['title' => 'Новое сообщение',       'body' => 'Вам написали в чате JobToo',                        'channel' => 'matches'],
+    'perm_approved'               => ['title' => 'Ответ по отклику',      'body' => 'Работодатель ответил на ваш отклик',                'channel' => 'matches'],
+    'perm_rejected'               => ['title' => 'Ответ по отклику',      'body' => 'Работодатель ответил на ваш отклик',                'channel' => 'matches'],
+    'perm_status'                 => ['title' => 'Ответ по отклику',      'body' => 'Работодатель ответил на ваш отклик',                'channel' => 'matches'],
+    'app_auto_rejected'           => ['title' => 'Ответ по отклику',      'body' => 'Откройте «Отклики», чтобы посмотреть статус',       'channel' => 'matches'],
+    'match_worker'                => ['title' => 'Есть ответ',            'body' => 'Работодатель ответил вам. Откройте JobToo',         'channel' => 'matches'],
+    'jupiter_captcha'             => ['title' => 'Юпитер ждёт вас',       'body' => 'Введите капчу, чтобы отклик ушёл',                  'channel' => 'matches'],
+    'jupiter_questions'           => ['title' => 'Вопросы от работодателей', 'body' => 'Ответьте на них, и отклики уйдут',               'channel' => 'matches'],
+    'jupiter_sent'                => ['title' => 'Отклик отправлен',      'body' => 'Юпитер отправил отклик. Статус — в «Откликах»',     'channel' => 'matches'],
+    'jupiter_failed'              => ['title' => 'Отклик не ушёл',        'body' => 'Откройте «Отклики», чтобы повторить',               'channel' => 'matches'],
+    'support'                     => ['title' => 'Ответ поддержки',       'body' => 'Поддержка JobToo ответила вам',                     'channel' => 'matches'],
+    'nearby_perm'                 => ['title' => 'Новые вакансии',        'body' => 'В ленте появились новые вакансии',                  'channel' => 'vacancies'],
+    'nearby_shift'                => ['title' => 'Новые вакансии',        'body' => 'В ленте появились новые вакансии',                  'channel' => 'vacancies'],
+    // Работодатель
+    'new_applicant'               => ['title' => 'Новый отклик',          'body' => 'На вашу вакансию откликнулись',                     'channel' => 'matches'],
+    'new_perm_applicant'          => ['title' => 'Новый отклик',          'body' => 'На вашу вакансию откликнулись',                     'channel' => 'matches'],
+    'pending_apps'                => ['title' => 'Кандидаты ждут',        'body' => 'Есть отклики без ответа',                           'channel' => 'matches'],
+    'match_employer'              => ['title' => 'Есть ответ',            'body' => 'По вашей вакансии есть новости. Откройте JobToo',   'channel' => 'matches'],
+    // Смены закрыты (17.09.2026), но старые записи ещё живут
+    'shift_confirmed_by_employer' => ['title' => 'Обновление по смене',   'body' => 'Откройте JobToo, чтобы посмотреть',                 'channel' => 'matches'],
+    'shift_cancelled'             => ['title' => 'Обновление по смене',   'body' => 'Откройте JobToo, чтобы посмотреть',                 'channel' => 'matches'],
+    'shift_rejected'              => ['title' => 'Обновление по смене',   'body' => 'Откройте JobToo, чтобы посмотреть',                 'channel' => 'matches'],
+];
+
+
 function jt_push_b64url_encode(string $raw): string {
     return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
 }
@@ -157,14 +189,20 @@ function jt_push_prepare_expo_message(array $message): ?array {
     $token = jt_push_decrypt((string)($message['to'] ?? ''));
     if ($token === '') return null;
 
+    // Текст берётся из таблицы по ВИДУ события; своего текста вызывающего
+    // (имя, компания, оклад, фраза сообщения) наружу не уходит никогда.
+    // Вид события не личен: «пришло сообщение» не говорит ни от кого, ни о чём.
+    $type = is_array($message['data'] ?? null) ? (string)($message['data']['type'] ?? '') : '';
+    $ev = JT_PUSH_EVENTS[$type] ?? null;
+
     return [
         'to' => $token,
-        'title' => JT_PUSH_PUBLIC_TITLE,
-        'body' => JT_PUSH_PUBLIC_BODY,
+        'title' => $ev['title'] ?? JT_PUSH_PUBLIC_TITLE,
+        'body' => $ev['body'] ?? JT_PUSH_PUBLIC_BODY,
         'sound' => 'default',
         'priority' => $message['priority'] ?? 'high',
-        'channelId' => 'default',
-        'data' => ['type' => 'refresh'],
+        'channelId' => $ev['channel'] ?? 'default',
+        'data' => ['type' => $ev ? $type : 'refresh'],
     ];
 }
 

@@ -35,14 +35,32 @@ $prepared = jt_push_prepare_expo_message([
 
 check('Expo получает исходный provider token для доставки',
     is_array($prepared) && ($prepared['to'] ?? '') === $plain);
-check('наружу уходит единый нейтральный заголовок',
-    ($prepared['title'] ?? '') === JT_PUSH_PUBLIC_TITLE);
-check('наружу уходит единый нейтральный текст',
-    ($prepared['body'] ?? '') === JT_PUSH_PUBLIC_BODY);
-check('идентификаторы события вычищены',
-    ($prepared['data'] ?? null) === ['type' => 'refresh']);
-check('канал не раскрывает категорию события',
-    ($prepared['channelId'] ?? '') === 'default');
+check('текст — из таблицы по виду события, а не вызывающего',
+    ($prepared['title'] ?? '') === JT_PUSH_EVENTS['message']['title']
+    && ($prepared['body'] ?? '') === JT_PUSH_EVENTS['message']['body']);
+check('персональное из вызывающего наружу не уходит',
+    !str_contains(json_encode($prepared, JSON_UNESCAPED_UNICODE), 'Иван')
+    && !str_contains(json_encode($prepared, JSON_UNESCAPED_UNICODE), 'Персональный'));
+check('идентификаторы события вычищены, остаётся только вид',
+    ($prepared['data'] ?? null) === ['type' => 'message']);
+
+// Неизвестный вид и пустой data — единый нейтральный пуш, как раньше.
+$generic = jt_push_prepare_expo_message(['to' => $encrypted, 'title' => 'Секрет', 'body' => 'Секрет',
+    'data' => ['type' => 'что-то-новое', 'chatId' => 'c1']]);
+check('неизвестный вид: единый заголовок и текст',
+    ($generic['title'] ?? '') === JT_PUSH_PUBLIC_TITLE && ($generic['body'] ?? '') === JT_PUSH_PUBLIC_BODY);
+check('неизвестный вид: канал default, data.type = refresh',
+    ($generic['channelId'] ?? '') === 'default' && ($generic['data'] ?? null) === ['type' => 'refresh']);
+$noData = jt_push_prepare_expo_message(['to' => $encrypted, 'title' => 'Секрет']);
+check('без data: единый нейтральный пуш', ($noData['title'] ?? '') === JT_PUSH_PUBLIC_TITLE && ($noData['data'] ?? null) === ['type' => 'refresh']);
+
+// Таблица: каждый вид из неё знает свой маршрут по нажатию, ни один текст не личный.
+foreach (JT_PUSH_EVENTS as $type => $ev) {
+    check("вид $type: есть заголовок, текст и канал",
+        $ev['title'] !== '' && $ev['body'] !== '' && in_array($ev['channel'], ['matches', 'vacancies', 'default'], true));
+    check("вид $type: без эмодзи и персональных данных в тексте",
+        !preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $ev['title'] . $ev['body']));
+}
 
 // Токены двух проектов Expo: пачка отвергается, шлём по одному.
 $mixed = [['to' => 'ExponentPushToken[a]'], ['to' => 'ExponentPushToken[b]']];

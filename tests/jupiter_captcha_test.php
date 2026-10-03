@@ -53,9 +53,17 @@ check('id заявки в payload колокольчика',
     str_contains($post, "['payload' => ['applicationId' => \$appId]]")
     && str_contains($post, "'type' => 'eq.jupiter_captcha'")
     && str_contains($post, "'payload' => 'is.null'"));
-check('внешний пуш нейтральный: только {type:refresh}',
-    str_contains((string)file_get_contents(__DIR__ . '/../php-proxy/push_privacy.php'),
-        "'data' => ['type' => 'refresh']"));
+// Внешний пуш (с 03.10.2026 — текст по виду события): id заявки наружу не уходит,
+// остаётся только вид события.
+require_once __DIR__ . '/../php-proxy/push_privacy.php';
+$pushed = jt_push_prepare_expo_message([
+    'to' => 'ExponentPushToken[captcha-test]', 'title' => 'Секрет', 'body' => 'Секрет',
+    'data' => ['type' => 'jupiter_captcha', 'applicationId' => 'app-secret-1'],
+]);
+check('внешний пуш капчи: только вид события, без id заявки',
+    is_array($pushed) && ($pushed['data'] ?? null) === ['type' => 'jupiter_captcha']
+    && !str_contains(json_encode($pushed, JSON_UNESCAPED_UNICODE), 'app-secret-1')
+    && !str_contains(json_encode($pushed, JSON_UNESCAPED_UNICODE), 'Секрет'));
 check('срок жизни 10 минут', str_contains($post, 'time() + 600'));
 check('get отбирает по владельцу и pending',
     str_contains($get, "'user_id' => 'eq.'") && str_contains($get, "'status' => 'eq.pending'"));
