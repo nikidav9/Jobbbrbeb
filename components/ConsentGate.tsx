@@ -14,6 +14,7 @@ import { rs, rf } from '@/constants/scale';
 import {
   dbGetConsent, dbRecordConsent, dbSetMarketingConsent,
 } from '@/services/db';
+import { setCrashReportingAllowed } from '@/services/crashReporting';
 import {
   LEGAL_DOCS, LEGAL_KEYS, LEGAL_STAMP, legalVersions,
   needsReconsent, formatLegalDate, type LegalDocKey,
@@ -104,6 +105,10 @@ export default function ConsentGate() {
       });
     return () => { alive = false; };
   }, [user?.id, checkRetry]);
+
+  // Отчёты о падениях уходят только пока документы приняты (services/crashReporting.ts).
+  const consentOk = !!user && !user.isGuest && checked && !needed && !checkFailed;
+  useEffect(() => { setCrashReportingAllowed(consentOk); }, [consentOk]);
 
   // Пока окно открыто или ещё проверяем — шторка профиля и обучение ждут.
   const blocking = !!user && !user.isGuest && (!checked || needed || checkFailed);

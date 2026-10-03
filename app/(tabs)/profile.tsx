@@ -1,6 +1,7 @@
 
 import { DeleteAccountSheet } from '@/components/feature/DeleteAccountSheet';
 import React, { useState, useEffect } from 'react';
+import { reportCaughtError } from '@/services/crashReporting';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextInput,
@@ -1583,6 +1584,7 @@ const photoSrcS = StyleSheet.create({
 });
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  useEffect(() => { reportCaughtError('profile', error); }, [error]);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }} edges={['top', 'left', 'right']}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
