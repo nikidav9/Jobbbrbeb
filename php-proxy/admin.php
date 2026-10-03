@@ -284,14 +284,7 @@ if (preg_match('#^/functions/v1/push-notify(\?|$)#', $path)) {
             $msgs = jt_push_prepare_expo_messages($msgs);
             if (!$msgs) continue;
 
-            $c = curl_init('https://exp.host/--/api/v2/push/send');
-            curl_setopt_array($c, [
-                CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-                CURLOPT_POSTFIELDS => json_encode(count($msgs) === 1 ? $msgs[0] : $msgs),
-                CURLOPT_TIMEOUT => 20,
-            ]);
-            curl_exec($c); curl_close($c);
+            jt_expo_send($msgs, 20);
             $pushCount += count($msgs);
         }
     }

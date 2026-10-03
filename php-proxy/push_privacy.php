@@ -177,3 +177,43 @@ function jt_push_prepare_expo_messages(array $messages): array {
     }
     return $out;
 }
+
+/**
+ * Отправка готовых сообщений в Expo. Пачкой нельзя, если токены из разных
+ * проектов Expo (старое приложение com.nikidav23 и новое com.jobtoo): Expo
+ * отвечает 400 PUSH_TOO_MANY_EXPERIENCE_IDS и не доставляет никому. Тогда шлём
+ * по одному. $post(array $body, int $timeout): array{http:int, json:array} —
+ * подменяется в тестах.
+ */
+function jt_expo_send(array $messages, int $timeout = 15, ?callable $post = null): array {
+    $post ??= function (array $body, int $t): array {
+        $ch = curl_init('https://exp.host/--/api/v2/push/send');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => $t,
+            CURLOPT_POSTFIELDS => json_encode($body),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+        ]);
+        $raw = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $j = is_string($raw) ? json_decode($raw, true) : null;
+        return ['http' => $code, 'json' => is_array($j) ? $j : []];
+    };
+    $messages = array_values($messages);
+    if (!$messages) return ['http' => 0, 'data' => [], 'errors' => [], 'split' => false];
+
+    $r = $post(count($messages) === 1 ? $messages[0] : $messages, $timeout);
+    $split = count($messages) > 1
+        && strpos(json_encode($r['json']['errors'] ?? []), 'PUSH_TOO_MANY_EXPERIENCE_IDS') !== false;
+    if (!$split) {
+        return ['http' => $r['http'], 'data' => $r['json']['data'] ?? [], 'errors' => $r['json']['errors'] ?? [], 'split' => false];
+    }
+    $data = []; $errors = []; $http = 0;
+    foreach ($messages as $m) {
+        $one = $post($m, $timeout);
+        $http = $one['http'];
+        foreach (($one['json']['data'] ?? []) as $t) $data[] = $t;
+        foreach (($one['json']['errors'] ?? []) as $e) $errors[] = $e;
+    }
+    return ['http' => $http, 'data' => $data, 'errors' => $errors, 'split' => true];
+}
