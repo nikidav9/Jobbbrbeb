@@ -59,7 +59,9 @@ if(tg||/[?&]app=1/.test(q))ss.setItem('jt_app','1');
 var standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 var desk=matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
 if((p==='/'||p==='/index.html')&&desk&&!tg&&!standalone&&ss.getItem('jt_app')!=='1'){
-document.documentElement.className+=' jt-landing';window.__JT_LANDING__=true;}
+document.documentElement.className+=' jt-landing';window.__JT_LANDING__=true;
+// Постер первого экрана грузим сразу: пока его нет, рамка светлая, а не чёрная.
+var pl=document.createElement('link');pl.rel='preload';pl.as='image';pl.href='/landing/hero.jpg';document.head.appendChild(pl);}
 }catch(e){}})();`;
 
 export const LANDING_STYLE = `
@@ -118,7 +120,7 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .hero-frame { position: relative; min-height: min(760px, calc(100vh - 100px)); display: flex; flex-direction: column;
   align-items: center; justify-content: center; text-align: center; padding: 70px 40px; color: var(--ink);
   border: 2px solid var(--ink); border-radius: 30px; box-shadow: 6px 6px 0 var(--ink); overflow: hidden;
-  background: var(--ink) url('/landing/hero.jpg') center / cover no-repeat; }
+  background: var(--soft) url('/landing/hero.jpg') center / cover no-repeat; }
 /* Пока у ролика нет первого кадра, браузер рисует его чёрным поверх постера (фон рамки):
    поэтому он прозрачен и проявляется классом .on, когда пошёл (событие playing). */
 #jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;

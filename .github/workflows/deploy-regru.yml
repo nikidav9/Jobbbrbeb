@@ -65,6 +65,12 @@ jobs:
       - name: Replace favicon
         run: cp assets/images/favicon.ico dist/favicon.ico
 
+      # Сайт для компьютера не грузит приложение под собой: тег приложения в
+      # dist/index.html становится условным (scripts/defer-landing-bundle.py).
+      # Не нашёл тег — страница остаётся как есть, выкладка идёт дальше.
+      - name: Defer app bundle on the desktop landing
+        run: python3 scripts/defer-landing-bundle.py dist/index.html || echo "::warning::defer-landing-bundle пропущен, приложение грузится под сайтом как раньше"
+
       - name: Verify same-origin static assets
         run: |
           if grep -R "j8a6jds2at.cdn.twcstorage.ru" dist --include='*.html'; then
