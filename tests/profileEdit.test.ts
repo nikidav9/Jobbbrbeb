@@ -294,7 +294,6 @@ test('mergeSelfUser: сохраняет self-only поля из prev, обнов
     phone: '+79990000000',
     email: 'ivan@example.com',
     emailVerifiedAt: '2026-01-01T00:00:00.000Z',
-    hasPassword: true,
     personalDetails: { middleName: 'Сергеевич' },
     resume: {
       ...emptyResume(),
@@ -318,7 +317,6 @@ test('mergeSelfUser: сохраняет self-only поля из prev, обнов
   assert.equal(merged.phone, '+79990000000');
   assert.equal(merged.email, 'ivan@example.com');
   assert.equal(merged.emailVerifiedAt, '2026-01-01T00:00:00.000Z');
-  assert.equal(merged.hasPassword, true);
   assert.deepEqual(merged.personalDetails, { middleName: 'Сергеевич' });
   assert.equal(merged.resume?.desiredPosition, 'Курьер-обновлённый');
   assert.equal(merged.resume?.email, 'resume@example.com');

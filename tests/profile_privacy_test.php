@@ -137,7 +137,7 @@ check('уборка стирает папку certificate/<uid>',
 check('уборка удаляет только пути владельца',
     str_contains($purge, 'jt_certificate_path_owned($path, $uid)'));
 check('удаление аккаунта самим человеком зовёт уборку',
-    str_contains(case_body($db, 'dbDeleteAccount'), 'jt_purge_user_storage($uid)'));
+    str_contains(case_body($db, 'dbDeleteAccountByCode'), 'jt_purge_user_storage($uid)'));
 check('удаление аккаунта администратором зовёт уборку',
     str_contains(case_body($db, 'dbDeleteUser'), 'jt_purge_user_storage('));
 

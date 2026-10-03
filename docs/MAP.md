@@ -1012,6 +1012,16 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 `docs/cofinder-swipejobs-разбор.md`.
 
 ### Вход по почте с кодом (с 25.09.2026, вход по коду — с 27.09.2026)
+- **Пароля нет с 03.10.2026** (решение владельца): вход и регистрация — только
+  код из письма. Убраны: `dbLogin`, `dbChangePassword`, `dbAuthResetPassword`,
+  `dbDeleteAccount` (по паролю), `adminResetPassword` (и кнопка в дашборде),
+  `dbCheckPhoneExists`, цель кода `reset`, экран `app/reset-password.tsx`,
+  «Сменить/Задать пароль» в настройках и профиле, `has_password`/`hasPassword`,
+  регистрация по телефону (запасной путь «почта не готова»). `dbUpsertUser`
+  создаёт аккаунт только по квитанции `register`, пароль и телефон при создании
+  не принимает. Удаление аккаунта — только `dbDeleteAccountByCode`. Ниже —
+  история; где она про пароль и телефон, она устарела. Охрана —
+  `tests/auth_email_test.php`.
 - **Загрузочный экран** — макет «JT-splash» (28.09.2026, `docs/design/splash`):
   точка → белая плашка → логотип → тень-наклейка и подпись «Работа в IT —
   свайпом» → полоса по реальному проценту. Веб — статичный `#splash` в
@@ -1133,12 +1143,8 @@ API (`career.php?modes=api`, JSON и встроенное состояние), �
 - **Письма** — `php-proxy/mailer.php`, свой SMTP-клиент: Timeweb с ящика
   `support@jobtoo.ru`, логин и пароль — `JUPITER_MAIL_IMAP_*` из секретов,
   в PHP приходят как `MAIL_SMTP_*` (`infra/docker-compose.yml`). Кроме кодов входа шлёт отклики письмом (`jupiter_email_apply.php`, раздел Jupiter).
-- **Вход** (`app/login.tsx`, решение владельца 27.09.2026) — по умолчанию код
-  из письма (`EmailCodeStep purpose="login"` → `services/db.ts:
-  dbAuthLoginByCode`), пароль — запасной вариант по ссылке «Войти по паролю»
-  (обязателен для старых аккаунтов по телефону, у них кода нет). «Забыли
-  пароль?» и одно поле «Почта или телефон» — в режиме пароля, без изменений.
-  «Забыли пароль?» → `app/reset-password.tsx`.
+- **Вход** (`app/login.tsx`) — только код из письма (`EmailCodeStep
+  purpose="login"` → `services/db.ts: dbAuthLoginByCode`).
 - **Аккаунт без пароля** (регистрация по коду): свой профиль сервер отдаёт
   через `jt_self_user` в `db.php` — `USER_SELF_COLS` плюс признак
   `has_password`, сам хеш наружу не уходит (вход по паролю ставит `true`).

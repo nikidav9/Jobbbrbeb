@@ -83,20 +83,6 @@ export async function blockUser(userId: string, block: boolean, userName?: strin
   logActivity(block ? 'Заблокирован' : 'Разблокирован', `ID: ${userId}`, userId, userName)
 }
 
-export async function resetPassword(userId: string): Promise<string> {
-  const res = await fetch('/api/admin/reset-password', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Admin-Token': getToken(),
-    },
-    body: JSON.stringify({ userId }),
-  })
-  const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка сброса пароля')
-  return data.password as string
-}
-
 // ─── Vacancies ────────────────────────────────────────────────────────────────
 
 export async function setPermVacancyStatus(id: string, status: 'open' | 'closed') {

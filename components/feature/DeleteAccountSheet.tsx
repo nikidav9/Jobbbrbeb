@@ -7,7 +7,7 @@ import { JT, JT_FONT } from '@/constants/jt';
 import { JTInput, JT_ERROR } from '@/components/ui/jt';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { useApp } from '@/hooks/useApp';
-import { dbDeleteAccount, dbDeleteAccountByCode, dbSendDeleteAccountCode } from '@/services/db';
+import { dbDeleteAccountByCode, dbSendDeleteAccountCode } from '@/services/db';
 import { rs, rf } from '@/constants/scale';
 
 /**
@@ -15,9 +15,7 @@ import { rs, rf } from '@/constants/scale';
  * вводишь — и аккаунт удалён»). Одно окно для настроек соискателя и профиля
  * работодателя, в стиле JT, как окно «да/нет».
  *
- * Есть подтверждённая почта — код из письма, пароль не нужен (у аккаунтов
- * «почта → код» его и нет). Почты нет (старые аккаунты по телефону) — по
- * паролю, как раньше: код отправить некуда.
+ * Только код из письма: пароля в JobToo нет (решение владельца 03.10.2026).
  *
  * Само удаление и проверку делает сервер (dbDeleteAccountByCode): код
  * уходит только на почту аккаунта из сессии. Выход и переход — у вызывающего
@@ -29,16 +27,13 @@ export function DeleteAccountSheet({ visible, onClose, onDeleted }: {
   onDeleted: () => void | Promise<void>;
 }) {
   const { currentUser } = useApp();
-  const byCode = !!currentUser?.email && !!currentUser?.emailVerifiedAt;
-
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!visible) { setCodeSent(false); setCode(''); setPassword(''); setBusy(false); setError(''); }
+    if (!visible) { setCodeSent(false); setCode(''); setBusy(false); setError(''); }
   }, [visible]);
 
   if (!currentUser) return null;
@@ -60,8 +55,7 @@ export function DeleteAccountSheet({ visible, onClose, onDeleted }: {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      if (byCode) await dbDeleteAccountByCode(currentUser.id, code.trim());
-      else await dbDeleteAccount(currentUser.id, password);
+      await dbDeleteAccountByCode(currentUser.id, code.trim());
       await onDeleted();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось удалить аккаунт');
@@ -69,8 +63,8 @@ export function DeleteAccountSheet({ visible, onClose, onDeleted }: {
     }
   };
 
-  const canDelete = byCode ? code.trim().length === 6 : password.trim().length > 0;
-  const step: 'intro' | 'code' | 'password' = !byCode ? 'password' : codeSent ? 'code' : 'intro';
+  const canDelete = code.trim().length === 6;
+  const step: 'intro' | 'code' = codeSent ? 'code' : 'intro';
 
   return (
     <Modal statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -101,20 +95,6 @@ export function DeleteAccountSheet({ visible, onClose, onDeleted }: {
                 />
               </View>
             ) : null}
-            {step === 'password' ? (
-              <View style={s.field}>
-                <JTInput
-                  label="Пароль"
-                  value={password}
-                  onChangeText={t => { setPassword(t); setError(''); }}
-                  placeholder="Подтвердите пароль"
-                  secureTextEntry
-                  autoFocus
-                  testID="delete-account-password"
-                />
-              </View>
-            ) : null}
-
             {error ? <Text style={s.error}>{error}</Text> : null}
 
             <HardShadowBox offset={3} radius={rs(26)} style={s.mainWrap}>

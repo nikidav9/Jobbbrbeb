@@ -16,7 +16,6 @@ import {
   getSessionUser,
   saveSessionUser,
   clearSessionUser,
-  extractPhoneDigits,
   loadCache,
   saveCache,
   CACHE_KEYS,
@@ -26,7 +25,6 @@ import {
 import {
   dbGetUsers,
   dbUpsertUser,
-  dbLogin,
   dbRestoreSession,
   dbClearSession,
   dbGetVacancies,
@@ -122,7 +120,6 @@ export interface AppContextValue {
   /** emailTicket — квитанция кода из письма (регистрация по почте). */
   /** marketing — отдельная необязательная галочка «рекламная рассылка». */
   registerUser: (u: User, emailTicket?: string, opts?: { marketing?: boolean }) => Promise<void>;
-  loginUser: (login: string, password: string) => Promise<User | null>;
   /** Войти уже полученным профилем: после сброса пароля по коду. */
   signInAs: (u: User) => Promise<void>;
   /** Заменить свой профиль ответом сервера: после привязки почты. */
@@ -751,10 +748,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // в базе — здесь, а не в двух экранах регистрации по отдельности:
     // забыть одно из двух мест куда проще, чем это одно.
     void dbRecordConsent(u.id, LEGAL_STAMP, coreDocs, 'registration');
-    // Пароль в кэше профиля на телефоне не храним: он нужен был только для
-    // создания аккаунта и дальше уже у сервера (хешем). Почта, если человек
-    // регистрировался по ней, подтверждена — окно EmailRequiredGate не нужно.
-    const cached: User = { ...u, password: '', hasPassword: !!u.password };
+    // Пароля в JobToo нет; поле в кэше профиля всегда пустое. Почта
+    // подтверждена кодом — окно EmailRequiredGate не нужно.
+    const cached: User = { ...u, password: '' };
     _setCurrentUser(cached);
     await saveSessionUser(cached);
     setTimeout(() => { registerForPushNotifications(u.id).catch(() => {}); }, 2000);
@@ -770,16 +766,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         refreshPermSaved(u),
       ]).catch(() => {}).finally(() => setDataReady(true));
     }, 300);
-  };
-
-  const loginUser = async (login: string, password: string): Promise<User | null> => {
-    // Почта — как есть; иначе это телефон старого аккаунта — цифрами.
-    const ident = login.includes('@') ? login.trim().toLowerCase() : extractPhoneDigits(login);
-    // Пароль сверяет сервер: сюда приходит либо профиль без пароля, либо null.
-    const found = await dbLogin(ident, password);
-    if (!found) return null;
-    await signInAs(found);
-    return found;
   };
 
   const signInAs = async (found: User) => {
@@ -1089,7 +1075,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         optimisticAddPermSaved,
         optimisticRemovePermSaved,
         registerUser,
-        loginUser,
         signInAs,
         emailAuthReady,
         consentPending,

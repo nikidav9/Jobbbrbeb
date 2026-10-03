@@ -250,7 +250,6 @@ function rowToUser(r: any): User {
     phone: r.phone ?? '',
     email: r.email ?? undefined,
     emailVerifiedAt: r.email_verified_at ?? undefined,
-    hasPassword: typeof r.has_password === 'boolean' ? r.has_password : undefined,
     lastName: r.last_name,
     firstName: r.first_name,
     age: r.age ?? undefined,
@@ -439,20 +438,6 @@ export async function dbGetUsers(): Promise<User[]> {
   return (data ?? []).map(rowToUser);
 }
 
-/**
- * Вход. Пароль сверяет сервер и возвращает профиль уже без пароля.
- *
- * Раньше приложение спрашивало профиль по номеру телефона и сравнивало
- * пароль у себя — то есть пароль уходил наружу всякому, кто знает номер.
- */
-export async function dbLogin(identifier: string, password: string): Promise<User | null> {
-  // Почта — как есть, телефон старого аккаунта — цифрами: решает сервер.
-  const d = await proxy<{ user?: any; session_token?: string } | null>('dbLogin', [identifier, password]);
-  if (!d?.user || !d.session_token) return null;
-  await saveSessionToken(d.session_token);
-  return rowToUser(d.user);
-}
-
 export async function dbRestoreSession(): Promise<User | null> {
   const token = await getSessionToken();
   if (!token) return null;
@@ -505,13 +490,6 @@ export async function dbAuthLoginByCode(email: string, code: string): Promise<Us
   return rowToUser(d.user);
 }
 
-/** Новый пароль по квитанции reset: сервер гасит прежние сессии и выдаёт новую. */
-export async function dbAuthResetPassword(ticket: string, newPassword: string): Promise<User> {
-  const d = await proxy<{ user: any; session_token: string }>('dbAuthResetPassword', [ticket, newPassword]);
-  await saveSessionToken(d.session_token);
-  return rowToUser(d.user);
-}
-
 /** Почта к старому аккаунту по телефону. */
 export async function dbAuthAttachEmail(ticket: string): Promise<User> {
   const d = await proxy<{ user: any }>('dbAuthAttachEmail', [ticket]);
@@ -522,22 +500,6 @@ export async function dbAuthAttachEmail(ticket: string): Promise<User> {
 export async function dbSetContactPhone(userId: string, phone: string): Promise<string | null> {
   const d = await proxy<{ phone: string | null }>('dbSetContactPhone', [userId, phone]);
   return d.phone;
-}
-
-/** Смена пароля: старый сверяет сервер, новый он же и хеширует. */
-export async function dbChangePassword(
-  userId: string,
-  oldPassword: string,
-  newPassword: string
-): Promise<{ ok: boolean; reason?: string }> {
-  const res = await proxy<{ ok: boolean; reason?: string; session_token?: string | null }>(
-    'dbChangePassword', [userId, oldPassword, newPassword]
-  );
-  // Смена пароля гасит все выданные токены, в том числе наш собственный:
-  // сервер тут же выдаёт новый, и без этой строки человек, сменивший пароль,
-  // оказывался бы выброшен из приложения.
-  if (res?.session_token) await saveSessionToken(res.session_token);
-  return res;
 }
 
 /**
@@ -584,27 +546,6 @@ export async function dbUpsertUser(
     supabase.from('jm_users').upsert(row, { onConflict: 'id' })
   );
   if (error) throwOnError('dbUpsertUser', error);
-}
-
-/**
- * Удалить свой аккаунт.
- *
- * Только через прокси и только с паролем. Прежняя версия ходила в базу
- * напрямую анонимным ключом — а у него с миграции 013 нет прав на jm_users,
- * так что запрос отклонялся. Ответ никто не читал, и человек видел
- * «Аккаунт удалён», когда не удалялось ничего.
- *
- * Пароль здесь не формальность: в прокси приходит идентификатор, и без
- * проверки по нему можно было бы стереть чужой аккаунт.
- *
- * Бросает с текстом причины — вызывающий обязан её показать, а не проглотить.
- */
-export async function dbDeleteAccount(id: string, password: string): Promise<void> {
-  const res = await proxy<{ error?: string; 'удалён'?: boolean }>(
-    'dbDeleteAccount', [id, password],
-  );
-  if (res?.error) throw new Error(res.error);
-  if (!res?.['удалён']) throw new Error('Не удалось удалить аккаунт');
 }
 
 /**
@@ -772,14 +713,6 @@ export function dbWarmup(): void {
     supabase.from('jm_users').select('id').limit(1),
     20_000
   ).catch(() => {});
-}
-
-export async function dbCheckPhoneExists(phone: string): Promise<boolean> {
-  // Ошибка запроса — это НЕ ответ «номер свободен». Экран регистрации сам
-  // показывает понятный текст и оставляет человека на первом шаге для повтора.
-  // Если проглотить ошибку здесь, внешний catch никогда не сработает и при
-  // обрыве связи мы разрешим создать второй аккаунт с тем же номером.
-  return proxy<boolean>('dbCheckPhoneExists', [phone]);
 }
 
 export async function dbGetUserByPhone(phone: string): Promise<User | null> {

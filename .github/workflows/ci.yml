@@ -64,9 +64,6 @@ jobs:
       - name: Скрытые возраст и номер не уходят работодателю, файл сертификата — только владельцу
         run: php tests/profile_privacy_test.php
 
-      - name: Аккаунт без пароля видит «Задать пароль», хеш наружу не уходит
-        run: php tests/has_password_test.php
-
       - name: Удаление аккаунта кодом — только своя почта и свой аккаунт
         run: php tests/delete_by_code_test.php
 

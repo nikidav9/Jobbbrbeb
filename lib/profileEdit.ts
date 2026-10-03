@@ -210,7 +210,6 @@ export function mergeSelfUser(prev: User, fresh: User): User {
     phone: prev.phone,
     email: prev.email,
     emailVerifiedAt: prev.emailVerifiedAt,
-    hasPassword: fresh.hasPassword ?? prev.hasPassword,
     personalDetails: prev.personalDetails,
     resume: fresh.resume
       ? {
