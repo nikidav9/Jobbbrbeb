@@ -34,14 +34,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from recon import (
     CLASSES, ENDPOINTS_JSON, TEST_CANDIDATE, ReconResult, NetOptions, site_adapter,
@@ -49,18 +52,26 @@ from recon import (
     load_feed_vacancies,
     load_sites, make_engine, vacancy_from_endpoint,
 )
+from ats_hosts import ats_for_url
 from site_compat import normalize_host, profile_for_url
 
 MAX_BROWSERS = 2
 DEFAULT_OUT = "jupiter-recon-browser.json"
 DEFAULT_BASELINE = os.environ.get("JUPITER_RECON_FILE", "jupiter-recon.json")
 RESULT_MARK = "@@RECON_RESULT@@"
+# Классы, для которых пишем диагностику страницы (page_diagnostic).
+DIAGNOSE_CLASSES = ("no_vacancy", "form_unmapped")
 # Классы HTTP-разведки, которые браузер может перевести в dry_run_ok.
 BROWSER_RETRY_CLASSES = ("spa", "captcha", "form_unmapped", "no_vacancy")
-# Из «blocked» — только отказ в доступе: за ним часто стоит проверка браузера,
-# которую Chromium проходит сам (browser_engine.CHALLENGE_WAIT_MS). Сертификат,
-# сеть и 404 браузер не исправит.
-BROWSER_RETRY_BLOCKS = ("доступ (401)", "доступ (403)", "доступ (429)", "доступ (503)")
+# Из «blocked» — отказ в доступе (за ним часто стоит проверка браузера, которую
+# Chromium проходит сам, browser_engine.CHALLENGE_WAIT_MS), а с 03.10.2026 ещё
+# «сеть» и «tls»: у HTTP-клиента Юпитера свой набор сертификатов и свои таймауты,
+# у Chromium — другие (на сервере стоят российские корневые), и 34 раздела,
+# закрытых ему, браузер не пробовал вовсе. 404 и «не HTML» браузер не исправит.
+# Сертификаты не отключаются: Chromium проверяет их по-прежнему.
+BROWSER_RETRY_BLOCKS = (
+    "доступ (401)", "доступ (403)", "доступ (429)", "доступ (503)", "сеть", "tls",
+)
 
 
 @dataclass
@@ -85,6 +96,10 @@ class BrowserReconResult(ReconResult):
     # Вид CAPTCHA на анкете (01.10.2026): картинку с текстом человек вводит в
     # приложении — такой сайт подключается (site_compat._recon_ready).
     captcha: dict[str, Any] = field(default_factory=dict)
+    # Что видно на странице, где форму отклика не нашли или не разобрали
+    # (03.10.2026): кнопки, ссылки «откликнуться», рамки, системы найма. Только
+    # публичная страница сайта — данных кандидата здесь нет. См. page_diagnostic.
+    diagnostic: dict[str, Any] = field(default_factory=dict)
 
 
 # С 01.10.2026 YandexGPT — на всех сайтах (решение владельца), расход держит
@@ -211,6 +226,8 @@ def recon_site_browser(
         result.llm_actions = _llm_trace(engine.actions, outcome.trajectory)
         result.klass = classify(outcome.status, outcome.reason_code, page, result.aggregator_links,
                                 site_adapter(outcome.trajectory))
+        if result.klass in DIAGNOSE_CLASSES:
+            result.diagnostic = page_diagnostic(page)
         if result.klass == "blocked":
             result.block_kind = block_kind(result.reason)
         if result.klass == "captcha":
@@ -346,6 +363,104 @@ def _load_list(path: str | None) -> list[dict]:
     except (OSError, ValueError):
         return []
     return [i for i in data if isinstance(i, dict)] if isinstance(data, list) else []
+
+
+_APPLY_WORDS = re.compile(
+    r"отклик|заявк|резюме|связаться|присоедин|в команду|подать|откликнуться|apply|join us|careers?",
+    re.IGNORECASE,
+)
+_LOGIN_WORDS = re.compile(r"войти|вход |авторизуй|регистрац|личный кабинет|sign in|log ?in", re.IGNORECASE)
+
+
+class _Clickables(HTMLParser):
+    """Кнопки и ссылки страницы: текст и куда ведут. Скрипты и стили пропускаются."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.items: list[dict[str, str]] = []
+        self.iframes: list[str] = []
+        self.hosts: set[str] = set()
+        self._cur: dict[str, str] | None = None
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: (v or "") for k, v in attrs}
+        for key in ("href", "src", "action"):
+            host = urlparse(a.get(key, "")).netloc.lower()
+            if host:
+                self.hosts.add(host)
+        if tag in ("script", "style"):
+            self._skip += 1
+        elif tag == "iframe" and a.get("src"):
+            self.iframes.append(urlparse(a["src"]).netloc.lower() or a["src"][:60])
+        elif tag in ("a", "button") or a.get("role") == "button":
+            self._cur = {"kind": tag, "text": "", "href": a.get("href", "")}
+            label = a.get("aria-label") or a.get("title") or ""
+            if label:
+                self._cur["text"] = label
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style") and self._skip:
+            self._skip -= 1
+        elif self._cur is not None and tag in (self._cur["kind"], "a", "button"):
+            self.items.append(self._cur)
+            self._cur = None
+
+    def handle_data(self, data):
+        if self._cur is not None and not self._skip and len(self._cur["text"]) < 80:
+            self._cur["text"] = (self._cur["text"] + " " + data).strip()
+
+
+def page_diagnostic(page) -> dict[str, Any]:
+    """Сжатая картина страницы, где Юпитер не нашёл форму отклика.
+
+    Ночной отчёт по таким сайтам раньше говорил лишь «форма не найдена», и
+    причину приходилось угадывать. Теперь видно: есть ли кнопки отклика и куда
+    они ведут (чужой хост, вход, рамка системы найма), есть ли формы и поля.
+    Только публичные признаки страницы: подписи кнопок, адреса без параметров.
+    """
+    if page is None:
+        return {}
+    parser = _Clickables()
+    try:
+        parser.feed(page.html or "")
+    except Exception:
+        pass
+
+    def short(item: dict[str, str]) -> dict[str, str]:
+        parsed = urlparse(item.get("href", ""))
+        out = {"kind": item["kind"], "text": " ".join(item["text"].split())[:50]}
+        if parsed.netloc:
+            out["to_host"] = parsed.netloc.lower()
+        if parsed.path and parsed.path != "/":
+            out["to_path"] = parsed.path[:60]
+        return out
+
+    clickable = [i for i in parser.items if i["text"].strip()]
+    apply_like = [short(i) for i in clickable if _APPLY_WORDS.search(i["text"])][:8]
+    buttons, seen = [], set()
+    for item in clickable:
+        text = " ".join(item["text"].split())[:40]
+        if text and text not in seen:
+            seen.add(text)
+            buttons.append(text)
+        if len(buttons) >= 12:
+            break
+    ats = sorted({info.name for host in parser.hosts for info in [ats_for_url("https://" + host + "/")] if info})
+    text = page.text or ""
+    parsed_url = urlparse(page.url or "")
+    return {
+        "title": (page.title or "")[:100],
+        "where": (parsed_url.netloc + parsed_url.path)[:120],
+        "forms": len(page.forms or []),
+        "inputs": sum(1 for c in (page.controls or []) if c.tag in ("input", "textarea", "select")),
+        "apply_like": apply_like,
+        "buttons": buttons,
+        "iframes": parser.iframes[:6],
+        "ats": ats,
+        "login_hint": bool(_LOGIN_WORDS.search(text[:4000])),
+        "text_head": " ".join(text.split())[:300],
+    }
 
 
 def sites_needing_browser(http_items: list[dict]) -> list[tuple[str, str]]:

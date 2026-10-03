@@ -20,7 +20,7 @@ from recon_browser import (
     BrowserReconResult,
     Progress,
     recon_site_browser, rehearsal_markers, rehearsal_verdict, sites_to_rehearse,
-    compare, order_by_previous, run_recon, select_sites, sites_needing_browser, write_atomic, _llm_trace, llm_sites,
+    compare, order_by_previous, page_diagnostic, run_recon, select_sites, sites_needing_browser, write_atomic, _llm_trace, llm_sites,
 )
 
 try:
@@ -207,11 +207,44 @@ class PureTest(unittest.TestCase):
             {"name": "agg", "url": "https://agg.ru/jobs", "klass": "aggregator"},
             {"name": "blk", "url": "https://blk.ru/jobs", "klass": "blocked"},
             {"name": "tls", "url": "https://tls.ru/jobs", "klass": "blocked", "block_kind": "tls"},
+            {"name": "net", "url": "https://net.ru/jobs", "klass": "blocked", "block_kind": "сеть"},
+            {"name": "404", "url": "https://gone.ru/jobs", "klass": "blocked", "block_kind": "404"},
             {"name": "403", "url": "https://waf.ru/jobs", "klass": "blocked", "block_kind": "доступ (403)"},
         ]
+        # С 03.10.2026 браузер пробует и «tls», и «сеть»: у Chromium другие
+        # сертификаты и таймауты. 404 и блок без причины — нет.
         self.assertEqual(
-            [name for name, _ in sites_needing_browser(http)], ["spa", "cap", "unm", "nov", "403"],
+            [name for name, _ in sites_needing_browser(http)],
+            ["spa", "cap", "unm", "nov", "tls", "net", "403"],
         )
+
+    def test_page_diagnostic_shows_why_no_form_was_found(self):
+        from types import SimpleNamespace
+        html = (
+            "<html><head><title>Вакансия: аналитик</title><script>var x='Откликнуться'</script></head><body>"
+            "<a href='https://rubius.hh.ru/vacancy/1?utm=x'>Откликнуться →</a>"
+            "<button>Поделиться</button><a href='/about'>О компании</a>"
+            "<iframe src='https://forms.yandex.ru/u/123/'></iframe>"
+            "<a href='https://company.huntflow.io/vacancy/a'>Все вакансии</a></body></html>"
+        )
+        page = SimpleNamespace(
+            url="https://career.example/vacancies/5?token=secret", title="Вакансия: аналитик", html=html,
+            text="Войти Вакансия аналитик Откликнуться", forms=[],
+            controls=[SimpleNamespace(tag="input"), SimpleNamespace(tag="button")],
+        )
+        d = page_diagnostic(page)
+        self.assertEqual(d["where"], "career.example/vacancies/5")  # без параметров
+        self.assertEqual(d["forms"], 0)
+        self.assertEqual(d["inputs"], 1)
+        self.assertEqual(d["apply_like"][0]["to_host"], "rubius.hh.ru")
+        self.assertEqual(d["apply_like"][0]["to_path"], "/vacancy/1")
+        self.assertNotIn("var x", " ".join(d["buttons"]))  # скрипты не читаются
+        self.assertIn("Поделиться", d["buttons"])
+        self.assertEqual(d["iframes"], ["forms.yandex.ru"])
+        self.assertEqual(d["ats"], ["Huntflow", "hh.ru", "Яндекс Формы"])
+        self.assertTrue(d["login_hint"])
+        self.assertNotIn("secret", str(d))
+        self.assertEqual(page_diagnostic(None), {})
 
     def test_previous_dry_run_ok_goes_first_then_unseen(self):
         sites = [("a", "https://a.ru"), ("b", "https://b.ru"), ("c", "https://c.ru"), ("d", "https://d.ru")]
