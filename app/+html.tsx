@@ -80,17 +80,25 @@ export default function Root({ children }: PropsWithChildren) {
             плашка улетает на место логотипа в шапке ленты. Шрифты — свои
             копии из макета: шрифты приложения приходят позже, с бандлом. */}
         <link rel="preload" href="/splash/logo.png" as="image" />
+        {/* Шрифты подписи — заранее и все четыре: кириллица и латиница лежат
+            отдельными файлами, и без предзагрузки «IT» приходило другим
+            шрифтом, а вся строка сперва рисовалась системным (03.10.2026).
+            font-display: block — подпись ждёт свой шрифт, а не подменяется. */}
+        <link rel="preload" href="/splash/unbounded-cyrillic-700-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/splash/unbounded-latin-700-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/splash/manrope-cyrillic-700-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/splash/manrope-latin-700-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <style>{`
-          @font-face { font-family: 'JTSplashUnbounded'; font-weight: 700; font-display: swap;
+          @font-face { font-family: 'JTSplashUnbounded'; font-weight: 700; font-display: block;
             src: url('/splash/unbounded-cyrillic-700-normal.woff2') format('woff2');
             unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-          @font-face { font-family: 'JTSplashUnbounded'; font-weight: 700; font-display: swap;
+          @font-face { font-family: 'JTSplashUnbounded'; font-weight: 700; font-display: block;
             src: url('/splash/unbounded-latin-700-normal.woff2') format('woff2');
             unicode-range: U+0000-00FF, U+2000-206F, U+2212; }
-          @font-face { font-family: 'JTSplashManrope'; font-weight: 700; font-display: swap;
+          @font-face { font-family: 'JTSplashManrope'; font-weight: 700; font-display: block;
             src: url('/splash/manrope-cyrillic-700-normal.woff2') format('woff2');
             unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-          @font-face { font-family: 'JTSplashManrope'; font-weight: 700; font-display: swap;
+          @font-face { font-family: 'JTSplashManrope'; font-weight: 700; font-display: block;
             src: url('/splash/manrope-latin-700-normal.woff2') format('woff2');
             unicode-range: U+0000-00FF, U+2000-206F, U+2212; }
           #splash {
