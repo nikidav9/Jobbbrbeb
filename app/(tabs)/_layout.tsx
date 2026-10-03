@@ -100,8 +100,10 @@ function FloatingTabBar({
                 accessibilityState={{ selected: focused }}
                 accessibilityLabel={hasBadge ? `${tab.label}, новых: ${tab.badge}` : tab.label}
               >
-                <View style={[fS.tabCell, focused && fS.tabCellActive]}
-                >
+                {/* collapsable={false}: у плашки есть фон и скругление, и Android
+                    (Fabric) схлопывает такой View, рисуя оранжевый прямоугольник без
+                    скруглений поверх меню. Раньше это держала обёртка тура. */}
+                <View collapsable={false} style={[fS.tabCell, focused && fS.tabCellActive]}>
                   <Ionicons
                     name={focused ? tab.iconFilled : tab.iconOutline}
                     size={rs(18)}
