@@ -210,6 +210,20 @@ export default function RootScreen() {
     if (finishTimer.current) clearTimeout(finishTimer.current);
   }, []);
 
+  // Родную заставку (точка) убираем, как только отрисован наш загрузочный
+  // экран. Раньше её снимали вкладки — через 4–5 с, и вся анимация заставки
+  // играла под ней, невидимая: человек видел точку, а потом сразу ленту.
+  // Фон загрузочного экрана тот же (#F5EFE6), белой вспышки нет; два кадра —
+  // чтобы React Native успел дорисовать первый кадр.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => { SplashScreen.hideAsync().catch(() => {}); });
+    });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, []);
+
   useEffect(() => {
     if (!ready) return;
     // Сначала рисуем приветственный экран и только затем убираем splash.
