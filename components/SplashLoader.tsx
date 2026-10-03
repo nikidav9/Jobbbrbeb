@@ -254,7 +254,7 @@ export default function SplashLoader({ percent = 1 }: { percent?: number }) {
 }
 
 const styles = StyleSheet.create({
-  root: { ...StyleSheet.absoluteFillObject, backgroundColor: '#F5EFE6' },
+  root: { ...StyleSheet.absoluteFill, backgroundColor: '#F5EFE6' },
   slot: {
     position: 'absolute', left: 0, right: 0, top: CENTER_Y - PLATE / 2, height: PLATE,
     alignItems: 'center',

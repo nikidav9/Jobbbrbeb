@@ -42,9 +42,9 @@ export function ConfirmDialog({
 }
 
 const s = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: EditColors.overlay },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: EditColors.overlay },
   center: {
-    ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: 24,
+    ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', padding: 24,
   },
   card: {
     width: '100%', maxWidth: 340, borderRadius: EditRadius.card, borderWidth: 2, borderColor: EditColors.ink,

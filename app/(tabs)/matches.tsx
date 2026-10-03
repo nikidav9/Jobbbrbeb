@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -932,7 +932,7 @@ const wm = StyleSheet.create({
 
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 
-  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.35)', zIndex: 50, elevation: 50 },
+  sheetOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(20,20,20,0.35)', zIndex: 50, elevation: 50 },
   sheet: {
     backgroundColor: JT.background, borderTopLeftRadius: rs(26), borderTopRightRadius: rs(26),
     paddingHorizontal: rs(20), paddingTop: rs(10), borderWidth: 2, borderColor: JT.ink, borderBottomWidth: 0,

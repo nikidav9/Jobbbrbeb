@@ -329,7 +329,7 @@ export default function ConsentGate() {
 // белые карточки с контуром, оранжевая кнопка с жёсткой тенью и чёрным текстом.
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(20,20,20,0.55)',
     alignItems: 'center',
     justifyContent: 'center',

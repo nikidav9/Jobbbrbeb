@@ -80,7 +80,7 @@ export function BottomSheet({
 }
 
 const s = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: EditColors.overlay },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: EditColors.overlay },
   sheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 34,
