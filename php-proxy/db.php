@@ -14,6 +14,7 @@
 @ini_set('display_errors', '0');
 @ini_set('html_errors', '0');
 ob_start();
+require_once __DIR__ . '/app_version.php';
 require_once __DIR__ . '/referral.php';
 require_once __DIR__ . '/funnel.php';
 require_once __DIR__ . '/shift_funnel.php';
@@ -122,7 +123,7 @@ define('SB_KEY', sb_resolve_key());
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-App-Secret, X-Admin-Token, X-Yandex-Metrika-Token, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, X-App-Secret, X-App-Version, X-Admin-Token, X-Yandex-Metrika-Token, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -162,6 +163,10 @@ if ($ok && $viaPrev) {
 }
 if (!$ok) {
     jt_respond(['error' => 'Forbidden'], 403); exit;
+}
+// Слишком старая сборка приложения (JT_MIN_APP_VERSION) — просим обновиться.
+if (jt_app_version_too_old($_SERVER['HTTP_X_APP_VERSION'] ?? null)) {
+    jt_respond(['error' => 'Эта версия приложения устарела — установите свежую версию JobToo'], 426); exit;
 }
 
 $body = json_decode(file_get_contents('php://input'), true);

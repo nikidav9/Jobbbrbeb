@@ -418,7 +418,7 @@ export const LANDING_MARKUP = `
           <button class="reel" type="button" data-jtl-reel aria-label="Смотреть ролик о JobToo"><b></b></button>
           <div class="hero-in">
             <span class="eyebrow"><i></i>IT и офисные вакансии</span>
-            <h1><span class="line"><span>Работа в IT —</span></span><span class="line"><span class="mark">свайпом</span></span></h1>
+            <h1><span class="line"><span>IT и офис —</span></span><span class="line"><span class="mark">свайпом</span></span></h1>
             <p class="lead">Листаете вакансии как ленту. Свайп вправо — и Юпитер сам заполняет анкету на сайте работодателя. Ответ приходит в чат приложения.</p>
             <div class="cta">
               <a class="btn btn-accent" href="${RUSTORE_URL}" target="_blank" rel="noopener">Скачать в RuStore →</a>
@@ -543,7 +543,7 @@ export const LANDING_MARKUP = `
     </section>
   </main>
 
-  <section class="giant" aria-hidden="true"><b class="rv">JobToo</b><span class="rv">Работа в IT — свайпом</span></section>
+  <section class="giant" aria-hidden="true"><b class="rv">JobToo</b><span class="rv">Работа в IT и офисе — свайпом</span></section>
 
   <div class="modal" id="jtl-modal" role="dialog" aria-modal="true" aria-label="Ролик о JobToo">
     <button class="btn btn-sm close" type="button" data-jtl-close>Закрыть</button>
@@ -563,7 +563,7 @@ export const LANDING_MARKUP = `
   <footer>
     <div class="wrap">
       <a class="brand" href="/"><img src="/splash/logo.png" alt="" />JobToo</a>
-      <small>Работа в IT — свайпом</small>
+      <small>Работа в IT и офисе — свайпом</small>
       <nav class="links" aria-label="Документы и контакты">
         <button type="button" data-jtl-doc="terms">Соглашение</button>
         <button type="button" data-jtl-doc="privacy">Политика конфиденциальности</button>

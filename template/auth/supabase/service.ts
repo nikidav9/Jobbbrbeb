@@ -451,7 +451,7 @@ export class AuthService {
     try {
       // Generate cross-platform redirect URL
       const redirectUrl = AuthSession.makeRedirectUri({
-        scheme: 'onspaceapp',
+        scheme: 'jobtoo',
         path: 'auth'
       });
 

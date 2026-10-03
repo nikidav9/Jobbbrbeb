@@ -21,7 +21,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
 
         <title>JobToo</title>
-        <meta name="description" content="Работа в IT — свайпом. Листайте IT и офисные вакансии, а анкету на сайте работодателя заполнит Юпитер. Ответ — в чате приложения." />
+        <meta name="description" content="Работа в IT и офисе — свайпом. Листайте IT и офисные вакансии, а анкету на сайте работодателя заполнит Юпитер. Ответ — в чате приложения." />
 
         {/* PWA manifest */}
         <link rel="manifest" href="/manifest.json" />
@@ -162,7 +162,7 @@ export default function Root({ children }: PropsWithChildren) {
             <div id="splash-plate"><img id="splash-logo" src="/splash/logo.png" alt="JobToo" /></div>
           </div>
           <div id="splash-below">
-            <p id="splash-tag">Работа в IT — свайпом</p>
+            <p id="splash-tag">Работа в IT и офисе — свайпом</p>
             <div id="splash-bar" role="progressbar" aria-label="Загрузка" aria-valuemin={0} aria-valuemax={100}>
               <span id="splash-fill" />
             </div>
