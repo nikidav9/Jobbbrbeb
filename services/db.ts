@@ -1936,6 +1936,7 @@ function toExtVacancy(row: any): ExtVacancy {
     schedule: row.schedule ?? null,
     description: row.description ?? null,
     url: String(row.url ?? ''),
+    autoApply: row.auto_apply !== false,
     active: !!row.active,
     firstSeenAt: String(row.first_seen_at ?? ''),
     lastSeenAt: String(row.last_seen_at ?? ''),

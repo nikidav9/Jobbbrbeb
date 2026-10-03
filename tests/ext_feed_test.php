@@ -207,6 +207,14 @@ check('компания совпала', ext_feed_match(['company' => 'Сбер'
 check('компания не совпала', !ext_feed_match(['company' => 'Магнит', 'title' => ''], $companyFilter));
 check('ignoreCompany пропускает фильтр по компании', ext_feed_match(['company' => 'Магнит', 'title' => ''], $companyFilter, true));
 
+// Автоотклик: компании из apply_unsupported.php не обещают «отклик через приложение».
+$unsup = require __DIR__ . '/../php-proxy/apply_unsupported.php';
+check('список компаний без автоотклика не пуст и в нижнем регистре', count($unsup) > 50 && $unsup === array_map(fn($x) => mb_strtolower($x, 'UTF-8'), $unsup));
+check('компания из списка: auto_apply=false (регистр и пробелы не важны)',
+    ext_feed_public_row(['company' => '  ' . mb_strtoupper($unsup[0], 'UTF-8') . ' '])['auto_apply'] === false);
+check('чужая компания: auto_apply=true', ext_feed_public_row(['company' => 'Сбер'])['auto_apply'] === true);
+check('пустая компания: auto_apply=true', ext_feed_public_row([])['auto_apply'] === true);
+
 if ($failures) {
     fwrite(STDERR, "FAIL:\n  " . implode("\n  ", $failures) . "\n");
     exit(1);

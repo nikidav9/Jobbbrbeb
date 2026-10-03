@@ -246,6 +246,26 @@ class PureTest(unittest.TestCase):
         self.assertNotIn("secret", str(d))
         self.assertEqual(page_diagnostic(None), {})
 
+    def test_page_diagnostic_reads_dialog_opened_by_apply_click(self):
+        from types import SimpleNamespace
+        html = (
+            "<html><body><p>Вакансии</p>"
+            "<div class='vacancy-modal is-open'><h3>Войдите, чтобы откликнуться</h3>"
+            "<input type='tel' placeholder='Телефон'><input type='hidden' name='csrf'>"
+            "<textarea name='cv'></textarea><button>Получить код</button></div>"
+            "<div role='dialog'><span>Согласие на cookie</span></div>"
+            "<script>var modal='x'</script></body></html>"
+        )
+        page = SimpleNamespace(url="https://c.example/v/1", title="", html=html, text="", forms=[], controls=[])
+        d = page_diagnostic(page)
+        self.assertEqual(len(d["dialogs"]), 2)
+        first = d["dialogs"][0]
+        self.assertIn("Войдите, чтобы откликнуться", first["text"])
+        self.assertEqual(first["inputs"], ["tel:Телефон", "textarea:cv"])  # hidden не берём
+        self.assertNotIn("var modal", str(d["dialogs"]))
+        plain = SimpleNamespace(url="https://c.example/", title="", html="<p>нет окон</p>", text="", forms=[], controls=[])
+        self.assertEqual(page_diagnostic(plain)["dialogs"], [])
+
     def test_previous_dry_run_ok_goes_first_then_unseen(self):
         sites = [("a", "https://a.ru"), ("b", "https://b.ru"), ("c", "https://c.ru"), ("d", "https://d.ru")]
         prev = [{"url": "https://a.ru", "klass": "spa"}, {"url": "https://c.ru", "klass": "dry_run_ok"}]
