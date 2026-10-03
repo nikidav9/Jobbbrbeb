@@ -11,7 +11,7 @@
     "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nikidav23.onspaceapp",
+      "bundleIdentifier": "com.jobtoo",
       "buildNumber": "7",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -25,7 +25,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.nikidav23.onspaceapp",
+      "package": "com.jobtoo",
       "versionCode": 7,
       "blockedPermissions": [
         "android.permission.ACTIVITY_RECOGNITION",

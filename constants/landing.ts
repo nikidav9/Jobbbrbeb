@@ -412,7 +412,7 @@ export const LANDING_MARKUP = `
           <div class="hero-shade"></div>
           <button class="reel" type="button" data-jtl-reel aria-label="Смотреть ролик о JobToo"><b></b></button>
           <div class="hero-in">
-            <span class="eyebrow"><i></i>Только IT-вакансии</span>
+            <span class="eyebrow"><i></i>IT и офисные вакансии</span>
             <h1><span class="line"><span>Работа в IT —</span></span><span class="line"><span class="mark">свайпом</span></span></h1>
             <p class="lead">Листаете вакансии как ленту. Свайп вправо — и Юпитер сам заполняет анкету на сайте работодателя. Ответ приходит в чат приложения.</p>
             <div class="cta">
@@ -440,7 +440,7 @@ export const LANDING_MARKUP = `
           <div class="wrap story-grid">
             <div>
               <ol class="story-steps">
-                <li data-s="1" class="on"><b>01</b><h3>Листаете</h3><p>Карточки IT-вакансий: зарплата, формат, стек. Нравится — свайп вправо, нет — влево.</p></li>
+                <li data-s="1" class="on"><b>01</b><h3>Листаете</h3><p>Карточки IT и офисных вакансий: зарплата, формат, стек. Нравится — свайп вправо, нет — влево.</p></li>
                 <li data-s="2"><b>02</b><h3>Юпитер откликается</h3><p>Наш помощник заполняет анкету на сайте работодателя из вашего профиля. Чего нет в профиле — спросит у вас, а не придумает.</p></li>
                 <li data-s="3"><b>03</b><h3>Вас приглашают</h3><p>Ответ работодателя приходит в чат приложения. Все отклики и их статусы — в одном разделе.</p></li>
               </ol>
