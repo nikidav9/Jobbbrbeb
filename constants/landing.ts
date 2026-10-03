@@ -119,7 +119,11 @@ html.jt-landing #root { visibility: hidden; }
   align-items: center; justify-content: center; text-align: center; padding: 70px 40px; color: var(--ink);
   border: 2px solid var(--ink); border-radius: 30px; box-shadow: 6px 6px 0 var(--ink); overflow: hidden;
   background: var(--ink) url('/landing/hero.jpg') center / cover no-repeat; }
-#jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: jtl-zoom 20s ease-out both; }
+/* Пока у ролика нет первого кадра, браузер рисует его чёрным поверх постера (фон рамки):
+   поэтому он прозрачен и проявляется классом .on, когда пошёл (событие playing). */
+#jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
+  transition: opacity .8s ease; }
+#jtl .hero-video.on { opacity: 1; animation: jtl-vzoom 20s ease-out both; }
 /* Ролик виден почти без вуали; читаемость даёт светлая плашка под текстом, а не затемнение */
 #jtl .hero-shade { position: absolute; inset: 0; background: rgba(20,20,20,.08); }
 #jtl .hero-in { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center;
@@ -357,6 +361,7 @@ html.jt-landing #root { visibility: hidden; }
 @keyframes jtl-bob { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-12px) rotate(3deg); } }
 @keyframes jtl-hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-16px); } }
 @keyframes jtl-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+@keyframes jtl-vzoom { from { transform: scale(1.04); } to { transform: scale(1); } }
 @keyframes jtl-shine { from { background-position: 0% 0; } to { background-position: -220% 0; } }
 @keyframes jtl-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(43,182,115,.55); } 50% { box-shadow: 0 0 0 6px rgba(43,182,115,0); } }
 @keyframes jtl-run { from { transform: translateX(0); } to { transform: translateX(-50%); } }
@@ -413,7 +418,7 @@ export const LANDING_MARKUP = `
     <section class="hero">
       <div class="wrap">
         <div class="hero-frame">
-          <video class="hero-video" id="jtl-video" muted loop playsinline preload="none" aria-hidden="true"></video>
+          <video class="hero-video" id="jtl-video" muted loop playsinline preload="none" poster="/landing/hero.jpg" aria-hidden="true"></video>
           <div class="hero-shade"></div>
           <button class="reel" type="button" data-jtl-reel aria-label="Смотреть ролик о JobToo"><b></b></button>
           <div class="hero-in">
@@ -718,7 +723,7 @@ var MP4=!!video&&!!video.canPlayType('video/mp4; codecs="avc1.42E01E"');
 var SRC=MP4?'/landing/hero.mp4':'/landing/hero.webm';
 // В окне «Смотреть ролик» — рекламная версия: заставка, сюжет, «Скачайте в RuStore».
 var PROMO=MP4?'/landing/promo.mp4':'/landing/promo.webm';
-if(video&&!reduce){video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
+if(video&&!reduce){video.addEventListener('playing',function(){video.classList.add('on');},{once:true});video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
 var modal=document.getElementById('jtl-modal'),mv=document.getElementById('jtl-modal-video');
 function closeModal(){modal.classList.remove('on');mv.pause();}
 root.addEventListener('click',function(e){
