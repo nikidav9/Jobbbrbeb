@@ -199,6 +199,12 @@ function jt_expo_send(array $messages, int $timeout = 15, ?callable $post = null
         $j = is_string($raw) ? json_decode($raw, true) : null;
         return ['http' => $code, 'json' => is_array($j) ? $j : []];
     };
+    // Один запрос с одним сообщением Expo отвечает объектом {"data": {...}}, а не
+    // списком: приводим к списку билетов.
+    $tickets = function (array $json): array {
+        $d = $json['data'] ?? [];
+        return is_array($d) && isset($d['status']) ? [$d] : (is_array($d) ? array_values($d) : []);
+    };
     $messages = array_values($messages);
     if (!$messages) return ['http' => 0, 'data' => [], 'errors' => [], 'split' => false];
 
@@ -206,13 +212,13 @@ function jt_expo_send(array $messages, int $timeout = 15, ?callable $post = null
     $split = count($messages) > 1
         && strpos(json_encode($r['json']['errors'] ?? []), 'PUSH_TOO_MANY_EXPERIENCE_IDS') !== false;
     if (!$split) {
-        return ['http' => $r['http'], 'data' => $r['json']['data'] ?? [], 'errors' => $r['json']['errors'] ?? [], 'split' => false];
+        return ['http' => $r['http'], 'data' => $tickets($r['json']), 'errors' => $r['json']['errors'] ?? [], 'split' => false];
     }
     $data = []; $errors = []; $http = 0;
     foreach ($messages as $m) {
         $one = $post($m, $timeout);
         $http = $one['http'];
-        foreach (($one['json']['data'] ?? []) as $t) $data[] = $t;
+        foreach ($tickets($one['json']) as $t) $data[] = $t;
         foreach (($one['json']['errors'] ?? []) as $e) $errors[] = $e;
     }
     return ['http' => $http, 'data' => $data, 'errors' => $errors, 'split' => true];

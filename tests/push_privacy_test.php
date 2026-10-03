@@ -52,11 +52,13 @@ $fake = function (array $body, int $t) use (&$calls): array {
     if (array_is_list($body)) {
         return ['http' => 400, 'json' => ['errors' => [['code' => 'PUSH_TOO_MANY_EXPERIENCE_IDS', 'message' => 'x']]]];
     }
-    return ['http' => 200, 'json' => ['data' => [['status' => 'ok', 'id' => 'id-' . $body['to']]]]];
+    // Для одиночного сообщения Expo отвечает объектом, а не списком.
+    return ['http' => 200, 'json' => ['data' => ['status' => 'ok', 'id' => 'id-' . $body['to']]]];
 };
 $r = jt_expo_send($mixed, 5, $fake);
 check('смешанные проекты: после отказа пачки шлём по одному (1 пачка + 2 одиночных)', count($calls) === 3);
 check('смешанные проекты: билеты собраны со всех одиночных', count($r['data']) === 2 && $r['split'] === true);
+check('билеты разобраны: статус и id на месте', ($r['data'][0]['status'] ?? '') === 'ok' && str_starts_with((string)($r['data'][1]['id'] ?? ''), 'id-'));
 $calls = [];
 $ok = function (array $body, int $t) use (&$calls): array {
     $calls[] = $body;
