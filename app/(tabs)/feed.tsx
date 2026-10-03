@@ -33,6 +33,7 @@ import { openExtVacancy, takeDeckAction } from '@/services/extVacancyHandoff';
 import { beginDraft, setAppliedFilters, setFeedQuery, useAppliedFilters } from '@/services/feedFilterStore';
 import { FORMATS, GRADES } from '@/components/filters/kit';
 import { JTBolt } from '@/components/ui/JTBolt';
+import { DeckLoader } from '@/components/ui/DeckLoader';
 import { TabLogo, TAB_TOP } from '@/components/ui/TabLogo';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
@@ -1893,19 +1894,24 @@ function WorkerPermMode() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
         >
-          <Ionicons name={backendOffline ? 'cloud-offline-outline' : careerLoading ? 'hourglass-outline' : 'search-outline'} size={48} color={JT.ink} />
-          <Text style={styles.emptyTitle}>
-            {backendOffline ? 'Нет связи с сервером'
-              : careerLoading ? 'Загружаем вакансии…'
-              : permFiltersActive ? 'По фильтрам ничего не нашлось'
-              : 'Нет открытых вакансий'}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.'
-              : careerLoading ? ''
-              : permFiltersActive ? 'Измените или сбросьте фильтры'
-              : 'Потяните вниз, чтобы обновить'}
-          </Text>
+          {careerLoading && !backendOffline ? (
+            // Песочные часы заменены карточкой-заготовкой в стиле колоды (03.10.2026).
+            <DeckLoader />
+          ) : (
+            <>
+              <Ionicons name={backendOffline ? 'cloud-offline-outline' : 'search-outline'} size={48} color={JT.ink} />
+              <Text style={styles.emptyTitle}>
+                {backendOffline ? 'Нет связи с сервером'
+                  : permFiltersActive ? 'По фильтрам ничего не нашлось'
+                  : 'Нет открытых вакансий'}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {backendOffline ? 'Показаны последние данные. Потяните вниз, чтобы обновить.'
+                  : permFiltersActive ? 'Измените или сбросьте фильтры'
+                  : 'Потяните вниз, чтобы обновить'}
+              </Text>
+            </>
+          )}
           {backendOffline ? (
             <TouchableOpacity style={pS.retryBtn} activeOpacity={0.85} onPress={onRefresh}>
               <Ionicons name="refresh" size={16} color={JT.ink} />
