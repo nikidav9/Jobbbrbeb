@@ -12,7 +12,7 @@ import { rs, rf } from '@/constants/scale';
 // по реальному проценту. Штатный RN Animated (reanimated-плагин не подключён).
 //
 // Ниже — ещё и DrawnArt/Stroke: «рисующиеся» линии, которыми нарисованы
-// иконки выбора роли (constants/roleIcons.ts).
+// иконки выбора роли.
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
