@@ -96,6 +96,19 @@ class KnowledgeTest(unittest.TestCase):
         kb.learn(HOST, {}, used=True, klass="captcha")
         self.assertTrue(kb.site(HOST, live=True))
 
+    def test_questions_for_human_are_not_a_failure(self):
+        # Анкета пройдена, остановились на вопросах работодателя — знание живо.
+        kb = Knowledge()
+        kb.learn(HOST, {"apply": "Откликнуться"}, used=False, klass="dry_run_ok", verdict="would_send")
+        kb.learn(HOST, {}, used=True, klass="form_unmapped", reason_code="NEEDS_ANSWERS")
+        entry = kb.site(HOST)
+        self.assertEqual(entry["apply"], "откликнуться")
+        self.assertNotIn("broken_at", entry)
+        self.assertTrue(kb.site(HOST, live=True))
+        # а настоящий провал анкеты по-прежнему ломает
+        kb.learn(HOST, {}, used=True, klass="form_unmapped", reason_code="VALIDATION_FAILED")
+        self.assertIn("broken_at", kb.site(HOST))
+
     def test_save_load_and_broken_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "kb.json")

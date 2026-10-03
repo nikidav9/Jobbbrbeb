@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '@/hooks/useApp';
 import { Colors } from '@/constants/theme';
 import { JT, JT_FONT } from '@/constants/jt';
+import { JTCheck } from '@/components/ui/jt';
 import { HardShadowBox } from '@/components/profile/edit/HardShadowBox';
 import { rs, rf } from '@/constants/scale';
 import {
@@ -251,9 +252,7 @@ export default function ConsentGate() {
             activeOpacity={0.8}
             onPress={() => setTermsAccepted(v => !v)}
           >
-            <View style={[styles.checkbox, termsAccepted && styles.checkboxActive]}>
-              {termsAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-            </View>
+            <JTCheck checked={termsAccepted} />
             <Text style={styles.consentText}>
               Я принимаю Пользовательское соглашение и подтверждаю, что ознакомлен(а) с Политикой.
             </Text>
@@ -264,9 +263,7 @@ export default function ConsentGate() {
             activeOpacity={0.8}
             onPress={() => setCoreAccepted(v => !v)}
           >
-            <View style={[styles.checkbox, coreAccepted && styles.checkboxActive]}>
-              {coreAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-            </View>
+            <JTCheck checked={coreAccepted} />
             <Text style={styles.consentText}>
               Отдельно даю Согласие на обработку персональных данных. Это самостоятельное действие, не являющееся частью принятия Пользовательского соглашения.
             </Text>
@@ -277,9 +274,7 @@ export default function ConsentGate() {
             activeOpacity={0.8}
             onPress={() => setAdsAccepted(v => !v)}
           >
-            <View style={[styles.checkbox, adsAccepted && styles.checkboxActive]}>
-              {adsAccepted ? <Text style={styles.checkmark}>✓</Text> : null}
-            </View>
+            <JTCheck checked={adsAccepted} />
             <Text style={styles.consentText}>
               По желанию: даю Согласие на получение рекламной рассылки о JobToo на почту и в уведомлениях. Можно отключить в настройках.
             </Text>
@@ -417,14 +412,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start', gap: rs(12),
     paddingVertical: rs(8),
   },
-  checkbox: {
-    width: rs(24), height: rs(24), borderRadius: rs(7), borderWidth: 2,
-    borderColor: JT.ink, backgroundColor: JT.surface,
-    alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0, marginTop: rs(1),
-  },
-  checkboxActive: { backgroundColor: JT.accent },
-  checkmark: { color: JT.ink, fontFamily: JT_FONT.heavy, fontSize: rf(14) },
   consentText: { flex: 1, fontFamily: JT_FONT.medium, fontSize: rf(13.5), lineHeight: rf(19), color: JT.textBody },
   link: { color: JT.ink, fontFamily: JT_FONT.bold, textDecorationLine: 'underline' },
   crossLinkButton: {

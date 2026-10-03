@@ -52,7 +52,7 @@ export default function EmailRequiredGate() {
     try {
       const updated = await dbAuthAttachEmail(ticket);
       await app.adoptUser(updated);
-      app.showToast('Почта подтверждена ✓', 'success');
+      app.showToast('Почта подтверждена', 'success');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось сохранить почту');
       setCanSnooze(true);

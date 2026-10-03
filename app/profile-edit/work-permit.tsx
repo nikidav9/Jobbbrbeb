@@ -91,11 +91,11 @@ export default function WorkPermitScreen() {
           <ChipGroup>
             {WORK_PERMIT_COUNTRIES.map((country) => {
               const selected = countries.includes(country);
-              if (country === 'Другая страна') {
+              if (country === 'Другая страна' && !selected) {
                 return (
                   <SuggestChip
                     key={country}
-                    label={selected ? `✓ ${country}` : country}
+                    label={country}
                     onPress={() => setCountries((cur) => toggle(cur, country))}
                   />
                 );
