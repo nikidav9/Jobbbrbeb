@@ -6,11 +6,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { useApp } from '@/hooks/useApp';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
 import {
-  dbChangePassword, dbClearPushToken,
+  dbClearPushToken,
   dbDeleteWebPushSubscription,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
@@ -27,7 +27,7 @@ import { BackButton } from '@/components/ui/BackButton';
 import { JT } from '@/constants/jt';
 import { EditColors, EditFonts } from '@/constants/profileEditTheme';
 import {
-  BottomSheet, ConfirmDialog, Field, HardShadowBox, CloseIcon, CheckIcon, ChevronRightIcon,
+  BottomSheet, ConfirmDialog, HardShadowBox, CloseIcon, CheckIcon, ChevronRightIcon,
 } from '@/components/profile/edit';
 
 const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
@@ -61,12 +61,6 @@ const BellIcon = ({ size = 20, color = JT.ink }: { size?: number; color?: string
     <Path d="M10 20a2 2 0 0 0 4 0" {...stroke} stroke={color} />
   </Svg>
 );
-const KeyIcon = ({ size = 20 }: { size?: number }) => (
-  <Svg {...iconProps} width={size} height={size}>
-    <Circle cx="8" cy="15" r="4" {...stroke} />
-    <Path d="M11 12l8-8M16 7l2 2M14 9l2 2" {...stroke} />
-  </Svg>
-);
 const GiftIcon = () => (
   <Svg {...iconProps}>
     <Rect x="3" y="8" width="18" height="5" rx="1" {...stroke} />
@@ -84,12 +78,6 @@ const LogoutIcon = () => (
   <Svg {...iconProps}>
     <Path d="M15 4h4v16h-4" stroke={DANGER} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
     <Path d="M10 8l-4 4l4 4M6 12h10" stroke={DANGER} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-const EyeIcon = ({ color }: { color: string }) => (
-  <Svg {...iconProps}>
-    <Path d="M2 12s3.5-7 10-7s10 7 10 7s-3.5 7-10 7S2 12 2 12z" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-    <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
@@ -211,54 +199,12 @@ function SheetHeader({ title, tile, onClose }: { title: string; tile: React.Reac
   );
 }
 
-function PasswordField({
-  label, value, onChangeText, placeholder, error,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (t: string) => void;
-  placeholder?: string;
-  error?: string;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <View style={{ gap: 6 }}>
-      <Field
-        label={label}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        secureTextEntry={!visible}
-        autoCapitalize="none"
-        autoCorrect={false}
-        right={(
-          <TouchableOpacity
-            onPress={() => setVisible(v => !v)}
-            style={s.eye}
-            accessibilityRole="button"
-            accessibilityLabel={visible ? 'Скрыть пароль' : 'Показать пароль'}
-          >
-            <EyeIcon color={value ? JT.ink : EditColors.textTertiary} />
-          </TouchableOpacity>
-        )}
-      />
-      {error ? <Text style={s.error}>{error}</Text> : null}
-    </View>
-  );
-}
-
 export default function ProfileSettingsScreen() {
   const router = useRouter();
   const { currentUser, logout, showToast } = useApp();
   const insets = useSafeAreaInsets();
   useWarmSystemBar();
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [wrongOldPassword, setWrongOldPassword] = useState(false);
 
   const [showLogout, setShowLogout] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -513,54 +459,9 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  const savePassword = async () => {
-    if (!currentUser || savingPassword) return;
-    if (newPassword.length < 6) {
-      showToast('Пароль должен быть не менее 6 символов', 'error');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      showToast('Пароли не совпадают', 'error');
-      return;
-    }
-    setSavingPassword(true);
-    setWrongOldPassword(false);
-    try {
-      const result = await dbChangePassword(currentUser.id, oldPassword, newPassword);
-      if (!result.ok) {
-        setWrongOldPassword(true);
-        return;
-      }
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setShowPassword(false);
-      showToast('Пароль изменён', 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Не удалось сменить пароль', 'error');
-    } finally {
-      setSavingPassword(false);
-    }
-  };
-
-  const closePasswordSheet = () => {
-    setShowPassword(false);
-    setOldPassword(''); setNewPassword(''); setConfirmPassword('');
-    setWrongOldPassword(false);
-  };
-
-  const goSetPasswordByCode = () => {
-    router.push({ pathname: '/reset-password', params: { returnTo: 'profile-settings', mode: 'set' } });
-  };
-
   if (!currentUser) return <View style={s.screen} />;
 
   const isWorker = currentUser.role === 'worker';
-  const noPassword = currentUser.hasPassword === false;
-  const passwordFilled = !!oldPassword && !!newPassword && !!confirmPassword;
-  const mismatch = !!confirmPassword && newPassword !== confirmPassword;
-  const tooShort = !!newPassword && newPassword.length < 6;
-  const canSavePassword = passwordFilled && !mismatch && !tooShort && !savingPassword;
   const notificationValue = notificationState === 'checking' ? '' : notificationState === 'enabled' ? 'Вкл' : 'Выкл';
 
   const notificationTitle = {
@@ -605,19 +506,6 @@ export default function ProfileSettingsScreen() {
             icon={<BellIcon />}
             value={notificationValue}
             onPress={openNotificationSettings}
-          />
-          {/* Аккаунт по коду из письма пароля не имеет: «Сменить» с полем
-              «текущий пароль» ему не пройти. Такому сразу — задать по коду. */}
-          <Row
-            label={currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
-            icon={<KeyIcon />}
-            onPress={() => {
-              // Регистрация «почта → код» (27.09.2026) пароля не заводит —
-              // «Сменить пароль» на таком аккаунте всегда отвечал бы «неверный
-              // пароль». Ведём сразу туда, откуда пароль реально берётся.
-              if (noPassword) goSetPasswordByCode();
-              else setShowPassword(true);
-            }}
           />
           {!currentUser.isGuest ? (
             <SwitchRow
@@ -738,53 +626,6 @@ export default function ProfileSettingsScreen() {
         ) : null}
         <View style={{ marginTop: 4 }}>
           <Btn kind="ghost" label="Закрыть" onPress={() => setShowNotificationSettings(false)} />
-        </View>
-      </BottomSheet>
-
-      <BottomSheet visible={showPassword} onClose={closePasswordSheet}>
-        <SheetHeader title="Сменить пароль" tile={<KeyIcon size={22} />} onClose={closePasswordSheet} />
-        <View style={s.form}>
-          <PasswordField
-            label="Текущий пароль"
-            value={oldPassword}
-            onChangeText={t => { setOldPassword(t); setWrongOldPassword(false); }}
-            error={wrongOldPassword ? 'Неверный текущий пароль' : undefined}
-          />
-          <PasswordField
-            label="Новый пароль"
-            value={newPassword}
-            onChangeText={setNewPassword}
-            placeholder="Минимум 6 символов"
-            error={tooShort ? 'Пароль должен быть не менее 6 символов' : undefined}
-          />
-          <PasswordField
-            label="Повторите новый пароль"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Ещё раз"
-            error={mismatch ? 'Пароли не совпадают' : undefined}
-          />
-        </View>
-        {/* Аккаунт без пароля (регистрация «почта → код») никогда не
-            пройдёт проверку текущего пароля — сервер отвечает
-            wrong_password намеренно. Путь такому человеку — код из письма. */}
-        <TouchableOpacity
-          onPress={() => { closePasswordSheet(); goSetPasswordByCode(); }}
-          accessibilityRole="button"
-          style={{ alignSelf: 'center', marginTop: 18 }}
-        >
-          <Text style={s.link}>Нет пароля? Задайте его по коду из письма</Text>
-        </TouchableOpacity>
-        <View style={{ marginTop: 20 }}>
-          <Btn
-            kind="primary"
-            label={savingPassword ? 'Сохраняем…' : 'Сохранить'}
-            onPress={savePassword}
-            disabled={!canSavePassword}
-          />
-        </View>
-        <View style={{ marginTop: 4 }}>
-          <Btn kind="ghost" label="Отмена" onPress={closePasswordSheet} />
         </View>
       </BottomSheet>
 

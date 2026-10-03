@@ -334,8 +334,14 @@ function case_body(string $src, string $fn): string
     $end = strpos($src, "\n        case '", $start + 10);
     return $end !== false ? substr($src, $start, $end - $start) : substr($src, $start);
 }
-check('код, сверка и сброс доступны до входа',
-    preg_match("~\\\$publicFns = \[.*?'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword',.*?\];~s", $db) === 1);
+check('код и сверка доступны до входа',
+    preg_match("~\\\$publicFns = \[.*?'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthConfig',.*?\];~s", $db) === 1);
+// Пароля в JobToo нет (решение владельца 03.10.2026): ни входа, ни смены,
+// ни сброса, ни удаления по паролю, ни регистрации по телефону.
+foreach (['dbLogin', 'dbChangePassword', 'dbAuthResetPassword', 'dbDeleteAccount', 'adminResetPassword', 'dbCheckPhoneExists'] as $gone) {
+    check("$gone убран с сервера", !str_contains($db, "case '$gone'") && !str_contains($db, "'$gone'"));
+}
+check('цели reset у кода больше нет', !in_array('reset', JT_AUTH_PURPOSES, true));
 check('привязка почты — только с сессией (не в публичных)',
     !preg_match("~\\\$publicFns = \[[^\]]*'dbAuthAttachEmail'~s", $db));
 check('телефон для связи меняет только владелец', str_contains($db, "'dbSetContactPhone' => 0"));
@@ -351,8 +357,8 @@ check('письма с одного адреса ограничены', str_cont
 check('попытка считается до ответа «почта занята» — перебор адресов ограничен',
     strpos($send, "jt_try_note('mail')") !== false
     && strpos($send, "jt_try_note('mail')") < strpos($send, "if (\$purpose === 'register' && \$owner) {"));
-check('вход по коду отвечает как сброс — не выдаёт, есть ли такая почта',
-    str_contains($send, "if (\$purpose === 'reset' || \$purpose === 'login') {"));
+check('вход по коду не выдаёт, есть ли такая почта',
+    str_contains($send, "if (\$purpose === 'login') {"));
 
 $verify = case_body($db, 'dbAuthVerifyCode');
 check('неверные коды с одного адреса ограничены', str_contains($verify, "jt_try_blocked('code')") && str_contains($verify, "jt_try_note('code')"));
@@ -368,13 +374,6 @@ check('вход по коду выдаёт сессию сразу, без кв�
     str_contains($verify, "jt_try_reset('login');")
     && str_contains($verify, "\$data = ['user' => jt_self_user((string)\$row['id']),\n                    'session_token' => jt_session_issue((string)\$row['id'])];"));
 
-$reset = case_body($db, 'dbAuthResetPassword');
-check('сброс пароля гасит прежние сессии', str_contains($reset, "'sessions_valid_from' => now_iso(),"));
-check('сброс проверяет пароль сервером', str_contains($reset, 'jt_password_problem($new)'));
-check('сброс — только по квитанции reset', str_contains($reset, "jt_auth_ticket_check((string)(\$args[0] ?? ''), 'reset', jt_session_key())"));
-check('квитанция сброса одноразовая (старше sessions_valid_from — отказ)',
-    str_contains($reset, "(int)strtotime((string)\$row['sessions_valid_from']) >= (int)\$t['iat']"));
-
 $attach = case_body($db, 'dbAuthAttachEmail');
 check('привязка — только своей квитанцией', str_contains($attach, "(string)\$t['uid'] !== (string)\$authUid"));
 check('подтверждённую почту из сессии не сменить',
@@ -388,28 +387,15 @@ check('регистрация по квитанции register ставит по
 check('почту в профиль через обычное сохранение не подсунуть',
     preg_match("~\\\$editable = \[[^\]]*'email'~s", $upsert) === 0 && preg_match("~\\\$atCreate = \[[^\]]*'email'~s", $upsert) === 0);
 
-// ── Почта без пароля (решение владельца 27.09.2026: «почта → код → сразу
-// лента», вход потом по коду из письма) ─────────────────────────────────────
-// По квитанции пустой пароль пропускается (аккаунт без пароля), непустой —
-// по-прежнему сверяется jt_password_problem. Без квитанции (регистрация по
-// телефону старых сборок) пароль остаётся обязательным.
-check('по квитанции пустой пароль не идёт на проверку правил',
-    (bool)preg_match('~\$pwd = \(string\)\(\$u\[\'password\'\] \?\? \'\'\);\s*if \(\$pwd !== \'\'\) \{\s*\$bad = jt_password_problem\(\$pwd\);~', $upsert));
-check('по квитанции непустой плохой пароль всё ещё отклоняется',
-    str_contains($upsert, "if (\$bad !== null) { jt_respond(['error' => \$bad], 400); exit; }"));
-check('без квитанции телефон и пароль по-прежнему обязательны',
-    str_contains($upsert, "} elseif (empty(\$u['phone']) || empty(\$u['password'])) {")
-    && str_contains($upsert, "throw new RuntimeException('Для регистрации нужны почта с кодом и пароль');"));
-// Мутация: если бы проверку одели в `if ($pwd === '')` вместо `!== ''`
-// (перепутали знак), пустой пароль как раз попадал бы под jt_password_problem
-// — этот же regex её бы не нашёл, потому что ищет именно `!== ''`.
-check('инвариант не переворачивается на противоположный (пустой пароль не проверяется)',
-    !str_contains($upsert, "if (\$pwd === '') {\n                        \$bad = jt_password_problem"));
-
-$login = case_body($db, 'dbLogin');
-check('вход по почте или по телефону старого аккаунта',
-    str_contains($login, "sb_single('jm_users', ['email' => 'eq.' . \$email])")
-    && str_contains($login, "sb_single('jm_users', ['phone' => 'eq.' . \$phone])"));
+// ── Регистрация — только по квитанции, пароль в базу не попадает ────────────
+check('без квитанции регистрации нет',
+    str_contains($upsert, "if (\$ticket === null) {")
+    && str_contains($upsert, "Подтверждение почты устарело. Начните регистрацию заново"));
+check('пароль и телефон при создании не принимаются',
+    (bool)preg_match("~\\\$atCreate = \['id', 'role', 'created_at'\];~", $upsert)
+    && !str_contains($upsert, 'password_hash('));
+check('свой профиль не читает колонку пароля',
+    !str_contains($db, "USER_SELF_COLS . ',password'"));
 
 $phone = case_body($db, 'dbSetContactPhone');
 check('перебор номеров через «телефон для связи» ограничен',
@@ -432,7 +418,7 @@ check('миграция входа расширяет цель кода идем
     && str_contains($mig127, "check (purpose in ('register', 'attach', 'reset', 'login'));"));
 
 // ── Готовность почты: пока SMTP недоступен, всё работает как до почты ──────
-check('готовность почты доступна до входа', str_contains($db, "'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',"));
+check('готовность почты доступна до входа', str_contains($db, "'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthConfig',"));
 $cfgCase = case_body($db, 'dbAuthConfig');
 check('ответ из кэша, перепроверка — после ответа клиенту',
     str_contains($cfgCase, 'jt_mail_ready_cached()') && str_contains($cfgCase, 'jt_mail_ready_refresh_later()'));
@@ -446,30 +432,21 @@ check('живая отправка отмечает готовность', jt_ma
 @unlink(jt_mail_ready_file());
 $gate = (string)file_get_contents(__DIR__ . '/../components/EmailRequiredGate.tsx');
 check('окно почты — только когда почта готова', str_contains($gate, '&& app.emailAuthReady;'));
-foreach (['app/register-worker.tsx'] as $f) { // работодателя регистрировать нельзя с 03.10.2026
-    $src = (string)file_get_contents(__DIR__ . '/../' . $f);
-    check("$f: без почты — регистрация по телефону",
-        str_contains($src, '{emailAuthReady ? (') && str_contains($src, 'onPress={continueFromPhone}')
-        && str_contains($src, "phone: emailTicket ? '' : extractPhoneDigits(phone),"));
-}
+$regSrc = (string)file_get_contents(__DIR__ . '/../app/register-worker.tsx');
+check('регистрация — только почта с кодом, без телефона и пароля',
+    str_contains($regSrc, 'purpose="register"') && !str_contains($regSrc, 'PhoneInput')
+    && !preg_match('~password~i', $regSrc));
 $loginSrc = (string)file_get_contents(__DIR__ . '/../app/login.tsx');
-check('без почты «Забыли пароль?» ведёт в поддержку', str_contains($loginSrc, 'if (!emailAuthReady) {'));
-check('вход по коду — свой шаг с кодом и переключатель на пароль',
+check('вход — только код из письма',
     str_contains($loginSrc, 'purpose="login"') && str_contains($loginSrc, 'dbAuthLoginByCode')
-    && str_contains($loginSrc, 'testID="login-code-mode"') && str_contains($loginSrc, 'testID="login-password-link"')
-    && str_contains($loginSrc, 'testID="login-code-link"'));
+    && str_contains($loginSrc, 'testID="login-code-mode"') && !str_contains($loginSrc, 'secureTextEntry')
+    && !str_contains($loginSrc, 'login-password-link'));
+check('экрана сброса пароля нет', !file_exists(__DIR__ . '/../app/reset-password.tsx'));
 
 $stepSrc = (string)file_get_contents(__DIR__ . '/../components/feature/EmailCodeStep.tsx');
 check('шаг с кодом даёт подменить проверку (нужно входу — без квитанции)',
     str_contains($stepSrc, 'verify?: (email: string, code: string) => Promise<void>;')
     && str_contains($stepSrc, 'if (customVerify) {'));
-
-// Аккаунт без пароля (регистрация почта → код): смена пароля не должна
-// пропускать пустой «старый пароль» — иначе чужая сессия ставит свой пароль.
-$dbSrcCp = (string)file_get_contents(__DIR__ . '/../php-proxy/db.php');
-$cpAt = strpos($dbSrcCp, "case 'dbChangePassword'");
-$cpBody = $cpAt === false ? '' : substr($dbSrcCp, $cpAt, 1500);
-check('смена пароля отказывает аккаунту без пароля', str_contains($cpBody, "\$ok = \$stored !== '' && ("));
 
 // ── Тестовый вход для проверяющего магазина (03.10.2026) ─────────────────────
 // Один адрес из секретов получает заранее известный код без письма; всё

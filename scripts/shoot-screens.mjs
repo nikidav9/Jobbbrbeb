@@ -154,7 +154,6 @@ function respond(fn, args) {
         ? { stamp: LEGAL_STAMP, docs: {}, source: 'screenshot', accepted_at: iso(NOW) }
         : null;
     case 'dbGetUsers': return USERS;
-    case 'dbCheckPhoneExists': return false;
     case 'dbGetUserById': return USERS.find(u => u.id === args?.[0]) ?? null;
     case 'dbGetVacancies': return VACANCIES;
     case 'dbGetPermVacancies': return PERM;

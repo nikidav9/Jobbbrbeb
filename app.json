@@ -64,11 +64,6 @@
             {
               "scheme": "https",
               "host": "jobtoo.ru",
-              "pathPrefix": "/reset-password"
-            },
-            {
-              "scheme": "https",
-              "host": "jobtoo.ru",
               "pathPrefix": "/login"
             },
             {

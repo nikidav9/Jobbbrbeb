@@ -17,7 +17,7 @@ check("разрешены только строчные латинские бу�
       "\\A[a-z0-9]{8,32}\\z" in db)
 
 start = db.index("case 'dbUpsertUser': {")
-end = db.index("case 'dbLogin': {", start)
+end = db.index("case 'dbSession': {", start)
 block = db[start:end]
 existing = block.index("$existing = sb_single")
 guard = block.index("if (!$existing && !jt_new_user_id_is_valid($uid))")

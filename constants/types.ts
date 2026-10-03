@@ -195,12 +195,6 @@ export interface User {
   email?: string;
   /** Когда почта подтверждена кодом; пусто — старый аккаунт без почты. */
   emailVerifiedAt?: string;
-  /**
-   * Задан ли пароль — только в своём профиле, сервер отдаёт признак, а не сам
-   * пароль. false — аккаунт создан по коду из письма; undefined — неизвестно
-   * (старый ответ сервера или кэш).
-   */
-  hasPassword?: boolean;
   lastName: string;
   firstName: string;
   age?: number;

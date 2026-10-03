@@ -22,7 +22,7 @@ import { useApp } from '@/hooks/useApp';
 import { uploadAvatar } from '@/services/avatarUpload';
 import { getInitials, nameColorFromString, displayName } from '@/services/storage';
 import {
-  dbGetRatingsForUser, dbChangePassword,
+  dbGetRatingsForUser,
   dbGetConsent,
   dbGetResumeFiles, dbSelectResumeFile, dbDeleteResumeFile,
   dbSignResumeFile, UserRating, type ResumeVaultItem,
@@ -365,14 +365,8 @@ export default function ProfileScreen() {
     setPersonalField(null);
   });
   const notifSwipe = useSwipeToDismiss(() => setShowNotifications(false));
-  const pwdSwipe = useSwipeToDismiss(() => setShowSettings(false));
   const [showPhotoSource, setShowPhotoSource] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [curPassword, setCurPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [savingPassword, setSavingPassword] = useState(false);
 
   const [editPhone, setEditPhone] = useState('');
   const [editLast, setEditLast] = useState('');
@@ -944,30 +938,10 @@ export default function ProfileScreen() {
               iconName="shield-checkmark"
               iconBg="#1C1C1E"
               title="Аккаунт"
-              summary="Пароль, выход, удаление"
+              summary="Выход, удаление"
               open={openSection === 'account'}
               onToggle={() => toggleSection('account')}
             >
-              <TouchableOpacity
-                style={sS.actionRow}
-                onPress={() => {
-                  // Регистрация «почта → код» пароля не заводит — вести на
-                  // «Сменить пароль» для такого аккаунта бессмысленно, он
-                  // всегда отвечает «неверный пароль».
-                  if (currentUser.hasPassword === false) {
-                    router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
-                  } else {
-                    setShowSettings(true);
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="key-outline" size={17} color={Colors.textSecondary} />
-                <Text style={[sS.actionLabel, { flex: 1 }]}>
-                  {currentUser.hasPassword === false ? 'Задать пароль' : 'Сменить пароль'}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-              </TouchableOpacity>
               <TouchableOpacity style={sS.actionRow} onPress={() => setShowConfirmLogout(true)} activeOpacity={0.7}>
                 <Ionicons name="log-out-outline" size={17} color={Colors.textSecondary} />
                 <Text style={[sS.actionLabel, { flex: 1 }]}>Выйти из аккаунта</Text>
@@ -1218,88 +1192,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Change password modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={showSettings} transparent animationType="slide" onRequestClose={() => setShowSettings(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowSettings(false)} />
-          <Animated.View style={[styles.modalSheet, pwdSwipe.animStyle]}>
-            <View {...pwdSwipe.panHandlers}>
-              <SheetHandle />
-              <Text style={styles.modalTitle}>Изменить пароль</Text>
-            </View>
-            <View style={{ gap: 12 }}>
-              <AppInput
-                label="Текущий пароль"
-                value={curPassword}
-                onChangeText={setCurPassword}
-                secureTextEntry
-                placeholder="Введите текущий пароль"
-              />
-              <AppInput
-                label="Новый пароль"
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                placeholder="Минимум 6 символов"
-              />
-              <AppInput
-                label="Повторите новый пароль"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                placeholder="Повторите новый пароль"
-              />
-            </View>
-            {/* Аккаунт без пароля (регистрация «почта → код») никогда не
-                примет здесь «текущий пароль» — сервер намеренно отвечает
-                wrong_password. Путь такому человеку — код из письма. */}
-            <TouchableOpacity
-              onPress={() => {
-                setShowSettings(false); setCurPassword(''); setNewPassword(''); setConfirmPassword('');
-                router.push({ pathname: '/reset-password', params: { returnTo: '(tabs)/profile', mode: 'set' } });
-              }}
-              accessibilityRole="button"
-            >
-              <Text style={styles.noPasswordLink}>Нет пароля? Задайте его по коду из письма</Text>
-            </TouchableOpacity>
-            <View style={{ marginTop: 8, gap: 10 }}>
-              <PrimaryButton
-                label={savingPassword ? 'Сохранение...' : 'Сохранить пароль'}
-                disabled={savingPassword}
-                onPress={async () => {
-                  if (!curPassword || !newPassword || !confirmPassword) {
-                    showToast('Заполните все поля', 'error'); return;
-                  }
-                  if (newPassword.length < 6) {
-                    showToast('Пароль должен быть не менее 6 символов', 'error'); return;
-                  }
-                  if (newPassword !== confirmPassword) {
-                    showToast('Пароли не совпадают', 'error'); return;
-                  }
-                  setSavingPassword(true);
-                  try {
-                    // Текущий пароль сверяет сервер. Раньше сравнивали здесь,
-                    // строкой с currentUser.password, — и для всех, у кого в
-                    // базе уже хеш, смена пароля просто не проходила.
-                    const res = await dbChangePassword(currentUser.id, curPassword, newPassword);
-                    if (!res.ok) {
-                      showToast('Неверный текущий пароль', 'error'); return;
-                    }
-                    setCurPassword(''); setNewPassword(''); setConfirmPassword('');
-                    setShowSettings(false);
-                    showToast('Пароль изменён', 'success');
-                  } catch {
-                    showToast('Ошибка при сохранении', 'error');
-                  } finally {
-                    setSavingPassword(false);
-                  }
-                }}
-              />
-              <PrimaryButton label="Отмена" onPress={() => setShowSettings(false)} secondary />
-            </View>
-          </Animated.View>
-        </KeyboardAvoidingView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -1546,17 +1438,11 @@ const styles = StyleSheet.create({
     marginTop: rs(8), fontSize: rf(13), color: Colors.red,
     textAlign: 'center',
   },
-  noPasswordLink: {
-    marginTop: rs(4), fontSize: rf(13), color: Colors.primary, fontWeight: '600',
-    textAlign: 'center',
-  },
   confirmBtns: { flexDirection: 'row', gap: rs(12), marginTop: rs(8) },
   cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: Colors.inputBorder, borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center' },
   cancelText: { fontSize: rf(15), fontWeight: '600', color: Colors.textSecondary },
   logoutConfirmBtn: { flex: 1, backgroundColor: Colors.red, borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center' },
   logoutConfirmText: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
-  setPasswordBtn: { flex: 1, backgroundColor: Colors.primary, borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center' },
-  setPasswordText: { color: '#fff', fontSize: rf(15), fontWeight: '700' },
 });
 
 const photoSrcS = StyleSheet.create({

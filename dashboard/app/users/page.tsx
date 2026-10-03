@@ -7,12 +7,12 @@ import KpiCard from '@/components/KpiCard'
 import ChartCard from '@/components/ChartCard'
 import PageHeader from '@/components/PageHeader'
 import PageSkeleton from '@/components/PageSkeleton'
-import { blockUser, resetPassword, sendBothToUser, deleteUser, changeRole } from '@/lib/admin-actions'
+import { blockUser, sendBothToUser, deleteUser, changeRole } from '@/lib/admin-actions'
 import Avatar from '@/components/Avatar'
 import Chip from '@/components/Chip'
 import {
   IconBan, IconBuilding, IconApp, IconBell, IconUser,
-  IconTrash, IconKey, IconSwap, IconCheck, IconX, IconChevron,
+  IconTrash, IconSwap, IconCheck, IconX, IconChevron,
 } from '@/components/icons'
 import { downloadCSV } from '@/lib/csv-export'
 import { getVerifiedUsers, setUserVerified } from '@/lib/verification'
@@ -283,14 +283,6 @@ export default function UsersPage() {
     } catch (e: any) { setA(u.id, 'err', e.message) }
   }
 
-  async function handleResetPwd(u: any) {
-    setA(u.id + '_pwd', 'loading')
-    try {
-      const pwd = await resetPassword(u.id)
-      setA(u.id + '_pwd', 'ok', `Новый пароль: ${pwd}`)
-    } catch (e: any) { setA(u.id + '_pwd', 'err', e.message) }
-  }
-
   async function handlePush(u: any) {
     const text = pushText[u.id]?.trim()
     if (!text) return
@@ -439,7 +431,6 @@ export default function UsersPage() {
                         const isWorker = u.role === 'worker'
                         const expanded = expandedId === u.id
                         const aBlock = actions[u.id]
-                        const aPwd = actions[u.id + '_pwd']
                         const aPush = actions[u.id + '_push']
                         const aDel = actions[u.id + '_del']
                         const isVerified = verifiedSet.has(u.id)
@@ -527,7 +518,7 @@ export default function UsersPage() {
                                         {aBlock?.s === 'loading' ? '…' : u.blocked ? 'Разблокировать' : 'Заблокировать'}
                                       </button>}
                                   <button onClick={() => setExpandedId(expanded ? null : u.id)}
-                                    title={expanded ? 'Свернуть' : 'Пароль и пуш'} className="jt-icon-btn">
+                                    title={expanded ? 'Свернуть' : 'Пуш'} className="jt-icon-btn">
                                     <IconChevron size={13} open={expanded} />
                                   </button>
                                   {(() => {
@@ -573,22 +564,6 @@ export default function UsersPage() {
                               <tr style={{ borderBottom: '1px solid var(--line)' }}>
                                 <td colSpan={9} style={{ padding: '0 12px 14px 60px', background: 'var(--bg-sunken)' }}>
                                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', paddingTop: 10 }}>
-                                    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px', minWidth: 200 }}>
-                                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}><IconKey size={12} />Сбросить пароль</div>
-                                      {aPwd?.s === 'ok'
-                                        ? <div style={{ fontSize: 13, color: 'var(--positive)' }}>
-                                            <div style={{ fontWeight: 500, marginBottom: 2 }}>Новый пароль:</div>
-                                            <div style={{ fontFamily: 'Manrope, sans-serif', fontSize: 18, fontWeight: 700, letterSpacing: 2, color: 'var(--ink)', background: 'var(--bg-sunken)', padding: '4px 10px', borderRadius: 6 }}>
-                                              {aPwd.msg?.replace('Новый пароль: ', '')}
-                                            </div>
-                                          </div>
-                                        : aPwd?.s === 'err'
-                                          ? <div style={{ fontSize: 12, color: 'var(--negative)' }}>{aPwd.msg}</div>
-                                          : <button onClick={() => handleResetPwd(u)} disabled={aPwd?.s === 'loading'}
-                                              style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--ink)', color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
-                                              {aPwd?.s === 'loading' ? 'Генерация…' : 'Сгенерировать новый'}
-                                            </button>}
-                                    </div>
                                     <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px', flex: 1, minWidth: 260 }}>
                                       <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--ink-3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}><IconApp size={12} />Отправить пуш</div>
                                       <div style={{ display: 'flex', gap: 6 }}>

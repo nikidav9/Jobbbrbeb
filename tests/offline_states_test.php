@@ -369,16 +369,6 @@ check('фото профиля: ошибка записи не запускае�
 
 // ── Fail-closed там, где отсутствие ответа меняет право продолжать ────────────
 $dbService = (string)file_get_contents(__DIR__ . '/../services/db.ts');
-$phoneStart = strpos($dbService, 'export async function dbCheckPhoneExists');
-$phoneEnd = strpos($dbService, 'export async function dbGetUserByPhone', $phoneStart === false ? 0 : $phoneStart);
-$phoneBody = ($phoneStart !== false && $phoneEnd !== false)
-    ? substr($dbService, $phoneStart, $phoneEnd - $phoneStart)
-    : '';
-check('регистрация: сервис не превращает ошибку телефона в false',
-    $phoneBody !== '' &&
-    str_contains($phoneBody, "return proxy<boolean>('dbCheckPhoneExists', [phone]);") &&
-    !str_contains($phoneBody, 'catch { return false; }'));
-
 $consentGate = (string)file_get_contents(__DIR__ . '/../components/ConsentGate.tsx');
 check('согласие: ошибка первичной проверки хранится отдельно',
     str_contains($consentGate, 'checkFailed') && str_contains($consentGate, 'setCheckFailed(true)'));

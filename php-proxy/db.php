@@ -180,7 +180,7 @@ if (!$fn) { jt_respond(['error' => 'Missing fn'], 400); exit; }
 // закрытом дашборде. Если он не настроен, административные вызовы безопасно
 // закрыты, а пользовательские сценарии продолжают работать.
 $adminFns = [
-    'dbKeyKind', 'adminResetPassword', 'dbMigrateChatMedia', 'dbDeleteUser',
+    'dbKeyKind', 'dbMigrateChatMedia', 'dbDeleteUser',
     'cronEveningDigest', 'cronDailyReport', 'cronDailyNudges',
     'cronAnnounceMissed', 'adminRetireTelegram',
     // Проверка почты после выкладки (.github/workflows/mail-check.yml).
@@ -280,7 +280,7 @@ if ($authUid !== null) {
     }
 }
 $publicFns = [
-    'dbCountUsers', 'dbWarmup', 'dbCheckPhoneExists', 'dbLogin',
+    'dbCountUsers', 'dbWarmup',
     'dbUpsertUser', 'tgAuth', 'dbGetVacancies', 'dbGetPermVacancies',
     'addressSuggest', 'dbLogOpen', 'guestEvent',
     // Карта логотипов компаний: лента открыта и гостям (миграция 144).
@@ -289,9 +289,10 @@ $publicFns = [
     // входа они отдавали всю переписку (для подсчёта) и весь каталог с полными
     // описаниями — десятки мегабайт на запрос. Приложение их не зовёт.
     'dbGetExtFeed', 'dbCountExtFeed',
-    // Регистрация и восстановление пароля по коду из письма — до входа.
-    // dbAuthSendCode/dbAuthVerifyCode с целью attach сами требуют сессию.
-    'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthResetPassword', 'dbAuthConfig',
+    // Регистрация и вход по коду из письма — до входа. Пароля в JobToo нет
+    // (решение владельца 03.10.2026). dbAuthSendCode/dbAuthVerifyCode с целью
+    // attach сами требуют сессию.
+    'dbAuthSendCode', 'dbAuthVerifyCode', 'dbAuthConfig',
 ];
 if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $authUid === null) {
     jt_respond(['error' => 'Authentication required'], 401); exit;
@@ -301,7 +302,7 @@ if (!in_array($fn, $publicFns, true) && !in_array($fn, $adminFns, true) && $auth
 // сервер не доверяет ID из тела запроса и сверяет его с подписанной сессией.
 $selfArgFns = [
     'tgPrepareLink' => 0, 'dbTouchLastSeen' => 0,
-    'dbChangePassword' => 0, 'dbDeleteAccount' => 0, 'dbDeleteAccountByCode' => 0, 'dbSetContactPhone' => 0,
+    'dbDeleteAccountByCode' => 0, 'dbSetContactPhone' => 0,
     'dbRecordConsent' => 0, 'dbGetConsent' => 0,
     'dbRecordCrossBorderConsent' => 0, 'dbGetCrossBorderConsent' => 0,
     'dbRevokeCrossBorderConsent' => 0,
@@ -865,16 +866,10 @@ function sb_single(string $t, array $f = [], string $sel = '*'): ?array {
     return !empty($rows) ? $rows[0] : null;
 }
 
-// Свой профиль для владельца сессии: USER_SELF_COLS и признак has_password.
-// Сам пароль (хеш) наружу не уходит — только «задан или нет». Без признака
-// экран настроек не отличал аккаунт, созданный по коду из письма, и на
-// «Сменить пароль» отвечал «неверный пароль»: старого пароля у него нет.
+// Свой профиль для владельца сессии: USER_SELF_COLS. Пароля в JobToo нет
+// (решение владельца 03.10.2026), колонку password не читаем вовсе.
 function jt_self_user(string $uid): ?array {
-    $row = sb_single('jm_users', ['id' => 'eq.' . $uid], USER_SELF_COLS . ',password');
-    if (!$row) return null;
-    $row['has_password'] = (string)($row['password'] ?? '') !== '';
-    unset($row['password']);
-    return $row;
+    return sb_single('jm_users', ['id' => 'eq.' . $uid], USER_SELF_COLS);
 }
 
 // Сигнал приложению уходит отсюда, из обёрток записи, а не из мест вызова:
@@ -1106,11 +1101,9 @@ function jt_b64url_decode(string $raw): string|false {
 }
 // ─── Перебор ──────────────────────────────────────────────────────────────────
 //
-// Вход — это номер телефона и пароль, и оба подбираются: `dbCheckPhoneExists`
-// отвечает, есть ли такой номер, а `dbLogin` — верен ли к нему пароль. Обе
-// операции публичные (иначе нельзя ни зарегистрироваться, ни войти), и до сих
-// пор ни одна из них не считала попытки. В админке такой счёт есть с самого
-// начала — здесь его не было, хотя перебирать выгоднее как раз здесь.
+// Публичные операции подбираются: коды из письма, письма на чужие адреса,
+// номера в «телефоне для связи». Каждая считает попытки с одного адреса (до
+// 03.10.2026 так же считались вход по паролю и проверка номера — их больше нет).
 //
 // Счёт файловый, как в admin.php: база для этого слишком дорога, а запрос
 // ронять из-за счётчика нельзя. REMOTE_ADDR — настоящий адрес клиента: nginx
@@ -4306,34 +4299,20 @@ try {
             if ($existing && $authUid !== $uid) {
                 jt_respond(['error' => 'Authentication required'], 401); exit;
             }
-            // Регистрация — по почте с кодом: четвёртый довод — квитанция
-            // dbAuthVerifyCode. Телефон с паролем принимаем только от старых
-            // сборок, которым OTA ещё не пришло: иначе у них сломалась бы
-            // регистрация; почту у них тут же спросит окно в приложении.
+            // Регистрация — только по почте с кодом: четвёртый довод —
+            // квитанция dbAuthVerifyCode. Пароля и регистрации по телефону в
+            // JobToo нет (решение владельца 03.10.2026).
             $regEmail = null;
             if (!$existing) {
                 $ticket = is_string($args[3] ?? null) ? jt_auth_ticket_check($args[3], 'register', jt_session_key()) : null;
-                if ($ticket === null && is_string($args[3] ?? null) && $args[3] !== '') {
+                if ($ticket === null) {
                     jt_respond(['error' => 'Подтверждение почты устарело. Начните регистрацию заново'], 400); exit;
                 }
-                if ($ticket !== null) {
-                    $regEmail = $ticket['email'];
-                    if (sb_single('jm_users', ['email' => 'eq.' . $regEmail], 'id')) {
-                        jt_respond(['error' => 'Аккаунт с этой почтой уже есть. Войдите'], 409); exit;
-                    }
-                    // Пароль необязателен (решение владельца 27.09.2026: почта
-                    // → код → сразу лента, вход потом по коду из письма).
-                    // Указан — проверяем как раньше; пуст — аккаунт без
-                    // пароля, ниже по коду пустой password просто не уйдёт в базу.
-                    $pwd = (string)($u['password'] ?? '');
-                    if ($pwd !== '') {
-                        $bad = jt_password_problem($pwd);
-                        if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
-                    }
-                    unset($u['phone']);
-                } elseif (empty($u['phone']) || empty($u['password'])) {
-                    throw new RuntimeException('Для регистрации нужны почта с кодом и пароль');
+                $regEmail = $ticket['email'];
+                if (sb_single('jm_users', ['email' => 'eq.' . $regEmail], 'id')) {
+                    jt_respond(['error' => 'Аккаунт с этой почтой уже есть. Войдите'], 409); exit;
                 }
+                unset($u['phone']);
             }
             if (!$existing) {
                 // Старые сборки иногда присылали профиль без role. Postgres
@@ -4377,10 +4356,8 @@ try {
             // При регистрации строки ещё нет: тогда же задаются и те поля,
             // которые потом менять нельзя. Роль и телефон — опознание
             // человека, и смена их задним числом ломает вход.
-            $atCreate = ['id', 'role', 'phone', 'password', 'created_at'];
+            $atCreate = ['id', 'role', 'created_at'];
             $allowed = $existing ? $editable : array_merge($editable, $atCreate);
-            // Пароль меняется через dbChangePassword со сверкой старого.
-            if ($existing) $u = array_diff_key($u, ['password' => 1]);
             $u = array_intersect_key($u, array_flip($allowed));
             $u['id'] = $uid;
             // Клиент присылает is_blocked: false при каждом сохранении профиля.
@@ -4389,12 +4366,6 @@ try {
             if ($regEmail !== null) {
                 $u['email'] = $regEmail;
                 $u['email_verified_at'] = now_iso();
-            }
-            // Пустой пароль — это не «сотри пароль», а «в профиле его нет».
-            if (empty($u['password'])) {
-                unset($u['password']);
-            } elseif (!is_bcrypt($u['password'])) {
-                $u['password'] = password_hash((string)$u['password'], PASSWORD_BCRYPT);
             }
             if ($existing) {
                 // Для уже существующей строки нужен PATCH, а не upsert.
@@ -4432,118 +4403,9 @@ try {
             break;
         }
 
-        // Вход. Сверка переехала сюда с клиента: раньше приложение спрашивало
-        // профиль по номеру телефона и сравнивало пароль у себя — а значит
-        // пароль (или его хеш) уходил наружу всякому, кто знает номер.
-        //
-        // Принимаем обе формы. Пока у части людей пароль лежит открытым
-        // текстом, отказывать им нельзя; зато при удачном входе такой пароль
-        // тут же превращается в хеш — база вычищается сама, по мере того как
-        // люди заходят.
-        case 'dbLogin': {
-            if (jt_try_blocked('login')) {
-                jt_respond(['error' => 'Слишком много попыток входа. Попробуйте через 15 минут.'], 429); exit;
-            }
-            // Почта или, у старых аккаунтов, телефон — одно поле на экране.
-            $ident = trim((string)($args[0] ?? ''));
-            $pass  = (string)($args[1] ?? '');
-            if (str_contains($ident, '@')) {
-                $email = jt_email_norm($ident);
-                $row = $email === null ? null : sb_single('jm_users', ['email' => 'eq.' . $email]);
-            } else {
-                $phone = preg_replace('/\D+/', '', $ident);
-                $row = $phone === '' ? null : sb_single('jm_users', ['phone' => 'eq.' . $phone]);
-            }
-            if (!$row || $pass === '' || empty($row['password'])) { jt_try_note('login'); $data = null; break; }
-
-            $stored = (string)$row['password'];
-            $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
-            if (!$ok) { jt_try_note('login'); $data = null; break; }
-            jt_try_reset('login');
-
-            if (!is_bcrypt($stored)) {
-                try {
-                    sb_update('jm_users', ['id' => 'eq.' . $row['id']],
-                        ['password' => password_hash($pass, PASSWORD_BCRYPT)]);
-                } catch (\Throwable $e) { /* вход важнее, чем перевод в хеш */ }
-            }
-
-            unset($row['password']);
-            $row['has_password'] = true; // вошёл по паролю — значит, он задан
-            $data = ['user' => $row, 'session_token' => jt_session_issue((string)$row['id'])]; break;
-        }
-
         case 'dbSession': {
             $row = jt_self_user($authUid);
             $data = $row ? ['user' => $row] : null;
-            break;
-        }
-
-        // Смена пароля в профиле. Тоже на сервере — на клиенте старый пароль
-        // сравнивался строкой, то есть для всех, у кого уже хеш, смена пароля
-        // попросту не работала.
-        case 'dbChangePassword': {
-            $row = sb_single('jm_users', ['id' => 'eq.' . ($args[0] ?? '')], 'id,password');
-            $old = (string)($args[1] ?? '');
-            $new = (string)($args[2] ?? '');
-            if (!$row || $new === '') { $data = ['ok' => false, 'reason' => 'not_found']; break; }
-
-            $stored = (string)($row['password'] ?? '');
-            // Аккаунт без пароля (регистрация почта → код, 27.09): сверять
-            // «старый пароль» не с чем, и hash_equals('', '') пропустил бы
-            // любого, у кого есть сессия, — он поставил бы свой пароль и
-            // выбил владельца. Пароль такому аккаунту задают только через код
-            // из письма (dbAuthResetPassword).
-            $ok = $stored !== '' && (is_bcrypt($stored) ? password_verify($old, $stored) : hash_equals($stored, $old));
-            if (!$ok) { $data = ['ok' => false, 'reason' => 'wrong_password']; break; }
-
-            // Вместе с паролем гасим выданные токены: смена пароля затем и
-            // делается, что доступ у кого-то лишнего. Свой же токен станет
-            // недействителен, поэтому тут же выдаём новый.
-            $upd = ['password' => password_hash($new, PASSWORD_BCRYPT)];
-            try {
-                sb_update('jm_users', ['id' => 'eq.' . $row['id']],
-                    $upd + ['sessions_valid_from' => now_iso()]);
-            } catch (\Throwable $e) {
-                sb_update('jm_users', ['id' => 'eq.' . $row['id']], $upd);
-            }
-            $data = ['ok' => true, 'session_token' => jt_session_issue((string)$row['id'])]; break;
-        }
-
-        // Сброс чужого пароля — для дашборда.
-        //
-        // Раньше дашборд ходил за этим прямо в Supabase собственным ключом.
-        // Ключ отозвали, и кнопка стала отвечать «Unregistered API key» —
-        // причём тем, кто её нажимал, а не тем, кто мог бы починить. Рабочий
-        // ключ лежит на хостинге, и правильнее ходить сюда, как ходят
-        // остальные страницы дашборда: меньше мест, где живут ключи.
-        case 'adminResetPassword': {
-            $uid = (string)($args[0] ?? '');
-            if ($uid === '') { $data = ['ok' => false, 'reason' => 'no_user']; break; }
-
-            // Шесть знаков без похожих друг на друга: пароль диктуют голосом,
-            // и «0 или O» на том конце провода стоит отдельного звонка.
-            $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            $pass = '';
-            for ($i = 0; $i < 6; $i++) $pass .= $alphabet[random_int(0, strlen($alphabet) - 1)];
-
-            // return=representation: без него запрос по несуществующему id
-            // проходил молча, и дашборд показывал пароль, которого ни у кого нет.
-            // Сброс пароля из дашборда — это обычно ответ на «у меня увели
-            // доступ». Значит и выданные токены надо погасить: иначе тот, кто
-            // увёл, ходит дальше с тем же токеном ещё месяц.
-            $patch = ['password' => password_hash($pass, PASSWORD_BCRYPT)];
-            try {
-                $rows = sb('PATCH', 'jm_users', ['id' => 'eq.' . $uid],
-                    $patch + ['sessions_valid_from' => now_iso()],
-                    ['Prefer: return=representation']);
-            } catch (\Throwable $e) {
-                $rows = sb('PATCH', 'jm_users', ['id' => 'eq.' . $uid], $patch,
-                    ['Prefer: return=representation']);
-            }
-            if (empty($rows)) { $data = ['ok' => false, 'reason' => 'not_found']; break; }
-
-            $data = ['ok' => true, 'password' => $pass];
             break;
         }
 
@@ -4554,38 +4416,6 @@ try {
             try { sb_select('jm_users', ['limit' => '1'], 'id'); } catch (\Throwable $e) {}
             $data = true; break;
 
-        // Удаление аккаунта: своё стирает, чужое обезличивает.
-        //
-        // Раньше здесь было `delete from jm_users`, и приложение вызывало
-        // это напрямую анонимным ключом. С миграции 013 у anon отобраны все
-        // права на таблицу, так что запрос отклонялся — а код ответ не
-        // проверял и показывал «Аккаунт удалён». То есть кнопка не удаляла
-        // ничего вообще, при этом уверяя в обратном.
-        //
-        // Теперь работу делает jm_delete_account (миграция 032) под
-        // служебной ролью, а здесь проверяется главное: что человек удаляет
-        // себя. Без этой проверки по чужому идентификатору стёрся бы чужой
-        // аккаунт — функции всё равно, чей номер ей передали.
-        case 'dbDeleteAccount': {
-            $uid = (string)($args[0] ?? '');
-            $pass = (string)($args[1] ?? '');
-            if ($uid === '' || $pass === '') {
-                $data = ['error' => 'Нужны идентификатор и пароль']; break;
-            }
-            $u = sb_single('jm_users', ['id' => 'eq.' . $uid], 'id,password');
-            if (!$u) { $data = ['error' => 'Пользователь не найден']; break; }
-            $stored = (string)($u['password'] ?? '');
-            $ok = is_bcrypt($stored) ? password_verify($pass, $stored) : hash_equals($stored, $pass);
-            if (!$ok) { $data = ['error' => 'Неверный пароль']; break; }
-
-            // Резюме и сертификаты лежат не в таблице, а в Storage: каскад БД
-            // удалит метаданные, но сами объекты без этой уборки остались бы навсегда.
-            jt_purge_user_storage($uid);
-
-            $data = sb_rpc('jm_delete_account', ['uid' => $uid]);
-            break;
-        }
-
         // args: [uid, code] — удаление кодом из письма (цель delete). Код
         // выпускается только на подтверждённую почту аккаунта из сессии, а
         // uid сверяется с сессией через $selfArgFns. Пароль не нужен: у
@@ -4594,7 +4424,7 @@ try {
             $uid = (string)($args[0] ?? '');
             $me = sb_single('jm_users', ['id' => 'eq.' . $uid], 'id,email,email_verified_at');
             if (!$me || empty($me['email']) || empty($me['email_verified_at'])) {
-                jt_respond(['error' => 'У аккаунта нет подтверждённой почты. Удалите его по паролю'], 409); exit;
+                jt_respond(['error' => 'У аккаунта нет подтверждённой почты. Напишите на support@jobtoo.ru'], 409); exit;
             }
             if (jt_try_blocked('code')) {
                 jt_respond(['error' => 'Слишком много попыток. Попробуйте через 15 минут.'], 429); exit;
@@ -5026,10 +4856,9 @@ try {
                 }
                 $userId = (string)$authUid;
             }
-            // reset и login отвечают одинаково независимо от того, есть ли
-            // такая почта: иначе по форме входа/восстановления можно
-            // перебирать, чья почта у нас есть.
-            if ($purpose === 'reset' || $purpose === 'login') {
+            // login отвечает одинаково независимо от того, есть ли такая
+            // почта: иначе по форме входа можно перебирать, чья почта у нас есть.
+            if ($purpose === 'login') {
                 if (!$owner || !empty($owner['is_blocked'])) { $data = ['ok' => true]; break; }
                 $userId = (string)$owner['id'];
             }
@@ -5100,33 +4929,6 @@ try {
             break;
         }
 
-        // args: [ticket, newPassword] → { user, session_token }. Все прежние
-        // сессии гаснут: пароль сбрасывают как раз тогда, когда доступ мог
-        // оказаться не только у владельца.
-        case 'dbAuthResetPassword': {
-            $t = jt_auth_ticket_check((string)($args[0] ?? ''), 'reset', jt_session_key());
-            if ($t === null) { jt_respond(['error' => 'Код устарел. Начните заново'], 400); exit; }
-            $new = (string)($args[1] ?? '');
-            $bad = jt_password_problem($new);
-            if ($bad !== null) { jt_respond(['error' => $bad], 400); exit; }
-            $row = sb_single('jm_users', ['id' => 'eq.' . (string)$t['uid'], 'email' => 'eq.' . $t['email']], 'id,is_blocked,sessions_valid_from');
-            if (!$row || !empty($row['is_blocked'])) { jt_respond(['error' => 'Аккаунт не найден'], 404); exit; }
-            // Квитанция одноразовая: сброс ставит sessions_valid_from = сейчас,
-            // и та же квитанция второй раз уже «старше» — как и после любой
-            // другой смены пароля.
-            if (!empty($row['sessions_valid_from']) && (int)strtotime((string)$row['sessions_valid_from']) >= (int)$t['iat']) {
-                jt_respond(['error' => 'Код уже использован. Начните заново'], 400); exit;
-            }
-            sb_update('jm_users', ['id' => 'eq.' . $row['id']], [
-                'password' => password_hash($new, PASSWORD_BCRYPT),
-                'sessions_valid_from' => now_iso(),
-            ]);
-            jt_try_reset('login');
-            $data = ['user' => jt_self_user((string)$row['id']),
-                'session_token' => jt_session_issue((string)$row['id'])];
-            break;
-        }
-
         // args: [ticket] → { user }. Почта к старому аккаунту по телефону.
         case 'dbAuthAttachEmail': {
             $t = jt_auth_ticket_check((string)($args[0] ?? ''), 'attach', jt_session_key());
@@ -5161,8 +4963,8 @@ try {
             }
             if ($digits !== '') {
                 // «Номер уже указан в другом аккаунте» — это ответ на вопрос
-                // «есть ли у номера аккаунт». Тот же лимит, что у
-                // dbCheckPhoneExists, иначе перебор номеров шёл бы без предела.
+                // «есть ли у номера аккаунт» — лимит, иначе перебор номеров
+                // шёл бы без предела.
                 if (jt_try_blocked('phone')) {
                     jt_respond(['error' => 'Слишком много проверок. Попробуйте через 15 минут.'], 429); exit;
                 }
@@ -5176,13 +4978,6 @@ try {
             $data = ['ok' => true, 'phone' => $digits === '' ? null : $digits];
             break;
         }
-
-        case 'dbCheckPhoneExists':
-            if (jt_try_blocked('phone')) {
-                jt_respond(['error' => 'Слишком много проверок. Попробуйте через 15 минут.'], 429); exit;
-            }
-            jt_try_note('phone');
-            $data = sb_single('jm_users', ['phone' => 'eq.' . $args[0]], 'id') !== null; break;
 
         // Как быстро человек отвечает — для чужого профиля.
         //
@@ -5305,7 +5100,7 @@ try {
         }
 
         // Старый клиентский вход по номеру возвращал всю строку, включая
-        // пароль. Современный вход — только dbLogin; этот путь закрыт.
+        // пароль. Вход теперь только кодом из письма; этот путь закрыт.
         case 'dbGetUserByPhone':
             jt_respond(['error' => 'Deprecated endpoint'], 410); exit;
 

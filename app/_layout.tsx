@@ -126,7 +126,7 @@ function AuthGuard() {
   const pathname = usePathname();
   const ctx = React.useContext(AppContext);
 
-  const publicPaths = new Set(['/', '/login', '/reset-password', '/register-worker', '/register-employer', '/legal', '/perm-vacancy-detail']);
+  const publicPaths = new Set(['/', '/login', '/register-worker', '/register-employer', '/legal', '/perm-vacancy-detail']);
 
   useEffect(() => {
     if (!ctx) return;
@@ -275,7 +275,6 @@ export default function RootLayout() {
             <Stack.Screen name="register-worker" />
             <Stack.Screen name="register-employer" />
             <Stack.Screen name="login" />
-            <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
             <Stack.Screen name="legal" />
             <Stack.Screen name="chat-room" />
             <Stack.Screen name="rate" options={{ presentation: 'modal' }} />

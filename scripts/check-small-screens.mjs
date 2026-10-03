@@ -135,7 +135,6 @@ function dbResponse(fn, args) {
       return CURRENT
         ? { stamp: LEGAL_STAMP, docs: {}, source: 'small-screen', accepted_at: iso(now) }
         : null;
-    case 'dbCheckPhoneExists': return false;
     case 'dbGetUsers': return [worker, employer];
     case 'dbGetUserById': return [worker, employer].find(u => u.id === args?.[0]) ?? null;
     case 'dbGetVacancies': return [vacancy];
@@ -202,7 +201,6 @@ const screens = [
   // Гость
   { id: 'start', url: '/' },
   { id: 'login', url: '/login' },
-  { id: 'reset-password', url: '/reset-password' },
   { id: 'register-worker', url: '/register-worker', back: true, backTo: /^\/$/ },
   { id: 'register-employer', url: '/register-employer', back: true, backTo: /^\/$/ },
   { id: 'legal-list', url: '/legal', back: true, backTo: /^\/$/ },
