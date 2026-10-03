@@ -520,16 +520,17 @@ function MetaBit({ name, text, color }: { name: IconName; text: string; color?: 
 }
 
 const gB = StyleSheet.create({
+  // Плашка гостя в стиле JT: светлая полоса с чёрным низом, кнопка — наклейка.
   banner: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    backgroundColor: Colors.primary,
-    paddingHorizontal: rs(14), paddingVertical: rs(9),
+    flexDirection: 'row', alignItems: 'center', gap: rs(10),
+    backgroundColor: JT.accentSoft, borderBottomWidth: 2, borderBottomColor: JT.ink,
+    paddingHorizontal: rs(14), paddingVertical: rs(10),
   },
-  bannerTxt: { flex: 1, color: '#fff', fontSize: rf(12), fontWeight: '600' },
+  bannerTxt: { flex: 1, color: JT.ink, fontSize: rf(13), lineHeight: rf(18), fontFamily: JT_FONT.bold },
   bannerCta: {
-    color: Colors.primary, backgroundColor: '#fff',
-    fontSize: rf(12), fontWeight: '800',
-    paddingHorizontal: rs(10), paddingVertical: rs(4), borderRadius: rs(8),
+    color: JT.ink, backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+    fontSize: rf(13), fontFamily: JT_FONT.heavy,
+    paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: rs(14),
     overflow: 'hidden',
   },
 });
@@ -1767,7 +1768,7 @@ function WorkerPermMode() {
     <View style={{ flex: 1 }}>
       {isGuest && (
         <TouchableOpacity style={gB.banner} activeOpacity={0.85} onPress={() => promptRegister({ vacancyKind: 'permanent' })}>
-          <Ionicons name="lock-closed" size={rs(15)} color="#fff" />
+          <Ionicons name="lock-closed" size={rs(16)} color={JT.ink} />
           <Text style={gB.bannerTxt}>Вы смотрите как гость. Зарегистрируйтесь, чтобы откликаться</Text>
           <Text style={gB.bannerCta}>Войти</Text>
         </TouchableOpacity>

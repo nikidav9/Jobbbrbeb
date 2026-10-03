@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Radius } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { rs, rf } from '@/constants/scale';
 
-import { JT_FONT } from '@/constants/jt';
+import { JT, JT_FONT } from '@/constants/jt';
 type Contact =
   /** Партнёрская вакансия: показываем домен источника, ведём на саму вакансию. */
   | { kind: 'source'; domain: string; onOpen: () => void }
@@ -88,10 +88,10 @@ const styles = StyleSheet.create({
   company: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.textPrimary },
   skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   skeleton: { height: rs(16), borderRadius: rs(8), backgroundColor: Colors.divider },
-  lockedNote: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: Colors.textMuted },
+  lockedNote: { fontFamily: JT_FONT.medium, fontSize: rf(13.5), color: JT.textSecondary },
   loginBtn: {
-    alignSelf: 'flex-start', paddingHorizontal: rs(18), paddingVertical: rs(9),
-    borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.primary,
+    alignSelf: 'flex-start', paddingHorizontal: rs(20), paddingVertical: rs(9),
+    borderRadius: rs(20), borderWidth: 2, borderColor: JT.ink, backgroundColor: JT.accent,
   },
-  loginTxt: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: Colors.primary },
+  loginTxt: { fontSize: rf(14), fontFamily: JT_FONT.bold, color: JT.ink },
 });

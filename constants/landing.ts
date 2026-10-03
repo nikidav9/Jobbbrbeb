@@ -60,6 +60,17 @@ var standalone=matchMedia('(display-mode: standalone)').matches||navigator.stand
 var desk=matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
 if((p==='/'||p==='/index.html')&&desk&&!tg&&!standalone&&ss.getItem('jt_app')!=='1'){
 document.documentElement.className+=' jt-landing';window.__JT_LANDING__=true;}
+// «Открыть в браузере» с сайта: в приложении остаётся кнопка «На сайт» (03.10.2026,
+// «нет кнопки вернуться»). Флаг jt_site ставит только клик на сайте: открытие по
+// ?app=1, из Telegram и с телефона вернуться на сайт не предлагают — его там нет.
+window.__jtSiteBack=function(){if(document.getElementById('jtl-back')||!document.body)return;
+var b=document.createElement('button');b.id='jtl-back';b.type='button';b.setAttribute('aria-label','Вернуться на сайт');
+b.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg><span>На сайт</span>';
+b.style.cssText='position:fixed;left:16px;bottom:16px;z-index:2147483000;display:flex;align-items:center;gap:8px;padding:10px 16px;border:2px solid #141414;border-radius:999px;background:#fff;color:#141414;cursor:pointer;box-shadow:3px 3px 0 #141414;font:700 14px/1 "JTSplashManrope",-apple-system,"Segoe UI",sans-serif';
+b.onclick=function(){try{ss.removeItem('jt_app');ss.removeItem('jt_site');}catch(_){}L.href='/';};
+document.body.appendChild(b);};
+if(desk&&!tg&&!standalone&&!window.__JT_LANDING__&&ss.getItem('jt_site')==='1'){
+if(document.body)window.__jtSiteBack();else document.addEventListener('DOMContentLoaded',window.__jtSiteBack);}
 }catch(e){}})();`;
 
 export const LANDING_STYLE = `
@@ -591,8 +602,9 @@ var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
 root.addEventListener('click',function(e){
   var t=e.target.closest&&e.target.closest('[data-jtl-open]');if(!t)return;
   e.preventDefault();
-  try{sessionStorage.setItem('jt_app','1');}catch(_){}
+  try{sessionStorage.setItem('jt_app','1');sessionStorage.setItem('jt_site','1');}catch(_){}
   window.__JT_LANDING__=false;if(video)video.pause();
+  if(window.__jtSiteBack)window.__jtSiteBack();
   document.documentElement.className=document.documentElement.className.replace(/\\s*jt-landing/g,'');
 });
 

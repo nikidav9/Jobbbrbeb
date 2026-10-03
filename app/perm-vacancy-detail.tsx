@@ -38,7 +38,7 @@ import { permVacancyInfoLines } from '@/services/vacancyCard';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { BackButton } from '@/components/ui/BackButton';
 
-import { JT_FONT } from '@/constants/jt';
+import { JT, JT_FONT } from '@/constants/jt';
 export default function PermVacancyDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -155,7 +155,9 @@ export default function PermVacancyDetailScreen() {
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setAuthModalDismissed(true)} />
         <Animated.View style={[styles.authSheet, authSwipe.animStyle]}>
           <View {...authSwipe.panHandlers} style={{ alignSelf: 'stretch' }}><SheetHandle /></View>
-          <Ionicons name="hand-left-outline" size={36} color={Colors.primary} style={{ marginBottom: 10, marginTop: 4 }} />
+          <View style={styles.authIcon}>
+            <Ionicons name="lock-closed" size={rs(28)} color={JT.ink} />
+          </View>
           <Text style={styles.authTitle}>Войдите, чтобы откликнуться</Text>
           <Text style={styles.authSub}>Зарегистрируйтесь или войдите — это бесплатно</Text>
           <TouchableOpacity style={styles.authBtnPrimary} onPress={() => router.push({ pathname: '/login', params: { returnTo: `perm-vacancy-detail?vacancyId=${vacancyId}` } })} activeOpacity={0.85}>
@@ -167,10 +169,10 @@ export default function PermVacancyDetailScreen() {
             <View style={styles.authDividerLine} />
           </View>
           <TouchableOpacity style={styles.authBtnSecondary} onPress={startWorkerRegistration} activeOpacity={0.85}>
-            <Text style={styles.authBtnSecondaryTxt}>Ищу работу — Зарегистрироваться</Text>
+            <Text style={styles.authBtnSecondaryTxt}>Зарегистрироваться</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.authBtnSecondary, { marginTop: 8 }]} onPress={() => router.push('/register-employer')} activeOpacity={0.85}>
-            <Text style={styles.authBtnSecondaryTxt}>Ищу сотрудников — Написать нам</Text>
+            <Text style={styles.authBtnSecondaryTxt}>Я представляю компанию</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -778,22 +780,23 @@ const styles = StyleSheet.create({
   detailNavText: { fontSize: rf(10), fontFamily: JT_FONT.semi, color: Colors.textMuted },
   detailNavTextActive: { color: Colors.primary },
 
+  // Гостевая полоса в стиле JT: кремовый фон, чёрный верх, кнопки-наклейки.
   guestBar: {
     flexDirection: 'row', gap: rs(10),
     paddingHorizontal: rs(16), paddingVertical: rs(12),
-    borderTopWidth: 1, borderTopColor: Colors.divider,
-    backgroundColor: Colors.outerBg,
+    borderTopWidth: 2, borderTopColor: JT.ink,
+    backgroundColor: JT.background,
   },
   guestBtnPrimary: {
-    flex: 1, backgroundColor: Colors.primary,
-    borderRadius: rs(10), paddingVertical: rs(13), alignItems: 'center',
+    flex: 1, backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+    borderRadius: rs(26), paddingVertical: rs(13), alignItems: 'center',
   },
-  guestBtnPrimaryTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.semi },
+  guestBtnPrimaryTxt: { color: JT.ink, fontSize: rf(15), fontFamily: JT_FONT.heavy },
   guestBtnSecondary: {
-    flex: 1, backgroundColor: Colors.primaryLight,
-    borderRadius: rs(10), paddingVertical: rs(13), alignItems: 'center',
+    flex: 1, backgroundColor: JT.surface, borderWidth: 2, borderColor: JT.ink,
+    borderRadius: rs(26), paddingVertical: rs(13), alignItems: 'center',
   },
-  guestBtnSecondaryTxt: { color: Colors.primary, fontSize: rf(15), fontFamily: JT_FONT.semi },
+  guestBtnSecondaryTxt: { color: JT.ink, fontSize: rf(15), fontFamily: JT_FONT.heavy },
 
   authOverlay: {
     flex: 1,
@@ -801,33 +804,41 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   authSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: rs(24), borderTopRightRadius: rs(24),
+    backgroundColor: JT.background,
+    borderTopLeftRadius: rs(28), borderTopRightRadius: rs(28),
+    borderTopWidth: 2, borderLeftWidth: 2, borderRightWidth: 2, borderColor: JT.ink,
     paddingHorizontal: rs(24), paddingTop: rs(4), paddingBottom: rs(40),
     alignItems: 'center', gap: 0,
   },
-  authCloseTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted },
-  authEmoji: { fontFamily: JT_FONT.medium, fontSize: rf(36), marginBottom: rs(10), marginTop: rs(4) },
-  authTitle: { fontSize: rf(20), fontFamily: JT_FONT.heavy, color: Colors.textPrimary, textAlign: 'center' },
+  authCloseTxt: { fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textTertiary },
+  authIcon: {
+    width: rs(64), height: rs(64), borderRadius: rs(32), borderWidth: 2, borderColor: JT.ink,
+    backgroundColor: JT.accentSoft, alignItems: 'center', justifyContent: 'center',
+    marginBottom: rs(14), marginTop: rs(4),
+  },
+  authTitle: {
+    fontSize: rf(20), lineHeight: rf(25), fontFamily: JT_FONT.head, color: JT.ink,
+    textAlign: 'center', letterSpacing: -0.2,
+  },
   authSub: {
-    fontFamily: JT_FONT.medium, fontSize: rf(14), color: Colors.textMuted, textAlign: 'center',
-    marginTop: rs(6), marginBottom: rs(20), lineHeight: rf(20),
+    fontFamily: JT_FONT.medium, fontSize: rf(14), color: JT.textSecondary, textAlign: 'center',
+    marginTop: rs(8), marginBottom: rs(20), lineHeight: rf(20),
   },
   authBtnPrimary: {
-    width: '100%', backgroundColor: Colors.primary,
-    borderRadius: rs(100), paddingVertical: rs(15), alignItems: 'center',
+    width: '100%', backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink,
+    borderRadius: rs(29), height: rs(56), alignItems: 'center', justifyContent: 'center',
   },
-  authBtnPrimaryTxt: { color: '#fff', fontSize: rf(15), fontFamily: JT_FONT.bold },
+  authBtnPrimaryTxt: { color: JT.ink, fontSize: rf(17), fontFamily: JT_FONT.bold },
   authDivider: {
     flexDirection: 'row', alignItems: 'center',
     gap: rs(10), marginVertical: rs(14), width: '100%',
   },
-  authDividerLine: { flex: 1, height: 1, backgroundColor: Colors.divider },
-  authDividerTxt: { fontFamily: JT_FONT.medium, fontSize: rf(13), color: Colors.textMuted },
+  authDividerLine: { flex: 1, height: 1.5, backgroundColor: JT.borderSoft },
+  authDividerTxt: { fontFamily: JT_FONT.bold, fontSize: rf(13), color: JT.textTertiary },
   authBtnSecondary: {
-    width: '100%', borderWidth: 1.5, borderColor: Colors.inputBorder,
-    borderRadius: rs(100), paddingVertical: rs(14), alignItems: 'center',
-    backgroundColor: Colors.bg,
+    width: '100%', borderWidth: 2, borderColor: JT.ink,
+    borderRadius: rs(27), height: rs(52), alignItems: 'center', justifyContent: 'center',
+    backgroundColor: JT.surface,
   },
-  authBtnSecondaryTxt: { fontSize: rf(14), fontFamily: JT_FONT.semi, color: Colors.textPrimary },
+  authBtnSecondaryTxt: { fontSize: rf(15), fontFamily: JT_FONT.bold, color: JT.ink },
 });
