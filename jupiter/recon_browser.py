@@ -580,7 +580,8 @@ def main(argv: list[str] | None = None) -> int:
 
         def after(res: BrowserReconResult) -> None:
             kb.learn(normalize_host(res.start_url), res.learned, used=res.knowledge_used,
-                     klass=res.klass, verdict=str((res.rehearsal or {}).get("verdict") or ""))
+                     klass=res.klass, verdict=str((res.rehearsal or {}).get("verdict") or ""),
+                     reason_code=res.reason_code or "")
             try:
                 kb.save(args.knowledge)
             except OSError as exc:

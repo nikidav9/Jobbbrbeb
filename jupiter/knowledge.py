@@ -48,6 +48,11 @@ MAX_SITE_FIELDS = 80
 MAX_SITE_QUESTIONS = 40
 # Классы итога, при которых знание сайта не сработало (до анкеты не дошли).
 FAILED_CLASSES = ("no_vacancy", "form_unmapped")
+# form_unmapped с этим кодом — не провал: анкета пройдена до вопросов
+# работодателя, дальше отвечает человек (site_compat._recon_ready считает это
+# успехом). 03.10.2026: 22 из 25 «сломанных» за ночь были именно такими, и
+# база стирала у них кнопку отклика.
+NOT_A_FAILURE = ("NEEDS_ANSWERS",)
 
 
 def norm(text: Any, limit: int = 80) -> str:
@@ -125,7 +130,7 @@ class Knowledge:
     # ── обучение (только ночная разведка) ───────────────────────────────
 
     def learn(self, host: str, learned: dict | None, *, used: bool, klass: str,
-              verdict: str = "", now: float | None = None) -> None:
+              verdict: str = "", reason_code: str = "", now: float | None = None) -> None:
         host = (host or "").lower()
         if not host:
             return
@@ -149,7 +154,7 @@ class Knowledge:
             if verdict == "would_send":
                 entry["confirmed_at"] = _iso(now)
                 entry.pop("broken_at", None)
-            elif used and klass in FAILED_CLASSES:
+            elif used and klass in FAILED_CLASSES and reason_code not in NOT_A_FAILURE:
                 # Знание было, а до анкеты не дошли: сайт изменился.
                 entry.pop("confirmed_at", None)
                 entry.pop("apply", None)
