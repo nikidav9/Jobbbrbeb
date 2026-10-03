@@ -253,7 +253,6 @@ JobMatch/
 │   └── feature/              # Бизнес-компоненты
 │       ├── MetroPicker.tsx   # Выбор станции метро
 │       ├── WorkTypeSelector.tsx # Выбор типа работы
-│       ├── PhoneInput.tsx    # Ввод телефона
 │       └── VacancyDetailModal.tsx # Модалка деталей вакансии
 │
 ├── contexts/

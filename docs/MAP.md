@@ -7,6 +7,8 @@
 тем же коммитом. Карта, отставшая от кода, хуже её отсутствия: она уводит не туда
 с полной уверенностью.
 
+**Срез 1 чистки (03.10.2026):** удалены неиспользуемые MetroMap, PhoneInput, LegalLinks, AboutYouStep, services/pay, constants/{help,roleIcons,metroCoords,lavkaLogoData}, components/index.ts, шрифт SpaceMono и две неиспользуемые картинки.
+
 **Аудит архитектуры 03.10.2026** (мёртвый код, зависимости, дубли, возможные ошибки) — `docs/audit-2026-10-03/README.md`.
 
 ## Что это за проект
