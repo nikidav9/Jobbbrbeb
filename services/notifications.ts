@@ -98,20 +98,30 @@ function getExpoProjectId(): string | undefined {
   );
 }
 
+// Почему токен не получился: показывается в настройках уведомлений. Без этого
+// человек видел бесконечное «Подключаем…» или общее «проверьте интернет»
+// (03.10.2026, Android: токен не оформлялся, причина была не видна).
+let lastPushError = '';
+export function getPushRegisterDebug(): string { return lastPushError; }
+
 export async function registerForPushNotifications(userId: string): Promise<boolean> {
+  lastPushError = '';
   if (Platform.OS === 'web') return false;
   if (await AsyncStorage.getItem(NOTIFICATION_DISABLED_KEY).catch(() => null) === '1') {
     console.info('[push] Disabled by user in profile settings.');
+    lastPushError = 'уведомления выключены в настройках приложения';
     return false;
   }
   if (!Device.isDevice) {
     console.info('[push] Skipped push token registration: simulator/emulator detected.');
+    lastPushError = 'эмулятор: токен выдаётся только на настоящем устройстве';
     return false;
   }
 
   const projectId = getExpoProjectId();
   if (!projectId) {
     console.warn('[push] Expo project ID is missing; push token registration skipped.');
+    lastPushError = 'в сборке нет идентификатора проекта Expo';
     return false;
   }
 
@@ -122,6 +132,7 @@ export async function registerForPushNotifications(userId: string): Promise<bool
     return true;
   } catch (error) {
     console.warn('[push] Failed to register Expo push token:', error);
+    lastPushError = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 160);
     return false;
   }
 }

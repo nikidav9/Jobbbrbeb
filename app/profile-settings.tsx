@@ -19,9 +19,10 @@ import * as ExpoNotifications from 'expo-notifications';
 import * as Updates from 'expo-updates';
 import { LEGAL_DOCS, type LegalDocKey } from '@/constants/legal';
 import {
-  NOTIFICATION_DISABLED_KEY, registerForPushNotifications,
+  NOTIFICATION_DISABLED_KEY, registerForPushNotifications, getPushRegisterDebug,
 } from '@/services/notifications';
 import { registerWebPush, getWebPushDebug, isWebPushRegistered } from '@/lib/webPush';
+
 import { clearRuntimeCache } from '@/services/storage';
 import { BackButton } from '@/components/ui/BackButton';
 import { JT } from '@/constants/jt';
@@ -49,6 +50,15 @@ const ABOUT_DOCS: { key: LegalDocKey; icon: IonName }[] = [
 // Иконки плиток — пути из docs/design/settings-help/03-settings.html.
 const iconProps = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none' } as const;
 const stroke = { stroke: JT.ink, strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
+/** Шаг включения уведомлений с потолком по времени: зависший шаг становится понятной ошибкой. */
+function stepWithTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`Не получилось включить: ${what}.`)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 const ChatIcon = () => (
   <Svg {...iconProps}>
     <Path d="M4 5h16v11H9l-5 4z" {...stroke} />
@@ -327,12 +337,14 @@ export default function ProfileSettingsScreen() {
           }
         }
       } else {
-        let permission = await ExpoNotifications.getPermissionsAsync();
+        // Каждый шаг с таймаутом: раньше окно висело на «Подключаем…» без конца,
+        // если система не отвечала или токен не выдавался.
+        let permission = await stepWithTimeout(ExpoNotifications.getPermissionsAsync(), 10_000, 'система не ответила на проверку разрешения');
         if (permission.status !== 'granted' && permission.canAskAgain !== false) {
-          permission = await ExpoNotifications.requestPermissionsAsync();
+          permission = await stepWithTimeout(ExpoNotifications.requestPermissionsAsync(), 60_000, 'не дождались ответа на запрос разрешения');
         }
         if (permission.status === 'granted') {
-          ok = await registerForPushNotifications(currentUser.id);
+          ok = await stepWithTimeout(registerForPushNotifications(currentUser.id), 25_000, 'сервис Google/Expo не выдал токен за 25 секунд');
         } else if (permission.canAskAgain === false) {
           setNotificationState('blocked');
           setNotificationMessage('Разрешение заблокировано системой. Откройте настройки устройства.');
@@ -345,7 +357,7 @@ export default function ProfileSettingsScreen() {
         setNotificationMessage(
           Platform.OS === 'web'
             ? (getWebPushDebug() || 'Не удалось подключить web-push. Попробуйте ещё раз.')
-            : 'Разрешение получено, но push-токен не зарегистрировался. Проверьте интернет и повторите.',
+            : `Разрешение получено, но push-токен не зарегистрировался${getPushRegisterDebug() ? ` (${getPushRegisterDebug()})` : ''}. Проверьте интернет и повторите.`,
         );
         return;
       }
