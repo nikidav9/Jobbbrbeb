@@ -1,9 +1,10 @@
 """Капча в браузерном движке: найти, показать человеку, ввести его ответ.
 
 Ничего не распознаёт и не обходит. Задача модуля — только передать человеку то,
-что человек может решить сам: картинку с текстом (text_image). Чекбокс,
-сетка картинок и невидимая капча сюда не передаются — их модуль лишь
-опознаёт, чтобы вызывающий код знал, что передавать нечего.
+что человек может решить сам: картинку с текстом (text_image) — человек вводит
+слово, а галочку «я не робот» и сетку картинок (checkbox, image_grid) — человек
+нажимает на снимок рамки капчи (tap, 03.10.2026), сервер повторяет его нажатия
+в своём браузере. Невидимая капча интерфейса не имеет — передавать нечего.
 
 Работает с синхронным Playwright `Page`. Поиск идёт на главной странице и
 внутри iframe известных вендоров (SmartCaptcha и др.). Найденные элементы
@@ -22,6 +23,18 @@ KIND_INVISIBLE = "invisible"    # без интерфейса: передать 
 KIND_UNKNOWN = "unknown"        # признаки капчи есть, что это — неясно
 
 MAX_ANSWER_LEN = 64
+MAX_TAPS = 12
+
+# Вендоры, чьи рамки (iframe) можно показать человеку и нажать на снимке.
+TAP_VENDORS = ("recaptcha", "hcaptcha", "turnstile", "smartcaptcha")
+# Адрес окна с заданием (сетка картинок) — оно открывается поверх страницы.
+_CHALLENGE_NEEDLES = ("/bframe", "frame=challenge")
+
+# Поля, куда вендор кладёт готовый ответ-токен, когда капча пройдена.
+_TOKEN_JS = """() => [...document.querySelectorAll(
+  'textarea[name=g-recaptcha-response], textarea[name=h-captcha-response], ' +
+  'input[name=h-captcha-response], input[name=cf-turnstile-response], input[name=smart-token]'
+)].some(e => (e.value || '').length > 20)"""
 
 # Вендор по адресу iframe.
 _FRAME_VENDORS = (
@@ -121,6 +134,12 @@ class CaptchaInfo:
     def transferable(self) -> bool:
         """Можно ли передать человеку: картинка + поле ввода."""
         return self.kind == KIND_TEXT_IMAGE and bool(self.image_selector and self.input_selector)
+
+    @property
+    def tappable(self) -> bool:
+        """Можно ли передать человеку снимком для нажатий: галочка или сетка
+        картинок рамки известного вендора."""
+        return self.kind in (KIND_CHECKBOX, KIND_IMAGE_GRID) and self.vendor in TAP_VENDORS
 
 
 def _scope(page, info: CaptchaInfo):
@@ -268,3 +287,111 @@ def enter_answer(page, info: CaptchaInfo, text: str, *, wait_ms: int = 3000) -> 
         except Exception:
             return True  # страница или фрейм сменились — капча ушла
     return False
+
+
+# ── Нажатия на снимок (галочка «я не робот», сетка картинок) ────────────────
+
+
+def parse_taps(answer: str) -> list[tuple[float, float]]:
+    """«0.31,0.52;0.7,0.2» → [(0.31, 0.52), (0.7, 0.2)]. Точки — доли снимка 0..1.
+
+    Не по форме — CaptchaError: на сайт нажатия идут только от человека и
+    только внутри рамки капчи.
+    """
+    points = []
+    for part in (answer or "").strip().split(";"):
+        try:
+            x_text, y_text = part.split(",")
+            x, y = float(x_text), float(y_text)
+        except ValueError:
+            raise CaptchaError("Нажатия не похожи на точки снимка") from None
+        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+            raise CaptchaError("Нажатие вне снимка капчи")
+        points.append((x, y))
+    if not points or len(points) > MAX_TAPS:
+        raise CaptchaError(f"Нужно от 1 до {MAX_TAPS} нажатий")
+    return points
+
+
+def tap_frame(page) -> tuple[str, bool] | None:
+    """Видимая рамка капчи известного вендора: (css, это ли окно с заданием).
+
+    Окно с заданием (сетка картинок) важнее: пока оно открыто, галочка под ним
+    ничего не решает. Среди прочих берётся самая большая видимая рамка.
+    """
+    best = None  # (приоритет, площадь, css, окно)
+    for css, _vendor, src in _frames(page):
+        try:
+            loc = page.locator(css)
+            if not loc.is_visible():
+                continue
+            box = loc.bounding_box()
+        except Exception:
+            continue
+        if not box or box["width"] < 20 or box["height"] < 20:
+            continue
+        challenge = any(n in src for n in _CHALLENGE_NEEDLES)
+        key = (1 if challenge else 0, box["width"] * box["height"])
+        if best is None or key > best[0]:
+            best = (key, css, challenge)
+    return (best[1], best[2]) if best else None
+
+
+def capture_tap(page, info: CaptchaInfo) -> bytes:
+    """PNG только рамки капчи (без остальной страницы, где есть ПДн)."""
+    if not info.tappable:
+        raise CaptchaError(f"Капчу вида {info.kind} нельзя показать для нажатий")
+    found = tap_frame(page)
+    if not found:
+        raise CaptchaError("Рамка капчи не видна")
+    loc = page.locator(found[0])
+    loc.scroll_into_view_if_needed()
+    return loc.screenshot(type="png")
+
+
+def _solved(page) -> bool:
+    try:
+        return bool(page.evaluate(_TOKEN_JS))
+    except Exception:
+        return False
+
+
+def tap(page, info: CaptchaInfo, points: list[tuple[float, float]], *, wait_ms: int = 4000) -> str:
+    """Повторить нажатия человека внутри рамки капчи.
+
+    'solved' — вендор выдал токен или рамка закрылась; 'again' — открылось
+    (или обновилось) задание, нужен новый снимок; 'failed' — ничего не изменилось.
+    """
+    if not info.tappable:
+        raise CaptchaError(f"Капчу вида {info.kind} нельзя решить нажатиями")
+    if not points or len(points) > MAX_TAPS:
+        raise CaptchaError(f"Нужно от 1 до {MAX_TAPS} нажатий")
+    found = tap_frame(page)
+    if not found:
+        raise CaptchaError("Рамка капчи не видна")
+    loc = page.locator(found[0])
+    loc.scroll_into_view_if_needed()
+    box = loc.bounding_box()
+    if not box:
+        raise CaptchaError("Рамка капчи не видна")
+    for fx, fy in points:
+        x, y = box["x"] + fx * box["width"], box["y"] + fy * box["height"]
+        # Нажатие человека — только внутри рамки капчи: если поверх неё лежит
+        # другой элемент (баннер, кнопка анкеты), клик ушёл бы мимо.
+        top = page.evaluate(
+            "([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.tagName : ''; }",
+            [min(x, box["x"] + box["width"] - 1), min(y, box["y"] + box["height"] - 1)])
+        if top != "IFRAME":
+            raise CaptchaError("Рамка капчи перекрыта другим элементом")
+        page.mouse.click(x, y)
+        page.wait_for_timeout(350)
+    for _ in range(max(1, wait_ms // 250)):
+        page.wait_for_timeout(250)
+        if _solved(page):
+            return "solved"
+        now = tap_frame(page)
+        if now is None:
+            return "solved"  # рамка закрылась: капча пройдена или страница ушла дальше
+        if now[1]:
+            return "again"   # открыто окно с заданием
+    return "failed"

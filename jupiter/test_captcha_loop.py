@@ -280,5 +280,102 @@ class TestWorkerHook(unittest.TestCase):
         self.assertEqual(queue.finished[0][2]["reason_code"], Reason.CAPTCHA_REQUIRED)
 
 
+class TapInfo:
+    transferable = False
+    tappable = True
+
+
+class TapEngine:
+    """Движок с галочкой/сеткой: tap_captcha отдаёт состояния по очереди."""
+
+    def __init__(self, states, infos=None):
+        self.states = list(states)
+        self.infos = list(infos) if infos is not None else [TapInfo()] * 4
+        self.taps: list[list[tuple[float, float]]] = []
+
+    def captcha(self):
+        return self.infos.pop(0) if self.infos else None
+
+    def captcha_tap_png(self, info) -> bytes:
+        return b"\x89PNG-frame"
+
+    def tap_captcha(self, info, points):
+        self.taps.append(points)
+        return self.states.pop(0)
+
+
+class TapQueue(CaptchaQueue):
+    def __init__(self, polls=None):
+        super().__init__(polls)
+        self.kinds: list[str] = []
+
+    def captcha_post(self, task_id, png, kind="text"):
+        self.kinds.append(kind)
+        return super().captcha_post(task_id, png)
+
+
+class TapCaptchaTest(unittest.TestCase):
+    def solve(self, engine, queue):
+        clock = FakeClock()
+        return solve_with_human(engine, queue, "t1", wait_s=60, poll_s=5,
+                                sleep=clock.sleep, clock=clock)
+
+    def test_checkbox_tap_is_replayed_and_solved(self):
+        engine = TapEngine(["solved"])
+        queue = TapQueue([("answered", "0.1,0.5;0.9,0.25")])
+        self.assertEqual(self.solve(engine, queue), "solved")
+        self.assertEqual(queue.kinds, ["tap"])
+        self.assertEqual(engine.taps, [[(0.1, 0.5), (0.9, 0.25)]])
+        self.assertEqual(queue.results, [("t1", "solved")])
+
+    def test_grid_after_checkbox_asks_a_second_time(self):
+        engine = TapEngine(["again", "solved"])
+        queue = TapQueue([("answered", "0.2,0.2"), ("answered", "0.3,0.3;0.8,0.9")])
+        self.assertEqual(self.solve(engine, queue), "solved")
+        self.assertEqual(queue.kinds, ["tap", "tap"])
+        self.assertEqual(len(engine.taps), 2)
+
+    def test_gives_up_after_three_rounds(self):
+        engine = TapEngine(["again"] * 3)
+        queue = TapQueue([("answered", "0.5,0.5")] * 3)
+        self.assertEqual(self.solve(engine, queue), "failed")
+        self.assertEqual(len(queue.posted), 3)
+
+    def test_nothing_changed_is_failed(self):
+        engine = TapEngine(["failed"])
+        queue = TapQueue([("answered", "0.5,0.5")])
+        self.assertEqual(self.solve(engine, queue), "failed")
+        self.assertEqual(queue.results, [("t1", "failed")])
+
+    def test_bad_answer_never_reaches_the_browser(self):
+        for answer in ("слово", "1.5,0.2", "0.5", "0.5,0.5;" * 13):
+            engine = TapEngine(["solved"])
+            queue = TapQueue([("answered", answer)])
+            self.assertEqual(self.solve(engine, queue), "failed", answer)
+            self.assertEqual(engine.taps, [], answer)
+
+    def test_no_answer_expires_and_taps_nothing(self):
+        engine = TapEngine(["solved"])
+        queue = TapQueue([("expired", None)])
+        self.assertEqual(self.solve(engine, queue), "expired")
+        self.assertEqual(engine.taps, [])
+
+    def test_lost_lease_stops_before_tapping(self):
+        engine = TapEngine(["solved"])
+        queue = TapQueue([("answered", "0.5,0.5")])
+        queue.heartbeat = lambda task_id: False
+        self.assertEqual(self.solve(engine, queue), "expired")
+        self.assertEqual(engine.taps, [])
+
+    def test_invisible_captcha_is_not_handed_over(self):
+        class Invisible:
+            transferable = False
+            tappable = False
+        engine = TapEngine(["solved"], infos=[Invisible()])
+        queue = TapQueue()
+        self.assertEqual(self.solve(engine, queue), "unsupported")
+        self.assertEqual(queue.posted, [])
+
+
 if __name__ == "__main__":
     unittest.main()

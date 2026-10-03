@@ -9,6 +9,8 @@ import {
 
 export type JupiterCaptcha = {
   id: string;
+  /** text — ввести слово; tap — нажать на снимок (галочка, сетка картинок). */
+  kind: 'text' | 'tap';
   /** PNG в base64, без префикса data:. */
   imagePng: string;
   company: string | null;
@@ -19,7 +21,10 @@ export type JupiterCaptcha = {
 export async function jupiterCaptchaGet(userId: string, applicationId: string): Promise<JupiterCaptcha | null> {
   const r = await dbJupiterCaptchaGet(userId, applicationId);
   if (!r) return null;
-  return { id: r.id, imagePng: r.image_png, company: null, expiresAt: r.expires_at };
+  return {
+    id: r.id, kind: r.kind === 'tap' ? 'tap' : 'text',
+    imagePng: r.image_png, company: null, expiresAt: r.expires_at,
+  };
 }
 
 /** Ответ человека на капчу заявки. Сервер ищет ждущую капчу по заявке сам. */

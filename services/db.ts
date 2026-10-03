@@ -2568,15 +2568,15 @@ export async function dbSupportSend(userId: string, text: string): Promise<void>
 export async function jupiterCaptchaGet(
   userId: string,
   applicationId: string,
-): Promise<{ id: string; image_png: string; expires_at: string } | null> {
-  const r = await proxy<{ id: string; image_png: string; expires_at: string } | null>(
+): Promise<{ id: string; image_png: string; expires_at: string; kind?: string } | null> {
+  const r = await proxy<{ id: string; image_png: string; expires_at: string; kind?: string } | null>(
     'jupiterCaptchaGet',
     [userId, applicationId],
   );
   return r ?? null;
 }
 
-/** Ответ на капчу заявки (до 64 символов). Просроченная даст ошибку 409. */
+/** Ответ на капчу заявки: слово до 64 символов или нажатия «x,y;x,y» (kind = tap). Просроченная даст ошибку 409. */
 export async function jupiterCaptchaAnswer(
   userId: string,
   applicationId: string,

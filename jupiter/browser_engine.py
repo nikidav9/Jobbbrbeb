@@ -1231,6 +1231,18 @@ class JupiterBrowserEngine:
         self._settle()
         return solved
 
+    def captcha_tap_png(self, info: CaptchaInfo) -> bytes:
+        """PNG рамки капчи (галочка, сетка картинок) — человеку для нажатий."""
+        return browser_captcha.capture_tap(self._tab, info)
+
+    def tap_captcha(self, info: CaptchaInfo, points: list[tuple[float, float]]) -> str:
+        """Повторить нажатия человека: 'solved' | 'again' | 'failed'."""
+        if self.read_only:
+            raise EngineSecurityError("Read-only Jupiter engine blocked captcha taps")
+        state = browser_captcha.tap(self._tab, info, points)
+        self._settle()
+        return state
+
     def current_page(self) -> PageState:
         """Свежий снимок текущей вкладки — продолжить с места после капчи."""
         return self._snapshot()

@@ -457,9 +457,13 @@ def _recon_ready(item: dict) -> bool:
     return item.get("klass") == "dry_run_ok" or (
         item.get("reason_code") in ("NEEDS_ANSWERS", "EMAIL_APPLY")
         and item.get("status") == "action_required") or (
-        # Анкета заполнена, осталась картинка с текстом — её вводит человек в
-        # приложении (captcha_loop). Галочки и reCAPTCHA сюда не относятся.
-        item.get("klass") == "captcha" and captcha.get("transferable") is True)
+        # Анкета заполнена, осталась капча, которую решает человек в приложении
+        # (captcha_loop): картинка с текстом — вводит слово, галочка и сетка
+        # картинок известного вендора — нажимает на снимок (03.10.2026).
+        # Невидимая капча сюда не относится. Не вышло у человека — заявка
+        # уходит в «Нужны вы» / «Ждут вас», как и раньше.
+        item.get("klass") == "captcha" and (
+            captcha.get("transferable") is True or captcha.get("tappable") is True))
 
 
 def _file_ok_hosts(path: str, now: float | None = None) -> frozenset[str]:

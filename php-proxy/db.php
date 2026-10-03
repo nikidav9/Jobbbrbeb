@@ -8227,6 +8227,12 @@ try {
         case 'jupiterCaptchaPost': {
             $appId = (string)($args[0] ?? '');
             $img = (string)($args[1] ?? '');
+            // 'text' — слово с картинки; 'tap' — нажатия на снимок (галочка,
+            // выбор картинок): ответ — точки в долях картинки.
+            $kind = (string)($args[2] ?? 'text');
+            if (!in_array($kind, ['text', 'tap'], true)) {
+                jt_respond(['error' => 'Вид капчи: text или tap'], 400); exit;
+            }
             if ($appId === '' || $img === '' || strlen($img) > 200000) {
                 jt_respond(['error' => 'Нужна картинка до 200 КБ'], 400); exit;
             }
@@ -8244,6 +8250,7 @@ try {
                 'application_id' => $appId,
                 'user_id' => (string)$app['user_id'],
                 'image_png' => $img,
+                'kind' => $kind,
                 'status' => 'pending',
                 'created_at' => $now,
                 'expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 600),
@@ -8257,7 +8264,8 @@ try {
             if ($company === '') $company = 'компанию';
             try {
                 notify_user((string)$app['user_id'], 'Нужна капча',
-                    'Введите слово, чтобы отклик в ' . $company . ' ушёл',
+                    ($kind === 'tap' ? 'Нажмите на картинку, чтобы отклик в ' : 'Введите слово, чтобы отклик в ')
+                        . $company . ' ушёл',
                     'jupiter_captcha', ['applicationId' => $appId]);
                 // Id заявки кладём в payload колокольчика (миграция 011): по нему
                 // приложение открывает /jupiter-captcha?id=<id>. Внешний пуш id
@@ -8282,31 +8290,38 @@ try {
                 'application_id' => 'eq.' . (string)($args[1] ?? ''),
                 'status' => 'eq.pending',
                 'order' => 'created_at.desc',
-            ], 'id,image_png,expires_at');
+            ], 'id,image_png,expires_at,kind');
             if ($row && strtotime((string)$row['expires_at']) <= time()) $row = null;
             $data = $row ? [
                 'id' => $row['id'], 'image_png' => $row['image_png'],
                 'expires_at' => $row['expires_at'],
+                'kind' => $row['kind'] ?? 'text',
             ] : null;
             break;
         }
 
-        // Ответ человека: только своя, ждущая, не просроченная; до 64 символов.
+        // Ответ человека: только своя, ждущая, не просроченная. Слово — до 64
+        // символов; нажатия (kind = tap) — до 12 точек «x,y;x,y» в долях 0..1.
         case 'jupiterCaptchaAnswer': {
             $uidArg = (string)($args[0] ?? '');
             $appId = (string)($args[1] ?? '');
             $answer = trim((string)($args[2] ?? ''));
-            if ($answer === '' || mb_strlen($answer) > 64) {
-                jt_respond(['error' => 'Ответ: от 1 до 64 символов'], 400); exit;
-            }
             $row = sb_single('jm_jupiter_captcha', [
                 'user_id' => 'eq.' . $uidArg,
                 'application_id' => 'eq.' . $appId,
                 'status' => 'eq.pending',
                 'order' => 'created_at.desc',
-            ], 'id,expires_at');
+            ], 'id,expires_at,kind');
             if (!$row || strtotime((string)$row['expires_at']) <= time()) {
                 jt_respond(['error' => 'Капча устарела'], 409); exit;
+            }
+            if (($row['kind'] ?? 'text') === 'tap') {
+                $pt = '(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)';
+                if (!preg_match('/^' . $pt . ',' . $pt . '(?:;' . $pt . ',' . $pt . '){0,11}$/', $answer)) {
+                    jt_respond(['error' => 'Ответ: от 1 до 12 нажатий'], 400); exit;
+                }
+            } elseif ($answer === '' || mb_strlen($answer) > 64) {
+                jt_respond(['error' => 'Ответ: от 1 до 64 символов'], 400); exit;
             }
             sb_update('jm_jupiter_captcha', [
                 'id' => 'eq.' . $row['id'], 'user_id' => 'eq.' . $uidArg, 'status' => 'eq.pending',

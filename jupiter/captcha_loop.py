@@ -3,6 +3,9 @@
 Капчу Jupiter не решает сам и никому не отдаёт на распознавание — её решает
 только кандидат. Здесь лишь доставка: снимок капчи уходит в очередь, приложение
 показывает его человеку, ответ возвращается и вводится в ту же живую страницу.
+Два вида: слово с картинки (человек вводит текст) и галочка «я не робот» /
+сетка картинок (человек нажимает на снимок рамки, сервер повторяет нажатия,
+03.10.2026).
 
 Ответ человека нигде не логируется и не попадает в траекторию: это одноразовый
 секрет той страницы, в истории отклика ему не место.
@@ -23,6 +26,9 @@ UNSUPPORTED = "unsupported"
 # Больше двух капч на одну заявку — сайт, скорее всего, гоняет по кругу;
 # дальше пусть человек разбирается сам («Нужны вы»).
 MAX_CAPTCHAS_PER_TASK = 2
+# Нажатия: галочка нередко открывает окно с заданием, а неверный выбор в сетке
+# приносит новую сетку — столько снимков подряд показываем за один заход.
+MAX_TAP_ROUNDS = 3
 
 
 def solve_with_human(
@@ -37,27 +43,72 @@ def solve_with_human(
 ) -> str:
     """Показать капчу человеку и ввести ответ. 'solved'|'failed'|'expired'|'unsupported'."""
     info = engine.captcha()
-    if info is None or not getattr(info, "transferable", False):
+    if info is None:
         return UNSUPPORTED
+    if getattr(info, "transferable", False):
+        return _solve_text(engine, queue, task_id, info, wait_s, poll_s, sleep, clock)
+    if getattr(info, "tappable", False) and callable(getattr(engine, "tap_captcha", None)):
+        return _solve_taps(engine, queue, task_id, info, wait_s, poll_s, sleep, clock)
+    return UNSUPPORTED
 
-    queue.captcha_post(task_id, engine.captcha_png(info))
+
+def _wait_answer(queue: Any, task_id: str, wait_s, poll_s, sleep, clock) -> tuple[str, str | None]:
+    """Ждать ответа человека, держа аренду. ('answered', текст) | ('expired', None)."""
     deadline = clock() + wait_s
     while clock() < deadline:
-        # Держим аренду, пока человек думает. Потеряли её — задача уже не наша,
-        # вводить ответ и продолжать отклик нельзя.
+        # Потеряли аренду — задача уже не наша, вводить ответ нельзя.
         if queue.heartbeat(task_id) is False:
-            return EXPIRED
+            return "expired", None
         status, answer = queue.captcha_poll(task_id)
         if status == "answered":
-            ok = bool(engine.enter_captcha(info, answer))
-            answer = None
-            outcome = SOLVED if ok else FAILED
-            queue.captcha_result(task_id, outcome)
-            return outcome
+            return "answered", answer
         if status == "expired":
-            return EXPIRED
+            return "expired", None
         sleep(poll_s)
-    return EXPIRED
+    return "expired", None
+
+
+def _solve_text(engine, queue, task_id, info, wait_s, poll_s, sleep, clock) -> str:
+    queue.captcha_post(task_id, engine.captcha_png(info))
+    status, answer = _wait_answer(queue, task_id, wait_s, poll_s, sleep, clock)
+    if status != "answered":
+        return EXPIRED
+    ok = bool(engine.enter_captcha(info, answer))
+    answer = None
+    outcome = SOLVED if ok else FAILED
+    queue.captcha_result(task_id, outcome)
+    return outcome
+
+
+def _solve_taps(engine, queue, task_id, info, wait_s, poll_s, sleep, clock) -> str:
+    """Снимок рамки → нажатия человека → те же нажатия в браузере воркера."""
+    from browser_captcha import CaptchaError, parse_taps
+
+    for _ in range(MAX_TAP_ROUNDS):
+        queue.captcha_post(task_id, engine.captcha_tap_png(info), "tap")
+        status, answer = _wait_answer(queue, task_id, wait_s, poll_s, sleep, clock)
+        if status != "answered":
+            return EXPIRED
+        try:
+            state = engine.tap_captcha(info, parse_taps(answer or ""))
+        except CaptchaError:
+            queue.captcha_result(task_id, FAILED)
+            return FAILED
+        finally:
+            answer = None
+        if state == "solved":
+            queue.captcha_result(task_id, SOLVED)
+            return SOLVED
+        queue.captcha_result(task_id, FAILED)
+        if state != "again":
+            return FAILED
+        # Открылось (или обновилось) задание: новый снимок и новый круг.
+        info = engine.captcha()
+        if info is None:
+            return SOLVED
+        if not getattr(info, "tappable", False):
+            return UNSUPPORTED
+    return FAILED
 
 
 def can_ask_human(agent: Any, queue: Any) -> bool:

@@ -66,6 +66,29 @@ check('ответ не принимает просроченную', str_contain
 check('poll закрывает просроченную', str_contains($poll, "'expired'"));
 check('poll отдаёт ответ только в answered', str_contains($poll, "=== 'answered'"));
 
+// ── Нажатия (миграция 146) ──────────────────────────────────────────────────
+$sqlTap = (string)file_get_contents(__DIR__ . '/../supabase/migrations/146_jupiter_captcha_tap.sql');
+check('post принимает только text или tap',
+    str_contains($post, "in_array(\$kind, ['text', 'tap'], true)") && str_contains($post, "'kind' => \$kind"));
+check('get отдаёт вид капчи', str_contains($get, "'kind' => \$row['kind']"));
+check('ответ-нажатия проверяется по виду строки, а не по клиенту',
+    str_contains($ans, "'id,expires_at,kind'") && str_contains($ans, "=== 'tap'"));
+check('миграция 146 добавляет kind с ограничением',
+    str_contains($sqlTap, 'add column if not exists kind text not null default \'text\'')
+    && str_contains($sqlTap, "check (kind in ('text', 'tap'))")
+    && str_contains($sqlTap, 'begin;') && str_contains($sqlTap, 'commit;'));
+// Тот же шаблон, что в db.php: до 12 точек «x,y;x,y» в долях 0..1.
+$pt = '(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)';
+$re = '/^' . $pt . ',' . $pt . '(?:;' . $pt . ',' . $pt . '){0,11}$/';
+check('шаблон нажатий совпадает с db.php', str_contains($ans, "\$pt = '(?:0(?:\\.\\d{1,4})?|1(?:\\.0{1,4})?)';"));
+foreach (['0.5,0.5', '0,1', '0.1234,0.9;1,0', '1.0000,0.0000;0.5000,1.0000', implode(';', array_fill(0, 12, '0.5,0.5'))] as $ok) {
+    check("нажатия принимаются: $ok", preg_match($re, $ok) === 1);
+}
+foreach (['', 'слово', '0.5', '1.2,0.1', '-0.1,0.1', '1.5,0.1', '1.0001,0.1', '0.5,0.5;', '0.12345,0.1', '0.5,0.5;0.5',
+          implode(';', array_fill(0, 13, '0.5,0.5'))] as $bad) {
+    check("нажатия отклоняются: $bad", preg_match($re, $bad) === 0);
+}
+
 // ── База ────────────────────────────────────────────────────────────────────
 check('RLS включён', str_contains($sql, 'enable row level security'));
 check('anon/authenticated отозваны',
