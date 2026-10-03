@@ -1063,6 +1063,18 @@ if [ "$MIGRATIONS_READY" = 1 ] && [ -f "$WU_FILE" ] && [ -f "$REPO/infra/wipe-us
   fi
 fi
 
+# Разовая проверка пушей (03.10.2026): один раз на каждое новое содержимое
+# infra/push-test-now. Итог — поле push_test в /security-status.json.
+PT_FILE="$REPO/infra/push-test-now"
+if [ "$MIGRATIONS_READY" = 1 ] && [ -f "$PT_FILE" ] && [ -f "$REPO/infra/push-test.sh" ]; then
+  mkdir -p /var/lib/jobtoo
+  pt_sha=$(sha256sum "$PT_FILE" | cut -d' ' -f1)
+  if [ "$pt_sha" != "$(cat /var/lib/jobtoo/push-test.sha 2>/dev/null || true)" ]; then
+    echo "$pt_sha" > /var/lib/jobtoo/push-test.sha
+    bash "$REPO/infra/push-test.sh" || say "пуш-проверка" "не удалась"
+  fi
+fi
+
 # Отдельный серверный ключ для шифрования native push-токенов. Не ротируем
 # его вместе с кодом: иначе уже зарегистрированные устройства потеряют push.
 if [ ! -s "$PROXY/push_token_key.php" ]; then

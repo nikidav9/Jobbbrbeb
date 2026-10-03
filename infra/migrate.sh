@@ -113,9 +113,15 @@ try:
     print(json.dumps(json.load(open("/var/www/html/wipe-status.json")), ensure_ascii=False, separators=(",", ":")))
 except Exception:
     print("null")' 2>/dev/null || echo null)
+# Итог разовой проверки пушей (infra/push-test.sh): числа и ответы Expo, без токенов.
+push_json=$(python3 -c 'import json
+try:
+    print(json.dumps(json.load(open("/var/www/html/push-test-status.json")), ensure_ascii=False, separators=(",", ":")))
+except Exception:
+    print("null")' 2>/dev/null || echo null)
 status_tmp=$(mktemp /var/www/html/security-status.json.XXXXXX)
-printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true,"jupiter_worker_active":%s,"recon_state":"%s","recon_last":"%s","wipe":%s}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" "$jupiter_active" "$recon_state" "$recon_last" "$wipe_json" > "$status_tmp"
+printf '{"generated_at":"%s","latest_migration":"%s","rls_guard":true,"jupiter_worker_active":%s,"recon_state":"%s","recon_last":"%s","wipe":%s,"push_test":%s}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$latest_migration" "$jupiter_active" "$recon_state" "$recon_last" "$wipe_json" "$push_json" > "$status_tmp"
 chmod 644 "$status_tmp"
 mv -f "$status_tmp" /var/www/html/security-status.json
 
