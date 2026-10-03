@@ -1048,6 +1048,21 @@ if [ "$MIGRATIONS_READY" = 1 ]; then
   cp -f "$REPO"/php-proxy/*.php "$PROXY"/ 2>/dev/null || true
 fi
 
+# Удаление всех людей (решение владельца 03.10.2026, чистый лист под новое
+# приложение): один раз на каждое новое содержимое infra/wipe-users-now.
+# Синхронно — пока идёт, следующий заход bootstrap не поднимет остановленные
+# службы. Только после удачных миграций: схема должна быть на месте.
+WU_FILE="$REPO/infra/wipe-users-now"
+if [ "$MIGRATIONS_READY" = 1 ] && [ -f "$WU_FILE" ] && [ -f "$REPO/infra/wipe-users.sh" ]; then
+  mkdir -p /var/lib/jobtoo
+  wu_sha=$(sha256sum "$WU_FILE" | cut -d' ' -f1)
+  if [ "$wu_sha" != "$(cat /var/lib/jobtoo/wipe-users.sha 2>/dev/null || true)" ]; then
+    echo "$wu_sha" > /var/lib/jobtoo/wipe-users.sha
+    say "удаление" "запущено: $(head -c 120 "$WU_FILE")"
+    bash "$REPO/infra/wipe-users.sh" || say "удаление" "остановлено, см. /wipe-status.json"
+  fi
+fi
+
 # Отдельный серверный ключ для шифрования native push-токенов. Не ротируем
 # его вместе с кодом: иначе уже зарегистрированные устройства потеряют push.
 if [ ! -s "$PROXY/push_token_key.php" ]; then
