@@ -209,21 +209,23 @@ class RemoteTaskQueue:
     # ── капча человеку (миграция 135) ─────────────────────────────────────
     # Ответ капчи — данные кандидата: не логируем его и не кладём в исключения.
 
-    def captcha_post(self, task_id: str, png: bytes) -> str:
-        """Отдаёт PNG капчи кандидату; возвращает id записи на сервере."""
+    def captcha_post(self, task_id: str, png: bytes, kind: str = "text") -> str:
+        """Отдаёт PNG капчи кандидату; возвращает id записи на сервере.
+
+        kind: "text" — человек вводит слово; "tap" — нажимает на снимок."""
         encoded = base64.b64encode(png).decode("ascii")
         if len(encoded) > CAPTCHA_MAX_BASE64:
             raise ValueError(
                 f"Картинка капчи слишком большая: {len(encoded)} символов base64, "
                 f"сервер принимает не больше {CAPTCHA_MAX_BASE64}"
             )
-        result = self._call("jupiterCaptchaPost", [task_id, encoded])
+        result = self._call("jupiterCaptchaPost", [task_id, encoded, kind])
         if not isinstance(result, dict) or result.get("ok") is not True or not result.get("id"):
             raise RemoteError(0, "jupiterCaptchaPost: bad response")
         return str(result["id"])
 
     def captcha_poll(self, task_id: str) -> tuple[str, str | None]:
-        """(status, answer): none|pending|answered|expired|solved|failed."""
+        """(status, answer): none|pending|answered|refresh|expired|solved|failed."""
         result = self._call("jupiterCaptchaPoll", [task_id])
         if not isinstance(result, dict) or not isinstance(result.get("status"), str):
             raise RemoteError(0, "jupiterCaptchaPoll: bad response")

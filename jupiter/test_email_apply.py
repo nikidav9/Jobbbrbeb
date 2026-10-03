@@ -56,6 +56,19 @@ class AgentResultTest(unittest.TestCase):
         self.assertTrue(_recon_ready({"klass": "no_vacancy", "status": "action_required",
                                       "reason_code": "EMAIL_APPLY"}))
 
+    def test_recon_counts_human_captcha_as_connected(self):
+        def item(**captcha):
+            return {"klass": "captcha", "status": "action_required", "captcha": captcha}
+        # Слово с картинки и нажатия (галочка, сетка картинок) решает человек.
+        self.assertTrue(_recon_ready(item(kind="text_image", transferable=True, tappable=False)))
+        self.assertTrue(_recon_ready(item(kind="checkbox", transferable=False, tappable=True)))
+        self.assertTrue(_recon_ready(item(kind="image_grid", transferable=False, tappable=True)))
+        # Невидимая и неопознанная капча — показать человеку нечего.
+        self.assertFalse(_recon_ready(item(kind="invisible", transferable=False, tappable=False)))
+        self.assertFalse(_recon_ready(item(kind="unknown", transferable=False, tappable=False)))
+        # Отчёт старого формата (без tappable) не открывает сайт.
+        self.assertFalse(_recon_ready(item(kind="checkbox", transferable=False)))
+
 
 if __name__ == "__main__":
     unittest.main()

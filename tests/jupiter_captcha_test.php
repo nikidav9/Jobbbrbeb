@@ -24,7 +24,7 @@ foreach (['jupiterCaptchaPost', 'jupiterCaptchaPoll', 'jupiterCaptchaResult'] as
     check("$fn только для воркера",
         str_contains($adminBlock, "'$fn'") && !str_contains($selfBlock, "'$fn'"));
 }
-foreach (['jupiterCaptchaGet', 'jupiterCaptchaAnswer'] as $fn) {
+foreach (['jupiterCaptchaGet', 'jupiterCaptchaAnswer', 'jupiterCaptchaRefresh'] as $fn) {
     check("$fn привязан к владельцу",
         str_contains($selfBlock, "'$fn' => 0") && !str_contains($adminBlock, "'$fn'"));
 }
@@ -37,8 +37,9 @@ $body = function (string $case, string $next) use ($db): string {
 };
 $post = $body('jupiterCaptchaPost', 'jupiterCaptchaGet');
 $get = $body('jupiterCaptchaGet', 'jupiterCaptchaAnswer');
-$ans = $body('jupiterCaptchaAnswer', 'jupiterCaptchaPoll');
+$ans = $body('jupiterCaptchaAnswer', 'jupiterCaptchaRefresh');
 $poll = $body('jupiterCaptchaPoll', 'jupiterCaptchaResult');
+$refresh = $body('jupiterCaptchaRefresh', 'jupiterCaptchaPoll');
 
 check('картинка ограничена 200 КБ', str_contains($post, '200000'));
 check('капча ставит CAPTCHA_HUMAN и action_required',
@@ -65,6 +66,40 @@ check('ответ принимает только свою pending',
 check('ответ не принимает просроченную', str_contains($ans, '<= time()') && str_contains($ans, '409'));
 check('poll закрывает просроченную', str_contains($poll, "'expired'"));
 check('poll отдаёт ответ только в answered', str_contains($poll, "=== 'answered'"));
+
+// ── Нажатия (миграция 146) ──────────────────────────────────────────────────
+$sqlTap = (string)file_get_contents(__DIR__ . '/../supabase/migrations/146_jupiter_captcha_tap.sql');
+check('post принимает только text или tap',
+    str_contains($post, "in_array(\$kind, ['text', 'tap'], true)") && str_contains($post, "'kind' => \$kind"));
+check('get отдаёт вид капчи', str_contains($get, "'kind' => \$row['kind']"));
+check('ответ-нажатия проверяется по виду строки, а не по клиенту',
+    str_contains($ans, "'id,expires_at,kind'") && str_contains($ans, "=== 'tap'"));
+check('миграция 146 добавляет kind с ограничением',
+    str_contains($sqlTap, 'add column if not exists kind text not null default \'text\'')
+    && str_contains($sqlTap, "check (kind in ('text', 'tap'))")
+    && str_contains($sqlTap, 'begin;') && str_contains($sqlTap, 'commit;'));
+// Тот же шаблон, что в db.php: до 12 точек «x,y;x,y» в долях 0..1.
+$pt = '(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)';
+$re = '/^' . $pt . ',' . $pt . '(?:;' . $pt . ',' . $pt . '){0,11}$/';
+check('шаблон нажатий совпадает с db.php', str_contains($ans, "\$pt = '(?:0(?:\\.\\d{1,4})?|1(?:\\.0{1,4})?)';"));
+foreach (['0.5,0.5', '0,1', '0.1234,0.9;1,0', '1.0000,0.0000;0.5000,1.0000', implode(';', array_fill(0, 12, '0.5,0.5'))] as $ok) {
+    check("нажатия принимаются: $ok", preg_match($re, $ok) === 1);
+}
+foreach (['', 'слово', '0.5', '1.2,0.1', '-0.1,0.1', '1.5,0.1', '1.0001,0.1', '0.5,0.5;', '0.12345,0.1', '0.5,0.5;0.5',
+          implode(';', array_fill(0, 13, '0.5,0.5'))] as $bad) {
+    check("нажатия отклоняются: $bad", preg_match($re, $bad) === 0);
+}
+
+// ── «Повторить капчу» ───────────────────────────────────────────────────────
+check('refresh: только своя ждущая не просроченная',
+    str_contains($refresh, "'user_id' => 'eq.' . \$uidArg") && str_contains($refresh, "'status' => 'eq.pending'")
+    && str_contains($refresh, '<= time()') && str_contains($refresh, '409'));
+check('refresh ставит статус refresh', str_contains($refresh, "['status' => 'refresh']"));
+check('новая капча закрывает и refresh-строки', str_contains($post, "'in.(pending,answered,refresh)'"));
+check('миграция 146 разрешает статус refresh',
+    str_contains($sqlTap, "'pending', 'answered', 'expired', 'solved', 'failed', 'refresh'")
+    && str_contains($sqlTap, 'drop constraint if exists jm_jupiter_captcha_status_check'));
+check('клиент: jupiterCaptchaRefresh', str_contains($ts, 'export async function jupiterCaptchaRefresh'));
 
 // ── База ────────────────────────────────────────────────────────────────────
 check('RLS включён', str_contains($sql, 'enable row level security'));

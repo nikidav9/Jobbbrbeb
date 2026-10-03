@@ -119,7 +119,11 @@ html.jt-landing #root { visibility: hidden; }
   align-items: center; justify-content: center; text-align: center; padding: 70px 40px; color: var(--ink);
   border: 2px solid var(--ink); border-radius: 30px; box-shadow: 6px 6px 0 var(--ink); overflow: hidden;
   background: var(--ink) url('/landing/hero.jpg') center / cover no-repeat; }
-#jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: jtl-zoom 20s ease-out both; }
+/* Пока у ролика нет первого кадра, браузер рисует его чёрным поверх постера (фон рамки):
+   поэтому он прозрачен и проявляется классом .on, когда пошёл (событие playing). */
+#jtl .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
+  transition: opacity .8s ease; }
+#jtl .hero-video.on { opacity: 1; animation: jtl-vzoom 20s ease-out both; }
 /* Ролик виден почти без вуали; читаемость даёт светлая плашка под текстом, а не затемнение */
 #jtl .hero-shade { position: absolute; inset: 0; background: rgba(20,20,20,.08); }
 #jtl .hero-in { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center;
@@ -158,6 +162,19 @@ html.jt-landing #root { visibility: hidden; }
 #jtl .modal.on { display: flex; animation: jtl-fade .25s ease both; }
 #jtl .modal video { width: min(1280px, 100%); border: 3px solid #fff; border-radius: 26px; background: var(--ink); }
 #jtl .modal .close { position: absolute; top: 22px; right: 26px; }
+#jtl .qr { font: inherit; cursor: pointer; }
+/* Окно «JobToo на телефон»: код, магазин, отправка ссылки себе */
+#jtl .phone-card { position: relative; width: min(760px, 100%); padding: 36px 40px 30px; border: 2px solid var(--ink);
+  border-radius: 26px; background: var(--bg); box-shadow: 6px 6px 0 var(--accent); }
+#jtl .phone-card h3 { font-size: 26px; padding-right: 110px; }
+#jtl .phone-card > p { margin-top: 10px; color: var(--muted); }
+#jtl .phone-card .close { position: absolute; top: 18px; right: 20px; }
+#jtl .phone-row { display: flex; gap: 28px; align-items: center; margin-top: 22px; }
+#jtl .phone-qr { flex: none; width: 220px; height: 220px; padding: 12px; background: #fff; border: 2px solid var(--ink);
+  border-radius: 18px; box-shadow: 4px 4px 0 var(--ink); }
+#jtl .phone-actions { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+#jtl .phone-actions .btn { justify-content: center; }
+#jtl .phone-card .note { margin-top: 18px; font-size: 13px; color: var(--muted); }
 /* Документы — на самом сайте, без загрузки приложения (public/landing/docs.json) */
 #jtl .modal.doc { align-items: stretch; padding: 40px; }
 #jtl .doc-card { position: relative; width: min(820px, 100%); margin: 0 auto; display: flex; flex-direction: column;
@@ -357,6 +374,7 @@ html.jt-landing #root { visibility: hidden; }
 @keyframes jtl-bob { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-12px) rotate(3deg); } }
 @keyframes jtl-hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-16px); } }
 @keyframes jtl-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+@keyframes jtl-vzoom { from { transform: scale(1.04); } to { transform: scale(1); } }
 @keyframes jtl-shine { from { background-position: 0% 0; } to { background-position: -220% 0; } }
 @keyframes jtl-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(43,182,115,.55); } 50% { box-shadow: 0 0 0 6px rgba(43,182,115,0); } }
 @keyframes jtl-run { from { transform: translateX(0); } to { transform: translateX(-50%); } }
@@ -403,7 +421,6 @@ export const LANDING_MARKUP = `
         <a href="#employers">Работодателям</a>
       </nav>
       <div class="actions">
-        <button class="btn btn-sm" type="button" data-jtl-open>Войти</button>
         <a class="btn btn-sm btn-accent" href="${RUSTORE_URL}" target="_blank" rel="noopener">Скачать</a>
       </div>
     </div>
@@ -413,7 +430,7 @@ export const LANDING_MARKUP = `
     <section class="hero">
       <div class="wrap">
         <div class="hero-frame">
-          <video class="hero-video" id="jtl-video" muted loop playsinline preload="none" aria-hidden="true"></video>
+          <video class="hero-video" id="jtl-video" muted loop playsinline preload="none" poster="/landing/hero.jpg" aria-hidden="true"></video>
           <div class="hero-shade"></div>
           <button class="reel" type="button" data-jtl-reel aria-label="Смотреть ролик о JobToo"><b></b></button>
           <div class="hero-in">
@@ -422,14 +439,14 @@ export const LANDING_MARKUP = `
             <p class="lead">Листаете вакансии как ленту. Свайп вправо — и Юпитер сам заполняет анкету на сайте работодателя. Ответ приходит в чат приложения.</p>
             <div class="cta">
               <a class="btn btn-accent" href="${RUSTORE_URL}" target="_blank" rel="noopener">Скачать в RuStore →</a>
-              <button class="btn" type="button" data-jtl-open>Открыть в браузере</button>
+              <button class="btn" type="button" data-jtl-phone>Отправить на телефон</button>
             </div>
-            <p class="note">iPhone — пока через браузер: откройте jobtoo.ru в Safari.</p>
+            <p class="note">JobToo — приложение для телефона. iPhone: откройте jobtoo.ru в Safari и добавьте на экран «Домой».</p>
           </div>
-          <a class="qr" href="/?app=1" title="jobtoo.ru">
+          <button class="qr" type="button" data-jtl-phone title="JobToo на телефон">
             <svg viewBox="0 0 25 25" shape-rendering="crispEdges" role="img" aria-label="QR-код jobtoo.ru"><path stroke="#141414" d="${QR_PATH}"/></svg>
             <span>Наведите камеру телефона — JobToo откроется сразу</span>
-          </a>
+          </button>
         </div>
       </div>
     </section>
@@ -537,7 +554,7 @@ export const LANDING_MARKUP = `
         <h2 class="rv split">Следующая работа —<br />в одном свайпе</h2>
         <div class="cta rv">
           <a class="btn btn-accent" href="${RUSTORE_URL}" target="_blank" rel="noopener">Скачать в RuStore →</a>
-          <button class="btn" type="button" data-jtl-open>Открыть в браузере</button>
+          <button class="btn" type="button" data-jtl-phone>Отправить на телефон</button>
         </div>
       </div>
     </section>
@@ -548,6 +565,24 @@ export const LANDING_MARKUP = `
   <div class="modal" id="jtl-modal" role="dialog" aria-modal="true" aria-label="Ролик о JobToo">
     <button class="btn btn-sm close" type="button" data-jtl-close>Закрыть</button>
     <video id="jtl-modal-video" controls playsinline loop preload="none"></video>
+  </div>
+
+  <div class="modal" id="jtl-phone" role="dialog" aria-modal="true" aria-label="JobToo на телефон">
+    <article class="phone-card">
+      <button class="btn btn-sm close" type="button" data-jtl-close>Закрыть</button>
+      <h3>JobToo — на телефон</h3>
+      <p>Наведите камеру на код: приложение откроется сразу. Или отправьте ссылку себе.</p>
+      <div class="phone-row">
+        <svg class="phone-qr" viewBox="0 0 25 25" shape-rendering="crispEdges" role="img" aria-label="QR-код jobtoo.ru"><path stroke="#141414" d="${QR_PATH}"/></svg>
+        <div class="phone-actions">
+          <a class="btn btn-accent" href="${RUSTORE_URL}" target="_blank" rel="noopener">Скачать в RuStore →</a>
+          <a class="btn" href="https://t.me/share/url?url=https%3A%2F%2Fjobtoo.ru%2F&amp;text=JobToo%20%E2%80%94%20IT%20%D0%B8%20%D0%BE%D1%84%D0%B8%D1%81%20%D1%81%D0%B2%D0%B0%D0%B9%D0%BF%D0%BE%D0%BC" target="_blank" rel="noopener">Отправить в Telegram</a>
+          <a class="btn" href="mailto:?subject=JobToo&amp;body=https%3A%2F%2Fjobtoo.ru%2F">Отправить на почту</a>
+          <button class="btn" type="button" data-jtl-copy>Скопировать ссылку</button>
+        </div>
+      </div>
+      <p class="note">iPhone: откройте ссылку в Safari и выберите «На экран Домой» — JobToo появится как приложение.</p>
+    </article>
   </div>
 
   <div class="modal doc" id="jtl-doc" role="dialog" aria-modal="true" aria-label="Документы JobToo">
@@ -581,15 +616,6 @@ export const LANDING_SCRIPT = `(function(){
 if(!window.__JT_LANDING__)return;
 var root=document.getElementById('jtl');if(!root)return;
 var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-// «Войти» / «Открыть в браузере»: приложение уже загружено под сайтом — показываем его.
-root.addEventListener('click',function(e){
-  var t=e.target.closest&&e.target.closest('[data-jtl-open]');if(!t)return;
-  e.preventDefault();
-  try{sessionStorage.setItem('jt_app','1');}catch(_){}
-  window.__JT_LANDING__=false;if(video)video.pause();
-  document.documentElement.className=document.documentElement.className.replace(/\\s*jt-landing/g,'');
-});
 
 var top=document.getElementById('jtl-top');
 root.addEventListener('scroll',function(){top.classList.toggle('scrolled',root.scrollTop>8);},{passive:true});
@@ -718,7 +744,7 @@ var MP4=!!video&&!!video.canPlayType('video/mp4; codecs="avc1.42E01E"');
 var SRC=MP4?'/landing/hero.mp4':'/landing/hero.webm';
 // В окне «Смотреть ролик» — рекламная версия: заставка, сюжет, «Скачайте в RuStore».
 var PROMO=MP4?'/landing/promo.mp4':'/landing/promo.webm';
-if(video&&!reduce){video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
+if(video&&!reduce){video.addEventListener('playing',function(){video.classList.add('on');},{once:true});video.src=SRC;var p=video.play();if(p&&p.catch)p.catch(function(){});}
 var modal=document.getElementById('jtl-modal'),mv=document.getElementById('jtl-modal-video');
 function closeModal(){modal.classList.remove('on');mv.pause();}
 root.addEventListener('click',function(e){
@@ -733,6 +759,18 @@ document.addEventListener('keydown',function(e){
   if(e.key!=='Escape')return;
   if(modal.classList.contains('on'))closeModal();
   if(docModal.classList.contains('on'))docModal.classList.remove('on');
+  if(phoneModal.classList.contains('on'))phoneModal.classList.remove('on');
+});
+
+// Окно «JobToo на телефон»: код, магазин, отправка ссылки себе (Telegram, почта, копирование).
+var phoneModal=document.getElementById('jtl-phone');
+root.addEventListener('click',function(e){
+  var t=e.target;if(!t.closest)return;
+  if(t.closest('[data-jtl-phone]')){phoneModal.classList.add('on');return;}
+  if(t===phoneModal||t.closest('#jtl-phone [data-jtl-close]')){phoneModal.classList.remove('on');return;}
+  var c=t.closest('[data-jtl-copy]');if(!c)return;
+  var done=function(){c.textContent='Ссылка скопирована';setTimeout(function(){c.textContent='Скопировать ссылку';},2200);};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText('https://jobtoo.ru/').then(done,function(){});
 });
 
 // Документы: открываются здесь же, в окне, тексты — /landing/docs.json (из constants/legal.ts).

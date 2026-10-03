@@ -217,7 +217,8 @@ def recon_site_browser(
             info = engine.captcha()
             if info is not None:
                 result.captcha = {"vendor": info.vendor, "kind": info.kind,
-                                  "transferable": info.transferable}
+                                  "transferable": info.transferable,
+                                  "tappable": info.tappable}
     finally:
         engine.close()
     if rehearse and result.klass == "dry_run_ok":

@@ -1,0 +1,74 @@
+name: Профиль телеграм-бота
+
+# Ручной запуск: выставляет описание бота (текст в пустом чате) и короткое
+# описание «О боте». Текст зашит здесь, не берётся из параметров. Токен — из
+# секрета TG_BOT_TOKEN, в журнал не попадает. Нужен после отзыва токена, если
+# посторонний успел подменить описание (03.10.2026: реклама VPN).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    name: Описание бота
+    runs-on: ubuntu-latest
+    steps:
+      - name: Выставить описание и проверить
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.error, urllib.parse, urllib.request
+
+          token = os.environ.get('TG_BOT_TOKEN', '').strip()
+          if not token:
+              sys.exit('TG_BOT_TOKEN не задан в секретах репозитория')
+
+          DESCRIPTION = (
+              'JobToo — работа в IT и офисе свайпом.\n\n'
+              'Листайте вакансии как ленту, откликайтесь одним свайпом и переписывайтесь '
+              'с работодателями. Нажмите «Старт», затем «Открыть JobToo».'
+          )
+          SHORT = 'Работа в IT и офисе — свайпом'
+
+
+          def call(method, **params):
+              # Адрес с токеном в журнал не пишем: наружу только код ответа и описание ошибки.
+              data = urllib.parse.urlencode(params).encode('utf-8')
+              req = urllib.request.Request(f'https://api.telegram.org/bot{token}/{method}', data=data)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  try:
+                      body = json.load(e)
+                  except Exception:
+                      body = {}
+                  sys.exit(f'{method}: HTTP {e.code} {body.get("description", "")}'.strip())
+              except Exception as e:
+                  sys.exit(f'{method}: {type(e).__name__}')
+
+
+          me = call('getMe')['result']
+          print(f'бот: @{me.get("username")} (id {me.get("id")})')
+
+          for lang in ('', 'ru'):
+              extra = {'language_code': lang} if lang else {}
+              call('setMyDescription', description=DESCRIPTION, **extra)
+              call('setMyShortDescription', short_description=SHORT, **extra)
+
+          for lang in ('', 'ru'):
+              extra = {'language_code': lang} if lang else {}
+              d = call('getMyDescription', **extra)['result']['description']
+              s = call('getMyShortDescription', **extra)['result']['short_description']
+              ok = d == DESCRIPTION and s == SHORT
+              print(f'язык {lang or "по умолчанию"}: {"совпадает" if ok else "НЕ совпадает"}')
+              if not ok:
+                  sys.exit('Описание после записи не совпало с заданным')
+
+          hook = call('getWebhookInfo')['result']
+          print('вебхук:', hook.get('url') or '— не задан —', '| ждёт:', hook.get('pending_update_count'),
+                '| ошибка:', hook.get('last_error_message') or 'нет')
+          PY

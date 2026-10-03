@@ -5,10 +5,13 @@
 import {
   jupiterCaptchaAnswer as dbJupiterCaptchaAnswer,
   jupiterCaptchaGet as dbJupiterCaptchaGet,
+  jupiterCaptchaRefresh as dbJupiterCaptchaRefresh,
 } from '@/services/db';
 
 export type JupiterCaptcha = {
   id: string;
+  /** text — ввести слово; tap — нажать на снимок (галочка, сетка картинок). */
+  kind: 'text' | 'tap';
   /** PNG в base64, без префикса data:. */
   imagePng: string;
   company: string | null;
@@ -19,10 +22,18 @@ export type JupiterCaptcha = {
 export async function jupiterCaptchaGet(userId: string, applicationId: string): Promise<JupiterCaptcha | null> {
   const r = await dbJupiterCaptchaGet(userId, applicationId);
   if (!r) return null;
-  return { id: r.id, imagePng: r.image_png, company: null, expiresAt: r.expires_at };
+  return {
+    id: r.id, kind: r.kind === 'tap' ? 'tap' : 'text',
+    imagePng: r.image_png, company: null, expiresAt: r.expires_at,
+  };
 }
 
 /** Ответ человека на капчу заявки. Сервер ищет ждущую капчу по заявке сам. */
 export async function jupiterCaptchaAnswer(userId: string, applicationId: string, answer: string): Promise<void> {
   await dbJupiterCaptchaAnswer(userId, applicationId, answer);
+}
+
+/** Попросить новую капчу: картинка на сайте сменилась или ответ не подошёл. */
+export async function jupiterCaptchaRefresh(userId: string, applicationId: string): Promise<void> {
+  await dbJupiterCaptchaRefresh(userId, applicationId);
 }
