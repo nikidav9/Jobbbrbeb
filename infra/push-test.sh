@@ -12,8 +12,12 @@ set -a; . /opt/jobtoo-secrets/env; set +a
 q() { docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
         psql -v ON_ERROR_STOP=1 -U supabase_admin -d postgres "$@"; }
 
+# PHP живёт в контейнере php, на хосте его нет. Сценарий кладём в /tmp
+# контейнера, а не в каталог API: оттуда его не вызвать по сети.
+docker compose cp "$REPO/infra/push-test.php" php:/tmp/push-test.php >/dev/null 2>&1
 RES=$(q -tAc "select push_token from jm_users where push_token is not null" 2>/dev/null \
-      | php "$REPO/infra/push-test.php" "$PROXY" 2>&1 | tail -n 1)
+      | docker compose exec -T php php /tmp/push-test.php /var/www/api 2>&1 | tail -n 1)
+docker compose exec -T php rm -f /tmp/push-test.php >/dev/null 2>&1
 python3 - "$RES" "$STATUS" <<'PY'
 import json, sys, datetime
 try:
