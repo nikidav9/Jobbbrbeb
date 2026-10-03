@@ -35,7 +35,79 @@
         "android.permission.USE_FINGERPRINT",
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
-      "allowBackup": false
+      "allowBackup": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "path": "/"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/ext-vacancy"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/perm-vacancy-detail"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/reset-password"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/login"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/register-worker"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/legal"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/mail"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/jupiter-application"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/jupiter-captcha"
+            },
+            {
+              "scheme": "https",
+              "host": "jobtoo.ru",
+              "pathPrefix": "/jupiter-questions"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
