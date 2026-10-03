@@ -97,39 +97,7 @@ export async function resetPassword(userId: string): Promise<string> {
   return data.password as string
 }
 
-export async function sendPushToUser(userId: string, title: string, body: string) {
-  const { data, error } = await supabaseAdmin.functions.invoke('push-notify', {
-    body: { userId, title, body },
-  })
-  if (error) throw new Error(error.message)
-  if (data?.error) throw new Error(data.error)
-}
-
 // ─── Vacancies ────────────────────────────────────────────────────────────────
-
-export async function setVacancyStatus(id: string, status: 'open' | 'closed') {
-  const { error } = await supabaseAdmin
-    .from('jm_vacancies')
-    .update({ status })
-    .eq('id', id)
-  if (error) throw new Error(error.message)
-}
-
-export async function setVacancyUrgent(id: string, urgent: boolean) {
-  const { error } = await supabaseAdmin
-    .from('jm_vacancies')
-    .update({ is_urgent: urgent })
-    .eq('id', id)
-  if (error) throw new Error(error.message)
-}
-
-export async function deleteVacancy(id: string) {
-  const { error } = await supabaseAdmin
-    .from('jm_vacancies')
-    .delete()
-    .eq('id', id)
-  if (error) throw new Error(error.message)
-}
 
 export async function setPermVacancyStatus(id: string, status: 'open' | 'closed') {
   const { error } = await supabaseAdmin
@@ -147,66 +115,7 @@ export async function deletePermVacancy(id: string) {
   if (error) throw new Error(error.message)
 }
 
-// ─── Chats / System messages ─────────────────────────────────────────────────
-
-function uid() {
-  return Math.random().toString(36).slice(2, 14)
-}
-
-export async function sendSystemMessage(chatId: string, text: string) {
-  const { error } = await supabaseAdmin
-    .from('jm_messages')
-    .insert({ id: uid(), chat_id: chatId, sender_id: 'system', text, created_at: new Date().toISOString() })
-  if (error) throw new Error(error.message)
-}
-
-// ─── Complaints ──────────────────────────────────────────────────────────────
-
-export async function dismissComplaint(id: string) {
-  const { error } = await supabaseAdmin
-    .from('jm_complaints')
-    .update({ status: 'dismissed' } as any)
-    .eq('id', id)
-  if (error) throw new Error(error.message)
-}
-
-export async function resolveComplaintAndBlock(complaintId: string, targetUserId: string) {
-  await blockUser(targetUserId, true)
-  await supabaseAdmin
-    .from('jm_complaints')
-    .update({ status: 'resolved' } as any)
-    .eq('id', complaintId)
-}
-
 // ─── Broadcast push / in-app (via Supabase Edge Function) ────────────────────
-
-export async function broadcastPush(
-  target: 'all' | 'workers' | 'employers' | 'metro',
-  title: string,
-  body: string,
-  metro?: string,
-) {
-  const { data, error } = await supabaseAdmin.functions.invoke('push-notify', {
-    body: { target, title, body, metro, mode: 'push' },
-  })
-  if (error) throw new Error(error.message)
-  if (data?.error) throw new Error(data.error)
-  return (data?.pushCount ?? 0) as number
-}
-
-export async function broadcastInApp(
-  target: 'all' | 'workers' | 'employers',
-  title: string,
-  body: string,
-) {
-  const { data, error } = await supabaseAdmin.functions.invoke('push-notify', {
-    body: { target, title, body, mode: 'inapp' },
-  })
-  if (error) throw new Error(error.message)
-  if (data?.error) throw new Error(data.error)
-  logActivity('In-app уведомление', `Цель: ${target}, заголовок: "${title}", получателей: ${data?.inappCount ?? 0}`)
-  return (data?.inappCount ?? 0) as number
-}
 
 export async function sendInAppToUser(userId: string, title: string, body: string) {
   const { data, error } = await supabaseAdmin.functions.invoke('push-notify', {
@@ -255,25 +164,6 @@ export async function broadcastBoth(
   return { pushCount: (data?.pushCount ?? 0) as number, inappCount: (data?.inappCount ?? 0) as number }
 }
 
-export async function broadcastTelegram(
-  title: string,
-  body: string,
-  role: 'all' | 'worker' | 'employer' = 'all',
-): Promise<{ sent: number; total: number }> {
-  const res = await fetch('/api/admin/tg-broadcast', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Admin-Token': getToken(),
-    },
-    body: JSON.stringify({ title, body, role }),
-  })
-  const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка Telegram-рассылки')
-  logActivity('Telegram-рассылка', `Роль: ${role}, заголовок: "${title}", доставлено: ${data.data?.sent ?? 0}`)
-  return { sent: (data.data?.sent ?? 0) as number, total: (data.data?.total ?? 0) as number }
-}
-
 export async function broadcastWebPush(title: string, body: string): Promise<{ sent: number; failed: number }> {
   const res = await fetch('/api/webpush/broadcast', {
     method: 'POST',
@@ -302,22 +192,6 @@ export async function sendBothToUser(userId: string, title: string, body: string
 
 // ─── Vacancy editing ─────────────────────────────────────────────────────────
 
-export async function updateTempVacancy(id: string, fields: {
-  status?: 'open' | 'closed'
-  is_urgent?: boolean
-  salary?: number | null
-  workers_needed?: number | null
-  address?: string
-  metro_station?: string
-  date?: string
-  time_start?: string
-  time_end?: string
-}) {
-  const { error } = await supabaseAdmin.from('jm_vacancies').update(fields).eq('id', id)
-  if (error) throw new Error(error.message)
-  logActivity('Вакансия (врем.) обновлена', `ID: ${id}, поля: ${Object.keys(fields).join(', ')}`)
-}
-
 export async function updatePermVacancy(id: string, fields: {
   status?: 'open' | 'closed'
   title?: string
@@ -330,100 +204,4 @@ export async function updatePermVacancy(id: string, fields: {
   const { error } = await supabaseAdmin.from('jm_perm_vacancies').update(fields).eq('id', id)
   if (error) throw new Error(error.message)
   logActivity('Вакансия (пост.) обновлена', `ID: ${id}, поля: ${Object.keys(fields).join(', ')}`)
-}
-
-// ─── Tickets (complaints) ─────────────────────────────────────────────────────
-
-export async function addComplaintNote(complaintId: string, note: string) {
-  const { error } = await supabaseAdmin
-    .from('jm_complaints')
-    .update({ admin_note: note } as any)
-    .eq('id', complaintId)
-  if (error) throw new Error(error.message)
-  logActivity('Заметка к жалобе', `ID: ${complaintId}`)
-}
-
-export async function setComplaintStatus(id: string, status: 'pending' | 'in_review' | 'resolved' | 'dismissed') {
-  const { error } = await supabaseAdmin
-    .from('jm_complaints')
-    .update({ status } as any)
-    .eq('id', id)
-  if (error) throw new Error(error.message)
-  logActivity('Статус жалобы изменён', `ID: ${id} → ${status}`)
-}
-
-/**
- * Личное сообщение боту каждому из списка.
- *
- * От рассылки отличается адресатами: там «все, у кого есть телеграм», здесь
- * — те, кого выбрали на экране. В тексте {name} заменяется на имя, поэтому
- * получается обращение, а не объявление.
- *
- * Отвечает не только числом отправленных, но и списком пропущенных: у
- * человека мог отвалиться телеграм или он заблокировал бота, и знать об
- * этом важнее, чем видеть красивую цифру.
- */
-export async function sendTelegramToUsers(
-  ids: string[],
-  template: string,
-): Promise<{ sent: number; skipped: string[] }> {
-  const res = await fetch('/api/admin/tg-send-users', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': getToken() },
-    body: JSON.stringify({ ids, template }),
-  })
-  const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка отправки')
-  const sent = (data.data?.sent ?? 0) as number
-  const skipped = (data.data?.skipped ?? []) as string[]
-  logActivity('Сообщение боту по списку', `Адресатов: ${ids.length}, доставлено: ${sent}`)
-  return { sent, skipped }
-}
-
-// Ручная публикация в общую группу «ПОДРАБОТКИ». Нужна, когда авторассылка
-// при создании вакансии не дошла (у клиента оборвалась сеть): объявление в
-// ленте есть, а в группе нет. Кнопка досылает тот же пост.
-export async function postToGroup(text: string): Promise<{ sent: boolean; chat: number | string }> {
-  const res = await fetch('/api/admin/tg-post-group', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': getToken() },
-    body: JSON.stringify({ text }),
-  })
-  const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error ?? 'Не удалось опубликовать в группу')
-  logActivity('Пост в группу ПОДРАБОТКИ', `Длина текста: ${text.length}`)
-  return { sent: data.sent as boolean, chat: data.chat }
-}
-
-// Опрос спящих соискателей «почему не пользуетесь». Шлём порциями и с логом —
-// повторный вызов продолжает с тех, кому ещё не слали.
-export async function sendDormantSurvey(): Promise<{ sent: number; sentTotal: number; remaining: number; eligible: number }> {
-  const res = await fetch('/api/admin/survey-dormant', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': getToken() },
-    body: JSON.stringify({ mode: 'send' }),
-  })
-  const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка опроса')
-  const sent = (data.data?.sent ?? 0) as number
-  const sentTotal = (data.data?.sent_total ?? 0) as number
-  const remaining = (data.data?.remaining ?? 0) as number
-  const eligible = (data.data?.eligible ?? 0) as number
-  logActivity('Опрос спящих', `Отправлено ещё ${sent}, всего ${sentTotal}, осталось ${remaining}`)
-  return { sent, sentTotal, remaining, eligible }
-}
-
-export async function getDormantSurveyResults(): Promise<{ total: number; sentTotal: number; tally: Record<string, number> }> {
-  const res = await fetch('/api/admin/survey-dormant', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': getToken() },
-    body: JSON.stringify({ mode: 'results' }),
-  })
-  const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка опроса')
-  return {
-    total: (data.data?.total ?? 0) as number,
-    sentTotal: (data.data?.sent_total ?? 0) as number,
-    tally: (data.data?.tally ?? {}) as Record<string, number>,
-  }
 }

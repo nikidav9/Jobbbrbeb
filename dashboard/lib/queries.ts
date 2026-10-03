@@ -1,8 +1,8 @@
-import { supabase, supabaseAdmin } from './supabase'
-import { subDays, format, eachDayOfInterval, parseISO, startOfDay } from 'date-fns'
-import { buildWorkerActivationCohort, buildWorkerShiftCohort } from './workerCohort'
+import { supabase } from './supabase'
+import { subDays, format, eachDayOfInterval } from 'date-fns'
+import { buildProduct, type ProductInput } from './productStats'
 
-// Supabase режет выборку до 1000 строк. Для полных агрегатов (просмотры и т.п.)
+// Supabase режет выборку до 1000 строк. Для полных агрегатов
 // тянем всю таблицу постранично, иначе счётчики занижаются.
 async function selectAll(table: string, columns: string): Promise<any[]> {
   const page = 1000
@@ -10,7 +10,8 @@ async function selectAll(table: string, columns: string): Promise<any[]> {
   const all: any[] = []
   for (;;) {
     const { data, error } = await supabase.from(table).select(columns).range(from, from + page - 1)
-    if (error || !data || data.length === 0) break
+    if (error) throw error
+    if (!data || data.length === 0) break
     all.push(...data)
     if (data.length < page) break
     from += page
@@ -45,13 +46,6 @@ async function selectAllBetween(
 }
 
 // ─── constants ───────────────────────────────────────────────────────────────
-
-export const WORK_TYPE_LABELS: Record<string, string> = {
-  stocker: 'Кладовщик',
-  cook: 'Повар',
-  shift_supervisor: 'Менеджер',
-  picker: 'Комплектовщик',
-}
 
 /** Палитра графиков.
  *
@@ -130,284 +124,147 @@ export function growthChip(current: number, prev: number): { text: string; tone:
 
 // ─── overview ────────────────────────────────────────────────────────────────
 
+/** Чтение, которое не валит весь «Обзор»: не прочиталась таблица — пустой
+ *  список и её имя в `failed`, чтобы панель честно сказала, чего не хватает. */
+async function safeRead<T>(name: string, failed: string[], read: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await read()
+  } catch {
+    failed.push(name)
+    return []
+  }
+}
+
+/**
+ * «Обзор» — метрики продукта. Счёт — lib/productStats.ts, здесь только
+ * строки. Колонок берём ровно столько, сколько нужно для счёта: ни писем,
+ * ни резюме, ни адресов вакансий панель здесь не просит.
+ */
 export async function fetchOverview() {
   const now = new Date()
-  const cohortFrom = subDays(now, 37).toISOString()
-  const cohortTo = subDays(now, 7).toISOString()
-  const [
-    { data: users },
-    { data: tempVacs },
-    { data: permVacs },
-    { data: likes },
-    { data: chats },
-    { data: messages },
-    { data: ratings },
-    { data: permApps },
-    cohortUsers,
-    cohortLikes,
-  ] = await Promise.all([
-    supabase.from('jm_users').select('id,role,created_at,is_blocked'),
-    supabase.from('jm_vacancies').select('id,status,work_type,created_at,workers_needed,workers_found'),
-    supabase.from('jm_perm_vacancies').select('id,status,created_at'),
-    supabase.from('jm_likes').select('id,worker_id,worker_liked,is_match,matched_at,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at'),
-    supabase.from('jm_chats').select('id,created_at'),
-    supabase.from('jm_messages').select('id,created_at'),
-    supabase.from('jm_ratings').select('id,rating'),
-    supabase.from('jm_perm_applications').select('id,status,created_at'),
-    selectAllBetween('jm_users', 'id,role,created_at', 'created_at', cohortFrom, cohortTo),
-    selectAllBetween(
-      'jm_likes',
-      'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
-      'created_at',
-      cohortFrom,
-      now.toISOString(),
-    ),
+  // Восемь недельных когорт + D30 у самой старой — с запасом 70 дней.
+  const since = subDays(now, 70).toISOString()
+  const until = new Date(now.getTime() + 86_400_000).toISOString()
+  const failed: string[] = []
+  const [users, resume, swipes, jupiter, permApps, emails] = await Promise.all([
+    safeRead('jm_users', failed, () => selectAll('jm_users', 'id,role,created_at,first_name,last_name,is_blocked')),
+    safeRead('jm_resume_files', failed, () => selectAll('jm_resume_files', 'user_id,selected')),
+    safeRead('jm_ext_swipes', failed, () => selectAllBetween('jm_ext_swipes', 'user_id,dir,created_at', 'created_at', since, until)),
+    safeRead('jm_jupiter_applications', failed, () => selectAllBetween('jm_jupiter_applications', 'user_id,state,reason_code,created_at', 'created_at', since, until)),
+    safeRead('jm_perm_applications', failed, () => selectAllBetween('jm_perm_applications', 'worker_id,created_at', 'created_at', since, until)),
+    safeRead('jm_jupiter_emails', failed, () => selectAllBetween('jm_jupiter_emails', 'user_id,received_at', 'received_at', since, until)),
   ])
-
-  const u = users ?? []
-  const tv = tempVacs ?? []
-  const pv = permVacs ?? []
-  const lk = likes ?? []
-  const ch = chats ?? []
-  const ms = messages ?? []
-  const rt = ratings ?? []
-  const pa = permApps ?? []
-
-  const workers = u.filter((x: any) => x.role === 'worker')
-  const employers = u.filter((x: any) => x.role === 'employer')
-  // Мэтч = совпадение по смене (is_match) ИЛИ одобренный отклик на вакансию
-  const shiftMatches = lk.filter((x: any) => x.is_match)
-  const permApproved = pa.filter((x: any) => x.status === 'approved')
-  const matches = [
-    ...shiftMatches.map((x: any) => ({ at: x.matched_at ?? x.created_at })),
-    ...permApproved.map((x: any) => ({ at: x.created_at })),
-  ]
-  const confirmed = lk.filter((x: any) => x.worker_confirmed && x.employer_confirmed)
-  const completed = lk.filter((x: any) => x.shift_completed)
-
-  const w7 = subDays(now, 7).toISOString()
-  const w30 = subDays(now, 30).toISOString()
-
-  const newUsersWeek = u.filter((x: any) => x.created_at > w7).length
-  const newUsersMonth = u.filter((x: any) => x.created_at > w30).length
-  const newVacsMonth = tv.filter((x: any) => x.created_at > w30).length
-  const newMatchesMonth = matches.filter((x) => x.at > w30).length
-
-  // prev month for trend
-  const w60 = subDays(now, 60).toISOString()
-  const prevUsersMonth = u.filter((x: any) => x.created_at > w60 && x.created_at <= w30).length
-  const prevMatchesMonth = matches.filter((x) => x.at > w60 && x.at <= w30).length
-
-  // 30-day daily data
-  const days30 = dayRange(30)
-  const usersByDay = groupByDate(u, 'created_at')
-  const workersByDay = groupByDate(workers, 'created_at')
-  const employersByDay = groupByDate(employers, 'created_at')
-  const vacsByDay = groupByDate(tv, 'created_at')
-  const matchesByDay = groupByDate(
-    matches.map((x) => ({ created_at: x.at })),
-    'created_at'
-  )
-
-  const dailyUsers = days30.map(d => ({
-    date: toDayLabel(d),
-    workers: workersByDay[d] ?? 0,
-    employers: employersByDay[d] ?? 0,
-    total: usersByDay[d] ?? 0,
-  }))
-
-  const dailyVacs = days30.map(d => ({
-    date: toDayLabel(d),
-    vacancies: vacsByDay[d] ?? 0,
-    matches: matchesByDay[d] ?? 0,
-  }))
-
-  // work type dist
-  const wtMap: Record<string, number> = {}
-  for (const v of tv) {
-    const wt = (v as any).work_type ?? 'other'
-    wtMap[wt] = (wtMap[wt] ?? 0) + 1
+  const input: ProductInput = {
+    users,
+    resumeUsers: resume.filter((r: any) => r.selected).map((r: any) => r.user_id),
+    swipes,
+    jupiter,
+    permApps,
+    emails,
   }
-  const workTypeDist = Object.entries(wtMap)
-    .map(([k, v]) => ({ name: WORK_TYPE_LABELS[k] ?? k, value: v }))
-    .sort((a, b) => b.value - a.value)
-
-  // Одна дозревшая когорта: каждый следующий шаг считает тех же работников.
-  const funnel = buildWorkerShiftCohort(cohortUsers, cohortLikes, now).steps
-
-  // ratings
-  const avgRating = rt.length > 0
-    ? rt.reduce((s: number, r: any) => s + Number(r.rating), 0) / rt.length
-    : 0
-
-  return {
-    kpi: {
-      totalUsers: u.length,
-      workers: workers.length,
-      employers: employers.length,
-      blocked: u.filter((x: any) => x.is_blocked).length,
-      tempVacancies: tv.length,
-      permVacancies: pv.length,
-      openTemp: tv.filter((x: any) => x.status === 'open').length,
-      openPerm: pv.filter((x: any) => x.status === 'open').length,
-      totalLikes: lk.length,
-      totalMatches: matches.length,
-      // конверсия «отклик → мэтч»: все отклики = свайпы по сменам + заявки на вакансии
-      matchRate: (lk.length + pa.length) > 0 ? ((matches.length / (lk.length + pa.length)) * 100).toFixed(1) : '0',
-      confirmed: confirmed.length,
-      completed: completed.length,
-      chats: ch.length,
-      messages: ms.length,
-      avgMessages: ch.length > 0 ? (ms.length / ch.length).toFixed(1) : '0',
-      // null, а не 0: «нет ни одной оценки» и «все поставили ноль» — разные
-      // сообщения, и панель обязана их различать.
-      avgRating: rt.length > 0 ? avgRating.toFixed(2) : null,
-      ratingsCount: rt.length,
-      newUsersWeek,
-      newUsersMonth,
-      newVacsMonth,
-      newMatchesMonth,
-      usersDelta: growthChip(newUsersMonth, prevUsersMonth),
-      matchesDelta: growthChip(newMatchesMonth, prevMatchesMonth),
-    },
-    dailyUsers,
-    dailyVacs,
-    workTypeDist,
-    funnel,
-  }
+  return { ...buildProduct(input, now), failed }
 }
 
 // ─── users ───────────────────────────────────────────────────────────────────
 
 export async function fetchUsers() {
-  const [{ data: users }, { data: webPushRows }] = await Promise.all([
+  const since = subDays(new Date(), 90).toISOString()
+  const until = new Date(Date.now() + 86_400_000).toISOString()
+  // Активность в ленте — по каждому человеку: сколько свайпал и откликался,
+  // когда последний раз. Не прочиталось — колонка покажет прочерк, список
+  // людей всё равно откроется.
+  const [{ data: users }, { data: webPushRows }, resumeRows, swipeRows, appRows] = await Promise.all([
     supabase
       .from('jm_users')
-      .select('id,role,first_name,last_name,phone,email,metro_station,metro_line_id,is_blocked,created_at,company,push_token')
+      .select('id,role,first_name,last_name,phone,email,is_blocked,created_at,push_token')
       .order('created_at', { ascending: false }),
     supabase
       .from('jm_web_push_subscriptions')
       .select('user_id,updated_at'),
+    selectAll('jm_resume_files', 'user_id,selected').catch(() => null),
+    selectAllBetween('jm_ext_swipes', 'user_id,created_at', 'created_at', since, until).catch(() => null),
+    selectAllBetween('jm_jupiter_applications', 'user_id,created_at', 'created_at', since, until).catch(() => null),
   ])
 
   const u = users ?? []
   const webPushMap = new Map((webPushRows ?? []).map((r: any) => [r.user_id, r.updated_at as string]))
+  const resumeSet = resumeRows ? new Set(resumeRows.filter((r: any) => r.selected).map((r: any) => r.user_id as string)) : null
+  const act = new Map<string, { swipes: number; apps: number; last: string }>()
+  const touch = (uid: string, at: string, kind: 'swipes' | 'apps') => {
+    const row = act.get(uid) ?? { swipes: 0, apps: 0, last: '' }
+    row[kind]++
+    if (at > row.last) row.last = at
+    act.set(uid, row)
+  }
+  for (const r of swipeRows ?? []) touch(r.user_id, r.created_at, 'swipes')
+  for (const r of appRows ?? []) touch(r.user_id, r.created_at, 'apps')
+  const activityKnown = swipeRows !== null && appRows !== null
 
-  const workers = u.filter((x: any) => x.role === 'worker')
-  const employers = u.filter((x: any) => x.role === 'employer')
-
-  const days30 = dayRange(30)
   const days90 = dayRange(90)
-
   const w30 = subDays(new Date(), 30).toISOString()
   const w7 = subDays(new Date(), 7).toISOString()
 
-  // 90-day growth
-  const wByDay = groupByDate(workers, 'created_at')
-  const eByDay = groupByDate(employers, 'created_at')
-  const growth90 = days90.map(d => ({
-    date: toDayLabel(d),
-    workers: wByDay[d] ?? 0,
-    employers: eByDay[d] ?? 0,
-  }))
+  const regByDay = groupByDate(u, 'created_at')
+  const growth90 = days90.map(d => ({ date: toDayLabel(d), regs: regByDay[d] ?? 0 }))
 
-  // cumulative
-  let cumW = workers.filter((x: any) => x.created_at < subDays(new Date(), 90).toISOString()).length
-  let cumE = employers.filter((x: any) => x.created_at < subDays(new Date(), 90).toISOString()).length
-  const cumulative = growth90.map(d => {
-    cumW += d.workers
-    cumE += d.employers
-    return { date: d.date, workers: cumW, employers: cumE, total: cumW + cumE }
+  const recent = u.map((x: any) => {
+    const a = act.get(x.id)
+    return {
+      name: `${x.first_name ?? ''} ${x.last_name ?? ''}`.trim(),
+      phone: x.phone,
+      email: x.email ?? null,
+      role: x.role,
+      blocked: x.is_blocked,
+      date: x.created_at?.slice(0, 10),
+      id: x.id,
+      hasResume: resumeSet ? resumeSet.has(x.id) : null,
+      swipes: activityKnown ? (a?.swipes ?? 0) : null,
+      apps: activityKnown ? (a?.apps ?? 0) : null,
+      lastActive: a?.last ? a.last.slice(0, 10) : null,
+      hasPushToken: !!x.push_token,
+      hasWebPush: webPushMap.has(x.id),
+      webPushDate: webPushMap.get(x.id)?.slice(0, 10) ?? null,
+    }
   })
 
-  const recent = u.map((x: any) => ({
-    name: `${x.first_name ?? ''} ${x.last_name ?? ''}`.trim(),
-    phone: x.phone,
-    email: x.email ?? null,
-    role: x.role,
-    metro: x.metro_station ?? '—',
-    company: x.company ?? '—',
-    blocked: x.is_blocked,
-    date: x.created_at?.slice(0, 10),
-    id: x.id,
-    hasPushToken: !!x.push_token,
-    hasWebPush: webPushMap.has(x.id),
-    webPushDate: webPushMap.get(x.id)?.slice(0, 10) ?? null,
-    hadPushTokenBefore: !!x.push_token && webPushMap.has(x.id),
-  }))
-
-  const withWebPush = webPushMap.size
-  const webPushNewWeek = (webPushRows ?? []).filter((r: any) => r.updated_at > w7).length
-  const webPushNewMonth = (webPushRows ?? []).filter((r: any) => r.updated_at > w30).length
-  const webPushOnlyCount = u.filter((x: any) => !x.push_token && webPushMap.has(x.id)).length
+  const active7 = Array.from(act.values()).filter(a => a.last > w7).length
 
   return {
     kpi: {
       total: u.length,
-      workers: workers.length,
-      employers: employers.length,
       blocked: u.filter((x: any) => x.is_blocked).length,
       newWeek: u.filter((x: any) => x.created_at > w7).length,
       newMonth: u.filter((x: any) => x.created_at > w30).length,
-      workerPct: u.length > 0 ? ((workers.length / u.length) * 100).toFixed(0) : '0',
-      // Считается отдельно, а не как «сто минус доля работников»: роли двумя
-      // значениями не исчерпываются, и разница уходила бы в работодателей.
-      employerPct: u.length > 0 ? ((employers.length / u.length) * 100).toFixed(0) : '0',
+      withResume: resumeSet ? u.filter((x: any) => resumeSet.has(x.id)).length : null,
+      active7: activityKnown ? active7 : null,
       withPushToken: u.filter((x: any) => x.push_token).length,
-      withoutPushToken: u.filter((x: any) => !x.push_token).length,
+      withWebPush: webPushMap.size,
+      webPushNewWeek: (webPushRows ?? []).filter((r: any) => r.updated_at > w7).length,
       // Без Expo-токена — ещё не «недоступен»: у части этих людей подключён
-      // веб-пуш с айфона. Недоступны только те, у кого нет ни того, ни другого,
-      // и раньше панель называла этим числом всех без Expo — то есть завышала
-      // его на всех айфонщиков разом.
+      // веб-пуш с айфона. Недоступны только те, у кого нет ни того, ни другого.
       noPushAtAll: u.filter((x: any) => !x.push_token && !webPushMap.has(x.id)).length,
-      withWebPush,
-      webPushNewWeek,
-      webPushNewMonth,
-      webPushOnlyCount,
     },
     growth90,
-    cumulative,
     recent,
-    roleSplit: [
-      { name: 'Работники', value: workers.length, fill: PALETTE.orange },
-      { name: 'Работодатели', value: employers.length, fill: PALETTE.blue },
-    ],
   }
 }
 
 // ─── vacancies ───────────────────────────────────────────────────────────────
-
-/** Смены с прошедшей датой должны быть закрыты — дашборд подчищает их при загрузке.
- *  Точная логика (по времени окончания, ночные смены) живёт на сервере;
- *  здесь только страховка: закрываем то, что старше вчерашнего дня. */
-async function autoCloseStaleVacancies() {
-  // МСК = UTC+3
-  const mskYesterday = new Date(Date.now() + 3 * 3600_000 - 86400_000).toISOString().slice(0, 10)
-  try {
-    await supabaseAdmin
-      .from('jm_vacancies')
-      .update({ status: 'closed' })
-      .eq('status', 'open')
-      .lt('date', mskYesterday)
-  } catch { /* не блокируем аналитику */ }
-}
+//
+// Только свои вакансии работодателей (jm_perm_vacancies). Смены закрыты
+// 17.09.2026: их список, автозакрытие прошедших смен, просмотры, зарплатные
+// корзины и «топ работодателей» сняты — своих вакансий единицы, а основная
+// лента — внешние карьерные сайты (раздел «Внешние вакансии»).
 
 export async function fetchVacancies() {
-  await autoCloseStaleVacancies()
-  const [{ data: tv }, { data: pv }, { data: apps }, { data: users }, { data: likes }, tvViews, pvViews] = await Promise.all([
-    supabase.from('jm_vacancies').select('id,status,work_type,work_type_label,created_at,employer_id,salary,workers_needed,workers_found,is_urgent,no_experience_needed,company,date,address,metro_station,time_start,time_end'),
+  const [{ data: pv }, { data: apps }, { data: users }] = await Promise.all([
     supabase.from('jm_perm_vacancies').select('id,title,status,created_at,employer_id,salary,company,metro_station,address,description,schedule,work_type'),
     supabase.from('jm_perm_applications').select('id,vacancy_id,worker_id,status,created_at').order('created_at', { ascending: false }),
     supabase.from('jm_users').select('id,first_name,last_name,phone'),
-    supabase.from('jm_likes').select('id,vacancy_id,worker_id,is_match,worker_liked,employer_liked,worker_skipped,created_at').order('created_at', { ascending: false }),
-    selectAll('jm_vacancy_views', 'vacancy_id,viewed_at'),
-    selectAll('jm_perm_vacancy_views', 'vacancy_id,viewed_at'),
   ])
 
-  const t = tv ?? []
   const p = pv ?? []
   const ap = apps ?? []
-  const lk = likes ?? []
 
   const userMap: Record<string, { name: string; phone: string }> = {}
   for (const u of users ?? []) {
@@ -450,150 +307,19 @@ export async function fetchVacancies() {
     applicants: appsByVac[v.id] ?? [],
   })).sort((a: any, b: any) => b.apps.total - a.apps.total)
 
-  const likesByVac: Record<string, AppInfo[]> = {}
-  const likeCountByVac: Record<string, { total: number; matched: number; pending: number; rejected: number }> = {}
-
-  for (const l of lk) {
-    const vid = (l as any).vacancy_id
-    const wid = (l as any).worker_id
-    if (!vid || !(l as any).worker_liked) continue
-    if (!likesByVac[vid]) likesByVac[vid] = []
-    if (!likeCountByVac[vid]) likeCountByVac[vid] = { total: 0, matched: 0, pending: 0, rejected: 0 }
-    likeCountByVac[vid].total++
-    let st: string
-    if ((l as any).is_match) { st = 'matched'; likeCountByVac[vid].matched++ }
-    else if ((l as any).employer_liked === false) { st = 'rejected'; likeCountByVac[vid].rejected++ }
-    else { st = 'pending'; likeCountByVac[vid].pending++ }
-    const worker = userMap[wid]
-    likesByVac[vid].push({ id: (l as any).id, workerId: wid, name: worker?.name ?? '—', phone: worker?.phone ?? '—', status: st, date: (l as any).created_at?.slice(0, 10) ?? '' })
-  }
-
-  const tempVacancyCards = t.map((v: any) => ({
-    id: v.id,
-    title: v.work_type_label ?? WORK_TYPE_LABELS[v.work_type ?? ''] ?? 'Вакансия',
-    company: v.company ?? '—',
-    salary: v.salary ? Number(v.salary).toLocaleString('ru-RU') + ' ₽' : null,
-    status: v.status ?? 'open',
-    isUrgent: !!v.is_urgent,
-    workersNeeded: v.workers_needed ?? null,
-    workersFound: v.workers_found ?? 0,
-    shiftDate: v.date ?? null,
-    timeStart: v.time_start ?? null,
-    timeEnd: v.time_end ?? null,
-    address: v.address ?? null,
-    metro: v.metro_station ?? null,
-    createdAt: v.created_at?.slice(0, 10) ?? null,
-    apps: likeCountByVac[v.id] ?? { total: 0, matched: 0, pending: 0, rejected: 0 },
-    applicants: likesByVac[v.id] ?? [],
-  })).sort((a: any, b: any) => b.apps.total - a.apps.total)
-
   const w30 = subDays(new Date(), 30).toISOString()
-  const days30 = dayRange(30)
-  const days90 = dayRange(90)
-
-  const tByDay = groupByDate(t, 'created_at')
-  const pByDay = groupByDate(p, 'created_at')
-
-  const daily90 = days90.map(d => ({
-    date: toDayLabel(d),
-    temp: tByDay[d] ?? 0,
-    perm: pByDay[d] ?? 0,
-  }))
-
-  const wtMap: Record<string, number> = {}
-  for (const v of t) {
-    const wt = (v as any).work_type ?? 'other'
-    wtMap[wt] = (wtMap[wt] ?? 0) + 1
-  }
-  const workTypeDist = Object.entries(wtMap)
-    .map(([k, v]) => ({ name: WORK_TYPE_LABELS[k] ?? k, temp: v, value: v }))
-    .sort((a, b) => b.value - a.value)
-
-  const empMap: Record<string, { name: string; temp: number; perm: number }> = {}
-  for (const v of t) {
-    const eid = (v as any).employer_id
-    const company = (v as any).company ?? eid
-    if (!eid) continue
-    if (!empMap[eid]) empMap[eid] = { name: company, temp: 0, perm: 0 }
-    empMap[eid].temp++
-    empMap[eid].name = company
-  }
-  for (const v of p) {
-    const eid = (v as any).employer_id
-    const company = (v as any).company ?? eid
-    if (!eid) continue
-    if (!empMap[eid]) empMap[eid] = { name: company, temp: 0, perm: 0 }
-    empMap[eid].perm++
-    empMap[eid].name = company
-  }
-  const topEmployers = Object.values(empMap)
-    .map(e => ({ ...e, total: e.temp + e.perm }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 10)
-
-  const salaryBuckets: Record<string, number> = {
-    '< 30k': 0, '30–50k': 0, '50–80k': 0, '80–120k': 0, '> 120k': 0,
-  }
-  for (const v of p) {
-    const s = Number((v as any).salary ?? 0)
-    if (s < 30000) salaryBuckets['< 30k']++
-    else if (s < 50000) salaryBuckets['30–50k']++
-    else if (s < 80000) salaryBuckets['50–80k']++
-    else if (s < 120000) salaryBuckets['80–120k']++
-    else salaryBuckets['> 120k']++
-  }
-  const salaryDist = Object.entries(salaryBuckets).map(([name, value]) => ({ name, value }))
-
-  // ── Динамика просмотров (уникальные просмотры с меткой времени) ──
-  const tViews = (tvViews ?? []) as any[]
-  const pViews = (pvViews ?? []) as any[]
-  const days30v = dayRange(30)
-  const tViewsByDay = groupByDate(tViews.map(v => ({ created_at: v.viewed_at })), 'created_at')
-  const pViewsByDay = groupByDate(pViews.map(v => ({ created_at: v.viewed_at })), 'created_at')
-  const viewsDaily30 = days30v.map(d => ({
-    date: toDayLabel(d),
-    temp: tViewsByDay[d] ?? 0,
-    perm: pViewsByDay[d] ?? 0,
-  }))
-  const w7v = subDays(new Date(), 7).toISOString()
-  const viewsKpi = {
-    tempTotal: tViews.length,
-    permTotal: pViews.length,
-    temp7: tViews.filter(v => (v.viewed_at ?? '') > w7v).length,
-    perm7: pViews.filter(v => (v.viewed_at ?? '') > w7v).length,
-  }
 
   return {
     kpi: {
-      totalTemp: t.length,
       totalPerm: p.length,
-      openTemp: t.filter((x: any) => x.status === 'open').length,
       openPerm: p.filter((x: any) => x.status === 'open').length,
-      closedTemp: t.filter((x: any) => x.status === 'closed').length,
-      closedPerm: p.filter((x: any) => x.status === 'closed').length,
-      urgentTemp: t.filter((x: any) => x.is_urgent).length,
-      newMonth: t.filter((x: any) => x.created_at > w30).length + p.filter((x: any) => x.created_at > w30).length,
+      newMonth: p.filter((x: any) => x.created_at > w30).length,
+      apps: ap.length,
+      pendingApps: ap.filter((a: any) => (a.status ?? 'pending') === 'pending').length,
     },
-    viewsDaily30,
-    viewsKpi,
-    daily90,
-    workTypeDist,
-    topEmployers,
-    salaryDist,
-    tempStatus: [
-      { name: 'Открыто', value: t.filter((x: any) => x.status === 'open').length, fill: PALETTE.green },
-      { name: 'Закрыто', value: t.filter((x: any) => x.status === 'closed').length, fill: PALETTE.gray },
-    ],
-    permStatus: [
-      { name: 'Открыто', value: p.filter((x: any) => x.status === 'open').length, fill: PALETTE.green },
-      { name: 'Закрыто', value: p.filter((x: any) => x.status === 'closed').length, fill: PALETTE.gray },
-    ],
     permVacancyCards,
-    tempVacancyCards,
   }
 }
-
-// ─── engagement ──────────────────────────────────────────────────────────────
 
 // ─── user profile ────────────────────────────────────────────────────────────
 
@@ -601,360 +327,45 @@ export async function fetchUserProfile(userId: string) {
   const [
     { data: user },
     { data: chats },
-    { data: ratingsReceived },
-    { data: ratingsSent },
-    { data: likes },
-    { data: vacancies },
+    { data: swipes },
+    { data: jupiter },
     { data: permVacancies },
     { data: permApps },
+    { data: resume },
     { data: webPushSub },
   ] = await Promise.all([
     supabase.from('jm_users').select('*').eq('id', userId).maybeSingle(),
     supabase.from('jm_chats').select('id,vac_title,company_name,created_at,worker_id,employer_id,vacancy_id')
       .or(`worker_id.eq.${userId},employer_id.eq.${userId}`)
       .order('created_at', { ascending: false }).limit(20),
-    supabase.from('jm_ratings').select('id,rating,review_text,role,created_at,from_user_id')
-      .eq('to_user_id', userId).order('created_at', { ascending: false }).limit(20),
-    supabase.from('jm_ratings').select('id,rating,review_text,role,created_at,to_user_id')
-      .eq('from_user_id', userId).order('created_at', { ascending: false }).limit(10),
-    supabase.from('jm_likes').select('id,vacancy_id,is_match,worker_liked,employer_liked,created_at')
-      .eq('worker_id', userId).order('created_at', { ascending: false }).limit(30),
-    supabase.from('jm_vacancies').select('id,work_type_label,work_type,status,created_at,company,address')
-      .eq('employer_id', userId).order('created_at', { ascending: false }).limit(20),
+    supabase.from('jm_ext_swipes').select('dir,created_at')
+      .eq('user_id', userId).order('created_at', { ascending: false }).limit(1000),
+    // Без checkpoint и resume_token: там токены возобновления прогона.
+    supabase.from('jm_jupiter_applications').select('id,company,state,reason_code,created_at,submitted_at')
+      .eq('user_id', userId).order('created_at', { ascending: false }).limit(50),
     supabase.from('jm_perm_vacancies').select('id,title,status,created_at,company,address')
       .eq('employer_id', userId).order('created_at', { ascending: false }).limit(20),
     supabase.from('jm_perm_applications').select('id,vacancy_id,status,created_at')
       .eq('worker_id', userId).order('created_at', { ascending: false }).limit(20),
+    supabase.from('jm_resume_files').select('imported_at,selected')
+      .eq('user_id', userId).eq('selected', true).maybeSingle(),
     supabase.from('jm_web_push_subscriptions').select('updated_at').eq('user_id', userId).maybeSingle(),
   ])
 
-  const avgRating = ratingsReceived && ratingsReceived.length > 0
-    ? (ratingsReceived.reduce((s: number, r: any) => s + Number(r.rating), 0) / ratingsReceived.length).toFixed(1)
-    : null
-
+  const sw = (swipes ?? []) as any[]
   return {
     user: user ?? null,
     chats: chats ?? [],
-    ratingsReceived: ratingsReceived ?? [],
-    ratingsSent: ratingsSent ?? [],
-    likes: likes ?? [],
-    vacancies: vacancies ?? [],
+    jupiter: jupiter ?? [],
     permVacancies: permVacancies ?? [],
     permApps: permApps ?? [],
-    avgRating,
-    totalLikes: (likes ?? []).length,
-    totalMatches: (likes ?? []).filter((l: any) => l.is_match).length,
+    swipesRight: sw.filter(s => s.dir === 1).length,
+    swipesLeft: sw.filter(s => s.dir === -1).length,
+    lastSwipe: sw[0]?.created_at?.slice(0, 10) ?? null,
+    resume: (resume as any) ?? null,
     hasWebPush: !!webPushSub,
     webPushDate: (webPushSub as any)?.updated_at?.slice(0, 10) ?? null,
   }
-}
-
-// ─── cohorts ─────────────────────────────────────────────────────────────────
-
-// ─── funnel ──────────────────────────────────────────────────────────────────
-
-export async function fetchFunnel() {
-  const funnelNow = new Date()
-  const cohortFrom = subDays(funnelNow, 37).toISOString()
-  const cohortTo = subDays(funnelNow, 7).toISOString()
-  const [
-    { data: users },
-    { data: likes },
-    { data: permApps },
-    { data: guestEvents },
-    cohortUsers,
-    cohortLikes,
-    cohortPermApps,
-    cohortShiftViews,
-    cohortPermViews,
-  ] = await Promise.all([
-    supabase.from('jm_users').select('id,role,created_at'),
-    supabase.from('jm_likes').select('id,worker_id,is_match,worker_liked,worker_confirmed,employer_confirmed,shift_completed,created_at'),
-    supabase.from('jm_perm_applications').select('id,worker_id,status,created_at'),
-    supabase.from('jm_guest_events').select('anon_id,event_type,vacancy_kind,campaign_id,channel,occurred_at'),
-    selectAllBetween(
-      'jm_users',
-      'id,role,created_at,first_name,last_name,metro_station,work_types',
-      'created_at',
-      cohortFrom,
-      cohortTo,
-    ),
-    selectAllBetween(
-      'jm_likes',
-      'worker_id,worker_liked,is_match,worker_confirmed,employer_confirmed,shift_completed,outcome,created_at',
-      'created_at',
-      cohortFrom,
-      funnelNow.toISOString(),
-    ),
-    selectAllBetween(
-      'jm_perm_applications',
-      'worker_id,status,created_at',
-      'created_at',
-      cohortFrom,
-      funnelNow.toISOString(),
-    ),
-    selectAllBetween(
-      'jm_vacancy_views',
-      'worker_id,viewed_at',
-      'viewed_at',
-      cohortFrom,
-      funnelNow.toISOString(),
-    ),
-    selectAllBetween(
-      'jm_perm_vacancy_views',
-      'worker_id,viewed_at',
-      'viewed_at',
-      cohortFrom,
-      funnelNow.toISOString(),
-    ),
-  ])
-
-  const u = users ?? []
-  const lk = likes ?? []
-  const ap = permApps ?? []
-  const ge = guestEvents ?? []
-
-  const workers = u.filter((x: any) => x.role === 'worker')
-
-  const likedLk = lk.filter((l: any) => l.worker_liked)
-  const matchedLk = lk.filter((l: any) => l.is_match)
-  const confirmedLk = lk.filter((l: any) => l.worker_confirmed && l.employer_confirmed)
-  const completedLk = lk.filter((l: any) => l.shift_completed)
-
-  const shiftsByWorker: Record<string, number> = {}
-  for (const l of completedLk) {
-    const wid = (l as any).worker_id
-    shiftsByWorker[wid] = (shiftsByWorker[wid] ?? 0) + 1
-  }
-  const shiftCounts = Object.values(shiftsByWorker)
-  const workersWithShift = shiftCounts.length
-  const avgShiftsPerWorker = workersWithShift > 0
-    ? (shiftCounts.reduce((a, b) => a + b, 0) / workersWithShift).toFixed(1) : '0'
-  const returningWorkers = shiftCounts.filter(c => c > 1).length
-
-  const likesByWorker: Record<string, number> = {}
-  for (const l of likedLk) {
-    const wid = (l as any).worker_id
-    likesByWorker[wid] = (likesByWorker[wid] ?? 0) + 1
-  }
-  const likeCounts = Object.values(likesByWorker)
-  const activityBuckets = [
-    { name: '0 лайков', value: Math.max(0, workers.length - Object.keys(likesByWorker).length) },
-    { name: '1', value: likeCounts.filter(c => c === 1).length },
-    { name: '2–5', value: likeCounts.filter(c => c >= 2 && c <= 5).length },
-    { name: '6–10', value: likeCounts.filter(c => c >= 6 && c <= 10).length },
-    { name: '11+', value: likeCounts.filter(c => c > 10).length },
-  ]
-
-  const shiftBuckets = [
-    { name: '1 смена', value: shiftCounts.filter(c => c === 1).length },
-    { name: '2–3', value: shiftCounts.filter(c => c >= 2 && c <= 3).length },
-    { name: '4–7', value: shiftCounts.filter(c => c >= 4 && c <= 7).length },
-    { name: '8+', value: shiftCounts.filter(c => c >= 8).length },
-  ]
-
-  const days30 = dayRange(30)
-  const likeByDay = groupByDate(likedLk, 'created_at')
-  const matchByDay = groupByDate(matchedLk, 'created_at')
-  const completedByDay = groupByDate(completedLk, 'created_at')
-  const daily30 = days30.map(d => ({
-    date: toDayLabel(d),
-    likes: likeByDay[d] ?? 0,
-    matches: matchByDay[d] ?? 0,
-    completed: completedByDay[d] ?? 0,
-  }))
-
-  const guestUnique = (eventType: string, since?: string) =>
-    new Set(ge.filter((e: any) =>
-      e.event_type === eventType && (!since || e.occurred_at >= since)
-    ).map((e: any) => e.anon_id)).size
-  const guestEventsCount = (eventType: string, since?: string) =>
-    ge.filter((e: any) => e.event_type === eventType && (!since || e.occurred_at >= since)).length
-  const guestSince7 = subDays(funnelNow, 7).toISOString()
-  const guestSince30 = subDays(funnelNow, 30).toISOString()
-  const guestStarted30 = guestUnique('guest_started', guestSince30)
-  const guestCompleted30 = guestUnique('registration_completed', guestSince30)
-  const guestByDay = (eventType: string) => groupByDate(
-    ge.filter((e: any) => e.event_type === eventType), 'occurred_at'
-  )
-  const guestImpressionsByDay = guestByDay('vacancy_impression')
-  const guestIntentByDay = guestByDay('apply_intent')
-  const guestCompletedByDay = guestByDay('registration_completed')
-  const guestDaily30 = days30.map(d => ({
-    date: toDayLabel(d),
-    impressions: guestImpressionsByDay[d] ?? 0,
-    intents: guestIntentByDay[d] ?? 0,
-    registrations: guestCompletedByDay[d] ?? 0,
-  }))
-  const guestFunnel = [
-    { name: 'Вошли гостем', value: guestUnique('guest_started', guestSince30), fill: PALETTE.blue },
-    { name: 'Смотрели вакансии', value: guestUnique('vacancy_impression', guestSince30), fill: PALETTE.cyan },
-    { name: 'Хотели откликнуться', value: guestUnique('apply_intent', guestSince30), fill: PALETTE.orange },
-    { name: 'Зарегистрировались', value: guestCompleted30, fill: PALETTE.green },
-  ]
-
-  // Канал открытия восстанавливаем по campaign_id публикации: в самой
-  // startapp-ссылке нет пользовательских данных и названия Telegram-чата.
-  const telegramPublished30 = ge.filter((e: any) =>
-    e.event_type === 'campaign_published' && e.campaign_id && e.occurred_at >= guestSince30
-  )
-  const telegramCampaigns = new Set(telegramPublished30.map((e: any) => e.campaign_id))
-  const telegramEvents30 = ge.filter((e: any) =>
-    e.campaign_id && telegramCampaigns.has(e.campaign_id) && e.occurred_at >= guestSince30
-  )
-  const telegramOpens30 = telegramEvents30.filter((e: any) => e.event_type === 'campaign_open').length
-  const telegramApplies30 = telegramEvents30.filter((e: any) => e.event_type === 'campaign_apply').length
-  const telegramRegistrations30 = new Set(
-    telegramEvents30.filter((e: any) => e.event_type === 'registration_completed')
-      .map((e: any) => e.anon_id)
-  ).size
-  const telegramFunnel = [
-    { name: 'Публикации', value: telegramPublished30.length, fill: PALETTE.blue },
-    { name: 'Открытия', value: telegramOpens30, fill: PALETTE.cyan },
-    { name: 'Намерения откликнуться', value: telegramApplies30, fill: PALETTE.orange },
-    { name: 'Регистрации', value: telegramRegistrations30, fill: PALETTE.green },
-  ]
-
-  // Органические рекомендации пользователей считаем отдельно от наших
-  // публикаций: это самостоятельный канал привлечения с нулевой закупочной
-  // стоимостью, и смешивание скрыло бы его реальную эффективность.
-  const referralShared30 = ge.filter((e: any) =>
-    e.event_type === 'campaign_shared' && e.channel === 'user_share'
-      && e.campaign_id && e.occurred_at >= guestSince30
-  )
-  const referralCampaigns = new Set(referralShared30.map((e: any) => e.campaign_id))
-  const referralEvents30 = ge.filter((e: any) =>
-    e.campaign_id && referralCampaigns.has(e.campaign_id) && e.occurred_at >= guestSince30
-  )
-  const referralOpens30 = referralEvents30.filter((e: any) => e.event_type === 'campaign_open').length
-  const referralApplies30 = referralEvents30.filter((e: any) => e.event_type === 'campaign_apply').length
-  const referralRegistrations30 = new Set(
-    referralEvents30.filter((e: any) => e.event_type === 'registration_completed')
-      .map((e: any) => e.anon_id)
-  ).size
-  const referralFunnel = [
-    { name: 'Поделились', value: referralShared30.length, fill: PALETTE.purple },
-    { name: 'Открытия', value: referralOpens30, fill: PALETTE.cyan },
-    { name: 'Намерения откликнуться', value: referralApplies30, fill: PALETTE.orange },
-    { name: 'Регистрации', value: referralRegistrations30, fill: PALETTE.green },
-  ]
-
-  const cohortColors = [
-    PALETTE.blue, PALETTE.cyan, PALETTE.purple,
-    PALETTE.orange, PALETTE.amber, PALETTE.green,
-  ]
-  const workerActivation = buildWorkerActivationCohort(
-    cohortUsers,
-    cohortLikes,
-    cohortPermApps,
-    cohortShiftViews,
-    cohortPermViews,
-    funnelNow,
-  )
-  const mainFunnel = workerActivation.steps
-    .map((step, index) => ({ ...step, fill: cohortColors[index] }))
-  const [
-    cohortWorkers,
-    cohortProfileReady,
-    cohortViewed,
-    cohortApplied,
-    cohortAccepted,
-    cohortWorked,
-  ] = workerActivation.steps.map(step => step.value)
-
-  const eventFunnel = [
-    { name: 'Лайки воркеров', value: likedLk.length, fill: PALETTE.blue },
-    { name: 'Совпадения', value: matchedLk.length, fill: PALETTE.purple },
-    { name: 'Подтверждено', value: confirmedLk.length, fill: PALETTE.orange },
-    { name: 'Смены завершены', value: completedLk.length, fill: PALETTE.green },
-  ]
-
-  const permFunnel = [
-    { name: 'Подано заявок', value: ap.length, fill: PALETTE.blue },
-    { name: 'Одобрено', value: ap.filter((a: any) => a.status === 'approved').length, fill: PALETTE.green },
-    { name: 'Отклонено', value: ap.filter((a: any) => a.status === 'rejected').length, fill: PALETTE.red },
-  ]
-
-  return {
-    kpi: {
-      workers: workers.length,
-      cohortWorkers,
-      cohortProfileReady,
-      cohortViewed,
-      cohortApplied,
-      cohortAccepted,
-      cohortWorked,
-      cohortProfileRate: pct(cohortProfileReady, cohortWorkers),
-      cohortViewRate: pct(cohortViewed, cohortProfileReady),
-      cohortApplyRate: pct(cohortApplied, cohortProfileReady),
-      cohortAcceptRate: pct(cohortAccepted, cohortApplied),
-      cohortWorkRate: pct(cohortWorked, cohortWorkers),
-      cohortAppliedWithin7d: workerActivation.appliedWithin7d,
-      cohortAppliedWithin7dRate: pct(workerActivation.appliedWithin7d, cohortProfileReady),
-      cohortProfileAnomalies: workerActivation.legacyProfileAnomalies,
-      cohortBiggestDrop: workerActivation.biggestDrop,
-      totalLikes: likedLk.length,
-      totalMatches: matchedLk.length,
-      matchRate: likedLk.length > 0 ? ((matchedLk.length / likedLk.length) * 100).toFixed(1) : '0',
-      completedCount: completedLk.length,
-      completionRate: matchedLk.length > 0 ? ((completedLk.length / matchedLk.length) * 100).toFixed(1) : '0',
-      avgShiftsPerWorker,
-      returningWorkers,
-      returningRate: workersWithShift > 0 ? ((returningWorkers / workersWithShift) * 100).toFixed(1) : '0',
-      permApplications: ap.length,
-      permApproved: ap.filter((a: any) => a.status === 'approved').length,
-      guestUnique7: guestUnique('guest_started', guestSince7),
-      guestUnique30: guestStarted30,
-      guestImpressions30: guestEventsCount('vacancy_impression', guestSince30),
-      guestIntent30: guestEventsCount('apply_intent', guestSince30),
-      guestRegistrations30: guestCompleted30,
-      guestRegistrationRate30: guestStarted30 > 0
-        ? ((guestCompleted30 / guestStarted30) * 100).toFixed(1) : '0',
-      telegramPublished30: telegramPublished30.length,
-      telegramOpens30,
-      telegramApplies30,
-      telegramRegistrations30,
-      telegramOpenRate30: telegramPublished30.length > 0
-        ? ((telegramOpens30 / telegramPublished30.length) * 100).toFixed(1) : '0',
-      telegramApplyRate30: telegramOpens30 > 0
-        ? ((telegramApplies30 / telegramOpens30) * 100).toFixed(1) : '0',
-      telegramRegistrationRate30: telegramOpens30 > 0
-        ? ((telegramRegistrations30 / telegramOpens30) * 100).toFixed(1) : '0',
-      referralShared30: referralShared30.length,
-      referralOpens30,
-      referralApplies30,
-      referralRegistrations30,
-      referralOpenRate30: referralShared30.length > 0
-        ? ((referralOpens30 / referralShared30.length) * 100).toFixed(1) : '0',
-      referralApplyRate30: referralOpens30 > 0
-        ? ((referralApplies30 / referralOpens30) * 100).toFixed(1) : '0',
-      referralRegistrationRate30: referralOpens30 > 0
-        ? ((referralRegistrations30 / referralOpens30) * 100).toFixed(1) : '0',
-    },
-    guestFunnel,
-    guestDaily30,
-    telegramFunnel,
-    referralFunnel,
-    mainFunnel,
-    eventFunnel,
-    daily30,
-    activityBuckets,
-    shiftBuckets,
-    permFunnel,
-  }
-}
-
-// ─── chats ───────────────────────────────────────────────────────────────────
-
-// ─── exchange (биржа) ────────────────────────────────────────────────────────
-
-// ─── executive summary (Сводка для презентаций) ──────────────────────────────
-
-function median(arr: number[]): number {
-  if (!arr.length) return 0
-  const s = [...arr].sort((a, b) => a - b)
-  const m = Math.floor(s.length / 2)
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
 // ─── external vacancies ─────────────────────────────────────────────────────

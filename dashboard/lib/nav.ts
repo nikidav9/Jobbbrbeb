@@ -22,22 +22,20 @@ export type NavItem = {
   locked?: boolean
 }
 
-export type Group = 'Обзор' | 'Люди' | 'Работа' | 'Общение' | 'Аналитика' | 'Система'
+export type Group = 'Обзор' | 'Люди' | 'Работа' | 'Общение' | 'Система'
 
-export const GROUPS: Group[] = ['Обзор', 'Люди', 'Работа', 'Общение', 'Аналитика', 'Система']
+export const GROUPS: Group[] = ['Обзор', 'Люди', 'Работа', 'Общение', 'Система']
 
 export const NAV: NavItem[] = [
   { href: '/',            label: 'Обзор',                short: 'Обзор',    icon: 'grid',    group: 'Обзор' },
   { href: '/users',       label: 'Пользователи',         short: 'Люди',     icon: 'users',   group: 'Люди' },
-  { href: '/dormant',     label: 'Ни разу не заходили',  short: 'Спящие',   icon: 'clock',   group: 'Люди' },
-  { href: '/vacancies',   label: 'Вакансии',                                icon: 'jobs',    group: 'Работа' },
-  { href: '/external',    label: 'Внешние вакансии',     short: 'Внешние',  icon: 'jobs',    group: 'Работа' },
   { href: '/jupiter',     label: 'Юпитер',                                  icon: 'funnel',  group: 'Работа' },
+  { href: '/external',    label: 'Внешние вакансии',     short: 'Внешние',  icon: 'jobs',    group: 'Работа' },
+  { href: '/vacancies',   label: 'Свои вакансии',        short: 'Свои',     icon: 'jobs',    group: 'Работа' },
   { href: '/support',     label: 'Поддержка',                               icon: 'ticket',  group: 'Общение' },
   { href: '/broadcast',   label: 'Рассылка',                                icon: 'bell',    group: 'Общение' },
   { href: '/health',      label: 'Доступность',          short: 'Аптайм',   icon: 'pulse',   group: 'Система' },
   { href: '/api-keys',    label: 'Ключи API',            short: 'API',      icon: 'shield',  group: 'Система' },
-  { href: '/funnel',      label: 'Воронка',                                 icon: 'funnel',  group: 'Аналитика' },
 ]
 
 /** Название раздела по адресу — для заголовка страницы. */
