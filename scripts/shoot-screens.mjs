@@ -414,9 +414,6 @@ for (const shot of SHOTS) {
         // помечаем пройденными, снимок должен показывать сам интерфейс
         window.localStorage.setItem(`jm_onboarding_v3_${u.id}`, JSON.stringify({ status: 'done', step: 999 }));
         window.localStorage.setItem('jm_notif_prompt_choice', 'enabled');
-        // «Заполните профиль до конца» — та же история, что обучалка: окно
-        // поверх экрана, помечаем показанным.
-        window.localStorage.setItem('jm_complete_profile_prompt_v1', '1');
       } catch {}
     }, toAppUser(shot.who));
   }

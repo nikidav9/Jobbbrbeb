@@ -332,7 +332,6 @@ try {
           localStorage.setItem('jm_session_token', 'small-screen-token');
           localStorage.setItem(`jm_onboarding_v3_${user.id}`, JSON.stringify({ status: 'done', step: 999 }));
           localStorage.setItem('jm_notif_prompt_choice', 'enabled');
-          localStorage.setItem('jm_complete_profile_prompt_v1', '1');
         }, toAppUser(screen.who));
       }
 
