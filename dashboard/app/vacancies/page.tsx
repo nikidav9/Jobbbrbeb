@@ -3,7 +3,6 @@ import { useCallback, useState } from 'react'
 import { fetchVacancies, PALETTE } from '@/lib/queries'
 import { useRealtime } from '@/lib/useRealtime'
 import KpiCard from '@/components/KpiCard'
-import Donut from '@/components/Donut'
 import Chip from '@/components/Chip'
 import { IconCheck } from '@/components/icons'
 import ChartCard from '@/components/ChartCard'
@@ -11,17 +10,12 @@ import PageHeader from '@/components/PageHeader'
 import PageSkeleton from '@/components/PageSkeleton'
 import { updatePermVacancy, deletePermVacancy, setPermVacancyStatus } from '@/lib/admin-actions'
 import { downloadCSV } from '@/lib/csv-export'
-import {
-  AreaChart, Area, BarChart, Bar, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts'
-import { AXIS, AXIS_CAT, GRID, LEGEND, TT } from '@/lib/chart'
 
 
 export default function VacanciesPage() {
   const fetcher = useCallback(() => fetchVacancies(), [])
   const { data: d, loading, lastUpdated, pulse, refresh } = useRealtime(fetcher, {
-    tables: ['jm_vacancies', 'jm_perm_vacancies', 'jm_perm_applications', 'jm_vacancy_views', 'jm_perm_vacancy_views'],
+    tables: ['jm_perm_vacancies', 'jm_perm_applications'],
     intervalSec: 30,
   })
 
@@ -47,108 +41,19 @@ export default function VacanciesPage() {
 
   return (
     <div>
-      <PageHeader title="Вакансии" intervalSec={30} lastUpdated={lastUpdated} pulse={pulse} onRefresh={refresh} />
+      <PageHeader title="Свои вакансии" intervalSec={30} lastUpdated={lastUpdated} pulse={pulse} onRefresh={refresh} />
 
       <div className="page-content">
         <div className="g-4">
-          <KpiCard label="Постоянных вакансий" value={d.kpi.totalPerm}
-            sub={`${d.kpi.openPerm} открыто из ${d.kpi.totalPerm}`} sparkColor={PALETTE.blue} />
-          {/* Чип «+N» рядом с числом N повторял его же. */}
+          <KpiCard label="Своих вакансий" value={d.kpi.totalPerm}
+            sub={`${d.kpi.openPerm} открыто`} sparkColor={PALETTE.blue} />
           <KpiCard label="Новых за месяц" value={d.kpi.newMonth}
             sub={`из ${d.kpi.totalPerm} за всё время`} />
-        </div>
-
-        <ChartCard title="Публикация вакансий" sub="Постоянные по дням · 90 дней">
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={d.daily90} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gP" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={PALETTE.blue} stopOpacity={0.2} /><stop offset="95%" stopColor={PALETTE.blue} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-              <XAxis dataKey="date" tick={AXIS} tickLine={false} axisLine={false} interval={8} />
-              <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={TT} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND} />
-              <Area type="monotone" dataKey="perm" name="Постоянные" stroke={PALETTE.blue} fill="url(#gP)" strokeWidth={1.7} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard
-          title="Просмотры вакансий"
-          sub={`Уникальные просмотры по дням · 30 дней · за неделю: ${d.viewsKpi.temp7} у смен, ${d.viewsKpi.perm7} у постоянных`}
-        >
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={d.viewsDaily30} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gVP" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={PALETTE.cyan} stopOpacity={0.2} /><stop offset="95%" stopColor={PALETTE.cyan} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-              <XAxis dataKey="date" tick={AXIS} tickLine={false} axisLine={false} interval={4} />
-              <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={TT} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND} />
-              <Area type="monotone" dataKey="perm" name="Постоянные" stroke={PALETTE.cyan} fill="url(#gVP)" strokeWidth={1.7} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <div className="g-2">
-          <ChartCard title="Постоянные вакансии" sub="Открыто и закрыто">
-            <Donut
-              data={d.permStatus.map((e: any) => ({ name: e.name, value: e.value, color: e.fill }))}
-              caption="вакансий"
-            />
-          </ChartCard>
+          <KpiCard label="Откликов" value={d.kpi.apps}
+            sub={`ждут решения работодателя: ${d.kpi.pendingApps}`} sparkColor={PALETTE.orange} />
         </div>
 
         <PermVacancyCards cards={d.permVacancyCards} onExport={exportPermCSV} onRefresh={refresh} />
-
-        <div className="g-2">
-          <ChartCard title="Зарплатные диапазоны" sub="Постоянные вакансии">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={d.salaryDist} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-                <XAxis dataKey="name" tick={AXIS} tickLine={false} axisLine={false} />
-                <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={TT} />
-                <Bar dataKey="value" name="Вакансий" radius={[4, 4, 0, 0]}>
-                  {d.salaryDist.map((_, i) => <Cell key={i} fill={PALETTE.blue} opacity={0.5 + i * 0.1} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          <ChartCard title="Топ работодателей" sub="По количеству вакансий">
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr>
-                  {['Компания', 'Смены', 'Пост.', 'Всего'].map(h => (
-                    <th key={h} style={{
-                      textAlign: 'left', fontSize: 10.5, textTransform: 'uppercase',
-                      letterSpacing: '0.06em', color: 'var(--ink-3)', fontWeight: 500,
-                      padding: '0 16px 10px 0', borderBottom: '1px solid var(--line)',
-                    }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {d.topEmployers.map((e, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--line)' }}>
-                    <td style={{ padding: '9px 16px 9px 0', fontWeight: 500, color: 'var(--ink)' }}>{e.name}</td>
-                    <td style={{ padding: '9px 16px 9px 0', color: 'var(--ink-2)' }}>{e.temp}</td>
-                    <td style={{ padding: '9px 16px 9px 0', color: 'var(--ink-2)' }}>{e.perm}</td>
-                    <td style={{ padding: '9px 0', fontWeight: 600, color: 'var(--accent)' }}>{e.total}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ChartCard>
-        </div>
       </div>
     </div>
   )
@@ -186,9 +91,19 @@ function makeVacancyPost(c: PermCard): string {
 }
 
 function PermVacancyCards({ cards, onExport, onRefresh }: { cards: PermCard[]; onExport: () => void; onRefresh: () => void }) {
-  if (!cards || cards.length === 0) return null
+  // Хуки — до любого раннего выхода: иначе первая вакансия на пустой базе
+  // меняла число хуков между отрисовками, и React падал.
   const [allPostCopied, setAllPostCopied] = useState(false)
   const [showAllPost, setShowAllPost] = useState(false)
+  if (!cards || cards.length === 0) {
+    return (
+      <ChartCard title="Вакансии" sub="Свои вакансии работодателей">
+        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
+          Своих вакансий пока нет
+        </div>
+      </ChartCard>
+    )
+  }
 
   const openCards = cards.filter(c => c.status === 'open')
 

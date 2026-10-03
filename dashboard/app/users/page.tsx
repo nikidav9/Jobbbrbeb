@@ -1,26 +1,26 @@
 'use client'
 import { useCallback, useState, useEffect, Fragment } from 'react'
-import { fetchUsers, fetchUserProfile, PALETTE } from '@/lib/queries'
+import { fetchUsers, fetchUserProfile, PALETTE, JUPITER_STATE_LABELS } from '@/lib/queries'
+import { REASON_LABEL } from '@/lib/jupiterStats'
 import { useRealtime } from '@/lib/useRealtime'
 import KpiCard from '@/components/KpiCard'
 import ChartCard from '@/components/ChartCard'
 import PageHeader from '@/components/PageHeader'
 import PageSkeleton from '@/components/PageSkeleton'
 import { blockUser, resetPassword, sendBothToUser, deleteUser, changeRole } from '@/lib/admin-actions'
-import DonutRoles from '@/components/DonutRoles'
 import Avatar from '@/components/Avatar'
 import Chip from '@/components/Chip'
 import {
-  IconBan, IconMetro, IconBuilding, IconApp, IconBell, IconUser,
-  IconTrash, IconKey, IconSwap, IconCheck, IconX, IconChevron, IconStar,
+  IconBan, IconBuilding, IconApp, IconBell, IconUser,
+  IconTrash, IconKey, IconSwap, IconCheck, IconX, IconChevron,
 } from '@/components/icons'
 import { downloadCSV } from '@/lib/csv-export'
 import { getVerifiedUsers, setUserVerified } from '@/lib/verification'
 import {
   AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { AXIS, GRID, LEGEND, TT } from '@/lib/chart'
+import { AXIS, GRID, TT } from '@/lib/chart'
 
 
 /** Текст с копированием по клику: почта и телефон нужны, чтобы вставить их в письмо или поиск. */
@@ -53,7 +53,7 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
 }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'overview' | 'likes' | 'reviews' | 'vacancies' | 'chats'>('overview')
+  const [tab, setTab] = useState<'overview' | 'apps' | 'vacancies' | 'chats'>('overview')
 
   useEffect(() => {
     fetchUserProfile(userId).then(d => { setData(d); setLoading(false) })
@@ -67,17 +67,17 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
     </div>
   )
 
-  const { user, chats, ratingsReceived, likes, vacancies, permVacancies, permApps, avgRating, totalLikes, totalMatches } = data
+  const { user, chats, jupiter, permVacancies, permApps, swipesRight, swipesLeft, lastSwipe, resume } = data
   if (!user) return null
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.phone || '—'
   const isWorker = user.role === 'worker'
+  const sent = jupiter.filter((a: any) => a.state === 'submitted').length
 
   const tabs = [
     { id: 'overview', label: 'Обзор' },
-    { id: 'likes', label: `Лайки (${totalLikes})` },
-    { id: 'reviews', label: `Отзывы (${ratingsReceived.length})` },
-    { id: 'vacancies', label: `Вакансии (${vacancies.length + permVacancies.length})` },
+    { id: 'apps', label: `Отклики (${jupiter.length + permApps.length})` },
+    ...(permVacancies.length > 0 ? [{ id: 'vacancies', label: `Вакансии (${permVacancies.length})` }] : []),
     { id: 'chats', label: `Чаты (${chats.length})` },
   ]
 
@@ -99,11 +99,6 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'Manrope, sans-serif' }}>{user.phone || '—'}</span>
               {user.email && <CopyText text={user.email} style={{ fontFamily: 'Manrope, sans-serif' }} />}
-              {user.metro_station && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <IconMetro size={12} />{user.metro_station}
-                </span>
-              )}
               {user.company && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <IconBuilding size={12} />{user.company}
@@ -147,11 +142,12 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
         {tab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="g-3">
-              <StatBox label="Лайков" value={totalLikes} />
-              <StatBox label="Совпадений" value={totalMatches} />
-              <StatBox label="Чатов" value={chats.length} />
-              <StatBox label="Средний рейтинг" value={avgRating ?? '—'} />
-              <StatBox label="Отзывов о нём" value={ratingsReceived.length} />
+              <StatBox label="Свайпов вправо" value={swipesRight} />
+              <StatBox label="Свайпов влево" value={swipesLeft} />
+              <StatBox label="Откликов Юпитера" value={jupiter.length} />
+              <StatBox label="Из них ушло" value={sent} />
+              <StatBox label="Последний свайп" value={lastSwipe ?? '—'} />
+              <StatBox label="Резюме" value={resume ? `с ${String(resume.imported_at ?? '').slice(0, 10) || '—'}` : 'нет'} />
             </div>
             <div style={{ background: 'var(--bg-sunken)', borderRadius: 8, padding: '12px 14px' }}>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-3)', marginBottom: 8 }}>Информация об аккаунте</div>
@@ -161,8 +157,7 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
                   ['Роль', isWorker ? 'Работник' : 'Работодатель'],
                   ['Телефон', user.phone || '—'],
                   ['Почта', user.email ? <CopyText key="em" text={user.email} /> : '—'],
-                  ['Метро', user.metro_station || '—'],
-                  ['Компания', user.company || '—'],
+                  ...(isWorker ? [] : [['Компания', user.company || '—']]),
                   ['Регистрация', user.created_at?.slice(0, 10) || '—'],
                   ['Push-токен', user.push_token ? 'Есть · Expo (Android/APK)' : 'Нет'],
                   ['iPhone Web Push', data.hasWebPush ? `Подключён ${data.webPushDate}` : 'Нет'],
@@ -176,62 +171,35 @@ function ProfileDrawer({ userId, onClose, verifiedSet, onVerifyToggle }: {
             </div>
           </div>
         )}
-        {tab === 'likes' && (
+        {tab === 'apps' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {likes.length === 0 && <Empty text="Нет лайков" />}
-            {likes.map((l: any) => (
-              <div key={l.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-elev)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span aria-hidden="true" style={{
-                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                  background: l.is_match ? 'var(--positive)' : l.worker_liked ? 'var(--accent)' : 'var(--line-strong)',
-                }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink)', fontWeight: 500 }}>
-                    {l.is_match ? 'Совпадение' : l.worker_liked ? 'Лайк' : 'Просмотр'}
+            {jupiter.length === 0 && permApps.length === 0 && <Empty text="Откликов нет" />}
+            {jupiter.map((a: any) => (
+              <div key={a.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-elev)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 500 }}>{a.company || 'Компания не указана'}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>
+                    {a.created_at?.slice(0, 10)}{a.reason_code ? ` · ${REASON_LABEL[a.reason_code] ?? a.reason_code}` : ''}
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>{l.created_at?.slice(0, 10)}</div>
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {l.vacancy_id?.slice(0, 8)}…
-                </div>
+                <Chip tone={a.state === 'submitted' ? 'positive' : a.state === 'failed' ? 'negative' : 'neutral'}>
+                  {a.state === 'submission_unknown' ? 'Скорее всего, ушёл' : JUPITER_STATE_LABELS[a.state] ?? a.state}
+                </Chip>
               </div>
             ))}
-          </div>
-        )}
-        {tab === 'reviews' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {ratingsReceived.length === 0 && <Empty text="Нет отзывов" />}
-            {ratingsReceived.map((r: any) => (
-              <div key={r.id} style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-elev)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ display: 'inline-flex', gap: 1, color: 'var(--accent)' }}>
-                    {[1, 2, 3, 4, 5].map(n => (
-                      <IconStar key={n} size={13} filled={n <= Number(r.rating)}
-                        style={{ color: n <= Number(r.rating) ? 'var(--accent)' : 'var(--line-strong)' }} />
-                    ))}
-                  </span>
-                  <span style={{ fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>{r.created_at?.slice(0, 10)}</span>
-                </div>
-                {r.review_text && <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>{r.review_text}</div>}
+            {permApps.map((a: any) => (
+              <div key={a.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-elev)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Chip tone="info">Своя вакансия</Chip>
+                <div style={{ flex: 1, fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Manrope, sans-serif' }}>{a.created_at?.slice(0, 10)}</div>
+                <Chip tone={a.status === 'approved' ? 'positive' : a.status === 'rejected' ? 'negative' : 'neutral'}>
+                  {a.status === 'approved' ? 'Принят' : a.status === 'rejected' ? 'Отказ' : 'Ждёт'}
+                </Chip>
               </div>
             ))}
           </div>
         )}
         {tab === 'vacancies' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {vacancies.length === 0 && permVacancies.length === 0 && <Empty text="Нет вакансий" />}
-            {vacancies.map((v: any) => (
-              <div key={v.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-elev)', display: 'flex', gap: 10, alignItems: 'center' }}>
-                <Chip tone="accent">Смена</Chip>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>{v.work_type_label || v.work_type || 'Вакансия'}</div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{v.address || '—'} · {v.created_at?.slice(0, 10)}</div>
-                </div>
-                <Chip tone={v.status === 'open' ? 'positive' : 'neutral'}>
-                  {v.status === 'open' ? 'Открыта' : 'Закрыта'}
-                </Chip>
-              </div>
-            ))}
             {permVacancies.map((v: any) => (
               <div key={v.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-elev)', display: 'flex', gap: 10, alignItems: 'center' }}>
                 <Chip tone="info">Постоянная</Chip>
@@ -296,7 +264,6 @@ export default function UsersPage() {
 
   if (loading || !d) return <PageSkeleton rows={3} />
 
-  const workerPct = Math.round(d.kpi.workers / Math.max(d.kpi.total, 1) * 100)
   const q = phoneSearch.trim().toLowerCase()
   const filteredUsers = q
     ? d.recent.filter((u: any) =>
@@ -377,8 +344,10 @@ export default function UsersPage() {
       'Телефон': u.phone || '',
       'Почта': u.email || '',
       'Роль': u.role === 'worker' ? 'Работник' : 'Работодатель',
-      'Метро': u.metro || '',
-      'Компания': u.company || '',
+      'Резюме': u.hasResume == null ? '' : u.hasResume ? 'Есть' : 'Нет',
+      'Свайпов за 90 дней': u.swipes ?? '',
+      'Откликов за 90 дней': u.apps ?? '',
+      'Последняя активность': u.lastActive || '',
       'Статус': u.blocked ? 'Заблокирован' : 'Активен',
       'Expo Push': u.hasPushToken ? 'Есть' : 'Нет',
       'iPhone Web Push': u.hasWebPush ? `Есть (${u.webPushDate})` : 'Нет',
@@ -392,49 +361,39 @@ export default function UsersPage() {
     <div style={{ position: 'relative' }}>
       <PageHeader title="Пользователи" intervalSec={30} lastUpdated={lastUpdated} pulse={pulse} onRefresh={refresh} />
       <div className="page-content">
-        <div className="g-6">
-          <KpiCard label="Всего" value={d.kpi.total} sub="в базе" />
-          <KpiCard label="Работники" value={d.kpi.workers} sub={`${d.kpi.workerPct}% базы`} sparkColor={PALETTE.orange} />
-          <KpiCard label="Работодатели" value={d.kpi.employers} sub={`${d.kpi.employerPct}% базы`} sparkColor={PALETTE.blue} />
-          <KpiCard label="Заблокировано" value={d.kpi.blocked}
-            sub={`${d.kpi.total ? Math.round(d.kpi.blocked / d.kpi.total * 100) : 0}% базы`} sparkColor={PALETTE.red} />
-          {/* Чип «+N» рядом с числом N ничего не добавлял: он повторял его же.
-              Масштаб полезнее — сколько это от базы. */}
+        <div className="g-4">
+          <KpiCard label="Всего" value={d.kpi.total} sub={`заблокировано: ${d.kpi.blocked}`} />
           <KpiCard label="Новых · 7 дней" value={d.kpi.newWeek}
-            sub={`${d.kpi.total ? Math.round(d.kpi.newWeek / d.kpi.total * 100) : 0}% базы`} />
-          <KpiCard label="Новых · 30 дней" value={d.kpi.newMonth}
-            sub={`${d.kpi.total ? Math.round(d.kpi.newMonth / d.kpi.total * 100) : 0}% базы`} />
-          <KpiCard label="Пуши в приложении" value={d.kpi.withPushToken} sub={`${d.kpi.total ? Math.round(d.kpi.withPushToken / d.kpi.total * 100) : 0}% базы`} sparkColor={PALETTE.green} />
-          <KpiCard label="Веб-пуш · iPhone" value={d.kpi.withWebPush} sub={`+${d.kpi.webPushNewWeek} за 7 дней`} sparkColor={PALETTE.purple} />
-          {/* Раньше здесь стояло «без пуш-токена — не получат пуши»: неправда,
-              часть этих людей подписана веб-пушем с айфона. Считаем тех, до
-              кого не достучаться ни одним каналом. */}
-          <KpiCard label="Пуши не дойдут" value={d.kpi.noPushAtAll}
-            sub="ни приложения, ни веб-пуша" sparkColor={PALETTE.red} />
+            sub={`за 30 дней: ${d.kpi.newMonth}`} sparkColor={PALETTE.blue} />
+          <KpiCard label="С резюме" value={d.kpi.withResume}
+            sub={d.kpi.withResume == null ? 'не прочиталось' : `${d.kpi.total ? Math.round(d.kpi.withResume / d.kpi.total * 100) : 0}% базы`} sparkColor={PALETTE.green} />
+          <KpiCard label="Активны · 7 дней" value={d.kpi.active7}
+            sub="свайп или отклик Юпитера" sparkColor={PALETTE.orange} />
         </div>
         <div className="g-14">
-          <ChartCard title="Новые регистрации" sub="Работники vs работодатели · 90 дней">
-            <ResponsiveContainer width="100%" height={220}>
+          <ChartCard title="Новые регистрации" sub="По дням · 90 дней">
+            <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={d.growth90} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="gW2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={PALETTE.orange} stopOpacity={0.2}/><stop offset="95%" stopColor={PALETTE.orange} stopOpacity={0}/></linearGradient>
-                  <linearGradient id="gE2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={PALETTE.blue} stopOpacity={0.2}/><stop offset="95%" stopColor={PALETTE.blue} stopOpacity={0}/></linearGradient>
+                  <linearGradient id="gR2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={PALETTE.blue} stopOpacity={0.2}/><stop offset="95%" stopColor={PALETTE.blue} stopOpacity={0}/></linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                 <XAxis dataKey="date" tick={AXIS} tickLine={false} axisLine={false} interval={8} />
                 <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip contentStyle={TT} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND} />
-                <Area type="monotone" dataKey="workers" name="Работники" stroke={PALETTE.orange} fill="url(#gW2)" strokeWidth={1.7} dot={false} />
-                <Area type="monotone" dataKey="employers" name="Работодатели" stroke={PALETTE.blue} fill="url(#gE2)" strokeWidth={1.7} dot={false} />
+                <Area type="monotone" dataKey="regs" name="Регистрации" stroke={PALETTE.blue} fill="url(#gR2)" strokeWidth={2} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Соотношение ролей" sub="Доли от всей базы">
-            <DonutRoles workers={d.kpi.workers} employers={d.kpi.employers} />
-          </ChartCard>
+          <div className="g-2" style={{ alignContent: 'start' }}>
+            <KpiCard label="Пуши в приложении" value={d.kpi.withPushToken} sub={`${d.kpi.total ? Math.round(d.kpi.withPushToken / d.kpi.total * 100) : 0}% базы`} sparkColor={PALETTE.green} />
+            <KpiCard label="Веб-пуш · iPhone" value={d.kpi.withWebPush} sub={`+${d.kpi.webPushNewWeek} за 7 дней`} sparkColor={PALETTE.purple} />
+            {/* Считаем тех, до кого не достучаться ни одним каналом. */}
+            <KpiCard label="Пуши не дойдут" value={d.kpi.noPushAtAll}
+              sub="ни приложения, ни веб-пуша" sparkColor={PALETTE.red} />
+          </div>
         </div>
-        {d.recent.length > 0 && (
+        {(
           <ChartCard
             title="Все пользователи"
             sub={phoneSearch.trim() ? `Найдено ${filteredUsers.length} из ${d.recent.length}` : `${d.recent.length} пользователей · CRM`}
@@ -468,7 +427,7 @@ export default function UsersPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                    {['Пользователь', 'Роль', 'Метро', 'Компания', 'Статус', 'Пуш', 'Верификация', 'Дата', 'Действия'].map(h => (
+                    {['Пользователь', 'Роль', 'Резюме', 'В ленте · 90 дней', 'Статус', 'Пуш', 'Верификация', 'Дата', 'Действия'].map(h => (
                       <th key={h} style={{ textAlign: 'left', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-3)', fontWeight: 500, padding: '8px 12px 10px', background: 'var(--bg)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -510,13 +469,22 @@ export default function UsersPage() {
                                   {isWorker ? 'Работник' : 'Работодатель'}
                                 </Chip>
                               </td>
-                              <td style={{ padding: '10px 12px', color: 'var(--ink-2)', fontSize: 12.5 }}>
-                                {u.metro && u.metro !== '—'
-                                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><IconMetro size={12} style={{ color: 'var(--ink-3)' }} />{u.metro}</span>
-                                  : <span style={{ color: 'var(--ink-3)' }}>—</span>}
+                              <td style={{ padding: '10px 12px' }}>
+                                {u.hasResume == null
+                                  ? <span style={{ color: 'var(--ink-3)' }}>—</span>
+                                  : u.hasResume
+                                  ? <Chip tone="positive"><IconCheck size={11} />Есть</Chip>
+                                  : <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>нет</span>}
                               </td>
-                              <td style={{ padding: '10px 12px', color: u.company && u.company !== '—' ? 'var(--ink-2)' : 'var(--ink-3)', maxWidth: 140 }}>
-                                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.company || '—'}</span>
+                              <td style={{ padding: '10px 12px', color: 'var(--ink-2)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                                {u.swipes == null
+                                  ? <span style={{ color: 'var(--ink-3)' }}>—</span>
+                                  : <>
+                                      <span className="num">{u.swipes} свайп. · {u.apps} откл.</span>
+                                      <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
+                                        {u.lastActive ? `последний раз ${u.lastActive}` : 'не свайпал'}
+                                      </div>
+                                    </>}
                               </td>
                               <td style={{ padding: '10px 12px' }}>
                                 {u.blocked
