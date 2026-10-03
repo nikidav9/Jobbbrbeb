@@ -210,6 +210,19 @@ export default function RootScreen() {
     if (finishTimer.current) clearTimeout(finishTimer.current);
   }, []);
 
+  // Телефон: системная заставка (одна точка) раньше висела, пока не наступит
+  // `ready`, то есть минимум SPLASH_MIN_MS, а настоящая заставка с логотипом и
+  // полосой рисовалась под ней и не была видна. Человек ~8 с смотрел на точку.
+  // Убираем системную, как только наша отрисована: два кадра, чтобы не
+  // мелькнуло белое окно (та же осторожность, что ниже и во вкладках).
+  useEffect(() => {
+    if (Platform.OS === 'web' || ready) return;
+    const first = requestAnimationFrame(() => {
+      requestAnimationFrame(() => { SplashScreen.hideAsync().catch(() => {}); });
+    });
+    return () => cancelAnimationFrame(first);
+  }, [ready]);
+
   useEffect(() => {
     if (!ready) return;
     // Сначала рисуем приветственный экран и только затем убираем splash.
