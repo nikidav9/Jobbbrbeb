@@ -10,7 +10,7 @@ import {
 import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';

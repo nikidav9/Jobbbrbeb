@@ -12,7 +12,7 @@ import {
 import Reanimated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWarmSystemBar } from '@/hooks/useWarmSystemBar';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ApplyAnswersPrompt } from '@/components/feature/ApplyAnswersPrompt';
 import { applyAnswersFor, applyAnswersFilled } from '@/lib/applyAnswers';
@@ -1813,7 +1813,7 @@ function WorkerPermMode() {
           предлагаем: обещать покупку, которой не существует, нельзя. */}
       {limitOpen ? (
         <View style={pS.limitOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setLimitOpen(false)} />
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setLimitOpen(false)} />
           <HardShadowBox style={pS.limitWrap} offset={6} radius={rs(28)}>
             <View style={pS.limitCard}>
               <View style={pS.limitIcon}>
@@ -2297,7 +2297,7 @@ const jt = StyleSheet.create({
 const pS = StyleSheet.create({
   // — плашка подтверждения перехода к партнёрской вакансии —
   confirmOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center', padding: rs(24), zIndex: 50,
   },
@@ -2402,7 +2402,7 @@ const pS = StyleSheet.create({
   },
   scrollHintTxt: { fontSize: rf(12), fontWeight: '700', color: Colors.textSecondary },
   limitOverlay: {
-    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.5)',
+    ...StyleSheet.absoluteFill, backgroundColor: 'rgba(20,20,20,0.5)',
     justifyContent: 'center', paddingHorizontal: rs(20), zIndex: 50,
   },
   limitWrap: { alignSelf: 'stretch' },

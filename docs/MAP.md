@@ -17,7 +17,7 @@
 создать: экран публикации удалён, а `dbUpsertVacancy` отвечает 410. Тому, что
 осталось в коде про смены, место только в обслуживании этой истории.
 
-Клиент — React Native на Expo SDK 53, маршрутизация expo-router по файлам.
+Клиент — React Native 0.86 на Expo SDK 57 (новая архитектура, Hermes V1), маршрутизация expo-router 57 по файлам.
 Работает как приложение, как сайт и как мини-приложение в телеграме.
 Сервер — PHP-прокси перед базой. Панель управления — отдельное приложение на Next.js.
 
@@ -1890,6 +1890,20 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   обрезает края). Источник — `assets/images/logo-source.png`. Сменил значок — подними `?v=`
   в `app/+html.tsx`; `jt-logo.jpg` — старое имя, старый вид логотипа. Иконка приложения в
   `app.json` — отдельно, меняется только новой сборкой.
+- **Expo SDK 57** (03.10.2026, до первой сборки; было 53): React 19.2, React Native 0.86,
+  Reanimated 4 (+ `react-native-worklets`), новая архитектура включена всегда —
+  ключей `newArchEnabled` и `android.edgeToEdgeEnabled` в `app.json` больше нет.
+  Что пришлось поменять: `expo-file-system` → `expo-file-system/legacy` (старый API
+  `EncodingType` и др.); `StyleSheet.absoluteFillObject` → `absoluteFill`; импорты
+  `@react-navigation/*` → `expo-router/js-tabs` и `expo-router/react-navigation` (SDK 56+
+  не пускает прямые `@react-navigation` в код, в `package.json` их нет); TypeScript 6:
+  в `tsconfig.json` `types: ["node"]` и `@types/node`. В `eslint.config.js` выключены
+  правила React Compiler из `eslint-plugin-react-hooks` 7 (компилятор не используем;
+  `rules-of-hooks` и `exhaustive-deps` работают). В `blockedPermissions` добавлен
+  `SYSTEM_ALERT_WINDOW` (нужен только dev-меню). Проверено: typecheck, lint, тесты,
+  экспорт web/android/ios, `expo prebuild` для Android, `expo-doctor` 21/21; **на
+  телефоне не запускалось** — перед выпуском нужна пробная сборка (EAS) и проход
+  по основным экранам, особенно жесты (Reanimated 4) и ленту.
 - **Первая сборка 1.0.0** (03.10.2026, пакет `com.jobtoo`, схема `jobtoo://`):
   иконка приложения — `assets/images/icon.png` (1024, логотип на белом),
   Android — `adaptive-icon.png` (прозрачный фон, логотип в безопасной зоне ~56%),

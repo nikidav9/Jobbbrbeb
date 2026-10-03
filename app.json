@@ -8,7 +8,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "jobtoo",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jobtoo",
@@ -24,7 +23,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.jobtoo",
       "versionCode": 1,
       "blockedPermissions": [
@@ -34,7 +32,8 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ]
     },
     "web": {
@@ -84,7 +83,11 @@
           "photosPermission": "Разрешите доступ к фото, чтобы добавить аватар и отправлять фотографии в чате",
           "cameraPermission": "Разрешите доступ к камере, чтобы сделать фото для профиля"
         }
-      ]
+      ],
+      "expo-localization",
+      "expo-secure-store",
+      "expo-image",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

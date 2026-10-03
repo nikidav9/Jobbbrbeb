@@ -116,7 +116,7 @@ export async function registerWebPush(userId: string): Promise<boolean> {
 
     const sub = existing ?? await wpTimeout(reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: wanted,
+      applicationServerKey: wanted as BufferSource,
     }), 12_000, 'создание подписки');
 
     wpDebug('Сохраняем в базу...');

@@ -62,8 +62,8 @@ export function ConfirmDialog({ visible, title, body, confirmLabel = 'Подтв
 }
 
 const s = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,20,20,0.45)' },
-  center: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: rs(24) },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(20,20,20,0.45)' },
+  center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', padding: rs(24) },
   cardWrap: { width: '100%', maxWidth: 400 },
   card: {
     backgroundColor: JT.background, borderRadius: rs(24), borderWidth: 2, borderColor: JT.ink,

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
-import { StackActions, useNavigation } from '@react-navigation/native';
+import { StackActions, useNavigation } from 'expo-router/react-navigation';
 import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -282,7 +282,7 @@ const fS = StyleSheet.create({
     elevation: 12,
   },
   tabsRow: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: rs(5),

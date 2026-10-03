@@ -94,7 +94,7 @@ export default function EmailRequiredGate() {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(17,17,17,0.55)',
     alignItems: 'center',
     justifyContent: 'center',

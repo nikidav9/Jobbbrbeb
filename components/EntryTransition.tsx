@@ -78,7 +78,7 @@ export default function EntryTransition() {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#F5EFE6',
     alignItems: 'center',
     justifyContent: 'center',

@@ -8,7 +8,7 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Application from 'expo-application';
 import {
@@ -23,7 +23,7 @@ import { Message, Chat } from '@/constants/types';
 import { nameColorFromString, getInitials, formatDate } from '@/services/storage';
 import { dbGetMessages, dbInsertMessage, dbMarkRead, dbGetLikeByVacancyWorker, dbUpsertLike, dbCheckAndCreateMatch, dbGetChatById, dbGetUserById, dbSetPermApplicationStatus, dbUploadChatMedia } from '@/services/db';
 import { setActiveChat } from '@/services/notifications';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { getSupabaseClient } from '@/template';
 import { getChatSuggestions } from '@/constants/chatSuggestions';
 import { isOnline, lastSeenLabel } from '@/services/presence';

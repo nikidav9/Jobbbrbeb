@@ -330,7 +330,7 @@ function Reason({ icon, text }: { icon: React.ComponentProps<typeof Ionicons>['n
 // экране лист не растягивается во всю ширину окна.
 const st = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(20,20,20,0.5)',
   },
   sheet: {
