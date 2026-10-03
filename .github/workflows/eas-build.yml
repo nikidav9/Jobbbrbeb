@@ -41,6 +41,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Связываем сборку с проектом @nikidav23/jobtoo на expo.dev по slug и
+      # печатаем его Project ID: в веб-интерфейсе Expo его не найти. Старый ID
+      # (проект «JobToo») перед связыванием убираем из копии app.json на раннере.
+      - name: Link Expo project
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          jq '.expo.slug = "jobtoo" | del(.expo.extra.eas.projectId, .expo.updates.url)' app.json > app.tmp && mv app.tmp app.json
+          eas init --force --non-interactive
+          PID=$(jq -r '.expo.extra.eas.projectId // empty' app.json)
+          if [ -z "$PID" ]; then echo "::error::Project ID не получен"; exit 1; fi
+          jq --arg u "https://u.expo.dev/$PID" '.expo.updates.url = $u' app.json > app.tmp && mv app.tmp app.json
+          echo "::notice title=Expo Project ID::$PID"
+
       # Секретный ключ Supabase в eas.json не хранится (репозиторий чист).
       # Подставляем его сюда из GitHub Secrets прямо перед сборкой: файл eas.json
       # уезжает на серверы EAS, поэтому значение должно попасть именно в него, а
