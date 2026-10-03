@@ -29,6 +29,9 @@ $out = ['tokens_in_db' => count($stored), 'decrypted' => 0, 'send_http' => null,
 $msgs = array_map(fn($s) => ['to' => $s, 'priority' => 'high'], $stored);
 $prep = jt_push_prepare_expo_messages($msgs);
 $out['decrypted'] = count($prep);
+// Отпечаток адреса (8 знаков SHA-256): по нему видно, сменился ли адрес
+// устройства между проверками. Сам адрес в итог не попадает.
+$out['fp'] = array_map(fn($m) => substr(hash('sha256', (string)$m['to']), 0, 8), $prep);
 if ($prep) {
     // Токены двух проектов Expo в одной пачке дают 400; jt_expo_send тогда шлёт по одному.
     $r = jt_expo_send($prep, 20);
