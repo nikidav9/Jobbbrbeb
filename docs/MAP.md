@@ -1907,7 +1907,7 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   обновления по воздуху, и первый запуск получал «Forbidden») и необязательный
   ключ AppMetrica; ссылки `https://jobtoo.ru/` и экраны приложения открываются
   приложением (`android.intentFilters`, `tests/app_links.test.mjs`; отпечаток
-  подписи для `assetlinks.json` — после первой сборки); в Соглашении п. 3.1.1
+  подписи `com.jobtoo` внесён в `public/.well-known/assetlinks.json` 03.10.2026; если RuStore подпишет приложение своим ключом — добавить и его отпечаток); в Соглашении п. 3.1.1
   «18+» (редакция `2026-10-03-2`); `eas-update.yml` читает те же секреты — обновление заменяет
   встроенный бандл. `android.allowBackup: false`.
 - **Expo SDK 57** (03.10.2026, до первой сборки; было 53): React 19.2, React Native 0.86,
