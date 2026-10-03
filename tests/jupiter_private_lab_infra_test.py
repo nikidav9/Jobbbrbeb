@@ -87,11 +87,13 @@ assert 'auth_basic "JobToo";' in admin_part
 assert "location ^~ /jupiter/" not in admin_part
 assert "auth_basic off;" not in admin_part
 
-# Private lab accepts normal JobToo login but only for the existing admin.
-assert 'ADMIN_PHONE = "89933431523"' in server
-assert "normalized_phone != ADMIN_PHONE" in server
-assert "returned_phone != ADMIN_PHONE" in server
-assert '"fn": "dbLogin"' in server
+# Private lab: вход кодом из письма JobToo, только почта владельца (пароля в
+# JobToo нет с 03.10.2026). В публичном репозитории — хеш адреса, не сам адрес.
+assert "ADMIN_EMAIL_SHA256 = " in server and "@" not in server.split("ADMIN_EMAIL_SHA256 = ", 1)[1].split("\n", 1)[0]
+assert '_jobtoo_call("dbAuthSendCode", [email.strip().lower(), "login"])' in server
+assert '_jobtoo_call("dbAuthVerifyCode", [email, "login", code.strip()])' in server
+assert 'str(user.get("email", "")).strip().lower() != email' in server
+assert "dbLogin" not in server and "nikidav" not in server
 assert "if not self._session()" in server
 assert '"/api/live-dry-run"' in server
 assert "profile_for_url" in server

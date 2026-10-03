@@ -35,7 +35,9 @@ API_ORIGIN = os.environ.get(
 ).rstrip("/")
 APP_SECRET = os.environ.get("JOBTOO_APP_SECRET", "")
 SESSION_SECRET = os.environ.get("JUPITER_SESSION_SECRET", "")
-ADMIN_PHONE = "89933431523"
+# Вход — кодом из письма на почту владельца (с 03.10.2026 пароля в JobToo нет).
+# Репозиторий публичный, поэтому здесь не сам адрес, а его SHA-256.
+ADMIN_EMAIL_SHA256 = "67172cc0bcc282a04b962095daafd561ff4628205fe2738b101c10ba3c5ec091"
 
 ALLOWED_USER_IDS = {
     value.strip()
@@ -221,19 +223,22 @@ LOGIN_HTML = """<!doctype html>
 <body>
 <div class="wrap"><div class="card">
   <h1>Jupiter Private Lab</h1>
-  <p class="muted">Войди тем же телефоном и паролем, которыми входишь в JobToo.</p>
-  <label>Телефон<input id="phone" inputmode="tel" autocomplete="username"></label>
-  <label>Пароль<input id="password" type="password" autocomplete="current-password"></label>
+  <p class="muted">Войди той же почтой, что и в JobToo: пришлём код.</p>
+  <label>Почта<input id="email" type="email" inputmode="email" autocomplete="username"></label>
+  <button id="send">Прислать код</button>
+  <label>Код из письма<input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label>
   <button id="login">Войти</button><div class="err" id="err"></div>
 </div></div>
 <script>
-const b=document.getElementById('login'),e=document.getElementById('err');
-b.onclick=async()=>{b.disabled=true;e.textContent='';
-try{
-  const r=await fetch('api/login',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({phone:document.getElementById('phone').value,password:document.getElementById('password').value})});
-  const d=await r.json();if(!r.ok)throw new Error(d.error||'Не удалось войти');location.reload()
-}catch(x){e.textContent=x.message||String(x)}finally{b.disabled=false}};
+const e=document.getElementById('err'),em=()=>document.getElementById('email').value;
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Не получилось');return d}
+document.getElementById('send').onclick=async(ev)=>{const b=ev.target;b.disabled=true;e.textContent='';
+  try{await post('api/login/code',{email:em()});e.textContent='Если адрес верный — код уже в почте.'}
+  catch(x){e.textContent=x.message||String(x)}finally{b.disabled=false}};
+document.getElementById('login').onclick=async(ev)=>{const b=ev.target;b.disabled=true;e.textContent='';
+  try{await post('api/login',{email:em(),code:document.getElementById('code').value});location.reload()}
+  catch(x){e.textContent=x.message||String(x)}finally{b.disabled=false}};
 </script>
 </body></html>"""
 
@@ -376,46 +381,49 @@ def verify_session(token: str | None) -> dict[str, Any] | None:
     return payload
 
 
-def authenticate_jobtoo(phone: str, password: str) -> dict[str, Any] | None:
-    normalized_phone = "".join(ch for ch in phone if ch.isdigit())
-    if normalized_phone != ADMIN_PHONE:
-        return None
+def _is_admin_email(email: str) -> bool:
+    digest = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+    return hmac.compare_digest(digest, ADMIN_EMAIL_SHA256)
+
+
+def _jobtoo_call(fn: str, args: list[Any]) -> dict[str, Any] | None:
+    """Вызов db.php от имени лаборатории. 4xx — None, остальное — исключение."""
     if not APP_SECRET:
         raise RuntimeError("JOBTOO_APP_SECRET is missing")
-
-    body = json.dumps(
-        {"fn": "dbLogin", "args": [phone, password]},
-        ensure_ascii=False,
-    ).encode("utf-8")
     req = urllib.request.Request(
         API_ORIGIN + "/api/db.php",
-        data=body,
+        data=json.dumps({"fn": fn, "args": args}, ensure_ascii=False).encode("utf-8"),
         method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "X-App-Secret": APP_SECRET,
-        },
+        headers={"Content-Type": "application/json", "X-App-Secret": APP_SECRET},
     )
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
-            raw = response.read()
+            payload = json.loads(response.read())
     except urllib.error.HTTPError as exc:
-        if exc.code in {401, 403}:
+        if 400 <= exc.code < 500:
             return None
         raise
-
-    payload = json.loads(raw)
     data = payload.get("data") if isinstance(payload, dict) else None
-    user = data.get("user") if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else None
+
+
+def send_login_code(email: str) -> None:
+    """Код уходит только на почту владельца; на чужой адрес молча ничего."""
+    if _is_admin_email(email):
+        _jobtoo_call("dbAuthSendCode", [email.strip().lower(), "login"])
+
+
+def authenticate_jobtoo(email: str, code: str) -> dict[str, Any] | None:
+    if not _is_admin_email(email):
+        return None
+    email = email.strip().lower()
+    data = _jobtoo_call("dbAuthVerifyCode", [email, "login", code.strip()])
+    user = data.get("user") if data else None
     if not isinstance(user, dict) or not data.get("session_token"):
         return None
-
-    returned_phone = "".join(
-        ch for ch in str(user.get("phone", "")) if ch.isdigit()
-    )
-    if returned_phone != ADMIN_PHONE:
+    # Сервер выдал сессию этой почте — сверяем и то, что вернулось.
+    if str(user.get("email", "")).strip().lower() != email:
         return None
-
     uid = str(user.get("id", "")).strip()
     if not uid:
         return None
@@ -695,14 +703,31 @@ class Handler(BaseHTTPRequestHandler):
                 )
             return self._html(SUCCESS_HTML)
 
+        if path == "/api/login/code":
+            try:
+                raw = self._read_json()
+                email = _clip(raw.get("email"), 254)
+                if "@" not in email:
+                    raise ValueError("Введите почту")
+                send_login_code(email)
+            except ValueError as exc:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception:
+                return self._json(
+                    HTTPStatus.BAD_GATEWAY,
+                    {"error": "Не удалось отправить код через JobToo"},
+                )
+            # Один ответ для любой почты: по нему не узнать, чья пускают.
+            return self._json(HTTPStatus.OK, {"ok": True})
+
         if path == "/api/login":
             try:
                 raw = self._read_json()
-                phone = _clip(raw.get("phone"), 80)
-                password = str(raw.get("password") or "")[:256]
-                if not phone or not password:
-                    raise ValueError("Введите телефон и пароль")
-                user = authenticate_jobtoo(phone, password)
+                email = _clip(raw.get("email"), 254)
+                code = "".join(ch for ch in str(raw.get("code") or "") if ch.isdigit())[:6]
+                if "@" not in email or len(code) != 6:
+                    raise ValueError("Введите почту и код из письма")
+                user = authenticate_jobtoo(email, code)
             except ValueError as exc:
                 return self._json(
                     HTTPStatus.BAD_REQUEST,
@@ -716,7 +741,7 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return self._json(
                     HTTPStatus.UNAUTHORIZED,
-                    {"error": "Неверный телефон или пароль JobToo"},
+                    {"error": "Неверный или устаревший код"},
                 )
             token = make_session(str(user["id"]))
             cookie = (
