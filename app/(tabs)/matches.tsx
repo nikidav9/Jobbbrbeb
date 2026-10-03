@@ -39,7 +39,6 @@ import { employerLikes, employerPending, employerMatched, employerCompleted,
   employerPermApps } from '@/services/matchCounts';
 import { ApplySheet } from '@/components/feature/ApplySheet';
 import { PERM_APPROVE_SUGGESTIONS } from '@/constants/chatSuggestions';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 
 import { rs, rf } from '@/constants/scale';
@@ -602,20 +601,20 @@ function WorkerMatches() {
       <View style={[TAB_TOP.row, wm.header]}>
         <TabLogo />
         <View style={wm.headerActions}>
-          <OnboardingTarget targetKey="matches.saved">
+          <View>
             {headBtn(BookmarkIcon, 'Сохранённые вакансии', () => router.push('/saved'))}
-          </OnboardingTarget>
-          <OnboardingTarget targetKey="matches.chats">
+          </View>
+          <View>
             {headBtn(MailIcon, unreadChats.length + unreadMail > 0 ? 'Сообщения, есть новые' : 'Сообщения',
               () => router.push(currentUser?.role === 'worker' ? '/mail' : '/(tabs)/chats'), unreadChats.length + unreadMail > 0)}
-          </OnboardingTarget>
+          </View>
           {headBtn(SearchIcon, searchOpen ? 'Закрыть поиск' : 'Поиск по откликам',
             () => { setSearchOpen(o => !o); if (searchOpen) setSearch(''); }, false, searchOpen)}
         </View>
       </View>
 
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
-      <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={[wm.list, { paddingBottom: tabBarHeight + rs(40) }, shown.length === 0 && { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
@@ -747,7 +746,7 @@ function WorkerMatches() {
             </View>
           ))}
         </ScrollView>
-      </OnboardingTarget>
+      </View>
       </JTPullRefresh>
 
       {/* Под меню — растворение фона, список уходит под него (макет). */}
@@ -1636,7 +1635,7 @@ function EmployerMatches() {
       </View>
 
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
-      <OnboardingTarget targetKey="matches.content" style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
       {shown.length === 0 ? (
         <View style={s.empty}>
           <Ionicons name={emptyIcon[tab]} size={56} color={Colors.textMuted} />
@@ -1670,7 +1669,7 @@ function EmployerMatches() {
           renderItem={renderItem}
         />
       )}
-      </OnboardingTarget>
+      </View>
       </JTPullRefresh>
 
       <ApplySheet

@@ -26,7 +26,6 @@ import { ProfileGateHost } from '@/components/feature/ProfileGateHost';
 import CookieConsent from '@/components/CookieConsent';
 import { ToastLayer } from '@/components/ui/ToastLayer';
 import { ConfirmHost } from '@/components/ui/ConfirmHost';
-import { OnboardingOverlay } from '@/components/OnboardingOverlay';
 import { setupAndroidChannels } from '@/services/notifications';
 import { routeForNotification, routeForRefreshPush } from '@/services/notificationRoute';
 import { hideWebSplash, markWebBundleMounted } from '@/lib/webSplash';
@@ -291,7 +290,6 @@ export default function RootLayout() {
                 уходят насовсем. Закрыть крестиком и вернуться на прежний
                 экран должно быть очевидно. */}
           </Stack>
-          <OnboardingOverlay />
           {/* Поверх всего, но под всплывающими сообщениями: окно закрывает
               приложение до принятия документов, а сообщения о неудачной
               записи должны быть видны и над ним. */}

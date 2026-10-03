@@ -26,7 +26,6 @@ import { dbDeleteChat } from '@/services/db';
 import GuestGate from '@/components/GuestGate';
 
 import { rs, rf } from '@/constants/scale';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { messagePreview } from '@/services/messagePreview';
 import { BackButton } from '@/components/ui/BackButton';
 import { confirmAsync } from '@/services/confirm';
@@ -293,9 +292,9 @@ export default function ChatsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
-        <OnboardingTarget targetKey="chats.back">
+        <View>
           <BackButton />
-        </OnboardingTarget>
+        </View>
         <Text style={styles.topTitle}>Сообщения</Text>
         {/* Пустая колонка той же ширины: иначе заголовок встаёт по центру
             остатка, а не экрана. Не копия кнопки — с её фоном и тенью это
@@ -303,7 +302,7 @@ export default function ChatsScreen() {
         <View style={styles.backSpacer} pointerEvents="none" />
       </View>
 
-      <OnboardingTarget targetKey="chats.content" style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
       <View style={styles.searchWrap}>
         <View style={styles.searchInner}>
           <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
@@ -412,7 +411,7 @@ export default function ChatsScreen() {
           )}
         />
       )}
-      </OnboardingTarget>
+      </View>
     </SafeAreaView>
   );
 }
