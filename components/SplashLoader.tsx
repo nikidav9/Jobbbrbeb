@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Animated, Easing, Dimensions, Image, AccessibilityInfo } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { useFonts } from 'expo-font';
+import { Unbounded_700Bold } from '@expo-google-fonts/unbounded/700Bold';
+import { Manrope_700Bold } from '@expo-google-fonts/manrope/700Bold';
 import { rs, rf } from '@/constants/scale';
 
 // Загрузочный экран — макет «JT-splash» (28.09.2026, docs/design/splash), 1:1
@@ -178,6 +181,11 @@ function play(value: Animated.Value, at: number, ms: number, easing: (t: number)
 }
 
 export default function SplashLoader({ percent = 1 }: { percent?: number }) {
+  // Подписи рисуем только с загруженным шрифтом. Иначе Android меряет их
+  // системным шрифтом, а когда приходит Unbounded/Manrope, ширину не
+  // пересчитывает — и строка обрезается («Работа в IT —», «Подбираем»).
+  // Шрифты те же, что грузит app/_layout.tsx: второй загрузки не будет.
+  const [fontsReady] = useFonts({ Unbounded_700Bold, Manrope_700Bold });
   // Тайминги — раскадровка макета, растянутая до ~5 с.
   const dot = useRef(new Animated.Value(0)).current;      // 0–500: точка 0 → 1
   const open = useRef(new Animated.Value(0)).current;     // 500–1100: точка → плашка
@@ -240,14 +248,18 @@ export default function SplashLoader({ percent = 1 }: { percent?: number }) {
       </View>
 
       <View style={styles.below}>
-        <Animated.Text style={[styles.tag, { opacity: sticker, transform: [{ translateY: tagShift }] }]}>
-          Работа в IT — свайпом
-        </Animated.Text>
+        {fontsReady ? (
+          <Animated.Text style={[styles.tag, { opacity: sticker, transform: [{ translateY: tagShift }] }]}>
+            Работа в IT и офисе — свайпом
+          </Animated.Text>
+        ) : <View style={styles.tagSlot} />}
         <Animated.View style={[styles.bar, { opacity: loading }]} accessibilityRole="progressbar"
           accessibilityValue={{ min: 0, max: 100, now: pct }}>
           <View style={[styles.fill, { width: fillW }, pct > 0 && pct < 100 && styles.fillEdge]} />
         </Animated.View>
-        <Animated.Text style={[styles.caption, { opacity: loading }]}>Подбираем вакансии…</Animated.Text>
+        {fontsReady ? (
+          <Animated.Text style={[styles.caption, { opacity: loading }]}>Подбираем вакансии…</Animated.Text>
+        ) : null}
       </View>
     </View>
   );
@@ -270,14 +282,18 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 0, right: 0, top: CENTER_Y + rs(106),
     alignItems: 'center', paddingHorizontal: 16,
   },
+  // alignSelf: 'stretch' — ширина строки от экрана, а не от замера текста:
+  // запасная страховка от обрезки, перенос — по словам.
   tag: {
-    fontFamily: 'Unbounded_700Bold', fontSize: rf(18), letterSpacing: -0.18, color: INK, textAlign: 'center',
+    alignSelf: 'stretch', fontFamily: 'Unbounded_700Bold', fontSize: rf(18), lineHeight: rf(22),
+    letterSpacing: -0.18, color: INK, textAlign: 'center',
   },
+  tagSlot: { height: rf(22) },
   bar: {
     marginTop: rs(26), width: BAR_W, height: 14, borderWidth: 2, borderColor: INK, borderRadius: 7,
     backgroundColor: WHITE, overflow: 'hidden',
   },
   fill: { height: '100%', backgroundColor: ACCENT },
   fillEdge: { borderRightWidth: 2, borderRightColor: INK },
-  caption: { marginTop: 10, fontFamily: 'Manrope_700Bold', fontSize: rf(13), color: '#6B645C', textAlign: 'center' },
+  caption: { alignSelf: 'stretch', marginTop: 10, fontFamily: 'Manrope_700Bold', fontSize: rf(13), color: '#6B645C', textAlign: 'center' },
 });
