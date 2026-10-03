@@ -11,6 +11,8 @@ const TO_MATCHES = new Set([
   'jupiter_sent', 'jupiter_failed',
   // Напоминание работодателю «Кандидаты ждут» и автоотказ работнику.
   'pending_apps', 'app_auto_rejected',
+  // Ответ по отклику, присланный из tg.php (expo_push_one), и отказ по смене.
+  'perm_status', 'shift_rejected',
 ]);
 
 const TO_FEED = new Set(['nearby_shift', 'nearby_perm']);

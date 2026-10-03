@@ -22,3 +22,21 @@ test('пуш ведёт туда же, куда колокольчик', () => {
     { pathname: '/support' },
   );
 });
+
+// Каждому виду пуша из таблицы JT_PUSH_EVENTS (php-proxy/push_privacy.php)
+// соответствует экран по нажатию. Иначе пуш объясняет, зачем открыть
+// приложение, а нажатие никуда не ведёт (жалоба владельца 03.10.2026).
+test('у каждого вида пуша из таблицы сервера есть маршрут по нажатию', async () => {
+  const { readFileSync } = await import('node:fs');
+  const php = readFileSync(new URL('../php-proxy/push_privacy.php', import.meta.url), 'utf8');
+  const block = php.slice(php.indexOf('const JT_PUSH_EVENTS'));
+  const keys = [...block.slice(0, block.indexOf('];')).matchAll(/^\s*'([a-z_]+)'\s*=>/gm)].map(m => m[1]);
+  assert.ok(keys.length >= 15, `в таблице найдено видов: ${keys.length}`);
+  for (const type of keys) {
+    assert.notEqual(routeForNotification(type, {}), null, `нет маршрута для вида «${type}»`);
+  }
+});
+
+test('нажатие на пуш с видом «сообщение» без чата открывает список чатов', () => {
+  assert.deepEqual(routeForNotification('message', {}), { pathname: '/(tabs)/chats' });
+});
