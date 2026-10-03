@@ -1958,7 +1958,10 @@ HTTP-движок остановился на `UNSUPPORTED_SCRIPT`/`VACANCY_NOT_
   `resume-files` → файлы воркеров, временные файлы и логи → резервные копии
   (локально и S3) и свежая копия без людей → службы старт. Каталог, логотипы,
   база знаний Юпитера и `jm_migrations` (отметки импорта) не трогаются. Итог —
-  `/wipe-status.json`, только числа. Сторож — `tests/wipe_users_test.py`.
+  `/var/www/html/wipe-status.json`, только числа; наружу этот файл nginx не отдаёт
+  (нужна отдельная `location`, как у `security-status.json`), поэтому `infra/migrate.sh`
+  кладёт его содержимое полем `wipe` в открытый `/security-status.json` (null — не
+  запускалось). Сторож — `tests/wipe_users_test.py`.
 - Регулярные задачи: `evening-digest.yml` (16:00 UTC), `daily-nudges.yml` (07:00),
   `partner-monthly-report.yml`, `site-availability.yml` (каждые 5 минут).
   В `cronDailyNudges` (daily-nudges) остались только служебные касания —

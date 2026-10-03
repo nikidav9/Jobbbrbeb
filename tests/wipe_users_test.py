@@ -45,6 +45,11 @@ check("отметки импорта не трогаем", "jm_migrations" not i
 check("bootstrap: по новому содержимому wipe-users-now", "wipe-users.sha" in BOOT and 'WU_FILE="$REPO/infra/wipe-users-now"' in BOOT)
 check("bootstrap: только после удачных миграций", '[ "$MIGRATIONS_READY" = 1 ] && [ -f "$WU_FILE" ]' in BOOT)
 
+MIG = (ROOT / "infra" / "migrate.sh").read_text(encoding="utf-8")
+check("итог удаления виден в открытом security-status.json (отдельного адреса у wipe-status нет)",
+      "/var/www/html/wipe-status.json" in MIG and '"wipe":%s' in MIG and "null" in MIG)
+check("в итог попадает только JSON, иначе null", "json.load(open(" in MIG and "except Exception" in MIG)
+
 if fails:
     print("wipe users: ПРОВАЛЫ")
     for f in fails:
