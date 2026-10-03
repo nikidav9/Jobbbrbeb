@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:829664337265:android:372a1cf92222ec33da2ad0",
+        "android_client_info": {
+          "package_name": "com.jobtoo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtWE18kBqwuyckKvJdfvEqGyEPj_HOT_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:829664337265:android:6f28813b8a943b61da2ad0",
         "android_client_info": {
           "package_name": "com.nikidav23.onspaceapp"
