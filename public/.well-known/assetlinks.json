@@ -1,11 +1,25 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "com.nikidav23.onspaceapp",
       "sha256_cert_fingerprints": [
         "31:E9:EC:F4:1C:7B:04:0A:66:C7:D3:76:29:B5:B9:F2:EC:3C:D2:85:0D:C2:69:3E:D5:7A:40:02:8D:FB:F3:A4"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.jobtoo",
+      "sha256_cert_fingerprints": [
+        "B7:C2:50:BB:A3:43:38:3A:94:EF:A1:7D:39:AA:C6:B2:27:AB:8B:23:83:0B:0B:92:0D:06:94:09:71:DA:81:B8"
       ]
     }
   }
