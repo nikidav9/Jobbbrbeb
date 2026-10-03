@@ -15,6 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Приложение уже выложено. Это меняет цену ошибки
 
 RuStore, порядка 500 живых пользователей, пакет `com.nikidav23.onspaceapp`.
+Новое приложение готовится под пакетом `com.jobtoo` (`app.json`, 03.10.2026):
+старое продолжает получать OTA из `main`, пока его не снимут.
 
 **Мерж в `main` сам выкатывает OTA-обновление** этим людям:
 `.github/workflows/eas-update.yml` срабатывает на push в `main` (кроме `docs/**`

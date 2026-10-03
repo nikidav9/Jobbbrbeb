@@ -21,7 +21,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
 
         <title>JobToo</title>
-        <meta name="description" content="Работа в IT — свайпом. Листайте IT-вакансии, а анкету на сайте работодателя заполнит Юпитер. Ответ — в чате приложения." />
+        <meta name="description" content="Работа в IT — свайпом. Листайте IT и офисные вакансии, а анкету на сайте работодателя заполнит Юпитер. Ответ — в чате приложения." />
 
         {/* PWA manifest */}
         <link rel="manifest" href="/manifest.json" />

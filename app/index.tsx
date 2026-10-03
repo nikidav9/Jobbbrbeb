@@ -47,14 +47,14 @@ const SLIDES = [
   {
     key: 'swipes',
     image: require('@/assets/images/onboarding-1-swipes.png'),
-    title: 'Свайпай\nIT-вакансии',
+    title: 'Свайпай\nвакансии',
     subtitle: 'Вправо\u00A0— откликнуться, влево\u00A0— пропустить. Поиск работы за\u00A0пару минут в\u00A0день',
   },
   {
     key: 'only-it',
     image: require('@/assets/images/onboarding-2-only-it.png'),
-    title: 'Только IT и\u00A0ничего лишнего',
-    subtitle: 'Разработка, QA, дизайн, аналитика\u00A0— от\u00A0стажёра до\u00A0тимлида',
+    title: 'IT и\u00A0офис, ничего лишнего',
+    subtitle: 'Разработка, дизайн, аналитика, финансы, HR и\u00A0юристы\u00A0— от\u00A0стажёра до\u00A0руководителя',
   },
   {
     key: 'profile',
