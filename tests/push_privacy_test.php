@@ -44,4 +44,29 @@ check('идентификаторы события вычищены',
 check('канал не раскрывает категорию события',
     ($prepared['channelId'] ?? '') === 'default');
 
+// Токены двух проектов Expo: пачка отвергается, шлём по одному.
+$mixed = [['to' => 'ExponentPushToken[a]'], ['to' => 'ExponentPushToken[b]']];
+$calls = [];
+$fake = function (array $body, int $t) use (&$calls): array {
+    $calls[] = $body;
+    if (array_is_list($body)) {
+        return ['http' => 400, 'json' => ['errors' => [['code' => 'PUSH_TOO_MANY_EXPERIENCE_IDS', 'message' => 'x']]]];
+    }
+    return ['http' => 200, 'json' => ['data' => [['status' => 'ok', 'id' => 'id-' . $body['to']]]]];
+};
+$r = jt_expo_send($mixed, 5, $fake);
+check('смешанные проекты: после отказа пачки шлём по одному (1 пачка + 2 одиночных)', count($calls) === 3);
+check('смешанные проекты: билеты собраны со всех одиночных', count($r['data']) === 2 && $r['split'] === true);
+$calls = [];
+$ok = function (array $body, int $t) use (&$calls): array {
+    $calls[] = $body;
+    return ['http' => 200, 'json' => ['data' => [['status' => 'ok']]]];
+};
+$r = jt_expo_send($mixed, 5, $ok);
+check('один проект: уходит одна пачка', count($calls) === 1 && $r['split'] === false);
+$calls = [];
+jt_expo_send([['to' => 'ExponentPushToken[a]']], 5, $ok);
+check('одно сообщение уходит не списком', count($calls) === 1 && !array_is_list($calls[0]));
+check('пустой список ничего не шлёт', jt_expo_send([], 5, $ok)['http'] === 0);
+
 echo "ok\n";

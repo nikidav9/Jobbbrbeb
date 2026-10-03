@@ -2180,15 +2180,7 @@ function expo_push(array $messages): void {
     if (empty($messages)) return;
 
     for ($i = 0; $i < count($messages); $i += 100) {
-        $chunk = array_slice($messages, $i, 100);
-        $ch = curl_init('https://exp.host/--/api/v2/push/send');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode(count($chunk) === 1 ? $chunk[0] : $chunk),
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-            CURLOPT_TIMEOUT => 15,
-        ]);
-        curl_exec($ch); curl_close($ch);
+        jt_expo_send(array_slice($messages, $i, 100), 15);
     }
 }
 

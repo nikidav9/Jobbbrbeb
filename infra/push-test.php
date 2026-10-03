@@ -30,10 +30,12 @@ $msgs = array_map(fn($s) => ['to' => $s, 'priority' => 'high'], $stored);
 $prep = jt_push_prepare_expo_messages($msgs);
 $out['decrypted'] = count($prep);
 if ($prep) {
-    $r = expo('send', $prep);
+    // Токены двух проектов Expo в одной пачке дают 400; jt_expo_send тогда шлёт по одному.
+    $r = jt_expo_send($prep, 20);
     $out['send_http'] = $r['http'];
+    $out['split'] = $r['split'];
     $ids = [];
-    foreach (($r['json']['data'] ?? []) as $t) {
+    foreach ($r['data'] as $t) {
         $out['tickets'][] = [
             'status' => $t['status'] ?? '?',
             'error' => clean((string)($t['details']['error'] ?? '')),
@@ -41,8 +43,8 @@ if ($prep) {
         ];
         if (!empty($t['id'])) $ids[] = $t['id'];
     }
-    if (!$out['tickets'] && !empty($r['json']['errors'])) {
-        $out['tickets'][] = ['status' => 'error', 'error' => '', 'message' => clean(json_encode($r['json']['errors'], JSON_UNESCAPED_UNICODE))];
+    if (!$out['tickets'] && !empty($r['errors'])) {
+        $out['tickets'][] = ['status' => 'error', 'error' => '', 'message' => clean(json_encode($r['errors'], JSON_UNESCAPED_UNICODE))];
     }
     if ($ids) {
         sleep(20);
