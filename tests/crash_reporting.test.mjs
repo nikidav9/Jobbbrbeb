@@ -53,3 +53,16 @@ test('запуск и отключение — только по согласи�
 test('версия SDK закреплена точно', () => {
   assert.equal(JSON.parse(read('package.json')).dependencies['@appmetrica/react-native-analytics'], '4.2.0');
 });
+
+test('отчёты о сбоях записаны в документы: перечень данных, получатель, версии', () => {
+  const legal = read('constants/legal.ts');
+  assert.equal((legal.match(/Отчёты о сбоях мобильного приложения: тип устройства/g) ?? []).length, 2, 'Политика и Согласие');
+  assert.equal((legal.match(/сервис отчётов о сбоях приложения AppMetrica \(ООО «ЯНДЕКС»\)/g) ?? []).length, 2, 'Согласие и dataPolicy');
+  assert.equal((legal.match(/для выявления сбоев приложение передаёт отчёты о сбоях сервису AppMetrica/g) ?? []).length, 2, 'Политика и dataPolicy о cookie');
+  for (const key of ['privacy', 'consent']) {
+    const i = legal.indexOf(`  ${key}: {`);
+    assert.match(legal.slice(i, i + 400), /consentVersion: '2026-10-03'/, key);
+  }
+  // Открытые документы на сайте пересобраны из тех же текстов.
+  assert.ok(read('public/landing/docs.json').includes('AppMetrica'));
+});
