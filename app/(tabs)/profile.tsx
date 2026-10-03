@@ -30,7 +30,6 @@ import {
 } from '@/services/db';
 import { LEGAL_DOCS, formatLegalDate } from '@/constants/legal';
 import { getSupabaseClient } from '@/template';
-import { resetOnboarding } from '@/components/OnboardingOverlay';
 import { TabHeader } from '@/components/ui/TabHeader';
 import GuestGate from '@/components/GuestGate';
 import { AppInput } from '@/components/ui/AppInput';
@@ -40,7 +39,6 @@ import { PersonalDetails } from '@/constants/types';
 import { mergeResumeIntoUser, pickAndImportResume } from '@/services/resumeImport';
 import { METRO_LINES } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { JT, JT_FONT } from '@/constants/jt';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -687,7 +685,7 @@ export default function ProfileScreen() {
         />
       )}
       <JTPullRefresh refreshing={refreshing} onRefresh={onRefresh}>
-      <OnboardingTarget targetKey="profile.content" style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={JT.accent} colors={[JT.accent]} />
@@ -902,18 +900,6 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
-          <TouchableOpacity
-            style={sS.actionRow}
-            onPress={async () => {
-              if (currentUser) { await resetOnboarding(currentUser.id); }
-              // Без уведомления: обучение и так открывается сразу на главной
-              router.push('/(tabs)/feed');
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[sS.actionLabel, { flex: 1 }]}>Показать обучение снова</Text>
-            <Ionicons name="refresh" size={16} color={Colors.textMuted} />
-          </TouchableOpacity>
         </SectionCard>
         </> : null}
 
@@ -1004,7 +990,7 @@ export default function ProfileScreen() {
 
         <View style={{ height: 8 }} />
       </ScrollView>
-      </OnboardingTarget>
+      </View>
       </JTPullRefresh>
 
       {/* Photo source picker */}

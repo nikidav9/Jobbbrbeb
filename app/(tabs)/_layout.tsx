@@ -15,7 +15,6 @@ import { useApp } from '@/hooks/useApp';
 import NotificationPermissionSheet from '@/components/NotificationPermissionSheet';
 import CompleteProfileSheet from '@/components/CompleteProfileSheet';
 import EntryTransition from '@/components/EntryTransition';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { matchBadgeCount } from '@/services/matchCounts';
 
 import { rs, rf } from '@/constants/scale';
@@ -101,9 +100,7 @@ function FloatingTabBar({
                 accessibilityState={{ selected: focused }}
                 accessibilityLabel={hasBadge ? `${tab.label}, новых: ${tab.badge}` : tab.label}
               >
-                <OnboardingTarget
-                  targetKey={`tab.${tab.route}`}
-                  style={[fS.tabCell, focused && fS.tabCellActive]}
+                <View style={[fS.tabCell, focused && fS.tabCellActive]}
                 >
                   <Ionicons
                     name={focused ? tab.iconFilled : tab.iconOutline}
@@ -119,7 +116,7 @@ function FloatingTabBar({
                     {tab.label}
                   </Text>
                   {hasBadge ? <View style={fS.badgeDot} /> : null}
-                </OnboardingTarget>
+                </View>
               </TouchableOpacity>
             );
           })}

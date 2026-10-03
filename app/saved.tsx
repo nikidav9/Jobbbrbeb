@@ -13,7 +13,6 @@ import { getInitials, nameColorFromString } from '@/services/storage';
 import { plural } from '@/services/time';
 import { dbGetPermSavedDetailed, dbRemovePermSaved } from '@/services/db';
 import { dayKey, dayShort, groupByDay } from '@/services/dayGroups';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { BackButton } from '@/components/ui/BackButton';
 import { loadExtSaved, toggleExtSaved, useExtSaved } from '@/services/extSaved';
 import { openExtVacancy } from '@/services/extVacancyHandoff';
@@ -154,9 +153,9 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={sv.safe} edges={['top', 'left', 'right']}>
       <View style={sv.header}>
-        <OnboardingTarget targetKey="saved.back">
+        <View>
           <BackButton />
-        </OnboardingTarget>
+        </View>
         <Text style={sv.title}>Избранное</Text>
         {/* Пустая колонка той же ширины, что кнопка: иначе заголовок встаёт
             не по центру экрана, а по центру остатка. Именно колонка, а не
@@ -165,7 +164,7 @@ export default function SavedScreen() {
         <View style={sv.backSpacer} pointerEvents="none" />
       </View>
 
-      <OnboardingTarget targetKey="saved.content" style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={[sv.list, !loading && saved.length === 0 && { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
@@ -199,7 +198,7 @@ export default function SavedScreen() {
           </View>
         ))}
         </ScrollView>
-      </OnboardingTarget>
+      </View>
     </SafeAreaView>
   );
 }

@@ -4,7 +4,6 @@ import {
   Dimensions, Platform, Easing, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isOnboardingDone, onOnboardingDone } from '@/components/OnboardingOverlay';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomSafe } from '@/lib/androidInsets';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,7 +68,6 @@ export default function NotificationPermissionSheet() {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    let unsubOnboarding: (() => void) | null = null;
 
     (async () => {
       try {
@@ -112,16 +110,11 @@ export default function NotificationPermissionSheet() {
           }
         }
 
-        // Обучение и это окно раньше показывались одновременно и наезжали
-        // друг на друга при первом входе. Ждём, пока человек пройдёт или
-        // пропустит обучение, и только потом предлагаем уведомления.
-        const show = () => setTimeout(() => { if (!cancelled) open(); }, SHOW_DELAY_MS);
-        if (await isOnboardingDone(userId)) { show(); return; }
-        unsubOnboarding = onOnboardingDone(() => { if (!cancelled) show(); });
+        setTimeout(() => { if (!cancelled) open(); }, SHOW_DELAY_MS);
       } catch {}
     })();
 
-    return () => { cancelled = true; unsubOnboarding?.(); };
+    return () => { cancelled = true; };
   }, [userId]);
 
   // ─── Open / close animations ───────────────────────────────────────────────

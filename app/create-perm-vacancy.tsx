@@ -17,7 +17,6 @@ import { PermVacancy, WorkType } from '@/constants/types';
 import { METRO_LINES } from '@/constants/metro';
 import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { AutoRejectNotice } from '@/components/AutoRejectNotice';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 
 import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
@@ -118,7 +117,7 @@ export default function CreatePermVacancy() {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <OnboardingTarget targetKey="employer.create.form" style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <AutoRejectNotice />
 
@@ -218,7 +217,7 @@ export default function CreatePermVacancy() {
           </View>
 
           <View style={{ marginBottom: 40, marginTop: 8 }}>
-            <OnboardingTarget targetKey="employer.create.publish">
+            <View>
               <TouchableOpacity
                 style={[styles.submitBtn, saving && { opacity: 0.6 }]}
                 onPress={submit}
@@ -231,10 +230,10 @@ export default function CreatePermVacancy() {
                   <Text style={styles.submitBtnTxt}>{isEdit ? 'Сохранить' : 'Опубликовать'}</Text>
                 )}
               </TouchableOpacity>
-            </OnboardingTarget>
+            </View>
           </View>
         </ScrollView>
-        </OnboardingTarget>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

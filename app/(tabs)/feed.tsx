@@ -74,7 +74,6 @@ import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { PermApplicationsSheet } from '@/components/feature/PermApplicationsSheet';
-import { OnboardingTarget } from '@/components/OnboardingTarget';
 import { registerWebPush, isWebPushRegistered, getWebPushDebug } from '@/lib/webPush';
 
 import { rs, rf } from '@/constants/scale';
@@ -722,7 +721,7 @@ function DeckActions({ bottom, onUndo, onSkip, onWant, saved, onSave }: {
         <Ionicons name="arrow-undo" size={rs(22)} color={JT.ink} />
       </TouchableOpacity>
 
-      <OnboardingTarget targetKey="worker.feed.reject">
+      <View>
         <View style={da.bigWrap}>
           <View style={da.bigShadow} />
           <TouchableOpacity
@@ -735,9 +734,9 @@ function DeckActions({ bottom, onUndo, onSkip, onWant, saved, onSave }: {
             <Ionicons name="close" size={rs(36)} color={JT.ink} />
           </TouchableOpacity>
         </View>
-      </OnboardingTarget>
+      </View>
 
-      <OnboardingTarget targetKey="worker.feed.apply">
+      <View>
         <View style={da.bigWrap}>
           <View style={da.bigShadow} />
           <TouchableOpacity
@@ -750,10 +749,10 @@ function DeckActions({ bottom, onUndo, onSkip, onWant, saved, onSave }: {
             <Ionicons name="heart" size={rs(32)} color={JT.ink} />
           </TouchableOpacity>
         </View>
-      </OnboardingTarget>
+      </View>
 
       {onSave ? (
-        <OnboardingTarget targetKey="worker.feed.save">
+        <View>
           <TouchableOpacity
             style={da.small}
             onPress={onSave}
@@ -763,7 +762,7 @@ function DeckActions({ bottom, onUndo, onSkip, onWant, saved, onSave }: {
           >
             <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={rs(22)} color={saved ? JT.accent : JT.ink} />
           </TouchableOpacity>
-        </OnboardingTarget>
+        </View>
       ) : <View style={da.smallSpacer} />}
     </View>
   );
@@ -1423,7 +1422,7 @@ function WorkerPermMode() {
             «Призраки» колоды остались снаружи: они позиционированы абсолютно
             от области карточек, и внутри списка их отступы сложились бы с её
             внутренними полями. */}
-        <OnboardingTarget targetKey="worker.feed.card" style={styles.cardViewportShell}>
+        <View style={styles.cardViewportShell}>
           <Reanimated.View style={[styles.deckSwipeLayer, swDeck.cardStyle]}>
           <View style={styles.cardSticker} pointerEvents="none" />
           <GHScrollView
@@ -1619,7 +1618,7 @@ function WorkerPermMode() {
             <Text style={styles.skipText}>НЕТ</Text>
           </Reanimated.View>
           </Reanimated.View>
-        </OnboardingTarget>
+        </View>
 
         {moreBelow ? (
           // Подсказка стоит не поверх текста, а на его растворении: у нижнего
@@ -1784,9 +1783,9 @@ function WorkerPermMode() {
       {/* Полоса чипов вместо шестерёнки и общей шторки (решение владельца
           27.09.2026): всегда на экране, даже когда колода пуста или ещё
           грузится — иначе пустой фильтр был бы тупиком. */}
-      <OnboardingTarget targetKey="worker.feed.filter">
+      <View>
         <FilterChipsBar filters={filters} onOpen={openFilterSheet} onClear={clearFilter} onOpenAll={() => openAllFilters()} />
-      </OnboardingTarget>
+      </View>
       {/* Пустая колода без загрузки прячет счётчик: он мог остаться от
           прежнего выбора чипов (свежий пул ещё не разложился в карточки),
           и «Всего 120» рядом с «По фильтрам ничего не нашлось» читалось бы
@@ -2081,7 +2080,7 @@ function EmployerHome() {
         ))}
       </View>
 
-      <OnboardingTarget targetKey="employer.feed.content" style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarHeight + 16 }}
           showsVerticalScrollIndicator={false}
@@ -2177,7 +2176,7 @@ function EmployerHome() {
           )
         }
         </ScrollView>
-      </OnboardingTarget>
+      </View>
 
       {viewersModal ? (
         <VacancyViewersModal
@@ -2205,7 +2204,7 @@ function EmployerHome() {
       ) : null}
 
       {/* Плавающая кнопка создания — видна и когда вакансии уже есть */}
-      <OnboardingTarget targetKey="employer.feed.create" style={[styles.fab, { bottom: tabBarHeight + 14 }] }>
+      <View style={[styles.fab, { bottom: tabBarHeight + 14 }] }>
         <TouchableOpacity
           style={[StyleSheet.absoluteFill, { backgroundColor: Colors.primary, borderRadius: rs(28), alignItems: 'center', justifyContent: 'center' }]}
           onPress={() => router.push('/create-perm-vacancy')}
@@ -2213,7 +2212,7 @@ function EmployerHome() {
         >
           <Ionicons name="add" size={30} color="#fff" />
         </TouchableOpacity>
-      </OnboardingTarget>
+      </View>
     </SafeAreaView>
   );
 }

@@ -14,7 +14,6 @@ import {
   dbDeleteWebPushSubscription,
   dbGetMarketingConsent, dbSetMarketingConsent,
 } from '@/services/db';
-import { resetOnboarding } from '@/components/OnboardingOverlay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
 import * as Updates from 'expo-updates';
@@ -652,16 +651,6 @@ export default function ProfileSettingsScreen() {
         <Section title="JobToo">
           {isWorker ? (
             <Row label="Пригласить друга" icon={<GiftIcon />} onPress={() => router.push('/invite')} />
-          ) : null}
-          {isWorker ? (
-            <Row
-              label="Показать обучение снова"
-              icon={<RefreshIcon />}
-              onPress={async () => {
-                await resetOnboarding(currentUser.id);
-                router.replace('/(tabs)/feed');
-              }}
-            />
           ) : null}
           <Row
             label={refreshBusy ? 'Обновляем…' : 'Очистить кеш и обновить'}
