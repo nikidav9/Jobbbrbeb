@@ -158,7 +158,7 @@
   вакансий по вашим фильтрам»); у пустой колоды при фильтрах — «Сбросить
   фильтры» (`empty-reset-filters`). Охрана — `tests/feed_empty_filters.test.mjs`,
   `tests/ext_feed_test.php`, `tests/feed_filters.test.ts`.
-- `hooks/useSwipeDeck.ts` — физика свайпа, общая для обеих колод.
+- `hooks/useSwipeDeck.ts` — физика свайпа, общая для обеих колод. Жесты на телефоне работают только внутри `GestureHandlerRootView` в `app/_layout.tsx` (с SDK 57 expo-router его не ставит; без него свайпы мертвы).
   Жест на gesture-handler, значения на Reanimated, всё на потоке интерфейса.
 - Настройки, Помощь, Молния — по макетам `docs/design/settings-help/`:
   `app/profile-settings.tsx` (разделы «Аккаунт»/«JobToo», шторки пароля и

@@ -4,6 +4,7 @@ import { Platform, AppState } from 'react-native';
 import * as Updates from 'expo-updates';
 import { Stack, useRouter, usePathname } from 'expo-router';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
@@ -252,6 +253,10 @@ export default function RootLayout() {
   }, []);
 
   return (
+    // Корень жестов: без него на телефоне ни один Gesture (свайп карточек,
+    // шторки, список чатов) не получает касаний. До SDK 57 обёртку ставил
+    // expo-router, теперь — только мы.
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <AlertProvider>
       {/* initialMetrics — чтобы безопасные отступы были известны сразу,
           иначе на первом кадре они нулевые и низ экрана дёргается */}
@@ -305,5 +310,6 @@ export default function RootLayout() {
         </AppProvider>
       </SafeAreaProvider>
     </AlertProvider>
+    </GestureHandlerRootView>
   );
 }
