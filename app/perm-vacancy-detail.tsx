@@ -170,7 +170,7 @@ export default function PermVacancyDetailScreen() {
             <Text style={styles.authBtnSecondaryTxt}>Ищу работу — Зарегистрироваться</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.authBtnSecondary, { marginTop: 8 }]} onPress={() => router.push('/register-employer')} activeOpacity={0.85}>
-            <Text style={styles.authBtnSecondaryTxt}>Ищу сотрудников — Зарегистрироваться</Text>
+            <Text style={styles.authBtnSecondaryTxt}>Ищу сотрудников — Написать нам</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>

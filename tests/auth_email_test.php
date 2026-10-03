@@ -446,7 +446,7 @@ check('живая отправка отмечает готовность', jt_ma
 @unlink(jt_mail_ready_file());
 $gate = (string)file_get_contents(__DIR__ . '/../components/EmailRequiredGate.tsx');
 check('окно почты — только когда почта готова', str_contains($gate, '&& app.emailAuthReady;'));
-foreach (['app/register-worker.tsx', 'app/register-employer.tsx'] as $f) {
+foreach (['app/register-worker.tsx'] as $f) { // работодателя регистрировать нельзя с 03.10.2026
     $src = (string)file_get_contents(__DIR__ . '/../' . $f);
     check("$f: без почты — регистрация по телефону",
         str_contains($src, '{emailAuthReady ? (') && str_contains($src, 'onPress={continueFromPhone}')

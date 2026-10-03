@@ -24,6 +24,23 @@ const SCREEN_H = Dimensions.get('window').height;
 const SHOW_DELAY_MS = 1200;
 const ENABLE_TIMEOUT_MS = 20_000;
 
+// iPhone в Safari: Apple даёт веб-пуши только сайту, добавленному на экран
+// «Домой» и открытому оттуда (iOS 16.4+). Во вкладке Notification нет вовсе —
+// вместо кнопки показываем, как установить (решение владельца 03.10.2026).
+// В телеграме установить нельзя — там подсказку не показываем.
+const IOS_HINT_KEY = 'jm_ios_home_hint_at';
+const IOS_HINT_EVERY_MS = 3 * 24 * 3600 * 1000;
+export function needsHomeScreenForPush(): boolean {
+  if (Platform.OS !== 'web' || typeof navigator === 'undefined' || typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const iOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1);
+  if (!iOS) return false;
+  if ((window as any).Telegram?.WebApp?.initData) return false;
+  const standalone = (navigator as any).standalone === true
+    || (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches);
+  return !standalone;
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     p,
@@ -40,6 +57,7 @@ export default function NotificationPermissionSheet() {
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [homeHint, setHomeHint] = useState(false);
 
   const slideY = useRef(new Animated.Value(SCREEN_H)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
@@ -58,7 +76,13 @@ export default function NotificationPermissionSheet() {
         const choice = await AsyncStorage.getItem(CHOICE_KEY);
         if (choice === 'enabled') return;
 
-        if (Platform.OS === 'web') {
+        if (needsHomeScreenForPush()) {
+          // Не чаще раза в три дня: во вкладке Safari кнопка ничего не включит.
+          const last = Number(await AsyncStorage.getItem(IOS_HINT_KEY)) || 0;
+          if (Date.now() - last < IOS_HINT_EVERY_MS) return;
+          await AsyncStorage.setItem(IOS_HINT_KEY, String(Date.now()));
+          if (!cancelled) setHomeHint(true);
+        } else if (Platform.OS === 'web') {
           // Browser Notification API: skip if unsupported or already resolved
           if (typeof Notification === 'undefined') return;
           if (Notification.permission === 'granted') {
@@ -232,6 +256,20 @@ export default function NotificationPermissionSheet() {
           <Ionicons name="close" size={rs(20)} color={JT.ink} />
         </TouchableOpacity>
 
+        {homeHint ? (
+          <>
+            <Text style={st.title}>Уведомления на iPhone</Text>
+            <Text style={st.subtitle}>
+              Apple присылает уведомления только приложениям с экрана «Домой». Добавьте JobToo — это два шага:
+            </Text>
+            <View style={st.reasons}>
+              <Reason icon="share-outline" text="Нажмите «Поделиться» внизу Safari" />
+              <Reason icon="add-circle-outline" text="Выберите «На экран „Домой“» и откройте JobToo с иконки" />
+              <Reason icon="notifications-outline" text="Там включите уведомления — придут ответы работодателей" />
+            </View>
+            <JTButton label="Понятно" onPress={handleClose} arrow={false} />
+          </>
+        ) : (<>
         <Text style={st.title}>Будьте в курсе</Text>
         <Text style={st.subtitle}>
           Включите уведомления, чтобы не пропустить важное — ответы работодателей, мэтчи и новые вакансии
@@ -270,6 +308,7 @@ export default function NotificationPermissionSheet() {
         <TouchableOpacity style={st.skipBtn} onPress={handleSkip} activeOpacity={0.7} accessibilityRole="button">
           <Text style={st.skipText}>Не сейчас</Text>
         </TouchableOpacity>
+        </>)}
       </Animated.View>
     </View>
   );

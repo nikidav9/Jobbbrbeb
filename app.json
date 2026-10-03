@@ -3,7 +3,7 @@
     "name": "JobToo",
     "slug": "onspace-app",
     "owner": "nikidav23",
-    "version": "1.4.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/jt-logo.png",
     "scheme": "onspaceapp",
@@ -12,7 +12,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jobtoo",
-      "buildNumber": "7",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryAddUsageDescription": "Разрешите сохранять фотографии в галерею"
@@ -26,7 +26,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.jobtoo",
-      "versionCode": 7,
+      "versionCode": 1,
       "blockedPermissions": [
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.READ_MEDIA_AUDIO",
