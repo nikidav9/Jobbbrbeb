@@ -42,7 +42,7 @@ import { JT, JT_FONT } from '@/constants/jt';
 import {
   type FeedFilters, EMPTY_FEED_FILTERS, isFilterActive, matchOwnVacancy, toExtFeedFilters, pluralVacancies,
 } from '@/services/feedFilters';
-import { METRO_LINES } from '@/constants/metro';
+import { getMetroLineByStation } from '@/constants/metro';
 import {
   dbUpdateVacancy,
   dbCreateChat,
@@ -1333,9 +1333,7 @@ function WorkerPermMode() {
     const workType = workTypeRaw ? (WORK_TYPE_META[workTypeRaw]?.label ?? workTypeRaw) : undefined;
     const description = cleanDescription(v.description);
     const posted = agoRu(v.createdAt);
-    const metroLine = v.metroStation
-      ? METRO_LINES.find(l => l.stations.includes(v.metroStation!)) ?? null
-      : null;
+    const metroLine = getMetroLineByStation(v.metroStation);
     return (
       <View style={[styles.cardArea, { paddingBottom: deckBottomReserve }]}>
         {deckCards[2] ? <View style={[styles.ghost2, { bottom: deckBottomReserve }]} /> : null}

@@ -63,3 +63,13 @@ export const METRO_LINES = [
     stations: ['Некрасовка','Лухмановская','Улица Дмитриевского','Косино','Юго-Восточная','Окская','Стахановская','Нижегородская','Авиамоторная','Лефортово','Электрозаводская','Сокольники']
   },
 ];
+
+/** Линия по id; нет id или линии — undefined. */
+export function getMetroLineById(lineId?: string | null) {
+  return METRO_LINES.find(l => l.id === lineId);
+}
+
+/** Линия по точному названию станции (регистр и «ё» важны); нет станции или линии — null. */
+export function getMetroLineByStation(station?: string | null) {
+  return station ? METRO_LINES.find(l => l.stations.includes(station)) ?? null : null;
+}
