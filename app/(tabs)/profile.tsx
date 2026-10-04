@@ -37,7 +37,7 @@ import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MetroPicker } from '@/components/feature/MetroPicker';
 import { PersonalDetails } from '@/constants/types';
 import { mergeResumeIntoUser, pickAndImportResume } from '@/services/resumeImport';
-import { METRO_LINES } from '@/constants/metro';
+import { getMetroLineById } from '@/constants/metro';
 import { NotifBell } from '@/components/ui/NotifBell';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { JT, JT_FONT } from '@/constants/jt';
@@ -56,6 +56,7 @@ import { PersonalTabContent } from '@/components/profile/PersonalTabContent';
 import { FilesTabContent } from '@/components/profile/FilesTabContent';
 import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
 import { ProfileColors } from '@/constants/profileTheme';
+import { phoneDigits } from '@/lib/phone';
 
 
 type EditSection = 'personal' | 'metro' | 'company' | 'bio' | null;
@@ -383,7 +384,7 @@ export default function ProfileScreen() {
 
   const initials = getInitials(displayName(currentUser));
   const avatarColor = nameColorFromString(currentUser.id);
-  const line = METRO_LINES.find(l => l.id === currentUser.metroLineId);
+  const line = getMetroLineById(currentUser.metroLineId);
 
   const toggleSection = (key: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.create(
@@ -424,8 +425,8 @@ export default function ProfileScreen() {
         // Телефон для связи — отдельной операцией с проверками на сервере
         // (формат, не занят ли, не единственный ли это вход). Обычное
         // сохранение профиля телефон не меняет и раньше молча его терял.
-        const want = editPhone.replace(/\D/g, '');
-        const have = (currentUser.phone ?? '').replace(/\D/g, '');
+        const want = phoneDigits(editPhone);
+        const have = phoneDigits(currentUser.phone);
         if (want !== have) updated.phone = (await dbSetContactPhone(currentUser.id, editPhone)) ?? '';
         updated.lastName = editLast; updated.firstName = editFirst;
         // Пустое поле — «не указан», а не ноль: иначе в карточке появилось бы «0 лет».
@@ -1087,7 +1088,7 @@ export default function ProfileScreen() {
               <View style={{ gap: 12 }}>
                 {editMetroStation ? (
                   <View style={styles.metroRow}>
-                    <View style={[styles.dot, { backgroundColor: METRO_LINES.find(l => l.id === editMetroLineId)?.color }]} />
+                    <View style={[styles.dot, { backgroundColor: getMetroLineById(editMetroLineId)?.color }]} />
                     <Text style={styles.metroVal}>{editMetroStation}</Text>
                     <TouchableOpacity onPress={() => setMetroPicker(true)}>
                       <Text style={{ color: Colors.primary, fontWeight: '600' }}>Изменить</Text>

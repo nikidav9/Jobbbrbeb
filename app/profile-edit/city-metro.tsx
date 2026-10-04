@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useApp } from '@/hooks/useApp';
 import { patchPersonal } from '@/lib/profileEdit';
-import { METRO_LINES } from '@/constants/metro';
+import { METRO_LINES, getMetroLineById } from '@/constants/metro';
 import type { MetroStationChoice } from '@/constants/types';
 import {
   EditScreen, FieldLabel, useUnsavedGuard, PinIcon, SearchIcon, CloseIcon,
@@ -43,7 +43,7 @@ const ALL_STATIONS: StationOption[] = METRO_LINES.flatMap((line) => (
 ));
 
 function lineById(lineId?: string) {
-  return METRO_LINES.find((l) => l.id === lineId);
+  return getMetroLineById(lineId);
 }
 
 function sameStations(a: MetroStationChoice[], b: MetroStationChoice[]): boolean {

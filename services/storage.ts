@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Vacancy } from '@/constants/types';
+import { MONTHS_GEN } from '@/services/dayGroups';
 import { JobSection, JOB_SECTIONS } from '@/constants/jobSections';
 export { normalizeCompany } from '@/services/company';
 
@@ -127,11 +128,6 @@ export function formatDate(isoDate: string): string {
   const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
   return `${days[d.getDay()]} ${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
 }
-
-const MONTHS_GEN = [
-  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-];
 
 /**
  * Отметка времени в списке переписок.

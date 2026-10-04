@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { getSupabaseClient } from '@/template';
 import { useApp } from '@/hooks/useApp';
+import { formatRubPerPeriod } from '@/lib/money';
 import { confirmAsync } from '@/services/confirm';
 
 import { rs, rf } from '@/constants/scale';
@@ -292,7 +293,7 @@ export default function AdminScreen() {
       <View style={styles.cardRow}>
         <Text style={styles.cardLabel}>Зарплата:</Text>
         <Text style={[styles.cardVal, { color: Colors.green, fontFamily: JT_FONT.bold }]}>
-          {item.salary.toLocaleString('ru-RU')} ₽/мес
+          {formatRubPerPeriod(item.salary)}
         </Text>
       </View>
       <View style={styles.cardRow}>

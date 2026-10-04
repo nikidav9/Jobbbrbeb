@@ -1,9 +1,8 @@
-import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import type { DocumentPickerAsset } from 'expo-document-picker';
 import { parseResumeText, parseResumeIdentity, inferWorkTypes } from '@/lib/resumeParser';
 import { ResumeProfile, User } from '@/constants/types';
+import { readFileBytes } from '@/lib/fileBytes';
 import { dbSaveResumeFile, ResumeVaultItem } from '@/services/db';
 
 type PdfTextItem = {
@@ -11,39 +10,11 @@ type PdfTextItem = {
   transform: number[];
 };
 
-function base64ToBytes(base64: string): Uint8Array {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const lookup = new Uint8Array(256);
-  for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
-  const clean = base64.replace(/[^A-Za-z0-9+/]/g, '');
-  const size = Math.floor((clean.length * 3) / 4);
-  const bytes = new Uint8Array(size);
-  let position = 0;
-  for (let i = 0; i < clean.length; i += 4) {
-    const a = lookup[clean.charCodeAt(i)] ?? 0;
-    const b = lookup[clean.charCodeAt(i + 1)] ?? 0;
-    const c = lookup[clean.charCodeAt(i + 2)] ?? 0;
-    const d = lookup[clean.charCodeAt(i + 3)] ?? 0;
-    bytes[position++] = (a << 2) | (b >> 4);
-    if (position < size) bytes[position++] = ((b & 15) << 4) | (c >> 2);
-    if (position < size) bytes[position++] = ((c & 3) << 6) | d;
-  }
-  return bytes;
-}
-
 async function readAsset(asset: DocumentPickerAsset): Promise<Uint8Array> {
   if ((asset.size ?? 0) > 10 * 1024 * 1024) {
     throw new Error('Файл больше 10 МБ');
   }
-  if (Platform.OS === 'web') {
-    const response = await fetch(asset.uri);
-    if (!response.ok) throw new Error('Не удалось прочитать файл');
-    return new Uint8Array(await response.arrayBuffer());
-  }
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  return base64ToBytes(base64);
+  return readFileBytes(asset.uri, { requireOk: true });
 }
 
 function joinItemsIntoLines(items: PdfTextItem[]): string[] {

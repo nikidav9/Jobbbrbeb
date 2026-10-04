@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import { readFileBase64 } from '@/lib/fileBytes';
 import { useApp } from '@/hooks/useApp';
 import { confirmAsync } from '@/services/confirm';
 import {
@@ -34,22 +34,6 @@ function splitDate(value: string): { month?: string; year?: string } {
   const parts = value.trim().split(/\s+/);
   if (parts.length < 2) return {};
   return { month: parts[0], year: parts[1] };
-}
-
-/** байты → base64. Своя реализация: `btoa` не годится для бинарных данных повсюду. */
-function bytesToBase64(bytes: Uint8Array): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i];
-    const b = bytes[i + 1];
-    const c = bytes[i + 2];
-    out += chars[a >> 2];
-    out += chars[((a & 3) << 4) | (b === undefined ? 0 : b >> 4)];
-    out += b === undefined ? '=' : chars[((b & 15) << 2) | (c === undefined ? 0 : c >> 6)];
-    out += c === undefined ? '=' : chars[c & 63];
-  }
-  return out;
 }
 
 type DateStep = null | 'issueMonth' | 'issueYear' | 'expChoice' | 'expMonth' | 'expYear';
@@ -203,16 +187,7 @@ export default function CertificateScreen() {
         return;
       }
       setUploading(true);
-      let base64: string;
-      if (Platform.OS === 'web') {
-        const resp = await fetch(asset.uri);
-        const bytes = new Uint8Array(await (await resp.blob()).arrayBuffer());
-        base64 = bytesToBase64(bytes);
-      } else {
-        base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-      }
+      const base64 = await readFileBase64(asset.uri);
       const saved = await dbSaveCertificateFile(asset.name || 'Файл', base64);
       // Прежний файл: ещё не сохранённый в записи — стираем сразу (иначе он
       // навсегда останется в хранилище); сохранённый — только после успешного

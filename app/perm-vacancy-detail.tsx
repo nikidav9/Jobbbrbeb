@@ -20,6 +20,7 @@ import { LavkaLogo } from '@/components/ui/LavkaLogo';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { VacancyContacts } from '@/components/feature/VacancyContacts';
 import { agoRu } from '@/services/time';
+import { formatRubPerPeriod } from '@/lib/money';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import {
   dbApplyPermVacancy,
@@ -30,7 +31,7 @@ import {
   dbStartGuestRegistration,
 } from '@/services/db';
 import { ensureResumeForApply } from '@/services/resumeGate';
-import { METRO_LINES } from '@/constants/metro';
+import { getMetroLineByStation } from '@/constants/metro';
 
 import { rs, rf } from '@/constants/scale';
 import { ApplySheet } from '@/components/feature/ApplySheet';
@@ -130,16 +131,14 @@ export default function PermVacancyDetailScreen() {
     if (!vacancy) return [];
     const list: { label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [];
     if (vacancy.salary > 0) {
-      list.push({ label: `${vacancy.salary.toLocaleString('ru-RU')} ₽/мес · на руки`, icon: 'wallet-outline' });
+      list.push({ label: `${formatRubPerPeriod(vacancy.salary)} · на руки`, icon: 'wallet-outline' });
     }
     if (vacancy.schedule) list.push({ label: vacancy.schedule, icon: 'calendar-outline' });
     if (vacancy.metroStation) list.push({ label: `м. ${vacancy.metroStation}`, icon: 'subway-outline' });
     return list;
   }, [vacancy]);
 
-  const metroLine = vacancy?.metroStation
-    ? METRO_LINES.find(l => l.stations.includes(vacancy.metroStation!)) ?? null
-    : null;
+  const metroLine = getMetroLineByStation(vacancy?.metroStation);
 
   const authSwipe = useSwipeToDismiss(() => setAuthModalDismissed(true), showAuthModal);
 
@@ -239,7 +238,7 @@ export default function PermVacancyDetailScreen() {
     const message = [
       `${vacancy.title} — ${vacancy.company}`,
       vacancy.metroStation ? `м. ${vacancy.metroStation}` : '',
-      `${vacancy.salary.toLocaleString('ru-RU')} ₽/мес`,
+      formatRubPerPeriod(vacancy.salary),
       url,
     ].filter(Boolean).join('\n');
     try {

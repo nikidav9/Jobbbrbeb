@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MONTHS_GEN } from '@/services/dayGroups';
 import { dbSavePushToken, dbReleasePushToken, proxy } from '@/services/db';
 
 export const NOTIFICATION_DISABLED_KEY = 'jm_notifications_disabled';
@@ -196,13 +197,12 @@ function escapeHtml(s: string): string {
 
 // ─── Nearby vacancy broadcast ─────────────────────────────────────────────────
 
-const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
 function formatDateRu(iso?: string): string {
   if (!iso) return '';
   const [, m, d] = iso.split('-').map(Number);
   if (!m || !d) return iso;
-  return `${d} ${MONTHS_RU[m - 1]}`;
+  return `${d} ${MONTHS_GEN[m - 1]}`;
 }
 
 // Уведомлений о событиях здесь больше нет — ни о сообщениях, ни о мэтче, ни об
