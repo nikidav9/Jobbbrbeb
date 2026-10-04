@@ -7,6 +7,8 @@
 тем же коммитом. Карта, отставшая от кода, хуже её отсутствия: она уводит не туда
 с полной уверенностью.
 
+**Обложки «Актуальных» Instagram** (03.10.2026): `docs/instagram-covers/` (4 штуки 1080×1920, с текстом и без), сборка — `scripts/make-instagram-covers.py` (нужен только Pillow), вырезки персонажей лендинга — `docs/instagram-covers/src/`. Неиспользуемые картинки персонажей `char-*` и `чел*.png` из `assets/images` удалены (владелец оставил только трёх героев лендинга).
+
 **Срез 4 чистки (03.10.2026):** из `package.json` убраны 40 неиспользуемых чисто-JS пакетов (UI-киты, redux/zustand, apollo/graphql, bcryptjs, date-fns и др.; список — `docs/audit-2026-10-03/2-dependencies.md`) и скрипт `import-users`. Нативные пакеты не тронуты.
 
 **Срез 1 чистки (03.10.2026):** удалены неиспользуемые MetroMap, PhoneInput, LegalLinks, AboutYouStep, services/pay, constants/{help,roleIcons,metroCoords,lavkaLogoData}, components/index.ts, шрифт SpaceMono и две неиспользуемые картинки.
