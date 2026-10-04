@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import type { JupiterEvent } from '@/services/jupiterTimeline';
-import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, WorkType, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
+import { User, Vacancy, Like, Chat, Message, PermVacancy, PermApplication, PermApplicationStatus, ReportableOutcome, ResumeProfile, JupiterApplication, ExtVacancy } from '@/constants/types';
 import type { VacancySpec, VacancyLevel, VacancyFormat } from '@/services/vacancyFacets';
 import { uid, nowISO } from '@/services/storage';
 import { normalizeCompany } from '@/services/company';
@@ -373,24 +373,6 @@ export type UserStats =
   | { enough: false }
   | { enough: true; chats: number; answered: number; medianSeconds: number | null };
 
-/**
- * Отзывчивость сразу по всем — для карточек в ленте.
- *
- * Поштучно нельзя: на экране десяток вакансий, и запрос на каждую превратил бы
- * ленту в слайд-шоу. В карте только те, о ком есть что сказать: остальных в
- * ней просто нет.
- */
-export type Responsiveness = { chats: number; answered: number; medianSeconds: number | null };
-
-export async function dbResponsivenessMap(): Promise<Record<string, Responsiveness>> {
-  try {
-    return await proxy<Record<string, Responsiveness>>('dbResponsivenessMap');
-  } catch {
-    // Лента важнее подписи: не сложилось — карточки просто без неё.
-    return {};
-  }
-}
-
 export async function dbUserStats(userId: string): Promise<UserStats> {
   try {
     return await proxy<UserStats>('dbUserStats', [userId]);
@@ -398,11 +380,6 @@ export async function dbUserStats(userId: string): Promise<UserStats> {
     // Профиль важнее статистики: не сложилось — просто не показываем блок.
     return { enough: false };
   }
-}
-
-/** Только число пользователей — для приветственного экрана. */
-export async function dbCountUsers(): Promise<number> {
-  return proxy<number>('dbCountUsers');
 }
 
 export async function dbGetUsers(): Promise<User[]> {
@@ -481,7 +458,7 @@ export async function dbSetContactPhone(userId: string, phone: string): Promise<
  * назначает себе сам, а кто его привёл — решает сервер. Он же находит
  * владельца кода и записывает связь, и только один раз, при создании.
  */
-export type ConsentPayload = {
+type ConsentPayload = {
   stamp: string;
   docs: Record<string, string>;
   /** Отдельное добровольное согласие на трансграничную передачу. */
@@ -594,51 +571,11 @@ export async function dbGetConsent(userId: string): Promise<{
   return proxy('dbGetConsent', [userId]);
 }
 
-export type CrossBorderConsentRecord = {
-  accepted: boolean;
-  version: string | null;
-  source: string | null;
-  accepted_at: string | null;
-};
-
-/** Текущее отдельное решение по трансграничной передаче. */
-export async function dbGetCrossBorderConsent(userId: string): Promise<CrossBorderConsentRecord> {
-  return proxy('dbGetCrossBorderConsent', [userId]);
-}
-
-/**
- * Зафиксировать отдельное добровольное согласие на трансграничную передачу.
- * В отличие от общего dbRecordConsent этот вызов бросает ошибку: включать
- * иностранный канал без доказательной записи нельзя.
- */
-export type CrossBorderConsentSource =
-  | 'crossborder:registration'
-  | 'crossborder:reconsent'
-  | 'crossborder:push'
-  | 'crossborder:telegram';
-
-export async function dbRecordCrossBorderConsent(
-  userId: string,
-  version: string,
-  source: CrossBorderConsentSource = 'crossborder:reconsent',
-): Promise<void> {
-  const res = await proxy<{ ok?: boolean; error?: string }>(
-    'dbRecordCrossBorderConsent', [userId, version, source],
-  );
-  if (!res?.ok) throw new Error(res?.error || 'Не удалось сохранить согласие');
-}
-
-/** Отзыв отдельного трансграничного согласия. */
-export async function dbRevokeCrossBorderConsent(userId: string): Promise<void> {
-  const res = await proxy<{ ok?: boolean; error?: string }>('dbRevokeCrossBorderConsent', [userId]);
-  if (!res?.ok) throw new Error(res?.error || 'Не удалось отозвать согласие');
-}
-
 /**
  * Согласие на рекламную рассылку (38-ФЗ, ст. 18) — отдельное и необязательное.
  * `on` — последнее решение «да» на текущую редакцию документа.
  */
-export type MarketingConsent = {
+type MarketingConsent = {
   on: boolean;
   version: string | null;
   source: string | null;
@@ -660,22 +597,12 @@ export async function dbSetMarketingConsent(
   return proxy('dbSetMarketingConsent', [userId, on, version, source]);
 }
 
-/** Удаление администратором из дашборда — там пароля человека нет. */
-export async function dbDeleteUser(id: string): Promise<void> {
-  await proxy('dbDeleteUser', [id]);
-}
-
 export function dbWarmup(): void {
   fetch(`${API_BASE}/api/db.php`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET, 'X-App-Version': APP_VERSION },
     body: JSON.stringify({ fn: 'dbWarmup', args: [] }),
   }).catch(() => {});
-}
-
-export async function dbGetUserByPhone(phone: string): Promise<User | null> {
-  const d = await proxy<any>('dbGetUserByPhone', [phone]);
-  return d ? rowToUser(d) : null;
 }
 
 // ─── Vacancies ────────────────────────────────────────────────────────────────
@@ -708,47 +635,9 @@ function rowToVacancy(r: any): Vacancy {
   };
 }
 
-function vacancyToRow(v: Vacancy) {
-  return {
-    id: v.id,
-    employer_id: v.employerId,
-    company: v.company ? normalizeCompany(v.company) : v.company,
-    title: v.title,
-    work_type: v.workType,
-    work_type_label: v.workTypeLabel,
-    metro_line_id: v.metroLineId || null,
-    metro_station: v.metroStation || null,
-    date: v.date,
-    time_start: v.timeStart,
-    time_end: v.timeEnd,
-    salary: v.salary,
-    norms_and_pay: v.normsAndPay || null,
-    address: v.address || null,
-    lat: v.lat ?? null,
-    lng: v.lng ?? null,
-    workers_needed: v.workersNeeded,
-    workers_found: v.workersFound,
-    is_urgent: v.isUrgent,
-    no_experience_needed: v.noExperienceNeeded,
-    conditions: v.conditions || null,
-    status: v.status,
-    created_at: v.createdAt,
-  };
-}
-
 export async function dbGetVacancies(): Promise<Vacancy[]> {
   const d = await proxy<any[]>('dbGetVacancies');
   return d.map(rowToVacancy);
-}
-
-export async function dbUpsertVacancy(v: Vacancy): Promise<void> {
-  await proxy('dbUpsertVacancy', [vacancyToRow(v)]);
-}
-
-export async function dbUpsertVacancyBatch(vacs: Vacancy[]): Promise<void> {
-  if (vacs.length === 0) return;
-  const rows = vacs.map(vacancyToRow);
-  await proxy('dbUpsertVacancyBatch', [rows]);
 }
 
 export async function dbUpdateVacancy(id: string, patch: Partial<{ status: string; workers_found: number }>): Promise<void> {
@@ -802,10 +691,6 @@ export async function dbGetPermVacancyViewers(vacancyId: string): Promise<string
   return proxy<string[]>('dbGetPermVacancyViewers', [vacancyId]);
 }
 
-export async function dbRecordVacancyView(vacancyId: string, workerId: string): Promise<void> {
-  await proxy('dbRecordVacancyView', [vacancyId, workerId]);
-}
-
 // ─── Событие «открыл приложение» (Фаза 1b) ───────────────────────────────────
 // Стабильный анонимный id устройства: ставится один раз и переживает logout,
 // поэтому один и тот же человек до и после регистрации — это одна строка воронки.
@@ -838,7 +723,7 @@ export async function dbLogOpen(userId: string | null, role: string | null, plat
   }
 }
 
-export type GuestEventType =
+type GuestEventType =
   | 'guest_started'
   | 'vacancy_impression'
   | 'apply_intent'
@@ -849,7 +734,7 @@ export type GuestEventType =
   | 'campaign_apply'
   | 'campaign_shared';
 
-export interface GuestEventContext {
+interface GuestEventContext {
   vacancyId?: string | null;
   vacancyKind?: 'shift' | 'permanent' | null;
   campaignId?: string | null;
@@ -931,11 +816,6 @@ export async function dbRecordPermVacancyView(vacancyId: string, workerId: strin
   await proxy('dbRecordPermVacancyView', [vacancyId, workerId]);
 }
 
-export async function dbGetLikesByVacancy(vacancyId: string): Promise<Like[]> {
-  const d = await proxy<any[]>('dbGetLikesByVacancy', [vacancyId]);
-  return d.map(rowToLike);
-}
-
 export async function dbGetLikeByVacancyWorker(vacancyId: string, workerId: string): Promise<Like | null> {
   const d = await proxy<any>('dbGetLikeByVacancyWorker', [vacancyId, workerId]);
   return d ? rowToLike(d) : null;
@@ -956,14 +836,6 @@ export async function dbUpsertLike(
 ): Promise<Like> {
   const d = await proxy<any>('dbUpsertLike', [vacancyId, workerId, employerId, updates]);
   return rowToLike(d);
-}
-
-export async function dbRemoveLike(vacancyId: string, workerId: string): Promise<void> {
-  await proxy('dbRemoveLike', [vacancyId, workerId]);
-}
-
-export async function dbDeleteMatch(likeId: string): Promise<void> {
-  await proxy('dbDeleteMatch', [likeId]);
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -1106,12 +978,6 @@ export async function dbSelectResumeFile(id: string): Promise<ResumeVaultItem> {
   return rowToResumeVaultItem(row);
 }
 
-/** Переименовать файл в сейфе. */
-export async function dbRenameResumeFile(id: string, fileName: string): Promise<ResumeVaultItem> {
-  const row = await proxy<any>('dbRenameResumeFile', [id, fileName]);
-  return rowToResumeVaultItem(row);
-}
-
 /**
  * Удалить PDF. Если удалялся выбранный, сервер сам выбирает следующий
  * доступный и возвращает его; null означает, что резюме больше нет.
@@ -1221,10 +1087,6 @@ export async function dbMarkRead(chatId: string, role: 'worker' | 'employer'): P
   await proxy('dbMarkRead', [chatId, role]);
 }
 
-export async function dbIncrementUnread(chatId: string, forRole: 'worker' | 'employer'): Promise<void> {
-  await proxy('dbIncrementUnread', [chatId, forRole]);
-}
-
 export async function dbDeleteChat(chatId: string): Promise<void> {
   await proxy('dbDeleteChat', [chatId]);
 }
@@ -1235,28 +1097,7 @@ export async function dbGetSaved(userId: string): Promise<string[]> {
   return proxy<string[]>('dbGetSaved', [userId]);
 }
 
-export async function dbAddSaved(userId: string, vacancyId: string): Promise<void> {
-  await proxy('dbAddSaved', [userId, vacancyId]);
-}
-
-export async function dbRemoveSaved(userId: string, vacancyId: string): Promise<void> {
-  await proxy('dbRemoveSaved', [userId, vacancyId]);
-}
-
 // ─── Complaints ───────────────────────────────────────────────────────────────
-
-export async function dbFileComplaint(params: {
-  reporterId: string;
-  reporterPhone: string;
-  reporterCompany?: string;
-  targetId: string;
-  targetPhone: string;
-  targetCompany?: string;
-  complaintType: 'worker' | 'employer';
-  description?: string;
-}): Promise<void> {
-  await proxy('dbFileComplaint', [params]);
-}
 
 // ─── Match logic ──────────────────────────────────────────────────────────────
 
@@ -1321,10 +1162,6 @@ export async function dbClosePermVacancy(id: string): Promise<void> {
   await proxy('dbClosePermVacancy', [id]);
 }
 
-export async function dbDeleteVacancy(id: string): Promise<void> {
-  await proxy('dbDeleteVacancy', [id]);
-}
-
 export async function dbDeletePermVacancy(id: string): Promise<void> {
   await proxy('dbDeletePermVacancy', [id]);
 }
@@ -1344,11 +1181,6 @@ function rowToPermApp(r: any): PermApplication {
 
 export async function dbGetPermApplications(userId: string, role: 'worker' | 'employer'): Promise<PermApplication[]> {
   const d = await proxy<any[]>('dbGetPermApplications', [userId, role]);
-  return d.map(rowToPermApp);
-}
-
-export async function dbGetPermApplicationsForVacancy(vacancyId: string): Promise<PermApplication[]> {
-  const d = await proxy<any[]>('dbGetPermApplicationsForVacancy', [vacancyId]);
   return d.map(rowToPermApp);
 }
 
@@ -1813,42 +1645,6 @@ export async function dbSubmitRatingAndMaybeDelete(params: {
   return proxy<{ bothRated: boolean }>('dbSubmitRatingAndMaybeDelete', [params]);
 }
 
-// ─── Микро-тесты по профессиям ────────────────────────────────────────────────
-
-export interface SkillResult {
-  workType: WorkType;
-  correct: number;
-  total: number;
-  passed: boolean;
-  passedAt?: string;
-  attemptsToday: number;
-  attemptsDay?: string;
-}
-
-export async function dbGetSkillResults(userId: string): Promise<SkillResult[]> {
-  const rows = await proxy<any[]>('dbGetSkillResults', [userId]);
-  return (rows ?? []).map(r => ({
-    workType: r.work_type,
-    correct: r.correct ?? 0,
-    total: r.total ?? 0,
-    passed: !!r.passed,
-    passedAt: r.passed_at ?? undefined,
-    attemptsToday: r.attempts_today ?? 0,
-    attemptsDay: r.attempts_day ?? undefined,
-  }));
-}
-
-/**
- * Отправить результат. Сервер проверить его не может — вопросы живут в
- * приложении, — но считает попытки и не даёт перебирать наугад. Поэтому в
- * ответе и приходит, сколько попыток осталось.
- */
-export async function dbSubmitSkillTest(
-  userId: string, workType: WorkType, correct: number, total: number, passed: boolean,
-): Promise<{ passed: boolean; осталось: number; error_попытки?: boolean }> {
-  return proxy('dbSubmitSkillTest', [userId, workType, correct, total, passed]);
-}
-
 // ─── Push tokens ──────────────────────────────────────────────────────────────
 
 export async function dbSavePushToken(userId: string, token: string): Promise<void> {
@@ -1877,18 +1673,6 @@ export async function dbDeleteWebPushSubscription(userId: string): Promise<void>
 }
 
 
-export async function dbSetEmployerCompany(userId: string, company: string): Promise<void> {
-  await proxy('dbSetEmployerCompany', [userId, company]);
-}
-
-export async function dbGetWebPushSubscription(userId: string): Promise<{ endpoint: string; p256dh: string; auth: string } | null> {
-  return proxy<{ endpoint: string; p256dh: string; auth: string } | null>('dbGetWebPushSubscription', [userId]);
-}
-
-export async function dbGetWorkerTokensByMetro(metroStation: string): Promise<{ id: string; push_token: string }[]> {
-  return proxy<{ id: string; push_token: string }[]>('dbGetWorkerTokensByMetro', [metroStation]);
-}
-
 // ─── In-app notifications ──────────────────────────────────────────────────────
 
 
@@ -1900,18 +1684,6 @@ export async function dbTouchLastSeen(userId: string): Promise<void> {
   } catch {
     // колонки может ещё не быть — молчим
   }
-}
-
-/**
- * Сказать серверу, что сейчас будет привязка Telegram. Нужно для случая,
- * когда чат с ботом уже существует: Telegram тогда не передаёт метку из
- * ссылки, и бот получает голый «/start». По этой заявке он поймёт, к кому
- * привязываться. Заявка живёт 15 минут.
- */
-export async function dbTgPrepareLink(userId: string): Promise<void> {
-  // Ошибка должна дойти до UI: оба места вызова уже завершают fire-and-forget
-  // собственным .catch(...) и показывают человеку, что привязку подготовить не удалось.
-  await proxy('tgPrepareLink', [userId]);
 }
 
 export async function dbGetNotifications(userId: string): Promise<{ id: string; title: string; body: string; is_read: boolean; created_at: string; type?: string | null; payload?: any }[]> {
@@ -1945,29 +1717,7 @@ export async function dbAddressSuggest(query: string): Promise<AddressSuggestion
   return withTimeout(proxy<AddressSuggestion[]>('addressSuggest', [query]), 9000);
 }
 
-export async function dbGetAllWorkerTokens(): Promise<{ id: string; push_token: string }[]> {
-  return proxy<{ id: string; push_token: string }[]>('dbGetAllWorkerTokens');
-}
-
 // ─── Telegram Mini App ────────────────────────────────────────────────────────
-
-export type TgAuthResult = {
-  ok: boolean;
-  user?: User | null;
-  tg?: { id: number; first_name: string; last_name: string; username: string };
-};
-
-/** Validates Telegram initData server-side and returns the linked user (if any) */
-export async function dbTelegramAuth(initData: string): Promise<TgAuthResult> {
-  const res = await proxy<{ ok: boolean; user?: any; session_token?: string | null; tg?: TgAuthResult['tg'] }>('tgAuth', [initData]);
-  if (res.session_token) await saveSessionToken(res.session_token);
-  return { ...res, user: res.user ? rowToUser(res.user) : null };
-}
-
-/** Links the current Telegram account to an existing JobToo user */
-export async function dbBindTelegram(userId: string, initData: string): Promise<boolean> {
-  return proxy<boolean>('tgBindTelegram', [userId, initData]);
-}
 
 /** Sends a Telegram message to a user's linked account (bot notification) */
 
@@ -1975,14 +1725,9 @@ export async function dbAutoClosePastVacancies(): Promise<void> {
   await proxy('dbAutoClosePastVacancies');
 }
 
-/** Отвязывает Telegram от аккаунта */
-export async function dbUnbindTelegram(userId: string): Promise<void> {
-  await proxy('tgUnbindTelegram', [userId]);
-}
-
 // ─── Поддержка ────────────────────────────────────────────────────────────────
 
-export type SupportSender = 'user' | 'assistant' | 'operator' | 'system';
+type SupportSender = 'user' | 'assistant' | 'operator' | 'system';
 
 export type SupportMessage = {
   id: string;
@@ -2055,14 +1800,6 @@ export async function dbSupportEscalate(userId: string, reason = ''): Promise<{ 
   return proxy<{ ok: boolean }>('supportEscalate', [userId, reason]);
 }
 
-/**
- * Старый прямой канал поддержки оставляем для совместимости со старыми
- * сборками. Новая форма использует assistantAsk + явную эскалацию.
- */
-export async function dbSupportSend(userId: string, text: string): Promise<void> {
-  await proxy('supportSend', [userId, text]);
-}
-
 /** Ждущая капча заявки (картинка PNG в base64) или null, если её нет/просрочена. */
 export async function jupiterCaptchaGet(
   userId: string,
@@ -2093,7 +1830,7 @@ export async function jupiterCaptchaRefresh(userId: string, applicationId: strin
 // Юпитер собирает вопросы анкет, на которые нет ответа в профиле; человек
 // отвечает здесь, отклик уходит сам. Факты сохраняются в банк ответов.
 
-export type JupiterQuestionType =
+type JupiterQuestionType =
   | 'text' | 'text_long' | 'choice' | 'yesno' | 'date' | 'number' | 'phone' | 'email' | 'url';
 
 export interface JupiterQuestion {

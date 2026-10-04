@@ -11,7 +11,7 @@ import { useSyncExternalStore } from 'react';
 import type { ExtVacancy } from '@/constants/types';
 import { dbAddExtSaved, dbGetExtSaved, dbRemoveExtSaved } from '@/services/db';
 
-export type ExtSavedItem = { vacancy: ExtVacancy; savedAt: string | null };
+type ExtSavedItem = { vacancy: ExtVacancy; savedAt: string | null };
 
 let items: ExtSavedItem[] = [];
 let loadedFor: string | null = null;
@@ -39,7 +39,7 @@ export async function loadExtSaved(userId: string, force = false): Promise<ExtSa
   return rows;
 }
 
-export function isExtSaved(id: string): boolean {
+function isExtSaved(id: string): boolean {
   return items.some(i => i.vacancy.id === id);
 }
 
@@ -53,12 +53,6 @@ export async function toggleExtSaved(userId: string, v: ExtVacancy): Promise<boo
   await dbAddExtSaved(userId, v.id);
   emit([{ vacancy: v, savedAt: new Date().toISOString() }, ...items.filter(i => i.vacancy.id !== v.id)]);
   return true;
-}
-
-/** Выход из аккаунта: чужие закладки не должны остаться на экране. */
-export function resetExtSaved(): void {
-  loadedFor = null;
-  emit([]);
 }
 
 export function useExtSaved(): ExtSavedItem[] {

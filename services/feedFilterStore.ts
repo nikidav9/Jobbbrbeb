@@ -20,8 +20,6 @@ function subscribe(l: () => void) {
   return () => { listeners.delete(l); };
 }
 
-export function getAppliedFilters(): FeedFilters { return applied; }
-
 export function setAppliedFilters(next: FeedFilters | ((f: FeedFilters) => FeedFilters)): void {
   applied = typeof next === 'function' ? next(applied) : next;
   emit();
@@ -33,8 +31,6 @@ export function useAppliedFilters(): FeedFilters {
 
 /** Открыли «Все фильтры» — черновик начинается с того, что сейчас в ленте. */
 export function beginDraft(): void { draft = applied; emit(); }
-
-export function getDraft(): FeedFilters { return draft; }
 
 export function setDraft(next: FeedFilters | ((f: FeedFilters) => FeedFilters)): void {
   draft = typeof next === 'function' ? next(draft) : next;

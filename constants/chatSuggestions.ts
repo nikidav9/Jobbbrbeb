@@ -4,7 +4,7 @@ import { Vacancy } from '@/constants/types';
 // молчат, не зная, с чего начать. Нажатие подставляет текст в поле — не
 // отправляет, чтобы можно было дописать под себя.
 
-export type ChatSuggestion = {
+type ChatSuggestion = {
   id: string;
   /** Короткая надпись на чипе */
   label: string;

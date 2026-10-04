@@ -11,7 +11,7 @@ import { Alert, Platform } from 'react-native';
  * и на телефоне, в фирменном стиле. Системный Alert и `window.confirm` —
  * только пока окно не смонтировано.
  */
-export interface ConfirmOptions {
+interface ConfirmOptions {
   title: string;
   body: string;
   confirmLabel?: string;

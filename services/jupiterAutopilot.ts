@@ -33,7 +33,7 @@ export function rerunAutopilotScript(script: string): string {
 }
 
 /** Что автопилот сообщает приложению в конце. */
-export type AutopilotOutcome =
+type AutopilotOutcome =
   | 'submitted'   // сайт подтвердил приём
   | 'ready'       // сухой прогон: всё заполнено, отправка не нажималась
   | 'needs_user'  // нужен человек: капча, согласие, пустое обязательное поле
@@ -53,7 +53,7 @@ export type AutopilotResult = {
   url: string;
 };
 
-export type AutopilotOptions = {
+type AutopilotOptions = {
   /** false — сухой прогон: всё, кроме нажатия «Отправить». */
   submit: boolean;
   /** Поручение на согласия работодателю есть (third_party_consent_at). */

@@ -29,7 +29,7 @@ const ENABLE_TIMEOUT_MS = 20_000;
 // В телеграме установить нельзя — там подсказку не показываем.
 const IOS_HINT_KEY = 'jm_ios_home_hint_at';
 const IOS_HINT_EVERY_MS = 3 * 24 * 3600 * 1000;
-export function needsHomeScreenForPush(): boolean {
+function needsHomeScreenForPush(): boolean {
   if (Platform.OS !== 'web' || typeof navigator === 'undefined' || typeof window === 'undefined') return false;
   const ua = navigator.userAgent || '';
   const iOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1);

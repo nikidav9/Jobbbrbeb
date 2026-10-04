@@ -342,7 +342,7 @@ import { JUPITER_EMPLOYERS } from './jupiterEmployers.ts';
 const OPERATOR_NAME = 'Давыдов Никита Сергеевич';
 const OPERATOR_INN = '773423983287';
 const OPERATOR_ADDRESS = 'г. Москва, ул. Исаковского, д. 28, корп. 2';
-export const OPERATOR_EMAIL = 'support@jobtoo.ru';
+const OPERATOR_EMAIL = 'support@jobtoo.ru';
 
 // Реквизиты взаимодействия с Роскомнадзором.
 //
@@ -371,7 +371,7 @@ const RKN_CROSSBORDER_APPEAL_SENT = '14 сентября 2026 года';
 // пользователь его не принимает, это обязательство оператора перед компаниями.
 export type LegalDocKey = 'terms' | 'privacy' | 'consent' | 'dataPolicy' | 'marketing' | 'employers' | 'companies';
 
-export type LegalDoc = {
+type LegalDoc = {
   title: string;
   /** Дата редакции. Меняется вместе с текстом — иначе запись согласия лжёт. */
   version: string;

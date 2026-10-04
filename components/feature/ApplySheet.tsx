@@ -23,9 +23,9 @@ import { JT_FONT } from '@/constants/jt';
  * готовые фразы — нажатие подставляет текст, дописать можно.
  */
 
-export const APPLY_MIN_LENGTH = 10;
+const APPLY_MIN_LENGTH = 10;
 
-export type ApplyChip = { id: string; label: string; text: string };
+type ApplyChip = { id: string; label: string; text: string };
 
 type Props = {
   visible: boolean;

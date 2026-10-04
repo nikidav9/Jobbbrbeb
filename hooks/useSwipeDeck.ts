@@ -9,16 +9,16 @@ import {
 const { width: SW } = Dimensions.get('window');
 
 /** Сколько карточка должна уехать вбок, чтобы отпускание засчиталось решением. */
-export const SWIPE_THRESHOLD = 115;
+const SWIPE_THRESHOLD = 115;
 /** Быстрый бросок засчитывается только после осмысленного смещения. */
-export const VELOCITY_THRESHOLD = 0.65;
+const VELOCITY_THRESHOLD = 0.65;
 /** Даже быстрый микрожест не должен случайно принимать/отклонять вакансию. */
-export const MIN_FLING_DISTANCE = 36;
+const MIN_FLING_DISTANCE = 36;
 
 const MAX_ROTATION = 8;
 const SPRING = { damping: 22, stiffness: 250, mass: 1 } as const;
 
-export interface SwipeDeckHandlers {
+interface SwipeDeckHandlers {
   /** Отпустили вправо — принять. vx в пикселях на миллисекунду. */
   want: (vx: number) => void;
   /** Отпустили влево — отклонить. */

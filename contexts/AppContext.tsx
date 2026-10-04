@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 
-export interface AppNotification {
+interface AppNotification {
   id: string;
   title: string;
   body: string;
@@ -71,9 +71,9 @@ const LAST_SEEN_INTERVAL = 120_000;
 const USERS_REFRESH_INTERVAL = 300_000;
 
 export type ToastType = 'success' | 'error' | 'info' | 'match';
-export interface ToastMessage { message: string; type: ToastType }
+interface ToastMessage { message: string; type: ToastType }
 
-export interface VacancyStats { applicants: number; rejected: number; views: number }
+interface VacancyStats { applicants: number; rejected: number; views: number }
 
 function computeVacancyStatsMap(likes: Like[]): Record<string, VacancyStats> {
   const map: Record<string, VacancyStats> = {};
@@ -178,8 +178,8 @@ export interface AppContextValue {
 }
 
 /** Списки, о доставке которых экраны спрашивают по отдельности. */
-export type OfflineKey = 'vacancies' | 'permVacancies' | 'likes' | 'permApplications' | 'chats';
-export type OfflineMap = Record<OfflineKey, boolean>;
+type OfflineKey = 'vacancies' | 'permVacancies' | 'likes' | 'permApplications' | 'chats';
+type OfflineMap = Record<OfflineKey, boolean>;
 
 export const AppContext = createContext<AppContextValue | null>(null);
 

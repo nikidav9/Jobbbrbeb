@@ -9,7 +9,7 @@ import { ProfileColors } from '@/constants/profileTheme';
  * набор на react-native-svg (уже в сборке, нативного кода не добавляет).
  */
 
-export type ProfileIconProps = { size?: number; color?: string };
+type ProfileIconProps = { size?: number; color?: string };
 
 type Shape =
   | { type: 'path'; d: string }

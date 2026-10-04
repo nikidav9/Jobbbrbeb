@@ -163,11 +163,11 @@ export function formatChatTime(iso: string): string {
  * After 21:00, today is considered closed — the strip starts from tomorrow.
  */
 /** Format a Date object to YYYY-MM-DD using LOCAL date components (not UTC). */
-export function localDateStr(d: Date): string {
+function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function getVirtualStartDate(): Date {
+function getVirtualStartDate(): Date {
   const now = new Date();
   if (now.getHours() >= 21) {
     const tomorrow = new Date(now);
@@ -180,38 +180,9 @@ export function getVirtualStartDate(): Date {
   return today;
 }
 
-/**
- * Returns ISO date strings for the next 14 days starting from the virtual start date.
- * Before 21:00: today + 13 more days.
- * After  21:00: tomorrow + 13 more days.
- * Always exactly 14 days — auto-updates daily.
- */
-export function getTodayDates(): string[] {
-  const start = getVirtualStartDate();
-  const dates: string[] = [];
-  const cur = new Date(start);
-  for (let i = 0; i < 14; i++) {
-    dates.push(localDateStr(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-  return dates;
-}
-
 
 
 // ─── Phone helpers ────────────────────────────────────────────────────────────
-
-export function isPhoneComplete(formatted: string): boolean {
-  const digits = formatted.replace(/\D/g, '');
-  const local = digits.startsWith('7') || digits.startsWith('8') ? digits.slice(1) : digits;
-  return local.length === 10;
-}
-
-export function extractPhoneDigits(formatted: string): string {
-  const digits = formatted.replace(/\D/g, '');
-  if (digits.startsWith('7') || digits.startsWith('8')) return '7' + digits.slice(1, 11);
-  return '7' + digits.slice(0, 10);
-}
 
 // ─── AsyncStorage cache (stale-while-revalidate) ──────────────────────────────
 

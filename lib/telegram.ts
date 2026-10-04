@@ -59,10 +59,6 @@ function getWebApp(): any | null {
   return wa;
 }
 
-export function isTelegramMiniApp(): boolean {
-  return getWebApp() !== null;
-}
-
 /** start_param from t.me/<bot>/<app>?startapp=... deep links */
 export function getTelegramStartParam(): string | null {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
@@ -87,14 +83,5 @@ export function initTelegramMiniApp(): void {
     if (typeof wa.disableVerticalSwipes === 'function') wa.disableVerticalSwipes();
     if (typeof wa.setHeaderColor === 'function') wa.setHeaderColor('#FFFFFF');
     if (typeof wa.setBackgroundColor === 'function') wa.setBackgroundColor('#FFFFFF');
-  } catch {}
-}
-
-export function telegramHapticFeedback(type: 'light' | 'success' = 'light'): void {
-  const wa = getWebApp();
-  if (!wa?.HapticFeedback) return;
-  try {
-    if (type === 'success') wa.HapticFeedback.notificationOccurred('success');
-    else wa.HapticFeedback.impactOccurred('light');
   } catch {}
 }

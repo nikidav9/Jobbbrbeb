@@ -29,7 +29,7 @@ export function dayKey(iso: string | null | undefined): string {
 }
 
 /** Сегодняшний ключ — вынесен, чтобы тесты могли считать от своей даты. */
-export function todayKey(now: Date = new Date()): string {
+function todayKey(now: Date = new Date()): string {
   return dayKey(now.toISOString());
 }
 

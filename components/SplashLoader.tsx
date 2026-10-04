@@ -25,7 +25,7 @@ const DRAW_MS = 1280;
 
 // Штрихи арта. from/to — окно прорисовки внутри общего прогресса 0→1,
 // len — приблизительная длина пути (для strokeDasharray).
-export type Stroke = { d: string; len: number; from: number; to: number; w?: number; t?: string };
+type Stroke = { d: string; len: number; from: number; to: number; w?: number; t?: string };
 
 
 function DrawnStroke({ stroke, progress, color = WHITE, scale = 1 }: {

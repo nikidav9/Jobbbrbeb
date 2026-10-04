@@ -8,7 +8,7 @@ import { EditColors } from '@/constants/profileEditTheme';
  * Стрелка «назад» и крестик — из `components/profile/edit/icons.tsx`.
  * Толщина линии у иконки своя в разных местах макета, поэтому её можно задать.
  */
-export type ResponseIconProps = { size?: number; color?: string; strokeWidth?: number };
+type ResponseIconProps = { size?: number; color?: string; strokeWidth?: number };
 
 function icon(defaultSize: number, defaultStroke: number, children: (color: string) => React.ReactNode) {
   function Icon({ size = defaultSize, color = EditColors.ink, strokeWidth = defaultStroke }: ResponseIconProps) {
