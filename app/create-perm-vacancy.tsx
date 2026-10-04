@@ -14,7 +14,7 @@ import { uid, nowISO } from '@/services/storage';
 import { dbUpsertPermVacancy, dbGetPermVacanciesByEmployer } from '@/services/db';
 import { notifyWorkersNewVacancy } from '@/services/notifications';
 import { PermVacancy, WorkType } from '@/constants/types';
-import { METRO_LINES } from '@/constants/metro';
+import { getMetroLineById } from '@/constants/metro';
 import { WorkTypeSelector, WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { AutoRejectNotice } from '@/components/AutoRejectNotice';
 
@@ -47,12 +47,12 @@ export default function CreatePermVacancy() {
 
   useEffect(() => {
     if (existing?.metroLineId) {
-      const ln = METRO_LINES.find(l => l.id === existing.metroLineId);
+      const ln = getMetroLineById(existing.metroLineId);
       setMetroLineName(ln?.name ?? '');
     }
   }, []);
 
-  const line = METRO_LINES.find(l => l.id === metroLineId);
+  const line = getMetroLineById(metroLineId);
 
   const validate = () => {
     const e: Record<string, string> = {};

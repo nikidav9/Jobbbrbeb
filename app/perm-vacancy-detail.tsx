@@ -30,7 +30,7 @@ import {
   dbStartGuestRegistration,
 } from '@/services/db';
 import { ensureResumeForApply } from '@/services/resumeGate';
-import { METRO_LINES } from '@/constants/metro';
+import { getMetroLineByStation } from '@/constants/metro';
 
 import { rs, rf } from '@/constants/scale';
 import { ApplySheet } from '@/components/feature/ApplySheet';
@@ -137,9 +137,7 @@ export default function PermVacancyDetailScreen() {
     return list;
   }, [vacancy]);
 
-  const metroLine = vacancy?.metroStation
-    ? METRO_LINES.find(l => l.stations.includes(vacancy.metroStation!)) ?? null
-    : null;
+  const metroLine = getMetroLineByStation(vacancy?.metroStation);
 
   const authSwipe = useSwipeToDismiss(() => setAuthModalDismissed(true), showAuthModal);
 
