@@ -56,6 +56,7 @@ import { PersonalTabContent } from '@/components/profile/PersonalTabContent';
 import { FilesTabContent } from '@/components/profile/FilesTabContent';
 import { ReviewsTabContent } from '@/components/profile/ReviewsTabContent';
 import { ProfileColors } from '@/constants/profileTheme';
+import { phoneDigits } from '@/lib/phone';
 
 
 type EditSection = 'personal' | 'metro' | 'company' | 'bio' | null;
@@ -424,8 +425,8 @@ export default function ProfileScreen() {
         // Телефон для связи — отдельной операцией с проверками на сервере
         // (формат, не занят ли, не единственный ли это вход). Обычное
         // сохранение профиля телефон не меняет и раньше молча его терял.
-        const want = editPhone.replace(/\D/g, '');
-        const have = (currentUser.phone ?? '').replace(/\D/g, '');
+        const want = phoneDigits(editPhone);
+        const have = phoneDigits(currentUser.phone);
         if (want !== have) updated.phone = (await dbSetContactPhone(currentUser.id, editPhone)) ?? '';
         updated.lastName = editLast; updated.firstName = editFirst;
         // Пустое поле — «не указан», а не ноль: иначе в карточке появилось бы «0 лет».
