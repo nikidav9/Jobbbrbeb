@@ -2,10 +2,9 @@
 // обновляет раз в две минуты. Порог в три минуты выбран с запасом: отметка
 // успевает обновиться до того, как человек «погаснет» на глазах собеседника.
 
-const ONLINE_MS = 3 * 60 * 1000;
+import { MONTHS_SHORT } from '@/services/dayGroups';
 
-const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн',
-  'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const ONLINE_MS = 3 * 60 * 1000;
 
 export function isOnline(lastSeenAt?: string | null): boolean {
   if (!lastSeenAt) return false;
@@ -41,10 +40,10 @@ export function lastSeenLabel(lastSeenAt?: string | null): string | null {
   if (d.toDateString() === yesterday.toDateString()) return `был(а) вчера в ${hh}`;
 
   if (hours < 24 * 7) {
-    return `был(а) ${d.getDate()} ${MONTHS_RU[d.getMonth()]} в ${hh}`;
+    return `был(а) ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} в ${hh}`;
   }
   const year = d.getFullYear() === now.getFullYear() ? '' : ` ${d.getFullYear()}`;
-  return `был(а) ${d.getDate()} ${MONTHS_RU[d.getMonth()]}${year}`;
+  return `был(а) ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}${year}`;
 }
 
 // ── Отзывчивость ────────────────────────────────────────────────────────────

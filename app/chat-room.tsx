@@ -36,6 +36,7 @@ import { rs, rf } from '@/constants/scale';
 import { BackButton } from '@/components/ui/BackButton';
 
 import { JT_FONT } from '@/constants/jt';
+import { dayKey, MONTHS_GEN } from '@/services/dayGroups';
 const POLL_INTERVAL = 8000;
 
 // Отступ под строкой ввода считаем ОДИН раз при загрузке модуля и больше не
@@ -132,14 +133,6 @@ const INPUT_MAX_H = 108;
 
 // Метки фото и голосовых живут в services/messagePreview.ts: их разбирает
 // не только этот экран, но и список чатов, и дашборд.
-const MONTHS_RU = ['января','февраля','марта','апреля','мая','июня','июля',
-  'августа','сентября','октября','ноября','декабря'];
-
-/** Ключ дня — по нему решаем, нужен ли разделитель между сообщениями */
-const dayKey = (ts: string) => {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-};
 
 /** «Сегодня» / «Вчера» / «24 июля» — как в мессенджерах */
 const dayLabel = (ts: string) => {
@@ -149,7 +142,7 @@ const dayLabel = (ts: string) => {
   const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000);
   if (diffDays === 0) return 'Сегодня';
   if (diffDays === 1) return 'Вчера';
-  const base = `${d.getDate()} ${MONTHS_RU[d.getMonth()]}`;
+  const base = `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`;
   return d.getFullYear() === now.getFullYear() ? base : `${base} ${d.getFullYear()}`;
 };
 

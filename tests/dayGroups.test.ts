@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dayKey, dayLabel, dayShort, groupByDay } from '../services/dayGroups.ts';
+import { dayKey, dayLabel, dayShort, groupByDay, MONTHS_GEN, MONTHS_SHORT } from '../services/dayGroups.ts';
 
 // Границы суток ломаются молча и в одну сторону: вечернее событие уезжает в
 // завтрашнюю группу, и заметить это можно только вечером.
@@ -72,4 +72,30 @@ test('элементы без даты собираются в «РАНЬШЕ»'
   assert.equal(g.length, 1);
   assert.equal(g[0].label, 'РАНЬШЕ');
   assert.equal(g[0].items.length, 2);
+});
+
+test('списки месяцев: 12 штук, в точности те, что были разбросаны по файлам', () => {
+  assert.equal(MONTHS_GEN.length, 12);
+  assert.equal(MONTHS_SHORT.length, 12);
+  assert.equal(MONTHS_GEN.join(','), 'января,февраля,марта,апреля,мая,июня,июля,августа,сентября,октября,ноября,декабря');
+  assert.equal(MONTHS_SHORT.join(','), 'янв,фев,мар,апр,мая,июн,июл,авг,сен,окт,ноя,дек');
+});
+
+// Прежний ключ из chat-room.tsx: разделитель дней в чате.
+const oldKey = (ts: string) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+
+test('dayKey разбивает сообщения чата на дни так же, как прежний ключ chat-room', () => {
+  const stamps = [
+    new Date(2026, 0, 1, 0, 5), new Date(2026, 0, 1, 23, 59), new Date(2026, 0, 2, 0, 0),
+    new Date(2025, 11, 31, 23, 30), new Date(2026, 8, 16, 12), new Date(2026, 8, 17, 8),
+    new Date(2026, 8, 17, 23, 30), new Date(2025, 8, 17, 12),
+  ].map((d) => d.toISOString());
+  for (const a of stamps) {
+    for (const b of stamps) {
+      assert.equal(dayKey(a) === dayKey(b), oldKey(a) === oldKey(b), `${a} / ${b}`);
+    }
+  }
 });
