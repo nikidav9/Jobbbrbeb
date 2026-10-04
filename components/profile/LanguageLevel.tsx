@@ -13,7 +13,7 @@ const CEFR_ORDER = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'];
  * PDF-резюме нет, поэтому нераспознанный уровень получает середину шкалы,
  * а не пустую или полную — обе крайности были бы такой же выдумкой.
  */
-export function languageSegments(level?: string): number {
+function languageSegments(level?: string): number {
   if (!level) return 0;
   const v = level.toLowerCase();
   if (/родн|native/.test(v)) return 6;

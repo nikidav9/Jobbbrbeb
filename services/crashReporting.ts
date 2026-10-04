@@ -27,7 +27,7 @@ let reporter: Reporter | null = null;
 let activated = false;
 
 /** Подключён ли сбор вообще: нужен нативный запуск и ключ. */
-export function crashReportingAvailable(): boolean {
+function crashReportingAvailable(): boolean {
   return Platform.OS !== 'web' && API_KEY !== '';
 }
 

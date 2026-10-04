@@ -1,7 +1,7 @@
 // Ссылки в тексте письма «Почты JobToo»: служба почты превращает кнопки
 // письма в «надпись (адрес)», а экран делает адреса нажимаемыми.
 
-export type MailPart = { text: string; url?: string };
+type MailPart = { text: string; url?: string };
 
 const URL_RE = /https?:\/\/[^\s<>"'()[\]]+/g;
 

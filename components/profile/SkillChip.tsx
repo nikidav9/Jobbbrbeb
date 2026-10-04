@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { ProfileColors, ProfileFonts, HAIRLINE, ProfileRadius } from '@/constants/profileTheme';
 
-export type ChipTone = 'default' | 'accent' | 'muted';
+type ChipTone = 'default' | 'accent' | 'muted';
 
 /**
  * Чип-пилюля: навык, «+N ещё», условие работы (активное/неактивное).

@@ -27,7 +27,7 @@ function getCtor(): MediaRecorderCtor | null {
 }
 
 /** Формат, в котором браузер согласен записывать. null — записывать нечем. */
-export const webVoiceMime: string | null = (() => {
+const webVoiceMime: string | null = (() => {
   const MR = getCtor();
   if (!MR) return null;
   const wanted = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];

@@ -2,7 +2,7 @@
 // пуш (app/_layout.tsx), и колокольчик внутри приложения ходят сюда, чтобы
 // одно и то же уведомление всегда открывало один и тот же экран.
 
-export type NotifTarget = { pathname: string; params?: Record<string, string> };
+type NotifTarget = { pathname: string; params?: Record<string, string> };
 
 const TO_MATCHES = new Set([
   'new_applicant', 'match_employer', 'match_worker',

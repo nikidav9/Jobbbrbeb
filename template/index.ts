@@ -1,6 +1,5 @@
 // @ts-nocheck
 export * from './core';
-export * from './auth';
 
 // UI exports
 export { useAlert, AlertProvider } from './ui';

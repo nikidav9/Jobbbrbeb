@@ -149,7 +149,7 @@ export function FCheck({ on }: { on: boolean }) {
   );
 }
 
-export function FToggle({ on }: { on: boolean }) {
+function FToggle({ on }: { on: boolean }) {
   return (
     <View style={[k.toggle, on && k.toggleOn]}>
       <View style={k.knob} />
@@ -276,5 +276,3 @@ const k = StyleSheet.create({
   },
   tileOn: { backgroundColor: JT.accent, borderWidth: 2, borderColor: JT.ink },
 });
-
-export const filterStyles = k;

@@ -62,6 +62,3 @@ export function rf(n: number): number {
   if (!n) return n;
   return PixelRatio.roundToNearestPixel(n * fontFactor * fontClamp);
 }
-
-/** Множитель — если размер нужно посчитать вручную, а не через rs(). */
-export const scaleFactor = factor;

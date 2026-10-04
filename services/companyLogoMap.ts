@@ -27,7 +27,7 @@ export function remoteLogoFor(name: string | null | undefined, from: Record<stri
   return key ? from[key] ?? null : null;
 }
 
-export function loadCompanyLogos(): void {
+function loadCompanyLogos(): void {
   if (started) return;
   started = true;
   (async () => {

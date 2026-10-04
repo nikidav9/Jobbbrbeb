@@ -50,7 +50,7 @@ export const PERSONAL_MULTILINE = new Set<PersonalFieldKey>([
   'employmentRestrictions',
 ]);
 
-export type PersonalChoice = { label: string; value: string };
+type PersonalChoice = { label: string; value: string };
 
 export const PERSONAL_FIELD_CHOICES: Partial<Record<PersonalFieldKey, PersonalChoice[]>> = {
   workAuthorization: [

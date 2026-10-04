@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { ProfileColors, ProfileFonts, HAIRLINE, ProfileRadius } from '@/constants/profileTheme';
 
-export type ProfileTabKey = 'resume' | 'personal' | 'files' | 'reviews';
+type ProfileTabKey = 'resume' | 'personal' | 'files' | 'reviews';
 
 const TABS: { key: ProfileTabKey; label: string }[] = [
   { key: 'resume', label: 'Резюме' },

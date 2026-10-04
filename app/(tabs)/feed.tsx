@@ -75,7 +75,6 @@ import { TabHeader } from '@/components/ui/TabHeader';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import { WORK_TYPE_META } from '@/components/feature/WorkTypeSelector';
 import { PermApplicationsSheet } from '@/components/feature/PermApplicationsSheet';
-import { registerWebPush, isWebPushRegistered, getWebPushDebug } from '@/lib/webPush';
 
 import { rs, rf } from '@/constants/scale';
 import { ApplySheet } from '@/components/feature/ApplySheet';
@@ -88,82 +87,6 @@ import { permVacancyInfoLines } from '@/services/vacancyCard';
 // регистрации гость исчезает, и счётчик перестаёт на что-либо влиять.
 const GUEST_SKIP_LIMIT = 3;
 let guestSkipCount = 0;
-
-
-// ─── Web push permission banner (iOS PWA requires user gesture) ───────────────
-type WPState = 'ask' | 'retry' | 'denied' | 'hidden';
-
-function getWPState(): WPState {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return 'hidden';
-  if (!('Notification' in window)) return 'hidden';
-  const perm = (window as any).Notification.permission as NotificationPermission;
-  if (perm === 'denied') return 'denied';
-  if (perm === 'granted' && isWebPushRegistered()) return 'hidden';
-  if (perm === 'granted') return 'retry';
-  return 'ask';
-}
-
-function WebPushBanner({ userId }: { userId: string }) {
-  const [state, setState] = useState<WPState>(() => getWPState());
-  const [debugMsg, setDebugMsg] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-
-  if (state === 'hidden') return null;
-
-  if (state === 'denied') {
-    return (
-      <TouchableOpacity style={[wpStyles.banner, wpStyles.bannerDenied]} activeOpacity={1}>
-        <Ionicons name="settings-outline" size={rf(18)} color="#92400E" />
-        <Text style={[wpStyles.text, wpStyles.textDenied]}>Разрешите уведомления: Настройки → Safari → Уведомления</Text>
-      </TouchableOpacity>
-    );
-  }
-
-  const handlePress = async () => {
-    if (loading) return;
-    setLoading(true);
-    setDebugMsg('...');
-    const ok = await registerWebPush(userId);
-    setLoading(false);
-    if (ok) {
-      setState('hidden');
-    } else {
-      const msg = getWebPushDebug();
-      setDebugMsg(msg);
-      const perm = typeof Notification !== 'undefined' ? Notification.permission : 'default';
-      if (perm === 'denied') setState('denied');
-    }
-  };
-
-  return (
-    <TouchableOpacity style={wpStyles.banner} onPress={handlePress} activeOpacity={0.85} disabled={loading}>
-      {loading
-        ? <ActivityIndicator size="small" color="#4338CA" />
-        : <Ionicons name="notifications-outline" size={rf(18)} color="#4338CA" />}
-      <View style={{ flex: 1 }}>
-        <Text style={wpStyles.text}>
-          {state === 'retry' ? 'Завершить настройку уведомлений' : 'Включить push-уведомления'}
-        </Text>
-        {debugMsg ? <Text style={wpStyles.debugText}>{debugMsg}</Text> : null}
-      </View>
-      {!loading && <Text style={wpStyles.arrow}>›</Text>}
-    </TouchableOpacity>
-  );
-}
-
-const wpStyles = StyleSheet.create({
-  banner: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(8),
-    marginHorizontal: rs(16), marginBottom: rs(8),
-    backgroundColor: '#EEF2FF', borderRadius: rs(12),
-    paddingHorizontal: rs(14), paddingVertical: rs(10),
-  },
-  bannerDenied: { backgroundColor: '#FEF3C7' },
-  text: { fontSize: rf(14), fontWeight: '600', color: '#4338CA' },
-  textDenied: { color: '#92400E', fontWeight: '500', fontSize: rf(12) },
-  debugText: { fontSize: rf(11), color: '#6B7280', marginTop: rs(2) },
-  arrow: { fontSize: rf(18), color: '#4338CA' },
-});
 
 const { width: SW } = Dimensions.get('window');
 

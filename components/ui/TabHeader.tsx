@@ -41,9 +41,6 @@ export function TabHeader({
   );
 }
 
-// Общие размеры для правого блока (используются и в кастомном right профиля)
-export const HEADER_ICON = 22;
-
 const h = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

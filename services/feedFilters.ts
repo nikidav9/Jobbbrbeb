@@ -69,7 +69,7 @@ function postedWithin(iso: string | null | undefined, posted: PostedFilter, now:
 }
 
 /** Минимум полей своей вакансии, нужных для фильтра — не тянем весь PermVacancy. */
-export type OwnVacancyLike = {
+type OwnVacancyLike = {
   title: string;
   company: string;
   schedule?: string | null;

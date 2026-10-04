@@ -10,17 +10,6 @@ import { formatDate } from '@/services/storage';
  * тексты разойдутся, отклик будет выглядеть как про другую вакансию.
  */
 
-export function vacancyInfoLines(v: Vacancy): string[] {
-  const lines = [`Смена: ${v.title}`];
-  const day = v.date ? formatDate(v.date) : '';
-  const time = v.timeStart && v.timeEnd ? `${v.timeStart}–${v.timeEnd}` : '';
-  const when = [day, time].filter(Boolean).join(', ');
-  if (when) lines.push(`Когда: ${when}`);
-  const where = v.address || (v.metroStation ? `м. ${v.metroStation}` : '');
-  if (where) lines.push(`Где: ${where}`);
-  return lines;
-}
-
 export function permVacancyInfoLines(v: PermVacancy): string[] {
   const lines = [`Постоянная работа: ${v.title}`];
   if (v.schedule) lines.push(`График: ${v.schedule}`);

@@ -64,7 +64,7 @@ function joinItemsIntoLines(items: PdfTextItem[]): string[] {
   return rows.map(row => row.items.sort((a, b) => a.x - b.x).map(item => item.text).join(' '));
 }
 
-export async function extractResumePdf(asset: DocumentPickerAsset) {
+async function extractResumePdf(asset: DocumentPickerAsset) {
   const bytes = await readAsset(asset);
   if (bytes.byteLength > 10 * 1024 * 1024) throw new Error('Файл больше 10 МБ');
   if (String.fromCharCode(...bytes.slice(0, 4)) !== '%PDF') {
@@ -156,7 +156,7 @@ export function mergeResumeIntoUser(
   };
 }
 
-export type PickedResumeImport = {
+type PickedResumeImport = {
   updatedUser: User;
   savedFile: ResumeVaultItem;
 };

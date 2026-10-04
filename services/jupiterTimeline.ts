@@ -3,7 +3,7 @@
 // тесты могли его импортировать напрямую.
 import type { JupiterApplication, JupiterApplicationState } from '@/constants/types';
 
-export type JupiterStatus = { label: string; fg: string; bg: string };
+type JupiterStatus = { label: string; fg: string; bg: string };
 
 const WAIT = { fg: '#B45309', bg: '#FEF3C7' };
 const DONE = { fg: '#047857', bg: '#D1FAE5' };
@@ -20,7 +20,7 @@ export function jupiterVacancyClosed(a: JupiterApplication): boolean {
   return a.vacancyActive === false && a.state !== 'submitted' && a.state !== 'duplicate';
 }
 
-export function jupiterIsSber(a: Pick<JupiterApplication, 'vacancyUrl'>): boolean {
+function jupiterIsSber(a: Pick<JupiterApplication, 'vacancyUrl'>): boolean {
   return /^https:\/\/rabota\.sber\.ru(?:\/|$)/i.test(a.vacancyUrl);
 }
 
@@ -69,7 +69,7 @@ export function jupiterStatus(a: JupiterApplication): JupiterStatus {
   return stateStatus(a.state);
 }
 
-export type JupiterBadge = { label: string; tone: 'sent' | 'needs_you' | 'failed' | 'working' | 'closed' };
+type JupiterBadge = { label: string; tone: 'sent' | 'needs_you' | 'failed' | 'working' | 'closed' };
 
 /** Метка строки списка — как у Sorce: ОТПРАВЛЕНО / НУЖНЫ ВЫ / НЕ УШЁЛ / СКОРЕЕ ВСЕГО УШЁЛ / В РАБОТЕ. */
 export function jupiterBadge(a: JupiterApplication): JupiterBadge {
@@ -112,7 +112,7 @@ export type JupiterEvent = {
 };
 
 /** Тип события базы — по нему экран выбирает кружок шага. */
-export type TimelineKind =
+type TimelineKind =
   | 'created' | 'consent' | 'queued' | 'ready_to_submit' | 'submitted' | 'submitted_manual'
   | 'action_required' | 'duplicate' | 'submission_unknown' | 'retryable_failed' | 'failed';
 

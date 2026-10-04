@@ -9,18 +9,12 @@ import { Dimensions, Platform, StatusBar } from 'react-native';
 // MIUI и старых сборках) он отдаёт снизу ноль, хотя панель кнопок есть.
 // Поэтому здесь мы ещё и меряем разницу между экраном и окном.
 
-/** Версия Android как число (API level). На других платформах 0. */
-export const ANDROID_API = Platform.OS === 'android' ? Number(Platform.Version) || 0 : 0;
-
-/** Android 15 и новее: edge-to-edge включён системой, отказаться нельзя. */
-export const ANDROID_FORCED_EDGE_TO_EDGE = ANDROID_API >= 35;
-
 /**
  * Высота системной панели навигации, измеренная напрямую.
  * screen — весь экран, window — то, что отдано приложению; разница и есть
  * панель. При edge-to-edge разницы нет, и тогда полагаемся на insets.
  */
-export function measuredNavBar(): number {
+function measuredNavBar(): number {
   if (Platform.OS !== 'android') return 0;
   const win = Dimensions.get('window');
   const scr = Dimensions.get('screen');
@@ -41,12 +35,3 @@ export function bottomSafe(inset: number, min = 0): number {
   if (Platform.OS !== 'android') return Math.max(inset, min);
   return Math.max(inset, measuredNavBar(), min);
 }
-
-/**
- * Свойства для <Modal>, без которых на Android с edge-to-edge окно модалки
- * считает себя меньше экрана: содержимое обрезается справа и снизу.
- * navigationBarTranslucent появился в Expo SDK 53 / RN 0.79.
- */
-export const androidModalProps = Platform.OS === 'android'
-  ? { statusBarTranslucent: true, navigationBarTranslucent: true }
-  : {};

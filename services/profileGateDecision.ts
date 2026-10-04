@@ -7,7 +7,7 @@
  * (`components/feature/ProfileGateHost.tsx`) и проверяется node-тестом
  * (`tests/profileGateDecision.test.ts`), в который RN-модули не тянутся.
  */
-export type ProfileGateStep = 'choose' | 'names' | 'skip';
+type ProfileGateStep = 'choose' | 'names' | 'skip';
 
 export function decideProfileGateStep(
   hasResume: boolean,

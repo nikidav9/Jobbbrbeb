@@ -19,18 +19,12 @@ import { Like, PermApplication, Vacancy } from '@/constants/types';
 
 // ─── Работник ────────────────────────────────────────────────────────────────
 
-export function workerLikes(likes: Like[], userId: string): Like[] {
+function workerLikes(likes: Like[], userId: string): Like[] {
   return likes.filter(l => l.workerId === userId && l.workerLiked);
 }
 
-export const workerActive = (my: Like[]): Like[] =>
+const workerActive = (my: Like[]): Like[] =>
   my.filter(l => !l.shiftCompleted && !l.cancelled && l.employerLiked !== false);
-
-export const workerRejected = (my: Like[]): Like[] =>
-  my.filter(l => l.employerLiked === false);
-
-export const workerCompleted = (my: Like[]): Like[] =>
-  my.filter(l => l.shiftCompleted || l.cancelled);
 
 // ─── Работодатель ────────────────────────────────────────────────────────────
 

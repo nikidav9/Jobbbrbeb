@@ -64,7 +64,7 @@ const CAND_SKILL = 45;        // подтверждённый навык под 
 const CAND_REPEAT = 60;       // уже работал у этого работодателя
 const CAND_NEW = 25;          // новичок без истории — не в самый низ
 
-export type CandidateRank = {
+type CandidateRank = {
   score: number;
   /** Почему он здесь: короткие причины, которые не стыдно показать. */
   reasons: string[];
