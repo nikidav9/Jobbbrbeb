@@ -25,6 +25,7 @@ import { jtBackStyle } from '@/components/ui/jt';
 import { JT, JT_FONT } from '@/constants/jt';
 import { rs, rf } from '@/constants/scale';
 import { agoRu } from '@/services/time';
+import { formatRubPerPeriod } from '@/lib/money';
 import { parseDescriptionBlocks, type DescriptionBlock } from '@/services/descriptionBlocks';
 import { VACANCY_FORMATS, VACANCY_LEVELS, vacancyFormat, vacancyLevel } from '@/services/vacancyFacets';
 import { getOpenedExtVacancy, setDeckAction } from '@/services/extVacancyHandoff';
@@ -173,7 +174,7 @@ export default function ExtVacancyScreen() {
             <View style={{ gap: 2, flexShrink: 1 }}>
               <Text style={s.salaryK}>ЗАРПЛАТА</Text>
               <Text style={s.salaryV}>
-                {salary ? `${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}` : 'Не указана'}
+                {salary ? formatRubPerPeriod(salary, ev.payPeriod) : 'Не указана'}
               </Text>
             </View>
             {!salary ? <Text style={s.salaryNote}>Обсуждается на собеседовании</Text> : null}

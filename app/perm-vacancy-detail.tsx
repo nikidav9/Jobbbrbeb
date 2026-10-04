@@ -20,6 +20,7 @@ import { LavkaLogo } from '@/components/ui/LavkaLogo';
 import { CompanyMark } from '@/components/ui/CompanyMark';
 import { VacancyContacts } from '@/components/feature/VacancyContacts';
 import { agoRu } from '@/services/time';
+import { formatRubPerPeriod } from '@/lib/money';
 import { SheetHandle, useSwipeToDismiss } from '@/components/ui/Sheet';
 import {
   dbApplyPermVacancy,
@@ -130,7 +131,7 @@ export default function PermVacancyDetailScreen() {
     if (!vacancy) return [];
     const list: { label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [];
     if (vacancy.salary > 0) {
-      list.push({ label: `${vacancy.salary.toLocaleString('ru-RU')} ₽/мес · на руки`, icon: 'wallet-outline' });
+      list.push({ label: `${formatRubPerPeriod(vacancy.salary)} · на руки`, icon: 'wallet-outline' });
     }
     if (vacancy.schedule) list.push({ label: vacancy.schedule, icon: 'calendar-outline' });
     if (vacancy.metroStation) list.push({ label: `м. ${vacancy.metroStation}`, icon: 'subway-outline' });
@@ -239,7 +240,7 @@ export default function PermVacancyDetailScreen() {
     const message = [
       `${vacancy.title} — ${vacancy.company}`,
       vacancy.metroStation ? `м. ${vacancy.metroStation}` : '',
-      `${vacancy.salary.toLocaleString('ru-RU')} ₽/мес`,
+      formatRubPerPeriod(vacancy.salary),
       url,
     ].filter(Boolean).join('\n');
     try {
