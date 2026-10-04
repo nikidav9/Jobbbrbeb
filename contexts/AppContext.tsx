@@ -457,13 +457,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               refreshPermVacancyViews(),
             ]).catch(() => {});
           }, 100);
-
-          // Register/refresh push token on every app open — catches users
-          // who registered before push notifications were added.
-          setTimeout(() => {
-            if (cancelled) return;
-            registerForPushNotifications(sessionUser.id).catch(() => {});
-          }, 2000);
         } else {
           // Guest: nothing user-specific to load
           // Финальные 100 % выставляет index после первого отрисованного кадра.

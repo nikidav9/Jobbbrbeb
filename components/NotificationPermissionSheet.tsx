@@ -16,8 +16,8 @@ import { registerWebPush, getWebPushDebug } from '@/lib/webPush';
 import { useApp } from '@/hooks/useApp';
 
 import { rs, rf } from '@/constants/scale';
+import { NOTIFICATION_CHOICE_KEY } from '@/constants/notifPrefs';
 
-export const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice'; // 'enabled' once notifications are on
 const CHOICE_KEY = NOTIFICATION_CHOICE_KEY;
 const SCREEN_H = Dimensions.get('window').height;
 const SHOW_DELAY_MS = 1200;
