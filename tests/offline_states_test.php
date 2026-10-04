@@ -309,7 +309,8 @@ $createPerm = (string)file_get_contents(__DIR__ . '/../app/create-perm-vacancy.t
 check('рассылка вакансии: helper возвращает результат',
     str_contains($notifSvc, 'export async function notifyWorkersNewVacancy') &&
     str_contains($notifSvc, '): Promise<boolean>') &&
-    str_contains($notifSvc, 'if (res.ok) return true;'));
+    str_contains($notifSvc, "await proxy('dbNotifyAllWorkersNewVacancy', notifyArgs);") &&
+    str_contains($notifSvc, 'return true;'));
 check('рассылка вакансии: исчерпанные повторы дают false',
     str_contains($notifSvc, 'return false;'));
 check('постоянная: неудачная рассылка видна, но публикация не откатывается',
