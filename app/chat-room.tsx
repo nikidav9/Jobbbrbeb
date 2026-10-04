@@ -8,7 +8,7 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import { readFileBytes } from '@/lib/fileBytes';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Application from 'expo-application';
 import {
@@ -621,31 +621,7 @@ export default function ChatRoom() {
     !messageLoadFailed && !isChatBlocked && !isRecording;
 
   // ── Отправка фото ────────────────────────────────────────────────────────
-  const base64ToUint8Array = (base64: string): Uint8Array => {
-    const bin = globalThis.atob(base64);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    return arr;
-  };
-
-  /**
-   * Содержимое файла по ссылке, которую дал выбор фото.
-   *
-   * На телефоне это путь к файлу, и читает его expo-file-system. В браузере
-   * тот же модуль — пустая заглушка без единого метода, а ссылка выглядит как
-   * blob:, поэтому содержимое забираем обычным запросом. Раньше здесь звали
-   * expo-file-system всегда, и на вебе отправка фото падала.
-   */
-  const uriToBytes = async (uri: string): Promise<Uint8Array> => {
-    if (IS_WEB) {
-      const resp = await fetch(uri);
-      return new Uint8Array(await (await resp.blob()).arrayBuffer());
-    }
-    const base64Data = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    return base64ToUint8Array(base64Data);
-  };
+  // Чтение файла — lib/fileBytes.ts: на телефоне путь, в браузере blob:.
 
   const sendImage = async (uri: string) => {
     if (!chat || !currentUser || uploadingImage) return;
@@ -656,7 +632,7 @@ export default function ChatRoom() {
         uri, [{ resize: { width: 1280 } }],
         { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
       );
-      const bytes = await uriToBytes(processed.uri);
+      const bytes = await readFileBytes(processed.uri);
       // Имя без косых внутри: закрытый бакет принимает только chat/<файл>.
       const fileName = `chat/${chat.id}_${Date.now()}.jpg`;
       // Через прокси, а не ключом из сборки: см. dbUploadChatMedia в services/db.ts.
@@ -759,11 +735,8 @@ export default function ChatRoom() {
       const uri = recorder.uri;
       if (!uri) return;
       try {
-        const base64Data = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
         clip = {
-          bytes: base64ToUint8Array(base64Data),
+          bytes: await readFileBytes(uri),
           // audio/mp4, а не audio/m4a: файл — это AAC внутри контейнера mp4,
           // а «audio/m4a» вообще не зарегистрированный тип, и часть плееров
           // на него спотыкается.
