@@ -3,21 +3,11 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { dbSavePushToken, dbReleasePushToken } from '@/services/db';
+import { dbSavePushToken, dbReleasePushToken, proxy } from '@/services/db';
 
 export const NOTIFICATION_DISABLED_KEY = 'jm_notifications_disabled';
 
-const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const DASHBOARD_URL = process.env.EXPO_PUBLIC_DASHBOARD_URL || '';
-// В вебе прокси — same-origin (тот же хост, с которого открылось приложение),
-// как API_BASE в services/db.ts: иначе с «чистого» имени вызовы пушей уходили
-// бы на зашитый jobtoo.ru и упирались в фильтр ТСПУ. Нативно window нет.
-const PROXY_URL =
-  Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin
-    ? `${window.location.origin}/api/db.php`
-    : process.env.EXPO_PUBLIC_API_URL
-      ? `${process.env.EXPO_PUBLIC_API_URL}/api/db.php`
-      : 'https://jobtoo.ru/api/db.php';
 
 // Какая переписка сейчас открыта на экране. Экран чата отмечается здесь, а
 // обработчик ниже сверяет отметку с тем, к какому чату относится уведомление.
@@ -286,12 +276,11 @@ export async function notifyWorkersNewVacancy(params: {
     // появления этого поля.
     const groupHtml = '';
 
-    const notifyPayload = JSON.stringify({
-      fn: 'dbNotifyAllWorkersNewVacancy',
+    const notifyArgs = [
       // Новые поля добавлены в конец: старые клиенты остаются совместимыми.
-      args: [notifTitle, body, tgHtml, type === 'permanent' ? 'nearby_perm' : 'nearby_shift',
-             groupHtml, vacancyId ?? '', metroStation ?? '', workType ?? ''],
-    });
+      notifTitle, body, tgHtml, type === 'permanent' ? 'nearby_perm' : 'nearby_shift',
+      groupHtml, vacancyId ?? '', metroStation ?? '', workType ?? '',
+    ];
 
     // Рассылка — отдельный вызов, и раньше он был «выстрелил и забыл», одна
     // попытка без срока. Стоило сети моргнуть при публикации — и объявление в
@@ -304,19 +293,10 @@ export async function notifyWorkersNewVacancy(params: {
     const canRetry = !!vacancyId;
     for (let attempt = 0; attempt < (canRetry ? 3 : 1); attempt++) {
       try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 25000);
-        try {
-          const res = await fetch(PROXY_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-App-Secret': APP_SECRET },
-            body: notifyPayload,
-            signal: ctrl.signal,
-          });
-          if (res.ok) return true;
-        } finally {
-          clearTimeout(timer);
-        }
+        // proxy() сам ставит срок ожидания, токен сессии и версию приложения;
+        // сервер этот метод без входа не принимает. Ошибка — исключение.
+        await proxy('dbNotifyAllWorkersNewVacancy', notifyArgs);
+        return true;
       } catch {
         // Сетевой сбой/таймаут — попробуем ещё раз (если есть vacancyId).
       }

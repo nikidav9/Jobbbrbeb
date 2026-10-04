@@ -120,7 +120,7 @@ export function setSessionExpiredHandler(cb: (() => void) | null): void {
  */
 const PROXY_TIMEOUT = 25_000;
 
-async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
+export async function proxy<T>(fn: string, args: unknown[] = []): Promise<T> {
   let status = 0;
   let text = '';
   // Был ли к запросу приложен токен сессии. Нужен ниже: 401 при наличии токена
