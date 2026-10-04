@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSessionToken } from '@/services/db';
+import { proxy } from '@/services/db';
 import { NOTIFICATION_DISABLED_KEY } from '@/services/notifications';
 
 // Публичная половина пары, которую сервер создал сам (infra/bootstrap.sh).
@@ -11,18 +11,6 @@ import { NOTIFICATION_DISABLED_KEY } from '@/services/notifications';
 // его безопасно — ниже подписка сверяется с ним и перевыпускается, если
 // выдана под другой.
 const VAPID_PUBLIC_KEY = 'BOGmoT8nUYJHXx8zLh7kmn_xDoaaLKu0wbSgWhqphsImHNeiTIscMLFEZsndZflZ6Xp9sJ8UMC1iIIkiLCecNzs';
-
-// Supabase напрямую из браузера блокируется в РФ — сохраняем через прокси.
-// В вебе адрес прокси — same-origin (тот же хост, с которого открылось
-// приложение), как и API_BASE в services/db.ts: иначе с «чистого» имени
-// подписка на пуш уходила бы на зашитый jobtoo.ru и упиралась в фильтр ТСПУ.
-const PROXY_URL =
-  Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin
-    ? `${window.location.origin}/api/db.php`
-    : process.env.EXPO_PUBLIC_API_URL
-      ? `${process.env.EXPO_PUBLIC_API_URL}/api/db.php`
-      : 'https://jobtoo.ru/api/db.php';
-const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -121,33 +109,15 @@ export async function registerWebPush(userId: string): Promise<boolean> {
 
     wpDebug('Сохраняем в базу...');
     const subJson = sub.toJSON();
-    // dbSaveWebPushSubscription на сервере — авторизованный метод: ему нужен
-    // токен сессии (Authorization), как и остальным запросам в services/db.ts.
-    // Без него сервер не видит пользователя и отвечает 401 — из-за этого
-    // «подключить уведомления» падало с «Ошибка сервера: HTTP 401».
-    const sessionToken = await getSessionToken();
-    const resp = await wpTimeout(fetch(PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Secret': APP_SECRET,
-        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
-      },
-      body: JSON.stringify({
-        fn: 'dbSaveWebPushSubscription',
-        args: [userId, subJson.endpoint, (subJson.keys as any)?.p256dh, (subJson.keys as any)?.auth],
-      }),
-    }), 12_000, 'сохранение в базу');
-
-    if (resp.status === 401) {
-      wpDebug('Ошибка 401: сессия не распознана. Выйдите и войдите снова, затем повторите.');
-      return false;
-    }
-
-    if (!resp.ok) {
-      wpDebug(`Ошибка сервера: HTTP ${resp.status}`);
-      return false;
-    }
+    // dbSaveWebPushSubscription на сервере — авторизованный метод: proxy()
+    // кладёт токен сессии (Authorization), как и остальные запросы. Без токена
+    // сервер отвечал 401 — «подключить уведомления» падало. Ошибки proxy()
+    // (в т.ч. протухшая сессия) приходят исключением и попадают в catch ниже.
+    await wpTimeout(
+      proxy('dbSaveWebPushSubscription', [userId, subJson.endpoint, (subJson.keys as any)?.p256dh, (subJson.keys as any)?.auth]),
+      12_000,
+      'сохранение в базу',
+    );
 
     localStorage.setItem(WP_FLAG, '1');
     localStorage.setItem(WP_DEBUG, 'OK — подписка сохранена!');
