@@ -20,6 +20,7 @@ import { normalizeCompany } from '@/services/company';
 import type { PermVacancy, User } from '@/constants/types';
 import { BackButton } from '@/components/ui/BackButton';
 import { useHydrated } from '@/hooks/useHydrated';
+import { formatRubPerPeriod } from '@/lib/money';
 
 import { JT_FONT } from '@/constants/jt';
 type CompanyTab = 'overview' | 'jobs';
@@ -260,7 +261,7 @@ function JobRow({ vacancy, onPress }: { vacancy: PermVacancy; onPress: () => voi
       <View style={s.jobChips}>
         {vacancy.salary > 0 ? (
           <View style={s.salaryChip}>
-            <Text style={s.salaryText}>{vacancy.salary.toLocaleString('ru-RU')} ₽/мес</Text>
+            <Text style={s.salaryText}>{formatRubPerPeriod(vacancy.salary)}</Text>
           </View>
         ) : null}
         {vacancy.schedule ? (

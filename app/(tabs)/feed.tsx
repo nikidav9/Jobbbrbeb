@@ -20,6 +20,7 @@ import { patchPersonal } from '@/lib/profileEdit';
 import { JTPullRefresh } from '@/components/ui/JTPullRefresh';
 import { Colors, Radius, Shadow } from '@/constants/theme';
 import { useApp } from '@/hooks/useApp';
+import { formatRubPerPeriod } from '@/lib/money';
 import { useSwipeDeck } from '@/hooks/useSwipeDeck';
 import { useEnergy } from '@/hooks/useEnergy';
 import { DAILY_ENERGY } from '@/services/energy';
@@ -1164,7 +1165,7 @@ function WorkerPermMode() {
     const message = [
       `${v.title} — ${v.company}`,
       v.metroStation ? `м. ${v.metroStation}` : '',
-      `${v.salary.toLocaleString('ru-RU')} ₽/мес`,
+      formatRubPerPeriod(v.salary),
       url,
     ].filter(Boolean).join('\n');
     try {
@@ -1390,7 +1391,7 @@ function WorkerPermMode() {
                     </View>
 
                     <View style={styles.chipsRow}>
-                      {salary > 0 ? <Chip label={`${salary.toLocaleString('ru-RU')} ₽/мес`} variant="salary" icon="wallet-outline" textSize={11} /> : null}
+                      {salary > 0 ? <Chip label={formatRubPerPeriod(salary)} variant="salary" icon="wallet-outline" textSize={11} /> : null}
                       <Chip label="На руки" variant="neutral" icon="checkmark-circle-outline" textSize={11} />
                       {schedule ? <Chip label={schedule} variant="neutral" icon="calendar-outline" textSize={11} /> : null}
                       {workType ? <Chip label={workType} variant="neutral" icon="briefcase-outline" textSize={11} /> : null}
@@ -1638,7 +1639,7 @@ function WorkerPermMode() {
                 <View style={[jt.tag, jt.tagSalary]}>
                   <Text style={jt.tagTxt} numberOfLines={1}>
                     {salary > 0
-                      ? `${salary.toLocaleString('ru-RU')} ₽/${ev.payPeriod === 'hour' ? 'ч' : 'мес'}`
+                      ? formatRubPerPeriod(salary, ev.payPeriod)
                       : 'з/п не указана'}
                   </Text>
                 </View>
@@ -2076,7 +2077,7 @@ function EmployerHome() {
                 </View>
                 <View style={pS.permTagsRow}>
                   <View style={pS.permSalaryTag}>
-                    <Text style={pS.permSalaryTxt}>{v.salary.toLocaleString('ru-RU')} ₽/мес</Text>
+                    <Text style={pS.permSalaryTxt}>{formatRubPerPeriod(v.salary)}</Text>
                   </View>
                   <View style={pS.permScheduleTag}>
                     <Ionicons name="calendar-outline" size={rf(13)} color={Colors.textSecondary} />
