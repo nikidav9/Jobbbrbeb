@@ -27,11 +27,11 @@ import { clearRuntimeCache } from '@/services/storage';
 import { BackButton } from '@/components/ui/BackButton';
 import { JT } from '@/constants/jt';
 import { EditColors, EditFonts } from '@/constants/profileEditTheme';
+import { NOTIFICATION_CHOICE_KEY } from '@/constants/notifPrefs';
 import {
   BottomSheet, ConfirmDialog, HardShadowBox, CloseIcon, CheckIcon, ChevronRightIcon,
 } from '@/components/profile/edit';
 
-const NOTIFICATION_CHOICE_KEY = 'jm_notif_prompt_choice';
 const DANGER = EditColors.danger;
 
 type NotificationState = 'checking' | 'enabled' | 'disabled' | 'blocked' | 'unavailable' | 'error';
