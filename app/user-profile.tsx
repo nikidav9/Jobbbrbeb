@@ -21,6 +21,7 @@ import { rs, rf } from '@/constants/scale';
 import { BackButton, BACK_BUTTON_SIZE } from '@/components/ui/BackButton';
 
 import { JT_FONT } from '@/constants/jt';
+import { phoneDigits, formatPhoneRu } from '@/lib/phone';
 function StarRow({ rating, count }: { rating: number; count: number }) {
   return (
     <View style={styles.starRow}>
@@ -249,7 +250,7 @@ export default function UserProfileScreen() {
   );
 
   const callWorker = () => {
-    const digits = (user.phone ?? '').replace(/\D/g, '');
+    const digits = phoneDigits(user.phone);
     if (!digits) return;
     Linking.openURL(`tel:+${digits}`).catch(() =>
       showToast('Не удалось открыть звонок — номер скопируйте вручную', 'error'));
@@ -531,17 +532,6 @@ export default function UserProfileScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-/**
- * Номер в человеческом виде: +7 916 587-08-77. В базе он лежит цифрами,
- * и читать его строкой из одиннадцати знаков, чтобы сверить с записью в
- * телефоне, — занятие на пустом месте.
- */
-function formatPhoneRu(raw: string): string {
-  const d = (raw ?? '').replace(/\D/g, '');
-  if (d.length !== 11) return raw;
-  return `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}`;
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {

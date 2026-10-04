@@ -8,26 +8,7 @@ import { BottomSheet } from '../BottomSheet';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { Toggle } from '../Toggle';
 import { PhoneIcon, CloseIcon, ChevronDownIcon } from '../icons';
-
-/** Только цифры, без ведущей «7» — то, что человек набирает после кода страны. */
-function digitsOf(phone: string | undefined): string {
-  const d = (phone ?? '').replace(/\D/g, '');
-  if (d.length === 11 && (d[0] === '7' || d[0] === '8')) return d.slice(1);
-  return d.slice(0, 10);
-}
-
-/** «9990000000» → «999 000-00-00» — маска из макета `personal/13-phone.html`. */
-function formatDigits(d: string): string {
-  const a = d.slice(0, 3);
-  const b = d.slice(3, 6);
-  const c = d.slice(6, 8);
-  const e = d.slice(8, 10);
-  let out = a;
-  if (b) out += ` ${b}`;
-  if (c) out += `-${c}`;
-  if (e) out += `-${e}`;
-  return out;
-}
+import { nationalDigits, formatNationalDigits } from '@/lib/phone';
 
 /**
  * Шторка «Телефон» — `docs/design/profile-edit/personal/13-phone.html`.
@@ -36,7 +17,7 @@ function formatDigits(d: string): string {
  */
 export function PhoneSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { currentUser, updateUser, showToast } = useApp();
-  const initialDigits = digitsOf(currentUser?.phone);
+  const initialDigits = nationalDigits(currentUser?.phone);
   const initialShowPhone = currentUser?.personalDetails?.showPhone ?? true;
   const [digits, setDigits] = useState(initialDigits);
   const [showPhone, setShowPhone] = useState(initialShowPhone);
@@ -115,7 +96,7 @@ export function PhoneSheet({ visible, onClose }: { visible: boolean; onClose: ()
           </View>
           <View style={s.inputWrap}>
             <TextInput
-              value={formatDigits(digits)}
+              value={formatNationalDigits(digits)}
               onChangeText={(text) => setDigits(text.replace(/\D/g, '').slice(0, 10))}
               placeholder="999 000-00-00"
               placeholderTextColor={EditColors.placeholder}
